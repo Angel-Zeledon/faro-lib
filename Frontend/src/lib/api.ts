@@ -381,6 +381,47 @@ export const authLogin = (email: string, password: string) =>
     }
   }>('POST', '/auth/login', { email, password })
 
+// ── Social sign-in (Google / Apple / Facebook) ───────────────────────────────
+// Off unless the instance operator enabled a provider; `providers` is then [].
+export type SocialProvider = 'google' | 'apple' | 'facebook'
+
+export const getAuthProviders = () =>
+  request<{ providers: SocialProvider[] }>('GET', '/auth/providers', undefined, { silent: true })
+
+/** Where the browser goes to start a provider sign-in. A navigation, not a
+ *  fetch: the provider's page has to take over the window. `terms` says the
+ *  page the person clicked on stated the Terms and the Privacy Policy. */
+// `/api/v1/...` rather than BASE: the browser-binding cookie the backend sets
+// is scoped to `/api/v1/auth/oauth`, the path the provider calls back on.
+export const socialStartUrl = (provider: SocialProvider, intent: 'login' | 'signup') =>
+  `/api/v1/auth/oauth/${provider}/start?intent=${intent}&terms=1`
+
+/** Trade the one-time code from /auth/callback for our own tokens. */
+export const exchangeSocialCode = (code: string) =>
+  request<{
+    access_token: string; refresh_token: string; token_type: string; expires_in: number
+    provider: SocialProvider; is_new_account: boolean
+    user: {
+      id: string; email: string; full_name: string | null; role: string
+      tenant_id: string; email_verified: boolean
+    }
+  }>('POST', '/auth/oauth/exchange', { code }, { silent: true })
+
+export interface LinkedIdentity {
+  provider: SocialProvider
+  email: string | null
+  created_at: string | null
+  last_used_at: string | null
+}
+
+export const getMyIdentities = () =>
+  request<{ identities: LinkedIdentity[]; has_password: boolean; providers_enabled: SocialProvider[] }>(
+    'GET', '/auth/identities', undefined, { silent: true },
+  )
+
+export const unlinkIdentity = (provider: SocialProvider) =>
+  request<{ unlinked: string }>('DELETE', `/auth/identities/${provider}`, undefined, { silent: true })
+
 /** A throwaway account from the landing: 24 hours, the `demo` tier, the demo
  *  run already queued. The password exists only in this response. */
 export interface TrialAccount {

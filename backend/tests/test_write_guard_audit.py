@@ -47,6 +47,8 @@ PUBLIC = {
     "POST /api/v1/auth/reset-password": "the emailed token is the credential",
     "POST /api/v1/auth/verify-email": "the emailed token is the credential",
     "POST /api/v1/auth/resend-verification": "you cannot verify without it",
+    "POST /api/v1/auth/oauth/{provider}/callback": "Apple's form_post; the single-use state is the credential",
+    "POST /api/v1/auth/oauth/exchange": "the one-time handoff code is the credential",
 }
 
 SELF = {
@@ -58,6 +60,7 @@ SELF = {
     "POST /api/v1/users/me/whatsapp/confirm": "your own phone number",
     "POST /api/v1/users/me/change-password/request": "your own password",
     "POST /api/v1/users/me/change-password/confirm": "your own password",
+    "DELETE /api/v1/auth/identities/{provider}": "unlinking your own sign-in provider",
     "PATCH /api/v1/me/preferences": "your own preferences",
     "POST /api/v1/analyst/chats": "your own conversation with the analyst",
     "POST /api/v1/analyst/chats/{chat_id}/messages": "your own conversation",

@@ -60,6 +60,11 @@ def get_user_by_email(tenant_id: str, email: str) -> Optional[dict]:
 
 def verify_credentials(tenant_id: str, email: str, password: str) -> Optional[dict]:
     u = get_user_by_email(tenant_id, email)
+    # `has_password` FALSE: the stored hash is random (a provider-only account,
+    # or a password dropped when a provider proved the mailbox) — no password
+    # opens it, however it is guessed.
+    if u and u.get("has_password", True) is False:
+        return None
     if u and verify_password(password, u["hashed_password"]):
         return u
     return None
@@ -94,6 +99,7 @@ def update_password(tenant_id: str, user_id: str, new_password: str) -> None:
     execute(
         """UPDATE users
               SET hashed_password = %s,
+                  has_password = TRUE,
                   sessions_invalid_before = NOW(),
                   updated_at = NOW()
             WHERE id = %s AND tenant_id = %s""",

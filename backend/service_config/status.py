@@ -149,6 +149,11 @@ def service_report(service: Service, tenant_id: str | None = None) -> dict:
 
     if service.kind == "deployment":
         state = _deployment_state(service, tenant_id)
+    elif service.switch and not resolve(service.switch, tenant_id).value:
+        # Paused by the operator. Wins over `not_configured` too: the panel's
+        # first job is to say the feature is off on purpose; `missing` still
+        # names what would be needed once it is switched on.
+        state = "off"
     elif missing:
         state = "not_configured"
     elif last is not None and not last.ok:
@@ -254,6 +259,8 @@ def run_probe(service_key: str, tenant_id: str | None = None) -> probes.ProbeRes
 
 def _service_is_ready(service_key: str, tenant_id: str | None) -> bool:
     service = BY_KEY[service_key]
+    if service.switch and not resolve(service.switch, tenant_id).value:
+        return False
     return not _missing_required(service, tenant_id)
 
 

@@ -3,7 +3,7 @@ import { usePathname } from 'next/navigation'
 import AppShell from './AppShell'
 import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 
-const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba']
+const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', '/auth/callback']
 // The landing and its public subpages: no app shell, no sign-in.
 // /desarrolladores: the API reference, a landing page with its own chrome.
 const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS), '/desarrolladores']

@@ -8,6 +8,7 @@ import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
 import { Eye, EyeOff, AlertTriangle, MailCheck } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
+import { SocialButtons, socialErrorText } from '@/components/auth/SocialButtons'
 
 // The split stage (wordmark, form column, the morning-list panel) comes from
 // (auth)/layout.tsx — this file renders only the form, centred in its column.
@@ -22,7 +23,12 @@ function LoginPageContent() {
   const [password, setPassword] = useState('')
   const [showPw,   setShowPw]   = useState(false)
   const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
+  // A provider sign-in that was refused comes back here as `?oauth_error=<code>`
+  // (never with a token). Shown in the same box as a password error.
+  const oauthError = searchParams.get('oauth_error')
+  const [error,    setError]    = useState<string | null>(
+    oauthError ? socialErrorText(t, oauthError) : null,
+  )
   // A login refused for a verification reason is the one error the user cannot
   // fix by retyping something, so it gets an action instead of just a message.
   const [canResend,  setCanResend]  = useState(false)
@@ -105,8 +111,10 @@ function LoginPageContent() {
             </p>
           </div>
 
+          <SocialButtons intent="login" />
+
           {error && (
-            <div style={{
+            <div role="alert" style={{
               display: 'flex', flexDirection: 'column', gap: 8,
               padding: '10px 12px', borderRadius: 10, marginBottom: 20,
               background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)',

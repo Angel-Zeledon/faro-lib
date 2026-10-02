@@ -1666,6 +1666,80 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
 ]
 
 
+# ── Social sign-in (backend/auth/social/) ────────────────────────────────────
+# Kept as its own list, appended, so it never collides with edits to the long
+# list above. All additive; nothing here changes an existing row's meaning.
+_SOCIAL_LOGIN = [
+    # Whether the account has a password anybody chose. FALSE for an account
+    # created through a provider (its `hashed_password` is a random hash
+    # nobody knows) and for one whose unverified password was dropped when a
+    # provider proved the mailbox belonged to someone else. DEFAULT TRUE: every
+    # existing account was created with a password.
+    #
+    # Guarded by a catalog check rather than `ADD COLUMN IF NOT EXISTS`: the
+    # latter still takes ACCESS EXCLUSIVE on `users` on every boot, and an
+    # instance starting while another holds a transaction on `users` then
+    # queues every login behind a no-op (measured 2026-10-02: a boot stalled
+    # five minutes and blocked an unrelated INSERT the whole time).
+    ("add_users_has_password",
+     """DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'users'
+               AND column_name = 'has_password'
+          ) THEN
+            ALTER TABLE users ADD COLUMN has_password BOOLEAN NOT NULL DEFAULT TRUE;
+          END IF;
+        END $$"""),
+    # One row per (provider account -> our user). (provider, subject) is the
+    # identity — the email can change at the provider, the subject never does.
+    # One identity per provider per user: a second Google account cannot be
+    # stacked onto the same login.
+    ("create_user_identities",
+     """CREATE TABLE IF NOT EXISTS user_identities (
+         id           TEXT PRIMARY KEY,
+         user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         provider     TEXT NOT NULL,
+         subject      TEXT NOT NULL,
+         email        TEXT,
+         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         last_used_at TIMESTAMPTZ,
+         UNIQUE (provider, subject),
+         UNIQUE (user_id, provider)
+     )"""),
+    # A started sign-in: state, PKCE verifier and nonce, server-side and
+    # single-use (consumed with DELETE ... RETURNING). Only the HASH of the
+    # state and of the browser-binding cookie is stored.
+    ("create_oauth_flows",
+     """CREATE TABLE IF NOT EXISTS oauth_flows (
+         state_hash     TEXT PRIMARY KEY,
+         provider       TEXT NOT NULL,
+         code_verifier  TEXT NOT NULL,
+         nonce          TEXT NOT NULL,
+         binding_hash   TEXT NOT NULL,
+         intent         TEXT NOT NULL DEFAULT 'login',
+         terms_accepted BOOLEAN NOT NULL DEFAULT FALSE,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         expires_at     TIMESTAMPTZ NOT NULL
+     )"""),
+    # The one-time code that carries a finished sign-in from the provider's
+    # redirect to the page that stores the tokens — so no token is ever in a
+    # URL. 60 seconds, single use, hash only.
+    ("create_oauth_handoffs",
+     """CREATE TABLE IF NOT EXISTS oauth_handoffs (
+         code_hash      TEXT PRIMARY KEY,
+         user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         provider       TEXT NOT NULL,
+         is_new_account BOOLEAN NOT NULL DEFAULT FALSE,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         expires_at     TIMESTAMPTZ NOT NULL
+     )"""),
+]
+_MIGRATIONS += _SOCIAL_LOGIN
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.

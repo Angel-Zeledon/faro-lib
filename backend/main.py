@@ -328,6 +328,10 @@ async def unhandled_error_handler(request: Request, exc: Exception):
 _PREFIX = "/api/v1"
 
 app.include_router(auth.router,          prefix=_PREFIX)
+# Optional Google / Apple / Facebook sign-in. Always mounted; every route
+# answers "off" until the instance operator enables a provider.
+from backend.api.v1 import social_auth as social_auth_router  # noqa: E402
+app.include_router(social_auth_router.router, prefix=_PREFIX)
 app.include_router(users.router,         prefix=_PREFIX)
 app.include_router(sessions.router,      prefix=_PREFIX)
 app.include_router(datasets.router,      prefix=_PREFIX)

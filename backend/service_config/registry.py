@@ -128,6 +128,12 @@ class Service:
     docs_note: str = ""
     """Anything a reader of the source needs that the fields do not say."""
 
+    switch: str = ""
+    """Key of a bool field that turns the whole service off WITHOUT deleting its
+    credentials. While it is false the service reports `off`, whatever else is
+    configured — "the operator paused it" and "nobody set it up" are different
+    statements and the panel has to be able to make both."""
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Core — the process does not start without these, and the panel never
@@ -567,6 +573,108 @@ CONTACT = Service(
 )
 
 
+_CALLBACK = "<FRONTEND_URL>/api/v1/auth/oauth/{provider}/callback"
+
+SOCIAL_LOGIN = Service(
+    key="social_login",
+    kind="external",
+    probe="probe_social_login",
+    switch="social_login_enabled",
+    # ANY one provider, complete, is enough for the service to run; the others
+    # simply do not get a button. Google first: the cheapest to set up.
+    requires_any=(
+        ("google_oauth_client_id", "google_oauth_client_secret"),
+        ("facebook_oauth_app_id", "facebook_oauth_app_secret"),
+        ("apple_oauth_service_id", "apple_oauth_team_id",
+         "apple_oauth_key_id", "apple_oauth_private_key"),
+    ),
+    summary="Sign in with Google, Apple or Facebook, next to email + password.",
+    what_breaks=(
+        "The 'Continue with Google / Apple / Facebook' buttons disappear from "
+        "the login and signup screens; email + password keeps working exactly "
+        "as before. People who only ever signed in with a provider must use "
+        "'forgot password' to set one. Off by default — a source install shows "
+        "only the email form until the operator configures a provider AND "
+        "turns SOCIAL_LOGIN_ENABLED on."
+    ),
+    docs_note=(
+        "Each provider shows its button only when the master switch is on AND "
+        "every one of its fields is set; a half-filled provider is never "
+        "offered. Every provider console asks for the redirect (callback) URL, "
+        "which is built from FRONTEND_URL:\n\n"
+        f"    {_CALLBACK.format(provider='google')}\n"
+        f"    {_CALLBACK.format(provider='facebook')}\n"
+        f"    {_CALLBACK.format(provider='apple')}\n\n"
+        "Step-by-step console instructions: `docs/social-login.md`. An existing "
+        "account is linked only through an email address the PROVIDER says it "
+        "verified; when the local account had never verified that address, its "
+        "password is removed on linking, because whoever chose it never proved "
+        "they own the mailbox."
+    ),
+    fields=(
+        ConfigField(
+            key="social_login_enabled", env="SOCIAL_LOGIN_ENABLED", kind="bool",
+            doc="Master switch. False hides every social button without deleting "
+                "the credentials below, so the feature can be paused and resumed.",
+            default="false", example="false",
+        ),
+        ConfigField(
+            key="google_oauth_client_id", env="GOOGLE_OAUTH_CLIENT_ID",
+            doc="OAuth client ID of a 'Web application' client in Google Cloud "
+                "Console. Authorized redirect URI: "
+                + _CALLBACK.format(provider="google") + ".",
+            example="1234567890-abc.apps.googleusercontent.com",
+        ),
+        ConfigField(
+            key="google_oauth_client_secret", env="GOOGLE_OAUTH_CLIENT_SECRET",
+            secret=True,
+            doc="Client secret of that Google OAuth client. Without it (or the "
+                "ID) the Google button is not shown.",
+            example="GOCSPX-...",
+        ),
+        ConfigField(
+            key="facebook_oauth_app_id", env="FACEBOOK_OAUTH_APP_ID",
+            doc="App ID of a Meta app with the Facebook Login product. Valid "
+                "OAuth redirect URI: " + _CALLBACK.format(provider="facebook") + ".",
+            example="123456789012345",
+        ),
+        ConfigField(
+            key="facebook_oauth_app_secret", env="FACEBOOK_OAUTH_APP_SECRET",
+            secret=True,
+            doc="App secret of that Meta app. Also signs every Graph API call "
+                "(appsecret_proof). Without it the Facebook button is not shown.",
+            example="0123456789abcdef0123456789abcdef",
+        ),
+        ConfigField(
+            key="apple_oauth_service_id", env="APPLE_OAUTH_SERVICE_ID",
+            doc="Identifier of the Sign in with Apple SERVICES ID (not the App "
+                "ID). Return URL: " + _CALLBACK.format(provider="apple")
+                + ". Apple only accepts https return URLs.",
+            example="es.stockai.signin",
+        ),
+        ConfigField(
+            key="apple_oauth_team_id", env="APPLE_OAUTH_TEAM_ID",
+            doc="10-character Apple Developer Team ID; the issuer of the client "
+                "secret this server signs for every Apple sign-in.",
+            example="ABCDE12345",
+        ),
+        ConfigField(
+            key="apple_oauth_key_id", env="APPLE_OAUTH_KEY_ID",
+            doc="Key ID of the Sign in with Apple private key (.p8).",
+            example="XYZ987WXYZ",
+        ),
+        ConfigField(
+            key="apple_oauth_private_key", env="APPLE_OAUTH_PRIVATE_KEY",
+            secret=True,
+            doc="Contents of the .p8 key file, BEGIN/END lines included. Pasted "
+                "on one line is fine; the line breaks are restored. Without it "
+                "Apple cannot be asked for a token and its button is not shown.",
+            example="-----BEGIN PRIVATE KEY-----...-----END PRIVATE KEY-----",
+        ),
+    ),
+)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Deployment — reported, never editable from the panel. These decide the shape
 # of the deployment, and a running process cannot change its own shape.
@@ -708,6 +816,7 @@ SERVICES: tuple[Service, ...] = (
     RAG,
     SECRET_STORAGE,
     CONTACT,
+    SOCIAL_LOGIN,
     WORKER,
     LIMITS,
     API_SURFACE,

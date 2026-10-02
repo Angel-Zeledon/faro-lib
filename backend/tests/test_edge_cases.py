@@ -46,6 +46,12 @@ UNAUTHENTICATED = {
     "POST /api/v1/auth/forgot-password": "you are locked out by definition",
     "POST /api/v1/auth/forgot-password/verify": "same flow, still locked out",
     "POST /api/v1/auth/reset-password": "the emailed token is the credential",
+    # Social sign-in (backend/auth/social/): the person is not signed in yet.
+    "GET /api/v1/auth/providers": "which sign-in buttons to draw; no tenant data",
+    "GET /api/v1/auth/oauth/{provider}/start": "redirects to the provider",
+    "GET /api/v1/auth/oauth/{provider}/callback": "single-use state + browser cookie are the credential",
+    "POST /api/v1/auth/oauth/{provider}/callback": "Apple's form_post; same state + cookie",
+    "POST /api/v1/auth/oauth/exchange": "the one-time handoff code is the credential",
     # The landing visitor has no account yet: this mints a throwaway one. It
     # reads no tenant's data; abuse is bounded in backend/trial/service.py.
     "POST /api/v1/trial": "creates a 24-hour trial account for a visitor",
