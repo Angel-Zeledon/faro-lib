@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
-import { Section, Tag, H2, H3, Lead, Dash } from '@/components/landing/primitives'
+import { Section, Tag, H2, H3, Lead } from '@/components/landing/primitives'
 
 // ── Reveal-once hook ──────────────────────────────────────────────────────────
 // `armed` is true only while JS is running, motion is allowed and the block
@@ -30,12 +30,14 @@ function useArmedInView<T extends HTMLElement>() {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     // Already on screen at mount (a reload halfway down): play straight away.
     setState('armed')
+    // Fires as soon as the block's first tenth is on screen, so the sequence
+    // is already under way while it scrolls up rather than waiting for it.
     const io = new IntersectionObserver(entries => {
       if (entries.some(e => e.isIntersecting)) {
         setState('in')
         io.disconnect()
       }
-    }, { threshold: 0.18 })
+    }, { threshold: 0.1 })
     io.observe(el)
     return () => io.disconnect()
   }, [])
@@ -89,7 +91,7 @@ export function EngineFlow() {
   const fig = useArmedInView<HTMLDivElement>()
 
   return (
-    <div className="ef-grid">
+    <div className="ef-grid" data-reveal-skip>
       <ol
         ref={flow.ref}
         className={`ef-flow${flow.armed ? ' is-armed' : ''}${flow.played ? ' is-in' : ''}`}
@@ -191,22 +193,14 @@ export function ModelsSection({ alt = true }: { alt?: boolean }) {
         ))}
       </ul>
 
-      <div className="split em-bottom">
-        <div>
-          <H3>{E.assistantTitle}</H3>
-          <p className="em-p">{E.assistantBody}</p>
-          <ul className="em-points">
-            {E.assistantPoints.map(p => <li key={p}>{p}</li>)}
-          </ul>
-        </div>
-        <div className="em-limits">
-          <H3>{E.limitsTitle}</H3>
-          <ul>
-            {E.limits.map(l => (
-              <li key={l}><Dash /><span>{l}</span></li>
-            ))}
-          </ul>
-        </div>
+      {/* The honest limits that used to sit beside this block now live in
+          the FAQ ("What doesn't StockAI do?"), owner's call 2026-10-02. */}
+      <div className="em-bottom">
+        <H3>{E.assistantTitle}</H3>
+        <p className="em-p">{E.assistantBody}</p>
+        <ul className="em-points">
+          {E.assistantPoints.map(p => <li key={p}>{p}</li>)}
+        </ul>
       </div>
     </Section>
   )
@@ -240,9 +234,9 @@ export const ENGINE_CSS = `
 
 .ef-flow.is-armed::before { transform: scaleY(0); }
 .ef-flow.is-armed .ef-num, .ef-flow.is-armed .ef-body { opacity: 0; }
-.ef-flow.is-in::before { animation: ef-rail 1700ms cubic-bezier(0.65, 0, 0.35, 1) both; }
-.ef-flow.is-in .ef-num { animation: ef-node 520ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(var(--i) * 190ms); }
-.ef-flow.is-in .ef-body { animation: ef-body 640ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(80ms + var(--i) * 190ms); }
+.ef-flow.is-in::before { animation: ef-rail 1300ms cubic-bezier(0.65, 0, 0.35, 1) both; }
+.ef-flow.is-in .ef-num { animation: ef-node 520ms var(--lp-ease) both; animation-delay: calc(var(--i) * 140ms); }
+.ef-flow.is-in .ef-body { animation: ef-body 600ms var(--lp-ease) both; animation-delay: calc(60ms + var(--i) * 140ms); }
 @keyframes ef-rail { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 @keyframes ef-node { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
 @keyframes ef-body { from { opacity: 0; transform: translate3d(10px, 0, 0); } to { opacity: 1; transform: none; } }
@@ -280,7 +274,7 @@ export const ENGINE_CSS = `
 .ei.is-in .ei-cand { animation: ei-draw 620ms cubic-bezier(0.45, 0, 0.25, 1) both, ei-dim 600ms ease both; animation-delay: calc(1100ms + var(--c) * 140ms), 2150ms; }
 .ei.is-in .ei-band { animation: ei-fade 620ms ease 2350ms both; }
 .ei.is-in .ei-win { animation: ei-draw 820ms cubic-bezier(0.45, 0, 0.25, 1) 2350ms both; }
-.ei.is-in .ei-signal { animation: ei-pop 520ms cubic-bezier(0.16, 1, 0.3, 1) 3150ms both; }
+.ei.is-in .ei-signal { animation: ei-pop 520ms var(--lp-ease) 3150ms both; }
 @keyframes ei-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes ei-dim { from { opacity: 0.85; } to { opacity: 0.22; } }
 @keyframes ei-fade { from { opacity: 0; } to { opacity: 1; } }
@@ -294,18 +288,16 @@ export const ENGINE_CSS = `
 .em-models { font-size: 13.5px; color: var(--lp-body); line-height: 1.55; }
 .em-note { font-size: 13.5px; color: var(--lp-body); line-height: 1.65; margin: 16px 0 0; max-width: 62ch; }
 .em-always { grid-template-columns: 1fr !important; }
-.em-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 64px; padding-top: 40px; border-top: 1px solid var(--lp-border); }
-.em-p { font-size: 15px; color: var(--lp-body); line-height: 1.72; margin: 0 0 14px; max-width: 60ch; }
-.em-points { margin: 0; padding-left: 18px; font-size: 14px; color: var(--lp-body); line-height: 1.65; }
+.em-bottom { margin-top: 64px; padding: 32px 36px; border-radius: 16px; border: 1px solid var(--lp-accent-bd); background: linear-gradient(135deg, var(--lp-accent-bg), transparent 70%); }
+.em-p { font-size: 15.5px; color: var(--lp-body); line-height: 1.72; margin: 0 0 14px; max-width: 68ch; }
+.em-points { list-style: disc; margin: 0; padding-left: 18px; font-size: 14px; color: var(--lp-body); line-height: 1.65; max-width: 68ch; }
 .em-points li + li { margin-top: 6px; }
-.em-limits ul { list-style: none; margin: 0; padding: 0; }
-.em-limits li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--lp-body); line-height: 1.6; padding: 8px 0; }
-.em-limits li svg { margin-top: 3px; }
 
 @media (max-width: 900px) {
  .ef-grid { grid-template-columns: 1fr; gap: 36px; }
  .ef-fig { position: static; order: -1; }
- .em-top, .em-bottom { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+ .em-top { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+ .em-bottom { padding: 24px 20px; }
 }
 @media (max-width: 760px) {
  /* The routing table stacks: pattern, then who competes, row by row. */

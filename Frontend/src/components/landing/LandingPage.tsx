@@ -8,6 +8,12 @@
 // sections that also have a subpage of their own (/precios, /como-funciona,
 // /preguntas-frecuentes, /seguridad) live in sibling modules, shared with
 // those subpages — see components/landing/{theme,primitives,chrome,sections}.
+//
+// Order since 2026-10-02 (owner: "sell it as a great product"): outcome first
+// (what you know every morning), then the problem, then the AI engine as the
+// centrepiece, then proof of fit (industries, roles, vs Excel), then the rule
+// and what you need, then price and trust. The honest limits now close the
+// FAQ instead of interrupting the engine.
 import Link from 'next/link'
 import { appHref } from '@/lib/siteUrls'
 import { useState } from 'react'
@@ -17,7 +23,7 @@ import { ScreenGuide } from '@/components/landing/ScreenGuide'
 import { T, DISPLAY } from '@/components/landing/theme'
 import { LandingStyles, Section, Tag, H2, H3, Lead, Check, Dash, Scroller, useScrollReveal } from '@/components/landing/primitives'
 import { Nav, Footer } from '@/components/landing/chrome'
-import { DecideSection, PricingSection, TrustSection, FaqAccordion, FinalSection } from '@/components/landing/sections'
+import { DecideSection, PricingSection, TrustSection, FaqAccordion, FinalSection, MorningSection, FeaturesSection } from '@/components/landing/sections'
 import { EngineFlow, ModelsSection, ENGINE_CSS } from '@/components/landing/engine'
 
 const HOME = { onHome: true } as const
@@ -50,8 +56,6 @@ export default function LandingPage() {
   const { lang } = useLanguage()
   const L = LANDING[lang]
 
-  // Same names the render code already used, now sourced from the active
-  // language. Nothing below this line had to change.
   const PROBLEMS   = L.problem.items
   const CASES      = L.cases.items
   const BENEFITS   = L.benefits.items
@@ -68,14 +72,14 @@ export default function LandingPage() {
  useScrollReveal()
 
  // Same rule as the stats strip below (see the comment there): a figure on this
- // page has to be one the product can back. This block used to carry fifteen
- // result percentages — "reducción de quiebres 20–35%", "compras de emergencia
- // −30–50%", "merma −25–40%" and twelve more. StockAI has never measured a single
- // one: there is no customer outcome study, no before/after dataset, nothing in
- // the repo that produces them. They were written to look like a case study.
- // What replaces them is what the product actually DOES for that operation,
- // each item checkable against code (signal thresholds and the 3-reception rule
- // in backend/inventory/service.py, the 30-day donor floor in the transfer
+ // page has to be one the product can back. The industries block used to carry
+ // fifteen result percentages — "reducción de quiebres 20–35%", "compras de
+ // emergencia −30–50%", "merma −25–40%" and twelve more. StockAI has never
+ // measured a single one: there is no customer outcome study, no before/after
+ // dataset, nothing in the repo that produces them. What replaces them is what
+ // the product actually DOES for that operation, each item checkable against
+ // code (signal thresholds and the 3-reception rule in
+ // backend/inventory/service.py, the 30-day donor floor in the transfer
  // service, the BOM explosion in backend/inventory/bom_service.py).
  // If real customer outcomes ever get measured, they belong here — with the
  // customer, the period and the baseline named. A percentage with no source
@@ -148,17 +152,19 @@ export default function LandingPage() {
      on real sessions the app shows its own users 75–89%. Advertising 94% while
      the screen says 75% is the one thing this product cannot afford to do —
      its whole argument is that it tells you the truth about your numbers.
-     What replaces them is countable: the four states every product lands in
-     (the semaforo), the deliveries it takes to learn a supplier's real lead time
+     What replaces them is countable: the nine models that can compete for a
+     product (eight in ForecastingCore's training/router.py ROUTING_TABLE plus
+     the global model, UNIVERSAL_MODELS), the four states every product lands
+     in, the deliveries it takes to learn a supplier's real lead time
      (MIN_LEAD_TIME_OBSERVATIONS = 3), and the catalogue size the product is
      exercised against.
      If a real average accuracy ever gets measured across customers, it belongs
      here — with the number the app actually shows. */}
  {[
- { value: '4', label: L.strip.models },
+ { value: '9', label: L.strip.models },
+ { value: '4', label: L.strip.states },
  { value: '3', label: L.strip.deliveries },
  { value: '5K+', label: L.strip.skus },
- { value: 'CSV', label: L.strip.csv },
  ].map(({ value, label }) => (
  <div key={label} className="strip-cell">
  <div className="strip-value">{value}</div>
@@ -167,6 +173,27 @@ export default function LandingPage() {
  ))}
  </div>
  </div>
+
+ {/* ── EVERY MORNING (the outcome, first) ───────────────────────────── */}
+ <Section>
+ <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 72, alignItems: 'start' }}>
+ <div>
+ <Tag>{L.benefits.tag}</Tag>
+ <H2>{L.benefits.title}</H2>
+ <Lead>
+ {L.benefits.lead}
+ </Lead>
+ </div>
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 20px' }}>
+ {BENEFITS.map(b => (
+ <div key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', borderBottom: `1px solid ${T.border}` }}>
+ <div style={{ marginTop: 1 }}><Check /></div>
+ <span style={{ fontSize: 14, color: T.body, lineHeight: 1.5 }}>{b}</span>
+ </div>
+ ))}
+ </div>
+ </div>
+ </Section>
 
  {/* ── THE PROBLEM ──────────────────────────────────────────────────── */}
  <Section id="problema" alt>
@@ -201,31 +228,20 @@ export default function LandingPage() {
  {/* The screen guide is an opt-in deep dive (owner, 2026-10-01): a teaser
      here, the chapters in a dialog. See components/landing/ScreenGuide. */}
  <ScreenGuide tour={L.tour} manual={L.manual} lang={lang} primaryClass="btn-primary" />
+ <Link href="/como-funciona" className="lp-more">{L.how.more}</Link>
  </Section>
 
  {/* ── THE MODELS ───────────────────────────────────────────────────── */}
  <ModelsSection />
 
- {/* ── HOW IT DECIDES ───────────────────────────────────────────────── */}
- <DecideSection alt={false} />
+ {/* ── YOUR MORNING WITH STOCKAI ────────────────────────────────────── */}
+ <MorningSection />
 
- {/* ── ABOUT US ─────────────────────────────────────────────────────── */}
- <Section id="nosotros">
- {/* The owner can replace this with the real story / team. */}
- <div style={{ maxWidth: 760 }}>
- <Tag>{L.about.tag}</Tag>
- <H2>{L.about.title}</H2>
- <p style={{ fontSize: 17, color: T.body, lineHeight: 1.75, margin: '0 0 20px' }}>
- {L.about.body1}
- </p>
- <p style={{ fontSize: 17, color: T.body, lineHeight: 1.75, margin: 0 }}>
- {L.about.body2}
- </p>
- </div>
- </Section>
+ {/* ── EVERY FEATURE, GROUPED ───────────────────────────────────────── */}
+ <FeaturesSection alt />
 
  {/* ── INDUSTRIES ───────────────────────────────────────────────────── */}
- <Section id="casos" alt>
+ <Section id="casos">
  <Tag>{L.cases.tag}</Tag>
  <H2>{L.cases.title}</H2>
  <Lead>
@@ -238,7 +254,7 @@ export default function LandingPage() {
  </button>
  ))}
  </div>
- <div className="split lp-card" style={{ padding: '38px 40px', borderRadius: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
+ <div className="split lp-card lp-card-soft" style={{ padding: '38px 40px', borderRadius: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
  <div key={`a-${activeCase}`} className="lp-swap">
  <div className="lp-label" style={{ color: T.accent, marginBottom: 12 }}>{CASES[activeCase].label}</div>
  <div style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, color: T.text, marginBottom: 16, letterSpacing: '-0.03em', lineHeight: 1.25 }}>{CASES[activeCase].title}</div>
@@ -259,51 +275,76 @@ export default function LandingPage() {
  </div>
  </Section>
 
- {/* ── WHAT'S INCLUDED (BENEFITS) ───────────────────────────────────── */}
- <Section>
- <div className="split" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 72, alignItems: 'start' }}>
- <div>
- <Tag>{L.benefits.tag}</Tag>
- <H2>{L.benefits.title}</H2>
- <Lead>
- {L.benefits.lead}
+ {/* ── WHAT'S INCLUDED (ROLES) ──────────────────────────────────────── */}
+ <Section id="incluye" alt>
+ <Tag>{L.includes.tag}</Tag>
+ <H2>{L.includes.title}</H2>
+ <Lead maxWidth={700}>
+ {L.includes.lead}
  </Lead>
- </div>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 20px' }}>
- {BENEFITS.map(b => (
- <div key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', borderBottom: `1px solid ${T.border}` }}>
- <div style={{ marginTop: 1 }}><Check /></div>
- <span style={{ fontSize: 14, color: T.body, lineHeight: 1.5 }}>{b}</span>
+
+ <H3>{L.includes.rolesTitle}</H3>
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 56 }}>
+ {ROLES.map(({ role, pain, gain }) => (
+ <div key={role} data-reveal className="lp-card">
+ <div className="lp-card-title" style={{ marginBottom: 16 }}>{role}</div>
+ <div className="lp-label" style={{ marginBottom: 6 }}>{L.misc.roleToday}</div>
+ <div className="lp-card-body" style={{ marginBottom: 16 }}>{pain}</div>
+ <div className="lp-label" style={{ color: T.accent, marginBottom: 6 }}>{L.misc.roleWith}</div>
+ <div className="lp-card-body">{gain}</div>
  </div>
  ))}
  </div>
+
+ <H3>{L.includes.itemsTitle}</H3>
+ <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+ {INCLUDES.map(({ title, desc, isNew }) => (
+ <div key={title} data-reveal className="lp-card">
+ <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+ <span className="lp-card-title" style={{ marginBottom: 0 }}>{title}</span>
+ {isNew && (
+ <span style={{ fontSize: 11, fontWeight: 700, color: T.green, background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 20, padding: '2px 9px' }}>{L.includes.isNew}</span>
+ )}
  </div>
+ <div className="lp-card-body">{desc}</div>
+ </div>
+ ))}
+ </div>
+
+ <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: '28px 0 0', maxWidth: 760 }}>
+ {L.includes.tail}
+ </p>
  </Section>
 
  {/* ── VS EXCEL ─────────────────────────────────────────────────────── */}
- <Section id="comparacion" alt>
+ <Section id="comparacion">
  <Tag>{L.compare.tag}</Tag>
  <H2>{L.compare.title}</H2>
  <Lead>
  {L.compare.lead}
  </Lead>
- <Scroller minWidth={620}>
+ <Scroller minWidth={720}>
  <div className="lp-table">
- <div className="lp-table-head" style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px' }}>
+ <div className="lp-table-head cmp-row">
  <div className="lp-label">{L.compare.head[0]}</div>
  <div className="lp-label" style={{ textAlign: 'center' }}>{L.compare.head[1]}</div>
- <div className="lp-label" style={{ textAlign: 'center', color: T.accent }}>{L.compare.head[2]}</div>
+ <div className="lp-label" style={{ textAlign: 'center' }}>{L.compare.head[2]}</div>
+ <div className="lp-label" style={{ textAlign: 'center', color: T.accent }}>{L.compare.head[3]}</div>
  </div>
- {COMPARE.map(({ feature, excel, stockai }) => (
- <div key={feature} className="lp-table-row" style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px' }}>
+ {COMPARE.map(({ feature, excel, gut, stockai }) => (
+ <div key={feature} className="lp-table-row cmp-row">
  <span style={{ fontSize: 14, color: T.body }}>{feature}</span>
  <span style={{ fontSize: 13.5, color: T.red, textAlign: 'center', fontWeight: 500 }}>{excel}</span>
+ <span style={{ fontSize: 13.5, color: T.red, textAlign: 'center', fontWeight: 500 }}>{gut}</span>
  <span style={{ fontSize: 13.5, color: T.green, textAlign: 'center', fontWeight: 700 }}>{stockai}</span>
  </div>
  ))}
  </div>
  </Scroller>
  </Section>
+
+ {/* ── HOW IT DECIDES ───────────────────────────────────────────────── */}
+ <DecideSection />
 
  {/* ── WHAT YOU NEED ────────────────────────────────────────────────── */}
  <Section id="empezar">
@@ -339,54 +380,28 @@ export default function LandingPage() {
 
  {/* ── TRUST ──────────────────────────────────────────────────────────── */}
  {/* Every claim is backed by code — see the note above TrustSection. */}
- <TrustSection decideHref="#como-decide" />
+ <TrustSection decideHref="#como-decide" moreHref="/seguridad" />
 
- {/* ── WHAT'S INCLUDED (ROLES) ──────────────────────────────────────── */}
- <Section id="incluye">
- <Tag>{L.includes.tag}</Tag>
- <H2>{L.includes.title}</H2>
- <Lead maxWidth={700}>
- {L.includes.lead}
- </Lead>
-
- <H3>{L.includes.rolesTitle}</H3>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 56 }}>
- {ROLES.map(({ role, pain, gain }) => (
- <div key={role} data-reveal className="lp-card lp-card-soft">
- <div className="lp-card-title" style={{ marginBottom: 16 }}>{role}</div>
- <div className="lp-label" style={{ marginBottom: 6 }}>{L.misc.roleToday}</div>
- <div className="lp-card-body" style={{ marginBottom: 16 }}>{pain}</div>
- <div className="lp-label" style={{ color: T.accent, marginBottom: 6 }}>{L.misc.roleWith}</div>
- <div className="lp-card-body">{gain}</div>
- </div>
- ))}
- </div>
-
- <H3>{L.includes.itemsTitle}</H3>
- <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
- {INCLUDES.map(({ title, desc, isNew }) => (
- <div key={title} data-reveal className="lp-card">
- <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
- <span className="lp-card-title" style={{ marginBottom: 0 }}>{title}</span>
- {isNew && (
- <span style={{ fontSize: 11, fontWeight: 700, color: T.green, background: T.greenBg, border: `1px solid ${T.greenBd}`, borderRadius: 20, padding: '2px 9px' }}>{L.includes.isNew}</span>
- )}
- </div>
- <div className="lp-card-body">{desc}</div>
- </div>
- ))}
- </div>
-
- <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: '28px 0 0', maxWidth: 760 }}>
- {L.includes.tail}
+ {/* ── ABOUT US ─────────────────────────────────────────────────────── */}
+ <Section id="nosotros" alt>
+ {/* The owner can replace this with the real story / team. */}
+ <div style={{ maxWidth: 760 }}>
+ <Tag>{L.about.tag}</Tag>
+ <H2>{L.about.title}</H2>
+ <p style={{ fontSize: 17, color: T.body, lineHeight: 1.75, margin: '0 0 20px' }}>
+ {L.about.body1}
  </p>
+ <p style={{ fontSize: 17, color: T.body, lineHeight: 1.75, margin: 0 }}>
+ {L.about.body2}
+ </p>
+ </div>
  </Section>
 
  {/* ── FOR YOUR TECHNICAL TEAM ──────────────────────────────────────── */}
  {/* The integration details for whoever the buyer forwards the link to.
      The model competition moved up into its own section (#motor) on
      2026-10-01; what stays here is ABC-XYZ, the API/MCP and the calendar. */}
- <Section id="tecnico" alt style={{ padding: '64px 0' }}>
+ <Section id="tecnico" style={{ padding: '64px 0' }}>
  <Tag>{L.tech.tag}</Tag>
  <h2 className="lp-h3">{L.tech.title}</h2>
  <p style={{ fontSize: 14, color: T.body, lineHeight: 1.7, margin: '0 0 22px', maxWidth: 640 }}>
@@ -404,7 +419,9 @@ export default function LandingPage() {
  </Section>
 
  {/* ── FAQ ──────────────────────────────────────────────────────────── */}
- <FaqAccordion />
+ {/* Ends with "What doesn't StockAI do?" — the honest limits, moved here
+     from the models section on 2026-10-02. */}
+ <FaqAccordion alt />
 
  {/* ── CLOSING BAND: the three ways forward ─────────────────────────── */}
  <FinalSection />
