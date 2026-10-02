@@ -6,7 +6,7 @@ import {
   getSessions, getSchedule, saveSchedule, deleteSchedule, listSchedules,
   getTenantTimezone, listScheduleHistory,
 } from '@/lib/api'
-import type { ApiKey, Webhook, JobSchedule, SessionInfo } from '@/lib/types'
+import type { ApiKey, ApiKeyScope, Webhook, JobSchedule, SessionInfo } from '@/lib/types'
 import type { TenantTimezone, ScheduleRun } from '@/lib/api'
 import Button from '@/components/ui/Button'
 import Input, { Select } from '@/components/ui/Input'
@@ -44,9 +44,9 @@ function ApiKeysTab() {
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
   // Defaults to read-only, the safer of the two. The choice is explicit because
-  // the two kinds do different jobs: a viewer key can read the semáforo, and
-  // only an analyst key can push the nightly export or record an order.
-  const [newRole, setNewRole] = useState<'viewer' | 'analyst'>('viewer')
+  // the two kinds do different jobs: a read key can read the semáforo, and
+  // only a write key can push the nightly export or record an order.
+  const [newScope, setNewScope] = useState<ApiKeyScope>('read')
   const [creating, setCreating] = useState(false)
   const [newKey,  setNewKey]  = useState<string | null>(null)
   const [copied,  setCopied]  = useState(false)
@@ -65,10 +65,10 @@ function ApiKeysTab() {
     if (!newName.trim()) return
     setCreating(true); setError(null)
     try {
-      const result = await createApiKey(newName.trim(), newRole)
+      const result = await createApiKey(newName.trim(), newScope)
       setNewKey(result.key)
       setNewName('')
-      setNewRole('viewer')
+      setNewScope('read')
       load()
     } catch (e: any) { setError(e.message) }
     finally { setCreating(false) }
@@ -126,18 +126,18 @@ function ApiKeysTab() {
             style={{ flex: 1, fontSize: 12 }}
           />
           <select
-            name="api_key_role"
+            name="api_key_scope"
             aria-label={t('settings.key_role_label')}
-            value={newRole}
-            onChange={e => setNewRole(e.target.value as 'viewer' | 'analyst')}
+            value={newScope}
+            onChange={e => setNewScope(e.target.value as ApiKeyScope)}
             style={{
               fontSize: 12, padding: '0 8px', borderRadius: 8,
               border: '1px solid var(--border)', background: 'var(--surface)',
               color: 'var(--text)',
             }}
           >
-            <option value="viewer">{t('settings.key_role_viewer')}</option>
-            <option value="analyst">{t('settings.key_role_analyst')}</option>
+            <option value="read">{t('settings.key_role_viewer')}</option>
+            <option value="write">{t('settings.key_role_analyst')}</option>
           </select>
           <Button variant="primary" size="sm" loading={creating} disabled={!newName.trim()} onClick={handleCreate}>
             {t('settings.create')}
@@ -183,12 +183,22 @@ function ApiKeysTab() {
       ) : (
         <table className="data-table">
           <thead>
-            <tr><th>{t('settings.col_name')}</th><th>{t('settings.col_created')}</th><th>{t('settings.col_last_used')}</th><th></th></tr>
+            <tr><th>{t('settings.col_name')}</th><th>{t('settings.col_scope')}</th><th>{t('settings.col_created')}</th><th>{t('settings.col_last_used')}</th><th></th></tr>
           </thead>
           <tbody>
             {keys.map(k => (
               <tr key={k.id}>
-                <td style={{ fontWeight: 500 }}>{k.name}</td>
+                <td style={{ fontWeight: 500 }}>
+                  {k.name}
+                  {k.last4 && (
+                    <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--dim)', fontFamily: 'monospace' }}>…{k.last4}</span>
+                  )}
+                </td>
+                {/* Which kind it is was invisible after creation: a list of
+                    names cannot tell you which key is allowed to write. */}
+                <td style={{ fontSize: 11, color: k.scope === 'write' ? 'var(--warning)' : 'var(--dim)' }}>
+                  {k.scope === 'write' ? t('settings.scope_write') : t('settings.scope_read')}
+                </td>
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{k.created_at.slice(0, 10)}</td>
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{k.last_used ? k.last_used.slice(0, 10) : t('settings.never')}</td>
                 <td>

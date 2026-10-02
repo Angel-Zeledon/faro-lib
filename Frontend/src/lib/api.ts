@@ -739,14 +739,22 @@ export const uploadActuals = (sessionId: string, file: File) => {
 // took the default: `viewer`. A read-only key cannot upload the nightly export
 // or record a purchase order, which is the entire job an integration has, and
 // the screen gave no hint that it had chosen for you.
-export const createApiKey = (name: string, role: 'viewer' | 'analyst' = 'viewer') =>
-  request<{ key: string; name: string; role: string }>('POST', '/api-keys', { name, role })
+// The choice is sent as `scope` ('read' | 'write'), the name the public API
+// documents; the backend maps it to the role the key acts as.
+export const createApiKey = (name: string, scope: import('./types').ApiKeyScope = 'read') =>
+  request<{ key: string; name: string; role: string; scope: import('./types').ApiKeyScope }>(
+    'POST', '/api-keys', { name, scope })
 
 export const listApiKeys = () =>
   request<import('./types').ApiKey[]>('GET', '/api-keys')
 
 export const revokeApiKey = (id: string) =>
   request<{ revoked: string }>('DELETE', `/api-keys/${id}`)
+
+// API-key calls this month (UTC), by day and by key. Admin only.
+export const getApiKeyUsage = (month?: string) =>
+  request<import('./types').ApiKeyUsage>(
+    'GET', `/api-keys/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`)
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
 export const createWebhook = (url: string, events: string[]) =>

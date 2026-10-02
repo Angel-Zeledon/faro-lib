@@ -1,5 +1,17 @@
 # StockAI's public API
 
+> **2026-10-01 — the surface is no longer eight endpoints.** Every tenant-scoped
+> action the app can take is callable with an API key, except auth/session,
+> user and password management, instance configuration, tenant export/deletion,
+> API-key management and person-scoped screens (inbox, assistant chats,
+> preferences). The rule lives in `backend/api/public_surface.py`; the complete,
+> generated reference is the landing page **/desarrolladores**
+> (`Frontend/src/data/public-api.json`, regenerated with
+> `python -m backend.scripts.export_public_api`). Keys are `read` (viewer) or
+> `write` (analyst). Every key call that reaches an endpoint is metered per day
+> in `api_usage_daily`; `GET /api/v1/api-keys/usage` (admin, JWT) reports it.
+> The walkthrough below — the nightly ERP job — is still the shortest path.
+
 ## In short
 
 StockAI does not want to be the system your inventory lives in. It wants to be the

@@ -1197,6 +1197,34 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # Optional expiry. NULL = never expires, which is what every existing key is.
     ("add_api_keys_expires_at",
      "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"),
+    # The key's scope as the public API names it: 'read' or 'write'. DERIVED
+    # from `role` rather than stored beside it, on purpose. Two columns that
+    # must agree are two columns that eventually do not, and a backfill to a
+    # flat 'read' default would have quietly demoted every existing analyst
+    # key — an integration whose nightly push starts answering 403 with nobody
+    # having touched it. Generated, the mapping is the schema's: viewer → read,
+    # analyst → write, for every row that exists and every row inserted later
+    # by any path.
+    ("add_api_keys_scope",
+     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS scope TEXT "
+     "GENERATED ALWAYS AS (CASE WHEN role = 'analyst' THEN 'write' ELSE 'read' END) STORED"),
+    # Metering: one row per key per UTC day, incremented by a single upsert on
+    # every API-key call that reached an endpoint. This is what a call-based
+    # bill is computed from, so it survives the key: `api_key_id` has no FK and
+    # `key_name` is copied in, because revoking a key DELETES its row and the
+    # month's calls it made are still owed. Tenant-owned: cascades with it.
+    ("create_api_usage_daily",
+     """CREATE TABLE IF NOT EXISTS api_usage_daily (
+         tenant_id   TEXT   NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         api_key_id  TEXT   NOT NULL,
+         key_name    TEXT   NOT NULL,
+         day         DATE   NOT NULL,
+         calls       BIGINT NOT NULL DEFAULT 0 CHECK (calls >= 0),
+         PRIMARY KEY (tenant_id, api_key_id, day)
+     )"""),
+    ("create_api_usage_daily_day_idx",
+     "CREATE INDEX IF NOT EXISTS api_usage_daily_tenant_day_idx "
+     "ON api_usage_daily (tenant_id, day)"),
 
     # Of the 45 tables carrying `tenant_id`, only four declared a foreign key to
     # `tenants`. Deleting a tenant therefore left every other table's rows behind

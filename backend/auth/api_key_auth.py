@@ -12,9 +12,12 @@ This module owns the database side of that: hashing, lookup, expiry and the
 """
 
 import hashlib
+import logging
 from typing import Optional
 
 from backend.db.connection import execute, query_one
+
+log = logging.getLogger(__name__)
 
 KEY_PREFIX = "sk_live_"
 
@@ -54,7 +57,7 @@ def resolve(credential: str) -> Optional[dict]:
     key that never did are the same 401.
     """
     row = query_one(
-        """SELECT id, tenant_id, role, expires_at
+        """SELECT id, tenant_id, name, role, expires_at
              FROM api_keys
             WHERE key_hash = %s
               AND (expires_at IS NULL OR expires_at > NOW())""",
@@ -186,6 +189,39 @@ def _daily_ceiling(tenant_id: str | None) -> int | None:
     if tenant is None:
         return None
     return tenant_limits(dict(tenant))["max_api_calls_per_day"]
+
+
+def meter(key_id: str, tenant_id: str, key_name: str) -> bool:
+    """Count one API-key call against its tenant, its key and today (UTC).
+
+    One statement: an upsert whose increment happens inside the row lock the
+    conflict takes, so twenty simultaneous calls count twenty — there is no
+    read-then-write for two requests to interleave in. Per-day rows are what
+    the monthly bill sums; `key_name` is copied in because revoking a key
+    deletes its row and the calls it already made are still owed.
+
+    Never raises. The call has already been authorised and must not fail
+    because a counter could not be written — but an uncounted call is unbilled
+    work, so the failure is logged at ERROR, with the tenant and key, every
+    single time. Returns whether the call was counted.
+    """
+    try:
+        execute(
+            """INSERT INTO api_usage_daily (tenant_id, api_key_id, key_name, day, calls)
+               VALUES (%s, %s, %s, (NOW() AT TIME ZONE 'UTC')::date, 1)
+               ON CONFLICT (tenant_id, api_key_id, day)
+               DO UPDATE SET calls = api_usage_daily.calls + 1,
+                             key_name = EXCLUDED.key_name""",
+            (tenant_id, key_id, key_name),
+        )
+        return True
+    except Exception:  # noqa: BLE001 — metering must never fail the call
+        log.error(
+            "[api-metering] UNMETERED API CALL: could not count a call for "
+            "tenant=%s key=%s — this call will be missing from the usage and "
+            "the bill", tenant_id, key_id, exc_info=True,
+        )
+        return False
 
 
 def actor_id(key_id: str) -> str:

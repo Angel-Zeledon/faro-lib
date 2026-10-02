@@ -45,6 +45,15 @@ const nextConfig = {
   },
   async rewrites() {
     return [
+      // The versioned public base an integration is told to use
+      // (`https://<domain>/api/v1/...`, see /desarrolladores and /api). Without
+      // this rule it fell into the one below and became `/api/v1/v1/...` — a
+      // 404 on every documented URL. First, so it wins; the app's own calls
+      // never start with `v1/`, so they are unaffected.
+      {
+        source: '/api/v1/:path*',
+        destination: `${BACKEND_URL}/api/v1/:path*`,
+      },
       {
         source: '/api/:path*',
         destination: `${BACKEND_URL}/api/v1/:path*`,
