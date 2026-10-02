@@ -46,6 +46,9 @@ UNAUTHENTICATED = {
     "POST /api/v1/auth/forgot-password": "you are locked out by definition",
     "POST /api/v1/auth/forgot-password/verify": "same flow, still locked out",
     "POST /api/v1/auth/reset-password": "the emailed token is the credential",
+    # The landing visitor has no account yet: this mints a throwaway one. It
+    # reads no tenant's data; abuse is bounded in backend/trial/service.py.
+    "POST /api/v1/trial": "creates a 24-hour trial account for a visitor",
     # Machine callers authorised by request signature, not by a user token.
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
     # Deliberate: Twilio's MediaUrl fetch cannot carry a Bearer token, and the
