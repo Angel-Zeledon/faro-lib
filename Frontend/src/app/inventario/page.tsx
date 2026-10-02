@@ -10,7 +10,7 @@ import {
  getCalendarCatalog, seedCalendarCatalog, toggleCalendarEntry,
  listEventMultipliers, setEventMultiplier, deleteEventMultiplier,
  getSupplierCostInflation, getMarginErosion, getForecastMoney,
- getCostOfIgnoring, getWhyChanged,
+ getCostOfIgnoring, getWhyChanged, getSignalThresholds,
  ApiError,
 } from '@/lib/api'
 import type {
@@ -20,6 +20,7 @@ import type {
  EventMultiplier,
  SupplierCostInflationResponse, MarginErosionResponse, ForecastMoneyResponse,
  CostOfIgnoringResponse, WhyChangedResponse, WhyChangedFieldOrigin,
+ SignalThresholdsState,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import Pagination, { usePage } from '@/components/table/Pagination'
@@ -1881,6 +1882,12 @@ export default function InventoryPage() {
  const role = getUser()?.role
  return role === 'admin' || role === 'analyst'
  })()
+ // The semáforo's configured multipliers, so the legend prints the rule this
+ // tenant actually runs on instead of a sentence that could drift from it.
+ const [signalRules, setSignalRules] = useState<SignalThresholdsState | null>(null)
+ useEffect(() => {
+ getSignalThresholds({ silent: true }).then(setSignalRules).catch(() => setSignalRules(null))
+ }, [])
  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  // Translates an ApiError's `error_code` + `params` into the user's language.
@@ -3919,12 +3926,25 @@ export default function InventoryPage() {
  {!loading && sessionId && (
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, fontSize: 11, color: C.dim, paddingBottom: 8, flexWrap: 'wrap' }}>
  {[
- { signal: t('inventory.signal_order_now'), desc: t('inventory.legend_order_now') },
+ { signal: t('inventory.signal_order_now'), desc: signalRules
+ ? `${t('inventory.legend_order_now')} (${t('inventory.thresholds_legend_order_now', { x: signalRules.effective.order_now_factor.toLocaleString(localeFor(lang)) })})`
+ : t('inventory.legend_order_now') },
  { signal: t('inventory.signal_order_soon'), desc: t('inventory.legend_order_soon') },
  { signal: t('inventory.signal_ok'), desc: t('inventory.legend_ok') },
- { signal: t('inventory.signal_overstock'), desc: t('inventory.legend_overstock') },
+ { signal: t('inventory.signal_overstock'), desc: signalRules
+ ? `${t('inventory.legend_overstock')} (${t('inventory.thresholds_legend_overstock', { x: signalRules.effective.overstock_factor.toLocaleString(localeFor(lang)) })})`
+ : t('inventory.legend_overstock') },
  { signal: t('inventory.signal_sin_datos'), desc: t('inventory.legend_sin_datos') },
  ].map(({ signal, desc }) => <span key={signal}><strong>{signal}</strong> — {desc}</span>)}
+ {signalRules && (
+ <Link href="/configurar-inventario#reglas-semaforo" style={{ color: C.indigo, textDecoration: 'none' }}>
+ {signalRules.overrides.length === 0
+ ? t('inventory.thresholds_legend_adjust')
+ : signalRules.overrides.length === 1
+ ? t('inventory.thresholds_legend_adjust_with_override_one')
+ : t('inventory.thresholds_legend_adjust_with_overrides', { count: signalRules.overrides.length })}
+ </Link>
+ )}
  </div>
  )}
  </div>

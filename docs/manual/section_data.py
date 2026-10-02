@@ -119,6 +119,7 @@ SECTION = {
                     "La barra de arriba dice «X% de tu compra del mes ya configurado» y debajo aclara «La barra mide plata, no filas», con el conteo de productos listos sobre el total.",
                     "Cada fila muestra la venta proyectada, cuánto vale reponerla, cuánto pesa dentro del mes, el acumulado y una columna «Le falta» que nombra exactamente qué dato no tienes.",
                     "Al final de cada fila hay tres casillas — Stock, Costo y Días de entrega — y un botón «Guardar» que confirma con la palabra «Guardado».",
+                    "El tercer panel, «Reglas del semáforo», dice cuándo un producto pasa a «Pedir YA» (de fábrica, con menos de 0,5 veces lo que tarda el proveedor) y cuándo a «Sobrestock» (de fábrica, desde 3 veces). Los cambias para toda la empresa o, en «Aplicar a», para un proveedor; antes de guardar te dice cuántos de tus productos cambiarían de señal, y «Volver a los valores de fábrica» lo deshace. «Pedir pronto» no es un múltiplo: es el punto de reorden.",
                 ],
                 "fields": [
                     ("Stock actual", "Cuántas unidades tienes hoy físicamente en bodega, sin contar lo que está por llegar."),
@@ -396,6 +397,7 @@ SECTION = {
                     "The bar at the top reads \"X% of this month's purchase already configured\" and underneath clarifies \"The bar measures money, not rows\", with the count of finished products over the total.",
                     "Each row shows the projected sales, what replacing them is worth, how much it weighs inside the month, the cumulative share, and a \"Missing\" column naming exactly which datum you do not have.",
                     "At the end of each row there are three boxes — Stock, Cost and Lead time (days) — and a \"Save\" button that confirms with the word \"Saved\".",
+                    "The third panel, \"Stock signal rules\", says when a product turns \"Order NOW\" (factory value: less than 0.5 times the supplier's lead time) and when it turns \"Overstock\" (factory value: from 3 times). You change them for the whole company or, under \"Apply to\", for one supplier; before saving it tells you how many of your products would change signal, and \"Back to factory values\" undoes it. \"Order soon\" is not a multiple: it is the reorder point.",
                 ],
                 "fields": [
                     ("Current stock", "How many units you physically hold today, not counting anything in transit."),

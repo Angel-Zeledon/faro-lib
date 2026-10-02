@@ -1648,6 +1648,21 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "CREATE UNIQUE INDEX IF NOT EXISTS po_log_tenant_idempotency_key_uniq "
      "ON inventory_po_log (tenant_id, idempotency_key) "
      "WHERE idempotency_key IS NOT NULL"),
+    # ── Semáforo multipliers (backend/inventory/signal_thresholds.py) ──────────
+    # The two lead-time multiples the signal is judged by, configurable per
+    # tenant (scope 'global'), supplier or category on the existing planning-
+    # rule rows. NULL on purpose: NULL means "nobody configured this", which is
+    # NOT the same as a tenant that saved 0.5/3.0 (silent-failures, question
+    # 3). Both are written together and resolved as one pair, so the CHECK only
+    # has to guard the ordering when a pair is present.
+    ("add_stock_defaults_order_now_factor",
+     "ALTER TABLE stock_defaults ADD COLUMN IF NOT EXISTS order_now_factor FLOAT"),
+    ("add_stock_defaults_overstock_factor",
+     "ALTER TABLE stock_defaults ADD COLUMN IF NOT EXISTS overstock_factor FLOAT"),
+    ("add_stock_defaults_signal_factors_check",
+     "ALTER TABLE stock_defaults ADD CONSTRAINT stock_defaults_signal_factors_check "
+     "CHECK (order_now_factor IS NULL OR overstock_factor IS NULL OR "
+     "(order_now_factor > 0 AND order_now_factor < overstock_factor))"),
 ]
 
 

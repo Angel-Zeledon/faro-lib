@@ -51,11 +51,12 @@ way a bigger order can be wrong:
      Never recommended, whatever the discount.
 
   b) NEVER RECOMMEND WHAT THE SEMÁFORO WILL CALL OVERSTOCK. StockAI paints a SKU
-     SOBRESTOCK at coverage >= lead_time * 3 (service._calc_signal). Advising a
+     SOBRESTOCK at coverage >= lead_time * overstock_factor (service._calc_signal;
+     the factor is the SKU's resolved `signal_thresholds`, 3 by default). Advising a
      purchase this same product would flag as overstock tomorrow destroys the
      semáforo's credibility, which is the product. We also cap at 90 days in
      absolute terms for obsolescence/perishability risk on long lead times.
-     limit = min(lead_time * 3, MAX_COVERAGE_DAYS)
+     limit = min(lead_time * overstock_factor, MAX_COVERAGE_DAYS)
 
   c) MATERIALITY. A net saving of a few colones is not worth a nudge, an extra
      decision or the risk of being wrong about the forecast. It must be at
@@ -73,6 +74,7 @@ from typing import Optional
 
 from backend.db.connection import query, query_one, execute
 from backend.inventory.service import _days_per_period
+from backend.inventory import signal_thresholds
 
 log = logging.getLogger(__name__)
 
@@ -186,6 +188,7 @@ def evaluate_step_up(
     current_stock: float,
     lead_time_days: int,
     holding_cost_pct: float = DEFAULT_HOLDING_COST_PCT,
+    overstock_factor: Optional[float] = None,
 ) -> Optional[dict]:
     """
     Best price-break opportunity above `current_quantity` for one SKU, or None
@@ -209,7 +212,11 @@ def evaluate_step_up(
     if not higher:
         return None
 
-    coverage_limit = min(float(lead_time_days) * 3.0, MAX_COVERAGE_DAYS)
+    # The SAME overstock multiple the semáforo judged this SKU by (the status
+    # row's resolved `signal_thresholds`), never a private copy of it.
+    if overstock_factor is None:
+        overstock_factor = signal_thresholds.DEFAULT_OVERSTOCK_FACTOR
+    coverage_limit = min(float(lead_time_days) * float(overstock_factor), MAX_COVERAGE_DAYS)
     demand = float(daily_demand or 0.0)
 
     candidates: list[dict] = []
@@ -409,6 +416,8 @@ def evaluate_cart(
                 current_stock=float(status.get("current_stock") or 0),
                 lead_time_days=int(status.get("lead_time_days") or 15),
                 holding_cost_pct=holding_cost_pct,
+                overstock_factor=(status.get("signal_thresholds") or {}).get(
+                    "overstock_factor"),
             )) is not None
         ]
         if opportunities:

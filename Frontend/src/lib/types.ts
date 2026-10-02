@@ -841,6 +841,46 @@ export interface JobSchedule {
 // ── Inventory ─────────────────────────────────────────────────────────────────
 export type InventorySignal = 'PEDIR_YA' | 'PEDIR_PRONTO' | 'OK' | 'SOBRESTOCK' | 'SIN_DATOS'
 
+// ── Semáforo multipliers (backend/inventory/signal_thresholds.py) ─────────────
+/** PEDIR_YA below `order_now_factor` x lead time; SOBRESTOCK from
+ *  `overstock_factor` x lead time (or twice the reorder point, if larger). The
+ *  PEDIR_PRONTO boundary is the reorder point and is not a multiplier. */
+export interface SignalThresholdFactors {
+  order_now_factor: number
+  overstock_factor: number
+}
+export type SignalThresholdScope = 'global' | 'supplier' | 'category'
+export interface ResolvedSignalThresholds extends SignalThresholdFactors {
+  source:      'default' | SignalThresholdScope
+  scope_value: string | null
+}
+export interface SignalThresholdRule extends SignalThresholdFactors {
+  scope_type:  SignalThresholdScope
+  scope_value: string | null
+  updated_at:  string | null
+}
+export interface SignalThresholdsState {
+  defaults:  SignalThresholdFactors
+  /** The tenant-wide rule; null when nobody configured one (defaults apply). */
+  tenant:    SignalThresholdRule | null
+  effective: SignalThresholdFactors
+  source:    'default' | 'global'
+  overrides: SignalThresholdRule[]
+  bounds:    Record<keyof SignalThresholdFactors, { min: number; max: number }>
+  overstock_reorder_point_multiple: number
+}
+export interface SignalThresholdsPreview {
+  available:      boolean
+  reason?:        'no_session'
+  total?:         number
+  changed?:       number
+  counts_before?: Record<InventorySignal, number>
+  counts_after?:  Record<InventorySignal, number>
+  /** "FROM>TO" -> how many products make that move. */
+  transitions?:   Record<string, number>
+  sample?:        { sku: string; name: string | null; from: InventorySignal; to: InventorySignal }[]
+}
+
 export interface InventoryStock {
   id?:            string
   sku:            string
@@ -1113,6 +1153,9 @@ export interface InventoryStatusItem extends InventoryStock {
   lead_time_demand:    number | null
   coverage_days:       number | null
   signal:               InventorySignal
+  /** The lead-time multipliers this row's signal was judged by, and which
+   *  rule they came from. Absent on a backend older than the feature. */
+  signal_thresholds?:   ResolvedSignalThresholds
   recommended_qty: number | null
   /** Units already on their way and not yet received: purchase orders the buyer
    *  has SENT, plus transfers in transit into this warehouse. Subtracted from

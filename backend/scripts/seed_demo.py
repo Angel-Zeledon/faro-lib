@@ -86,8 +86,9 @@ SUPPLIERS = [
 
 # SKU catalog. `target` is the semáforo band we want the demo to show for this
 # SKU (coverage is expressed as a multiple of the lead time; see
-# service._calc_signal thresholds: <0.5 PEDIR_YA, <1.2 PEDIR_PRONTO, <3 OK,
-# else SOBRESTOCK). `base` is the mean daily units, `wk` a weekend uplift
+# service._calc_signal at the factory thresholds of signal_thresholds.py:
+# <0.5 PEDIR_YA, <= the reorder point PEDIR_PRONTO, <3 OK, else SOBRESTOCK;
+# the 0.85 target below sits under a 1.0+ reorder point by construction). `base` is the mean daily units, `wk` a weekend uplift
 # factor, `trend` the fractional growth across the whole window.
 #   supplier index -> SUPPLIERS[i]
 SKUS = [
