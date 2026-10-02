@@ -15,7 +15,9 @@ const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS), ...LEGAL_PUBLIC_PAT
 export default function ConditionalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isAuth    = AUTH_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
-  const isLanding = LANDING_PATHS.includes(pathname)
+  // The help center is a tree (/docs, /docs/<section>/<page>), so it is
+  // matched by prefix rather than listed page by page.
+  const isLanding = LANDING_PATHS.includes(pathname) || pathname === '/docs' || pathname.startsWith('/docs/')
 
   // The one-time notice about browser storage rides on the landing and the
   // app shells; the sign-in screens keep it off their submit buttons (see

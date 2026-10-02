@@ -1,8 +1,9 @@
 import {
   ShoppingCart, ClipboardList, Package, Boxes, Truck, TrendingUp, Database,
   History, MessagesSquare, FlaskConical, Plug, Settings, Users, KeyRound,
-  Upload, Plus, SunMoon, Languages, type LucideIcon,
+  Upload, Plus, SunMoon, Languages, LifeBuoy, type LucideIcon,
 } from 'lucide-react'
+import { siteHref } from '@/lib/siteUrls'
 import type { InventoryStatusItem } from '@/lib/types'
 
 /**
@@ -70,6 +71,8 @@ export const COMMANDS: Command[] = [
   { id: 'act.new_order', group: 'action', href: '/pedidos?new=1', labelKey: 'cmd.create_order',    aliasKey: 'cmd.alias.create_order', Icon: Plus,      writerOnly: true },
   { id: 'act.theme',     group: 'action',                         labelKey: 'cmd.toggle_theme',    aliasKey: 'cmd.alias.theme',        Icon: SunMoon,   run: c => c.toggleTheme() },
   { id: 'act.language',  group: 'action',                         labelKey: 'cmd.toggle_language', aliasKey: 'cmd.alias.language',     Icon: Languages, run: c => c.setLang(c.lang === 'es' ? 'en' : 'es') },
+  // The help center is on the landing (maybe another origin): a new tab, not a route.
+  { id: 'act.help',      group: 'action',                         labelKey: 'help.center',         aliasKey: 'cmd.alias.help',         Icon: LifeBuoy,  run: () => { window.open(siteHref('/docs'), '_blank', 'noopener') } },
 ]
 
 /** What this user may reach. Role only: there are no locked features left. */

@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Download, LogOut, Share, User } from 'lucide-react'
+import { Download, LifeBuoy, LogOut, Share, User } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -12,6 +12,7 @@ import { useInstall } from '@/lib/pwa'
 import { GROUPS, visibleNavFor, navItemMatches } from '@/components/layout/navItems'
 import BottomSheet from './BottomSheet'
 import LegalLinks from '@/components/legal/LegalLinks'
+import { siteHref } from '@/lib/siteUrls'
 
 /**
  * "Más": every screen that is not a bottom tab, grouped exactly like the
@@ -111,6 +112,12 @@ export default function MoreSheet({ open, onClose, unread }: {
       />
 
       <div style={{ height: 1, background: 'var(--border)', margin: '12px 0 6px' }} />
+
+      {/* On the landing's origin, in its own tab (see the sidebar). */}
+      <a href={siteHref('/docs')} target="_blank" rel="noopener" className="tap-feedback" style={row} onClick={onClose}>
+        <LifeBuoy size={20} color="var(--muted)" aria-hidden="true" />
+        <span style={{ flex: 1 }}>{t('help.center')}</span>
+      </a>
 
       {installMode && (
         <>

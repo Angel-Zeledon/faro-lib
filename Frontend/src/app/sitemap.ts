@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { SITE_URL } from '@/lib/siteUrls'
+import { DOC_ORDER, docHref } from '@/i18n/docs/tree'
 
 // Served as /sitemap.xml. The landing, its four pages and the two manuals are
 // the whole public surface; robots.ts keeps everything else out.
@@ -22,6 +23,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/divulgacion-responsable`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/accesibilidad`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/condiciones-comerciales`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/docs`, changeFrequency: 'weekly', priority: 0.7 },
+    ...DOC_ORDER.map(id => ({ url: `${SITE_URL}${docHref(id)}`, changeFrequency: 'monthly' as const, priority: 0.5 })),
     { url: `${SITE_URL}/stockai-manual-es.pdf`, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE_URL}/stockai-manual-en.pdf`, changeFrequency: 'monthly', priority: 0.4 },
   ]
