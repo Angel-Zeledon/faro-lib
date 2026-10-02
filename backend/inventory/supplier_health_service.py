@@ -116,6 +116,7 @@ def get_contact_health(tenant_id: str) -> list[dict]:
               AND poi.status IN %s
               AND COALESCE(TRIM(poi.supplier), '') <> ''
               AND pol.reception_status IN %s
+              AND pol.cancelled_at IS NULL
             GROUP BY LOWER(TRIM(poi.supplier))""",
         (tenant_id, _ORDERED, _OPEN_PO_STATES),
     )

@@ -31,6 +31,7 @@ from backend.inventory.service import (
     _aggregate_stock_rows_by_sku,
     _avg_forecast_curve,
     _days_per_period,
+    _resolve_review_period_days,
     get_learned_lead_times,
     list_stock,
     resolve_lead_time,
@@ -95,6 +96,22 @@ _solve_gate = threading.BoundedSemaphore(_MAX_CONCURRENT_SOLVES)
 
 class OptimizerBusy(Exception):
     """Raised when all concurrent-solve slots are taken; caller should 503."""
+
+
+def solve(inp: OptimizationInput):
+    """Run the MILP on `inp`, or skip it when every SKU was sized like the
+    Panel (O1) and nothing is left for the solver.
+
+    The engine handed an empty problem fails the solve and reports the greedy
+    "fallback" — and /compras then warns the buyer that the plan is an
+    approximation, about a plan that never needed the optimizer at all.
+    Callers still hold `solve_slot()` around this.
+    """
+    from forecasting_core.business.optimizer import OptimizationResult, optimize
+    if not inp.skus:
+        return OptimizationResult(orders={}, transfers={}, inventory={},
+                                  shortages={}, total_cost=0.0, status="optimal")
+    return optimize(inp)
 
 
 @contextmanager
@@ -230,7 +247,13 @@ def resolve_planning_inputs(
 ) -> dict[str, dict]:
     """Per-SKU lead time and MOQ — the SAME numbers the semáforo plans on.
 
-    `{sku: {"supplier", "lead_time_days", "lead_time_source", "moq"}}`.
+    `{sku: {"supplier", "lead_time_days", "lead_time_source", "moq",
+    "review_period_days"}}`.
+
+    `review_period_days` is the supplier's declared order cadence, read the
+    way the semáforo reads it (`service._resolve_review_period_days`): it is
+    what decides how far past the lead time this SKU's plan has to reach (see
+    `effective_horizon_buckets`).
 
     This function exists because the optimizer used to answer these two
     questions by itself, and its answers were not the product's answers. It read
@@ -269,6 +292,11 @@ def resolve_planning_inputs(
         log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
         primary_suppliers = {}
     rule_index = sd_svc.build_rule_index(tenant_id)
+    try:
+        review_period_map = sup_svc.get_review_period_map(tenant_id)
+    except Exception as e:
+        log.debug("review period map lookup failed tenant=%s: %s", tenant_id, e)
+        review_period_map = {}
 
     resolved: dict[str, dict] = {}
     for sku, stock in stock_map.items():
@@ -294,8 +322,32 @@ def resolve_planning_inputs(
             "lead_time_days": max(1, int(lead_time)),
             "lead_time_source": lead_time_source,
             "moq": moq if moq > 0 else 1.0,
+            "review_period_days": _resolve_review_period_days(supplier, review_period_map),
         }
     return resolved
+
+
+def effective_horizon_buckets(
+    horizon_buckets: int, lead_time_buckets: int, review_period_buckets: int,
+) -> int:
+    """How far one SKU's plan has to reach: the configured horizon, or the
+    arrival of the order after today's, whichever is later.
+
+    Math audit O1 (2026-10-01). In the MILP an order arrives at bucket t only
+    for t > lead time, so a SKU whose lead time reached the horizon had every
+    arrival gated and was planned at 0 — with the default 15-day lead time and
+    14-day horizon, every SKU nobody had configured. A review period of 0 means
+    no cadence was declared and the next chance to order is the next bucket, so
+    it counts as 1.
+
+    A SKU whose reach exceeds the configured horizon is NOT solved by the MILP:
+    the owner's decision ("igual que el Panel") is that it gets exactly the
+    quantity the semáforo recommends — see `build_optimization_input`. With
+    `horizon > lead` and no declared cadence this returns the configured
+    horizon, and the SKU is optimized exactly as before.
+    """
+    reach = int(lead_time_buckets) + max(1, int(review_period_buckets))
+    return max(int(horizon_buckets), reach)
 
 
 def build_optimization_input(
@@ -435,6 +487,39 @@ def build_optimization_input(
     stockout_cost: dict[str, float] = {}
     order_cost: dict[str, float] = {}
 
+    # The lead time this SKU is planned on, resolved ONCE for the whole
+    # product (see resolve_planning_inputs). It used to be
+    # `max(raw lead_time_days across the SKU's rows)`, which answered a
+    # different question from every other screen: it ignored supplier and
+    # category rules, ignored what the supplier's real receptions have taught
+    # us, and could not tell a lead time somebody typed from the schema's
+    # untouched 15. In the model's own buckets: for daily it is the day count;
+    # for weekly/monthly the lead time rounded up to whole periods —
+    # commensurable with `horizon_buckets`, both counts of the same bucket.
+    #
+    # A SKU whose next-order arrival lies past the horizon (O1) leaves the MILP
+    # here and is sized like the Panel below.
+    like_panel: list[str] = []
+    for sku in skus:
+        sku_planning = planning.get(sku) or {}
+        raw_lead = int(sku_planning.get("lead_time_days") or _DEFAULT_LEAD_TIME_DAYS)
+        lead_time_buckets[sku] = max(1, _math.ceil(raw_lead / days_per_period))
+        review_days = float(sku_planning.get("review_period_days") or 0.0)
+        review_buckets = _math.ceil(review_days / days_per_period) if review_days > 0 else 0
+        if effective_horizon_buckets(
+                horizon_buckets, lead_time_buckets[sku], review_buckets) > horizon_buckets:
+            like_panel.append(sku)
+    milp_skus = [sku for sku in skus if sku not in set(like_panel)]
+    for sku in like_panel:
+        del lead_time_buckets[sku]
+
+    panel_lines = _panel_lines(
+        tenant_id, session_id, like_panel, raw_forecasts, stock_rows, incoming,
+        period, warehouses)
+
+    if not milp_skus and not panel_lines:
+        return None
+
     def _bucketed(model_forecasts: dict) -> list[float]:
         """One forecast curve laid into the horizon's buckets, padded with 0.
 
@@ -449,7 +534,7 @@ def build_optimization_input(
                 series[step] = point["value"]
         return series
 
-    for sku in skus:
+    for sku in milp_skus:
         sku_rows = rows_by_sku.get(sku, {})
 
         # The MILP needs an opening balance for every (sku, warehouse) pair it
@@ -479,21 +564,6 @@ def build_optimization_input(
             for w in warehouses:
                 share = shares.get(w, 0.0)
                 demand[(sku, w)] = [v * share for v in total_curve]
-
-        # The lead time this SKU is planned on, resolved ONCE for the whole
-        # product (see resolve_planning_inputs). It used to be
-        # `max(raw lead_time_days across the SKU's rows)`, which answered a
-        # different question from every other screen: it ignored supplier and
-        # category rules, ignored what the supplier's real receptions have
-        # taught us, and could not tell a lead time somebody typed from the
-        # schema's untouched 15.
-        raw_lead = int((planning.get(sku) or {}).get("lead_time_days")
-                       or _DEFAULT_LEAD_TIME_DAYS)
-        # Lead time in the model's own buckets: for daily this is the day count
-        # (unchanged); for weekly/monthly it is the lead time rounded up to
-        # whole periods. Commensurable with `horizon_buckets` above — both are
-        # counts of the same bucket now.
-        lead_time_buckets[sku] = max(1, _math.ceil(raw_lead / days_per_period))
 
         costs = [c for c in (_usable_unit_cost(row.get("unit_cost"))
                              for row in sku_rows.values()) if c is not None]
@@ -550,8 +620,8 @@ def build_optimization_input(
                 _math.ceil(int(lane["lead_time_days"]) / days_per_period))
             transfer_fixed_cost_by_lane[(a, b)] = float(lane["fixed_cost"])
 
-    return OptimizationInput(
-        skus=skus,
+    inp = OptimizationInput(
+        skus=milp_skus,
         warehouses=warehouses,
         horizon=horizon_buckets,
         demand=demand,
@@ -566,6 +636,65 @@ def build_optimization_input(
         transfer_lead_buckets=transfer_lead_buckets,
         transfer_fixed_cost_by_lane=transfer_fixed_cost_by_lane,
     )
+    # The lines sized like the Panel ride along to serialize_optimization_result.
+    # Not engine input: the engine never sees these SKUs.
+    inp.panel_lines = panel_lines
+    inp.days_per_period = days_per_period
+    return inp
+
+
+def _panel_lines(
+    tenant_id: str, session_id: str, skus: list[str], raw_forecasts: dict,
+    stock_rows: list[dict], incoming: dict, period: str, warehouses: list[str],
+) -> list[dict]:
+    """The Panel's own quantity for SKUs the MILP cannot plan (O1, "igual que
+    el Panel").
+
+    A SKU whose next-order arrival lies past the horizon used to be planned at
+    0 here while /compras showed a real number for it. Rather than derive a
+    second answer, this asks the SAME function the Panel reads
+    (`service._compute_inventory_status`, behind `get_inventory_status` and the
+    morning briefing) on the same preloaded data: demand × (lead time + review
+    period) + safety stock − (on hand + on order), with its MOQ floor and its
+    signal gate. The two screens then cannot show two numbers for one SKU.
+
+    That function is the tenant-wide view, so the line goes to the default
+    warehouse (the one the Panel's representative row is anchored on); moving
+    stock between warehouses for these SKUs is left to the per-warehouse
+    semáforo on /inventario, which is where it already lives.
+    """
+    if not skus:
+        return []
+    from backend.inventory.service import _compute_inventory_status
+    rows = _compute_inventory_status(
+        tenant_id, session_id, 0.95,
+        forecasts=raw_forecasts, stock_rows=stock_rows, incoming_qty=incoming,
+        period=period,
+    )
+    wanted = set(skus)
+    default = wh_svc.get_default_warehouse_name(tenant_id)
+    if default not in warehouses:
+        default = sorted(warehouses, key=wh_svc.name_precedence_key)[0]
+    lines: list[dict] = []
+    for row in rows:
+        if row.get("sku") not in wanted:
+            continue
+        calc = row.get("calc_explanation") or {}
+        protection = calc.get("protection_interval_days")
+        if protection is None:
+            protection = float(row.get("lead_time_days") or 0) + float(
+                calc.get("review_period_days") or 0)
+        lines.append({
+            "sku": row["sku"],
+            "warehouse": default,
+            "qty": int(_math.ceil(float(row.get("recommended_qty") or 0))),
+            "unit_cost": row.get("unit_cost"),
+            "supplier": row.get("supplier"),
+            "signal": row.get("signal"),
+            # Calendar days the Panel's quantity protects: lead time + review.
+            "protection_days": int(_math.ceil(float(protection))),
+        })
+    return lines
 
 
 def serialize_optimization_result(inp, result, stock_rows: list[dict],
@@ -669,6 +798,24 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict],
             # here reported those lines as priced on a real cost — the screen
             # printed a total and no warning, over a plan built on 1.0.
             "assumed_unit_cost": _usable_unit_cost(row.get("unit_cost")) is None,
+            "sized_like_panel": False,
+            "horizon_extended": False,
+        })
+
+    # SKUs whose next order lands past the horizon carry the Panel's own
+    # quantity (see _panel_lines). A 0 there means the Panel says "no pedir",
+    # and a line of 0 is not an order.
+    for line in getattr(inp, "panel_lines", None) or []:
+        if line["qty"] <= 0:
+            continue
+        orders.append({
+            "sku": line["sku"], "warehouse": line["warehouse"], "qty": line["qty"],
+            "unit_cost": line.get("unit_cost"),
+            "supplier": line.get("supplier"),
+            "assumed_unit_cost": _usable_unit_cost(line.get("unit_cost")) is None,
+            "sized_like_panel": True,
+            "horizon_extended": True,
+            "effective_horizon_days": line["protection_days"],
         })
 
     transfers = _net_transfer_moves(transfer_totals)
@@ -677,6 +824,10 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict],
         "status": result.status,
         "total_cost": round(result.total_cost, 2),
         "horizon_days": horizon_days if horizon_days is not None else inp.horizon,
+        # How many lines carry the Panel's quantity because their supplier's
+        # next order lands past the horizon — said once, above the list.
+        "extended_lines": sum(1 for o in orders if o["sized_like_panel"]),
         "orders": orders,
         "transfers": transfers,
     }
+

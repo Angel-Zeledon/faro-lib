@@ -122,9 +122,33 @@ EVENTS: dict[str, EventSpec] = {
         detail_keys=("reference", "sku_count", "units", "warehouse"),
     ),
     # Reverses `sent_at`. Same reasoning as reception_undone: it un-anchors the
-    # cash calendar and changes what counts as incoming stock, so it belongs on
-    # the bell, not only in the quiet feed.
+    # cash calendar, so it belongs on the bell, not only in the quiet feed.
+    # (It no longer changes incoming stock: every open PO counts as on its way,
+    # sent or not — see service.get_incoming_detail.)
     "purchase.order_unsent": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference",),
+    ),
+    # The buyer said the order's invoice is settled: it leaves the cash
+    # calendar. Info — a routine bookkeeping step, like a reception.
+    "purchase.order_paid": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference",),
+    ),
+    # Puts money back on the cash calendar, so it reaches the bell like every
+    # other reversal.
+    "purchase.order_unpaid": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference",),
+    ),
+    # The order is abandoned: its units stop counting as on the way, so the
+    # semáforo may ask for them again. Warning, because every recommendation
+    # for its SKUs moves on the strength of it.
+    "purchase.order_cancelled": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference", "cancel_reason"),
+    ),
+    "purchase.order_uncancelled": EventSpec(
         kind="purchase", severity=WARNING,
         detail_keys=("reference",),
     ),
@@ -208,6 +232,8 @@ REASONS: tuple[str, ...] = (
     # reversals — the WHY of an un-receive or un-send is that a person decided
     # the original action was a mistake and corrected it themselves.
     "reversed_by_user",
+    # a person cancelled the order themselves
+    "cancelled_by_user",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

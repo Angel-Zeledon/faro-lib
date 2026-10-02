@@ -766,6 +766,28 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     # time, so without this there is no due date to compute.
     ("add_po_log_sent_at",
      "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ"),
+    # When the supplier's invoice for this PO was paid, and who said so (math
+    # audit 2026-10-01, O3). Without it every PO ever sent stayed a payable
+    # forever, so `overdue_total` only grew and the affordability check
+    # eventually answered "does not fit" to every cart. Nullable, no default,
+    # no backfill: an existing order is "not marked as paid", which is exactly
+    # what is known about it — inventing a payment date for old rows would be
+    # the opposite lie.
+    ("add_po_log_paid_at",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ"),
+    ("add_po_log_paid_by",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS paid_by TEXT"),
+    # A purchase order the buyer abandoned (2026-10-01, owner's decision).
+    # Without it an order that was never going to arrive kept counting as
+    # "on the way" until somebody received it, holding the recommendation down
+    # by exactly its units. NULL = not cancelled, which is what every existing
+    # order is; nothing is backfilled.
+    ("add_po_log_cancelled_at",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ"),
+    ("add_po_log_cancelled_by",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS cancelled_by TEXT"),
+    ("add_po_log_cancel_reason",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS cancel_reason TEXT"),
 
     # One row per tenant per month once the monthly recap email has been sent.
     # The unique constraint is the dedup mechanism: the worker re-runs on every
@@ -1606,6 +1628,26 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("add_suppliers_review_period_days",
      "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS review_period_days INT "
      "NOT NULL DEFAULT 0 CHECK (review_period_days >= 0)"),
+
+    # Idempotent purchase-order creation. A second tap on "Descargar orden de
+    # compra" (or a client retrying a request whose answer it never saw) used
+    # to write a second, identical order: OC-000003 and OC-000004, 5 s apart,
+    # same SKU and quantity — and both then counted as stock on its way.
+    # The client sends one key per cart submission; the PARTIAL unique index
+    # is what makes a replay resolve to the first order even when the two
+    # requests race (the loser hits the index, not a read-then-write window).
+    # Nullable: API callers that send no key keep today's behaviour.
+    # `idempotency_fingerprint` is a hash of what was ordered, so a key reused
+    # for a DIFFERENT order is refused instead of silently answered with the
+    # wrong PO.
+    ("add_po_log_idempotency_key",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS idempotency_key TEXT"),
+    ("add_po_log_idempotency_fingerprint",
+     "ALTER TABLE inventory_po_log ADD COLUMN IF NOT EXISTS idempotency_fingerprint TEXT"),
+    ("create_po_log_idempotency_uniq",
+     "CREATE UNIQUE INDEX IF NOT EXISTS po_log_tenant_idempotency_key_uniq "
+     "ON inventory_po_log (tenant_id, idempotency_key) "
+     "WHERE idempotency_key IS NOT NULL"),
 ]
 
 

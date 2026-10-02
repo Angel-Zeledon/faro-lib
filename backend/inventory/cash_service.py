@@ -163,16 +163,36 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
 
     A PO can span several suppliers, so payables are grouped by (PO, supplier):
     each supplier invoices its own lines under its own terms.
+
+    **Paid and cancelled orders are not payables** (math audit 2026-10-01,
+    O3). Before
+    `paid_at` existed nothing ever left this calendar, so `overdue_total`
+    only grew and every cart eventually "did not fit".
+
+    **A line with no unit cost is counted, not priced at 0.** The sum used
+    `COALESCE(unit_cost, 0)`, so an uncosted line silently added nothing and an
+    order with NO costed line had amount 0 and was dropped entirely — even from
+    `unknown_terms`. Now each group carries `uncosted_lines`, a group with only
+    uncosted lines is kept (amount 0, `amount_complete: False`), and the
+    response says how many lines the totals are missing (`uncosted_lines`,
+    `totals_complete`). A stored 0 counts as no cost, the same rule the
+    optimizer applies (`optimizer_service._usable_unit_cost`): a free line is
+    far rarer than a blank one that happens to be a number.
     """
     rows = query(
         """SELECT l.id            AS po_log_id,
                   l.sent_at,
                   i.supplier,
-                  SUM(i.final_qty * COALESCE(i.unit_cost, 0)) AS amount
+                  SUM(CASE WHEN i.unit_cost > 0
+                           THEN i.final_qty * i.unit_cost ELSE 0 END) AS amount,
+                  COUNT(*) FILTER (WHERE i.unit_cost IS NULL OR i.unit_cost <= 0)
+                      AS uncosted_lines
              FROM inventory_po_log l
              JOIN inventory_po_items i ON i.po_log_id = l.id
             WHERE l.tenant_id = %s
               AND l.sent_at IS NOT NULL
+              AND l.paid_at IS NULL
+              AND l.cancelled_at IS NULL
               AND i.status IN ('approved', 'modified')
               AND i.final_qty > 0
             GROUP BY l.id, l.sent_at, i.supplier
@@ -190,7 +210,8 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
 
     for r in rows:
         amount = round(float(r["amount"] or 0), 2)
-        if amount <= 0:
+        uncosted = int(r.get("uncosted_lines") or 0)
+        if amount <= 0 and uncosted == 0:
             continue
         name = (r.get("supplier") or "").strip()
         supplier = suppliers_by_name.get(name.lower())
@@ -204,6 +225,8 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
                 "po_log_id": r["po_log_id"],
                 "supplier_name": name or None,
                 "amount": amount,
+                "uncosted_lines": uncosted,
+                "amount_complete": uncosted == 0,
                 "payment_terms": (supplier or {}).get("payment_terms"),
             })
             continue
@@ -215,6 +238,8 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
             "po_log_id": r["po_log_id"],
             "supplier_name": name or None,
             "amount": amount,
+            "uncosted_lines": uncosted,
+            "amount_complete": uncosted == 0,
             "sent_date": sent_date.isoformat(),
             "credit_days": credit_days,
             "due_date": due_date.isoformat(),
@@ -239,6 +264,15 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
         2,
     )
 
+    # What the totals above are missing. `uncosted_lines_committed` is the part
+    # that falls inside the money the affordability check counts (overdue or
+    # due within the horizon); `uncosted_lines` is everything still owed.
+    every_group = due_items + unknown_terms
+    uncosted_lines = sum(g["uncosted_lines"] for g in every_group)
+    uncosted_lines_committed = sum(
+        d["uncosted_lines"] for d in due_items if d["overdue"] or d["within_horizon"]
+    )
+
     return {
         "today": today.isoformat(),
         "horizon_days": horizon_days,
@@ -249,6 +283,10 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
         "horizon_total": horizon_total,
         "unknown_terms": unknown_terms,
         "unknown_terms_total": round(sum(u["amount"] for u in unknown_terms), 2),
+        "uncosted_lines": uncosted_lines,
+        "uncosted_lines_committed": uncosted_lines_committed,
+        "uncosted_po_count": len({g["po_log_id"] for g in every_group if g["uncosted_lines"]}),
+        "totals_complete": uncosted_lines == 0,
     }
 
 
@@ -307,10 +345,17 @@ def evaluate_purchase_fit(
     purchase_in_horizon = 0.0
     assumed_immediate: list[str] = []
     lines_out: list[dict] = []
+    # Lines being bought that carry no price. They used to be skipped here
+    # (`amount <= 0: continue`), so a cart of uncosted lines added ₡0 and the
+    # verdict was "fits" — about a purchase whose cost nobody knows.
+    uncosted_skus: list[str] = []
 
     for line in purchase_lines:
         quantity = float(line.get("quantity") or 0)
         unit_cost = float(line.get("unit_cost") or 0)
+        if quantity > 0 and unit_cost <= 0:
+            uncosted_skus.append(str(line.get("sku") or ""))
+            continue
         amount = quantity * unit_cost
         if amount <= 0:
             continue
@@ -343,11 +388,27 @@ def evaluate_purchase_fit(
     purchase_in_horizon = round(purchase_in_horizon, 2)
     required = round(committed + purchase_in_horizon, 2)
 
+    # Every missing cost can only ADD to `required`, so a total already over
+    # budget is a sound "does not fit"; a total under budget is not a sound
+    # "fits" while any of the money it is made of is unpriced.
+    uncosted_committed = int(payables["uncosted_lines_committed"])
+    uncosted_purchase = len(uncosted_skus)
+    total_complete = uncosted_committed == 0 and uncosted_purchase == 0
+
     fits: Optional[bool] = None
+    fits_unknown_reason: Optional[str] = None
     shortfall: Optional[float] = None
-    if budget is not None:
-        fits = required <= float(budget)
+    if budget is None:
+        fits_unknown_reason = "no_budget"
+    else:
         shortfall = round(max(0.0, required - float(budget)), 2)
+        if required > float(budget):
+            fits = False
+        elif total_complete:
+            fits = True
+        else:
+            fits = None
+            fits_unknown_reason = "missing_costs"
 
     return {
         "today": today.isoformat(),
@@ -360,7 +421,12 @@ def evaluate_purchase_fit(
         "purchase_in_horizon": purchase_in_horizon,
         "required_total": required,
         "fits": fits,
+        "fits_unknown_reason": fits_unknown_reason,
         "shortfall": shortfall,
+        "total_complete": total_complete,
+        "uncosted_committed_lines": uncosted_committed,
+        "uncosted_purchase_lines": uncosted_purchase,
+        "uncosted_purchase_skus": uncosted_skus,
         "lines": lines_out,
         "suppliers_assumed_immediate": assumed_immediate,
         "unknown_terms_total": payables["unknown_terms_total"],

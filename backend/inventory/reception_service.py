@@ -125,6 +125,12 @@ def receive_po(
     po = get_po(tenant_id, po_log_id)
     if not po:
         raise AppError("po_not_found", "Purchase order not found", status_code=404)
+    if po.get("cancelled_at") is not None:
+        raise AppError(
+            "po_cancelled",
+            "This order was cancelled; reopen it before recording a reception",
+            status_code=409,
+        )
     if po.get("reception_status") not in RECEIVABLE_STATES:
         status = po.get("reception_status")
         raise AppError(
@@ -591,14 +597,15 @@ def unsend_po(tenant_id: str, po_log_id: str, user_id: str) -> dict:
     docs/assistant-actions.md, class C.1: "it left the system"). This reverses
     only StockAI's OWN bookkeeping about the order.
 
-    **Why clearing the column is the whole fix.** Nothing downstream stores a
-    second copy of "this order is in transit": `service.get_incoming_qty`
-    (units on the way, which feeds the purchase recommendation) and
-    `cash_service`'s payables calendar both filter live on
-    `inventory_po_log.sent_at IS NOT NULL` — neither caches or snapshots that
-    state anywhere else. Clearing `sent_at` here means the very next read of
-    either screen already stops counting this order as sent; there is nothing
-    else to chase down or go stale.
+    **Why clearing the column is the whole fix.** `cash_service`'s payables
+    calendar filters live on `inventory_po_log.sent_at IS NOT NULL` and keeps
+    no copy, so the very next read stops counting this order as a payable.
+
+    It does NOT take the order out of "units on the way": since 2026-10-01
+    `service.get_incoming_detail` counts every open PO whether or not it was
+    sent through StockAI (a downloaded PO the buyer mailed themselves is just
+    as much on its way), so un-sending leaves the purchase recommendation
+    exactly where it was.
 
     **Refuses once a reception exists.** A reception recorded against this PO
     (`reception_status != 'pending'`) is physical evidence the order DID reach
@@ -628,6 +635,15 @@ def unsend_po(tenant_id: str, po_log_id: str, user_id: str) -> dict:
             "reached the supplier; undo the reception before un-sending",
             status_code=409,
             params={"reception_status": po.get("reception_status")},
+        )
+    # A paid invoice is evidence the supplier invoiced it, i.e. that the order
+    # reached them. Un-sending would also strand `paid_at` on a draft the cash
+    # calendar no longer shows. Undo the payment first (mark-unpaid).
+    if po.get("paid_at") is not None:
+        raise AppError(
+            "po_unsend_after_payment",
+            "This order is marked as paid; mark it as unpaid before un-sending",
+            status_code=409,
         )
 
     execute(
@@ -1032,6 +1048,7 @@ def get_overdue_receptions(tenant_id: str) -> list[dict]:
     pos = query(
         """SELECT id, generated_at FROM inventory_po_log
            WHERE tenant_id = %s AND reception_status IN %s
+             AND cancelled_at IS NULL
            ORDER BY generated_at""",
         (tenant_id, RECEIVABLE_STATES),
     )

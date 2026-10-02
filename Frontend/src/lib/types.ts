@@ -1120,6 +1120,10 @@ export interface InventoryStatusItem extends InventoryStock {
    *  again every day until they landed. Show it wherever the quantity is shown,
    *  or a drop to 0 looks like the app forgetting. */
   incoming_qty?:        number
+  /** Which open orders / transfers make up `incoming_qty`, so the screen can
+   *  say "426 on the way (OC-000001, OC-000002)". `reference` is the order
+   *  number for a PO and the origin warehouse for a transfer. */
+  incoming_sources?:    IncomingSource[]
   inventory_value:     number | null
   n_models:             number
   abc:                  string
@@ -1255,6 +1259,13 @@ export interface OptimizationOrder {
   // `total_cost` means nothing. Optional: a response from before this existed
   // has no flag. See backend/inventory/optimizer_service.py.
   assumed_unit_cost?:  boolean
+  // Math audit O1, owner's decision "igual que el Panel": a SKU whose next
+  // order lands past the horizon is not solved by the MILP; it carries the
+  // Panel's own quantity, and `effective_horizon_days` is the lead time +
+  // review period that quantity protects.
+  sized_like_panel?:       boolean
+  horizon_extended?:       boolean
+  effective_horizon_days?: number
 }
 
 export interface OptimizationTransfer {
@@ -1270,6 +1281,8 @@ export interface OptimizationResponse {
   horizon_days:  number
   orders:        OptimizationOrder[]
   transfers:     OptimizationTransfer[]
+  // Lines whose plan reaches past `horizon_days` (see OptimizationOrder).
+  extended_lines?: number
   // SKUs left out of the optimization because nobody has told us what is on the
   // shelf. How much to buy depends on how much is left, so there is no honest
   // quantity to show — the screen names them instead of printing a number.
@@ -1360,6 +1373,12 @@ export interface ROIMonthReport {
   capital_freed_status:    CapitalFreedStatus
 }
 
+export interface IncomingSource {
+  kind:      'po' | 'transfer'
+  reference: string
+  qty:       number
+}
+
 export interface POLogEntry {
   id:                string
   po_number?:        number | null
@@ -1381,10 +1400,21 @@ export interface POLogEntry {
   // Reception (feature 1.4): pending | partial | received | not_received
   reception_status?: 'pending' | 'partial' | 'received' | 'not_received'
   /** When the order was sent to the supplier; null if it never was.
-   *  The payables calendar and `incoming_qty` both read it, which is
-   *  why undoing a send is a real action and not a cosmetic flag. */
+   *  The payables calendar reads it, which is why undoing a send is a real
+   *  action and not a cosmetic flag. (`incoming_qty` does not: every open
+   *  order counts as on its way, sent from here or not.) */
   sent_at?: string | null
   received_at?:      string | null
+  /** When the buyer marked the supplier's invoice as paid; null while owed.
+   *  A paid order leaves the payments calendar. */
+  paid_at?:          string | null
+  /** When the order was cancelled; null while it stands. A cancelled order
+   *  is not on its way, not overdue and not owed. */
+  cancelled_at?:     string | null
+  cancel_reason?:    string | null
+  /** True when the server answered an `Idempotency-Key` it had already seen:
+   *  this is the order the FIRST request created, nothing new was written. */
+  replayed?: boolean
 }
 
 // A line of a PO as stored server-side, with reception progress.
@@ -1640,6 +1670,9 @@ export interface PayableItem {
   days_until_due: number
   overdue:        boolean
   within_horizon: boolean
+  // Lines of this (PO, supplier) with no unit cost: `amount` leaves them out.
+  uncosted_lines?:  number
+  amount_complete?: boolean
 }
 
 export interface PayableUnknownTerms {
@@ -1647,6 +1680,8 @@ export interface PayableUnknownTerms {
   supplier_name: string | null
   amount:        number
   payment_terms: string | null
+  uncosted_lines?:  number
+  amount_complete?: boolean
 }
 
 export interface CashWeek {
@@ -1665,6 +1700,12 @@ export interface CashCalendar {
   horizon_total:       number
   unknown_terms:       PayableUnknownTerms[]
   unknown_terms_total: number
+  // Lines on sent, unpaid orders that carry no unit cost — the totals above
+  // are missing them (math audit O3). Optional for older responses.
+  uncosted_lines?:           number
+  uncosted_lines_committed?: number
+  uncosted_po_count?:        number
+  totals_complete?:          boolean
 }
 
 export interface CashFitLine {
@@ -1689,7 +1730,15 @@ export interface CashFitResult {
   purchase_in_horizon:         number
   required_total:              number
   fits:                        boolean | null
+  // Why `fits` is null: no budget typed, or costs missing so a "fits" would
+  // be a guess. Over budget is still `false` either way — a missing cost can
+  // only add to what is required.
+  fits_unknown_reason?:        'no_budget' | 'missing_costs' | null
   shortfall:                   number | null
+  total_complete?:             boolean
+  uncosted_committed_lines?:   number
+  uncosted_purchase_lines?:    number
+  uncosted_purchase_skus?:     string[]
   lines:                       CashFitLine[]
   suppliers_assumed_immediate: string[]
   unknown_terms_total:         number

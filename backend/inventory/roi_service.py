@@ -7,10 +7,13 @@ can see the value StockAI has generated for their operation over time.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from datetime import datetime, timezone
 
 from backend.db.connection import execute, query, query_one, transaction
+from backend.errors import AppError
 from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE as _DEFAULT_WAREHOUSE
 
 log = logging.getLogger(__name__)
@@ -89,9 +92,72 @@ def _insert_lines(
         )
 
 
+# Longest idempotency key accepted. A UUID is 36 characters; the bound only
+# stops a client from storing an arbitrary blob in an indexed column.
+MAX_IDEMPOTENCY_KEY_LEN = 128
+
+
+def validate_idempotency_key(key: str | None) -> str | None:
+    """Normalize a client-supplied idempotency key (None/blank = no key).
+
+    Refused rather than truncated when too long or not printable ASCII: a key
+    silently shortened could collide with a different submission's key and
+    answer it with the wrong order.
+    """
+    if key is None:
+        return None
+    key = key.strip()
+    if not key:
+        return None
+    if len(key) > MAX_IDEMPOTENCY_KEY_LEN or not all(33 <= ord(c) < 127 for c in key):
+        raise AppError(
+            "po_idempotency_key_invalid",
+            f"Idempotency-Key must be 1-{MAX_IDEMPOTENCY_KEY_LEN} printable ASCII characters",
+            status_code=422,
+            params={"max": MAX_IDEMPOTENCY_KEY_LEN},
+        )
+    return key
+
+
+def po_fingerprint(payload: dict) -> str:
+    """Stable hash of WHAT was ordered, stored next to the idempotency key.
+
+    Same key + same fingerprint = a replay of the same submission. Same key +
+    a different fingerprint = a client bug (a key reused for another order),
+    which is refused: answering it with the first order would tell the buyer
+    their second order exists when it does not.
+    """
+    blob = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def find_by_idempotency_key(tenant_id: str, key: str) -> dict | None:
+    row = query_one(
+        "SELECT * FROM inventory_po_log WHERE tenant_id = %s AND idempotency_key = %s",
+        (tenant_id, key),
+    )
+    return dict(row) if row else None
+
+
+def _replay_or_conflict(existing: dict, fingerprint: str | None) -> dict:
+    """The first order written under this key, marked as a replay — or a 409
+    when the key arrives with a different order behind it."""
+    if fingerprint is not None and existing.get("idempotency_fingerprint") not in (None, fingerprint):
+        raise AppError(
+            "po_idempotency_key_reused",
+            "This idempotency key was already used for a different purchase order",
+            status_code=409,
+            params={"po_number": format_po_number(existing.get("po_number"),
+                                                  str(existing.get("id") or ""))},
+        )
+    return {**existing, "replayed": True}
+
+
 def _write_po_atomically(
     insert_header, tenant_id: str, items: list[dict],
     destination_warehouse: str | None,
+    idempotency_key: str | None = None,
+    fingerprint: str | None = None,
 ) -> dict:
     """Write a purchase order's header and its lines as ONE unit.
 
@@ -112,7 +178,20 @@ def _write_po_atomically(
     can collide on the unique index. That is not a failure of this order: the
     losing side retries on a clean transaction (the poisoned one is already
     rolled back and nothing it wrote survived).
+
+    `idempotency_key` (optional) makes a replay return the FIRST order instead
+    of writing a second one. The read before the write is only the fast path;
+    the guarantee is the partial unique index on (tenant_id, idempotency_key):
+    two identical submissions racing both pass the read, and the loser's INSERT
+    blocks on the index until the winner commits, then fails with a unique
+    violation — which is resolved here by returning the winner's order. The
+    loser's transaction rolled back whole, so none of its lines survive.
     """
+    if idempotency_key:
+        existing = find_by_idempotency_key(tenant_id, idempotency_key)
+        if existing:
+            return _replay_or_conflict(existing, fingerprint)
+
     for attempt in (1, 2):
         try:
             with transaction() as conn:
@@ -122,7 +201,13 @@ def _write_po_atomically(
                 _insert_lines(tenant_id, header, items, destination_warehouse, conn)
                 return dict(header)
         except Exception as exc:
-            if attempt == 2 or getattr(exc, "pgcode", "") != _UNIQUE_VIOLATION:
+            if getattr(exc, "pgcode", "") != _UNIQUE_VIOLATION:
+                raise
+            if idempotency_key:
+                existing = find_by_idempotency_key(tenant_id, idempotency_key)
+                if existing:
+                    return _replay_or_conflict(existing, fingerprint)
+            if attempt == 2:
                 raise
             log.info("po_number race on tenant=%s — retrying once", tenant_id)
     raise RuntimeError("unreachable")                    # pragma: no cover
@@ -132,6 +217,7 @@ def log_po_generation(
     tenant_id: str, session_id: str, items: list[dict],
     destination_warehouse: str | None = None,
     decisions_recorded: bool = True,
+    idempotency_key: str | None = None,
 ) -> dict:
     """
     Called every time a user exports a PO.
@@ -158,9 +244,21 @@ def log_po_generation(
     said otherwise, and 'rejected' was unreachable by construction. A download is
     evidence the buyer took the list away, not evidence they agreed with every
     line on it — and the difference is the whole meaning of the metric.
+
+    `idempotency_key`: see `_write_po_atomically`. A replay comes back with
+    `replayed: True` and writes nothing.
     """
     # Normalize status + forbid 0-unit orders (see _normalize_decisions).
     norm = _normalize_decisions(items)
+    fingerprint = po_fingerprint({
+        "kind": "forecast", "session_id": session_id,
+        "destination_warehouse": destination_warehouse,
+        "decisions_recorded": decisions_recorded,
+        "lines": [{k: i.get(k) for k in ("sku", "supplier", "supplier_id", "status",
+                                          "final_qty", "recommended_qty", "unit_cost",
+                                          "warehouse")}
+                  for i in norm],
+    }) if idempotency_key else None
 
     ordered = [i for i in norm if i["status"] in _ORDERED]
 
@@ -198,8 +296,9 @@ def log_po_generation(
                    (tenant_id, session_id, source, sku_count, total_units, total_value,
                     skus_order_now, skus_order_soon,
                     suggested_count, approved_count, modified_count, rejected_count,
-                    destination_warehouse, po_number)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    destination_warehouse, idempotency_key, idempotency_fingerprint,
+                    po_number)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        (SELECT COALESCE(MAX(po_number), 0) + 1
                           FROM inventory_po_log WHERE tenant_id = %s))
                RETURNING *""",
@@ -212,7 +311,7 @@ def log_po_generation(
              sku_count, total_units, total_value,
              skus_order_now, skus_order_soon,
              suggested_count, approved_count, modified_count, rejected_count,
-             destination_warehouse, tenant_id),
+             destination_warehouse, idempotency_key, fingerprint, tenant_id),
             conn=conn,
         )
 
@@ -221,12 +320,14 @@ def log_po_generation(
     # came back empty) is gone with it: a header that was not written is not an
     # order, and handing one back is what let the caller log a PO that does not
     # exist.
-    return _write_po_atomically(_insert, tenant_id, norm, destination_warehouse)
+    return _write_po_atomically(_insert, tenant_id, norm, destination_warehouse,
+                                idempotency_key=idempotency_key, fingerprint=fingerprint)
 
 
 def create_manual_po(
     tenant_id: str, supplier: dict, lines: list[dict],
     destination_warehouse: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict:
     """
     A purchase order the buyer wrote from scratch — no forecast session behind
@@ -242,18 +343,24 @@ def create_manual_po(
         for l in lines if l.get("unit_cost") is not None
     ]
     total_value: float | None = sum(value_parts) if value_parts else None
+    fingerprint = po_fingerprint({
+        "kind": "manual", "supplier_id": supplier["id"],
+        "destination_warehouse": destination_warehouse,
+        "lines": [{k: l.get(k) for k in ("sku", "qty", "unit_cost")} for l in lines],
+    }) if idempotency_key else None
 
     def _insert(conn=None) -> dict | None:
         return query_one(
             """INSERT INTO inventory_po_log
                    (tenant_id, session_id, source, sku_count, total_units,
-                    total_value, destination_warehouse, po_number)
-               VALUES (%s, NULL, 'manual', %s, %s, %s, %s,
+                    total_value, destination_warehouse, idempotency_key,
+                    idempotency_fingerprint, po_number)
+               VALUES (%s, NULL, 'manual', %s, %s, %s, %s, %s, %s,
                        (SELECT COALESCE(MAX(po_number), 0) + 1
                           FROM inventory_po_log WHERE tenant_id = %s))
                RETURNING *""",
             (tenant_id, len(lines), total_units, total_value,
-             destination_warehouse, tenant_id),
+             destination_warehouse, idempotency_key, fingerprint, tenant_id),
             conn=conn,
         )
 
@@ -271,7 +378,8 @@ def create_manual_po(
         "unit_cost":       l.get("unit_cost"),
         "status":          "approved",
     } for l in lines]
-    return _write_po_atomically(_insert, tenant_id, items, destination_warehouse)
+    return _write_po_atomically(_insert, tenant_id, items, destination_warehouse,
+                                idempotency_key=idempotency_key, fingerprint=fingerprint)
 
 
 def get_roi_summary(tenant_id: str) -> dict:
@@ -372,7 +480,8 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
         # cannot decide without knowing.
         """SELECT id, session_id, source, generated_at, sku_count, total_units,
                   total_value, skus_order_now, skus_order_soon,
-                  reception_status, received_at, po_number, sent_at
+                  reception_status, received_at, po_number, sent_at,
+                  paid_at, cancelled_at, cancel_reason
            FROM inventory_po_log
            WHERE tenant_id = %s
            ORDER BY generated_at DESC
@@ -383,7 +492,7 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     for row in rows:
         r = dict(row)
         # Serialize datetimes to ISO strings for JSON
-        for k in ("generated_at", "received_at"):
+        for k in ("generated_at", "received_at", "paid_at", "cancelled_at"):
             if isinstance(r.get(k), datetime):
                 r[k] = r[k].isoformat()
         result.append(r)

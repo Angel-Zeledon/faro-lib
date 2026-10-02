@@ -11,6 +11,8 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { UndoPOActions } from '@/components/po/UndoPOActions'
+import { PaidPOActions } from '@/components/po/PaidPOActions'
+import { CancelPOActions, CancelledBadge } from '@/components/po/CancelPOActions'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
@@ -351,7 +353,8 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
 export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutContact = [] }: {
   entries: POLogEntry[]
   onReceive: (id: string) => void
-  /** Reload after an undo rewrote stock or the sent flag. */
+  /** Reload after an undo rewrote stock or the sent flag, or the order was
+   *  marked paid / unpaid. */
   onUndone?: () => void
   suppliersWithoutContact?: string[]
 }) {
@@ -436,6 +439,19 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                   const status = entry.reception_status || 'pending'
                   const badge = RECEPTION_LABEL[status] || RECEPTION_LABEL.pending
                   const receivable = status === 'pending' || status === 'partial'
+                  // A cancelled order offers only its badge and "reopen": it
+                  // cannot be received, sent, paid or un-sent until reopened
+                  // (the server refuses each of those too).
+                  if (entry.cancelled_at) {
+                    return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <CancelledBadge cancelledAt={entry.cancelled_at} />
+                        <CancelPOActions poLogId={entry.id} receptionStatus={status}
+                                         paidAt={entry.paid_at} cancelledAt={entry.cancelled_at}
+                                         onChanged={onUndone} />
+                      </span>
+                    )
+                  }
                   return (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
@@ -459,11 +475,27 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                       )}
                       <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact} />
                       <ForwardPOActions poLogId={entry.id} />
+                      {/* A paid order cannot be un-sent (the server refuses:
+                          the invoice is evidence it reached the supplier), so
+                          the undo is not offered until the payment is unmarked. */}
                       <UndoPOActions
                         poLogId={entry.id}
                         receptionStatus={status}
-                        sent={Boolean(entry.sent_at)}
+                        sent={Boolean(entry.sent_at) && !entry.paid_at}
                         onDone={onUndone}
+                      />
+                      <PaidPOActions
+                        poLogId={entry.id}
+                        sent={Boolean(entry.sent_at)}
+                        paidAt={entry.paid_at}
+                        onChanged={onUndone}
+                      />
+                      <CancelPOActions
+                        poLogId={entry.id}
+                        receptionStatus={status}
+                        paidAt={entry.paid_at}
+                        cancelledAt={entry.cancelled_at}
+                        onChanged={onUndone}
                       />
                     </span>
                   )

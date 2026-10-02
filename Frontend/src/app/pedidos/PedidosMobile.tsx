@@ -38,6 +38,8 @@ import type {
 import { formatMoney } from '@/lib/currency'
 import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import { PaidPOActions } from '@/components/po/PaidPOActions'
+import { CancelPOActions, CancelledBadge } from '@/components/po/CancelPOActions'
 import {
   SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
@@ -67,13 +69,15 @@ interface PedidosMobileProps {
   /** The transfers panel, passed as a node rather than reimplemented: it is
    *  already a card list, so it survives a narrow viewport as it is. */
   transfers: React.ReactNode
+  /** Reload after an order was marked paid or unpaid. */
+  onPaidChanged?: () => void
 }
 
 export default function PedidosMobile(props: PedidosMobileProps) {
   const { t } = useLanguage()
   const {
     loading, error, onRetry, entries, contactHealth, leadTimeAlerts,
-    onReceive, multiWarehouse, tab, onTab, transfers,
+    onReceive, multiWarehouse, tab, onTab, transfers, onPaidChanged,
   } = props
 
   const awaiting = entries.filter(isAwaitingReception)
@@ -155,7 +159,8 @@ export default function PedidosMobile(props: PedidosMobileProps) {
                       'Nothing to receive among your recent orders. If you are expecting something older, look for it on the desktop screen.')}
                   </p>
                 ) : awaiting.map(entry => (
-                  <OrderCard key={entry.id} entry={entry} onReceive={() => onReceive(entry.id)} />
+                  <OrderCard key={entry.id} entry={entry} onReceive={() => onReceive(entry.id)}
+                             onPaidChanged={onPaidChanged} />
                 ))}
               </Section>
 
@@ -165,7 +170,9 @@ export default function PedidosMobile(props: PedidosMobileProps) {
                   color={C.dim}
                   title={tOr(t, 'mobile.pedidos_history_title', 'Already recorded')}
                 >
-                  {closed.map(entry => <ClosedRow key={entry.id} entry={entry} />)}
+                  {closed.map(entry => (
+                    <ClosedRow key={entry.id} entry={entry} onPaidChanged={onPaidChanged} />
+                  ))}
                 </Section>
               )}
             </div>
@@ -190,7 +197,9 @@ export default function PedidosMobile(props: PedidosMobileProps) {
 }
 
 // ── One order still waiting for goods ────────────────────────────────────────
-function OrderCard({ entry, onReceive }: { entry: POLogEntry; onReceive: () => void }) {
+function OrderCard({ entry, onReceive, onPaidChanged }: {
+  entry: POLogEntry; onReceive: () => void; onPaidChanged?: () => void
+}) {
   const { t, lang } = useLanguage()
   const [sharing, setSharing] = useState(false)
 
@@ -245,6 +254,18 @@ function OrderCard({ entry, onReceive }: { entry: POLogEntry; onReceive: () => v
         </div>
       )}
 
+      {/* Paid / mark as paid — the same component the desktop table uses, so
+          the two cannot disagree about which orders still count as owed. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+        {(entry.sent_at || entry.paid_at) && (
+          <PaidPOActions poLogId={entry.id} sent={Boolean(entry.sent_at)}
+                         paidAt={entry.paid_at} onChanged={onPaidChanged} />
+        )}
+        <CancelPOActions poLogId={entry.id} receptionStatus={status}
+                         paidAt={entry.paid_at} cancelledAt={entry.cancelled_at}
+                         onChanged={onPaidChanged} />
+      </div>
+
       {/* The one thing this screen exists for, one tap away */}
       <button
         onClick={onReceive}
@@ -292,7 +313,7 @@ function OrderCard({ entry, onReceive }: { entry: POLogEntry; onReceive: () => v
 }
 
 // ── An order already recorded: nothing left to decide ────────────────────────
-function ClosedRow({ entry }: { entry: POLogEntry }) {
+function ClosedRow({ entry, onPaidChanged }: { entry: POLogEntry; onPaidChanged?: () => void }) {
   const { t, lang } = useLanguage()
   const badge = receptionBadge(receptionStatus(entry))
 
@@ -309,6 +330,19 @@ function ClosedRow({ entry }: { entry: POLogEntry }) {
         <div style={{ fontSize: 11, color: C.dim, marginTop: 2, overflowWrap: 'anywhere' }}>
           {fmtShortDateTime(entry.generated_at, lang)} · {unitCountText(t, entry.total_units)}
         </div>
+        {entry.cancelled_at ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            <CancelledBadge cancelledAt={entry.cancelled_at} />
+            <CancelPOActions poLogId={entry.id} receptionStatus={receptionStatus(entry)}
+                             paidAt={entry.paid_at} cancelledAt={entry.cancelled_at}
+                             onChanged={onPaidChanged} />
+          </div>
+        ) : (entry.sent_at || entry.paid_at) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            <PaidPOActions poLogId={entry.id} sent={Boolean(entry.sent_at)}
+                           paidAt={entry.paid_at} onChanged={onPaidChanged} />
+          </div>
+        )}
       </div>
       <span style={{
         flexShrink: 0, padding: '3px 9px', borderRadius: 20, fontSize: 10.5, fontWeight: 700,

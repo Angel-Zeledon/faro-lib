@@ -4586,6 +4586,8 @@ pass it and then forget what it means.
 | M22 | MEDIUM | monthly recap email | 40 lines ordered, 6 with a cost | "₡2.1M en compras gestionadas" | "≥ ₡2.1M", as /impacto prints it | `TestRecapEmailDoesNotPresentAPartialTotalAsComplete` |
 | M23 | HIGH | `compute_session_accuracy` | one SKU: no demand in the validation window, forecast 0.3/day | WAPE = 9e8 → "Precisión promedio" **0%** | 89.1% (the SKU is left out, like the 0/0 case) | `TestOneDeadSkuDoesNotZeroTheAccuracy` |
 | M24 | MEDIUM | `get_morning_briefing` KPI | one SOBRESTOCK SKU with no cost (live on the demo tenant) | `overstock: 0` (while /status says 1) | 1 | `TestBriefingCountsEveryOverstockedSku` |
+| M25 | CRITICAL | /compras "Descargar orden de compra" + `POST /inventory/log-po`, `/inventory/po` (mobile QA) | second tap after the CSV downloaded | OC-000003 and OC-000004, 5 s apart, same SKU and qty; the cart still said "En el pedido" | one PO. Client: in-flight guard, lines move to `ordered` ("Pedido en OC-…"), toast with the number and a link to /pedidos. Server: `Idempotency-Key` per cart submission, partial unique index `(tenant_id, idempotency_key)`; a replay returns the first order (200, `replayed`), a key reused for other lines is 409 `po_idempotency_key_reused` | `test_po_idempotency_and_on_order.py` (replay, 4-thread race, permission pair, tenant scoping, manual PO) |
+| M26 | CRITICAL | `service.get_incoming_detail` (was `get_incoming_qty`), read by the semáforo, /compras, /inventario, optimizer (M18), alerts | 426 units pending on OC-000001/2, downloaded, never sent through StockAI | "Pedir pronto, 63 unidades" — only `sent_at IS NOT NULL` POs counted, and the download path never stamps it | every open PO line (pending/partial/not_received; approved/modified) minus what was received, clamped per line; rows carry `incoming_sources` → "426 ya vienen en camino (OC-000001, OC-000002)". Un-sending no longer re-opens the order for re-buying (copy updated) | `test_incoming_stock_counts.py`, `TestADownloadedOrderIsStockOnItsWay` |
 
 Notes on the fixes:
 
@@ -4612,9 +4614,9 @@ Notes on the fixes:
 
 | # | Sev. | Where | Proof | Why it is open |
 |---|---|---|---|---|
-| O1 | HIGH | optimizer horizon (`ForecastingCore business/optimizer.py:275` gate + `planning_service` default horizon 14) | Engine probe, demand 10/bucket, horizon 14: lead time 15 → **0 orders**, 120 short; lead time 10 → orders 40 (covers buckets 11–14 only). Default lead time is 15, so every unconfigured SKU on a daily plan is planned at 0. The /compras copy says these quantities "cover the next 14 days, which is why they are larger" — for these SKUs the plan is empty or smaller. | A finite-horizon end effect. The fix is a product choice: extend the horizon to lead time + coverage, or report SKUs whose lead time exceeds the horizon. Either changes problem size or adds a field. |
+| O1 | HIGH | optimizer horizon | **FIXED 2026-10-01** (owner's decision, commit 3848d13) — see *O1 and O3, fixed* below. | — |
 | O2 | HIGH | semáforo thresholds — **owned by the threshold workstream, code not touched** | (a) `test_math_audit_open_thresholds.py` (red): 0 on hand and a forecast of 0 → `coverage = 0/0` → 9999 sentinel → **SOBRESTOCK on an empty shelf**. `_calc_signal`'s docstring says the sentinel applies to a SKU "with any stock at all"; the caller never checks. (b) The landing (`i18n/landing.ts` signals table, both languages) still promises PEDIR PRONTO below 1.2× lead time and OK from 1.2× to 3×. Since §17c the boundary is the reorder point (L + SS/d), and SOBRESTOCK starts at max(3L, 2·reorder-point days). "You can do it by hand to check it gives the same answer" is no longer true for any SKU with a safety stock. The "landing's checkable mechanics hold up" line in *What was tested and is solid* is stale. | Another agent owns the threshold multipliers and the landing. |
-| O3 | HIGH | `cash_service` | No "paid" state exists, so every PO ever sent stays a payable and `overdue_total` grows forever (affordability → permanently "does not fit"). `SUM(final_qty * COALESCE(unit_cost,0))` prices uncosted lines at 0. A PO with no costs at all is dropped (`amount <= 0`), even from `unknown_terms`, and `evaluate_purchase_fit` says "fits". | Needs a paid/closed state and an "amount unknown" surface. Both are new capability. |
+| O3 | HIGH | `cash_service` | **FIXED 2026-10-01** (owner's decision, commit 3848d13) — see *O1 and O3, fixed* below. | — |
 | O4 | HIGH | /impacto hero "compras gestionadas"; /pedidos PO `total_value` | Both sum only the costed lines (`roi_service.py:297`, `:54`) and print the result as the total, with no "≥". §2.6 fixed this on the monthly report only. | Needs a completeness field on two responses, like `managed_purchase_value_complete`. |
 | O5 | HIGH | /inventario bulk update + edit form | `current_stock: parseFloat('') \|\| 0`. Changing only the supplier of an uncounted SKU creates its row with stock **0** → PEDIR_YA at full quantity. | The §1.2 class: the DB cannot hold a row without a count (`current_stock NOT NULL DEFAULT 0`). The fix is the pending `current_stock_set_by` decision, or refusing the save with new copy. |
 | O6 | MEDIUM | /compras supplier switch | Re-pointing a line at another supplier keeps the SKU's `unit_cost`, which goes into the PO, its PDF, cash and /impacto. | Known §4.7: `sku_suppliers.unit_cost` reaches no planning path. |
@@ -4623,6 +4625,130 @@ Notes on the fixes:
 | O9 | MEDIUM | narrative / RAG fallback / WhatsApp bot | Per-period coverage and demand labelled as days (`narrative_service.py:272,335,354`). `rag_service.py:753` reads `r.get("recommended")`, a key that does not exist (always null). `holding_cost` 0.00 (§16 l) still live. | AI-assistant area (another agent); the WhatsApp bot is out of scope (§3.3). |
 | O10 | MEDIUM | `export-po` CSV | Coverage in periods under "Días cobertura". "Demanda (lead time)" is lead time **plus review period**. Every non-learned source is labelled "Configurado", including the assumed 15. | API file shared with the public-API workstream. Copy plus a param. |
 | O11 | LOW | various | Coverage rounded to whole periods (0.4 weeks → "0 semanas" on a PEDIR_YA card); /escenarios "Demanda diaria" (per period); `SkuSearchOverlay` "{n}d"; "cost of ignoring" date defaults use the UTC date (one day late after 18:00 CR); `parseInt` truncates a typed 12.5; PDF/WhatsApp/email quantities `:.0f` (unreachable from the UI, which takes integers); "₡X inmovilizados en sobrestock" quotes the full value of overstocked SKUs; `forecast_money` reports steps as `horizon_days`; the optimizer's per-bucket orders are dated as one PO sent today in the cash fit. | Cosmetic, or each needs copy. |
+| O12 | HIGH | purchase orders have no "cancelled" state — **FIXED 2026-10-01** (see *PO cancellation* below) | Since M26 every open PO counts as on its way. A PO the buyer generated and then abandoned keeps lowering the recommendation until somebody records a reception; `not_received` deliberately still counts ("nothing arrived yet"). The overdue list surfaces it, but there is no action that closes it. | A cancel action (endpoint + state + /pedidos button) is new capability — the owner's call. |
+
+## O1 and O3, fixed (2026-10-01)
+
+**O1 — a SKU whose next order lands past the horizon gets the Panel's
+quantity.** Owner's decisions: first, the plan must reach the next order's
+arrival, max(horizon, lead time + review period), a missing review period
+counting as one bucket (the engine gates arrivals at t ≤ L); then, for the SKUs
+that rule extends, "igual que el Panel": the optimizer reports exactly what
+/hoy and /compras recommend, so two screens never show two numbers for one
+SKU.
+
+- `optimizer_service.build_optimization_input` splits the SKUs with
+  `effective_horizon_buckets`. Those whose reach exceeds the horizon leave the
+  MILP; `_panel_lines` asks `service._compute_inventory_status` — the function
+  behind `get_inventory_status` and the morning briefing — on the same
+  preloaded forecasts, stock and on-order units, and takes its
+  `recommended_qty` (demand × (L + R) + safety stock − (on hand + on order),
+  its MOQ floor, its signal gate). The line goes to the default warehouse, the
+  Panel's own anchor; transfers for these SKUs stay with the per-warehouse
+  semáforo on /inventario. Every other SKU is solved exactly as before
+  (pinned: lead 10, horizon 14 still orders 40, beside a Panel-sized SKU too).
+- `optimizer_service.solve` skips the engine when no SKU is left for it — an
+  empty problem would have reported the greedy "fallback" and the plan warning.
+- The engine (`ForecastingCore`) is unchanged: an intermediate per-SKU-horizon
+  version was written and then reverted when the owner chose Panel sizing.
+- Lines carry `sized_like_panel` and `effective_horizon_days` (the lead time +
+  review period the Panel's quantity protects); the response carries
+  `extended_lines`. /compras prints "igual que el Panel: cubre N días, hasta
+  que pueda llegar el siguiente pedido" and a note with the count; the old
+  "cover the next {horizon} days, which is why they are larger" sentence is
+  rewritten (it was false).
+- The cash check (`/cash-calendar/fit` with a session) prices the same lines.
+- Tests: `backend/tests/test_optimizer_horizon_covers_lead_time.py` (14) — each
+  "equals the Panel" test calls both paths: the audit case (10/day, lead 15,
+  horizon 14, nothing on hand: Panel ≥ 150 and the optimizer equal to it, not
+  0), stock + on order + a weekly review period (and both move by exactly the
+  on-order 40 when it is removed), a SKU the Panel says not to order, a weekly
+  tenant, the cash check, and the endpoint. Seven `TestBuildOptimizationInput`
+  cases and the M18 netting test now build on a 30-day horizon, because at 7
+  or 14 days their default-15 SKUs are Panel-sized and never reach the MILP
+  input they inspect.
+
+**O3 — purchase orders have a paid state; the calendar says what it does not
+know.**
+
+- Migration: `inventory_po_log.paid_at TIMESTAMPTZ NULL`, `paid_by TEXT NULL`.
+  No default, no backfill — an old order is "not marked as paid".
+- `POST /inventory/po/{id}/mark-paid` and `/mark-unpaid` (analyst or above;
+  new router `api/v1/po_payments.py`, tag `inventory-payments`, classified
+  INTERNAL — not exposed to API keys until the owner decides). Only a sent
+  order can be paid (409 `po_paid_requires_sent`). Both idempotent: a repeat
+  keeps the first date and author and answers `changed: false`, with no
+  second activity row. Events `purchase.order_paid` (info) and
+  `purchase.order_unpaid` (warning, `reversed_by_user`) — the undo is
+  mark-unpaid, the same inverse-endpoint pattern as unsend/unreceive.
+  `unsend` now refuses a paid order (409 `po_unsend_after_payment`).
+- `cash_service.get_payables`: paid orders leave due/overdue. Lines with no
+  unit cost (NULL or ≤ 0, the optimizer's rule) are counted, not priced at 0;
+  a group with only uncosted lines stays on the calendar with amount 0 and
+  `amount_complete: false` (it used to vanish, even from `unknown_terms`).
+  New totals `uncosted_lines`, `uncosted_lines_committed`,
+  `uncosted_po_count`, `totals_complete`.
+- `evaluate_purchase_fit`: over budget stays `fits: false` (a missing cost can
+  only add); under budget with any missing cost is `fits: null`,
+  `fits_unknown_reason: "missing_costs"`, never "fits". Uncosted cart lines
+  are listed (`uncosted_purchase_skus`).
+- Frontend: /pedidos "Marcar como pagada" / "Desmarcar pago" + "Pagada" badge
+  on every row (desktop table and phone cards), a Todas / Sin pagar / Pagadas
+  filter; the table now reloads after an undo (`onUndone` was never passed, so
+  an un-send left the row stale). The cash panel shows "N líneas sin costo —
+  total incompleto" and an amber "no podemos decir si cabe" verdict, and no
+  longer hides itself when the only commitments are uncosted or have unknown
+  terms.
+- Tenant export selects `*`, so the columns ride along (pinned); delete is by
+  tenant cascade, unchanged.
+- Tests: `backend/tests/test_po_paid_state.py` (22) — permission pairs with DB
+  read-back, idempotency, trail, calendar exclusion and undo, incompleteness,
+  the verdict, export.
+
+**PO cancellation (O12, owner's decision 2026-10-01).**
+
+- Migration: `inventory_po_log.cancelled_at`, `cancelled_by`, `cancel_reason`,
+  all NULL; nothing backfilled.
+- `POST /inventory/po/{id}/cancel` (optional `{reason}`, ≤ 500 chars) and
+  `/uncancel`, analyst or above, router `api/v1/po_cancellation.py`, tag
+  `inventory-cancellation` classified INTERNAL: cancelling moves every
+  recommendation for the order's SKUs, and whether a machine may do that
+  unattended is the owner's call. Both idempotent (`changed: false`, no second
+  event). Refused with 409: anything received (`po_cancel_after_reception` —
+  record what arrived instead), marked paid (`po_cancel_after_payment`).
+  Events `purchase.order_cancelled` (warning, reason `cancelled_by_user`,
+  detail `cancel_reason`) and `purchase.order_uncancelled` (warning,
+  `reversed_by_user`); uncancel is the undo.
+- Every reader filters `cancelled_at IS NULL` at query time:
+  `service.get_incoming_detail` (so the semáforo, /compras, /inventario, the
+  optimizer, the daily alerts and the exports all follow), the overdue list
+  (`get_overdue_receptions`), open orders per supplier
+  (`supplier_health_service`) and the payables calendar. A cancelled order
+  cannot be received, sent to suppliers or marked paid (409 `po_cancelled`).
+  Not changed: the WhatsApp bot's own PO query (`whatsapp/tools.py`, out of
+  scope) and the adoption / managed-value history, which still counts the
+  order as generated.
+- /pedidos: "Cancelar orden" / "Reabrir orden" with a confirm that says what
+  moves (and that StockAI does not tell the supplier), a "Cancelada" badge, a
+  Canceladas filter, the phone cards too; a cancelled order is no longer
+  "awaiting arrival" there. The UI sends no reason (the API takes one).
+- Tests: `backend/tests/test_po_cancel.py` (14) — permission pairs with DB
+  read-back, both refusals, idempotency, the trail, the Panel's quantity
+  before / with the order / after cancel / after reopen (−60, back, −60), the
+  overdue list, the calendar, the receive/send/mark-paid guards, history.
+
+**Not walked in a browser.** The Chrome extension was not connected in this
+session. The pages compile and serve (`/pedidos`, `/compras` 200 on a worktree
+dev server), `tsc` and i18n parity pass, and the API was walked through the
+dev proxy as demo@faro.app. The demo tenant has no sent order, and sending one
+would message its suppliers, so mark-paid was exercised by the test suite only.
+These screens still owe a walk: /pedidos (paid and cancel buttons, both
+badges, the filter, phone cards), the /compras cash panel with an uncosted
+line, the /compras optimizer lines marked "igual que el Panel". The Panel
+sizing and the cancellation were verified by tests only: no dev server was
+started for them, because a server's startup migrations (`ALTER TABLE … IF NOT
+EXISTS` takes an exclusive lock) had just deadlocked against the full suite's
+open transaction on the shared database.
 
 ## What was checked and found correct (with the check)
 
