@@ -1404,18 +1404,30 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ConfigPage() {
-  const { t, lang, setLang }  = useLanguage()
-  const { setTheme }          = useTheme()
+  const { t, lang }           = useLanguage()
+  const { theme }             = useTheme()
 
-  // Sync stored preferences from DB to context/localStorage on mount
+  // The device's current choice wins; the account copy follows it.
+  //
+  // This used to do the opposite — pull the account's theme and language down
+  // on mount and apply them. Anything chosen where it could not be saved (the
+  // theme/language toggles on the signed-out login screen) or not saved YET
+  // (a toggle's PUT still in flight when this GET answered) was then reverted
+  // the moment the user opened Mi cuenta: the theme flipped on navigation.
+  // Pushing the local value up instead keeps the account in step without ever
+  // changing what the user is looking at.
   useEffect(() => {
     getPreferences()
       .then(prefs => {
-        setTheme(prefs.theme)
-        setLang(prefs.language)
+        const patch: { theme?: 'dark' | 'light'; language?: 'es' | 'en' } = {}
+        if (prefs.theme !== theme) patch.theme = theme
+        if (prefs.language !== lang) patch.language = lang
+        if (patch.theme || patch.language) return updatePreferences(patch)
       })
       .catch(() => {})
-  }, [setTheme, setLang])
+    // Once per visit: the toggles persist their own changes after this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const narrow = useIsNarrow()
   if (narrow) return <MobileSettings />
