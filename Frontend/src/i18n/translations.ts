@@ -526,6 +526,13 @@ export const translations = {
     'data.summary_target_col':        'Col. objetivo',
     'data.summary_group_col':         'Col. grupo',
     'data.click_row_for_detail':      'Haz clic en una fila para ver el análisis detallado →',
+    // Phone layout of /archivos (record cards, row editor, sort)
+    'data.m_show_more_rows':          'Mostrar {n} filas más',
+    'data.m_row_label':               'Fila {n}',
+    'data.m_columns_title':           'Columnas',
+    'data.m_sort_label':              'Ordenar por',
+    'data.m_sort_asc':                'Ascendente — toca para invertir',
+    'data.m_sort_desc':               'Descendente — toca para invertir',
     // Source detail
     'data.confirm_delete_prefix':     'Eliminar',
     'data.confirm_delete_suffix':     'Esto no se puede deshacer.',
@@ -4432,6 +4439,13 @@ export const translations = {
     'data.summary_target_col':        'Target col',
     'data.summary_group_col':         'Group col',
     'data.click_row_for_detail':      'Click a row for detailed analysis →',
+    // Phone layout of /archivos (record cards, row editor, sort)
+    'data.m_show_more_rows':          'Show {n} more rows',
+    'data.m_row_label':               'Row {n}',
+    'data.m_columns_title':           'Columns',
+    'data.m_sort_label':              'Sort by',
+    'data.m_sort_asc':                'Ascending — tap to reverse',
+    'data.m_sort_desc':               'Descending — tap to reverse',
     // Source detail
     'data.confirm_delete_prefix':     'Delete',
     'data.confirm_delete_suffix':     'This cannot be undone.',

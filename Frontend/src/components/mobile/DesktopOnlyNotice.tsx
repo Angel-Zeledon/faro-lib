@@ -39,6 +39,8 @@ export const MOBILE_READY = [
   '/proveedores',
   // Upload wizard: stacked mapping, sticky confirm, wrapping step bar.
   '/ventas',
+  // Source list ⇄ full-screen source detail; result sets as record cards.
+  '/archivos',
 ]
 
 /** Does `path` have a real phone layout? Links that lead from a phone screen
