@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Upload, Database } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const TABS = [
   { href: '/ventas', labelKey: 'nav.quick_start', Icon: Upload },
@@ -22,6 +23,8 @@ const TABS = [
 export default function DataTabs({ style }: { style?: React.CSSProperties }) {
   const path  = usePathname()
   const { t } = useLanguage()
+  // Phone: two equal 48px tabs across the width.
+  const narrow = useIsNarrow()
 
   return (
     <nav
@@ -48,6 +51,7 @@ export default function DataTabs({ style }: { style?: React.CSSProperties }) {
               borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
               marginBottom: -1,
               transition: 'color 0.15s, border-color 0.15s',
+              ...(narrow ? { flex: 1, minWidth: 0, minHeight: 48, boxSizing: 'border-box', justifyContent: 'center', fontSize: 14 } : {}),
             }}
           >
             <Icon size={14} strokeWidth={active ? 2.2 : 1.8} />

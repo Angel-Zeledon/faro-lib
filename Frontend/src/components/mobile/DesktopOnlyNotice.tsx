@@ -37,6 +37,8 @@ export const MOBILE_READY = [
   '/configurar-inventario',
   // Supplier cards + detail/form sheets; also covers /proveedores/scorecard (cards).
   '/proveedores',
+  // Upload wizard: stacked mapping, sticky confirm, wrapping step bar.
+  '/ventas',
 ]
 
 /** Does `path` have a real phone layout? Links that lead from a phone screen
