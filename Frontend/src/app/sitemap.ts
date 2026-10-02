@@ -23,6 +23,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/divulgacion-responsable`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/accesibilidad`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/condiciones-comerciales`, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/licencia`, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/docs`, changeFrequency: 'weekly', priority: 0.7 },
     ...DOC_ORDER.map(id => ({ url: `${SITE_URL}${docHref(id)}`, changeFrequency: 'monthly' as const, priority: 0.5 })),
     { url: `${SITE_URL}/stockai-manual-es.pdf`, changeFrequency: 'monthly', priority: 0.5 },
