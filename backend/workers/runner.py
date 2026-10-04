@@ -696,14 +696,66 @@ def _collect_run_warnings(engine, prep_notes: "list | None" = None) -> dict:
 
 # ── Progress helpers ───────────────────────────────────────────────────────
 
-def _emit(tenant_id: str, session_id: str, job_id: str, percent: int, step: str, message: str):
-    progress = {"percent": percent, "step": step, "message": message}
-    update_progress(tenant_id, job_id, progress)
-    broadcaster.broadcast_sync(job_id, {"type": "progress", "job_id": job_id, **progress})
-    session_store.append_log(
-        tenant_id, session_id, job_id,
-        f"[{datetime.now(timezone.utc).isoformat()}] [{step}] {message}",
-    )
+# Fine-grained unit updates inside one stage (one SKU trained, ...) can arrive
+# many times a second; each stage/message change is always written, but pure
+# percentage creep inside a stage is written at most this often.
+_PROGRESS_MIN_INTERVAL_S = 0.5
+
+
+class JobProgress:
+    """Reports a training job's real progress: cost-weighted stages, monotonic.
+
+    The weights and the arithmetic live in ForecastingCore
+    (``forecasting_core.pipelines.progress``); this class only persists what the
+    tracker computes and fans it out to the websocket and the job log.
+    """
+
+    def __init__(self, tenant_id: str, session_id: str, job_id: str):
+        from forecasting_core.pipelines.progress import JOB_STAGES, ProgressTracker
+        self._tenant_id = tenant_id
+        self._session_id = session_id
+        self._job_id = job_id
+        self._last_write = 0.0
+        self._last_stage = None
+        self._last_message = None
+        self._tracker = ProgressTracker(JOB_STAGES, self._publish)
+
+    @property
+    def percent(self) -> int:
+        return int(self._tracker.percent)
+
+    def begin(self, stage: str, message: str) -> None:
+        self._tracker.begin(stage, message)
+
+    def finish(self, stage: str, message: str = "") -> None:
+        self._tracker.finish(stage, message)
+
+    def drop(self, stage: str) -> None:
+        self._tracker.drop(stage)
+
+    def on_engine_event(self, event: dict) -> None:
+        """Callback handed to ``ForecastEngine.train(on_progress=...)``."""
+        self._tracker.apply(event)
+
+    def _publish(self, evt: dict) -> None:
+        stage, message = evt["stage"], evt.get("message") or ""
+        now = _time.monotonic()
+        changed = stage != self._last_stage or message != self._last_message
+        if not changed and now - self._last_write < _PROGRESS_MIN_INTERVAL_S:
+            return
+        self._last_write = now
+        self._last_stage, self._last_message = stage, message
+        progress = {
+            "percent": evt["pct"], "step": stage, "message": message,
+            "done": evt.get("done"), "total": evt.get("total"),
+        }
+        update_progress(self._tenant_id, self._job_id, progress)
+        broadcaster.broadcast_sync(self._job_id, {"type": "progress", "job_id": self._job_id, **progress})
+        if changed:
+            session_store.append_log(
+                self._tenant_id, self._session_id, self._job_id,
+                f"[{datetime.now(timezone.utc).isoformat()}] [{stage}] {message}",
+            )
 
 
 # ── Main training entry point ──────────────────────────────────────────────
@@ -724,10 +776,11 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         log.info(f"[MOCK_TRAINING] job {job_id} completed (no ML)")
         return
     try:
-        _emit(tenant_id, session_id, job_id, 5, "init", "Building engine config...")
+        prog = JobProgress(tenant_id, session_id, job_id)
+        prog.begin("init", "Building engine config...")
         config = build_engine_config(tenant_id, session_id)
 
-        _emit(tenant_id, session_id, job_id, 10, "load", "Loading dataset...")
+        prog.begin("load", "Loading dataset...")
         from forecasting_core.engine import ForecastEngine
         engine = ForecastEngine.from_dict(config)
         engine.load_data(config["data"]["path"])
@@ -783,9 +836,10 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 notes=prep_notes,
             )
 
+        if not (gap_fill and gap_fill != "leave" and engine._df is not None):
+            prog.drop("gap_fill")
         if gap_fill and gap_fill != "leave" and engine._df is not None:
-            _emit(tenant_id, session_id, job_id, 14, "gap_fill",
-                  f"Filling missing dates (strategy: {gap_fill})...")
+            prog.begin("gap_fill", f"Filling missing dates (strategy: {gap_fill})...")
             engine._df = _apply_gap_fill(
                 engine._df,
                 date_col=col_cfg["date"],
@@ -796,9 +850,10 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             )
 
         strategy = outlier_cfg.get("strategy", "leave") if isinstance(outlier_cfg, dict) else "leave"
+        if not (strategy and strategy != "leave" and engine._df is not None):
+            prog.drop("outliers")
         if strategy and strategy != "leave" and engine._df is not None:
-            _emit(tenant_id, session_id, job_id, 16, "outliers",
-                  f"Applying outlier treatment (strategy: {strategy})...")
+            prog.begin("outliers", f"Applying outlier treatment (strategy: {strategy})...")
             engine._df = _apply_outlier_treatment(
                 engine._df,
                 date_col=col_cfg["date"],
@@ -808,6 +863,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 notes=prep_notes,
             )
 
+        prog.begin("sync", "Syncing inventory from the dataset...")
         if engine._df is not None:
             try:
                 from backend.inventory.service import sync_stock_from_dataset
@@ -833,16 +889,17 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             except Exception as e:
                 log.warning(f"Inventory stock sync failed (non-fatal): {e}")
 
-        _emit(tenant_id, session_id, job_id, 20, "inspect", "Running data quality check...")
+        prog.begin("inspect", "Running data quality check...")
         dq_report = engine.get_data_quality_report()
 
-        _emit(tenant_id, session_id, job_id, 30, "routing", "Computing model routing...")
+        prog.begin("routing", "Computing model routing...")
         routing = engine.get_routing_plan()
 
-        _emit(tenant_id, session_id, job_id, 40, "training", "Training models (this may take a while)...")
-        engine.train()
+        # The engine reports its own stages and per-SKU units; they fold into
+        # this job's plan, so the bar moves with real work done.
+        engine.train(on_progress=prog.on_engine_event)
 
-        _emit(tenant_id, session_id, job_id, 85, "results", "Collecting metrics...")
+        prog.begin("results", "Collecting metrics...")
         metrics = engine.get_metrics()
 
         # Not one SKU-model pair survived. That is a DATA problem (series too
@@ -855,7 +912,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
 
         inventory = engine.get_inventory_report()
 
-        _emit(tenant_id, session_id, job_id, 90, "saving", "Saving results...")
+        prog.begin("saving", "Saving results...")
         result_payload = {
             "job_id": job_id,
             "run_id": engine._run_id,
@@ -869,7 +926,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         }
         session_store.set_training_result(tenant_id, session_id, result_payload)
 
-        _emit(tenant_id, session_id, job_id, 93, "forecast", "Generating forecast series...")
+        prog.begin("forecast", "Generating forecast series...")
         forecasts: dict = {}
         try:
             forecasts = _generate_forecast_series(engine, config)
@@ -896,7 +953,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         except Exception as e:
             log.warning(f"Excluded-SKU computation failed (non-fatal): {e}")
 
-        _emit(tenant_id, session_id, job_id, 96, "indexing", "Indexing session for AI analyst...")
+        prog.begin("indexing", "Indexing session for AI analyst...")
         try:
             from backend.ai import rag as _rag
             from backend.training.job_service import get_job as _get_job
@@ -919,6 +976,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             log.warning(f"RAG indexing failed (non-fatal): {e}")
 
         # Save binary artifacts to disk
+        prog.begin("artifacts", "Saving model artifacts...")
         from backend.storage import paths
         artifact_path = paths.artifacts_dir(tenant_id, session_id)
         artifact_path.mkdir(parents=True, exist_ok=True)

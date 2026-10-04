@@ -3,17 +3,19 @@ import logging
 import numpy as np
 from forecasting_core.evaluation.metrics import evaluate_all
 
+from forecasting_core.pipelines.progress import ticking
+
 log = logging.getLogger(__name__)
 
 
 def run_prophet_core(df, dt, target, group, train_ratio, min_rows, seasonal_period,
-                     regressors=None, horizon: int = 0):
+                     regressors=None, horizon: int = 0, on_unit=None):
     from prophet import Prophet
     import pandas as _pd
     results = {}
     src = df.groupby(group) if group else [(None, df)]
     regressors = regressors or []
-    for sku, g in src:
+    for sku, g in ticking(src, on_unit):
         g = g.sort_values(dt).reset_index(drop=True)
         if len(g) < min_rows: continue
         avail = [c for c in regressors if c in g.columns]

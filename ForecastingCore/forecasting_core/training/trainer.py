@@ -85,6 +85,7 @@ class Trainer:
         target: str = "",
         dt: str = "",
         group_col: Optional[str] = None,   # deprecated alias — ignored if group_cols given
+        on_unit=None,
     ) -> Dict[str, dict]:
         """
         Train models per SKU / (SKU, store) group.
@@ -98,6 +99,9 @@ class Trainer:
             target:     Column name of the target variable.
             dt:         Column name of the date.
             group_col:  Deprecated single-column alias; normalised to group_cols=[group_col].
+            on_unit:    Optional ``callable(done, total)`` invoked from the calling
+                        thread after each group finishes (success or failure), so
+                        a caller can report real progress.
 
         Returns:
             {f"{model}_{series_key(sku, store)}": {mae, rmse, wape, bias, sku, store, model, n, validation}}
@@ -120,27 +124,37 @@ class Trainer:
 
         group_list = list(groups)
         n_workers = self._resolve_max_workers(len(group_list))
+        total_groups = len(group_list)
+
+        def _unit_done(done: int) -> None:
+            if on_unit is not None:
+                try:
+                    on_unit(done, total_groups)
+                except Exception:
+                    pass  # reporting must never fail training
 
         if n_workers <= 1:
             # Same isolation as the parallel branch below: one group's
             # unexpected failure must not abort every other group's
             # training, regardless of how many workers this machine has.
-            for group_val, g in group_list:
+            for done, (group_val, g) in enumerate(group_list, start=1):
                 try:
                     results.update(self._train_one_group(group_val, g, dt, target, exclude, trainable))
                 except Exception as e:
                     log.exception(f"Group {group_val!r} training task failed: {e}")
+                _unit_done(done)
         else:
             with ThreadPoolExecutor(max_workers=n_workers) as executor:
                 future_to_group = {
                     executor.submit(self._train_one_group, group_val, g, dt, target, exclude, trainable): group_val
                     for group_val, g in group_list
                 }
-                for future in as_completed(future_to_group):
+                for done, future in enumerate(as_completed(future_to_group), start=1):
                     try:
                         results.update(future.result())
                     except Exception as e:
                         log.exception(f"Group {future_to_group[future]!r} training task failed: {e}")
+                    _unit_done(done)
 
         return results
 

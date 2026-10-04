@@ -13,6 +13,8 @@ import logging
 import numpy as np
 from forecasting_core.evaluation.metrics import evaluate_all
 
+from forecasting_core.pipelines.progress import ticking
+
 log = logging.getLogger(__name__)
 
 WINDOW = 14  # default lookback window
@@ -126,6 +128,7 @@ def run_lstm_core(
     window: int = WINDOW,
     epochs: int = 50,
     patience: int = 5,
+    on_unit=None,
 ):
     """
     Train an LSTM per SKU and return evaluation metrics (+ future forecast).
@@ -161,7 +164,7 @@ def run_lstm_core(
     results = {}
     src = df.groupby(group) if group else [(None, df)]
 
-    for sku, g in src:
+    for sku, g in ticking(src, on_unit):
         g = g.sort_values(dt).reset_index(drop=True)
         series = g[target].astype(float).values
 

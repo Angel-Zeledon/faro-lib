@@ -3,6 +3,8 @@ import logging
 import numpy as np
 from forecasting_core.evaluation.metrics import evaluate_all
 
+from forecasting_core.pipelines.progress import ticking
+
 log = logging.getLogger(__name__)
 
 
@@ -25,10 +27,10 @@ def croston_forecast(series: np.ndarray, alpha: float = 0.1, n_ahead: int = 1) -
 
 
 def run_croston_core(df, dt, target, group, train_ratio, min_rows, seasonal_period,
-                     alpha=0.1, horizon: int = 0):
+                     alpha=0.1, horizon: int = 0, on_unit=None):
     results = {}
     src = df.groupby(group) if group else [(None, df)]
-    for sku, g in src:
+    for sku, g in ticking(src, on_unit):
         g = g.sort_values(dt).reset_index(drop=True)
         series = g[target].astype(float).values
         if len(series) < min_rows: continue

@@ -31,7 +31,7 @@ def list_jobs_for_session(tenant_id: str, session_id: str) -> list[dict]:
 
 
 def mark_running(tenant_id: str, job_id: str, worker_id: str) -> dict:
-    progress = {"percent": 5, "step": "starting", "message": "Worker picked up job"}
+    progress = {"percent": 0, "step": "starting", "message": "Worker picked up job"}
     execute(
         """UPDATE jobs SET status = 'RUNNING', started_at = NOW(),
            worker_id = %s, progress = %s
