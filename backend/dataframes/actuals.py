@@ -99,3 +99,91 @@ def load_actual_series(
         "first_date": first_day.strftime("%Y-%m-%d"),
         "last_date": last_day.strftime("%Y-%m-%d"),
     }
+
+
+# (path, mtime_ns, size, date_col) -> {"first_date", "last_date"} | {"error"}.
+# A dataset file never changes in place (a replace writes a new file), so the
+# range is read once and reused by every screen that asks.
+_RANGE_CACHE: dict[tuple, dict] = {}
+_RANGE_CACHE_MAX = 2000
+
+
+def dataset_date_range(path: str, date_col: str) -> dict:
+    """First and last date of a dataset's date column, cached per file.
+
+    Returns ``{"first_date", "last_date"}`` or ``{"error": code}`` where the code
+    is ``columns_missing`` / ``no_rows`` / ``unreadable`` — a file that cannot
+    answer is a reason to show, not an exception.
+    """
+    import os
+    try:
+        st = os.stat(path)
+    except OSError:
+        return {"error": "unreadable"}
+    key = (path, st.st_mtime_ns, st.st_size, date_col)
+    hit = _RANGE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        df = read_dataframe(path)
+        if date_col not in df.columns:
+            out: dict = {"error": "columns_missing"}
+        else:
+            dates = pd.to_datetime(df[date_col], errors="coerce").dropna()
+            out = ({"error": "no_rows"} if dates.empty else
+                   {"first_date": dates.min().strftime("%Y-%m-%d"),
+                    "last_date": dates.max().strftime("%Y-%m-%d")})
+    except Exception:  # noqa: BLE001 - an unreadable file is a reason, not a 500
+        out = {"error": "unreadable"}
+    if len(_RANGE_CACHE) >= _RANGE_CACHE_MAX:
+        _RANGE_CACHE.clear()
+    _RANGE_CACHE[key] = out
+    return out
+
+
+def write_holdout_copy(
+    src_path: str, dst_path: str, date_col: str, holdout_periods: int,
+    target_freq: Optional[str],
+) -> dict:
+    """Write a copy of a dataset without its last ``holdout_periods`` periods.
+
+    The period is the session's own grain (``W-MON`` weekly, ``MS`` monthly,
+    otherwise days). The cut falls on the end of a period so no period is left
+    half-observed. Returns ``{"cutoff", "last_date", "rows_kept", "rows_total"}``
+    or ``{"error": code}``; the original file is never touched.
+    """
+    df = read_dataframe(src_path)
+    if date_col not in df.columns:
+        return {"error": "columns_missing"}
+    dates = pd.to_datetime(df[date_col], errors="coerce")
+    valid = dates.dropna()
+    if valid.empty:
+        return {"error": "no_rows"}
+    last_day = valid.max().normalize()
+    freq = (target_freq or "").upper()
+    if freq.startswith("W"):
+        # Land on the week's closing day so the last kept week is whole.
+        cutoff = pd.tseries.frequencies.to_offset(freq).rollback(
+            last_day - pd.Timedelta(days=7 * holdout_periods))
+    elif freq in ("MS", "M"):
+        cutoff = (last_day - pd.DateOffset(months=holdout_periods)) + pd.offsets.MonthEnd(0)
+        if cutoff >= last_day:
+            cutoff = (last_day - pd.DateOffset(months=holdout_periods + 1)) + pd.offsets.MonthEnd(0)
+    else:
+        cutoff = last_day - pd.Timedelta(days=holdout_periods)
+    kept = df[dates <= cutoff + pd.Timedelta(hours=23, minutes=59, seconds=59)]
+    if kept.empty or kept[date_col].nunique() < 2:
+        return {"error": "holdout_too_large"}
+    suffix = str(dst_path).rsplit(".", 1)[-1].lower()
+    if suffix == "csv":
+        kept.to_csv(dst_path, index=False)
+    elif suffix == "parquet":
+        kept.to_parquet(dst_path, index=False)
+    elif suffix in ("xlsx", "xls"):
+        kept.to_excel(dst_path, index=False)
+    elif suffix == "json":
+        kept.to_json(dst_path, orient="records", date_format="iso")
+    else:
+        return {"error": "unreadable"}
+    return {"cutoff": cutoff.strftime("%Y-%m-%d"), "last_date": last_day.strftime("%Y-%m-%d"),
+            "rows_kept": int(len(kept)), "rows_total": int(len(df))}

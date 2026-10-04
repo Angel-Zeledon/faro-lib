@@ -384,7 +384,7 @@ def delete_source(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     import psycopg2
-    _ds_or_404(user.tenant_id, source_id)
+    src = _ds_or_404(user.tenant_id, source_id)
     try:
         svc.delete_source(user.tenant_id, source_id)
     except psycopg2.errors.ForeignKeyViolation:
@@ -393,6 +393,9 @@ def delete_source(
             "Cannot delete: this data source is still referenced by one or more sessions.",
             status_code=409,
         )
+    from backend.activity.service import log_action
+    log_action(user.tenant_id, user.user_id, "dataset.delete", resource=source_id,
+               context={"name": src.get("name"), "filename": src.get("original_filename")})
     return ok({"deleted": source_id})
 
 

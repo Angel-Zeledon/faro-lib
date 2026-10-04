@@ -256,27 +256,29 @@ class TestCascadeDeletes:
         assert row is None, "User should be CASCADE-deleted with tenant"
 
     def test_delete_session_cascades_to_jobs(self, test_tenant):
-        from backend.sessions.service import create_session, delete_session
+        from backend.sessions.service import create_session
         from backend.training.job_service import create_job
-        from backend.db.connection import query_one
+        from backend.db.connection import execute, query_one
 
         s = create_session(test_tenant["id"], "usr_test", "cascade-jobs-test")
         job = create_job(test_tenant["id"], s["id"], "usr_test")
         job_id = job["id"]
 
-        delete_session(test_tenant["id"], s["id"])
+        # The schema still cascades (tenant erasure relies on it); the product
+        # no longer exposes a hard delete of a session.
+        execute("DELETE FROM sessions WHERE id = %s", (s["id"],))
         row = query_one("SELECT id FROM jobs WHERE id = %s", (job_id,))
         assert row is None, "Job should be CASCADE-deleted with session"
 
     def test_delete_session_cascades_to_session_configs(self, test_tenant):
-        from backend.sessions.service import create_session, delete_session
+        from backend.sessions.service import create_session
         from backend.db import session_store
-        from backend.db.connection import query_one
+        from backend.db.connection import execute, query_one
 
         s = create_session(test_tenant["id"], "usr_test", "cascade-cfg-test")
         session_store.set_field(test_tenant["id"], s["id"], "columns_cfg", {"test": True})
 
-        delete_session(test_tenant["id"], s["id"])
+        execute("DELETE FROM sessions WHERE id = %s", (s["id"],))
         row = query_one(
             "SELECT session_id FROM session_configs WHERE session_id = %s",
             (s["id"],),

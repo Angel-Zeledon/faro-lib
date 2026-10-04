@@ -76,35 +76,39 @@ def _serving_session(tenant_id: str, schedule_id: str) -> Optional[str]:
     reading right now, and the one row the prune must not touch."""
     row = query_one(
         "SELECT id FROM sessions WHERE tenant_id = %s AND scheduled_job_id = %s "
-        "AND status = 'COMPLETED' ORDER BY updated_at DESC LIMIT 1",
+        "AND status = 'COMPLETED' AND archived_at IS NULL "
+        "ORDER BY updated_at DESC LIMIT 1",
         (tenant_id, schedule_id),
     )
     return row["id"] if row else None
 
 
 def prune_previous_runs(tenant_id: str, schedule_id: str) -> int:
-    """Delete the sessions this schedule created, except the one now serving.
+    """Archive the sessions this schedule created, except the one now serving.
 
     This is the schedule reusing its own slot rather than consuming a new one
-    every night. It can only ever reach rows it created itself — a session a
-    person made carries no `scheduled_job_id` — and it deliberately runs BEFORE
-    the new run rather than after: deleting the serving session first would
-    leave the product blank for as long as the training takes.
+    every night. It ARCHIVES, never deletes (sessions are permanent): an
+    archived run leaves the working list and stops counting toward the
+    saved-forecast ceiling, but its results stay recoverable from the library.
+    It can only ever reach rows it created itself — a session a person made
+    carries no `scheduled_job_id` — and it deliberately runs BEFORE the new run
+    rather than after: archiving the serving session first would leave the
+    product blank for as long as the training takes.
     """
     serving = _serving_session(tenant_id, schedule_id)
     rows = query(
         "SELECT id FROM sessions WHERE tenant_id = %s AND scheduled_job_id = %s "
-        "AND status NOT IN %s",
+        "AND status NOT IN %s AND archived_at IS NULL",
         (tenant_id, schedule_id, _IN_FLIGHT),
     ) or []
     doomed = [r["id"] for r in rows if r["id"] != serving]
     for session_id in doomed:
         try:
-            session_svc.delete_session(tenant_id, session_id)
+            session_svc.archive_session(tenant_id, session_id, "scheduler")
         except Exception as exc:  # noqa: BLE001
             # Not fatal: a slot that could not be freed costs a ceiling, and
             # failing the retrain over it would cost the forecast.
-            log.warning("retrain prune: could not delete %s: %s", session_id, exc)
+            log.warning("retrain prune: could not archive %s: %s", session_id, exc)
     return len(doomed)
 
 
@@ -191,12 +195,13 @@ def launch_scheduled_retrain(
         # The run never started — a blocked data gate, a ceiling, a broken
         # dataset. The session it would have trained is of no use to anybody and
         # holding it costs a saved-forecast slot until the next trigger prunes
-        # it, so it goes now. The error still propagates: the scheduler records
-        # it on `scheduled_jobs.last_error` and the feed carries the reason.
+        # it, so it is archived now (kept, out of the working list and off the
+        # ceiling). The error still propagates: the scheduler records it on
+        # `scheduled_jobs.last_error` and the feed carries the reason.
         try:
-            session_svc.delete_session(tenant_id, run_id)
+            session_svc.archive_session(tenant_id, run_id, "scheduler")
         except Exception:  # noqa: BLE001
-            log.warning("retrain: could not clean up the failed run %s", run_id)
+            log.warning("retrain: could not archive the failed run %s", run_id)
         raise
 
     log.info("Scheduled retrain launched: schedule=%s template=%s run=%s",

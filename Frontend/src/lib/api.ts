@@ -468,6 +468,36 @@ export const getSessionSummaries = (skip = 0, limit = 100) =>
   request<{ items: import('./types').SessionSummary[]; total: number }>(
     'GET', `/sessions/summary?skip=${skip}&limit=${limit}`,
   )
+
+/** The sessions library: search, filters, sort and paging are done server-side. */
+export interface SessionLibraryQuery {
+  skip?: number
+  limit?: number
+  q?: string
+  status?: string[]
+  datasetId?: string
+  archived?: 'active' | 'archived' | 'all'
+  createdFrom?: string
+  createdTo?: string
+  sort?: 'created_at' | 'updated_at' | 'name' | 'status' | 'horizon' | 'accuracy'
+  order?: 'asc' | 'desc'
+}
+export const getSessionLibrary = (o: SessionLibraryQuery = {}) => {
+  const qs = new URLSearchParams()
+  qs.set('skip', String(o.skip ?? 0))
+  qs.set('limit', String(o.limit ?? 25))
+  if (o.q?.trim()) qs.set('q', o.q.trim())
+  o.status?.forEach(s => qs.append('status', s))
+  if (o.datasetId) qs.set('dataset_id', o.datasetId)
+  if (o.archived) qs.set('archived', o.archived)
+  if (o.createdFrom) qs.set('created_from', o.createdFrom)
+  if (o.createdTo) qs.set('created_to', o.createdTo)
+  if (o.sort) qs.set('sort', o.sort)
+  if (o.order) qs.set('order', o.order)
+  return request<{ items: import('./types').SessionSummary[]; total: number; skip: number; limit: number }>(
+    'GET', `/sessions/summary?${qs.toString()}`,
+  )
+}
 export const getSession    = (id: string)    => request<SessionInfo>('GET', `/sessions/${id}`)
 export const createSession = (name?: string) =>
   request<SessionInfo>('POST', '/sessions', {
@@ -475,11 +505,12 @@ export const createSession = (name?: string) =>
   })
 export const patchSession  = (id: string, body: Record<string, unknown>) =>
   request<SessionInfo>('PATCH', `/sessions/${id}`, body)
-export const deleteSession = (id: string) =>
-  fetch(`${BASE}/sessions/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${getToken()}` },
-  }).then(() => undefined as void)
+/** Archives a session. Nothing is erased: it leaves the working list and can be
+ *  restored. (The route keeps its DELETE verb for older clients.) */
+export const archiveSession = (id: string) =>
+  request<void>('DELETE', `/sessions/${id}`)
+export const restoreSession = (id: string) =>
+  request<SessionInfo>('POST', `/sessions/${id}/restore`)
 
 // ── Datasets ──────────────────────────────────────────────────────────────────
 export const uploadDataset = (fd: FormData) =>
@@ -631,14 +662,43 @@ export interface RealizedVerdict {
   bias:      number | null
   n_points:  number
 }
+export type OverlapRelation =
+  'covers' | 'partial' | 'ends_before_forecast' | 'starts_after_forecast' | 'unknown'
+export interface OverlapReading {
+  relation:     OverlapRelation
+  overlap_from: string | null
+  overlap_to:   string | null
+  gap_days:     number | null
+  compared_periods?: number
+  forecast_periods?: number
+}
+export interface ComparisonCandidate {
+  dataset_id: string
+  name: string
+  filename: string | null
+  uploaded_at: string
+  is_training_dataset: boolean
+  uploaded_after_session: boolean
+  first_date: string | null
+  last_date: string | null
+  /** why no range is known: columns_missing | no_rows | unreadable | not_probed */
+  range_error: string | null
+  overlap: OverlapReading | null
+}
 export interface ForecastVsActual {
   session_id:    string
   target_freq:   string | null
   forecast_from: string | null
   forecast_to:   string | null
-  candidates:    { dataset_id: string; name: string; uploaded_at: string }[]
-  status:        'ok' | 'no_later_upload' | 'no_overlap' | 'columns_missing' | 'no_rows' | 'unreadable'
-  source:        { dataset_id: string; name: string; uploaded_at: string; last_date: string } | null
+  forecast_periods?: number
+  candidates:    ComparisonCandidate[]
+  is_backtest?:  boolean
+  backtest_source_dataset_id?: string | null
+  backtest_holdout_periods?:  number | null
+  status:        'ok' | 'no_later_upload' | 'no_overlap' | 'no_matching_series' | 'columns_missing'
+               | 'no_rows' | 'unreadable' | 'dataset_not_found' | 'no_forecast'
+  source:        { dataset_id: string; name: string; uploaded_at: string; first_date: string | null; last_date: string | null; is_training_dataset?: boolean } | null
+  overlap:       OverlapReading | null
   n_skus_total?: number
   result: null | {
     aggregate: RealizedMetrics & { n_skus: number; series: RealizedPoint[]; verdict: RealizedVerdict }
@@ -652,6 +712,14 @@ export const getForecastVsActual = (sessionId: string, datasetId?: string) =>
     'GET',
     `/sessions/${sessionId}/forecast-vs-actual${datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : ''}`,
   )
+
+/** Train a back-test: the same setup on a copy of the data without its last
+ *  periods. The new run's forecast then covers the periods that were held out. */
+export const startBacktest = (sessionId: string, holdoutPeriods: number, name?: string) =>
+  request<{
+    session_id: string; dataset_id: string; compare_dataset_id: string
+    cutoff: string; last_date: string; grain: string; holdout_periods: number
+  }>('POST', `/sessions/${sessionId}/backtest`, { holdout_periods: holdoutPeriods, name })
 
 // ── Results ───────────────────────────────────────────────────────────────────
 export const getMetrics = (id: string) =>

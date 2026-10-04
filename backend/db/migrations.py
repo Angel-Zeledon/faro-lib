@@ -1423,6 +1423,26 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
     ("create_sessions_scheduled_job_idx",
      "CREATE INDEX IF NOT EXISTS sessions_scheduled_job_idx "
      "ON sessions (tenant_id, scheduled_job_id) WHERE scheduled_job_id IS NOT NULL"),
+    # ── Sessions are permanent (2026-10-04) ──────────────────────────────────
+    # A session is never erased on a real tenant's behalf. "Delete" became
+    # "archive": the row, its results and its artifacts stay, and the session
+    # leaves the working list until somebody restores it. NULL = active.
+    ("add_sessions_archived_at",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ"),
+    ("add_sessions_archived_by",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS archived_by TEXT"),
+    # A back-test is a session trained on a copy of a dataset with its last
+    # periods held out, so its forecast can be graded against the full file.
+    # It must never drive purchasing, so planning queries exclude it.
+    ("add_sessions_is_backtest",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_backtest BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("add_sessions_backtest_source_dataset_id",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS backtest_source_dataset_id TEXT"),
+    ("add_sessions_backtest_holdout_periods",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS backtest_holdout_periods INT"),
+    ("create_sessions_library_idx",
+     "CREATE INDEX IF NOT EXISTS sessions_library_idx "
+     "ON sessions (tenant_id, archived_at, created_at DESC)"),
     ("create_system_loop_runs",
      """CREATE TABLE IF NOT EXISTS system_loop_runs (
          loop          TEXT PRIMARY KEY,

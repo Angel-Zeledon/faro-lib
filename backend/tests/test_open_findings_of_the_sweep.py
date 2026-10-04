@@ -691,7 +691,7 @@ class TestAScheduledRetrainCannotBlankTheProduct:
         # The template, which a person created, is never in scope for the prune.
         assert query_one("SELECT id FROM sessions WHERE id=%s", (template,)) is not None
 
-    def test_a_failed_run_is_pruned_before_the_next_one(
+    def test_a_failed_run_is_archived_before_the_next_one(
         self, client, test_tenant, monkeypatch,
     ):
         from backend.sessions import family_service, retrain_service
@@ -709,10 +709,14 @@ class TestAScheduledRetrainCannotBlankTheProduct:
         execute("UPDATE sessions SET status='FAILED' WHERE id=%s", (failed,))
 
         retrain_service.launch_scheduled_retrain(tid, sched, template)
-        remaining = query(
-            "SELECT id FROM sessions WHERE tenant_id=%s AND scheduled_job_id=%s", (tid, sched))
-        assert len(remaining) == 1
-        assert remaining[0]["id"] != failed
+        # Sessions are permanent: the failed run is ARCHIVED (kept, off the
+        # ceiling), never erased.
+        rows = query(
+            "SELECT id, archived_at FROM sessions WHERE tenant_id=%s AND scheduled_job_id=%s",
+            (tid, sched))
+        active = [r for r in rows if r["archived_at"] is None]
+        assert len(active) == 1 and active[0]["id"] != failed
+        assert [r for r in rows if r["id"] == failed][0]["archived_at"] is not None
 
     def test_a_template_that_cannot_train_is_refused_with_a_reason(
         self, client, test_tenant,

@@ -403,6 +403,41 @@ def get_forecast_vs_actual(
     return ok(forecast_vs_actual(user.tenant_id, s, dataset_id))
 
 
+class BacktestRequest(BaseModel):
+    holdout_periods: int
+    name: Optional[str] = None
+
+    @field_validator("holdout_periods")
+    @classmethod
+    def _positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("holdout_periods must be at least 1")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: Optional[str]) -> Optional[str]:
+        v = (v or "").strip()
+        return v[:200] or None
+
+
+@router.post("/sessions/{session_id}/backtest", status_code=202)
+def start_backtest(
+    session_id: str,
+    body: BacktestRequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Train a back-test of a completed session: the same configuration on a copy
+    of its dataset with the last `holdout_periods` periods held out. Its forecast
+    then covers those periods and can be graded against the full dataset with
+    `forecast-vs-actual`. The source session and dataset are not modified; the
+    run counts against the plan's saved-forecast ceiling and is refused (nothing
+    deleted) when that is full."""
+    s = _require_completed(user.tenant_id, session_id)
+    from backend.forecast_check.backtest import launch_backtest
+    return ok(launch_backtest(user.tenant_id, user.user_id, s, body.holdout_periods, body.name))
+
+
 @router.get("/sessions/{session_id}/config-schema")
 def get_config_schema(session_id: str, user: CurrentUser = Depends(get_current_user)):
     session_svc.get_session(user.tenant_id, session_id)

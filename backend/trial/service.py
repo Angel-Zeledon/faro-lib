@@ -182,6 +182,14 @@ def reap_expired_trials() -> int:
     erased = 0
     for row in rows:
         try:
+            # The one place in the product that erases sessions on its own, so
+            # it re-reads the tier right before the delete: a tenant moved off
+            # `demo` between the SELECT above and here (a visitor who just
+            # became a customer) is a real tenant, and real tenants' sessions
+            # are permanent.
+            fresh = query_one("SELECT tier FROM tenants WHERE id = %s", (row["id"],))
+            if not fresh or fresh["tier"] != DEMO:
+                continue
             delete_tenant(row["id"])
             erased += 1
         except Exception as exc:

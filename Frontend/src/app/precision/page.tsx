@@ -1,8 +1,11 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Target } from 'lucide-react'
-import { getForecastVsActual, getSessionSummaries } from '@/lib/api'
-import type { ForecastVsActual, RealizedPoint } from '@/lib/api'
+import { getForecastVsActual, getSessionLibrary, startBacktest } from '@/lib/api'
+import type { ComparisonCandidate, ForecastVsActual, OverlapReading, RealizedPoint } from '@/lib/api'
+import { getUser } from '@/lib/auth'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import type { SessionSummary } from '@/lib/types'
 import { EmptyState, InlineError, LoadingState, SkeletonTable } from '@/components/ui/States'
 import Card from '@/components/ui/Card'
@@ -73,9 +76,45 @@ function CompareChart({ series, labels }: { series: RealizedPoint[]; labels: { f
   )
 }
 
-export default function PrecisionPage() {
+const UNIT_KEY: Record<string, string> = { 'W-MON': 'weeks', MS: 'months' }
+
+/** One plain-language line about how a file's dates sit against the forecast. */
+function OverlapLine({ o, fmtDate }: { o: OverlapReading | null; fmtDate: (iso: string) => string }) {
+  const { t } = useLanguage()
+  if (!o || o.relation === 'unknown') return <span>{t('precision.rel_unknown')}</span>
+  switch (o.relation) {
+    case 'covers': return <span>{t('precision.rel_covers')}</span>
+    case 'partial':
+      return <span>{t('precision.rel_partial', {
+        from: o.overlap_from ? fmtDate(o.overlap_from) : '—', to: o.overlap_to ? fmtDate(o.overlap_to) : '—' })}</span>
+    case 'ends_before_forecast':
+      return <span>{t('precision.rel_ends_before', { days: o.gap_days ?? 0 })}</span>
+    default:
+      return <span>{t('precision.rel_starts_after', { days: o.gap_days ?? 0 })}</span>
+  }
+}
+
+const REL_COLOR: Record<string, string> = {
+  covers: '#2E8B62', partial: '#B7791F', ends_before_forecast: 'var(--dim)',
+  starts_after_forecast: 'var(--dim)', unknown: 'var(--dim)',
+}
+
+function RelBadge({ c }: { c: ComparisonCandidate }) {
+  const { t } = useLanguage()
+  const rel = c.overlap?.relation ?? 'unknown'
+  const label = c.range_error && !c.overlap ? t(`precision.range_${c.range_error}`) : t(`precision.badge_${rel}`)
+  return (
+    <span style={{ fontSize: 11, fontWeight: 700, color: REL_COLOR[rel] ?? 'var(--dim)', whiteSpace: 'nowrap' }}>{label}</span>
+  )
+}
+
+function PrecisionInner() {
   const { t, lang } = useLanguage()
+  const router = useRouter()
+  const params = useSearchParams()
   const planning = usePlanning()?.planning ?? null
+  const canEdit = ['admin', 'analyst'].includes(getUser()?.role ?? '')
+  const narrow = useIsNarrow()
 
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -84,19 +123,28 @@ export default function PrecisionPage() {
   const [error, setError] = useState<unknown>(null)
   const [loading, setLoading] = useState(false)
   const [sku, setSku] = useState<string | null>(null)
+  const [showFiles, setShowFiles] = useState(false)
+  const [holdout, setHoldout] = useState('4')
+  const [launching, setLaunching] = useState(false)
+  const [launched, setLaunched] = useState<{ session_id: string; cutoff: string; holdout_periods: number } | null>(null)
 
   useEffect(() => {
-    getSessionSummaries(0, 100)
-      .then(r => setSessions((r.items ?? []).filter(s => s.status === 'COMPLETED')))
+    // Every finished session, archived ones included: a past run is exactly
+    // what somebody comes here to review.
+    getSessionLibrary({ status: ['COMPLETED'], archived: 'all', limit: 500, sort: 'created_at', order: 'desc' })
+      .then(r => setSessions(r.items ?? []))
       .catch(e => { setSessions([]); setError(e) })
   }, [])
 
-  // Default to the session the app plans from.
+  // Default to the session named in the link, else the one the app plans from.
   useEffect(() => {
     if (sessionId || !sessions?.length) return
+    const wanted = params.get('session')
     const active = planning?.active_session_id
-    setSessionId(sessions.find(s => (s.session_id ?? s.id) === active)?.session_id ?? sessions[0].session_id ?? sessions[0].id)
-  }, [sessions, planning, sessionId])
+    const pick = sessions.find(s => s.session_id === wanted)
+      ?? sessions.find(s => s.session_id === active) ?? sessions[0]
+    setSessionId(pick.session_id)
+  }, [sessions, planning, sessionId, params])
 
   useEffect(() => {
     if (!sessionId) return
@@ -109,14 +157,33 @@ export default function PrecisionPage() {
     return () => { stale = true }
   }, [sessionId, datasetId])
 
-  const fmtDate = (iso: string) =>
-    new Date(iso).toLocaleDateString(lang === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short', year: 'numeric' })
+  const fmtDate = (iso: string) => {
+    const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso)
+    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(lang === 'es' ? 'es' : 'en', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
 
   const agg = data?.result?.aggregate
   const chosenSku = useMemo(
     () => data?.result?.skus.find(s => s.sku === sku) ?? null, [data, sku])
   const chartSeries = chosenSku ? chosenSku.points : agg?.series ?? []
   const verdict = agg?.verdict
+  const session = sessions?.find(s => s.session_id === sessionId) ?? null
+  const trainingFile = data?.candidates.find(c => c.is_training_dataset) ?? null
+  const unit = t(`precision.unit_${UNIT_KEY[data?.target_freq ?? ''] ?? 'days'}`)
+
+  const runBacktest = async () => {
+    const n = parseInt(holdout, 10)
+    if (!sessionId || !Number.isFinite(n) || n < 1 || launching) return
+    setLaunching(true)
+    try {
+      const r = await startBacktest(sessionId, n, t('precision.backtest_session_name', { name: session?.name ?? '', n }))
+      setLaunched({ session_id: r.session_id, cutoff: r.cutoff, holdout_periods: r.holdout_periods })
+    } catch {
+      // The API interceptor already explained (ceiling reached, too little data, ...).
+    } finally {
+      setLaunching(false)
+    }
+  }
 
   const header = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -140,7 +207,65 @@ export default function PrecisionPage() {
 
   const selectStyle: React.CSSProperties = {
     padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)',
-    background: 'var(--surface)', color: 'var(--text)', fontSize: 12, maxWidth: 280,
+    background: 'var(--surface)', color: 'var(--text)', fontSize: 12, maxWidth: '100%', minWidth: 0,
+  }
+  const note: React.CSSProperties = { fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.55 }
+  const fileLabel = (c: ComparisonCandidate) =>
+    `${c.name}${c.first_date && c.last_date ? ` · ${c.first_date} → ${c.last_date}` : ''}`
+
+  // Why there is nothing to grade, in words — never a blank screen.
+  const explain = () => {
+    if (!data || data.status === 'ok') return null
+    const o = data.overlap
+    const src = data.source
+    const fcRange = data.forecast_from && data.forecast_to
+      ? t('precision.forecast_window', { from: fmtDate(data.forecast_from), to: fmtDate(data.forecast_to) }) : ''
+    let title: string, body: string
+    switch (data.status) {
+      case 'no_later_upload':
+        title = t('precision.empty_no_later_title')
+        body = t('precision.empty_no_later_body', {
+          file: trainingFile?.name ?? '—', last: trainingFile?.last_date ? fmtDate(trainingFile.last_date) : '—',
+          window: fcRange })
+        break
+      case 'no_overlap':
+        title = t('precision.empty_no_overlap_title')
+        body = src
+          ? t('precision.empty_no_overlap_named', {
+              file: src.name, first: src.first_date ? fmtDate(src.first_date) : '—',
+              last: src.last_date ? fmtDate(src.last_date) : '—', window: fcRange })
+          : t('precision.empty_no_overlap_any', { window: fcRange })
+        break
+      case 'no_matching_series':
+        title = t('precision.empty_no_series_title')
+        body = t('precision.empty_no_series_body', { file: src?.name ?? '—' })
+        break
+      case 'dataset_not_found':
+        title = t('precision.empty_not_found_title'); body = t('precision.empty_not_found_body'); break
+      case 'no_forecast':
+        title = t('precision.empty_no_forecast_title'); body = t('precision.empty_no_forecast_body'); break
+      default:
+        title = t('precision.empty_unreadable_title'); body = t('precision.empty_unreadable_body')
+    }
+    return (
+      <Card padding={20} style={{ borderLeft: '4px solid var(--muted)' }}>
+        <div data-testid="precision-empty" style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>{title}</div>
+        <div style={note}>{body}</div>
+        {o && (data.status === 'no_overlap') && (
+          <div style={{ ...note, marginTop: 6 }}><OverlapLine o={o} fmtDate={fmtDate} /></div>
+        )}
+        <div style={{ ...note, marginTop: 10 }}>{t('precision.empty_what_next')}</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+          <button className="btn-secondary" style={{ ...selectStyle, cursor: 'pointer' }} onClick={() => router.push('/archivos')}>
+            {t('precision.go_upload')}
+          </button>
+          <button className="btn-secondary" style={{ ...selectStyle, cursor: 'pointer' }}
+                  onClick={() => document.getElementById('precision-backtest')?.scrollIntoView({ behavior: 'smooth' })}>
+            {t('precision.go_backtest')}
+          </button>
+        </div>
+      </Card>
+    )
   }
 
   return (
@@ -148,40 +273,63 @@ export default function PrecisionPage() {
       {header}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', fontSize: 12, color: 'var(--dim)' }}>
-        <label>{t('precision.session_label')}{' '}
-          <select value={sessionId ?? ''} onChange={e => { setSessionId(e.target.value); setDatasetId(undefined) }} style={selectStyle}>
-            {sessions.map(s => <option key={s.session_id ?? s.id} value={s.session_id ?? s.id}>{s.name}</option>)}
+        <label style={{ minWidth: 0, maxWidth: '100%' }}>{t('precision.session_label')}{' '}
+          <select value={sessionId ?? ''} onChange={e => { setSessionId(e.target.value); setDatasetId(undefined); setLaunched(null) }}
+                  style={{ ...selectStyle, maxWidth: 320 }} data-testid="precision-session">
+            {sessions.map(s => (
+              <option key={s.session_id} value={s.session_id}>
+                {s.name} · {fmtDate(s.created_at)}{s.archived_at ? ` (${t('sessions.tag_archived')})` : ''}{s.is_backtest ? ` (${t('sessions.tag_backtest')})` : ''}
+              </option>
+            ))}
           </select>
         </label>
-        {data && data.candidates.length > 1 && (
-          <label>{t('precision.compare_with')}{' '}
-            <select value={datasetId ?? data.source?.dataset_id ?? ''} onChange={e => setDatasetId(e.target.value)} style={selectStyle}>
-              {data.candidates.map(c => <option key={c.dataset_id} value={c.dataset_id}>{c.name}</option>)}
+        {data && data.candidates.length > 0 && (
+          <label style={{ minWidth: 0, maxWidth: '100%' }}>{t('precision.compare_with')}{' '}
+            <select value={datasetId ?? ''} onChange={e => setDatasetId(e.target.value || undefined)}
+                    style={{ ...selectStyle, maxWidth: 360 }} data-testid="precision-dataset">
+              <option value="">{t('precision.auto_pick')}</option>
+              {data.candidates.map(c => <option key={c.dataset_id} value={c.dataset_id}>{fileLabel(c)}</option>)}
             </select>
           </label>
         )}
       </div>
 
+      {/* What this run forecast and what it was trained on. */}
+      {data && (
+        <Card padding={14}>
+          <div style={note} data-testid="precision-window">
+            {data.forecast_from && data.forecast_to
+              ? t('precision.window_line', {
+                  from: fmtDate(data.forecast_from), to: fmtDate(data.forecast_to), n: data.forecast_periods ?? 0, unit })
+              : t('precision.window_none')}
+            {trainingFile && (
+              <> {t('precision.trained_on', {
+                file: trainingFile.name,
+                first: trainingFile.first_date ? fmtDate(trainingFile.first_date) : '—',
+                last: trainingFile.last_date ? fmtDate(trainingFile.last_date) : '—' })}</>
+            )}
+          </div>
+          {data.is_backtest && (
+            <div style={{ ...note, marginTop: 6, color: 'var(--text)' }}>
+              {t('precision.is_backtest', { n: data.backtest_holdout_periods ?? '—' })}
+            </div>
+          )}
+        </Card>
+      )}
+
       {loading && <LoadingState label={t('common.loading')}><SkeletonTable rows={4} columns={4} /></LoadingState>}
       {!loading && error != null && <InlineError error={error} />}
 
-      {!loading && !error && data && data.status === 'no_later_upload' && (
-        <EmptyState icon={<Target size={22} />} title={t('precision.empty_no_later_title')} body={t('precision.empty_no_later_body')}
-                    actions={[{ label: t('precision.go_upload'), href: '/archivos' }]} />
-      )}
-      {!loading && !error && data && data.status === 'no_overlap' && (
-        <EmptyState icon={<Target size={22} />} title={t('precision.empty_no_overlap_title')}
-                    body={t('precision.empty_no_overlap_body', { from: data.forecast_from ? fmtDate(data.forecast_from) : '—', to: data.forecast_to ? fmtDate(data.forecast_to) : '—' })} />
-      )}
-      {!loading && !error && data && ['columns_missing', 'no_rows', 'unreadable'].includes(data.status) && (
-        <EmptyState icon={<Target size={22} />} title={t('precision.empty_unreadable_title')} body={t('precision.empty_unreadable_body')} />
-      )}
+      {!loading && !error && explain()}
 
       {!loading && !error && data?.status === 'ok' && agg && verdict && (
         <>
           <Card padding={16} style={{ borderLeft: `4px solid ${VERDICT_COLOR[verdict.level]}` }}>
             <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 6 }}>
-              {t('precision.source', { name: data.source!.name, date: fmtDate(data.source!.uploaded_at), last: fmtDate(data.source!.last_date) })}
+              {t('precision.source', { name: data.source!.name, date: fmtDate(data.source!.uploaded_at), last: data.source!.last_date ? fmtDate(data.source!.last_date) : '—' })}
+              {data.overlap?.compared_periods != null && (
+                <> {t('precision.coverage', { n: data.overlap.compared_periods, total: data.overlap.forecast_periods ?? 0 })}</>
+              )}
             </div>
             <div data-testid="precision-verdict" style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', lineHeight: 1.5 }}>
               {t(`precision.verdict_${verdict.level}`, { pct: pct(verdict.wape).replace('%', ''), n: verdict.n_points })}
@@ -260,6 +408,104 @@ export default function PrecisionPage() {
           )}
         </>
       )}
+
+      {/* Every file against this forecast: which dates overlap. */}
+      {data && data.candidates.length > 0 && (
+        <Card padding={0}>
+          <button onClick={() => setShowFiles(v => !v)} aria-expanded={showFiles}
+                  style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', boxSizing: 'border-box', padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+            {t('precision.files_title', { n: data.candidates.length })} {showFiles ? '▾' : '▸'}
+          </button>
+          {showFiles && narrow && (
+            <div data-testid="precision-files" style={{ borderTop: '1px solid var(--border)', maxHeight: 420, overflowY: 'auto' }}>
+              {data.candidates.map(c => (
+                <div key={c.dataset_id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13, overflowWrap: 'anywhere' }}>
+                    {c.name}{c.is_training_dataset ? ` · ${t('precision.files_training')}` : ''}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {c.first_date && c.last_date ? `${fmtDate(c.first_date)} → ${fmtDate(c.last_date)}` : '—'}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <RelBadge c={c} />
+                    <button className="btn-secondary" style={{ ...selectStyle, cursor: 'pointer', minHeight: 36 }}
+                            onClick={() => setDatasetId(c.dataset_id)}>{t('precision.files_compare')}</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {showFiles && !narrow && (
+            <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto', borderTop: '1px solid var(--border)' }}>
+              <table data-testid="precision-files" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ color: 'var(--dim)', textAlign: 'left' }}>
+                    <th style={{ padding: '8px 16px' }}>{t('precision.files_col_file')}</th>
+                    <th style={{ padding: '8px 12px' }}>{t('precision.files_col_dates')}</th>
+                    <th style={{ padding: '8px 12px' }}>{t('precision.files_col_overlap')}</th>
+                    <th style={{ padding: '8px 12px' }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.candidates.map(c => (
+                    <tr key={c.dataset_id} style={{ borderTop: '1px solid var(--border)', background: (datasetId ?? data.source?.dataset_id) === c.dataset_id ? 'var(--surface-2)' : undefined }}>
+                      <td style={{ padding: '8px 16px', fontWeight: 600, color: 'var(--text)' }}>
+                        {c.name}
+                        {c.is_training_dataset && <span style={{ fontWeight: 400, color: 'var(--dim)' }}> · {t('precision.files_training')}</span>}
+                      </td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--muted)' }}>
+                        {c.first_date && c.last_date ? `${fmtDate(c.first_date)} → ${fmtDate(c.last_date)}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px' }}><RelBadge c={c} /></td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        <button className="btn-secondary" style={{ ...selectStyle, cursor: 'pointer' }}
+                                onClick={() => setDatasetId(c.dataset_id)}>{t('precision.files_compare')}</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Back-test: make the missing overlap from history the user already has. */}
+      <Card padding={16}>
+        <div id="precision-backtest" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>{t('precision.backtest_title')}</div>
+        <div style={note}>{t('precision.backtest_body')}</div>
+        {launched ? (
+          <div data-testid="precision-backtest-started" style={{ ...note, marginTop: 10, color: 'var(--text)' }}>
+            {t('precision.backtest_started', { n: launched.holdout_periods, unit, date: fmtDate(launched.cutoff) })}
+            {' '}
+            <button onClick={() => router.push('/historial')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--accent)' }}>
+              {t('precision.backtest_see_history')}
+            </button>
+          </div>
+        ) : canEdit ? (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+            <label style={{ fontSize: 12, color: 'var(--dim)' }}>{t('precision.backtest_hold_out')}{' '}
+              <input type="number" min={1} max={90} value={holdout} onChange={e => setHoldout(e.target.value)}
+                     data-testid="precision-holdout" style={{ ...selectStyle, width: 70 }} /> {unit}
+            </label>
+            <button className="btn-primary" disabled={launching || !(parseInt(holdout, 10) >= 1)} onClick={runBacktest}
+                    data-testid="precision-run-backtest"
+                    style={{ ...selectStyle, background: 'var(--accent)', color: '#fff', border: 'none', cursor: launching ? 'wait' : 'pointer', fontWeight: 600 }}>
+              {launching ? t('precision.backtest_starting') : t('precision.backtest_run')}
+            </button>
+          </div>
+        ) : (
+          <div style={{ ...note, marginTop: 8 }}>{t('precision.backtest_viewer')}</div>
+        )}
+      </Card>
     </div>
+  )
+}
+
+export default function PrecisionPage() {
+  return (
+    <Suspense fallback={null}>
+      <PrecisionInner />
+    </Suspense>
   )
 }

@@ -98,7 +98,7 @@ class TestForecastVsActual:
         foreign = _upload(client, other, [("2023-04-01", "SKU_001", 5)])
         d = client.get(URL.format(sid=completed_session["id"]) + f"?dataset_id={foreign['id']}",
                        headers=auth_headers).json()["data"]
-        assert d["status"] == "no_later_upload" and d["result"] is None
+        assert d["status"] == "dataset_not_found" and d["result"] is None
 
     def test_viewer_can_read(self, client, viewer_headers, completed_session):
         r = client.get(URL.format(sid=completed_session["id"]), headers=viewer_headers)
