@@ -4,6 +4,7 @@ import { X, ArrowLeft, ArrowRight } from 'lucide-react'
 import { useTour } from '@/contexts/TourContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import ExplainerVisual from '@/components/ui/ExplainerVisual'
 import type { TourDefinition, TourStep } from './types'
 
 /** Copy for a tour comes from the tour's own module — see types.ts on why.
@@ -75,9 +76,13 @@ export default function TourOverlay() {
   // So the final vertical position is decided here, from the measured height:
   // an un-anchored card is centred, and any card is clamped inside the
   // viewport. Runs in a layout effect, before paint, so nothing is seen to jump.
+  // Also re-decided whenever the anchor moves: the first measurement happens
+  // BEFORE scrollIntoView runs, so a step whose anchor starts below the fold
+  // (a tall page — the upload guide made /ventas one) kept a position computed
+  // for the pre-scroll rect and left the card, and its Next button, off-screen.
   useLayoutEffect(() => {
     setTopOverride(null)
-  }, [step])
+  }, [step, rect?.top, rect?.left, rect?.height])
 
   useLayoutEffect(() => {
     const el = cardRef.current
@@ -235,12 +240,15 @@ export default function TourOverlay() {
         {/* Steps explain WHY a thing exists, so bodies run to a short
             paragraph. Capped and scrollable rather than allowed to grow off a
             laptop screen, which would push the buttons out of reach. */}
-        <p style={{
-          margin: '0 0 14px', fontSize: 12.5, lineHeight: 1.65, color: 'var(--muted)',
-          overflowY: 'auto', minHeight: 0, whiteSpace: 'pre-line',
-        }}>
-          {copyOf(active, lang, step.body)}
-        </p>
+        <div style={{ margin: '0 0 14px', overflowY: 'auto', minHeight: 0, overscrollBehavior: 'contain' }}>
+          {step.visual && <div style={{ margin: '4px 0 10px' }}><ExplainerVisual id={step.visual} /></div>}
+          <p style={{
+            margin: 0, fontSize: 12.5, lineHeight: 1.65, color: 'var(--muted)',
+            whiteSpace: 'pre-line',
+          }}>
+            {copyOf(active, lang, step.body)}
+          </p>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, color: 'var(--dim)', fontVariantNumeric: 'tabular-nums' }}>

@@ -34,6 +34,9 @@ export interface TourStep {
   /** Copy key, resolved against this tour's own `es` / `en` maps. */
   title: string
   body: string
+  /** Optional picture for the step (semáforo legend, example table, flow…),
+   *  from the shared ExplainerVisual registry. Shown above the body. */
+  visual?: 'semaforo' | 'sales_table' | 'column_map' | 'pipeline'
 }
 
 export interface TourCopy {

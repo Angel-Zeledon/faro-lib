@@ -9,7 +9,7 @@ export const inventoryTour: TourDefinition = {
     { anchor: 'inv.views', title: 'views_title', body: 'views_body' },
     { anchor: 'inv.filters', title: 'filters_title', body: 'filters_body' },
     { anchor: 'inv.search', title: 'search_title', body: 'search_body' },
-    { anchor: 'inv.signal', title: 'signal_title', body: 'signal_body' },
+    { anchor: 'inv.signal', title: 'signal_title', body: 'signal_body', visual: 'semaforo' },
     { anchor: 'inv.coverage', title: 'coverage_title', body: 'coverage_body' },
     { anchor: 'inv.suggest', title: 'suggest_title', body: 'suggest_body' },
     { anchor: 'inv.leadtime', title: 'leadtime_title', body: 'leadtime_body' },

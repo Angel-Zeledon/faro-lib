@@ -1,74 +1,109 @@
 'use client'
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import FloatingBubble from '@/components/ui/FloatingBubble'
 
 /**
- * Small "?" help affordance. On hover (or focus) it shows a short explanation.
- * Use it next to delicate processes, ambiguous terms, or inputs whose meaning
- * isn't obvious — NOT for self-evident fields (e.g. "password").
+ * Small "?" help affordance. Use it next to delicate processes, ambiguous
+ * terms, or inputs whose meaning isn't obvious — NOT for self-evident fields.
  *
- * Positioned with fixed coords from the trigger's rect so it never gets clipped
- * by overflow:hidden containers (tables, cards).
+ * Two modes:
+ *   · text only — shows on hover/focus, never takes the pointer.
+ *   · with `visual` (a diagram, example table, steps…) — a click/Enter opens a
+ *     pinned, scrollable popover (hover alone cannot hold a diagram the user
+ *     needs to read), closed by Escape, outside click or its close button.
+ *
+ * The bubble is positioned with fixed coords and clamped to the viewport by
+ * FloatingBubble, so no overflow:hidden ancestor and no screen edge can cut it.
  */
 export default function HelpTip({
   text,
   size = 14,
   width = 250,
+  visual,
+  title,
 }: {
   text: string
   size?: number
   width?: number
+  visual?: React.ReactNode
+  title?: string
 }) {
   const { t } = useLanguage()
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const ref = useRef<HTMLSpanElement>(null)
+  const [hover, setHover] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const rich = visual != null
+  const open = pinned || (!rich && hover)
+  const getRect = useCallback(() => ref.current?.getBoundingClientRect() ?? null, [])
 
-  const show = (el: HTMLElement) => {
-    const r = el.getBoundingClientRect()
-    setPos({ x: r.left + r.width / 2, y: r.top })
-  }
+  useEffect(() => {
+    if (!pinned) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPinned(false) }
+    const onDown = (e: MouseEvent) => {
+      const n = e.target as Node
+      if (ref.current?.contains(n)) return
+      if ((n as HTMLElement).closest?.('[data-helptip-bubble]')) return
+      setPinned(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onDown)
+    }
+  }, [pinned])
 
   return (
     <span
+      ref={ref}
       tabIndex={0}
-      aria-label={t('common.help')}
+      role={rich ? 'button' : undefined}
+      aria-expanded={rich ? pinned : undefined}
+      aria-label={title ?? t('common.help')}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'help', verticalAlign: 'middle', outline: 'none',
+        cursor: rich ? 'pointer' : 'help', verticalAlign: 'middle', outline: 'none',
       }}
-      onMouseEnter={e => show(e.currentTarget)}
-      onMouseLeave={() => setPos(null)}
-      onFocus={e => show(e.currentTarget)}
-      onBlur={() => setPos(null)}
-      onClick={e => { e.preventDefault(); e.stopPropagation() }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setHover(true)}
+      onBlur={() => setHover(false)}
+      onKeyDown={e => { if (rich && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setPinned(p => !p) } }}
+      onClick={e => { e.preventDefault(); e.stopPropagation(); if (rich) setPinned(p => !p) }}
     >
       <span style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: size, height: size, borderRadius: '50%',
-        border: '1px solid var(--border)', background: 'var(--surface-2)',
-        color: 'var(--dim)', fontSize: size - 5, fontWeight: 700, lineHeight: 1,
+        border: `1px solid ${open ? 'var(--accent)' : 'var(--border)'}`,
+        background: 'var(--surface-2)',
+        color: open ? 'var(--accent)' : 'var(--dim)',
+        fontSize: size - 5, fontWeight: 700, lineHeight: 1,
       }}>?</span>
 
-      {pos && (
-        // Theme tokens, not the pre-brand indigo-era hexes this used to carry:
-        // a permanently dark tooltip over a light screen was the same defect
-        // already fixed on the auth screens. The arrow reuses --surface-3 so it
-        // cannot drift from the bubble it points out of.
-        <span style={{
-          position: 'fixed', left: pos.x, top: pos.y - 8,
-          transform: 'translate(-50%, -100%)',
-          background: 'var(--surface-3)', color: 'var(--text)',
-          fontSize: 11.5, lineHeight: 1.55, fontWeight: 400, textAlign: 'left',
-          padding: '9px 12px', borderRadius: 8, width, zIndex: 9999,
-          border: '1px solid var(--border-strong)',
-          boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
-          pointerEvents: 'none', whiteSpace: 'normal',
-        }}>
-          {text}
-          <span style={{
-            position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
-            borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
-            borderTop: '5px solid var(--surface-3)',
-          }} />
+      {open && (
+        <span data-helptip-bubble onClick={e => e.stopPropagation()} style={{ display: 'contents' }}>
+          <FloatingBubble
+            getRect={getRect}
+            width={rich ? Math.max(width, 340) : width}
+            interactive={pinned}
+            role={pinned ? 'dialog' : 'tooltip'}
+          >
+            {pinned && (
+              <button
+                type="button" aria-label={t('common.close')}
+                onClick={() => setPinned(false)}
+                style={{ all: 'unset', cursor: 'pointer', float: 'right', color: 'var(--dim)', padding: 2, marginLeft: 8 }}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            )}
+            {title && <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{title}</div>}
+            <div style={{ marginBottom: rich ? 10 : 0 }}>{text}</div>
+            {rich && pinned && visual}
+            {rich && !pinned && <div style={{ color: 'var(--dim)', fontSize: 11 }}>{t('xv.click_to_expand')}</div>}
+          </FloatingBubble>
         </span>
       )}
     </span>

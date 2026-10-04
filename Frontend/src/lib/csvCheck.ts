@@ -110,11 +110,11 @@ const CSV_FALLBACK_COPY: Record<string, string> = {
   'csv.group.empty_sku.hint':        'Every row needs the product code or name so we can forecast per SKU.',
 
   'csv.error.empty_file':          'The file is empty or only has a header row.',
-  'csv.error.too_few_columns':     'Only {count} column(s) detected. At least 3 are needed: date, product and quantity. Check that the separator is a comma (,) or a semicolon (;).',
+  'csv.error.too_few_columns':     'Only {count} column(s) detected ({found}). Exactly these 3 are required: sku, fecha, demanda. Check that the separator is a comma (,) or a semicolon (;) and that the header row is the first line.',
   'csv.error.too_many_bad_rows':   '{title}: {count} of {rows} row(s).',
-  'csv.warn.no_date_column':       'No date column was identified by its name (e.g. "fecha"). You will be able to pick it by hand in the next step.',
-  'csv.warn.no_qty_column':        'No quantity column was identified by its name (e.g. "demanda" or "cantidad"). You will be able to pick it by hand in the next step.',
-  'csv.warn.no_sku_column':        'No product column was identified by its name (e.g. "sku" or "producto"). You will be able to pick it by hand in the next step.',
+  'csv.warn.no_date_column':       'No date column found. Your file has: {found}. Rename the date column to "fecha" (or "date") to match the template, or pick it by hand in the next step.',
+  'csv.warn.no_qty_column':        'No quantity column found. Your file has: {found}. Rename the units-sold column to "demanda" (or "cantidad", "quantity") to match the template, or pick it by hand in the next step.',
+  'csv.warn.no_sku_column':        'No product column found. Your file has: {found}. Rename the product code column to "sku" (or "producto") to match the template, or pick it by hand in the next step.',
   'csv.warn.rows_skipped':         '{count} row(s) with problems will be skipped while processing. The rest will be used normally.',
   'csv.warn.few_rows':             'Only {rows} data rows — at least 60 days of history is recommended for a useful forecast.',
 }
@@ -185,7 +185,7 @@ export const CSV_TEMPLATE_HEADERS = [
   'sku', 'fecha', 'demanda', 'tienda', 'inventario', 'costo', 'precio',
 ] as const
 
-const CSV_TEMPLATE_ROWS: string[][] = [
+export const CSV_TEMPLATE_ROWS: string[][] = [
   ['SKU-001', '2026-01-01', '32', 'Bodega Central', '480', '8.50', '12.90'],
   ['SKU-001', '2026-01-02', '28', 'Bodega Central', '452', '8.50', '12.90'],
   ['SKU-001', '2026-01-03', '35', 'Bodega Central', '417', '8.50', '12.90'],
@@ -318,7 +318,7 @@ export function validateSalesCsv(text: string, t?: CsvTranslate): CsvCheckResult
   const columns = splitLine(lines[0], sep)
 
   if (header.length < 3) {
-    errors.push(say('csv.error.too_few_columns', { count: header.length }))
+    errors.push(say('csv.error.too_few_columns', { count: header.length, found: columns.join(', ') }))
     return { ok: false, errors, warnings, rowCount: lines.length - 1, columns, issueGroups: [] }
   }
 
@@ -326,9 +326,9 @@ export function validateSalesCsv(text: string, t?: CsvTranslate): CsvCheckResult
   const qtyIdx  = header.findIndex(h => QTY_HINTS.some(k => h.includes(k)))
   const skuIdx  = header.findIndex(h => SKU_HINTS.some(k => h.includes(k)))
 
-  if (dateIdx === -1) warnings.push(say('csv.warn.no_date_column'))
-  if (qtyIdx  === -1) warnings.push(say('csv.warn.no_qty_column'))
-  if (skuIdx  === -1) warnings.push(say('csv.warn.no_sku_column'))
+  if (dateIdx === -1) warnings.push(say('csv.warn.no_date_column', { found: columns.join(', ') }))
+  if (qtyIdx  === -1) warnings.push(say('csv.warn.no_qty_column', { found: columns.join(', ') }))
+  if (skuIdx  === -1) warnings.push(say('csv.warn.no_sku_column', { found: columns.join(', ') }))
 
   const issues: CsvIssue[] = []
   const rows = lines.length - 1

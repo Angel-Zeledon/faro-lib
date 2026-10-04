@@ -14,6 +14,7 @@ import {
 } from '@/lib/inventoryDefaults'
 import { validateSalesCsv } from '@/lib/csvCheck'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
+import UploadGuide from '@/components/upload/UploadGuide'
 import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
 import DataIssuesPanel from '@/components/ui/DataIssuesPanel'
 import RemediationChoices from '@/components/ui/RemediationChoices'
@@ -1412,6 +1413,7 @@ function QuickStartPageContent() {
  <DatasetPicker datasets={datasets} onPick={handlePickExisting} busy={busy} />
  ) : (
  <>
+ <UploadGuide kind="sales" />
  <DropZone onFile={handleFile} busy={busy} />
 
  {fileName && !error && (
