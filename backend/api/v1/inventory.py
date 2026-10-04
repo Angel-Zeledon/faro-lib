@@ -13,14 +13,17 @@ import csv
 import io
 import json
 import logging
+import re
 from datetime import date
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Response, UploadFile, File
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from psycopg2.pool import PoolError
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
+from backend.activity.events import record_event
 from backend.api.v1.currency import currency_of
 from backend.auth.guards import (
     CurrentUser, get_current_user, require_analyst_or_above,
@@ -28,10 +31,6 @@ from backend.auth.guards import (
 )
 from backend.config import settings
 from backend.errors import AppError
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
-from backend.entitlements.service import has_feature
-from backend.tenants.service import get_tenant
 from backend.sessions import planning_service
 from backend.inventory import service as svc
 from backend.inventory import supplier_service as sup_svc
@@ -43,6 +42,9 @@ from backend.inventory import transfer_service as tr_svc
 from backend.inventory import transfer_lane_service as lane_svc
 from backend.inventory import price_break_service as pb_svc
 from backend.inventory import cash_service
+from backend.inventory import dead_capital as dead_capital_svc
+from backend.inventory import cost_alerts as cost_alerts_svc
+from backend.inventory import forecast_money as forecast_money_svc
 from backend.schemas.common import ok
 from backend.utils import stock_import
 from backend.utils.csv_safe import csv_safe
@@ -125,20 +127,64 @@ def upsert_stock(
     body: StockUpsert,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    from backend.entitlements.service import enforce_limit
+    from backend.entitlements.service import enforce_limit, limit_guard
 
     # Resolve to the canonical spelling FIRST so the pre-checks below judge
     # the same (sku, warehouse) row svc.upsert_stock will actually write —
     # 'norte' with an existing 'Norte' is an update, not a new location.
     warehouse = wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse)
-    if not svc.get_stock(user.tenant_id, sku, warehouse=warehouse):
-        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id))
-    # A new warehouse name would otherwise be auto-created for free by
-    # svc.upsert_stock -> _ensure_warehouse, bypassing max_locations entirely.
-    # Enforce BEFORE the write so a blocked request never creates the row.
-    if not wh_svc.get_warehouse_by_name(user.tenant_id, warehouse):
-        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
-    row = svc.upsert_stock(user.tenant_id, sku, body.model_dump(exclude_none=True))
+
+    data = body.model_dump(exclude_none=True)
+    # Only what the caller ACTUALLY SENT is written — on a new row as much as
+    # on an existing one.
+    #
+    # `exclude_none` alone cannot tell "omitted" from "sent": the three fields
+    # that are not Optional (`min_stock`, `lead_time_days`, `moq`) arrive
+    # already materialised to their model defaults, so a body naming only the
+    # stock count silently wrote 0 / 15 / 1 over them. Measured on the daily
+    # "update stock" screen, which posts exactly {current_stock,
+    # lead_time_days, supplier}: a supplier minimum of 100 became 1 and the
+    # recommendation went from 100 units to 81 — below a minimum the supplier
+    # will not ship. The stock count and the supplier's minimum have nothing to
+    # do with each other; counting stock must not rewrite the purchasing rules.
+    #
+    # This filter used to apply ONLY to existing rows, on the reasoning that "a
+    # new row has to start somewhere". It does — but the place it starts is the
+    # SCHEMA default (`lead_time_days INT NOT NULL DEFAULT 15`), which is
+    # already exactly what omitting the column produces. What the old branch
+    # actually added was the provenance stamp: upsert_stock stamps
+    # `<field>_set_by = 'user'` for every tracked field present in `data`, so a
+    # materialised default arrived labelled as a value a human had chosen.
+    #
+    # That lie has teeth. `stock_defaults_service.resolve_field` lets the SKU
+    # row win over a rule only when its `_set_by` says somebody set it — so a
+    # tenant who configures "Acme delivers in 45 days" as a supplier rule had it
+    # silently overridden, on every SKU created through this endpoint, by a 15
+    # nobody ever typed. It also defeated the whole point of the provenance
+    # columns: "the user chose 15" and "nobody ever touched this" became
+    # indistinguishable again, which is the exact bug they were migrated in to
+    # kill (see defaults.py, SOURCE_DEFAULT).
+    #
+    # Omitting them leaves `<field>_set_by` NULL, which is what "we assumed
+    # this" is spelled as, and the value on the row is unchanged either way.
+    data = {k: v for k, v in data.items() if k in body.model_fields_set}
+    # The ceiling and the write, inside one transaction holding one per-tenant
+    # lock. Split apart — the way this endpoint used to do it — twelve
+    # simultaneous requests against a ceiling of five left ten rows: every one
+    # of them counted before any of them had committed. See
+    # entitlements.service.limit_guard.
+    with limit_guard(user.tenant_id) as conn:
+        if not svc.get_stock(user.tenant_id, sku, warehouse=warehouse, conn=conn):
+            enforce_limit(user.tenant_id, "max_skus",
+                          svc.count_stock(user.tenant_id, conn=conn), conn=conn)
+        # A new warehouse name would otherwise be auto-created for free by
+        # svc.upsert_stock -> _ensure_warehouse, bypassing max_locations
+        # entirely. Enforced BEFORE the write so a blocked request never
+        # creates the row.
+        if not wh_svc.get_warehouse_by_name(user.tenant_id, warehouse):
+            enforce_limit(user.tenant_id, "max_locations",
+                          wh_svc.count_warehouses(user.tenant_id), conn=conn)
+        row = svc.upsert_stock(user.tenant_id, sku, data, conn=conn)
     return ok(row)
 
 
@@ -148,16 +194,61 @@ def patch_stock(
     body: StockPatch,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    existing = svc.get_stock(user.tenant_id, sku)
-    if not existing:
+    """Partial update of ONE existing stock row. It never creates one.
+
+    The row this patch lands on used to be decided by two halves that did not
+    talk to each other: the 404 check looked the SKU up with no warehouse
+    filter (so it found the row wherever it lived), and the write went through
+    `upsert_stock`, which defaults a missing warehouse to 'principal'. A SKU
+    that only existed in 'Norte' passed the check on the Norte row and got a
+    BRAND NEW row inserted in 'principal' — phantom units that inflate
+    coverage and talk a buyer out of a purchase they needed to make.
+
+    Now the target warehouse is resolved first and the existence check is made
+    against THAT row:
+
+      · `warehouse` sent      → that row, 404 if the SKU is not in it;
+      · SKU in exactly one    → that one, whatever it is called;
+      · SKU in several, one
+        of them 'principal'   → 'principal' (what this endpoint has always
+                                done, and it is a real row, not a new one);
+      · SKU in several, no
+        'principal'           → 422 naming them. This is precisely the case
+                                that used to fabricate the phantom row, and
+                                there is no safe guess to make for the caller.
+    """
+    warehouses = svc.list_stock_warehouses(user.tenant_id, sku)
+    if not warehouses:
         raise AppError(
             "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
             status_code=404, params={"sku": sku},
         )
+
+    if body.warehouse is not None:
+        target = wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse)
+        if target not in warehouses:
+            raise AppError(
+                "stock_sku_not_found_in_warehouse",
+                f"SKU '{sku}' has no stock in warehouse '{target}'",
+                status_code=404, params={"sku": sku, "warehouse": target},
+            )
+    elif len(warehouses) == 1:
+        target = warehouses[0]
+    elif wh_svc.DEFAULT_WAREHOUSE in warehouses:
+        target = wh_svc.DEFAULT_WAREHOUSE
+    else:
+        raise AppError(
+            "stock_warehouse_required",
+            f"SKU '{sku}' exists in more than one warehouse; name the one to update",
+            status_code=422,
+            params={"sku": sku, "warehouses": ", ".join(warehouses)},
+        )
+
     data = body.model_dump(exclude_none=True)
+    data.pop("warehouse", None)
     if not data:
-        return ok(existing)
-    row = svc.upsert_stock(user.tenant_id, sku, data)
+        return ok(svc.get_stock(user.tenant_id, sku, warehouse=target))
+    row = svc.upsert_stock(user.tenant_id, sku, {**data, "warehouse": target})
     return ok(row)
 
 
@@ -283,14 +374,24 @@ def _row_error(line_no: int, sku: str, code: str, params: dict, fallback: str) -
     return {"row": line_no, "sku": sku, "code": code, "params": params, "error": fallback}
 
 
-def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], list[dict], int]:
+def _parse_stock_rows(
+    raw_rows: list[dict], mapping: dict, thousands_dot: Optional[bool] = None,
+) -> tuple[list[dict], list[dict], int, list[str]]:
     """
-    (valid canonical rows, per-row errors, rows skipped for having no SKU).
+    (valid canonical rows, per-row errors, rows skipped for having no SKU,
+    cells whose dot nobody has disambiguated yet).
 
     Numbers are read with the LatAm-tolerant parser: '1.234,56' and '₡ 1 234'
     are values, 'N/D' is a reported error. The comma/dot verdict is taken once
     for the whole file so an ambiguous '1,250' inherits what its unambiguous
     neighbours already proved.
+
+    The fourth return value is the half the file cannot settle on its own: a
+    file of "1.250" and "980" with no comma anywhere means either 1250 or 1.25,
+    and the parser used to pick 1.25 in silence — every quantity divided by a
+    thousand, no row errors, and the whole catalogue in PEDIR_YA
+    (stability 11.2). `thousands_dot` is the user's answer once they have
+    been asked.
     """
     numeric_sources = [mapping[f] for f in stock_import.NUMERIC_FIELDS if f in mapping]
     samples = [
@@ -298,6 +399,8 @@ def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], 
         if r.get(col) not in (None, "")
     ]
     decimal_comma = stock_import.has_decimal_comma(samples)
+    ambiguous_cells = ([] if thousands_dot is not None
+                       else stock_import.dot_is_ambiguous(samples))
 
     rows: list[dict] = []
     errors: list[dict] = []
@@ -312,6 +415,17 @@ def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], 
             skipped_no_sku += 1
             continue
 
+        # A NUL anywhere in the row means the export is corrupt. This path
+        # keeps the byte (the stdlib csv reader does not truncate the way
+        # pandas does), so the row is rejected by name instead of being stored
+        # as a different product code than the file says.
+        if any("\x00" in str(v) for v in raw_row.values() if v is not None):
+            errors.append(_row_error(
+                line_no, sku.replace("\x00", ""), "inventory_import_row_has_nul",
+                {}, "the row contains a NUL byte and was not imported",
+            ))
+            continue
+
         parsed: dict = {"sku": sku}
         for fld in stock_import.TEXT_FIELDS:
             if fld in row:
@@ -324,7 +438,8 @@ def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], 
         for fld in stock_import.NUMERIC_FIELDS:
             if fld not in row:
                 continue
-            value = stock_import.parse_number(row[fld], decimal_comma=decimal_comma)
+            value = stock_import.parse_number(row[fld], decimal_comma=decimal_comma,
+                                              thousands_dot=thousands_dot)
             if value is None:
                 row_error = _row_error(
                     line_no, sku, "inventory_import_row_not_a_number",
@@ -357,7 +472,7 @@ def _parse_stock_rows(raw_rows: list[dict], mapping: dict) -> tuple[list[dict], 
             continue
         rows.append({"sku": sku, **validated.model_dump(exclude_none=True)})
 
-    return rows, errors, skipped_no_sku
+    return rows, errors, skipped_no_sku, ambiguous_cells
 
 
 @router.post("/bulk/preview")
@@ -375,7 +490,7 @@ async def bulk_import_preview(
     content = await file.read()
     fmt, columns, raw_rows, sep = _read_upload(file.filename, content)
     used, detected = _resolve_mapping(columns, mapping)
-    rows, errors, skipped_no_sku = _parse_stock_rows(raw_rows, used)
+    rows, errors, skipped_no_sku, ambiguous_cells = _parse_stock_rows(raw_rows, used)
 
     # Group the per-row errors so the UI shows "37 non-numeric cells", not 37
     # separate lines the user has to read one by one.
@@ -410,6 +525,20 @@ async def bulk_import_preview(
         "sample_rows": rows[:_PREVIEW_SAMPLE_ROWS],
         "issues": list(grouped.values()),
         "fields": list(stock_import.CANONICAL_FIELDS),
+        # The one thing the file cannot answer about itself. When `ambiguous`
+        # is true the wizard must ASK before importing: read as decimals (the
+        # old silent guess) every quantity is divided by a thousand, the import
+        # reports success, and the catalogue drops to PEDIR_YA.
+        "number_format": {
+            "ambiguous": bool(ambiguous_cells),
+            "samples": ambiguous_cells,
+            # What each reading would produce for the first sample, so the
+            # question can be asked in numbers instead of in vocabulary.
+            "as_decimal": (stock_import.parse_number(ambiguous_cells[0])
+                           if ambiguous_cells else None),
+            "as_thousands": (stock_import.parse_number(ambiguous_cells[0], thousands_dot=True)
+                             if ambiguous_cells else None),
+        },
     })
 
 
@@ -417,6 +546,9 @@ async def bulk_import_preview(
 async def bulk_import(
     file: UploadFile = File(...),
     mapping: Optional[str] = Form(default=None),
+    warehouse: Optional[str] = Form(default=None),
+    thousands_dot: Optional[bool] = Form(default=None),
+    only_fill_missing: bool = Form(default=False),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
@@ -426,6 +558,12 @@ async def bulk_import(
     ('Código', 'Existencia', 'Costo Unitario', separated by ';') imports with
     no hand-editing. `mapping` — a JSON object of {canonical_field:
     source_column} sent by the wizard — overrides the detection per field.
+
+    `warehouse` is the destination for rows that do not name one. Without it the
+    only way to stock a second location was a `warehouse` COLUMN — supported
+    here since 5.4, but never mentioned in the UI, so creating a warehouse led
+    to "Sin datos en esta bodega" and no way forward. A row that DOES name a
+    warehouse keeps its own: a multi-warehouse sheet still imports as written.
 
     Canonical fields: sku, warehouse, display_name, category, brand,
     unit_of_measure, barcode, current_stock, min_stock, lead_time_days,
@@ -440,10 +578,41 @@ async def bulk_import(
     def _parse():
         fmt_, columns_, raw_rows_, _sep_ = _read_upload(file.filename, content)
         used_, detected_ = _resolve_mapping(columns_, mapping)
-        rows_, errors_, skipped_ = _parse_stock_rows(raw_rows_, used_)
-        return fmt_, columns_, used_, detected_, rows_, errors_, skipped_
+        rows_, errors_, skipped_, ambiguous_ = _parse_stock_rows(
+            raw_rows_, used_, thousands_dot=thousands_dot)
+        return fmt_, columns_, used_, detected_, rows_, errors_, skipped_, ambiguous_
 
-    fmt, columns, used, detected, rows, errors, skipped_no_sku = await asyncio.to_thread(_parse)
+    (fmt, columns, used, detected, rows, errors,
+     skipped_no_sku, ambiguous_cells) = await asyncio.to_thread(_parse)
+
+    # The file says "1.250" and nothing in it says whether that is 1250 or
+    # 1.25. Refusing is the point: the old behaviour picked 1.25, reported
+    # "1,200 products imported" and put the whole catalogue in PEDIR_YA
+    # (stability 11.2). The preview asks the question; an import that arrives
+    # without the answer is one that skipped it.
+    if ambiguous_cells:
+        raise AppError(
+            "inventory_import_number_format_unclear",
+            "The file uses a dot in numbers like "
+            f"{ambiguous_cells[0]} and nothing in it says whether that is a "
+            "thousands separator or a decimal point. Answer that first.",
+            status_code=422,
+            params={
+                "samples": ", ".join(ambiguous_cells),
+                "as_decimal": stock_import.parse_number(ambiguous_cells[0]),
+                "as_thousands": stock_import.parse_number(ambiguous_cells[0],
+                                                          thousands_dot=True),
+            },
+        )
+
+    # Destination for rows that name no warehouse. Applied before the limit
+    # pre-checks below, which count new (sku, warehouse) keys and new location
+    # names — they must judge the rows that will actually be written.
+    default_wh = (warehouse or "").strip()
+    if default_wh:
+        for row in rows:
+            if not (row.get("warehouse") or "").strip():
+                row["warehouse"] = default_wh
 
     if not rows:
         # The whole file was rejected — a user event, not API misuse, so it
@@ -471,7 +640,17 @@ async def bulk_import(
     # This is what the stress test caught. bulk_upsert was already offloaded,
     # but /health still stalled 5.4s against a 0.02s baseline during a 3k-row
     # import, because the loop was waiting on these.
-    from backend.entitlements.service import enforce_limit
+    from backend.entitlements.service import enforce_limit, limit_guard
+
+    # Rows READ from the file. `rows` is collapsed in place below, so the
+    # count the user is shown has to be taken before that.
+    total_read = len(rows)
+    stats = {"duplicates": 0}
+    # Rows the writer could not persist. Filled inside the worker thread below
+    # and merged into the same `errors` channel the parse stage already uses:
+    # to the person holding the file, "row 41 never saved" and "row 41 was
+    # unreadable" are the same question.
+    write_failures: list[dict] = []
 
     def _check_and_write() -> int:
         # Resolve every distinct warehouse spelling in the CSV to its canonical
@@ -485,10 +664,40 @@ async def bulk_import(
         for r in rows:
             r["warehouse"] = resolved_wh[r.get("warehouse")]
 
+        # Collapse duplicate (sku, warehouse) rows, and COUNT them.
+        #
+        # `new_keys` below was already de-duplicated for the ceiling check, but
+        # the write loop was not: bulk_upsert does one upsert per row against
+        # the (tenant, sku, warehouse) conflict target, so N rows for the same
+        # pair meant the last one silently won — and `imported` counted the
+        # CALLS, so the user was told "350 de 350" while 120 rows existed.
+        #
+        # Collapsed field-wise rather than last-row-wins wholesale: two rows
+        # for one SKU often carry different columns (one the cost, one the
+        # count), and dropping the earlier row's fields would lose data the
+        # file did contain. Later values still win per field, which is the only
+        # defensible reading of "the file says it twice".
+        deduped: dict[tuple, dict] = {}
+        for r in rows:
+            key = (r["sku"], r["warehouse"])
+            if key in deduped:
+                stats["duplicates"] += 1
+                deduped[key].update(r)
+            else:
+                deduped[key] = r
+        rows[:] = list(deduped.values())
+
+        # One lock for the whole import. Without it, two CSVs uploaded at the
+        # same moment each counted the catalogue before either had written, and
+        # a tenant capped at 100 SKUs ended up with 200.
+        with limit_guard(user.tenant_id) as conn:
+            return _check_and_write_locked(conn)
+
+    def _check_and_write_locked(conn) -> int:
         existing_keys = svc.list_stock_keys(user.tenant_id)
         new_keys = {(r["sku"], r["warehouse"]) for r in rows} - existing_keys
-        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id),
-                      adding=len(new_keys))
+        enforce_limit(user.tenant_id, "max_skus", svc.count_stock(user.tenant_id, conn=conn),
+                      adding=len(new_keys), conn=conn)
 
         # Same bypass risk as PUT /stock: a CSV with N distinct new warehouse
         # names would otherwise create all N for free via
@@ -499,15 +708,28 @@ async def bulk_import(
         existing_wh_names = wh_svc.list_warehouse_names(user.tenant_id)
         new_wh_names = {r["warehouse"] for r in rows} - existing_wh_names
         enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id),
-                      adding=len(new_wh_names))
+                      adding=len(new_wh_names), conn=conn)
 
-        # bulk_upsert does one synchronous DB round-trip per row.
-        return svc.bulk_upsert(user.tenant_id, rows)
+        # `only_fill_missing` is the buyer's answer to "does this re-import
+        # overwrite what I corrected by hand?" — off by default, which is the
+        # behaviour every existing caller had, and on when the wizard's toggle
+        # says so. Without it a monthly ERP re-export silently reverted every
+        # manual lead time, and re-stamped the provenance to 'file' so the UI
+        # could not even badge the value as the tenant's own (stability 11.9).
+        # bulk_upsert does one synchronous DB round-trip per row. `failures`
+        # collects the rows that were read from the file and did not reach the
+        # database, so the response can name them instead of leaving "83 of 120"
+        # as the only signal (stability 11.34).
+        return svc.bulk_upsert(user.tenant_id, rows, failures=write_failures,
+                               only_fill_missing=only_fill_missing)
 
     count = await asyncio.to_thread(_check_and_write)
     result = {
         "imported": count,
-        "total_rows": len(rows),
+        "total_rows": total_read,
+        # Echoed so the screen can say which reading it used rather than
+        # leaving the buyer to infer it from the numbers.
+        "only_fill_missing": only_fill_missing,
         "format": fmt,
         # What we read the file as, so the UI can say "we took Existencia as
         # your stock" instead of leaving the user guessing.
@@ -516,11 +738,54 @@ async def bulk_import(
         "unmapped_columns": [c for c in columns if c not in used.values()],
         "skipped_no_sku": skipped_no_sku,
     }
+    # Rows the file repeated. Reported rather than absorbed: "350 read, 120
+    # written" is a fact the user can act on (their export is per-branch and
+    # the branch column is not mapped), and the old silence made it look like
+    # every row had landed.
+    if stats["duplicates"]:
+        result["duplicate_rows"] = stats["duplicates"]
     # Surface rejected rows so the user learns their data was garbage instead
-    # of it being silently dropped/coerced.
-    if errors:
-        result["errors"] = errors
-        result["error_count"] = len(errors)
+    # of it being silently dropped/coerced — and, since 11.34, the rows that
+    # parsed cleanly and still did not land.
+    reported_errors = errors + write_failures
+    if reported_errors:
+        result["errors"] = reported_errors[:_MAX_REPORTED_ROW_ERRORS]
+        result["error_count"] = len(reported_errors)
+    if write_failures:
+        result["write_failed_rows"] = len(write_failures)
+
+    # What the file had and what the database got, in the history — because
+    # "83 products imported" after a 120-row preview was the only signal, and
+    # whoever reads it a day later has no file in front of them.
+    written_short = count < (total_read - stats["duplicates"])
+    details = {
+        "rows_read":      total_read + len(errors),
+        "rows_written":   count,
+        "duplicate_rows": stats["duplicates"],
+        "rejected_rows":  len(errors) + len(write_failures),
+    }
+    # Offloaded like every other DB call on this endpoint: it is one INSERT,
+    # but this handler is async and the module's rule is that blocking work
+    # does not run on the event loop.
+    if errors or stats["duplicates"] or written_short:
+        await asyncio.to_thread(
+            record_event,
+            user.tenant_id, user.user_id, "data.stock_import_partial",
+            resource=file.filename, details=details,
+            # One reason, the one the user can act on first: a rejected row is
+            # a file to fix, a collapsed duplicate is a column they did not
+            # map. A short write with neither is the case nobody has explained
+            # yet (see stability 11.34), and saying so is better than
+            # inventing a cause.
+            reason=("rows_rejected_by_validation" if errors or write_failures
+                    else "duplicate_rows_collapsed" if stats["duplicates"]
+                    else "unknown"),
+        )
+    else:
+        await asyncio.to_thread(
+            record_event, user.tenant_id, user.user_id, "data.stock_imported",
+            resource=file.filename, details=details,
+        )
     return ok(result)
 
 
@@ -535,6 +800,15 @@ _TEMPLATE_EXAMPLE = [
 ]
 
 
+# Excel on a Spanish-locale Windows opens a .csv with the system ANSI codepage
+# unless the file starts with a UTF-8 BOM, so `Señal` arrives as `SeÃ±al` and a
+# supplier called `Distribuidora Peña` is mangled in the document the buyer
+# forwards to that supplier. The frontend's own template writer
+# (Frontend/src/lib/csvCheck.ts) already prefixes it — the product knew, and
+# applied it in one writer out of several.
+_CSV_BOM = "﻿"
+
+
 @router.get("/template.csv")
 def download_template(user: CurrentUser = Depends(get_current_user)):
     """Canonical inventory import template: header row + one example row."""
@@ -543,7 +817,7 @@ def download_template(user: CurrentUser = Depends(get_current_user)):
     w.writerow(_TEMPLATE_COLUMNS)
     w.writerow(_TEMPLATE_EXAMPLE)
     return Response(
-        content=buf.getvalue(),
+        content=_CSV_BOM + buf.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="inventory_template.csv"'},
     )
@@ -592,36 +866,6 @@ def setup_gaps(
 
 # ── Status endpoint — the core of the product ─────────────────────────────────
 
-def _strip_abc_xyz_unless_entitled(
-    items: list[dict], tenant_id: str, extra_keys: tuple[str, ...] = (),
-) -> list[dict]:
-    """
-    ABC-XYZ classification is a Professional+ feature (Feature.ABC_XYZ), but
-    it rides along as extra keys on otherwise-core inventory items rather than
-    living behind its own endpoint. Starter tenants must still get the core
-    signal/coverage/recommendation data — so we omit the classification keys
-    (graceful degradation) instead of 403-ing the whole read. No-op in
-    testing_mode, matching every other entitlement check.
-
-    ``extra_keys`` lets a call site drop additional fields that are DERIVED
-    from the classification (e.g. dead-stock's ``action_suggested``, which is
-    picked from ``item['abc']``) — otherwise a non-entitled tenant could
-    reverse-engineer the stripped classification from those derived fields.
-    """
-    if settings.testing_mode:
-        return items
-    tenant = get_tenant(tenant_id) or {}
-    if has_feature(tenant, Feature.ABC_XYZ):
-        return items
-    for item in items:
-        item.pop("abc", None)
-        item.pop("xyz", None)
-        item.pop("abc_xyz", None)
-        for key in extra_keys:
-            item.pop(key, None)
-    return items
-
-
 _COVERAGE_UNIT = {"daily": "day", "weekly": "week", "monthly": "month"}
 
 
@@ -655,13 +899,11 @@ def inventory_status(
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
 
     # Both views share the source-then-filter shape; only the response
-    # envelope differs. abc/xyz stripping applies to the aggregated view only
-    # — per-warehouse rows never carry classification fields.
+    # envelope differs.
     if by_warehouse:
         items = svc.get_inventory_status_by_warehouse(user.tenant_id, session_id, service_level, period)
     else:
         items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
-        items = _strip_abc_xyz_unless_entitled(items, user.tenant_id)
 
     if signal:
         signal_up = signal.upper()
@@ -749,6 +991,19 @@ def create_shrinkage(
         user_id=user.user_id, warehouse=body.warehouse, notes=body.notes,
         occurred_at=occurred_at,
     )
+    # Units left the building without a sale. The warehouse recorded is the one
+    # the service RESOLVED, not the one the form sent: those differ (§11.8) and
+    # the history has to say where the stock actually came off.
+    record_event(
+        user.tenant_id, user.user_id, "data.shrinkage_recorded",
+        resource=body.sku,
+        details={
+            "sku":              body.sku,
+            "quantity":         body.quantity,
+            "warehouse":        row.get("warehouse"),
+            "shrinkage_reason": body.reason,
+        },
+    )
     return ok(row)
 
 
@@ -776,17 +1031,26 @@ def list_shrinkage_reasons(user: CurrentUser = Depends(get_current_user)):
 def get_stock_history(
     sku: str,
     days: int = Query(default=30, ge=1, le=365),
+    warehouse: Optional[str] = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Returns point-in-time stock snapshots for trend visualization."""
+    """Point-in-time stock levels for trend visualisation.
+
+    Without `warehouse` the series is the TENANT-WIDE level — per-location rows
+    summed per day, not listed one after another. With it, that one location's
+    own history, which begins when snapshots started carrying a warehouse
+    (2026-09-16): rows older than that are tenant-wide totals and are not
+    attributed to a location after the fact.
+    """
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
         raise AppError(
             "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
             status_code=404, params={"sku": sku},
         )
-    history = svc.get_stock_history(user.tenant_id, sku, days=days)
-    return ok({"sku": sku, "days": days, "history": history})
+    canonical = wh_svc.resolve_canonical_name(user.tenant_id, warehouse) if warehouse else None
+    history = svc.get_stock_history(user.tenant_id, sku, days=days, warehouse=canonical)
+    return ok({"sku": sku, "days": days, "warehouse": canonical, "history": history})
 
 
 # ── Dashboard summary (lightweight — only summary block) ──────────────────────
@@ -800,7 +1064,8 @@ def dashboard_summary(
     Lightweight endpoint for the dashboard widget.
     Returns only the summary counts without the full item list.
     """
-    items = svc.get_inventory_status(user.tenant_id, session_id)
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
     total_value = sum(i["inventory_value"] for i in items if i.get("inventory_value"))
     return ok({
         "session_id":   session_id,
@@ -821,10 +1086,19 @@ def dashboard_summary(
 # ── Events (temporadas / promociones) ────────────────────────────────────────
 
 def _parse_event_date(value: str, field: str) -> date:
+    # A bare `ValueError` inside a validator reaches the browser as pydantic's
+    # generic `value_error` on loc ["body"], which the frontend could only
+    # render as "body: no es válido." — measured on screen when saving an event
+    # whose end date preceded its start. A stable type plus params lets the
+    # catalogue say which date and why.
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD)")
+        raise PydanticCustomError(
+            "event_date_invalid",
+            "'{field}' must be a date written as YYYY-MM-DD.",
+            {"field": field, "value": str(value)[:32]},
+        )
 
 
 class EventCreate(BaseModel):
@@ -839,7 +1113,11 @@ class EventCreate(BaseModel):
         start = _parse_event_date(self.start_date, "start_date")
         end = _parse_event_date(self.end_date, "end_date")
         if end < start:
-            raise ValueError("end_date must not be before start_date")
+            raise PydanticCustomError(
+                "event_end_before_start",
+                "The event ends before it starts.",
+                {"start": self.start_date, "end": self.end_date},
+            )
         return self
 
 
@@ -859,7 +1137,11 @@ class EventPatch(BaseModel):
             _parse_event_date(self.end_date, "end_date")
         if self.start_date is not None and self.end_date is not None:
             if date.fromisoformat(self.end_date) < date.fromisoformat(self.start_date):
-                raise ValueError("end_date must not be before start_date")
+                raise PydanticCustomError(
+                    "event_end_before_start",
+                    "The event ends before it starts.",
+                    {"start": self.start_date, "end": self.end_date},
+                )
         return self
 
 
@@ -874,7 +1156,7 @@ class SimulateEventRequest(BaseModel):
     name:       Optional[str]   = None
 
 
-@router.post("/events/simulate", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.post("/events/simulate")
 def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_current_user)):
     """
     What-if simulator — project a promo/season's impact per SKU: extra demand,
@@ -899,6 +1181,7 @@ def simulate_event(body: SimulateEventRequest, user: CurrentUser = Depends(get_c
         result = svc.simulate_event_impact(
             user.tenant_id, body.session_id, start, end, mult,
             event_name=name, event_id=body.event_id,
+            period=planning_service.get_planning(user.tenant_id).get("period", "daily"),
         )
     except AppError:
         # Already carries its own code/params — wrapping it would strip them.
@@ -917,7 +1200,7 @@ class EventMultiplierUpsert(BaseModel):
     multiplier:  float = Field(ge=0.1, le=10.0)
 
 
-@router.get("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.get("/events/{event_id}/multipliers")
 def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_current_user)):
     """Per-SKU, per-family or per-category multiplier overrides for this event."""
     if not svc.get_event(user.tenant_id, event_id):
@@ -925,7 +1208,7 @@ def list_event_multipliers(event_id: str, user: CurrentUser = Depends(get_curren
     return ok(svc.get_event_multipliers(user.tenant_id, event_id))
 
 
-@router.put("/events/{event_id}/multipliers", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.put("/events/{event_id}/multipliers")
 def upsert_event_multiplier(
     event_id: str,
     body: EventMultiplierUpsert,
@@ -951,7 +1234,6 @@ def upsert_event_multiplier(
 
 @router.delete(
     "/events/{event_id}/multipliers/{override_id}", status_code=204,
-    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
 )
 def remove_event_multiplier(
     event_id: str,
@@ -965,12 +1247,12 @@ def remove_event_multiplier(
         )
 
 
-@router.get("/events", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.get("/events")
 def list_events(user: CurrentUser = Depends(get_current_user)):
     return ok(svc.list_events(user.tenant_id))
 
 
-@router.get("/events/upcoming", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.get("/events/upcoming")
 def upcoming_events(
     days: int = Query(default=60, ge=1, le=365),
     user: CurrentUser = Depends(get_current_user),
@@ -980,14 +1262,13 @@ def upcoming_events(
 
 @router.post(
     "/events", status_code=201,
-    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
 )
 def create_event(body: EventCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     ev = svc.create_event(user.tenant_id, body.model_dump())
     return ok(ev)
 
 
-@router.patch("/events/{event_id}", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.patch("/events/{event_id}")
 def patch_event(
     event_id: str,
     body: EventPatch,
@@ -1015,7 +1296,6 @@ def patch_event(
 
 @router.delete(
     "/events/{event_id}", status_code=204,
-    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
 )
 def delete_event(event_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     svc.delete_event(user.tenant_id, event_id)
@@ -1032,13 +1312,13 @@ class CatalogToggleRequest(BaseModel):
     active: bool
 
 
-@router.get("/events/catalog", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.get("/events/catalog")
 def get_event_catalog(
     country: str = Query(default="CR", max_length=4),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Which commercial events Faro knows for a country, and whether this tenant
+    Which commercial events StockAI knows for a country, and whether this tenant
     has them seeded / switched on. Read-only.
     """
     from backend.inventory import calendar_catalog as cat
@@ -1070,7 +1350,7 @@ def get_event_catalog(
     })
 
 
-@router.post("/events/catalog/seed", dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))])
+@router.post("/events/catalog/seed")
 def seed_event_catalog(
     body: CalendarSeedRequest,
     user: CurrentUser = Depends(require_analyst_or_above),
@@ -1088,7 +1368,6 @@ def seed_event_catalog(
 
 @router.patch(
     "/events/catalog/{catalog_key}",
-    dependencies=[Depends(require_feature(Feature.EVENT_SIMULATOR))],
 )
 def toggle_catalog_entry(
     catalog_key: str,
@@ -1116,8 +1395,9 @@ def download_pdf_report(
     user: CurrentUser = Depends(get_current_user),
 ):
     """Generates and streams a one-page executive PDF inventory summary."""
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
     try:
-        pdf_bytes = svc.generate_inventory_pdf(user.tenant_id, session_id, service_level)
+        pdf_bytes = svc.generate_inventory_pdf(user.tenant_id, session_id, service_level, period)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
 
@@ -1154,10 +1434,32 @@ class POLogRequest(BaseModel):
     destination_warehouse: Optional[str] = None
 
 
+_IDEMPOTENCY_KEY_DOC = (
+    "Optional. One unique value (a UUID) per order you mean to place. Repeating "
+    "the request with the same key returns the order the first request created "
+    "(200, replayed=true) instead of creating a second one; the same key with "
+    "different lines is refused with 409 po_idempotency_key_reused."
+)
+
+
+def _po_response(record: dict, response: Response) -> dict:
+    """A created order answers 201; a replay of an idempotency key answers 200
+    with `replayed: true` and the FIRST order's body, so a client that retried
+    a request it never saw answered gets the order it already placed."""
+    out = {k: v for k, v in record.items() if k != "idempotency_fingerprint"}
+    out["replayed"] = bool(record.get("replayed"))
+    if out["replayed"]:
+        response.status_code = 200
+    return out
+
+
 @router.post("/log-po", status_code=201)
 def log_po(
+    response: Response,
     session_id: str = Query(...),
     body: Optional[POLogRequest] = None,
+    idempotency_key: Optional[str] = Header(
+        default=None, alias="Idempotency-Key", description=_IDEMPOTENCY_KEY_DOC),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
@@ -1170,13 +1472,46 @@ def log_po(
     Fallback (no body): the server re-derives the actionable PEDIR_YA /
     PEDIR_PRONTO items — used by the legacy server-side CSV export, which has no
     per-line decisions to send.
-    """
-    from backend.inventory.roi_service import log_po_generation
 
-    if body and body.items:
+    `Idempotency-Key` (header, optional): one value per cart submission. A
+    second request with the same key — a double tap, a client retry after a
+    dropped connection, two tabs racing — returns the order the first one
+    created instead of writing an identical second order (which then counted
+    as stock on its way twice). A key reused for a DIFFERENT order is a 409.
+    """
+    from backend.inventory.roi_service import (
+        find_by_idempotency_key, log_po_generation, validate_idempotency_key,
+    )
+
+    idempotency_key = validate_idempotency_key(idempotency_key)
+    decisions_recorded = bool(body and body.items)
+    if idempotency_key and not decisions_recorded:
+        # The no-body path re-derives the lines from the CURRENT semaforo,
+        # which the first order has already changed (its units now count as
+        # on their way). Re-deriving would produce a different list and a
+        # false "key reused" conflict, so a replay is resolved before that.
+        existing = find_by_idempotency_key(user.tenant_id, idempotency_key)
+        if existing:
+            return ok(_po_response({**existing, "replayed": True}, response))
+
+    if decisions_recorded:
         po_items = [i.model_dump() for i in body.items]
     else:
-        items = svc.get_inventory_status(user.tenant_id, session_id)
+        period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+        # Re-derived at the SAME level the file was built for. Without this the
+        # export endpoint served Norte's rows while the order logged right
+        # behind it was the tenant-wide list: the buyer downloaded a file with
+        # nothing to order and /pedidos showed them an order for two SKUs they
+        # never saw (stability 11.7, found walking the screen — the export
+        # itself was already scoped).
+        destination = body.destination_warehouse if body else None
+        if destination:
+            canonical = wh_svc.resolve_canonical_name(user.tenant_id, destination)
+            rows = svc.get_inventory_status_by_warehouse(
+                user.tenant_id, session_id, period=period)
+            items = [i for i in rows if i.get("warehouse") == canonical]
+        else:
+            items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
         po_items = [
             i for i in items
             if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("recommended_qty") or 0) > 0
@@ -1185,8 +1520,34 @@ def log_po(
     record = log_po_generation(
         user.tenant_id, session_id, po_items,
         destination_warehouse=body.destination_warehouse if body else None,
+        # The order is recorded either way; only the ADOPTION reading is
+        # withheld. Nobody told us what the buyer decided here — the server
+        # re-derived the list — so counting all of it as "followed" was the
+        # product marking its own homework. See log_po_generation.
+        decisions_recorded=decisions_recorded,
+        idempotency_key=idempotency_key,
     )
-    return ok(record)
+    if record.get("replayed"):
+        # Nothing was written, so nothing is recorded: the activity log must
+        # not show the same order generated twice.
+        return ok(_po_response(record, response))
+    # The order exists from here on: the buyer will act on the file they just
+    # downloaded, and /pedidos will show it. Recorded so the history answers
+    # "who ordered what, and when" without anybody having to remember.
+    from backend.inventory.roi_service import format_po_number
+    record_event(
+        user.tenant_id, user.user_id, "purchase.order_generated",
+        resource=str(record.get("id") or ""),
+        details={
+            "reference": format_po_number(record.get("po_number"),
+                                          str(record.get("id") or "")),
+            "lines":     record.get("sku_count"),
+            "value":     record.get("total_value"),
+            "suppliers": len({(i.get("supplier") or "").strip()
+                              for i in po_items if (i.get("supplier") or "").strip()}),
+        },
+    )
+    return ok(_po_response(record, response))
 
 
 class ManualPOLine(BaseModel):
@@ -1205,14 +1566,22 @@ class ManualPORequest(BaseModel):
 @router.post("/po", status_code=201)
 def create_manual_po(
     body: ManualPORequest,
+    response: Response,
+    idempotency_key: Optional[str] = Header(
+        default=None, alias="Idempotency-Key", description=_IDEMPOTENCY_KEY_DOC),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """
     A purchase order the buyer writes from scratch — supplier chosen
     explicitly, lines typed in, no forecast session behind it. Persisted with
-    source='manual' so adoption metrics stay clean.
+    source='manual' so adoption metrics stay clean. `Idempotency-Key`: same
+    contract as /log-po.
     """
-    from backend.inventory.roi_service import create_manual_po as create_po_svc
+    from backend.inventory.roi_service import (
+        create_manual_po as create_po_svc, validate_idempotency_key,
+    )
+
+    idempotency_key = validate_idempotency_key(idempotency_key)
 
     supplier = sup_svc.get_supplier(user.tenant_id, body.supplier_id)
     if not supplier:
@@ -1222,8 +1591,9 @@ def create_manual_po(
         user.tenant_id, supplier,
         [l.model_dump() for l in body.lines],
         destination_warehouse=body.destination_warehouse,
+        idempotency_key=idempotency_key,
     )
-    return ok(record)
+    return ok(_po_response(record, response))
 
 
 @router.get("/roi")
@@ -1307,7 +1677,7 @@ def receive_po(
 ):
     """
     Record that a PO arrived (fully, partially, or not at all).
-    Side effects: current_stock increases by the received units, and Faro logs
+    Side effects: current_stock increases by the received units, and StockAI logs
     the supplier's REAL lead time (order date → reception date).
     """
     from datetime import datetime as _dt
@@ -1331,6 +1701,23 @@ def receive_po(
     result = rec_svc.receive_po(
         user.tenant_id, po_log_id, user.user_id,
         lines=lines, received_at=received_at,
+    )
+    # Stock moved and a lead time was learned. Both change what the semáforo
+    # says tomorrow, and until now the only record was the PO's own row on a
+    # screen the buyer has to go looking for.
+    from backend.inventory.roi_service import format_po_number
+    po_row = rec_svc.get_po(user.tenant_id, po_log_id) or {}
+    received_items = [i for i in result.get("items", [])
+                      if float(i.get("received_qty") or 0) > 0]
+    record_event(
+        user.tenant_id, user.user_id, "purchase.reception_recorded",
+        resource=po_log_id,
+        details={
+            "reference": format_po_number(po_row.get("po_number"), po_log_id),
+            "sku_count": len(received_items),
+            "units":     sum(float(i.get("received_qty") or 0) for i in received_items),
+            "warehouse": po_row.get("destination_warehouse"),
+        },
     )
     return ok(result)
 
@@ -1434,6 +1821,11 @@ def send_po_to_suppliers(
     po = rec_svc.get_po(user.tenant_id, po_log_id)
     if not po:
         raise AppError("po_not_found", "Purchase order not found", status_code=404)
+    # A cancelled order must not reach a supplier: they would ship it.
+    if po.get("cancelled_at") is not None:
+        raise AppError("po_cancelled",
+                       "This order was cancelled; reopen it before sending it",
+                       status_code=409)
 
     items = rec_svc.get_po_items(user.tenant_id, po_log_id)
     ordered = [i for i in items if i["status"] in ("approved", "modified")]
@@ -1487,13 +1879,16 @@ def send_po_to_suppliers(
                 to=supplier["email"], supplier_name=supplier_name, po_log_id=po_log_id,
                 items=supplier_items, pdf_bytes=pdf_bytes, pdf_filename=pdf_path.name,
                 po_ref=format_po_number(po.get("po_number"), po_log_id),
+                tenant_id=user.tenant_id,
             )
 
         whatsapp_ok = False
         if supplier.get("whatsapp"):
             media_url = f"{settings.frontend_url}/api/v1/inventory/po/{po_log_id}/pdf/{slug}"
             text = wa_mod.build_po_supplier_text(supplier_name, po_log_id, supplier_items)
-            whatsapp_ok = wa_mod.send_whatsapp(supplier["whatsapp"], text, media_url=media_url)
+            whatsapp_ok = wa_mod.send_whatsapp(supplier["whatsapp"], text,
+                                               media_url=media_url,
+                                               tenant_id=user.tenant_id)
 
         if email_ok or whatsapp_ok:
             sent.append({"supplier": supplier_name, "email": email_ok, "whatsapp": whatsapp_ok})
@@ -1524,6 +1919,36 @@ def send_po_to_suppliers(
         },
     )
 
+    # Same fact, in the history the whole tenant reads. `record_notification_
+    # delivery` above is the delivery ledger the bell groups by fan-out; this is
+    # the one-line answer to "did the order leave?", carrying WHY when it did
+    # not. A buyer who closed the tab has no other way to find out.
+    reference = format_po_number(po.get("po_number"), po_log_id)
+    unreached = len(skipped) + len(unresolved)
+    if sent:
+        record_event(
+            user.tenant_id, user.user_id, "purchase.order_sent",
+            resource=po_log_id,
+            details={"reference": reference, "sent": len(sent), "skipped": unreached},
+        )
+    elif ordered:
+        # Nobody has the order. (An order with no orderable lines is not a
+        # failure to deliver, so it records nothing.) The reason the buyer can
+        # act on is the one that stopped the FIRST supplier — a missing contact is fixed on the
+        # supplier's card, a dead transport by whoever owns the credential.
+        no_contact = any(s.get("reason") == "no_contact_details" for s in skipped)
+        if no_contact or unresolved:
+            reason = "supplier_has_no_contact"
+        else:
+            reason = ("no_transport_configured"
+                      if email_mod.failure_reason(user.tenant_id) == "not_configured"
+                      else "transport_error")
+        record_event(
+            user.tenant_id, user.user_id, "purchase.order_not_sent",
+            resource=po_log_id, reason=reason,
+            details={"reference": reference, "skipped": unreached},
+        )
+
     return ok({"sent": sent, "skipped": skipped, "unresolved": unresolved})
 
 
@@ -1534,7 +1959,7 @@ def send_po_to_self(
 ):
     """
     Deliver the order to the BUYER's own WhatsApp so they forward it to their
-    supplier (PENDIENTES #1) — no Faro↔supplier integration required.
+    supplier (PENDIENTES #1) — no StockAI↔supplier integration required.
 
     Always returns the rendered text plus a wa.me deep link, so the flow works
     end to end even with no Twilio configured and no number on file: the UI can
@@ -1588,6 +2013,11 @@ class PriceBreakUpsert(BaseModel):
 class PriceBreakCartLine(BaseModel):
     sku:      str
     quantity: float = Field(ge=0)
+    # The supplier the buyer has on this line right now. Optional, because the
+    # briefing surface evaluates without a cart — but when the screen has one it
+    # must travel, or a line whose supplier was switched keeps being quoted the
+    # previous supplier's ladder (stability 11.14).
+    supplier_id: Optional[str] = None
 
 
 class PriceBreakEvaluateRequest(BaseModel):
@@ -1648,10 +2078,12 @@ def evaluate_price_breaks(
     Falls back to the session's own recommended quantities when no cart is sent,
     which is what the daily briefing surface needs.
     """
-    status_items = svc.get_inventory_status(user.tenant_id, session_id)
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    status_items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
 
     if body and body.items:
-        cart = [{"sku": i.sku, "quantity": i.quantity} for i in body.items]
+        cart = [{"sku": i.sku, "quantity": i.quantity, "supplier_id": i.supplier_id}
+                for i in body.items]
     else:
         cart = [
             {"sku": i["sku"], "quantity": i.get("recommended_qty") or 0}
@@ -1664,7 +2096,7 @@ def evaluate_price_breaks(
     holding_cost_pct = float(business_cfg.get("holding_cost_pct", pb_svc.DEFAULT_HOLDING_COST_PCT))
 
     opportunities = pb_svc.evaluate_cart(
-        user.tenant_id, cart, status_items, holding_cost_pct,
+        user.tenant_id, cart, status_items, holding_cost_pct, period=period,
     )
     return ok({
         "opportunities": opportunities,
@@ -1719,6 +2151,8 @@ def cash_calendar_fit(
     business can pay for it in the window it lands in.
     """
     budget = body.budget if body else None
+    # None on the cart path: nothing was solved, so there is no plan to qualify.
+    plan_status: Optional[str] = None
 
     if body and body.items:
         lines = [
@@ -1731,15 +2165,43 @@ def cash_calendar_fit(
             for i in body.items
         ]
     elif session_id:
-        from forecasting_core.business.optimizer import optimize
-
-        inp = opt_svc.build_optimization_input(user.tenant_id, session_id, 30)
+        # The caller's own horizon and the tenant's planning period — not a
+        # hardcoded 30 days at the default daily grain. This path answers "does
+        # the recommended purchase fit in the cash I have?", so it has to price
+        # the SAME plan /compras is showing; solving a different horizon at a
+        # different grain answered a question nobody asked, and the answer was
+        # then labelled with this endpoint's horizon_days.
+        fit_period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+        fit_stock_rows = svc.list_stock(user.tenant_id)
+        # Same resolution as /inventory/optimize, for the same reason: this
+        # endpoint prices the plan /compras is showing, so it has to be built
+        # on the lead times and MOQs that plan is built on.
+        fit_planning = opt_svc.resolve_planning_inputs(user.tenant_id, fit_stock_rows)
+        inp = opt_svc.build_optimization_input(
+            user.tenant_id, session_id, horizon_days, stock_rows=fit_stock_rows,
+            period=fit_period, planning=fit_planning)
         if inp is None:
             lines = []
         else:
-            result = optimize(inp)
-            stock_rows = svc.list_stock(user.tenant_id)
-            serialized = opt_svc.serialize_optimization_result(inp, result, stock_rows)
+            # The SAME gate `/inventory/optimize` uses. This solve was outside
+            # it, which made the gate's cap a fiction: two purchasing panels
+            # take both slots, this endpoint adds a third solve, and measured
+            # locally three concurrent HiGHS solves stop making progress
+            # altogether — the process wedges rather than erroring, so the whole
+            # backend goes unresponsive instead of returning a 503. Two buyers
+            # refreshing while a third opens the cash calendar is enough.
+            try:
+                with opt_svc.solve_slot():
+                    result = opt_svc.solve(inp)
+            except opt_svc.OptimizerBusy:
+                raise AppError(
+                    "optimizer_busy",
+                    "Optimizer busy (too many concurrent requests); please retry.",
+                    status_code=503,
+                )
+            serialized = opt_svc.serialize_optimization_result(
+                inp, result, fit_stock_rows, horizon_days=horizon_days,
+                planning=fit_planning)
             lines = [
                 {
                     "sku": o["sku"],
@@ -1749,23 +2211,84 @@ def cash_calendar_fit(
                 }
                 for o in serialized["orders"]
             ]
+            plan_status = result.status
     else:
         lines = []
 
-    return ok(cash_service.evaluate_purchase_fit(
+    fit = cash_service.evaluate_purchase_fit(
         user.tenant_id, lines, budget, horizon_days,
-    ))
+    )
+    # WHICH plan was priced, not just what it costs.
+    #
+    # `/inventory/optimize` degrades to a greedy shortcut when the solver cannot
+    # finish in time, and says so — this endpoint threw that away, so a cash
+    # answer built on the shortcut was presented with the same confidence as one
+    # built on the optimum. The number is not wrong; the thing it describes is a
+    # different plan, and the user had no way to tell.
+    #
+    # Only set on the path that actually solves. A caller who sent their own
+    # cart is being told about THEIR cart, and there is no plan status to report.
+    if plan_status is not None:
+        fit["plan_status"] = plan_status
+    return ok(fit)
 
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────
+
+# A supplier's email is the address purchase orders are sent to. It was accepted
+# as any string at all: `no-es-un-email` saved cleanly, showed in the EMAIL
+# column of the suppliers table like a configured address, and stayed wrong
+# until the day an order failed to arrive. The send path does report that
+# (`skipped: delivery_failed`), so nothing is lost silently — but the user finds
+# out after the order was supposed to have gone, which is the wrong moment.
+#
+# Deliberately a shape check, not a deliverability check: the only thing we can
+# know at save time is whether an address could ever be routed. `pydantic`'s
+# EmailStr would need the `email-validator` dependency and would also reject
+# addresses that are unusual but legal; this refuses what is certainly
+# unreachable and leaves the rest to the send, which already reports its result.
+_EMAIL_SHAPE = re.compile(r"^[^@\s,;]+@[^@\s,;.]+(\.[^@\s,;.]+)+$")
+
+
+def _validated_email(value: Optional[str]) -> Optional[str]:
+    """None/blank stay None — not every supplier is contacted by email."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if not _EMAIL_SHAPE.match(text):
+        raise PydanticCustomError(
+            "supplier_email_shape",
+            "'{email}' cannot receive mail — a purchase order sent there would "
+            "never arrive. Use an address like name@company.com.",
+            {"email": text[:64]},
+        )
+    return text
+
 
 class SupplierCreate(BaseModel):
     name:           str
     email:          Optional[str] = None
     phone:          Optional[str] = None
     whatsapp:       Optional[str] = None
-    lead_time_days: int   = Field(default=15, ge=1, le=365)
+    # Optional, and None by default, because this field is PROVENANCE.
+    #
+    # It used to be `int = Field(default=15)`, so the model handed the service a
+    # 15 for every caller that sent none — and `_stamp_lead_time_provenance`
+    # records SOURCE_USER for any call that supplies a lead time. StockAI's own
+    # assumption was therefore filed as the supplier's declaration, and the
+    # scorecard printed DECLARADO 15d for a supplier who declared nothing
+    # (stability 11.32). `exclude_none=True` in the handler now drops it
+    # entirely, so the column's own DEFAULT 15 applies without anybody claiming
+    # to have chosen it.
+    lead_time_days: Optional[int] = Field(default=None, ge=1, le=365)
     lead_time_std:  int   = Field(default=3, ge=0, le=60)
+    # How often this buyer actually orders from this supplier, in days
+    # (stability.md 17/19.3). 0 (the column's own default) means no cadence
+    # has been declared, and the recommendation reproduces today's arithmetic
+    # exactly — see `backend/inventory/service.py::_calc_recommended`.
+    review_period_days: int = Field(default=0, ge=0, le=365)
     payment_terms:  Optional[str] = None
     # Structured credit days (feature 3.6). Optional: when omitted it is derived
     # from the free-text `payment_terms`, so existing clients keep working and
@@ -1773,6 +2296,11 @@ class SupplierCreate(BaseModel):
     # wins over the parser — the user correcting a bad parse must stick.
     payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, value: Optional[str]) -> Optional[str]:
+        return _validated_email(value)
 
 
 class SupplierPatch(BaseModel):
@@ -1782,9 +2310,15 @@ class SupplierPatch(BaseModel):
     whatsapp:       Optional[str]   = None
     lead_time_days: Optional[int]   = Field(default=None, ge=1, le=365)
     lead_time_std:  Optional[int]   = Field(default=None, ge=0, le=60)
+    review_period_days: Optional[int] = Field(default=None, ge=0, le=365)
     payment_terms:  Optional[str]   = None
     payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str]   = None
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, value: Optional[str]) -> Optional[str]:
+        return _validated_email(value)
 
 
 class SkuSupplierUpsert(BaseModel):
@@ -1841,6 +2375,24 @@ def delete_supplier(supplier_id: str, user: CurrentUser = Depends(require_analys
     sup_svc.delete_supplier(user.tenant_id, supplier_id)
 
 
+@router.post("/suppliers/{supplier_id}/reactivate")
+def reactivate_supplier(supplier_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
+    """Undo a deactivation.
+
+    Deactivation was always logical (`active = FALSE`) and never had an undo, so
+    dropping a supplier by mistake was a one-way door. It also left the create
+    endpoint's `supplier_name_taken_by_deactivated` (409) naming a row the user
+    could not reach — the error told them the answer and gave them no verb.
+
+    Looked up WITHOUT the `active` filter on purpose: the row this acts on is
+    precisely the one every other read hides.
+    """
+    row = sup_svc.reactivate_supplier(user.tenant_id, supplier_id)
+    if row is None:
+        raise AppError("supplier_not_found", "Supplier not found", status_code=404)
+    return ok(row)
+
+
 # ── Warehouses ────────────────────────────────────────────────────────────────
 
 class WarehouseCreate(BaseModel):
@@ -1848,14 +2400,13 @@ class WarehouseCreate(BaseModel):
     is_default: bool = False
 
 
-@router.get("/warehouses", dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))])
+@router.get("/warehouses")
 def list_warehouses(user: CurrentUser = Depends(get_current_user)):
     return ok(wh_svc.list_warehouses(user.tenant_id))
 
 
 @router.post(
     "/warehouses", status_code=201,
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     if not (body.name or "").strip():
@@ -1867,9 +2418,22 @@ def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_
     # location for the max_locations pre-check.
     name = wh_svc.resolve_canonical_name(user.tenant_id, body.name)
     if not wh_svc.get_warehouse_by_name(user.tenant_id, name):
-        from backend.entitlements.service import enforce_limit
-        enforce_limit(user.tenant_id, "max_locations", wh_svc.count_warehouses(user.tenant_id))
-    warehouse = wh_svc.create_warehouse(user.tenant_id, name, is_default=body.is_default)
+        from backend.entitlements.service import enforce_limit, limit_guard
+        # The write stays INSIDE the block: the lock has to still be held when
+        # the warehouse row commits, or the next caller counts a catalogue that
+        # does not yet include it and the ceiling is back to being advisory.
+        with limit_guard(user.tenant_id) as _conn:
+            enforce_limit(user.tenant_id, "max_locations",
+                          wh_svc.count_warehouses(user.tenant_id), conn=_conn)
+            warehouse = wh_svc.create_warehouse(
+                user.tenant_id, name, is_default=body.is_default,
+            )
+    else:
+        # Already exists: an idempotent re-create that consumes no ceiling, so
+        # it has no business waiting on another tenant's import for a lock.
+        warehouse = wh_svc.create_warehouse(
+            user.tenant_id, name, is_default=body.is_default,
+        )
     return ok(warehouse)
 
 
@@ -1879,7 +2443,6 @@ class WarehousePatch(BaseModel):
 
 @router.patch(
     "/warehouses/{name}",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def patch_warehouse(
     name: str,
@@ -1906,7 +2469,6 @@ class TransferLaneUpsert(BaseModel):
 
 @router.get(
     "/warehouses/lanes",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def list_transfer_lanes(user: CurrentUser = Depends(get_current_user)):
     """Configured lanes only. A pair with no row falls back to the documented
@@ -1917,7 +2479,6 @@ def list_transfer_lanes(user: CurrentUser = Depends(get_current_user)):
 
 @router.put(
     "/warehouses/lanes",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def upsert_transfer_lane(
     body: TransferLaneUpsert,
@@ -1934,7 +2495,6 @@ def upsert_transfer_lane(
 
 @router.delete(
     "/warehouses/lanes", status_code=204,
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def delete_transfer_lane(
     from_warehouse: str = Query(min_length=1),
@@ -1989,7 +2549,6 @@ def _svc_error(e: ValueError) -> Exception:
 
 @router.post(
     "/transfers", status_code=201,
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def create_transfer(
     body: TransferCreate,
@@ -2001,12 +2560,21 @@ def create_transfer(
             [i.model_dump() for i in body.items], body.notes)
     except ValueError as e:
         raise _svc_error(e)
+    record_event(
+        user.tenant_id, user.user_id, "data.transfer_created",
+        resource=str(t.get("id") or ""),
+        details={
+            "sku_count":      len(body.items),
+            "units":          sum(i.qty for i in body.items),
+            "from_warehouse": t.get("from_warehouse") or body.from_warehouse,
+            "to_warehouse":   t.get("to_warehouse") or body.to_warehouse,
+        },
+    )
     return ok(t)
 
 
 @router.get(
     "/transfers",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def list_transfers(
     status: Optional[str] = Query(default=None),
@@ -2017,7 +2585,6 @@ def list_transfers(
 
 @router.post(
     "/transfers/{transfer_id}/receive",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def receive_transfer(
     transfer_id: str,
@@ -2033,7 +2600,6 @@ def receive_transfer(
 
 @router.post(
     "/transfers/{transfer_id}/cancel",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def cancel_transfer(
     transfer_id: str,
@@ -2048,7 +2614,6 @@ def cancel_transfer(
 
 @router.post(
     "/transfers/{transfer_id}/close",
-    dependencies=[Depends(require_feature(Feature.MULTI_LOCATION))],
 )
 def close_transfer(
     transfer_id: str,
@@ -2096,17 +2661,18 @@ def send_alert_now(
     user: CurrentUser = Depends(require_verified_analyst_or_above),
 ):
     """
-    Fire the daily inventory alert immediately for this tenant (email to all
-    plans + WhatsApp to opted-in admins on Professional+). Lets the user
-    verify their channels without waiting for the 8:00 UTC scheduler run.
+    Fire the daily inventory alert immediately for this tenant — email to the
+    admins, WhatsApp to the ones who opted in. Lets the user verify their
+    channels without waiting for the 8:00 UTC scheduler run.
 
-    Email is core to every plan and always test-fired here. WhatsApp is a
-    Professional+ feature (Feature.WHATSAPP_ALERTS) — only that slice is
-    gated, mirroring the daily loop in backend/inventory/service.py's
-    run_daily_inventory_alerts(). The endpoint itself must never 403 a
-    Starter tenant out of its core email alert.
+    Both channels mirror the daily loop in backend/inventory/service.py's
+    run_daily_inventory_alerts(): a test fire that skipped one of them would
+    prove less than it appears to.
     """
-    items = svc.get_inventory_status(user.tenant_id, session_id)
+    # Same grain the 8:00 loop uses, so the test send previews the real thing
+    # rather than a differently-computed one.
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
     critical = [i for i in items if i["signal"] == "PEDIR_YA"]
     warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
     if not critical and not warning:
@@ -2115,7 +2681,10 @@ def send_alert_now(
     from backend.config import settings as _settings
     from backend.notifications.email import send_inventory_alert_email
 
-    inventory_url = f"{_settings.frontend_url}/inventory"
+    # `/hoy`, the same screen the 8:00 loop links to. This said `/inventory`,
+    # which redirects to a DIFFERENT screen (`/inventario`) — so the preview and
+    # the thing it previews did not even land the buyer in the same place.
+    inventory_url = f"{_settings.frontend_url}/hoy"
     # Full lists: the email renderer trims the table itself and keeps the
     # counts real, so a test fire shows the same numbers the daily loop would.
     emails = svc.get_tenant_admin_emails(user.tenant_id)
@@ -2123,19 +2692,23 @@ def send_alert_now(
         1 for email in emails
         if send_inventory_alert_email(
             to=email, critical_items=critical, warning_items=warning,
-            inventory_url=inventory_url,
+            inventory_url=inventory_url, tenant_id=user.tenant_id,
+            # The grain was resolved above and then not passed, so the renderer
+            # fell back to its "daily" default: a weekly tenant's test email
+            # said "4 días" where the real 8:00 email says "4 semanas". The
+            # preview contradicted the thing it previews.
+            period=period,
         )
     )
 
-    wa_sent = 0
-    tenant = get_tenant(user.tenant_id) or {}
-    if has_feature(tenant, Feature.WHATSAPP_ALERTS):
-        from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+    from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
 
-        numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
-        if numbers:
-            text = build_inventory_alert_text(critical, warning, inventory_url)
-            wa_sent = sum(1 for n in numbers if send_whatsapp(n, text))
+    wa_sent = 0
+    numbers = svc.get_tenant_admin_whatsapps(user.tenant_id)
+    if numbers:
+        text = build_inventory_alert_text(critical, warning, inventory_url,
+                                          period=period)
+        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text, tenant_id=user.tenant_id))
 
     # The point of a test fire is to prove the channel works, so its outcome is
     # recorded like a real send instead of only being echoed in the response.
@@ -2192,8 +2765,12 @@ def morning_briefing(
 
 @router.get("/product-types")
 def list_product_types(user: CurrentUser = Depends(get_current_user)):
-    """Returns the list of valid product types and their labels."""
-    return ok(bom_svc.PRODUCT_TYPES)
+    """The valid product types, as the English keys the frontend translates.
+
+    It used to return `{key: Spanish label}`, which put backend-authored copy
+    on an English-mode screen. The caller renders `enum.product_type_<key>`.
+    """
+    return ok(list(bom_svc.PRODUCT_TYPES))
 
 
 @router.patch("/stock/{sku}/product-type")
@@ -2226,7 +2803,7 @@ class BomItemUpsert(BaseModel):
     notes:    Optional[str] = None
 
 
-@router.get("/bom/{parent_sku}", dependencies=[Depends(require_feature(Feature.BOM))])
+@router.get("/bom/{parent_sku}")
 def get_bom(parent_sku: str, user: CurrentUser = Depends(get_current_user)):
     """Returns BOM (Bill of Materials) for a finished good."""
     return ok(bom_svc.list_bom(user.tenant_id, parent_sku))
@@ -2234,7 +2811,6 @@ def get_bom(parent_sku: str, user: CurrentUser = Depends(get_current_user)):
 
 @router.put(
     "/bom/{parent_sku}/{child_sku}", status_code=200,
-    dependencies=[Depends(require_feature(Feature.BOM))],
 )
 def upsert_bom_item(
     parent_sku: str,
@@ -2256,7 +2832,6 @@ def upsert_bom_item(
 
 @router.delete(
     "/bom/{parent_sku}/{child_sku}", status_code=204,
-    dependencies=[Depends(require_feature(Feature.BOM))],
 )
 def delete_bom_item(
     parent_sku: str,
@@ -2266,7 +2841,7 @@ def delete_bom_item(
     bom_svc.delete_bom_item(user.tenant_id, parent_sku, child_sku)
 
 
-@router.get("/bom/{child_sku}/used-in", dependencies=[Depends(require_feature(Feature.BOM))])
+@router.get("/bom/{child_sku}/used-in")
 def where_used(child_sku: str, user: CurrentUser = Depends(get_current_user)):
     """Returns all finished goods that use this component."""
     return ok(bom_svc.get_parents_using(user.tenant_id, child_sku))
@@ -2285,94 +2860,112 @@ def production_requirements(
     returns required quantities of each component and raw material,
     flagging shortages and purchase requirements.
     """
-    result = bom_svc.explode_requirements(user.tenant_id, session_id, horizon_days)
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    result = bom_svc.explode_requirements(user.tenant_id, session_id, horizon_days, period)
     return ok(result)
 
 
-# ── Dead stock / Inventario inmovilizado ─────────────────────────────────────
+# ── Dead capital / Capital parado ─────────────────────────────────────────────
+# "How long has the stock level itself gone without falling, and how much
+# money is that" — from `inventory_snapshots` alone, no session or model. See
+# `backend/inventory/dead_capital.py`'s module docstring. This is the ONE
+# surface for money that is not moving: `/dead-stock` (depletion measured
+# against the forecast, which priced an unknown unit cost at 0 and sorted by
+# it) was retired on 2026-09-30 by the owner's decision, stability.md 19.2.
 
-@router.get("/dead-stock")
-def dead_stock(
-    session_id: str = Query(...),
-    min_days_static: int = Query(default=30, ge=7, le=365,
-        description="Minimum days without significant stock depletion to flag as dead"),
+@router.get("/dead-capital")
+def dead_capital(
+    window_days: int = Query(
+        default=dead_capital_svc.DEFAULT_WINDOW_DAYS, ge=7, le=365,
+        description="Minimum days without a stock decrease to count as not moving"),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Returns inventory items that have had little or no stock movement
-    for at least min_days_static days — 'dead' or 'slow-moving' inventory.
-    Capital trapped = current_stock × unit_cost.
+    Every SKU on hand whose stock level has not fallen in at least
+    `window_days`, ranked worst first by money, with the tenant's total at the
+    top. Needs no session — it reads real stock-level history, not a forecast.
     """
-    from backend.inventory.service import get_inventory_status, get_stock_history
+    session_id = planning_service.resolve_active_session(user.tenant_id)
+    result = dead_capital_svc.get_dead_capital(
+        user.tenant_id, window_days=window_days, session_id=session_id)
+    return ok(result)
 
-    items = get_inventory_status(user.tenant_id, session_id)
-    dead_items = []
 
-    for item in items:
-        if not item.get('has_stock') or not item.get('current_stock'):
-            continue
+# ── Supplier cost inflation / Margin erosion ─────────────────────────────────
+# stability.md #20, items 5-6: both read `inventory_po_items.unit_cost` (a
+# price history nobody realised the product already had) crossed either with
+# itself (inflation) or with `inventory_stock.sale_price` (erosion). Neither
+# needs a session or a new table — see `cost_alerts.py`'s module docstring
+# for the honesty constraints this pair is built under.
 
-        # Get stock history to detect if stock has barely moved
-        history = get_stock_history(user.tenant_id, item['sku'], days=min_days_static)
+@router.get("/supplier-cost-inflation")
+def supplier_cost_inflation(
+    window_days: int = Query(
+        default=cost_alerts_svc.DEFAULT_WINDOW_DAYS, ge=30, le=1095,
+        description="How far back to look for received-order cost observations"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Suppliers who raised a SKU's cost at least once in the window, worst
+    first, with the products each one hit hardest. Built only from POs that
+    were actually received — a quoted or rejected order proves nothing was
+    paid.
+    """
+    result = cost_alerts_svc.get_supplier_cost_inflation(user.tenant_id, window_days=window_days)
+    return ok(result)
 
-        if len(history) < 2:
-            # No history → can't determine movement, skip
-            continue
 
-        first_stock = history[0]['stock']
-        last_stock  = history[-1]['stock']
-        depletion   = first_stock - last_stock
+@router.get("/margin-erosion")
+def margin_erosion(
+    window_days: int = Query(
+        default=cost_alerts_svc.DEFAULT_WINDOW_DAYS, ge=30, le=1095,
+        description="How far back to look for received-order cost observations"),
+    min_erosion_pts: float = Query(
+        default=cost_alerts_svc.DEFAULT_MIN_EROSION_PTS, ge=0, le=100,
+        description="Minimum margin drop, in percentage points, to be listed"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    SKUs whose margin eroded because their cost rose while the product's
+    sale_price is the only price StockAI has ever stored. `price_history_available:
+    false` in the response is load-bearing: the "before" margin is today's
+    price against a past cost, not a historical fact — see
+    `cost_alerts.get_margin_erosion`'s docstring.
+    """
+    result = cost_alerts_svc.get_margin_erosion(
+        user.tenant_id, window_days=window_days, min_erosion_pts=min_erosion_pts)
+    return ok(result)
 
-        # If stock increased (restocking during period), skip — not dead stock
-        if depletion < 0:
-            continue
 
-        # Expected depletion based on forecast
-        avg_daily = item.get('daily_demand') or 0
-        expected  = avg_daily * len(history)
+# ── The forecast in money ──────────────────────────────────────────────────
+# stability.md #20 item 1: the engine predicts units, the product knows
+# price and cost per SKU, nobody had multiplied them. See
+# `forecast_money.py`'s module docstring for the honesty constraints.
 
-        # Classify as dead if actual depletion is < 20% of expected
-        if expected > 0 and depletion < expected * 0.20:
-            days_static = len(history)
-            capital = round(float(item.get('current_stock', 0)) * float(item.get('unit_cost') or 0), 2)
-            holding_cost_annual = capital * 0.25  # 25% annual holding cost estimate
-            holding_cost_monthly = round(holding_cost_annual / 12, 2)
+@router.get("/forecast-money")
+def forecast_money(
+    session_id: Optional[str] = Query(
+        default=None,
+        description="Completed forecast session; defaults to the tenant's active-period session"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Projected revenue, cost and gross margin over the active session's
+    forecast horizon, per SKU and in total, ranked so the top contributors
+    are visible — "your next N days: X in sales, Y in margin, and these
+    products carry it."
+    """
+    if not session_id:
+        session_id = planning_service.resolve_active_session(user.tenant_id)
+        if not session_id:
+            raise AppError(
+                "no_completed_session",
+                "No completed session for this tenant yet",
+                status_code=400,
+            )
 
-            dead_items.append({
-                'sku':              item['sku'],
-                'display_name':     item.get('display_name'),
-                'supplier':        item.get('supplier'),
-                'current_stock':     item.get('current_stock'),
-                'unit_cost':   item.get('unit_cost'),
-                'capital_trapped':  capital,
-                'holding_cost_monthly': holding_cost_monthly,
-                'days_without_movement': days_static,
-                'depletion_pct':    round(depletion / first_stock * 100, 1) if first_stock > 0 else 0,
-                'avg_daily_demand': round(avg_daily, 2),
-                'signal':           item.get('signal'),
-                'abc':              item.get('abc', '?'),
-                'action_suggested': (
-                    'Devolver al proveedor' if item.get('abc') == 'C' else
-                    'Ofrecer descuento' if item.get('abc') == 'B' else
-                    'Revisar con ventas'
-                ),
-            })
-
-    dead_items.sort(key=lambda x: x['capital_trapped'], reverse=True)
-    dead_items = _strip_abc_xyz_unless_entitled(
-        dead_items, user.tenant_id, extra_keys=("action_suggested",)
-    )
-
-    total_capital = sum(d['capital_trapped'] for d in dead_items)
-    total_holding = sum(d['holding_cost_monthly'] for d in dead_items)
-
-    return ok({
-        'items':                dead_items,
-        'total_capital_trapped': round(total_capital, 2),
-        'total_holding_cost_monthly': round(total_holding, 2),
-        'sku_count':            len(dead_items),
-        'min_days_static':      min_days_static,
-    })
+    result = forecast_money_svc.get_forecast_money(user.tenant_id, session_id)
+    return ok(result)
 
 
 # ── Export PO as CSV ───────────────────────────────────────────────────────────
@@ -2382,28 +2975,75 @@ def export_po(
     session_id: str = Query(...),
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     signals: str = Query(default="PEDIR_YA,PEDIR_PRONTO", description="Comma-separated signals to include"),
+    warehouse: Optional[str] = Query(
+        default=None,
+        description="Export this warehouse's rows instead of the tenant-wide ones",
+    ),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Export purchase order as CSV, filtered to actionable SKUs."""
+    """Export purchase order as CSV, filtered to actionable SKUs.
+
+    The period is resolved here for the same reason `GET /status` resolves it:
+    this endpoint does NOT export what the buyer is looking at, it re-derives
+    the list server-side. Without the period that re-derivation reads a weekly
+    tenant's per-week demand as per-day, so the screen offered nothing to order
+    and the CSV came back with a hundred units — plus a purchase order in
+    /pedidos the buyer never saw on screen.
+
+    `warehouse` exists for the same class of defect on the other axis
+    (stability 11.7): the download menu sits above the warehouse selector and
+    stayed enabled with a warehouse tab open, so a buyer reading "Norte needs
+    40" downloaded a file saying 150 — the tenant-wide number — and `logPOGeneration`
+    wrote that into /pedidos as an order they never saw. With it, the CSV is the
+    rows of that warehouse, from the same per-warehouse computation the tab
+    renders.
+    """
     include_signals = {s.strip().upper() for s in signals.split(",")}
-    items = svc.get_inventory_status(user.tenant_id, session_id, service_level)
+    period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+    if warehouse:
+        canonical = wh_svc.resolve_canonical_name(user.tenant_id, warehouse)
+        rows = svc.get_inventory_status_by_warehouse(
+            user.tenant_id, session_id, service_level, period)
+        items = [i for i in rows if i.get("warehouse") == canonical]
+    else:
+        items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
     po_items = [i for i in items if i["signal"] in include_signals and (i.get("recommended_qty") or 0) > 0]
 
     output = io.StringIO()
     writer = csv.writer(output)
+    # The file is opened in Excel, never rendered by the frontend, so its Spanish
+    # headers come from the backend copy catalog keyed in English.
+    from backend.notifications.locale import render_es
     writer.writerow([
-        "SKU", "Nombre", "Proveedor", "Señal",
-        "Stock actual", "Días cobertura", "Demanda (lead time)",
-        "Lead time (días)", "Origen lead time",
-        "Cantidad recomendada", "MOQ", "Costo unitario", "Valor orden",
+        render_es("inventory_csv_col_sku"),
+        render_es("inventory_csv_col_name"),
+        render_es("inventory_csv_col_supplier"),
+        render_es("inventory_csv_col_signal"),
+        render_es("inventory_csv_col_stock"),
+        render_es("inventory_csv_col_coverage"),
+        render_es("inventory_csv_col_lead_demand"),
+        render_es("inventory_csv_col_lead_time"),
+        render_es("inventory_csv_col_lead_source"),
+        render_es("inventory_csv_col_recommended"),
+        render_es("inventory_csv_col_moq"),
+        render_es("inventory_csv_col_unit_cost"),
+        render_es("inventory_csv_col_order_value"),
     ])
     for i in po_items:
         qty   = i.get("recommended_qty") or 0
         cost  = i.get("unit_cost")
-        value = round(qty * cost, 2) if cost else ""
+        # `if cost` (and `cost or ""` below) treated a real unit cost of 0 as
+        # "we do not know", printing both as an empty cell. They are different
+        # facts: a free line and an unpriced line lead to different decisions,
+        # and the PDF writer already makes this distinction
+        # (inventory/po_pdf.py — "a line whose cost nobody recorded is priced
+        # as UNKNOWN, not as zero"). Only None is unknown here too.
+        value = round(qty * cost, 2) if cost is not None else ""
         # Label where the lead time came from so the buyer can trust (or
         # question) it — same distinction the /hoy and /inventory screens show.
-        lead_origin = "Aprendido" if i.get("lead_time_source") == "learned" else "Configurado"
+        lead_origin = render_es("inventory_csv_lead_source_learned"
+                                if i.get("lead_time_source") == "learned"
+                                else "inventory_csv_lead_source_declared")
         writer.writerow([
             # Neutralize the user-controlled text cells against CSV formula
             # injection — these can carry `=`/`+`/`@` from an imported catalog
@@ -2419,13 +3059,13 @@ def export_po(
             lead_origin,
             qty,
             i.get("moq") or 1,
-            cost or "",
+            cost if cost is not None else "",
             value,
         ])
 
     output.seek(0)
     return StreamingResponse(
-        iter([output.getvalue()]),
+        iter([_CSV_BOM + output.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=purchase_order.csv"},
     )
@@ -2433,7 +3073,7 @@ def export_po(
 
 # ── MILP purchasing/transfers optimizer (MW-3) ───────────────────────────────
 
-@router.get("/optimize", dependencies=[Depends(require_feature(Feature.MILP_OPTIMIZER))])
+@router.get("/optimize")
 def optimize_inventory(
     session_id:   Optional[str] = Query(default=None),
     # Cap raised from 30 to 360 (multi-period Phase C): a monthly horizon of 12
@@ -2448,8 +3088,6 @@ def optimize_inventory(
     recommended inter-warehouse transfers, collapsed to one total per
     line over the full horizon.
     """
-    from forecasting_core.business.optimizer import optimize
-
     plan = planning_service.get_planning(user.tenant_id)
     period = plan.get("period", "daily")
     if not session_id:
@@ -2470,8 +3108,14 @@ def optimize_inventory(
     # connection checkouts for no benefit.
     try:
         stock_rows = svc.list_stock(user.tenant_id)
+        # The supplier inputs the semáforo plans on — lead time (rules +
+        # learned receptions) and MOQ — resolved ONCE and handed to both the
+        # build and the serialize, so the plan is solved and reported on the
+        # same numbers /hoy shows.
+        planning_inputs = opt_svc.resolve_planning_inputs(user.tenant_id, stock_rows)
         inp = opt_svc.build_optimization_input(
             user.tenant_id, session_id, horizon_days, stock_rows=stock_rows, period=period,
+            planning=planning_inputs,
         )
     except PoolError:
         # The DB pool (ThreadedConnectionPool, max=10) raises rather than
@@ -2484,10 +3128,19 @@ def optimize_inventory(
             status_code=503,
         )
 
+    # SKUs the optimizer refused to decide for: their stock is unknown, and how
+    # much to buy is a function of how much is left. They travel with every
+    # response — including the empty one — because "no suggestions" and "no
+    # suggestions BECAUSE nobody has told us what is on the shelf" look
+    # identical on screen, and only one of them is the user's to fix.
+    from backend.db import session_store
+    forecasts = session_store.get_forecasts(user.tenant_id, session_id) or {}
+    needs_stock = opt_svc.skus_missing_stock(forecasts, stock_rows)
+
     if inp is None:
         return ok({
             "status": "optimal", "total_cost": 0.0, "horizon_days": horizon_days,
-            "orders": [], "transfers": [],
+            "orders": [], "transfers": [], "needs_stock": needs_stock,
         })
 
     # optimize() never raises on structurally-valid-but-degenerate input
@@ -2498,11 +3151,16 @@ def optimize_inventory(
     # thread-pool worker and wedge the server — excess requests get a fast 503.
     try:
         with opt_svc.solve_slot():
-            result = optimize(inp)
+            result = opt_svc.solve(inp)
     except opt_svc.OptimizerBusy:
         raise AppError(
             "optimizer_busy",
             "Optimizer busy (too many concurrent requests); please retry.",
             status_code=503,
         )
-    return ok(opt_svc.serialize_optimization_result(inp, result, stock_rows))
+    return ok({
+        **opt_svc.serialize_optimization_result(
+            inp, result, stock_rows, horizon_days=horizon_days,
+            planning=planning_inputs),
+        "needs_stock": needs_stock,
+    })

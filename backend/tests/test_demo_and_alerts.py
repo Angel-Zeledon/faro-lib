@@ -1,13 +1,15 @@
 """
 Tests for the one-click demo endpoint (POST /demo/quickstart) and the
 WhatsApp-alert plumbing (users.whatsapp_number + alert send-now endpoint).
-Feature spec: docs/features_propuestas_faro_2026-07-05.md (1.1 / 1.2).
+Feature spec: the 2026-07-05 proposals, sections 1.1 / 1.2 (doc retired in the
+2026-08-11 docs cleanup; still in git history).
 """
 
 from unittest import mock
 
 import pytest
 
+from backend.config import settings as config_settings
 from backend.db.connection import query_one
 
 
@@ -44,7 +46,9 @@ class TestDemoQuickstart:
                       "validation_cfg", "forecast_cfg", "business_cfg"):
             assert cfg[field], f"{field} was not seeded"
         assert cfg["columns_cfg"]["schema_version"] == "canonical_v1"
-        assert cfg["models_cfg"]["selected_models"] == ["lightgbm", "prophet", "croston", "xgboost"]
+        assert cfg["models_cfg"]["selected_models"] == [
+            "global_lgbm", "lightgbm", "prophet", "croston", "xgboost",
+        ]
 
         # A real job is queued
         job = query_one("SELECT * FROM jobs WHERE id = %s AND tenant_id = %s", (job_id, tid))
@@ -179,7 +183,7 @@ class TestWhatsappTransport:
     def test_not_configured_is_noop(self):
         from backend.notifications import whatsapp
 
-        with mock.patch.object(whatsapp.settings, "twilio_account_sid", ""):
+        with mock.patch.object(config_settings, "twilio_account_sid", ""):
             assert whatsapp.send_whatsapp("+573001234567", "hola") is False
 
     # NOTE: this targets _transport_send, not _send — conftest patches _send
@@ -190,9 +194,9 @@ class TestWhatsappTransport:
 
         fake_resp = mock.Mock(status_code=201)
         fake_resp.raise_for_status = mock.Mock()
-        with mock.patch.object(whatsapp.settings, "twilio_account_sid", "AC123"), \
-             mock.patch.object(whatsapp.settings, "twilio_auth_token", "tok"), \
-             mock.patch.object(whatsapp.settings, "twilio_whatsapp_from", "whatsapp:+14155238886"), \
+        with mock.patch.object(config_settings, "twilio_account_sid", "AC123"), \
+             mock.patch.object(config_settings, "twilio_auth_token", "tok"), \
+             mock.patch.object(config_settings, "twilio_whatsapp_from", "whatsapp:+14155238886"), \
              mock.patch("httpx.post", return_value=fake_resp) as post:
             whatsapp._transport_send("+573001234567", "hola", None)
         args, kwargs = post.call_args
@@ -204,12 +208,15 @@ class TestWhatsappTransport:
     def test_send_whatsapp_reports_transport_success(self):
         from backend.notifications import whatsapp
 
-        with mock.patch.object(whatsapp.settings, "twilio_account_sid", "AC123"), \
-             mock.patch.object(whatsapp.settings, "twilio_auth_token", "tok"), \
-             mock.patch.object(whatsapp.settings, "twilio_whatsapp_from", "whatsapp:+14155238886"), \
+        with mock.patch.object(config_settings, "twilio_account_sid", "AC123"), \
+             mock.patch.object(config_settings, "twilio_auth_token", "tok"), \
+             mock.patch.object(config_settings, "twilio_whatsapp_from", "whatsapp:+14155238886"), \
              mock.patch.object(whatsapp, "_send") as transport:
             assert whatsapp.send_whatsapp("+573001234567", "hola") is True
-            transport.assert_called_once_with("+573001234567", "hola", None)
+            # The fourth argument is the tenant scope, added on 2026-09-13 so a
+            # tenant that pasted its own Twilio sender messages its own people
+            # from it. None here means the instance's channel.
+            transport.assert_called_once_with("+573001234567", "hola", None, None)
             transport.side_effect = RuntimeError("twilio down")
             assert whatsapp.send_whatsapp("+573001234567", "hola") is False
 
@@ -240,7 +247,7 @@ class TestResendTransport:
 
         fake_resp = mock.Mock(status_code=200)
         fake_resp.raise_for_status = mock.Mock()
-        with mock.patch.object(email_mod.settings, "resend_api_key", "re_test_123"), \
+        with mock.patch.object(config_settings, "resend_api_key", "re_test_123"), \
              mock.patch("httpx.post", return_value=fake_resp) as post:
             email_mod._transport_send("dest@example.com", "Prueba", "<b>hola</b>")
         args, kwargs = post.call_args
@@ -257,8 +264,8 @@ class TestResendTransport:
         """
         from backend.notifications import email as email_mod
 
-        with mock.patch.object(email_mod.settings, "resend_api_key", ""), \
-             mock.patch.object(email_mod.settings, "smtp_user", ""), \
+        with mock.patch.object(config_settings, "resend_api_key", ""), \
+             mock.patch.object(config_settings, "smtp_user", ""), \
              mock.patch("httpx.post") as post, \
              mock.patch("smtplib.SMTP") as smtp:
             with pytest.raises(email_mod.EmailNotConfigured):

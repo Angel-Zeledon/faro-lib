@@ -302,15 +302,20 @@ class TestUniqueConstraints:
         tid2 = generate_id("ten")
         slug = f"dupe-slug-{uuid4().hex[:8]}"
         quota = _json({"max_sessions": 20})
+        import psycopg2
         _exec(
-            "INSERT INTO tenants (id, name, slug, plan, status, quota, settings, created_at) "
-            "VALUES (%s, %s, %s, 'free', 'active', %s, '{}', NOW())",
+            "INSERT INTO tenants (id, name, slug, status, quota, settings, created_at) "
+            "VALUES (%s, %s, %s, 'active', %s, '{}', NOW())",
             (tid1, "T1", slug, quota),
         )
-        with pytest.raises(Exception):
+        # UniqueViolation specifically: a bare `Exception` passed for years on
+        # the wrong error — when `plan` was dropped from the schema the first
+        # INSERT raised UndefinedColumn and the second never ran the case under
+        # test, which a broad `raises` would have called a pass.
+        with pytest.raises(psycopg2.errors.UniqueViolation):
             _exec(
-                "INSERT INTO tenants (id, name, slug, plan, status, quota, settings, created_at) "
-                "VALUES (%s, %s, %s, 'free', 'active', %s, '{}', NOW())",
+                "INSERT INTO tenants (id, name, slug, status, quota, settings, created_at) "
+                "VALUES (%s, %s, %s, 'active', %s, '{}', NOW())",
                 (tid2, "T2", slug, quota),
             )
         execute("DELETE FROM tenants WHERE id = %s", (tid1,))

@@ -19,6 +19,12 @@ import pytest
 from backend.api.v1.chats import MAX_QUESTION_LENGTH, RATE_LIMIT_MAX_MESSAGES
 
 
+def _canned_reply(*_a, **_k):
+    """The assistant core, answered without reading the account or a model."""
+    from backend.assistant import AssistantReply
+    return AssistantReply(text="ok", source="assistant", language="es", channel="web")
+
+
 @pytest.fixture
 def chat(client, auth_headers):
     resp = client.post("/api/v1/analyst/chats", json={}, headers=auth_headers)
@@ -37,7 +43,7 @@ class TestMessageValidation:
         assert resp.status_code == 400, resp.text
 
     def test_question_at_limit_accepted(self, client, auth_headers, chat):
-        with mock.patch("backend.api.v1.chats._general_answer", return_value="ok"):
+        with mock.patch("backend.assistant.answer", side_effect=_canned_reply):
             resp = client.post(
                 f"/api/v1/analyst/chats/{chat['id']}/messages",
                 json={"question": "x" * MAX_QUESTION_LENGTH},
@@ -54,11 +60,6 @@ class TestRateLimit:
         # TESTING_MODE=true silently turns this into a test that can't fail.
         from backend.config import settings
         monkeypatch.setattr(settings, "testing_mode", False)
-        # Disabling testing_mode also activates plan-based entitlement gating;
-        # the AI analyst needs professional+, so upgrade the tenant or the 403
-        # PLAN_UPGRADE_REQUIRED fires before the rate limit ever can.
-        from backend.db.connection import execute
-        execute("UPDATE tenants SET plan = 'professional' WHERE id = %s", (chat["tenant_id"],))
         # The rate limit uses a sliding window keyed on RATE_LIMIT_WINDOW_SECONDS
         # (60s in production). Sending RATE_LIMIT_MAX_MESSAGES requests against a
         # real remote DB takes long enough in wall-clock time that, at the
@@ -66,7 +67,7 @@ class TestRateLimit:
         # before the last one is sent — masking the limit instead of testing it.
         # Widening the window here (independent of the count threshold under
         # test) makes the test immune to its own network latency.
-        with mock.patch("backend.api.v1.chats._general_answer", return_value="ok"), \
+        with mock.patch("backend.assistant.answer", side_effect=_canned_reply), \
              mock.patch("backend.api.v1.chats.RATE_LIMIT_WINDOW_SECONDS", 3600):
             # Earlier tests in the run may have already sent messages for this
             # tenant inside the widened window — only the remaining budget is

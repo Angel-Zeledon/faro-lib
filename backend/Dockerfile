@@ -1,4 +1,4 @@
-# Faro backend image — one build serves BOTH deployment roles:
+# StockAI backend image — one build serves BOTH deployment roles:
 #   API:    uvicorn backend.main:app       (WORKER_ENABLED/SCHEDULER_ENABLED=false)
 #   Worker: python -m backend.workers      (training + cron loops)
 #

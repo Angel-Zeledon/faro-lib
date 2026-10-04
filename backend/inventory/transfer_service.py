@@ -60,7 +60,10 @@ def _adjust_stock(conn, tenant_id: str, sku: str, warehouse: str, delta: float) 
                RETURNING current_stock""",
             (delta, tenant_id, sku, warehouse), conn=conn)
     new_stock = float(row["current_stock"])
-    inv_svc._record_snapshot(tenant_id, sku, new_stock, conn=conn)
+    # Stamped with the warehouse this leg moved: a transfer writes two
+    # snapshots, one per side, and without the column they arrived as one
+    # sawtooth series for the SKU (stability 11.15).
+    inv_svc._record_snapshot(tenant_id, sku, new_stock, conn=conn, warehouse=warehouse)
     return new_stock
 
 
@@ -198,7 +201,7 @@ def receive_transfer(
     Record arrival at the destination. lines: [{sku, received_qty}]; None means
     "everything outstanding arrived". Partial receptions accumulate.
     """
-    from backend.entitlements.service import enforce_limit
+    from backend.entitlements.service import enforce_limit, take_tenant_lock
     from backend.inventory import service as inv_svc
 
     t = get_transfer(tenant_id, transfer_id)
@@ -236,13 +239,20 @@ def receive_transfer(
     # rules (and all-or-nothing guarantee) as PO reception. No max_locations
     # check is needed: create_transfer already validated the destination
     # warehouse exists, and warehouses cannot be deleted.
-    existing_keys = inv_svc.list_stock_keys(tenant_id)
-    new_pairs = {(sku, dest) for sku in to_receive} - existing_keys
-    if new_pairs:
-        enforce_limit(tenant_id, "max_skus", inv_svc.count_stock(tenant_id),
-                      adding=len(new_pairs))
-
     with transaction() as conn:
+        # The lock and the check moved INSIDE this block. Outside it, two
+        # receptions landing together each counted a catalogue neither had
+        # written to yet and both were allowed through. `existing_keys` is read
+        # here too, under the lock, so the "how many are new" figure is not
+        # already stale by the time it is enforced.
+        take_tenant_lock(tenant_id, conn)
+        existing_keys = inv_svc.list_stock_keys(tenant_id, conn=conn)
+        new_pairs = {(sku, dest) for sku in to_receive} - existing_keys
+        if new_pairs:
+            enforce_limit(tenant_id, "max_skus",
+                          inv_svc.count_stock(tenant_id, conn=conn),
+                          adding=len(new_pairs), conn=conn)
+
         for sku, qty in sorted(to_receive.items()):
             # Atomic cap: only accept this receipt if it keeps qty_received
             # <= qty_sent. Two concurrent full-receives of the same transfer
@@ -332,8 +342,15 @@ def close_transfer(tenant_id: str, transfer_id: str, user_id: str) -> dict:
                 tenant_id, sku=sku, warehouse=origin, quantity=qty,
                 reason="transfer_loss",
                 unit_cost=unit_costs.get(sku),
-                # End-user copy (Spanish by design, like every explanation string)
-                notes=f"Faltante al cerrar transferencia {origin} → {t['to_warehouse']}",
+                # The note is PERSISTED and the ledger renders it verbatim, so a
+                # sentence written here would be frozen in one language forever —
+                # it read "Faltante al cerrar transferencia ..." on an English
+                # screen. What the row means is already carried by
+                # `reason='transfer_loss'`, which the UI localises
+                # (inventory.shrinkage_reason_transfer_loss); all the note has to
+                # add is WHICH route lost them, and two warehouse names with an
+                # arrow between them belong to no language.
+                notes=f"{origin} → {t['to_warehouse']}",
                 user_id=user_id, conn=conn,
             )
         execute(

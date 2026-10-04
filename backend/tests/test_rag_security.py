@@ -9,8 +9,8 @@ Verifies:
   5. Audit metadata — every vector carries user_id, tenant_id, timestamp
 
 Prerequisites:
-  - VOYAGEAI_API_KEY, PINECONE_API_KEY, PINECONE_INDEX, ANTHROPIC_API_KEY in .env
-  - pip install voyageai pinecone anthropic
+  - VOYAGEAI_API_KEY, PINECONE_API_KEY, PINECONE_INDEX, DEEPSEEK_API_KEY in .env
+  - pip install voyageai pinecone
 
 Run:
   cd backend
@@ -133,7 +133,7 @@ def _skip_if_no_keys():
             ("VOYAGEAI_API_KEY",  settings.voyageai_api_key),
             ("PINECONE_API_KEY",  settings.pinecone_api_key),
             ("PINECONE_INDEX",    settings.pinecone_index),
-            ("ANTHROPIC_API_KEY", settings.anthropic_api_key),
+            ("DEEPSEEK_API_KEY",  settings.deepseek_api_key),
         ] if not v
     ]
     if missing:

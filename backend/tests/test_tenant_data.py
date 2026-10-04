@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 
-from backend.db.connection import execute, query_one
+from backend.db.connection import execute, query, query_one
 
 
 def _seed_business_data(tenant_id: str, sku: str) -> None:
@@ -182,61 +182,87 @@ class TestDeleteCascade:
             execute("DELETE FROM tenants WHERE id = %s", (other_tenant["id"],))
 
 
-@pytest.fixture
-def fernet_key(monkeypatch):
-    from cryptography.fernet import Fernet
+def _tenant_scoped_tables() -> set[str]:
+    """Every table the live schema scopes by tenant_id."""
+    return {
+        r["table_name"] for r in query(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE column_name = 'tenant_id' AND table_schema = 'public'"
+        )
+    }
 
-    monkeypatch.setattr(
-        "backend.config.settings.integrations_secret_key", Fernet.generate_key().decode()
-    )
 
+class TestErasureLeavesNothingBehind:
+    """`DELETE /tenant` promises "ALL of its data. Irreversible" and returns 200.
 
-class TestIntegrationConnectionsExportAndDelete:
+    It kept that promise only for the tables someone remembered. `_DELETE_ORDER`
+    is a hand-maintained list, most tenant-scoped tables have NO foreign key to
+    `tenants` (see the module docstring), and ten of them had fallen off it —
+    among them `activity_logs`, `direct_messages`, `scenarios`, the whole
+    transfer history and `user_preferences`. Those rows stayed readable in the
+    database after the account was erased, and the caller was told it was done.
+    Found 2026-08-08 while tracing why the local database had accumulated 572k
+    inventory rows belonging to tenants that no longer existed.
 
-    def test_export_includes_connections_without_credentials(
-        self, client, auth_headers, test_tenant, fernet_key
+    The existing cascade test passed throughout, because it only ever checked
+    inventory_stock, suppliers and users — three tables that WERE on the list.
+    """
+
+    def test_delete_order_covers_every_tenant_scoped_table(self):
+        """The guard that keeps the list from rotting again.
+
+        Compares against the live schema instead of a hardcoded roster, so a new
+        tenant-scoped table fails here the day it is added rather than quietly
+        surviving erasure forever.
+        """
+        from backend.tenants.data_export import _DELETE_ORDER
+
+        missing = _tenant_scoped_tables() - set(_DELETE_ORDER)
+        assert not missing, (
+            f"{len(missing)} tenant-scoped table(s) survive account erasure: "
+            f"{sorted(missing)} — add them to _DELETE_ORDER, children first")
+
+    def test_rows_in_the_forgotten_tables_are_actually_gone(
+        self, client, auth_headers, test_tenant, registered_user,
     ):
-        from backend.integrations import store
-
+        """The behaviour, not just the list: seed three tables that used to
+        survive, erase, then look for anything left in EVERY tenant-scoped
+        table directly in the database."""
         tenant_id = test_tenant["id"]
-        secret_token = f"SECRET-{uuid4().hex}"
-        store.create_connection(tenant_id, "alegra", {"email": "a@b.com", "token": secret_token})
+        user_id = registered_user["user"]["id"]
 
-        resp = client.get("/api/v1/tenant/export", headers=auth_headers)
-        assert resp.status_code == 200, resp.text
-
-        zf = zipfile.ZipFile(io.BytesIO(resp.content))
-        names = set(zf.namelist())
-        assert "integration_connections.json" in names
-
-        manifest = json.loads(zf.read("manifest.json"))
-        assert manifest["tables"]["integration_connections"] >= 1
-
-        connections_bytes = zf.read("integration_connections.json")
-        connections_rows = json.loads(connections_bytes)
-        assert len(connections_rows) >= 1
-        for row in connections_rows:
-            assert "credentials" not in row
-        # Belt and suspenders: neither ciphertext nor plaintext token anywhere
-        # in the exported file (not just absent as a top-level key).
-        assert secret_token not in connections_bytes.decode("utf-8")
-        assert secret_token.encode("utf-8") not in connections_bytes
-
-    def test_delete_removes_connections(self, client, auth_headers, test_tenant, fernet_key):
-        from backend.integrations import store
-
-        tenant_id = test_tenant["id"]
-        conn = store.create_connection(tenant_id, "siigo", {"partner_id": "p1", "username": "u1"})
-        assert query_one(
-            "SELECT id FROM integration_connections WHERE id = %s", (conn["id"],)
-        ) is not None
+        execute(
+            "INSERT INTO activity_logs (id, tenant_id, user_id, action) "
+            "VALUES (%s, %s, %s, %s)",
+            (f"act_{uuid4().hex[:8]}", tenant_id, user_id, "login"),
+        )
+        execute(
+            "INSERT INTO user_preferences (user_id, tenant_id, language) "
+            "VALUES (%s, %s, %s)",
+            (user_id, tenant_id, "es"),
+        )
+        execute(
+            "INSERT INTO scenarios (id, tenant_id, session_id, name) "
+            "VALUES (%s, %s, %s, %s)",
+            (f"scn_{uuid4().hex[:8]}", tenant_id, f"sess_{uuid4().hex[:8]}", "Escenario"),
+        )
+        for table in ("activity_logs", "user_preferences", "scenarios"):
+            assert query_one(
+                f"SELECT tenant_id FROM {table} WHERE tenant_id = %s", (tenant_id,)
+            ) is not None, f"{table} was not seeded — the test would prove nothing"
 
         resp = client.request(
             "DELETE", "/api/v1/tenant", headers=auth_headers,
-            json={"confirm": test_tenant["slug"]},
+            json={"confirm": "DELETE"},
         )
         assert resp.status_code == 200, resp.text
 
-        assert query_one(
-            "SELECT id FROM integration_connections WHERE id = %s", (conn["id"],)
-        ) is None
+        left = {}
+        for table in sorted(_tenant_scoped_tables()):
+            n = query_one(
+                f"SELECT COUNT(*) AS c FROM {table} WHERE tenant_id = %s", (tenant_id,)
+            )["c"]
+            if n:
+                left[table] = n
+        assert not left, (
+            f"erasure returned 200 while leaving rows behind: {left}")

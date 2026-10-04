@@ -10,8 +10,21 @@ export interface AutoSessionResult {
   currentSession:    SessionInfo | undefined
   completedSessions: SessionInfo[]
   loading:           boolean
-  /** Set when the session list failed to load — distinct from "no sessions exist yet". */
-  error:             string | null
+  /** The RAW failure when the session list could not be loaded — distinct from
+   *  "no sessions exist yet".
+   *
+   *  This used to be a pre-rendered string built as
+   *  `e instanceof Error ? e.message : '<Spanish fallback>'`. Every failure
+   *  from `getSessions()` is an `ApiError`, which IS an `Error`, so the left
+   *  branch always won and the fallback was dead code (a hardcoded Spanish
+   *  literal in logic, which the repo forbids outright). `ApiError.message` is
+   *  `detail || \`HTTP ${status}\``, and a network failure is constructed as
+   *  status 0 — so the buyer's main screen rendered a large centred
+   *  **"HTTP 0"** when the wifi dropped, and the backend's raw English
+   *  sentence on a 500. Handing back the error itself lets each screen render
+   *  it through `useErrorDetail` / `ErrorState`, which already translate
+   *  `error_code` + `params`. */
+  error:             unknown
   refresh:           () => void
 }
 
@@ -19,7 +32,7 @@ export function useAutoSession(): AutoSessionResult {
   const [sessions,   setSessions]   = useState<SessionInfo[]>([])
   const [sessionId,  setSessionId]  = useState('')
   const [loading,    setLoading]    = useState(true)
-  const [error,      setError]      = useState<string | null>(null)
+  const [error,      setError]      = useState<unknown>(null)
 
   // `load` is created once (stable identity, called only from the mount
   // effect and manual refresh) — it must read the *current* sessionId, not
@@ -69,9 +82,7 @@ export function useAutoSession(): AutoSessionResult {
         }
         if (preferred && !sessionIdRef.current) setSessionId(preferred)
       })
-      .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : 'No se pudo cargar la lista de sesiones. Verifica tu conexión e intenta de nuevo.')
-      })
+      .catch((e: unknown) => setError(e))
       .finally(() => setLoading(false))
   }, [])
 

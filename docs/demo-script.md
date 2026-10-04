@@ -1,235 +1,248 @@
-# Guion de demo — Faro
+# Demo script — StockAI
 
-Guía práctica para presentar Faro de principio a fin, con datos ricos y coherentes
-ya cargados. Pensada para leerse mientras se maneja la app: cada paso trae una
-frase de "qué decir" que resalta el valor de negocio.
+A practical guide to presenting StockAI from end to end, against a tenant already
+seeded with rich, coherent data. Written to be read while driving the app: each
+step carries a "what to say" line that names the business value.
+
+> **Routes were corrected on 2026-09-16.** An earlier version of this script
+> sent the presenter to `/hoy`, `/skus`, `/data`, `/config` and `/inventory` —
+> none of which exist. Everything below was checked against
+> `Frontend/src/app/`.
 
 ---
 
-## 0. Antes de empezar (setup)
+## 0. Before you start (setup)
 
-### Levantar el entorno
+### Bring the environment up
 
-1. **Postgres** (Docker, ya corriendo normalmente):
+1. **Postgres** (Docker, usually already running):
    ```bash
-   docker start faro_db   # contenedor en :5544, user/pass postgres/postgres
+   docker start faro_db   # container on :5544, user/pass postgres/postgres
    ```
 
-2. **Backend** (puerto 8010) — desde la raíz del repo:
+2. **Backend** (port 8011 — 8010 is taken by another project's container on the
+   development machine), from the repository root:
    ```bash
-   backend/.venv/Scripts/python.exe -m uvicorn backend.main:app --port 8010
+   backend/.venv/Scripts/python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8011
    ```
 
-3. **Frontend** (puerto 5000) — desde `Frontend/`:
+3. **Frontend** (port 5000), from `Frontend/`:
    ```bash
-   set BACKEND_URL=http://localhost:8010&& npm run dev
+   npm run dev
    ```
-   Si `node_modules` está roto: `npm install`. **No** correr `npm run build`
-   mientras `next dev` está activo (corrompe la caché `.next`).
+   The proxy target comes from `Frontend/.env.local`, and that file **beats** a
+   shell `BACKEND_URL=…`. If every `/api/*` call returns 500 with an empty
+   body, that file is naming a port nothing is listening on. If `node_modules`
+   is broken: `npm install`. Do **not** run `npm run build` while `next dev` is
+   up — it corrupts the `.next` cache.
 
-4. Abrir **http://localhost:5000** en Chrome.
+4. Open **http://localhost:5000** in Chrome.
 
-### Login del demo
+### Demo login
 
-| Campo | Valor |
+| Field | Value |
 |-------|-------|
-| Correo | `demo@faro.app` |
-| Contraseña | `demo1234` |
+| Email | `demo@faro.app` |
+| Password | `demo1234` |
 
-El tenant es **enterprise** (todo desbloqueado: multi-bodega, simulador de
-eventos, integraciones, asistente IA), con el correo ya verificado.
+The email is already verified. Every feature is available: there are no feature
+gates in this product — the tier decides how MUCH fits (SKUs, users,
+warehouses, saved forecasts), never what the product can do.
 
-### Resetear + resembrar antes de una demo
+### Reset and reseed before a demo
 
-El seed es **idempotente**: borra el tenant demo y lo reconstruye desde cero con
-datos coherentes. Corre esto para dejar el demo "como nuevo":
+The seed is **idempotent**: it deletes the demo tenant and rebuilds it from
+scratch with coherent data. Run this to leave the demo "as new":
 
 ```bash
 backend/.venv/Scripts/python.exe -m backend.scripts.seed_demo
 ```
 
-- Tarda **~3–4 minutos** porque entrena los pronósticos de verdad (familia diaria
-  + semanal sobre 14 SKUs). Al terminar imprime el resumen y el semáforo
-  (`PEDIR_YA: 2, PEDIR_PRONTO: 3, OK: 6, SOBRESTOCK: 3`).
-- Se puede correr con el backend levantado; el worker no interfiere. Si estabas
-  con sesión abierta en el navegador, vuelve a iniciar sesión después (el usuario
-  se recrea).
-- `--no-train` resetea en segundos **pero deja el semáforo vacío** (no hay
-  pronóstico). Úsalo solo para pruebas rápidas, nunca para la demo real.
+- Takes **~3–4 minutes** because it trains the forecasts for real (a daily +
+  weekly family over 14 SKUs). It prints the summary and the semáforo when it
+  finishes (`PEDIR_YA: 2, PEDIR_PRONTO: 3, OK: 6, SOBRESTOCK: 3`).
+- It can run with the backend up; the worker does not interfere. If you had a
+  browser session open, sign in again afterwards — the user is recreated.
+- `--no-train` resets in seconds **but leaves the semáforo empty** (there is no
+  forecast). Use it for quick checks, never for a real demo.
 
-### Qué quedó sembrado (resumen)
+### What gets seeded
 
-- **14 SKUs** de abarrotes (Aceite de Oliva, Arroz Premium, Leche, Café, Atún…)
-  con ~18 meses de ventas diarias y pronóstico entrenado (precisión ~88%).
-- **3 bodegas** (principal / Norte / Sur) con reparto de demanda; **Detergente**
-  está desbalanceado a propósito para disparar una sugerencia de transferencia.
-- **3 proveedores** con lead times, mapeados a SKUs.
-- **4 órdenes de compra** en estados distintos (recibida, parcial, en camino,
-  por enviar) + **1 transferencia** cerrada.
-- **2 mermas**, y un **calendario LatAm** (quincenas de Colombia + Semana Santa).
+- **14 grocery SKUs** (olive oil, premium rice, milk, coffee, tuna…) with ~18
+  months of daily sales and a trained forecast (~88% accuracy).
+- **3 warehouses** (principal / Norte / Sur) with a demand split; **Detergente**
+  is deliberately unbalanced so a transfer suggestion fires.
+- **3 suppliers** with lead times, mapped to SKUs.
+- **4 purchase orders** in different states (received, partial, in transit, to
+  be sent) plus **1 closed transfer**.
+- **2 shrinkage records**, and a **LatAm calendar** (the Costa Rica catalog —
+  fortnights, aguinaldo — plus Holy Week).
 
 ---
 
-## 1. La historia de valor (click-through)
+## 1. The value story (click-through)
 
-> Hilo conductor: **subir datos → pronóstico → semáforo de qué pedir → generar la
-> orden → recibir y aprender lead time → multi-bodega y transferencias →
-> multi-período → calendario/estacionalidad → editor de datos → WhatsApp.**
+> The thread: **upload data → forecast → what to order → generate the order →
+> receive it and learn the lead time → multi-warehouse and transfers →
+> multi-period → calendar and seasonality → data editor → WhatsApp.**
 
-### A. Subir ventas → de un CSV a decisiones
+### A. Upload sales → from a CSV to decisions
 
-1. Ir a **Mis Archivos** (`/data`). Seleccionar **"Ventas Demo Faro"**.
-   > *"Todo arranca con lo que el distribuidor ya tiene: su historial de ventas
-   > en un CSV. Nada de integraciones complejas para empezar."*
-2. Mostrar el tamaño / filas de la fuente.
-   > *"18 meses de ventas diarias, 14 productos. Con esto Faro entrena un modelo
-   > por SKU."*
+1. Go to **Mis ventas** (`/ventas`) and open **Mis archivos** (`/archivos`).
+   Select **"Ventas Demo StockAI"**.
+   > *"It starts with what the distributor already has: their sales history in
+   > a CSV. No complex integration to get going."*
+2. Show the size and the row count.
+   > *"Eighteen months of daily sales, 14 products. That is what StockAI trains a
+   > model per SKU on."*
 
-### B. Pronóstico → un modelo por producto
+### B. Forecast → one model per product
 
-3. Ir a **Predicciones** (`/skus`). Se auto-selecciona la sesión "Demo Faro".
-   > *"Faro entrena varios modelos (LightGBM, XGBoost, Prophet, Croston…) y elige
-   > el mejor por SKU. Aquí el mejor modelo salió XGBoost con ~3% de error."*
-4. Clic en un SKU (ej. **Aceite de Oliva 1L**): ver la curva histórica + el
-   pronóstico y la banda de incertidumbre.
-   > *"No es una regla fija de 'pedir cuando baje de X'. Es demanda proyectada,
-   > con estacionalidad de fin de semana y quincena."*
-5. Cambiar la **granularidad D → W** (botones D/W/M en el gráfico) y el selector
-   de **Sesión** entre "Demo Faro" y "Demo Faro · weekly".
-   > *"El mismo dato se ve por día o por semana según cómo compre el cliente."*
+3. Go to **Pronósticos** (`/pronosticos`). The "Demo StockAI" session is selected
+   automatically.
+   > *"StockAI trains several models (LightGBM, XGBoost, Prophet, Croston…) and
+   > picks the best one per SKU. Here the winner was XGBoost at ~3% error."*
+4. Click a SKU (e.g. **Aceite de Oliva 1L**): the history, the forecast and the
+   uncertainty band.
+   > *"This is not a fixed 'order when it drops below X' rule. It is projected
+   > demand, with weekend and payday seasonality."*
+5. Switch the **granularity D → W** (the D/W/M buttons on the chart) and the
+   **session** selector between "Demo StockAI" and "Demo StockAI · weekly".
+   > *"The same data, by day or by week, depending on how the customer buys."*
 
-### C. Semáforo → qué pedir hoy
+### C. The semáforo → what to order today
 
-6. Ir a **Inventario** (`/inventory`). Mostrar el semáforo:
+6. Go to **Inventario** (`/inventario`) and show the signals:
    **2 Pedir YA · 3 Pedir pronto · 6 OK · 3 Sobrestock**.
-   > *"Esta es la pantalla estrella: en un vistazo, qué está en riesgo y qué
-   > sobra. Rojo = se agota antes de que llegue el proveedor; azul = capital
-   > dormido."*
-7. Señalar un **Sobrestock** (Arroz / Azúcar): 48 días de cobertura.
-   > *"Aquí hay plata parada. Faro sugiere pausar el próximo pedido."*
+   > *"This is the screen: at a glance, what is at risk and what is excess. Red
+   > runs out before the supplier arrives; blue is sleeping capital."*
+7. Point at an **overstocked** line (rice / sugar): 48 days of coverage.
+   > *"That is money standing still. StockAI suggests pausing the next order."*
 
-### D. Generar la orden → del semáforo a la OC
+### D. Generate the order → from the signal to a PO
 
-8. Volver a **Panel de Compras** (`/hoy`). Mostrar las tarjetas "URGENTE"
-   (Aceite, Harina) con la cantidad sugerida y el "≈ costo".
-   > *"Faro no solo avisa: dice cuánto pedir y a qué proveedor, con el costo
-   > estimado."*
-9. Clic en **"Ver por qué"** de un urgente para abrir el desglose (demanda diaria,
-   lead time, stock de seguridad).
-   > *"Todo es explicable: el comprador ve la cuenta, no una caja negra."*
-10. Clic en **Aprobar** en una tarjeta → se arma el carrito. Desde `/inventory`,
-    botón **"Exportar OC"** para generar la orden.
-    > *"Un clic convierte la recomendación en una orden de compra lista para
-    > enviar."*
+8. Back to **Panel de compras** (`/compras`). Show the "URGENTE" cards (oil,
+   flour) with the suggested quantity and the approximate cost.
+   > *"StockAI does not just warn: it says how much to order, from which supplier,
+   > at what estimated cost."*
+9. Click **"Ver por qué"** on an urgent line to open the breakdown (daily
+   demand, lead time, safety stock).
+   > *"All of it is explainable: the buyer sees the arithmetic, not a black
+   > box."*
+10. **Approve** a card to build the cart, then export the order.
+    > *"One click turns the recommendation into a purchase order ready to
+    > send."*
 
-### E. Recibir y aprender lead time → cerrar el ciclo
+### E. Receive it and learn the lead time → closing the loop
 
-11. Ir a **Pedidos** (`/pedidos`). Mostrar las 4 OC en estados distintos:
-    **OC-000001 Recibida**, **OC-000002 Parcial**, **OC-000003/004 En camino**.
-    > *"El ciclo no termina en la orden: se registra la llegada."*
-12. En una OC "En camino", clic en **"Registrar llegada"** y confirmar la recepción.
-    > *"Cuando registras la llegada, Faro compara la fecha real contra la
-    > prometida y aprende el lead time verdadero del proveedor."*
-13. Ir a **Proveedores → Scorecard** (`/inventory/suppliers/scorecard`).
-    > *"Mira: Granos del Valle dice 12 días pero en la práctica entrega en 5–8.
-    > Faro usa el lead time REAL para calcular cuándo pedir — no el del papel."*
+11. Go to **Pedidos** (`/pedidos`). Show the four POs in different states:
+    **OC-000001 received**, **OC-000002 partial**, **OC-000003/004 in transit**.
+    > *"The cycle does not end at the order: the arrival is recorded."*
+12. On an in-transit PO, click **"Registrar llegada"** and confirm the
+    reception.
+    > *"When you record the arrival, StockAI compares the real date against the
+    > promised one and learns the supplier's true lead time."*
+13. Go to **Proveedores → Scorecard** (`/proveedores/scorecard`).
+    > *"Look: Granos del Valle says 12 days and delivers in 5–8. StockAI plans on
+    > the REAL lead time, not the one on paper."*
 
-### F. Multi-bodega y transferencias → mover antes de comprar
+### F. Multi-warehouse and transfers → move before you buy
 
-14. En **Inventario**, cambiar a la pestaña de bodega **principal**.
-    > *"El mismo semáforo, pero por bodega."*
-15. Buscar **Detergente 1kg**: en principal la acción NO es "comprar", es
+14. In **Inventario**, switch to the **principal** warehouse tab.
+    > *"The same semáforo, per warehouse."*
+15. Find **Detergente 1kg**: in principal the action is not "buy", it is
     **"Transferir 228 desde Norte"**.
-    > *"Antes de gastar en una compra, Faro revisa si otra bodega tiene
-    > excedente. Aquí conviene mover stock, no comprar."*
-16. (Opcional) En el **Panel de Compras** también aparece arriba:
-    *"1 se resuelve moviendo stock, sin comprar"* → botón **Crear transferencia**.
+    > *"Before spending on a purchase, StockAI checks whether another warehouse has
+    > a surplus. Here it is cheaper to move stock than to buy it."*
+16. (Optional) The purchase panel says the same at the top: *"1 se resuelve
+    moviendo stock, sin comprar"* → **Crear transferencia**.
 
-### G. Multi-período → día ↔ semana
+### G. Multi-period → day ↔ week
 
-17. En el selector superior **"Ver por"**, cambiar **Día → Semana** (o al revés).
-    > *"El comprador que planifica semanal ve cobertura, cantidades y lead time
-    > todo en semanas — cuadra con cómo trabaja."*
-18. Notar que las cantidades quedan en unidades enteras y las coberturas cambian
-    de "días" a "semanas" de forma consistente con el KPI de arriba.
+17. In the **"Ver por"** selector at the top, switch **day → week**.
+    > *"A buyer who plans weekly sees coverage, quantities and lead time in
+    > weeks — which is how they actually work."*
+18. Note that quantities stay whole units and coverage switches from days to
+    weeks consistently with the KPI above.
 
-### H. Calendario y estacionalidad → anticipar picos
+### H. Calendar and seasonality → getting ahead of the peaks
 
-19. En **Inventario**, botón **"Eventos y temporadas (2 próximos)"** o los botones
-    **"Simular: Quincena…"**.
-    > *"Faro trae el calendario comercial LatAm: quincenas, Semana Santa. Un clic
-    > simula el impacto del evento sobre la demanda."*
-20. Correr **"Simular: Quincena"** y mostrar cómo cambian las recomendaciones con
-    el multiplicador del evento.
-    > *"La quincena dispara el consumo; Faro lo anticipa antes de que el semáforo
-    > se ponga rojo."*
+19. In **Inventario**, open **"Eventos y temporadas"** or the **"Simular:
+    Quincena…"** buttons.
+    > *"StockAI ships the LatAm commercial calendar: paydays, Holy Week. One click
+    > simulates the event's impact on demand."*
+20. Run **"Simular: Quincena"** and show how the recommendations move with the
+    event multiplier.
+    > *"Payday drives consumption; StockAI anticipates it before the signal turns
+    > red."*
 
-### I. Editor de datos → corregir sin salir de la app
+### I. Data editor → fixing without leaving the app
 
-21. En **Mis Archivos**, seleccionar la fuente → **Editar**.
-    > *"Si el cliente detecta un dato malo, lo corrige aquí mismo."*
-22. Cambiar una celda de `cantidad` → botón **"Guardar como nuevo"** (crea una
-    versión nueva sin tocar el original).
-    > *"Guardar como nuevo deja el dataset original intacto y crea una versión
-    > lista para reentrenar."*
-    > ⚠️ Ojo: la tabla del editor carga TODAS las filas del archivo (ver
-    > "Limitaciones"). No hay que hacer scroll por las ~7.5k filas; basta mostrar
-    > el encabezado, editar una celda y guardar.
+21. In **Mis archivos**, select the source → **Editar**.
+    > *"If the customer spots bad data, they fix it right here."*
+22. Change a `cantidad` cell → **"Guardar como nuevo"** (creates a new version
+    without touching the original).
+    > *"Save as new leaves the original dataset intact and produces a version
+    > ready to retrain."*
+    > ⚠️ The editor table loads EVERY row of the file (see "Known limits").
+    > Do not scroll through the ~7,500 rows: show the header, edit one cell,
+    > save.
 
-### J. WhatsApp → alertas y bot
+### J. WhatsApp → alerts and the bot
 
-23. Ir a **Configuración** (`/config`), sección **"Vincular WhatsApp"**: el número
-    ya está puesto (`+506 8888 7777`), botón **"Enviar código"**.
-    > *"El comprador vincula su WhatsApp y recibe las alertas de inventario ahí
-    > mismo, y puede consultar sus compras conversando con el bot."*
-    Ver la nota honesta sobre el bot más abajo.
+23. Go to **Mi cuenta** (`/mi-cuenta`), section **"Vincular WhatsApp"**: the
+    number is already there (`+506 8888 7777`), then **"Enviar código"**.
+    > *"The buyer links their WhatsApp and gets the inventory alerts there, and
+    > can ask about their purchases by chatting with the bot."*
+    See the honest note about the bot below.
 
-### K. Cierre — el idioma y el resto
+### K. Closing — language and the rest
 
-24. Botón **ES / EN** (barra lateral o `/config`): togglear a inglés y volver.
-    > *"Producto bilingüe de fábrica."*
-25. **Ctrl-K** (o el buscador arriba): buscar un producto y ver el desglose por
-    bodega.
-26. Mencionar **Impacto** (`/inventory/roi`): ROI acumulado, adopción de
-    recomendaciones, capital liberado.
-    > *"Y todo esto se mide: cuántas recomendaciones siguió, cuánto capital
-    > liberó."*
-
----
-
-## 2. Nota honesta sobre el bot de WhatsApp
-
-- **Alertas salientes (outbound): funcionan de verdad.** Con las credenciales de
-  Twilio (sandbox) configuradas, Faro envía las alertas diarias de inventario por
-  WhatsApp. Sin credenciales, el envío queda como no-op registrado en logs.
-- **Bot conversacional entrante (inbound): requiere montaje extra.** Para el
-  round-trip en vivo (el usuario le escribe al bot y este responde con sus datos)
-  hace falta:
-  1. Un **túnel público** (ej. `ngrok`) apuntando al webhook del backend, porque
-     Twilio necesita una URL pública para entregar los mensajes entrantes.
-  2. **Crédito de Anthropic** (`ANTHROPIC_API_KEY`) para las respuestas del bot
-     inteligente; hoy el bot corre en **modo genérico** (`WHATSAPP_BOT_GENERIC_MODE`)
-     como stopgap cuando no hay LLM financiado.
-- **Recomendación para la demo:** mostrar la **UI de vinculación** en
-  `/config` y **explicar** el bot. Si el presentador quiere el round-trip en vivo,
-  levantar `ngrok` + poner `ANTHROPIC_API_KEY` con crédito **antes** de la sesión.
+24. The **ES / EN** button (sidebar or `/mi-cuenta`): toggle to English and
+    back.
+    > *"Bilingual out of the box."*
+25. **Ctrl-K** (or the search box at the top): find a product and see its
+    per-warehouse breakdown.
+26. Mention **Impacto** (`/impacto`): accumulated ROI, recommendation adoption,
+    capital freed. And **Qué ha pasado** (`/actividad`): everything the product
+    did and why, which is what an auditor or a returning buyer reads first.
+    > *"And all of it is measured: how many recommendations they followed, how
+    > much capital they freed."*
 
 ---
 
-## 3. Limitaciones conocidas / "no hagas clic aquí"
+## 2. An honest note about the WhatsApp bot
 
-- **Editor de datos con archivo grande.** El editor renderiza TODAS las filas del
-  dataset. El archivo demo tiene ~7.5k filas, así que la tabla tarda un momento en
-  pintar y el scroll se siente pesado. Para la demo: abrir el editor, editar UNA
-  celda visible y usar "Guardar como nuevo"; no hacer scroll por toda la tabla.
-- **"Resumen ejecutivo del día" (Panel de Compras).** El texto narrativo lo genera
-  el LLM. Si `ANTHROPIC_API_KEY` no tiene crédito, puede quedarse en
-  "Analizando datos…". No es un error de datos; el resto del panel funciona. Si
-  molesta, no esperar a que cargue esa tarjeta.
-- **"Cambios en demanda" con -99%.** En el Panel de Compras, esta sección compara
-  el último día real contra el pronóstico y a veces muestra caídas grandes (ruido
-  del último punto). Es informativo, no un bug; conviene no detenerse ahí.
-- **Asistente IA / chat.** Igual que el bot, depende de `ANTHROPIC_API_KEY` con
-  crédito. Sin él, responde en modo limitado.
-- **Reseed = re-login.** Si corres `seed_demo` con la sesión abierta, el usuario se
-  recrea; vuelve a iniciar sesión.
+- **Outbound alerts work for real.** With Twilio (sandbox) credentials
+  configured, StockAI sends the daily inventory alerts over WhatsApp. Without
+  credentials the send is a no-op recorded in the logs.
+- **The inbound conversational bot needs extra setup.** For a live round trip
+  (the user writes to the bot and it answers with their data) you need:
+  1. A **public tunnel** (e.g. `ngrok`) pointing at the backend webhook, because
+     Twilio needs a public URL to deliver incoming messages.
+  2. **DeepSeek credit** (`DEEPSEEK_API_KEY`) for the intelligent replies; today
+     the bot runs in **generic mode** (`WHATSAPP_BOT_GENERIC_MODE`) as a stopgap
+     when there is no funded LLM.
+- **Recommendation for the demo:** show the linking UI in `/mi-cuenta` and
+  *explain* the bot. If the presenter wants the live round trip, bring up
+  `ngrok` and set a funded `DEEPSEEK_API_KEY` **before** the session.
+
+---
+
+## 3. Known limits / "do not click here"
+
+- **The data editor with a large file.** It renders EVERY row. The demo file has
+  ~7,500, so the table takes a moment to paint and scrolling feels heavy. For
+  the demo: open it, edit ONE visible cell, use "Guardar como nuevo", do not
+  scroll.
+- **"Resumen ejecutivo del día" (purchase panel).** The narrative is generated
+  by the LLM. With no `DEEPSEEK_API_KEY` credit it can sit on "Analizando
+  datos…". That is not a data error and the rest of the panel works; do not wait
+  for that card.
+- **"Cambios en demanda" showing -99%.** That section compares the last real day
+  against the forecast and sometimes shows a large drop (noise in the final
+  point). It is informative, not a bug — do not dwell on it.
+- **AI assistant / chat.** Like the bot, it depends on funded
+  `DEEPSEEK_API_KEY`. Without it, it answers in a limited mode.
+- **Reseed means re-login.** If you run `seed_demo` with a session open, the
+  user is recreated; sign in again.

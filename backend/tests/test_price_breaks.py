@@ -105,7 +105,7 @@ class TestStepUpRejected:
 
     def test_cheaper_unit_price_but_creates_overstock_is_rejected(self):
         """The headline case the plan warns about: the unit price genuinely
-        drops 20%, but the quantity is a year of stock for this SKU. Faro's own
+        drops 20%, but the quantity is a year of stock for this SKU. StockAI's own
         semáforo would paint it SOBRESTOCK, so it must not be recommended."""
         opp = pb.evaluate_step_up(
             sku="SKU-1", supplier_name="Acme",
@@ -396,3 +396,90 @@ class TestEvaluateEndpoint:
         )
         assert r.status_code == 200
         assert "opportunities" in r.json()["data"]
+
+
+# ── A ladder belongs to a (SKU, supplier) pair ────────────────────────────────
+
+class TestTwoSuppliersQuotingTheSameSku:
+    """`evaluate_cart` grouped the rungs by SKU alone, so two suppliers' scales
+    became one imaginary ladder credited to whichever supplier owned the LOWEST
+    rung. The panel could then say "Andina: order 500 and save ~1400" about a
+    price only Norte ever quoted — the buyer calls Andina and is told no such
+    price exists."""
+
+    @staticmethod
+    def _two_ladders(tenant_id, sku):
+        """Andina quotes 200 @ 9.5; Norte quotes 500 @ 8.0 — the deeper deal
+        belongs to the supplier who does NOT own the lowest rung."""
+        from backend.inventory import supplier_service as sup_svc
+        andina = sup_svc.create_supplier(tenant_id, {"name": f"Andina-{uuid4().hex[:6]}"})
+        norte = sup_svc.create_supplier(tenant_id, {"name": f"Norte-{uuid4().hex[:6]}"})
+        pb.upsert_price_break(tenant_id, andina["id"], sku, 200, 9.5)
+        pb.upsert_price_break(tenant_id, norte["id"], sku, 500, 8.0)
+        return andina, norte
+
+    @staticmethod
+    def _status(sku, supplier_name=None, supplier_id=None):
+        return [{
+            "sku": sku,
+            "supplier": supplier_name,
+            "supplier_id": supplier_id,
+            "unit_cost": 10.0,
+            "daily_demand": 20.0,
+            "current_stock": 0,
+            "lead_time_days": 15,
+        }]
+
+    @staticmethod
+    def _quoted_by(tenant_id, supplier_name, sku, min_qty, unit_price):
+        """The supplier named in the recommendation must really have that rung
+        on file — the assertion the merged ladder could not survive."""
+        return query_one(
+            """SELECT pb.id FROM supplier_price_breaks pb
+                 JOIN suppliers s ON s.id = pb.supplier_id
+                WHERE pb.tenant_id = %s AND s.name = %s AND pb.sku = %s
+                  AND pb.min_qty = %s AND pb.unit_price = %s""",
+            (tenant_id, supplier_name, sku, min_qty, unit_price),
+        )
+
+    def test_the_skus_own_supplier_ladder_is_the_only_one_quoted(self, test_tenant):
+        tid = test_tenant["id"]
+        sku = f"SKU-{uuid4().hex[:8].upper()}"
+        andina, _norte = self._two_ladders(tid, sku)
+
+        results = pb.evaluate_cart(
+            tid, [{"sku": sku, "quantity": 100}],
+            self._status(sku, andina["name"], andina["id"]),
+        )
+
+        assert len(results) == 1
+        opp = results[0]
+        assert opp["supplier_name"] == andina["name"]
+        assert opp["step_quantity"] == 200, "Quoted a rung from the other supplier's scale"
+        assert opp["step_unit_price"] == 9.5
+        assert self._quoted_by(tid, opp["supplier_name"], sku,
+                               opp["step_quantity"], opp["step_unit_price"]), (
+            f"{opp['supplier_name']} never offered "
+            f"{opp['step_quantity']} @ {opp['step_unit_price']}"
+        )
+
+    def test_with_no_supplier_on_the_sku_the_best_rung_keeps_its_own_owner(self, test_tenant):
+        """Nothing on the SKU says who supplies it, so every ladder is fair
+        game — but the winning rung must be credited to the supplier that
+        actually quoted it."""
+        tid = test_tenant["id"]
+        sku = f"SKU-{uuid4().hex[:8].upper()}"
+        _andina, norte = self._two_ladders(tid, sku)
+
+        results = pb.evaluate_cart(
+            tid, [{"sku": sku, "quantity": 100}], self._status(sku),
+        )
+
+        assert len(results) == 1
+        opp = results[0]
+        assert opp["step_quantity"] == 500
+        assert opp["supplier_name"] == norte["name"], (
+            "The deepest discount was credited to a supplier who never quoted it"
+        )
+        assert self._quoted_by(tid, opp["supplier_name"], sku,
+                               opp["step_quantity"], opp["step_unit_price"])

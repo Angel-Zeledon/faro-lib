@@ -43,10 +43,15 @@ class InventoryRecommendation:
         forecast_total:   Total demand forecast over horizon.
         safety_stock:     Units of safety stock to hold.
         reorder_point:    Stock level at which to reorder.
-        days_of_coverage: Current stock / daily demand rate.
-        stockout_risk:    Probability of stockout (0-1).
+        days_of_coverage: Current stock / daily demand rate. None when
+                           current_stock is unknown — see `recommend`.
+        stockout_risk:    Probability of stockout (0-1). None when
+                           current_stock is unknown — see `recommend`.
         overstock_alert:  True if current stock exceeds ROP + safety stock by 50%.
-        action:           Human-readable recommendation ("REORDER", "OK", "OVERSTOCK").
+                           Always False when current_stock is unknown.
+        action:           Human-readable recommendation ("REORDER", "OK",
+                           "OVERSTOCK", or "UNKNOWN" when current_stock was
+                           not supplied).
         details:          Dict with intermediate calculation values.
     """
     sku: str
@@ -54,8 +59,8 @@ class InventoryRecommendation:
     forecast_total: float
     safety_stock: float
     reorder_point: float
-    days_of_coverage: float
-    stockout_risk: float
+    days_of_coverage: Optional[float]
+    stockout_risk: Optional[float]
     overstock_alert: bool
     action: str
     details: dict
@@ -94,7 +99,7 @@ class InventoryAdvisor:
         self,
         sku: str,
         forecast: np.ndarray,
-        current_stock: float = 0.0,
+        current_stock: Optional[float] = None,
         demand_std: Optional[float] = None,
     ) -> InventoryRecommendation:
         """
@@ -103,7 +108,11 @@ class InventoryAdvisor:
         Args:
             sku:           SKU identifier.
             forecast:      Daily demand forecast array (length = horizon).
-            current_stock: Current on-hand inventory units.
+            current_stock: Current on-hand inventory units. None means the
+                           caller does not know it (the engine, in
+                           particular, is never given stock levels) — kept
+                           distinct from an actual zero, which is a caller
+                           telling us the shelf is empty.
             demand_std:    Daily demand standard deviation (estimated from forecast if None).
 
         Returns:
@@ -119,26 +128,49 @@ class InventoryAdvisor:
         total_demand = float(np.sum(forecast))
 
         if demand_std is None:
+            # Fallback only, for a SKU with no forecast-error band (no q90):
+            # the dispersion of the forecast PATH, not of the forecast ERROR.
+            # A flat forecast — what a good model produces on a stable SKU —
+            # makes this ~0, understating the cushion it needs; a seasonal
+            # one sizes the cushion by its seasonality instead of by how
+            # wrong the model actually is. Callers that have a real error
+            # band (Pipeline._inventory, from forecast_df's q90) pass
+            # demand_std explicitly and never hit this branch.
             demand_std = float(np.std(forecast)) if len(forecast) > 1 else daily_demand * 0.3
 
         safety_stock = self._z * demand_std * np.sqrt(self.lead_time_days)
         reorder_point = daily_demand * self.lead_time_days + safety_stock
-        days_coverage = current_stock / (daily_demand + 1e-8)
 
-        # Stockout risk: probability demand during lead time > current stock
-        lead_demand_mean = daily_demand * self.lead_time_days
-        lead_demand_std  = demand_std * np.sqrt(self.lead_time_days)
-        stockout_risk = float(1 - stats.norm.cdf(current_stock, lead_demand_mean, lead_demand_std + 1e-8))
-        stockout_risk = min(max(stockout_risk, 0.0), 1.0)
-
-        overstock_alert = current_stock > (reorder_point + safety_stock) * 1.5
-
-        if current_stock <= reorder_point:
-            action = "REORDER"
-        elif overstock_alert:
-            action = "OVERSTOCK"
+        if current_stock is None:
+            # No stock level was supplied. Treating that as current_stock=0.0
+            # produced a confident, specific, wrong answer for every SKU:
+            # stockout_risk~1.0 and days_of_coverage=0.0 regardless of the
+            # true stock position. It reached a tenant once — see
+            # backend/ai/rag_service.py (~line 723): the assistant told them
+            # "100% of your products are critical" against a screen that read
+            # 20 OK / 8 SOBRESTOCK / 4 at risk. Report "unknown", not a number
+            # computed from an assumed zero.
+            days_coverage = None
+            stockout_risk = None
+            overstock_alert = False
+            action = "UNKNOWN"
         else:
-            action = "OK"
+            days_coverage = current_stock / (daily_demand + 1e-8)
+
+            # Stockout risk: probability demand during lead time > current stock
+            lead_demand_mean = daily_demand * self.lead_time_days
+            lead_demand_std  = demand_std * np.sqrt(self.lead_time_days)
+            stockout_risk = float(1 - stats.norm.cdf(current_stock, lead_demand_mean, lead_demand_std + 1e-8))
+            stockout_risk = min(max(stockout_risk, 0.0), 1.0)
+
+            overstock_alert = current_stock > (reorder_point + safety_stock) * 1.5
+
+            if current_stock <= reorder_point:
+                action = "REORDER"
+            elif overstock_alert:
+                action = "OVERSTOCK"
+            else:
+                action = "OK"
 
         return InventoryRecommendation(
             sku=sku,
@@ -146,8 +178,8 @@ class InventoryAdvisor:
             forecast_total=round(total_demand, 2),
             safety_stock=round(safety_stock, 2),
             reorder_point=round(reorder_point, 2),
-            days_of_coverage=round(days_coverage, 1),
-            stockout_risk=round(stockout_risk, 4),
+            days_of_coverage=round(days_coverage, 1) if days_coverage is not None else None,
+            stockout_risk=round(stockout_risk, 4) if stockout_risk is not None else None,
             overstock_alert=overstock_alert,
             action=action,
             details={
@@ -171,11 +203,16 @@ class InventoryAdvisor:
 
         Args:
             forecasts_by_sku: {sku: np.ndarray of forecast}
-            stocks_by_sku:    {sku: current_stock}   — defaults to 0
+            stocks_by_sku:    {sku: current_stock}   — a SKU absent from this
+                              dict (or the dict not being passed at all)
+                              means "stock unknown", not "stock is 0"
             std_by_sku:       {sku: demand_std}      — estimated if None
 
         Returns:
-            List of InventoryRecommendation sorted by stockout_risk descending.
+            List of InventoryRecommendation sorted by stockout_risk descending,
+            with unknown-stock SKUs (stockout_risk=None) last: None is not a
+            stockout risk of zero, it is the absence of one, so it cannot be
+            ranked against a SKU we could actually score.
         """
         stocks = stocks_by_sku or {}
         stds   = std_by_sku or {}
@@ -184,11 +221,14 @@ class InventoryAdvisor:
             rec = self.recommend(
                 sku=sku,
                 forecast=fc,
-                current_stock=stocks.get(sku, 0.0),
+                current_stock=stocks.get(sku),
                 demand_std=stds.get(sku),
             )
             results.append(rec)
-        return sorted(results, key=lambda r: r.stockout_risk, reverse=True)
+        return sorted(
+            results,
+            key=lambda r: (r.stockout_risk is None, -(r.stockout_risk or 0.0)),
+        )
 
     def summary_df(self, recommendations: List[InventoryRecommendation]):
         """Convert recommendations to a DataFrame for reporting."""

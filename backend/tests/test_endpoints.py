@@ -36,8 +36,8 @@ def unique_phone() -> str:
 
 
 def _email(prefix: str) -> str:
-    """@faro-e2e.io has no MX record, so no test address can reach a person."""
-    return f"{prefix}-{uuid4().hex[:8]}@faro-e2e.io"
+    """@stockai-e2e.io has no MX record, so no test address can reach a person."""
+    return f"{prefix}-{uuid4().hex[:8]}@stockai-e2e.io"
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -82,6 +82,7 @@ class TestSignup:
             "tenant_name": tenant_name,
             "full_name": "Test User",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 201
         tenant_id = resp.json()["data"]["tenant"]["id"]
@@ -102,9 +103,18 @@ class TestSignup:
             assert user["hashed_password"] != "StrongPass123!"
             assert user["hashed_password"].startswith("$2"), "not a bcrypt hash"
 
-            tenant = query_one("SELECT name, plan FROM tenants WHERE id = %s", (tenant_id,))
+            tenant = query_one(
+                "SELECT name, tier, trial_ends_at FROM tenants WHERE id = %s", (tenant_id,))
             assert tenant is not None and tenant["name"] == tenant_name
-            assert tenant["plan"], "a new tenant was created with no plan"
+            # A new tenant lands on the free tier, and the free tier is a
+            # permanent home rather than a countdown: the 14-day trial was
+            # removed on 2026-08-22, so `trial_ends_at` is NULL on every new
+            # signup. The column survives only to suspend an account by hand.
+            assert tenant["tier"] == "free"
+            assert tenant["trial_ends_at"] is None, (
+                "a new tenant was given a trial clock — the trial was removed "
+                "on 2026-08-22 and the free tier does not expire"
+            )
         finally:
             execute("DELETE FROM tenants WHERE id = %s", (tenant_id,))
 
@@ -117,6 +127,7 @@ class TestSignup:
             "password": "StrongPass123!",
             "tenant_name": tenant_name,
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "email_already_registered"
@@ -155,6 +166,7 @@ class TestSignup:
             "password": "StrongPass123!",
             "tenant_name": tenant_name,
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
             **payload_patch,
         }
         resp = client.post("/api/v1/auth/signup", json=body)
@@ -180,6 +192,7 @@ class TestSignupWhatsapp:
             "password": "StrongPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": phone,
+            "accept_terms": True,
         })
         assert resp.status_code == 201, resp.text
         row = query_one(
@@ -221,6 +234,7 @@ class TestSignupWhatsapp:
             "password": "StrongPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": phone,
+            "accept_terms": True,
         })
         assert resp.status_code == 409, resp.text
         assert resp.json().get("error_code") == "whatsapp_number_taken"
@@ -314,7 +328,7 @@ class TestLogin:
         It used to 403, which left anyone whose verification mail hit spam
         permanently outside with no self-service way back and nothing of the
         product seen. They now get in with `email_verified: false` on the token,
-        and only outward-facing actions (inviting users, integrations, sending
+        and only outward-facing actions (inviting users, sending
         notifications) are refused — see test_email_verification_unblock.py for
         those, including the pair that proves an unverified admin cannot invite.
         """

@@ -1,11 +1,15 @@
-"""FastAPI dependency guards that enforce plan entitlements."""
+"""The one entitlement guard left: an expired trial cannot write.
+
+`require_feature` used to live here and gated about forty routes by plan. With
+one plan it has nothing to decide, so it is gone rather than left as a
+dependency that always says yes.
+"""
 
 from fastapi import Depends, HTTPException, status
 
-from backend.auth.guards import CurrentUser, get_current_user, require_role
+from backend.auth.guards import CurrentUser, require_role
 from backend.config import settings
-from backend.entitlements.plans import Feature
-from backend.entitlements.service import has_feature, is_read_only, required_plans_for
+from backend.entitlements.service import is_read_only
 from backend.tenants.service import get_tenant
 
 
@@ -26,7 +30,6 @@ def require_active_analyst(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "TRIAL_EXPIRED",
-                "current_plan": tenant.get("plan", "starter"),
                 "trial_ends_at": (
                     tenant["trial_ends_at"].isoformat()
                     if tenant.get("trial_ends_at") else None
@@ -34,23 +37,3 @@ def require_active_analyst(
             },
         )
     return user
-
-
-def require_feature(feature: Feature):
-    def guard(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        if settings.testing_mode:
-            return user
-        tenant = get_tenant(user.tenant_id) or {}
-        if not has_feature(tenant, feature):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "PLAN_UPGRADE_REQUIRED",
-                    "feature": feature.value,
-                    "current_plan": tenant.get("plan", "starter"),
-                    "required_plans": required_plans_for(feature),
-                },
-            )
-        return user
-
-    return guard

@@ -6,6 +6,7 @@ import {
  chooseColumnsCanonical, setFeatures, setModels, setValidationConfig,
  setBusinessConfig, startTraining, getJob,
  startDemoQuickstart, listDatasets, getSessionSummaries, getColumnsConfig,
+ getDataGate, setRemediations,
 } from '@/lib/api'
 import type { TrainingFamily } from '@/lib/api'
 import {
@@ -15,11 +16,15 @@ import { validateSalesCsv } from '@/lib/csvCheck'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
 import DataIssuesPanel from '@/components/ui/DataIssuesPanel'
+import RemediationChoices from '@/components/ui/RemediationChoices'
 import type {
- InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary,
+ InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary, DataGate,
 } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
+import { useErrorDetail } from '@/components/ui/States'
 import DataTabs from '@/components/layout/DataTabs'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import StickyActionBar from '@/components/mobile/StickyActionBar'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { usePlanning } from '@/contexts/PlanningContext'
 
@@ -35,9 +40,9 @@ function trainingErrorText(raw: string | null | undefined, t: (k: string) => str
 }
 
 // ── Step indicator ─────────────────────────────────────────────────────────────
-function StepBubble({ n, label, active, done }: { n: number; label: string; active: boolean; done: boolean }) {
+function StepBubble({ n, label, active, done, narrow }: { n: number; label: string; active: boolean; done: boolean; narrow?: boolean }) {
  return (
- <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+ <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, ...(narrow ? { flexShrink: 0, maxWidth: 92 } : {}) }}>
  <div style={{
  width: 36, height: 36, borderRadius: '50%',
  display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -52,7 +57,8 @@ function StepBubble({ n, label, active, done }: { n: number; label: string; acti
  <span style={{
  fontSize: 12, fontWeight: active ? 600 : 400,
  color: active ? 'var(--accent)' : done ? '#22c55e' : 'var(--dim)',
- whiteSpace: 'nowrap',
+ whiteSpace: narrow ? 'normal' : 'nowrap',
+ ...(narrow ? { textAlign: 'center', lineHeight: 1.25 } : {}),
  }}>
  {label}
  </span>
@@ -62,19 +68,22 @@ function StepBubble({ n, label, active, done }: { n: number; label: string; acti
 
 function StepBar({ step }: { step: number }) {
  const { t } = useLanguage()
+ // Phone: the connectors flex instead of a fixed 80px, and the labels wrap —
+ // three bubbles with nowrap labels measured 420px at 360.
+ const narrow = useIsNarrow()
  const steps = [
  { n: 1, label: t('qs.step1') },
  { n: 2, label: t('qs.step2') },
  { n: 3, label: t('qs.step3') },
  ]
  return (
- <div data-tour="qs.steps" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 0, marginBottom: 40 }}>
+ <div data-tour="qs.steps" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 0, marginBottom: narrow ? 20 : 40 }}>
  {steps.map((s, i) => (
- <div key={s.n} style={{ display: 'flex', alignItems: 'center' }}>
- <StepBubble n={s.n} label={s.label} active={step === s.n} done={step > s.n} />
+ <div key={s.n} style={{ display: 'flex', alignItems: 'center', ...(narrow && i < steps.length - 1 ? { flex: 1, minWidth: 0 } : {}) }}>
+ <StepBubble n={s.n} label={s.label} active={step === s.n} done={step > s.n} narrow={narrow} />
  {i < steps.length - 1 && (
  <div style={{
- width: 80, height: 2, margin: '0 8px', marginBottom: 24,
+ width: narrow ? 'auto' : 80, flex: narrow ? 1 : undefined, minWidth: narrow ? 12 : undefined, height: 2, margin: narrow ? '0 4px' : '0 8px', marginBottom: 24,
  background: step > s.n ? '#22c55e44' : 'var(--border)',
  transition: 'all 0.25s',
  }} />
@@ -134,6 +143,7 @@ function CsvExample() {
 // ── Drop zone ──────────────────────────────────────────────────────────────────
 function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }) {
  const { t } = useLanguage()
+ const narrow = useIsNarrow()
  const [dragging, setDragging] = useState(false)
  const inputRef = useRef<HTMLInputElement>(null)
 
@@ -159,7 +169,7 @@ function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }
  style={{
  border: `2px dashed ${dragging ? 'var(--accent)' : 'var(--border)'}`,
  borderRadius: 12,
- padding: '48px 32px',
+ padding: narrow ? '28px 16px' : '48px 32px',
  textAlign: 'center',
  cursor: busy ? 'not-allowed' : 'pointer',
  background: dragging ? 'var(--accent-dim, #eef2ff)' : 'var(--surface-2, #f8fafc)',
@@ -200,6 +210,7 @@ function SessionClonePicker({ sessions, onPick, busy }: {
  sessions: SessionSummary[]; onPick: (s: SessionSummary) => void; busy: boolean
 }) {
  const { t } = useLanguage()
+ const narrow = useIsNarrow()
  if (sessions.length === 0) {
  return <p style={{ fontSize: 13, color: 'var(--dim)', margin: 0 }}>{t('qs.clone_empty')}</p>
  }
@@ -238,6 +249,7 @@ function SessionClonePicker({ sessions, onPick, busy }: {
   color: 'var(--accent)', flexShrink: 0,
   cursor: busy ? 'not-allowed' : 'pointer',
   opacity: busy ? 0.6 : 1,
+  ...(narrow ? { minHeight: 44, padding: '0 16px' } : {}),
  }}
  >
  {t('qs.clone_use_btn')}
@@ -254,6 +266,7 @@ function DatasetPicker({ datasets, onPick, busy }: {
  datasets: DatasetMeta[]; onPick: (id: string) => void; busy: boolean
 }) {
  const { t } = useLanguage()
+ const narrow = useIsNarrow()
  if (datasets.length === 0) {
  return <p style={{ fontSize: 13, color: 'var(--dim)', margin: 0 }}>{t('qs.reuse_empty')}</p>
  }
@@ -292,6 +305,7 @@ function DatasetPicker({ datasets, onPick, busy }: {
   color: 'var(--accent)', flexShrink: 0,
   cursor: busy ? 'not-allowed' : 'pointer',
   opacity: busy ? 0.6 : 1,
+  ...(narrow ? { minHeight: 44, padding: '0 16px' } : {}),
  }}
  >
  {t('qs.reuse_use_btn')}
@@ -356,25 +370,30 @@ function TrainingLoader({ message, pct, multiPeriod }: { message: string; pct: n
 }
 
 // ── Canonical field definitions ────────────────────────────────────────────────
+// Labels and prose defaults go through i18n: they were hardcoded Spanish, so
+// the mapping step of the wizard stayed in Spanish for an English user — on the
+// one screen where getting a column wrong costs a whole training run.
+// `defaultLiteral` is for the values that are not prose (a number, `false`,
+// `0%`), which read the same in both languages.
 const CANONICAL_FIELDS = [
- { name: 'sku',           label: 'SKU / Producto',     required: true  },
- { name: 'date',          label: 'Fecha',              required: true  },
- { name: 'demand',        label: 'Demanda',            required: true  },
- { name: 'store',         label: 'Tienda',             required: false, default: 'Tienda única' },
- { name: 'region',        label: 'Región',             required: false, default: 'Sin región' },
- { name: 'inventory',     label: 'Inventario',         required: false, default: '0' },
+ { name: 'sku',           labelKey: 'qs.field_sku',           required: true  },
+ { name: 'date',          labelKey: 'qs.field_date',          required: true  },
+ { name: 'demand',        labelKey: 'qs.field_demand',        required: true  },
+ { name: 'store',         labelKey: 'qs.field_store',         required: false, defaultKey: 'qs.default_single_store' },
+ { name: 'region',        labelKey: 'qs.field_region',        required: false, defaultKey: 'qs.default_no_region' },
+ { name: 'inventory',     labelKey: 'qs.field_inventory',     required: false, defaultLiteral: '0' },
  // The default shown here is what the engine actually broadcasts into an
  // unmapped lead_time column. It said 7 while the DB, this wizard's business
  // config and /inventory all said 15 — the mapping step was promising the user
  // a number no other screen would honour.
- { name: 'lead_time',     label: 'Lead Time (días)',   required: false, default: String(DEFAULT_LEAD_TIME_DAYS) },
- { name: 'price',         label: 'Precio',             required: false, default: 'Desconocido' },
- { name: 'cost',          label: 'Costo',              required: false, default: 'Desconocido' },
- { name: 'regular_price', label: 'Precio Regular',     required: false, default: 'Desconocido' },
- { name: 'promo_price',   label: 'Precio Promocional', required: false, default: '= Precio Regular' },
- { name: 'promo',         label: 'Promoción',          required: false, default: 'false' },
- { name: 'promo_type',    label: 'Tipo de Promoción',  required: false, default: 'Sin promoción' },
- { name: 'discount',      label: 'Descuento',          required: false, default: '0%' },
+ { name: 'lead_time',     labelKey: 'qs.field_lead_time',     required: false, defaultLiteral: String(DEFAULT_LEAD_TIME_DAYS) },
+ { name: 'price',         labelKey: 'qs.field_price',         required: false, defaultKey: 'qs.default_unknown' },
+ { name: 'cost',          labelKey: 'qs.field_cost',          required: false, defaultKey: 'qs.default_unknown' },
+ { name: 'regular_price', labelKey: 'qs.field_regular_price', required: false, defaultKey: 'qs.default_unknown' },
+ { name: 'promo_price',   labelKey: 'qs.field_promo_price',   required: false, defaultKey: 'qs.default_same_as_regular' },
+ { name: 'promo',         labelKey: 'qs.field_promo',         required: false, defaultLiteral: 'false' },
+ { name: 'promo_type',    labelKey: 'qs.field_promo_type',    required: false, defaultKey: 'qs.default_no_promo' },
+ { name: 'discount',      labelKey: 'qs.field_discount',      required: false, defaultLiteral: '0%' },
 ] as const
 
 // ── Plan settings (name + horizon + granularity, step 1) ───────────────────────
@@ -394,9 +413,38 @@ const GRANULARITY_OPTIONS: { value: Granularity; labelKey: string }[] = [
  { value: 'monthly', labelKey: 'qs.plan_granularity_monthly' },
 ]
 
+// Which country's public holidays the engine learns from.
+//
+// The engine has always accepted this and the wizard never asked, so every
+// tenant trained on COLOMBIAN holidays — including the Mexican and Costa Rican
+// ones. Holidays are, per the engine's own comment, "among the strongest
+// signals a daily retail series carries": a distributor whose December 12th is
+// dead and whose Semana Santa is frantic was being modelled on someone else's
+// calendar, and nothing on any screen said so.
+//
+// A curated list rather than the ~150 the `holidays` package supports: this is
+// a LatAm product and a 150-row dropdown is a worse answer than a short one.
+// The backend validates against the full package list, so a country missing
+// here is a one-line addition, not a redesign.
+const HOLIDAY_COUNTRIES = [
+ { code: 'CR', labelKey: 'qs.country_CR' },
+ { code: 'CO', labelKey: 'qs.country_CO' },
+ { code: 'MX', labelKey: 'qs.country_MX' },
+ { code: 'PE', labelKey: 'qs.country_PE' },
+ { code: 'CL', labelKey: 'qs.country_CL' },
+ { code: 'AR', labelKey: 'qs.country_AR' },
+ { code: 'EC', labelKey: 'qs.country_EC' },
+ { code: 'GT', labelKey: 'qs.country_GT' },
+ { code: 'PA', labelKey: 'qs.country_PA' },
+ { code: 'DO', labelKey: 'qs.country_DO' },
+ { code: 'ES', labelKey: 'qs.country_ES' },
+ { code: 'US', labelKey: 'qs.country_US' },
+] as const
+
 function Chip({ label, selected, disabled, onClick }: {
  label: string; selected: boolean; disabled: boolean; onClick: () => void
 }) {
+ const narrow = useIsNarrow()
  return (
  <button
  type="button"
@@ -412,6 +460,7 @@ function Chip({ label, selected, disabled, onClick }: {
  cursor: disabled ? 'not-allowed' : 'pointer',
  opacity: disabled ? 0.6 : 1,
  transition: 'all 0.15s',
+ ...(narrow ? { minHeight: 44, fontSize: 14, padding: '0 16px' } : {}),
  }}
  >
  {label}
@@ -419,13 +468,17 @@ function Chip({ label, selected, disabled, onClick }: {
  )
 }
 
-function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, onGranularity, busy }: {
+function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, onGranularity,
+                        country, onCountry, busy }: {
  name: string; onName: (v: string) => void
  horizonDays: number; onHorizonDays: (v: number) => void
  granularity: Granularity; onGranularity: (v: Granularity) => void
+ country: string; onCountry: (v: string) => void
  busy: boolean
 }) {
  const { t } = useLanguage()
+ const narrow = useIsNarrow()
+ const fieldN: React.CSSProperties = narrow ? { fontSize: 16, minHeight: 44, boxSizing: 'border-box', borderRadius: 10 } : {}
  const labelStyle: React.CSSProperties = {
  fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6,
  }
@@ -447,6 +500,7 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  width: '100%', padding: '9px 12px', borderRadius: 8,
  border: '1px solid var(--border)', background: 'var(--surface)',
  color: 'var(--text)', fontSize: 13,
+ ...fieldN,
  }}
  />
  </div>
@@ -478,6 +532,30 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  ))}
  </div>
  </div>
+ <div data-tour="qs.country">
+ <label htmlFor="qs-holiday-country" style={labelStyle}>
+ {t('qs.plan_country_label')}
+ </label>
+ <select
+ id="qs-holiday-country"
+ value={country}
+ disabled={busy}
+ onChange={e => onCountry(e.target.value)}
+ style={{
+ padding: '9px 12px', borderRadius: 8,
+ border: '1px solid var(--border)', background: 'var(--surface)',
+ color: 'var(--text)', fontSize: 13, minWidth: 220,
+ ...(narrow ? { ...fieldN, minWidth: 0, width: '100%' } : {}),
+ }}
+ >
+ {HOLIDAY_COUNTRIES.map(c => (
+ <option key={c.code} value={c.code}>{t(c.labelKey)}</option>
+ ))}
+ </select>
+ <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 6, lineHeight: 1.5 }}>
+ {t('qs.plan_country_help')}
+ </div>
+ </div>
  </div>
  )
 }
@@ -487,6 +565,13 @@ function QuickStartPageContent() {
  const router = useRouter()
  const searchParams = useSearchParams()
  const { t } = useLanguage()
+ // Phone: no second gutter inside the shell's, a 16px card, the mapping as
+ // stacked label/select pairs, and the confirm pinned above the tab bar.
+ const narrow = useIsNarrow()
+ // Backend failures arrive with a stable `error_code`; without this the wizard
+ // printed the English `detail` instead — a viewer who picked a file read
+ // "Role 'viewer' not permitted. Required: ['admin', 'analyst']".
+ const errorDetail = useErrorDetail()
  // The wizard runs inside the AppShell, so the planning context that resolves
  // the active session was loaded BEFORE this training existed — see the
  // redirect in pollFamily for why it has to be refreshed there.
@@ -531,9 +616,19 @@ function QuickStartPageContent() {
  const [sessionName, setSessionName] = useState('')
  const [horizonDays, setHorizonDays] = useState<number>(28)
  const [granularity, setGranularity] = useState<Granularity>('auto')
+ // Defaults to Costa Rica, the anchor market (owner's decision, 2026-09-30).
+ // It was Colombia before, only because the first calendar was Colombian.
+ // A default for a NEW run; a session that already stored a country keeps it.
+ const [holidayCountry, setHolidayCountry] = useState('CR')
 
  // Inspection result
  const [inspection, setInspection] = useState<InspectionResult | null>(null)
+ // The pre-training gate, evaluated against the CONFIRMED mapping. Null until
+ // the first confirm attempt: before a mapping exists the profiler's own
+ // reading is all there is, and that is what DataIssuesPanel already shows.
+ const [gate, setGate] = useState<DataGate | null>(null)
+ // {issue_type: option_code} — what the user decided about each fixable finding.
+ const [remediationChoices, setRemediationChoices] = useState<Record<string, string>>({})
 
  // Column mapping (14-field canonical schema)
  const [mapping, setMapping] = useState<Record<string, string | null>>(
@@ -572,7 +667,7 @@ function QuickStartPageContent() {
  trainLaunchedRef.current = true
  await pollFamily(demo.job_id, demo.family)
  } catch (e: unknown) {
- setError(e instanceof Error ? e.message : t('qs.err_demo'))
+ setError(errorDetail(e) || t('qs.err_demo'))
  setBusy(false)
  }
  }
@@ -581,6 +676,23 @@ function QuickStartPageContent() {
  // gratis" CTA, carried through signup + login) auto-starts the demo instead
  // of waiting on a click — the whole point of that path is zero extra taps
  // between "create account" and "see the semáforo working".
+ // Set when this screen unmounts. `pollFamily` below is a self-recursive
+ // async closure with no AbortController, so without this it kept running
+ // after the user navigated away — and on completion it called
+ // `router.push('/compras')`, yanking them off whatever screen they had
+ // moved on to, minutes later, discarding anything unsaved there. Every
+ // other effect on this page already has a `cancelled` flag; this one, the
+ // longest-lived of them (MAX_POLLS ≈ 30 min), did not.
+ //
+ // Reset on (re)mount: React's development mode mounts, unmounts and mounts
+ // again, and a flag that is only ever set to true left the poll exiting on
+ // its first lap — the demo trained and the screen never moved on.
+ const unmountedRef = useRef(false)
+ useEffect(() => {
+ unmountedRef.current = false
+ return () => { unmountedRef.current = true }
+ }, [])
+
  const autoDemoRanRef = useRef(false)
  useEffect(() => {
  if (autoDemoRanRef.current) return
@@ -589,6 +701,24 @@ function QuickStartPageContent() {
  handleDemo()
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [searchParams])
+
+ // Ask the gate as soon as the mapping screen opens, not only when the user
+ // presses confirm.
+ //
+ // The profiler's own `blocking` flag cannot tell a dead end from a question:
+ // it marks duplicated rows as blocking, so the screen said "este archivo no
+ // puede generar un pronóstico" and offered nothing but another file — for a
+ // problem the gate has two documented answers to. Fetching here puts the
+ // questions on screen the moment the user can act on them; `handleConfirm`
+ // re-asks against the confirmed mapping, which is the authoritative verdict.
+ useEffect(() => {
+ if (step !== 2 || !sessionId) return
+ let cancelled = false
+ getDataGate(sessionId, { silent: true })
+ .then(g => { if (!cancelled) setGate(g) })
+ .catch(() => { /* the profiler's own panel is still rendered */ })
+ return () => { cancelled = true }
+ }, [step, sessionId])
 
  // Load previously uploaded datasets once — a failure just keeps the reuse
  // tab hidden, the upload path is unaffected.
@@ -687,7 +817,7 @@ function QuickStartPageContent() {
 
  setStep(2)
  } catch (e: unknown) {
- setError(e instanceof Error ? e.message : t('qs.reuse_err_attach'))
+ setError(errorDetail(e) || t('qs.reuse_err_attach'))
  setStep(1)
  } finally {
  setBusy(false)
@@ -757,7 +887,7 @@ function QuickStartPageContent() {
  setMapping(next)
  setStep(2)
  } catch (e: unknown) {
- setError(e instanceof Error ? e.message : t('qs.clone_err'))
+ setError(errorDetail(e) || t('qs.clone_err'))
  setStep(1)
  } finally {
  setBusy(false)
@@ -805,7 +935,7 @@ function QuickStartPageContent() {
  await startFromDataset(dataset.id)
  } catch (e: unknown) {
  // Only the upload itself can throw here — startFromDataset handles its own.
- const msg = e instanceof Error ? e.message : t('qs.err_upload')
+ const msg = errorDetail(e) || t('qs.err_upload')
  setError(msg)
  setFileName(null)
  setBusy(false)
@@ -818,7 +948,6 @@ function QuickStartPageContent() {
 
  setError(null)
  setBusy(true)
- setStep(3)
 
  try {
  // POST canonical columns mapping
@@ -827,17 +956,55 @@ function QuickStartPageContent() {
   defaults_override: {},
  })
 
- // POST features config
+ // The gate, re-run against the mapping the user just confirmed. Everything
+ // before this point was judged from DETECTED columns — a guess. This is the
+ // same verdict `POST /train` enforces, so asking it here is the difference
+ // between a question the user can answer and a refusal they cannot.
+ //
+ // Deliberately BEFORE `setStep(3)`: showing "el sistema está aprendiendo"
+ // and only then discovering the run is refused is exactly what the removed
+ // "continuar de todos modos" link did, and the reason it had to go.
+ const liveGate = await getDataGate(sessionId, { silent: true })
+ setGate(liveGate)
+
+ // Nothing can be done about these, so there is nothing to ask. Stay on the
+ // mapping screen, where DataIssuesPanel says why.
+ if ((liveGate.blocking_fatal?.length ?? 0) > 0) {
+  setBusy(false)
+  return
+ }
+
+ // Fixable, and unanswered: the questions have just appeared below the
+ // mapping. Nothing started, so nothing has to be undone.
+ const stillUnresolved = (liveGate.unresolved ?? []).filter(
+  issueType => !remediationChoices[issueType],
+ )
+ if (stillUnresolved.length > 0) {
+  setBusy(false)
+  return
+ }
+
+ if (Object.keys(remediationChoices).length > 0) {
+  await setRemediations(sessionId, remediationChoices)
+ }
+
+ setStep(3)
+
+ // POST features config. `holiday_country` decides whose public holidays the
+ // model learns from; without it every tenant trained on one fixed calendar.
  await setFeatures(sessionId, {
  lags: [1, 7, 14, 28],
  rolling: [7, 14, 28],
  diffs: [1],
  calendar: true,
  ewm_spans: [7, 14],
+ holiday_country: holidayCountry,
  })
 
  // POST models config
- await setModels(sessionId, ['lightgbm', 'prophet', 'croston', 'xgboost'])
+ // `global_lgbm` leads the list: one model fitted across the whole catalogue,
+ // which is what gives a short or newly-launched SKU a usable forecast at all.
+ await setModels(sessionId, ['global_lgbm', 'lightgbm', 'prophet', 'croston', 'xgboost'])
 
  // POST validation config
  await setValidationConfig(sessionId, {
@@ -852,7 +1019,7 @@ function QuickStartPageContent() {
  // horizon from user_horizon_days at launch (see startTraining below).
 
  // POST business config
- // One source of truth for what Faro assumes (src/lib/inventoryDefaults.ts,
+ // One source of truth for what StockAI assumes (src/lib/inventoryDefaults.ts,
  // mirroring backend/inventory/defaults.py) — this used to be a literal 15
  // sitting next to a literal 7 in the mapping step above.
  await setBusinessConfig(sessionId, {
@@ -873,9 +1040,21 @@ function QuickStartPageContent() {
  // Poll the whole family
  await pollFamily(res.job_id, res.family)
  } catch (e: unknown) {
- const msg = e instanceof Error ? e.message : t('qs.err_config')
+ const msg = errorDetail(e) || t('qs.err_config')
  setError(msg)
  setBusy(false)
+ // Nothing was launched, so the "el sistema está aprendiendo" screen is a
+ // lie — and it is the screen with no controls on it. Send the user back to
+ // the mapping, where the error, the column selectors and any gate questions
+ // all are. The gate can still refuse here if the file changed underneath us
+ // between the check and the launch.
+ if (!trainLaunchedRef.current) {
+  setStep(2)
+  if (sessionId) {
+   try { setGate(await getDataGate(sessionId, { silent: true })) }
+   catch { /* the message above already says what failed */ }
+  }
+ }
  }
  }
 
@@ -903,6 +1082,8 @@ function QuickStartPageContent() {
  let attempts = 0
 
  const poll = async (): Promise<void> => {
+ // The user left. Stop polling and, above all, do not navigate.
+ if (unmountedRef.current) return
  try {
  const jobs = await Promise.all(memberJobIds.map(id => getJob(id)))
  const baseJob = jobs.find(j => j.id === baseJobId) ?? jobs[0]
@@ -942,7 +1123,9 @@ function QuickStartPageContent() {
  // mounts with the new value. Deliberately scoped to the user's OWN
  // just-finished run: the app is never re-pointed at a session that finished
  // in the background while the user was mid-task somewhere else.
+ if (unmountedRef.current) return
  await planningCtx?.reload()
+ if (unmountedRef.current) return
  router.push('/compras')
  return
  }
@@ -958,9 +1141,10 @@ function QuickStartPageContent() {
  }
  // Still running, poll again
  await new Promise(res => setTimeout(res, 3000))
+ if (unmountedRef.current) return
  return poll()
  } catch (e: unknown) {
- const msg = e instanceof Error ? e.message : t('qs.err_status')
+ const msg = errorDetail(e) || t('qs.err_status')
  setError(msg)
  setBusy(false)
  }
@@ -1006,12 +1190,49 @@ function QuickStartPageContent() {
  setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
  }
 
+ // Back to step 1 with a clean slate. Reached from the mapping step when the
+ // file cannot train: continuing is pointless, so the way out is a new file.
+ const handleStartOver = () => {
+ setStep(1)
+ setBusy(false)
+ setError(null)
+ setFileName(null)
+ setSessionId(null)
+ setDatasetId(null)
+ setInspection(null)
+ setRetryNote(false)
+ setReusedMapping(null)
+ setCsvWarnings([])
+ setCsvIssues([])
+ setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
+ }
+
  // ── Preview table (first 3 rows sample) ─────────────────────────────────────
  function PreviewTable() {
  if (!inspection) return null
  const profile = inspection.profile
  const cols = profile.columns.slice(0, 5)
  const maxRows = 3
+ if (narrow) return (
+ <div style={{ marginTop: 16 }}>
+ <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 8 }}>{t('qs.preview')}</p>
+ <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+ {cols.map((c, i) => (
+  <li key={c.name} style={{ padding: '8px 12px', borderTop: i ? '1px solid var(--border)' : 'none', minWidth: 0 }}>
+  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--dim)' }}>{c.name}</div>
+  <div style={{ fontSize: 13.5, color: 'var(--text)', overflowWrap: 'anywhere' }}>
+   {Array.from({ length: maxRows }).map((_, k) => String(c.sample?.[k] ?? '—')).join(' · ')}
+  </div>
+  </li>
+ ))}
+ </ul>
+ {profile.columns.length > 5 && (
+ <p style={{ fontSize: 12, color: 'var(--dim)', marginTop: 6 }}>
+ + {profile.columns.length - 5} {t('qs.more_columns')}
+ </p>
+ )}
+ </div>
+ )
  return (
  <div style={{ marginTop: 16, overflowX: 'auto' }}>
  <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>
@@ -1055,6 +1276,27 @@ function QuickStartPageContent() {
  )
  }
 
+ // Not one product in this file can reach the engine's min_history, so training
+ // it can only end in `no_models_trained`. The rule lives in the profiler — the
+ // frontend only reacts to the flag, so the threshold has one owner.
+ // Fatal only: nothing the user can answer changes the verdict, so the screen
+ // offers another file. Once the gate has run against the confirmed mapping it
+ // is the authority — the profiler's flag was a guess from detected columns.
+ const blockedByData = gate
+ ? (gate.blocking_fatal?.length ?? 0) > 0
+ : (inspection?.profile.data_quality?.blocking === true ||
+    (inspection?.profile.data_quality?.issues ?? []).some(i => i.blocking === true))
+
+ // Fixable and unanswered. Not the same as blocked: there IS a way forward,
+ // and it is one radio button away — so the confirm button stays visible and
+ // simply cannot fire until every question has an answer.
+ const unansweredFixable = (gate?.issues ?? [])
+ .filter(i => i.classification === 'blocking_fixable' && (i.remediations?.length ?? 0) > 0)
+ .filter(i => !remediationChoices[i.type])
+ .length
+
+ const missingRequired = CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name])
+
  return (
  <>
  {/* Keyframes */}
@@ -1074,17 +1316,17 @@ function QuickStartPageContent() {
  display: 'flex',
  flexDirection: 'column',
  alignItems: 'center',
- padding: '20px 20px 48px',
+ padding: narrow ? '0 0 24px' : '20px 20px 48px',
  }}>
  <div style={{ width: '100%', maxWidth: 580 }}>
 
  {/* Same nav entry as /data — the two routes are tabs of each other. */}
- <DataTabs style={{ marginBottom: 32 }} />
+ <DataTabs style={{ marginBottom: narrow ? 18 : 32 }} />
 
  {/* Header */}
- <div style={{ textAlign: 'center', marginBottom: 40 }}>
+ <div style={{ textAlign: 'center', marginBottom: narrow ? 20 : 40 }}>
  <h1 style={{
- fontSize: 26, fontWeight: 700,
+ fontSize: narrow ? 21 : 26, fontWeight: 700,
  color: 'var(--text)', margin: 0, marginBottom: 8,
  letterSpacing: '-0.02em',
  }}>
@@ -1103,26 +1345,26 @@ function QuickStartPageContent() {
  background: 'var(--surface)',
  border: '1px solid var(--border)',
  borderRadius: 16,
- padding: 32,
+ padding: narrow ? 16 : 32,
  }}>
 
  {/* ── Step 1 ──────────────────────────────────────────────────────── */}
  {step === 1 && (
  <div>
- <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
- {t('qs.upload_title')}
- </h2>
+ {/* No "Sube tus ventas" heading here: the page title above says it and
+ the step bar's first label says it again. */}
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
  {t('qs.upload_desc')}
  {' '}<strong style={{ color: 'var(--text)' }}>{t('qs.upload_desc_bold')}</strong>
  </p>
 
- {/* Plan settings: name + horizon + granularity. Applied to both the
- file-upload path and the one-click demo below. */}
+ {/* Plan settings: name + horizon + granularity + holiday calendar.
+ Applied to both the file-upload path and the one-click demo below. */}
  <PlanSettings
  name={sessionName} onName={setSessionName}
  horizonDays={horizonDays} onHorizonDays={setHorizonDays}
  granularity={granularity} onGranularity={setGranularity}
+ country={holidayCountry} onCountry={setHolidayCountry}
  busy={busy}
  />
 
@@ -1145,6 +1387,7 @@ function QuickStartPageContent() {
   aria-pressed={source === tab.value}
   style={{
   flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 13,
+  ...(narrow ? { minHeight: 44, fontSize: 14, padding: '0 6px' } : {}),
   fontWeight: source === tab.value ? 700 : 400,
   border: `1px solid ${source === tab.value ? 'var(--accent)' : 'var(--border)'}`,
   background: source === tab.value ? 'var(--accent-dim, #eef2ff)' : 'var(--surface)',
@@ -1220,7 +1463,7 @@ function QuickStartPageContent() {
  </div>
  )}
 
- {/* Demo de un clic: ver el semáforo sin preparar ningún archivo */}
+ {/* One-click demo: see the semaphore without preparing any file */}
  <div data-tour="qs.demo" style={{
  marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)',
  textAlign: 'center',
@@ -1239,6 +1482,7 @@ function QuickStartPageContent() {
  borderRadius: 10, fontSize: 14, fontWeight: 700,
  cursor: busy ? 'not-allowed' : 'pointer',
  opacity: busy ? 0.6 : 1,
+ ...(narrow ? { minHeight: 48, width: '100%' } : {}),
  }}
  >
  {t('qs.demo_btn')}
@@ -1304,19 +1548,22 @@ function QuickStartPageContent() {
 
   return (
   <div key={field.name} style={{
-   display: 'grid', gridTemplateColumns: '1fr 1fr',
-   alignItems: 'center', gap: 12,
+   display: 'grid', gridTemplateColumns: narrow ? 'minmax(0, 1fr)' : '1fr 1fr',
+   alignItems: 'center', gap: narrow ? 6 : 12,
    padding: '10px 0',
    borderBottom: '1px solid var(--border)',
   }}>
    <div>
    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
     {field.required && <span style={{ color: '#ef4444', marginRight: 4 }}>★</span>}
-    {field.label}
+    {t(field.labelKey)}
    </span>
    {!field.required && isNone && (
     <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
-    {t('qs.default_prefix')} {(field as { default?: string }).default}
+    {t('qs.default_prefix')}{' '}
+    {'defaultKey' in field
+     ? t((field as { defaultKey: string }).defaultKey)
+     : (field as { defaultLiteral?: string }).defaultLiteral}
     </div>
    )}
    </div>
@@ -1331,6 +1578,7 @@ function QuickStartPageContent() {
     border: `1px solid ${field.required && !val ? '#ef4444' : 'var(--border)'}`,
     background: 'var(--surface)', color: 'var(--text)', fontSize: 13,
     cursor: 'pointer',
+    ...(narrow ? { fontSize: 16, minHeight: 44, width: '100%', minWidth: 0, boxSizing: 'border-box', borderRadius: 10 } : {}),
    }}
    >
    {!field.required && (
@@ -1352,9 +1600,25 @@ function QuickStartPageContent() {
 
  {/* The profiler has always found these; nothing used to show them. This is
      the last screen where the user can still go fix the file. */}
+ {/* Only the findings nobody is being asked about. A finding with options is
+     rendered ONCE, by RemediationChoices below, with its ways out — showing
+     it here too produced the contradiction "puedes continuar igual" sitting
+     directly above "tienes que decidir algo antes de seguir". */}
  <DataIssuesPanel
-  issues={inspection.profile.data_quality?.issues ?? []}
+  issues={(gate?.issues ?? inspection.profile.data_quality?.issues ?? [])
+   .filter(i => (i.remediations?.length ?? 0) === 0)}
   granularity={inspection.granularity}
+ />
+
+ {/* The questions. Only appear once the gate has run against the mapping the
+     user confirmed — before that the column reading is a guess, and asking
+     someone to decide about a problem we may have imagined is noise. */}
+ <RemediationChoices
+  issues={gate?.issues ?? []}
+  chosen={remediationChoices}
+  onChoose={(issueType, code) =>
+   setRemediationChoices(prev => ({ ...prev, [issueType]: code }))}
+  disabled={busy}
  />
 
  {error && (
@@ -1364,21 +1628,84 @@ function QuickStartPageContent() {
  </div>
  )}
 
+ {/* No bypass. There used to be a "Continuar de todos modos" link here,
+     justified by the profiler judging the file from DETECTED columns —
+     the user might know better. That justification died when the gate
+     started re-running on the CONFIRMED mapping at launch: the button led
+     to the training screen, sat there as if something had started, and
+     then printed the backend's refusal. An escape hatch that cannot
+     escape is worse than no escape hatch.
+
+     Nothing is lost by removing it. The column selectors are on this same
+     screen: a user who thinks we read the wrong column fixes the mapping
+     and the file is judged again. That is the real answer to "I know
+     better" — correcting the reading, not overriding the verdict. */}
+ {blockedByData ? (
+ <>
+  <button
+  onClick={handleStartOver}
+  disabled={busy}
+  style={{
+   marginTop: 28, width: '100%', padding: '14px 0',
+   background: 'var(--accent)', color: '#fff',
+   border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700,
+   cursor: busy ? 'not-allowed' : 'pointer',
+   opacity: busy ? 0.7 : 1,
+   transition: 'opacity 0.15s',
+  }}
+  >
+  {t('qs.pick_another_file')}
+  </button>
+  <p style={{
+   marginTop: 10, fontSize: 12, color: 'var(--dim)',
+   textAlign: 'center', lineHeight: 1.5,
+  }}>
+  {t('qs.blocked_remap_hint')}
+  </p>
+ </>
+ ) : narrow ? (
+ <>
+ {unansweredFixable > 0 && !busy && (
+ <p style={{ marginTop: 16, fontSize: 13, color: 'var(--dim)', textAlign: 'center', lineHeight: 1.5 }}>
+  {t('gate.answer_first').replace('{count}', String(unansweredFixable))}
+ </p>
+ )}
+ <StickyActionBar>
+ <button type="button" className="mobile-btn mobile-btn-primary" onClick={handleConfirm}
+  disabled={busy || missingRequired || unansweredFixable > 0}>
+  {busy ? t('qs.processing') : t('qs.looks_good')}
+ </button>
+ </StickyActionBar>
+ </>
+ ) : (
+ <>
  <button
  onClick={handleConfirm}
- disabled={busy || CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name])}
+ disabled={busy || missingRequired || unansweredFixable > 0}
  style={{
   marginTop: 28, width: '100%', padding: '14px 0',
   background: 'var(--accent)', color: '#fff',
   border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700,
-  cursor: (busy || CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name]))
+  cursor: (busy || missingRequired || unansweredFixable > 0)
    ? 'not-allowed' : 'pointer',
-  opacity: busy ? 0.7 : 1,
+  opacity: (busy || unansweredFixable > 0) ? 0.7 : 1,
   transition: 'opacity 0.15s',
  }}
  >
  {busy ? t('qs.processing') : t('qs.looks_good')}
  </button>
+ {/* Why the button is dead, said next to the button. A disabled control
+     with no explanation is how a user concludes the app is broken. */}
+ {unansweredFixable > 0 && !busy && (
+ <p style={{
+  marginTop: 8, fontSize: 12, color: 'var(--dim)',
+  textAlign: 'center', lineHeight: 1.5,
+ }}>
+  {t('gate.answer_first').replace('{count}', String(unansweredFixable))}
+ </p>
+ )}
+ </>
+ )}
  </div>
  )}
 
@@ -1415,6 +1742,7 @@ function QuickStartPageContent() {
  border: 'none', borderRadius: 10,
  fontSize: 14, fontWeight: 700,
  cursor: 'pointer',
+ ...(narrow ? { minHeight: 48, width: '100%' } : {}),
  }}
  >
  {t('qs.try_again')}

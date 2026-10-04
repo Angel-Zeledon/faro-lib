@@ -1,23 +1,49 @@
-"""
-AI completion client factory — one factory, two possible backends.
+"""AI completion client — one factory, one backend: DeepSeek.
 
-get_local_llm_client() returns a real Anthropic-backed client when
-settings.anthropic_api_key is configured, else a local Ollama shim. Both
-expose the identical minimal surface every AI consumer already uses:
+Every AI feature in the product goes through `get_local_llm_client()`: the
+morning narrative, the inventory insight, the RAG analyst, the chat, and the
+data-quality diagnosis. There used to be three possible backends behind it —
+DeepSeek, Anthropic, and a local Ollama server — chosen by whichever key
+happened to be set.
+
+That is gone. This deployment runs on DeepSeek, so DeepSeek is the only thing
+here. Three reasons, in order of how much they cost:
+
+  1. A fallback chain decides silently. "Whichever key is set" means a missing
+     or mistyped `DEEPSEEK_API_KEY` did not fail — it quietly answered from
+     somewhere else, and the only symptom was a different bill or a worse
+     answer. Now a missing key raises, at the call, saying which variable.
+  2. The Ollama branch could not work in production anyway: there is no Ollama
+     container in `deploy/docker-compose.prod.yml`. It was a local-dev
+     convenience that read, from the code, like a supported deployment mode.
+  3. Two dead branches are two branches every future reader has to understand
+     before changing anything here.
+
+The surface every consumer already uses is unchanged:
 
     client.messages.create(model=..., max_tokens=..., system=..., messages=[...])
         -> resp.content[0].text
         -> resp.usage.input_tokens / resp.usage.output_tokens
 
-so every call site (rag_service.py, chats.py, narrator.py,
-narrative_service.py, configuration.py's data-quality diagnosis) stays
-structurally the same regardless of which backend is active — setting or
-clearing ANTHROPIC_API_KEY alone switches all of them. Both backends also
-ignore whatever `model` string a caller passes (some pass a stale/informal
-placeholder, some pass none at all) and use their own configured model
-instead — settings.anthropic_model for the Anthropic path, since a caller
-targeting one backend's model naming shouldn't need to know or care which
-backend actually served the request.
+`model` is accepted and ignored — call sites pass whatever string they were
+written against, and the configured `DEEPSEEK_MODEL` is what runs.
+
+Function calling (used by `backend/assistant/`): pass `tools=[...]` in the
+OpenAI shape and read `resp.tool_calls` (name + raw JSON arguments) and
+`resp.message` (the assistant turn to send back before the tool results).
+Callers that pass no `tools` get the payload and response they always got.
+
+Configuration is read through `backend/service_config/resolver.effective()`
+rather than straight off `settings`, so a key entered in the configuration
+screen takes effect on the next call instead of at the next restart. With no
+override stored, that resolves to exactly what `settings` holds.
+
+No SDK: DeepSeek's API is OpenAI-shaped (`POST {base}/chat/completions`, bearer
+auth) and this is one POST, so a dependency would buy nothing and add a version
+to keep pinned.
+
+Note for test authors: `backend/tests/conftest.py` patches this factory
+session-wide, so the suite never reaches the real API with a live key in `.env`.
 """
 
 from __future__ import annotations
@@ -28,7 +54,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from backend.config import settings
+from backend.service_config.resolver import effective
 
 log = logging.getLogger(__name__)
 
@@ -36,11 +62,12 @@ _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 def _strip_thinking(text: str) -> str:
-    """
-    DeepSeek-R1 emits its chain-of-thought wrapped in <think>...</think> before the
-    actual answer. Older Ollama versions / templates return it inline in
-    message.content — strip it so callers only see the final answer, matching what
-    they got from Claude (which never exposed reasoning this way).
+    """Remove a chain-of-thought block a model emitted inline.
+
+    `deepseek-reasoner` normally puts its reasoning in a separate
+    `reasoning_content` field, which is never read here. A model or gateway that
+    inlines it as `<think>…</think>` instead would otherwise ship a paragraph of
+    the model thinking out loud straight into a customer's narrative.
     """
     return _THINK_BLOCK_RE.sub("", text).strip()
 
@@ -57,71 +84,35 @@ class _ContentBlock:
 
 
 @dataclass
-class _LocalLLMResponse:
+class _ToolCall:
+    """One function call the model asked for. `arguments` is the RAW JSON
+    string the provider sent — parsing it (and refusing what does not parse)
+    is the caller's job, because only the caller knows the tool's schema."""
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass
+class _LLMResponse:
     content: list = field(default_factory=list)
     usage: _Usage = field(default_factory=_Usage)
+    # Empty unless the request offered `tools` and the model chose to call one.
+    # Consumers that never pass `tools` never see anything here, so the
+    # interface every existing caller reads is unchanged.
+    tool_calls: list = field(default_factory=list)
+    # The assistant message exactly as the provider returned it. A tool-calling
+    # loop must send it back verbatim (with its `tool_calls`) before the tool
+    # results, or the provider rejects the follow-up request.
+    message: dict = field(default_factory=dict)
 
 
-class _Messages:
-    def __init__(self, base_url: str, model: str, timeout: float):
-        self._base_url = base_url
+class _DeepSeekMessages:
+    def __init__(self, api_key: str, base_url: str, model: str, timeout: float):
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
         self._model = model
         self._timeout = timeout
-
-    def create(
-        self,
-        model: str | None = None,   # accepted for Anthropic-SDK compatibility, ignored
-        max_tokens: int = 1024,
-        system: str | None = None,
-        messages: list | None = None,
-        **_ignored,
-    ) -> _LocalLLMResponse:
-        payload_messages = []
-        if system:
-            payload_messages.append({"role": "system", "content": system})
-        payload_messages.extend(messages or [])
-
-        resp = httpx.post(
-            f"{self._base_url}/api/chat",
-            json={
-                "model": self._model,
-                "messages": payload_messages,
-                "stream": False,
-                "options": {"num_predict": max_tokens},
-            },
-            timeout=self._timeout,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-        raw_text = (data.get("message") or {}).get("content", "")
-        text = _strip_thinking(raw_text)
-
-        usage = _Usage(
-            input_tokens=data.get("prompt_eval_count", 0),
-            output_tokens=data.get("eval_count", 0),
-        )
-        return _LocalLLMResponse(content=[_ContentBlock(text=text)], usage=usage)
-
-
-class LocalLLMClient:
-    """Drop-in replacement for anthropic.Anthropic() backed by a local Ollama server."""
-
-    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: float = 60.0):
-        self._base_url = (base_url or settings.local_llm_base_url).rstrip("/")
-        self._model = model or settings.local_llm_model
-        self.messages = _Messages(self._base_url, self._model, timeout)
-
-
-class _AnthropicMessages:
-    """Wraps the real Anthropic SDK's .messages, forcing our configured model
-    regardless of whatever (possibly stale or backend-specific) model string
-    a caller passes — mirrors _Messages.create's same "accept but ignore the
-    caller's model" contract above."""
-
-    def __init__(self, real_client, model: str):
-        self._real = real_client
-        self._model = model
 
     def create(
         self,
@@ -129,41 +120,106 @@ class _AnthropicMessages:
         max_tokens: int = 1024,
         system: str | None = None,
         messages: list | None = None,
-        **kwargs,
-    ):
-        call_kwargs = {"model": self._model, "max_tokens": max_tokens, "messages": messages or []}
+        tools: list | None = None,
+        tool_choice: str | None = None,
+        **_ignored,
+    ) -> _LLMResponse:
+        payload_messages = []
         if system:
-            call_kwargs["system"] = system
-        call_kwargs.update(kwargs)
-        return self._real.messages.create(**call_kwargs)
+            payload_messages.append({"role": "system", "content": system})
+        payload_messages.extend(messages or [])
+
+        payload = {
+            "model": self._model,
+            "messages": payload_messages,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        # OpenAI-shaped function calling. Only sent when a caller offers tools:
+        # every existing consumer keeps sending exactly the payload it sent.
+        if tools:
+            payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
+
+        resp = httpx.post(
+            f"{self._base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self._api_key}"},
+            json=payload,
+            timeout=self._timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        choices = data.get("choices") or []
+        message = (choices[0] if choices else {}).get("message") or {}
+        raw_text = message.get("content") or ""
+        text = _strip_thinking(raw_text)
+
+        tool_calls = []
+        for call in message.get("tool_calls") or []:
+            fn = (call or {}).get("function") or {}
+            if fn.get("name"):
+                tool_calls.append(_ToolCall(
+                    id=str(call.get("id") or ""),
+                    name=str(fn["name"]),
+                    arguments=fn.get("arguments") or "{}",
+                ))
+
+        # DeepSeek reports OpenAI's names for the two counts every caller in this
+        # codebase reads as Anthropic's. Translated here, once, so no consumer
+        # has to learn whose API answered.
+        usage_in = data.get("usage") or {}
+        usage = _Usage(
+            input_tokens=usage_in.get("prompt_tokens", 0),
+            output_tokens=usage_in.get("completion_tokens", 0),
+        )
+        return _LLMResponse(
+            content=[_ContentBlock(text=text)], usage=usage,
+            tool_calls=tool_calls, message=message,
+        )
 
 
-class _AnthropicBackedClient:
-    """Drop-in replacement for LocalLLMClient, backed by the real Anthropic API."""
+class DeepSeekClient:
+    """The AI client. Same shape the consumers were always written against."""
 
     def __init__(self, timeout: float = 60.0):
-        import anthropic
+        # Read through the override layer, not straight off `settings`, so a key
+        # pasted into the configuration panel takes effect without a restart.
+        # With no override stored this returns exactly what `settings` holds.
+        cfg = effective()
+        self.messages = _DeepSeekMessages(
+            cfg.deepseek_api_key,
+            cfg.deepseek_base_url,
+            cfg.deepseek_model,
+            timeout,
+        )
 
-        real = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=timeout)
-        self.messages = _AnthropicMessages(real, settings.anthropic_model)
 
+class LLMNotConfigured(RuntimeError):
+    """No `DEEPSEEK_API_KEY`. Raised where the call is made, not at import.
 
-def get_local_llm_client(timeout: float = 60.0):
+    Deliberately loud. The chain this replaced answered from a different
+    provider when the key was missing, so a typo in the variable name produced
+    working AI features and a surprising invoice — the failure mode that costs
+    the most to notice. Callers already wrap AI calls in try/except and degrade
+    to their rule-based text, so this degrades the same way, while the log line
+    names the actual problem.
     """
-    Returns the active AI client for this deployment: a real Anthropic-backed
-    client when settings.anthropic_api_key is set, else the local Ollama shim
-    (no API key required for the local path). Connectivity/model errors
-    surface as exceptions from messages.create() either way, so existing
-    try/except fallback paths in callers work unchanged.
 
-    Note for test authors: this reads the same .env the dev server does, so
-    a real ANTHROPIC_API_KEY in local .env means pytest would otherwise fire
-    real, billed requests too (and stall for a long time if that account has
-    no credit — observed directly). backend/tests/conftest.py patches this
-    factory session-wide so tests never reach a real API regardless of what
-    .env has configured, mirroring the existing session-wide patch on
-    backend.notifications.email._send.
+
+def get_local_llm_client(timeout: float = 60.0) -> DeepSeekClient:
+    """The AI client for this deployment.
+
+    Named `get_local_llm_client` for the same reason the module is still
+    `local_llm.py`: five consumers import it under that name, and renaming a
+    working seam across all of them buys nothing here. What it returns has been
+    a hosted client since 2026-08-22.
     """
-    if settings.anthropic_api_key:
-        return _AnthropicBackedClient(timeout=timeout)
-    return LocalLLMClient(timeout=timeout)
+    if not effective().deepseek_api_key:
+        raise LLMNotConfigured(
+            "DEEPSEEK_API_KEY is not set — AI features (narrative, analyst, "
+            "chat, data-quality diagnosis) cannot run. Set it in the "
+            "environment, or from the configuration screen."
+        )
+    return DeepSeekClient(timeout=timeout)

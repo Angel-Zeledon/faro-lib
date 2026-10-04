@@ -21,9 +21,9 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from backend.config import settings
 from backend.formatting import DEFAULT_CURRENCY
-from backend.notifications.locale import render_es
+from backend.notifications.locale import render_es, render_month
+from backend.service_config.resolver import effective
 
 log = logging.getLogger(__name__)
 
@@ -36,18 +36,25 @@ class EmailNotConfigured(EmailDeliveryError):
     """Neither Resend nor SMTP credentials are set — nothing can be sent."""
 
 
-def is_configured() -> bool:
-    """True when some transport can actually deliver. Mirrors whatsapp.is_configured()."""
-    return bool(settings.resend_api_key or (settings.smtp_user and settings.smtp_pass))
+def is_configured(tenant_id: str | None = None) -> bool:
+    """True when some transport can actually deliver. Mirrors whatsapp.is_configured().
+
+    `tenant_id` asks the question for a tenant that configured its own sender:
+    a deployment with no instance-level transport can still be able to mail
+    THIS tenant's people, and answering "not configured" there would hide a
+    channel that works.
+    """
+    cfg = effective(tenant_id)
+    return bool(cfg.resend_api_key or (cfg.smtp_user and cfg.smtp_pass))
 
 
-def failure_reason() -> str:
+def failure_reason(tenant_id: str | None = None) -> str:
     """
     Stable code for why a send failed, for API payloads and activity rows.
     The two are fixed by different people: `not_configured` is an operator
     setting up credentials, `transport_error` is the provider rejecting us.
     """
-    return "transport_error" if is_configured() else "not_configured"
+    return "transport_error" if is_configured(tenant_id) else "not_configured"
 
 _APP_NAME = "ForecastPlatform"
 _PRIMARY   = "#818cf8"
@@ -103,21 +110,30 @@ def _strong(text: str) -> str:
     return f'<strong style="color:{_TEXT};">{text}</strong>'
 
 
-# How long a verification code / setup link stays valid. The number lives in
-# code; only the unit word comes from the locale catalog.
-_CODE_TTL_HOURS = 30
+# Two different windows, and one label used to serve both: the 6-digit OTP
+# (15 minutes) was announced as "30 horas" because it borrowed the setup link's
+# number. Read them from config so the announcement cannot drift from the
+# expiry the issuer actually wrote to the database.
+def _otp_ttl_label() -> str:
+    from backend.config import OTP_EXPIRE_MINUTES
+    return render_es("minutes_duration", minutes=OTP_EXPIRE_MINUTES)
 
 
-def _code_ttl_label() -> str:
-    return render_es("hours_duration", hours=_CODE_TTL_HOURS)
+def _setup_link_ttl_label() -> str:
+    from backend.config import SETUP_LINK_EXPIRE_HOURS
+    return render_es("hours_duration", hours=SETUP_LINK_EXPIRE_HOURS)
 
 
-def _send_resend(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
+def _send_resend(
+    to: str, subject: str, html: str, attachment: dict | None = None,
+    tenant_id: str | None = None,
+) -> None:
     """Send via the Resend HTTP API. Raises on failure."""
     import httpx
 
+    cfg = effective(tenant_id)
     payload = {
-        "from": settings.email_from,
+        "from": cfg.email_from,
         "to": [to],
         "subject": f"[{_APP_NAME}] {subject}",
         "html": html,
@@ -130,18 +146,22 @@ def _send_resend(to: str, subject: str, html: str, attachment: dict | None = Non
 
     resp = httpx.post(
         "https://api.resend.com/emails",
-        headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+        headers={"Authorization": f"Bearer {cfg.resend_api_key}"},
         json=payload,
         timeout=15,
     )
     resp.raise_for_status()
 
 
-def _send_smtp(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
+def _send_smtp(
+    to: str, subject: str, html: str, attachment: dict | None = None,
+    tenant_id: str | None = None,
+) -> None:
     """Send via SMTP TLS (fallback transport). Raises on failure."""
+    cfg = effective(tenant_id)
     msg = MIMEMultipart("mixed" if attachment else "alternative")
     msg["Subject"] = f"[{_APP_NAME}] {subject}"
-    msg["From"]    = f"{_APP_NAME} <{settings.smtp_user}>"
+    msg["From"]    = f"{_APP_NAME} <{cfg.smtp_user}>"
     msg["To"]      = to
 
     if attachment:
@@ -154,14 +174,17 @@ def _send_smtp(to: str, subject: str, html: str, attachment: dict | None = None)
     else:
         msg.attach(MIMEText(html, "html", "utf-8"))
 
-    with smtplib.SMTP(settings.smtp_server, settings.smtp_port) as smtp:
+    with smtplib.SMTP(cfg.smtp_server, cfg.smtp_port) as smtp:
         smtp.ehlo()
         smtp.starttls()
-        smtp.login(settings.smtp_user, settings.smtp_pass)
-        smtp.sendmail(settings.smtp_user, to, msg.as_string())
+        smtp.login(cfg.smtp_user, cfg.smtp_pass)
+        smtp.sendmail(cfg.smtp_user, to, msg.as_string())
 
 
-def _transport_send(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
+def _transport_send(
+    to: str, subject: str, html: str, attachment: dict | None = None,
+    tenant_id: str | None = None,
+) -> None:
     """
     Dispatch an email: Resend when RESEND_API_KEY is set, SMTP as fallback.
     Raises on transport failure so callers can report `email_sent=False`.
@@ -170,25 +193,43 @@ def _transport_send(to: str, subject: str, html: str, attachment: dict | None = 
     and returning quietly here made every `try: _send() ... return True`
     caller claim it had mailed an invite / a verification link / a purchase
     order that no one ever received.
+
+    `tenant_id` selects a tenant's own transport when it configured one. It is
+    passed by the sends that carry the TENANT's identity to the tenant's own
+    people — an inventory alert, a purchase order to a supplier. Platform mail
+    (verification, password reset, invitations) deliberately stays on the
+    instance transport: those speak for the installation, not for a customer,
+    and a tenant must not be able to send the address that resets a password.
     """
-    if settings.resend_api_key:
-        _send_resend(to, subject, html, attachment)
+    # A trial login is a made-up address on a TLD that does not exist. Handing
+    # it to a provider would only earn a bounce against our sender.
+    from backend.trial.service import is_trial_email
+    if is_trial_email(to):
+        raise EmailDeliveryError(f"Trial account address, never mailed: {to}")
+
+    cfg = effective(tenant_id)
+
+    if cfg.resend_api_key:
+        _send_resend(to, subject, html, attachment, tenant_id)
         log.info("Email sent via Resend → %s | subject: %s", to, subject)
         return
 
-    if not settings.smtp_user or not settings.smtp_pass:
+    if not cfg.smtp_user or not cfg.smtp_pass:
         raise EmailNotConfigured(
             f"No email transport configured (RESEND_API_KEY / SMTP) — nothing sent to {to}"
         )
 
-    _send_smtp(to, subject, html, attachment)
+    _send_smtp(to, subject, html, attachment, tenant_id)
     log.info("Email sent via SMTP → %s | subject: %s", to, subject)
 
 
-def _send(to: str, subject: str, html: str, attachment: dict | None = None) -> None:
+def _send(
+    to: str, subject: str, html: str, attachment: dict | None = None,
+    tenant_id: str | None = None,
+) -> None:
     # Thin wrapper so tests (conftest) can patch the single `_send` entrypoint
     # while the dispatch logic in _transport_send stays independently testable.
-    _transport_send(to, subject, html, attachment)
+    _transport_send(to, subject, html, attachment, tenant_id)
 
 
 # Rows an inventory digest lists before collapsing the rest into a "+N more"
@@ -268,7 +309,7 @@ def send_change_password_code(to: str, code: str) -> bool:
                        padding:14px 24px;font-family:monospace;">{code}</span>
         </div>
         <p style="color:{_DIM};font-size:12px;margin:0;">
-          {render_es("change_password_email_expiry", duration=_strong(_code_ttl_label()))}
+          {render_es("change_password_email_expiry", duration=_strong(_otp_ttl_label()))}
         </p>
         """,
     )
@@ -298,7 +339,7 @@ def send_password_reset_otp(to: str, code: str) -> bool:
                        padding:14px 24px;font-family:monospace;">{code}</span>
         </div>
         <p style="color:{_DIM};font-size:12px;margin:0;">
-          {render_es("password_reset_otp_email_expiry", duration=_strong(_code_ttl_label()))}
+          {render_es("password_reset_otp_email_expiry", duration=_strong(_otp_ttl_label()))}
         </p>
         """,
     )
@@ -324,7 +365,7 @@ def send_account_setup_email(to: str, full_name: str, setup_url: str) -> bool:
         </p>
         {_button(render_es("account_setup_email_cta"), setup_url)}
         <p style="color:{_DIM};font-size:12px;">
-          {render_es("account_setup_email_expiry", duration=_code_ttl_label())}
+          {render_es("account_setup_email_expiry", duration=_setup_link_ttl_label())}
         </p>
         """,
     )
@@ -336,11 +377,29 @@ def send_account_setup_email(to: str, full_name: str, setup_url: str) -> bool:
         return False
 
 
+# Period -> the locale catalog's unit key stem. Unknown/legacy degrades to
+# "day", matching how the service layer's _days_per_period degrades.
+_COVERAGE_UNIT_STEM = {"daily": "day", "weekly": "week", "monthly": "month"}
+
+
+def _coverage_label(value: float, period: str) -> str:
+    """"4" + weekly -> "4 semanas". Singular handled, because "1 semanas" in a
+    digest a buyer reads at 8 in the morning is the kind of sloppiness that
+    makes the rest of the number look untrustworthy too."""
+    stem = _COVERAGE_UNIT_STEM.get(period or "daily", "day")
+    rounded = round(value)
+    if rounded == 1:
+        return render_es(f"unit_{stem}_one")
+    return render_es(f"unit_{stem}_many", n=f"{value:.0f}")
+
+
 def send_inventory_alert_email(
     to: str,
     critical_items: list[dict],
     warning_items: list[dict],
     inventory_url: str,
+    period: str = "daily",
+    tenant_id: str | None = None,
 ) -> bool:
     """
     Daily digest: SKUs at risk of stockout. Returns True if sent.
@@ -360,10 +419,11 @@ def send_inventory_alert_email(
         days  = item.get("coverage_days")
         recom = item.get("recommended_qty")
         prov  = item.get("supplier") or "—"
-        days_str  = (
-            render_es("alert_email_coverage_days", days=f"{days:.0f}")
-            if days is not None else "—"
-        )
+        # Coverage is expressed in the tenant's OWN planning unit. This used to
+        # render "días" whatever the period was, so a weekly tenant read "4
+        # días" for four WEEKS of cover — the digest understating the cushion by
+        # a factor of seven, on the one screen that tells a buyer to act today.
+        days_str  = _coverage_label(days, period) if days is not None else "—"
         recom_str = f"{recom:,.0f}" if recom else "—"
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'
@@ -452,7 +512,7 @@ def send_inventory_alert_email(
         """,
     )
     try:
-        _send(to, subject_prefix, html)
+        _send(to, subject_prefix, html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send inventory alert to %s: %s", to, exc)
@@ -463,6 +523,7 @@ def send_supplier_lead_time_alert_email(
     to: str,
     deviations: list[dict],
     scorecard_url: str,
+    tenant_id: str | None = None,
 ) -> bool:
     """
     Daily digest: suppliers whose recent lead time drifted significantly off
@@ -473,20 +534,20 @@ def send_supplier_lead_time_alert_email(
     _AMB = "#f59e0b"
 
     def _row(d: dict) -> str:
-        # `severidad` / `lead_time_reciente` / `n_reciente` are payload keys owned
-        # by supplier_health_service, not user-facing copy — read, never rendered.
-        color = _RED if d.get("severidad") == "alta" else _AMB
+        # `severity` / `lead_time_recent` / `n_recent` are payload keys owned by
+        # supplier_health_service, not user-facing copy — read, never rendered.
+        color = _RED if d.get("severity") == "high" else _AMB
         return (
             f'<tr style="border-bottom:1px solid #1e2030;">'
             f'<td style="padding:10px 12px;font-size:13px;font-weight:600;">{d.get("supplier", "")}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:700;">'
-            f'  {render_es("lead_time_email_days", days=d.get("lead_time_reciente"))}</td>'
+            f'  {render_es("lead_time_email_days", days=d.get("lead_time_recent"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
-            f'  {render_es("lead_time_email_days", days=d.get("lead_time_historico"))}</td>'
+            f'  {render_es("lead_time_email_days", days=d.get("lead_time_historical"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{color};font-weight:600;">'
             f'  {render_es("lead_time_email_deviation_days", days=d.get("deviation_days"))}</td>'
             f'<td style="padding:10px 12px;font-size:12px;color:{_DIM};">'
-            f'  {render_es("lead_time_email_receptions_ratio", recent=d.get("n_reciente"), baseline=d.get("n_baseline"))}</td>'
+            f'  {render_es("lead_time_email_receptions_ratio", recent=d.get("n_recent"), baseline=d.get("n_baseline"))}</td>'
             f'</tr>'
         )
 
@@ -529,7 +590,7 @@ def send_supplier_lead_time_alert_email(
         """,
     )
     try:
-        _send(to, subject, html)
+        _send(to, subject, html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send supplier lead-time alert to %s: %s", to, exc)
@@ -541,6 +602,7 @@ def send_data_freshness_reminder_email(
     sales_age_days: int | None,
     stock_age_days: int | None,
     upload_url: str,
+    tenant_id: str | None = None,
 ) -> bool:
     """
     The reminder that reaches a buyer who stopped opening the app.
@@ -581,14 +643,115 @@ def send_data_freshness_reminder_email(
         else render_es("freshness_email_subject_stock", days=stock_age_days)
     )
     try:
-        _send(to, subject, html)
+        _send(to, subject, html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send data-freshness reminder to %s: %s", to, exc)
         return False
 
 
-def send_training_complete_email(to: str, session_name: str, dashboard_url: str) -> bool:
+# Rows each operator-digest section lists before collapsing into "+N more".
+_OPERATOR_DIGEST_MAX_ROWS = 15
+
+
+def _digest_time(value) -> str:
+    return value.strftime("%Y-%m-%d %H:%M") if hasattr(value, "strftime") else str(value or "")
+
+
+def send_operator_digest_email(
+    to: str, failures: dict, window_start, window_end,
+) -> bool:
+    """The daily list of what failed on this installation (stability §14.g).
+
+    Built by `notifications.operator_digest.run_operator_digest`. Platform
+    mail: it speaks for the installation, so it always uses the instance
+    transport, never a tenant's. Returns True if the message reached a transport.
+    """
+    from html import escape
+
+    def _row(headline: str, detail: str) -> str:
+        return (
+            f'<li style="margin:0 0 10px;">{_strong(escape(headline))}'
+            f'<br><span style="color:{_DIM};font-size:12px;">{escape(detail)}</span></li>'
+        )
+
+    def _section(title_key: str, rows: list[str]) -> str:
+        if not rows:
+            return ""
+        shown = rows[:_OPERATOR_DIGEST_MAX_ROWS]
+        more = len(rows) - len(shown)
+        tail = (f'<li style="color:{_DIM};">{escape(render_es("operator_digest_more", n=more))}</li>'
+                if more > 0 else "")
+        return (
+            f'<p style="font-weight:700;margin:20px 0 8px;">'
+            f'{escape(render_es(title_key, n=len(rows)))}</p>'
+            f'<ul style="padding-left:18px;margin:0;">{"".join(shown)}{tail}</ul>'
+        )
+
+    no_error = render_es("operator_digest_no_error")
+    jobs = [
+        _row(render_es("operator_digest_job_line",
+                       tenant=j.get("tenant_name") or j.get("tenant_id"),
+                       session=j.get("session_name") or j.get("session_id"),
+                       at=_digest_time(j.get("failed_at"))),
+             j.get("error") or no_error)
+        for j in failures.get("jobs", [])
+    ]
+    schedules = [
+        _row(render_es("operator_digest_job_line",
+                       tenant=s.get("tenant_name") or s.get("tenant_id"),
+                       session=s.get("session_name") or s.get("session_id"),
+                       at=_digest_time(s.get("failed_at"))),
+             s.get("error") or no_error)
+        for s in failures.get("schedules", [])
+    ]
+    loops = [
+        _row(render_es("operator_digest_loop_line",
+                       loop=lp.get("loop"), status=lp.get("last_status"),
+                       at=_digest_time(lp.get("last_run_at"))),
+             lp.get("last_error") or no_error)
+        for lp in failures.get("loops", [])
+    ]
+    events = [
+        _row(render_es("operator_digest_event_line",
+                       tenant=e.get("tenant_name") or e.get("tenant_id"),
+                       action=e.get("action"), at=_digest_time(e.get("failed_at"))),
+             e.get("detail") or no_error)
+        for e in failures.get("events", [])
+    ]
+    total = len(jobs) + len(schedules) + len(loops) + len(events)
+
+    title = render_es("operator_digest_title")
+    html = _base_html(
+        title,
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 12px;">{title}</p>
+        <p style="color:{_DIM};margin:0 0 8px;">
+          {escape(render_es("operator_digest_intro",
+                            start=_digest_time(window_start), end=_digest_time(window_end)))}
+        </p>
+        {_section("operator_digest_section_jobs", jobs)}
+        {_section("operator_digest_section_schedules", schedules)}
+        {_section("operator_digest_section_loops", loops)}
+        {_section("operator_digest_section_events", events)}
+        <p style="color:{_DIM};font-size:11px;margin:24px 0 0;">
+          {escape(render_es("operator_digest_footer"))}
+        </p>
+        """,
+    )
+    subject = render_es("operator_digest_subject", n=total, s="" if total == 1 else "s")
+    try:
+        _send(to, subject, html)
+        return True
+    except Exception as exc:
+        log.error("Failed to send operator digest to %s: %s", to, exc)
+        return False
+
+
+def send_training_complete_email(
+    to: str, session_name: str, dashboard_url: str,
+    tenant_id: str | None = None,
+) -> bool:
     """Notify user when a training job finishes. Returns True if sent."""
     html = _base_html(
         "Training complete",
@@ -603,7 +766,7 @@ def send_training_complete_email(to: str, session_name: str, dashboard_url: str)
         """,
     )
     try:
-        _send(to, f"Training complete — {session_name}", html)
+        _send(to, f"Training complete — {session_name}", html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send training complete email to %s: %s", to, exc)
@@ -619,6 +782,7 @@ def send_po_to_supplier_email(
     pdf_bytes: bytes,
     pdf_filename: str,
     po_ref: str | None = None,
+    tenant_id: str | None = None,
 ) -> bool:
     """Send a purchase order's PDF to its supplier. Returns True if sent."""
     ref = po_ref or po_log_id
@@ -664,7 +828,8 @@ def send_po_to_supplier_email(
     )
     try:
         _send(to, render_es("po_email_subject", reference=ref), html,
-              attachment={"filename": pdf_filename, "content_bytes": pdf_bytes})
+              attachment={"filename": pdf_filename, "content_bytes": pdf_bytes},
+              tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send PO email to supplier %s <%s>: %s", supplier_name, to, exc)
@@ -673,16 +838,10 @@ def send_po_to_supplier_email(
 
 # ── Monthly recap ─────────────────────────────────────────────────────────────
 # Amounts follow the tenant's currency setting (backend/api/v1/currency.py), not
-# a hardcoded colón: this email is the one figure-bearing message Faro sends on
+# a hardcoded colón: this email is the one figure-bearing message StockAI sends on
 # its own initiative, and a customer on USD used to read ₡ in the subject line.
 # LatAm convention throughout: period as the thousands separator, comma for the
 # decimals — which is why this does not go through `formatting.money`.
-_MONTH_KEYS = (
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
-)
-
-
 def _fmt_money(value: float, currency: dict | None = None) -> str:
     """Amount in the tenant's currency, LatAm-punctuated: ₡1.250.000 / $9.402,55.
     `currency` is what `currency_of(tenant_id)` returns; omitting it renders the
@@ -697,13 +856,11 @@ def _fmt_money(value: float, currency: dict | None = None) -> str:
 
 
 def _month_label(month_key: str) -> str:
-    """'2026-06' -> 'junio de 2026' (month name and joiner come from the catalog)."""
+    """'2026-06' -> 'junio de 2026'. The month names, the joiner and the ordering
+    all belong to the copy catalog — the PDF needs the same three and had grown
+    its own copy of the list."""
     year, month = (int(p) for p in month_key.split("-"))
-    return render_es(
-        "month_label",
-        month=render_es(f"month_name_{_MONTH_KEYS[month - 1]}"),
-        year=year,
-    )
+    return render_month(year, month)
 
 
 def _recap_metric_block(value: str, label: str, note: str, color: str) -> str:
@@ -718,9 +875,10 @@ def _recap_metric_block(value: str, label: str, note: str, color: str) -> str:
 
 
 def send_monthly_roi_email(to: str, report: dict, roi_url: str,
-                           currency: dict | None = None) -> bool:
+                           currency: dict | None = None,
+                           tenant_id: str | None = None) -> bool:
     """
-    Monthly recap of what the buyer did with Faro.
+    Monthly recap of what the buyer did with StockAI.
 
     Every figure comes straight from `get_month_report`; metrics that could not
     be derived from the tenant's own records are omitted from the email rather
@@ -766,8 +924,12 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str,
 
     managed = report.get("managed_purchase_value")
     if managed is not None:
+        # When some ordered lines carry no cost the figure covers only the
+        # costed ones. /impacto prints it as "≥ ₡X" (stability 2.6); this tile
+        # printed the partial sum as the month's total (math audit 2026-10-01).
+        partial = report.get("managed_purchase_value_complete") is False
         tiles.append(_recap_metric_block(
-            _fmt_money(managed, currency),
+            ("≥ " if partial else "") + _fmt_money(managed, currency),
             render_es("roi_email_metric_purchases_label"),
             render_es("roi_email_metric_purchases_note"),
             _TEXT,
@@ -810,8 +972,48 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str,
         else render_es("roi_email_subject_default", month=month_label)
     )
     try:
-        _send(to, subject, html)
+        _send(to, subject, html, tenant_id=tenant_id)
         return True
     except Exception as exc:
         log.error("Failed to send monthly recap to %s: %s", to, exc)
+        return False
+
+
+def send_upgrade_request_email(
+    *,
+    to: str,
+    tenant_name: str,
+    tenant_id: str,
+    requester: str,
+    limit_key: str | None,
+    message: str,
+    contact: str,
+) -> bool:
+    """Tell us that a customer wants to pay. Returns True if sent.
+
+    Deliberately in English and deliberately plain: this one goes to us, not to
+    a customer, so it is not end-user copy and needs no locale catalog. It is
+    also not the record — `upgrade_requests` is. If this send fails the row is
+    already committed, which is the whole point: the most expensive silent
+    failure this product could have is losing an "I want to pay you".
+    """
+    html = _base_html(
+        "Upgrade request",
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">{tenant_name} wants more room</p>
+        <p style="color:{_DIM};margin:0 0 4px;">Tenant: <strong style="color:{_TEXT};">{tenant_name}</strong> ({tenant_id})</p>
+        <p style="color:{_DIM};margin:0 0 4px;">Asked by: <strong style="color:{_TEXT};">{requester}</strong></p>
+        <p style="color:{_DIM};margin:0 0 4px;">Reach them at: <strong style="color:{_TEXT};">{contact or "—"}</strong></p>
+        <p style="color:{_DIM};margin:0 0 20px;">Hit the limit: <strong style="color:{_TEXT};">{limit_key or "—"}</strong></p>
+        <p style="color:{_TEXT};margin:0 0 8px;white-space:pre-wrap;">{message or "(no message)"}</p>
+        <p style="color:{_DIM};font-size:12px;">
+          Move them over with: UPDATE tenants SET tier = 'paid' WHERE id = '{tenant_id}';
+        </p>
+        """,
+    )
+    try:
+        _send(to, f"Upgrade request — {tenant_name}", html)
+        return True
+    except Exception as exc:
+        log.error("Failed to send upgrade request email to %s: %s", to, exc)
         return False

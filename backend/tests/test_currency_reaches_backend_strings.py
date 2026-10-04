@@ -277,27 +277,43 @@ _OVERSTOCK_ITEM = {
 
 
 class TestOverstockSentenceCarriesTheTenantsCurrency:
-    def _overstock_text(self, currency) -> str:
+    """The recommendation now travels as code + params with an English fallback
+    sentence, so the amount has to carry the tenant's symbol in BOTH — the
+    frontend renders the Spanish, but it cannot format the money itself."""
+
+    def _overstock(self, currency) -> dict:
         from backend.inventory.service import generate_recommendations
         recs = generate_recommendations([dict(_OVERSTOCK_ITEM)], "daily", currency)
-        rec = next(r for r in recs if r["rec_type"] == "OVERSTOCK")
-        return rec["text"]
+        return next(r for r in recs if r["rec_type"] == "OVERSTOCK")
 
     def test_the_sentence_uses_the_tenants_symbol(self):
         """Break to check: drop `currency=currency` from the OVERSTOCK text."""
-        text = self._overstock_text(USD)
-        assert "$12,500.00" in text, text
-        assert "₡" not in text
+        rec = self._overstock(USD)
+        # 120 days of cover against a 3 x 10-day ceiling: 90/120 of the
+        # 12,500 on the shelf is the excess pausing can free (math audit
+        # 2026-10-01 — it used to quote the whole 12,500).
+        assert "$9,375.00" in rec["text"], rec["text"]
+        assert "₡" not in rec["text"]
+
+    def test_the_param_the_frontend_renders_carries_it_too(self):
+        """The `text` above is only the fallback. Break to check: drop
+        `currency=currency` from `text_params['amount']` and this is the only
+        test that notices."""
+        rec = self._overstock(USD)
+        assert rec["text_params"]["amount"] == "$9,375.00", rec["text_params"]
 
     def test_the_anchor_market_sentence_is_unchanged(self):
-        text = self._overstock_text(None)
-        assert "liberaría ₡12,500 en capital de trabajo" in text, text
+        rec = self._overstock(None)
+        assert "would free ₡9,375 of working capital" in rec["text"], rec["text"]
+        assert rec["text_params"]["amount"] == "₡9,375"
 
 
 class TestBriefingAndNarrativeThreadTheSetting:
     """End to end through the real endpoints: the currency is set with the real
-    PATCH, and the assertions read the composed Spanish the API returns. This is
-    what breaks if the tenant_id stops being threaded anywhere along
+    PATCH, and the assertions read the amounts the API composes — the one part of
+    these payloads the frontend cannot build, since only the backend knows the
+    tenant's currency setting. This is what breaks if the tenant_id stops being
+    threaded anywhere along
     endpoint -> get_morning_briefing -> generate_recommendations, or
     endpoint -> generate_morning_narrative -> _extract_key_points.
     """
@@ -339,8 +355,10 @@ class TestBriefingAndNarrativeThreadTheSetting:
         data = r.json()["data"]
         over = [x for x in data["recommendations"] if x["rec_type"] == "OVERSTOCK"]
         assert over, f"no overstock recommendation to check: {data['recommendations']}"
-        # 500 units x 100.0 = 50,000 of trapped capital, relabelled not converted.
-        assert "$50,000.00" in over[0]["text"], over[0]["text"]
+        # 500 days of cover against a 3 x 10-day ceiling: 470/500 of the
+        # 50,000 on the shelf is what pausing can free — 47,000, relabelled
+        # not converted (math audit 2026-10-01).
+        assert "$47,000.00" in over[0]["text"], over[0]["text"]
         assert "₡" not in over[0]["text"]
 
     def test_narrative_key_points_follow_the_tenants_currency(
@@ -362,9 +380,70 @@ class TestBriefingAndNarrativeThreadTheSetting:
                         headers=auth_headers)
         assert r.status_code == 200, r.text
         data = r.json()["data"]
-        blob = " ".join(data["key_points"]) + " " + data["narrative"]
+        # A key point is code + params + English fallback now. The amount is
+        # pre-formatted in BOTH — only the backend knows the tenant's setting —
+        # so the currency has to reach each of them.
+        amounts = [p["params"].get("amount") for p in data["key_points"]
+                   if "amount" in p["params"]]
+        assert amounts, f"no key point quotes an amount: {data['key_points']}"
+        blob = (" ".join(p["text"] for p in data["key_points"])
+                + " " + " ".join(str(a) for a in amounts)
+                + " " + data["narrative"])
         assert "$50,000.00" in blob, blob
         assert "₡" not in blob, "the colón survived in the executive summary"
+
+    def test_the_prompt_itself_carries_the_currency_not_a_bare_number(
+        self, client, auth_headers, test_tenant, monkeypatch
+    ):
+        """The gap the two tests above could not see.
+
+        They pin the fallback (`_get_client -> None`) and read `key_points`,
+        both of which went through `money()` from the start. The LLM path did
+        not: the money fields entered the prompt as bare floats
+        (`"total_inventory_value": 195755.6`), so the model had nothing to
+        anchor a symbol to and supplied its own. Measured in a browser on
+        2026-08-22: the KPI tile read `₡196K` and the sentence directly below it
+        read "195.755,6 €", for a tenant whose books are in colones.
+
+        No amount of prompt wording fixes that reliably — the number has to
+        arrive already formatted. So this test captures the REAL prompt and
+        asserts the tenant's symbol is in it and the bare float is not.
+        """
+        import backend.ai.narrative_service as ns
+        from backend.sessions.service import create_session
+
+        captured: dict = {}
+
+        def fake_call(client_, prompt, max_tokens=700, language=None):
+            captured["prompt"] = prompt
+            return "narrative stub"
+
+        # A truthy client so the LLM branch is taken, and the call intercepted.
+        monkeypatch.setattr(ns, "_get_client", lambda: object())
+        monkeypatch.setattr(ns, "_call_llm", fake_call)
+
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "cur-prompt")["id"]
+        self._pile_of_stock(client, auth_headers, tid, sid, "CURPMT")
+        self._set_currency(client, auth_headers, "USD")
+
+        r = client.post("/api/v1/ai/narrative/morning",
+                        json={"session_id": sid, "profile": "distributor"},
+                        headers=auth_headers)
+        assert r.status_code == 200, r.text
+
+        prompt = captured.get("prompt")
+        assert prompt, "the LLM branch was not taken — this test proves nothing"
+        assert "$50,000.00" in prompt, (
+            f"the prompt does not quote the amount in the tenant's currency: {prompt}"
+        )
+        # The bare float is what let the model choose a symbol. Its absence is
+        # the actual fix; the presence of "$" above could also be satisfied by a
+        # formatted value sitting NEXT to an unformatted one.
+        assert "50000.0" not in prompt, (
+            f"a bare, currency-less amount is still reaching the model: {prompt}"
+        )
+        assert "₡" not in prompt, "the colón reached a USD tenant's prompt"
 
     def test_the_same_tenant_on_colones_still_reads_colones(
         self, client, auth_headers, test_tenant
@@ -379,7 +458,7 @@ class TestBriefingAndNarrativeThreadTheSetting:
                        headers=auth_headers)
         over = [x for x in r.json()["data"]["recommendations"]
                 if x["rec_type"] == "OVERSTOCK"]
-        assert over and "₡50,000" in over[0]["text"], over
+        assert over and "₡47,000" in over[0]["text"], over
         assert "$" not in over[0]["text"]
 
 
@@ -416,6 +495,8 @@ class TestInventoryPdfCarriesTheTenantsCurrency:
 
 # ── The monthly recap email ───────────────────────────────────────────────────
 
+from backend.notifications.locale import render_es
+
 _RECAP = {"month": "2026-06", "adoption_rate": 0.75,
           "recommendations_followed": 6, "recommendations_shown": 8,
           "stockout_risks_handled": 3, "capital_freed": 1250000.0,
@@ -427,23 +508,33 @@ class TestMonthlyRecapEmailCarriesTheTenantsCurrency:
         from backend.notifications import email as email_mod
         captured = {}
         monkeypatch.setattr(email_mod, "_send",
-                            lambda to, subject, html, attachment=None:
+                            lambda to, subject, html, attachment=None, **_kw:
                             captured.update(subject=subject, html=html))
         assert email_mod.send_monthly_roi_email(
-            "buyer@faro-e2e.io", dict(_RECAP), "https://faro.test/roi",
+            "buyer@stockai-e2e.io", dict(_RECAP), "https://stockai.test/roi",
             currency=currency) is True
         return captured
 
+    # The subject is asserted through the catalog and the AMOUNT is asserted as
+    # a literal. That split is the point of these two tests: they exist to catch
+    # a money format regressing, not to freeze the sentence around it — and
+    # pinning the whole subject made a deliberate copy correction read as one.
     def test_subject_and_tiles_use_the_tenants_symbol(self, monkeypatch):
         """Break to check: revert `_fmt_money` to the hardcoded ₡."""
         msg = self._send(monkeypatch, USD)
-        assert msg["subject"] == "Faro — liberaste $1.250.000,00 en junio de 2026"
+        assert "$1.250.000,00" in msg["subject"]
+        assert msg["subject"] == render_es(
+            "roi_email_subject_capital",
+            month="junio de 2026", amount="$1.250.000,00")
         assert "$890.000,00" in msg["html"]
         assert "₡" not in msg["subject"] and "₡" not in msg["html"]
 
     def test_the_anchor_market_recap_is_byte_identical_to_before(self, monkeypatch):
         msg = self._send(monkeypatch, None)
-        assert msg["subject"] == "Faro — liberaste ₡1.250.000 en junio de 2026"
+        assert "₡1.250.000" in msg["subject"]
+        assert msg["subject"] == render_es(
+            "roi_email_subject_capital",
+            month="junio de 2026", amount="₡1.250.000")
         assert "₡890.000" in msg["html"]
 
 

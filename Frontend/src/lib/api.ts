@@ -1,17 +1,21 @@
 import type {
   SessionInfo, DatasetMeta, DataProfile, ColumnOptions, InspectionResult,
   QualityReport, RunWarnings, ConfigSchema, ChooseColumnsBody, CanonicalColumnsBody,
-  JobResponse, MetricsResponse, InventoryResponse, RoutingPlan,
+  JobResponse, MetricsResponse, InventoryResponse, RoutingPlan, TrainingResults,
   ForecastSeries, DataHealthReport,
   Chat, ChatMessage, MessagesPage, ChatSourceType,
   DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
-  Supplier, SkuSupplier, MorningBriefing, DeadStockResponse, OptimizationResponse,
+  Supplier, SkuSupplier, MorningBriefing, DeadCapitalResponse, OptimizationResponse,
+  SupplierCostInflationResponse, MarginErosionResponse, ForecastMoneyResponse,
+  CostOfIgnoringResponse, WhyChangedResponse,
   ShrinkageReason, ShrinkageRecord,
   Warehouse, WarehouseStatusResponse, Transfer, TransferLane,
   PlanningState, PlanningPeriod, MeUser,
+  SignalThresholdFactors, SignalThresholdScope, SignalThresholdRule,
+  SignalThresholdsState, SignalThresholdsPreview,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
 import { translateErrorParts } from './errorMessage'
@@ -128,7 +132,13 @@ function notify(err: ApiError, silent: boolean) {
  * toast — used by callers that render the failure themselves (a full-screen
  * `ErrorState`) so the user isn't told the same thing twice.
  */
-export interface RequestOpts { silent?: boolean }
+export interface RequestOpts {
+  silent?: boolean
+  /** Extra request headers — e.g. `Idempotency-Key` on PO creation, so a
+   *  double tap or a retry after a dropped connection returns the order
+   *  already written instead of creating a second one. */
+  headers?: Record<string, string>
+}
 
 // FastAPI validation errors send `detail` as an array of {type, loc, msg, ...}
 // instead of a string. Without this, `new Error(detail)` stringifies the array
@@ -196,11 +206,14 @@ async function apiErrorFromResponse(res: Response, path: string): Promise<ApiErr
   )
 }
 
-function _doFetch(method: string, path: string, body?: unknown): Promise<Response> {
+function _doFetch(
+  method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>,
+): Promise<Response> {
   const isForm = body instanceof FormData
   const token  = getToken()
 
   const headers: Record<string, string> = isForm ? {} : { 'Content-Type': 'application/json' }
+  if (extraHeaders) Object.assign(headers, extraHeaders)
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   return fetch(`${BASE}${path}`, {
@@ -226,7 +239,7 @@ async function request<T = unknown>(
 
   let res: Response
   try {
-    res = await _doFetch(method, path, body)
+    res = await _doFetch(method, path, body, opts.headers)
   } catch {
     // fetch() only rejects when the request never completed: offline, DNS
     // failure, or the backend not listening. Any HTTP status resolves.
@@ -253,7 +266,7 @@ async function request<T = unknown>(
     // once, so a 15-minute token never kicks the user back to /login mid-task.
     // `_sessionLost()` never returns — it clears auth and redirects.
     if (await tryRefresh()) {
-      res = await _doFetch(method, path, body)
+      res = await _doFetch(method, path, body, opts.headers)
       if (res.status === 401) _sessionLost()
     } else {
       _sessionLost()
@@ -344,6 +357,8 @@ export const authSignup = (body: {
   email: string; password: string; full_name?: string; tenant_name: string
   /** E.164, required — purchase orders are delivered here for forwarding. */
   whatsapp_number: string
+  /** The Terms + Privacy box. Anything but `true` is refused with `terms_not_accepted`. */
+  accept_terms: boolean
 }) =>
   request<{
     user: Record<string, unknown>; tenant: Record<string, unknown>
@@ -366,10 +381,63 @@ export const authLogin = (email: string, password: string) =>
       id: string; email: string; full_name: string | null; role: string
       tenant_id: string
       /** Unverified users log in fine — only outward actions (invites,
-       *  integrations, sending notifications) demand verification. */
+       *  sending notifications) demand verification. */
       email_verified: boolean
     }
   }>('POST', '/auth/login', { email, password })
+
+// ── Social sign-in (Google / Apple / Facebook) ───────────────────────────────
+// Off unless the instance operator enabled a provider; `providers` is then [].
+export type SocialProvider = 'google' | 'apple' | 'facebook'
+
+export const getAuthProviders = () =>
+  request<{ providers: SocialProvider[] }>('GET', '/auth/providers', undefined, { silent: true })
+
+/** Where the browser goes to start a provider sign-in. A navigation, not a
+ *  fetch: the provider's page has to take over the window. `terms` says the
+ *  page the person clicked on stated the Terms and the Privacy Policy. */
+// `/api/v1/...` rather than BASE: the browser-binding cookie the backend sets
+// is scoped to `/api/v1/auth/oauth`, the path the provider calls back on.
+export const socialStartUrl = (provider: SocialProvider, intent: 'login' | 'signup') =>
+  `/api/v1/auth/oauth/${provider}/start?intent=${intent}&terms=1`
+
+/** Trade the one-time code from /auth/callback for our own tokens. */
+export const exchangeSocialCode = (code: string) =>
+  request<{
+    access_token: string; refresh_token: string; token_type: string; expires_in: number
+    provider: SocialProvider; is_new_account: boolean
+    user: {
+      id: string; email: string; full_name: string | null; role: string
+      tenant_id: string; email_verified: boolean
+    }
+  }>('POST', '/auth/oauth/exchange', { code }, { silent: true })
+
+export interface LinkedIdentity {
+  provider: SocialProvider
+  email: string | null
+  created_at: string | null
+  last_used_at: string | null
+}
+
+export const getMyIdentities = () =>
+  request<{ identities: LinkedIdentity[]; has_password: boolean; providers_enabled: SocialProvider[] }>(
+    'GET', '/auth/identities', undefined, { silent: true },
+  )
+
+export const unlinkIdentity = (provider: SocialProvider) =>
+  request<{ unlinked: string }>('DELETE', `/auth/identities/${provider}`, undefined, { silent: true })
+
+/** A throwaway account from the landing: 24 hours, the `demo` tier, the demo
+ *  run already queued. The password exists only in this response. */
+export interface TrialAccount {
+  email: string
+  password: string
+  expires_at: string
+  hours: number
+}
+
+export const createTrialAccount = () =>
+  request<TrialAccount>('POST', '/trial', undefined, { silent: true })
 
 export const authVerifyEmail = (token: string) =>
   request<{ message: string }>('POST', '/auth/verify-email', { token })
@@ -448,6 +516,20 @@ export const chooseColumnsCanonical = (id: string, body: CanonicalColumnsBody) =
 export const setFeatures = (id: string, body: Record<string, unknown>) =>
   request<{ ok: boolean }>('POST', `/sessions/${id}/configure/features`, body)
 
+// ── Pre-training data gate ────────────────────────────────────────────────────
+// What is wrong with this file and what the user may do about it. Evaluated
+// against the CONFIRMED mapping, so this is the same verdict `POST /train`
+// enforces — asking here and being refused there would be the worst of both.
+export const getDataGate = (id: string, opts?: { silent?: boolean }) =>
+  request<import('./types').DataGate>('GET', `/sessions/${id}/data-gate`, undefined, opts)
+
+// {issue_type: option_code}. Validated against the live gate, so a stale choice
+// for a finding this file no longer has is rejected rather than stored.
+export const setRemediations = (id: string, remediations: Record<string, string>) =>
+  request<{ remediations: Record<string, string> }>(
+    'POST', `/sessions/${id}/configure/remediations`, { remediations },
+  )
+
 export const setModels = (
   id: string,
   selected_models: string[],
@@ -520,6 +602,17 @@ export const getMetrics = (id: string) =>
 
 export const getInventory = (id: string) =>
   request<InventoryResponse>('GET', `/sessions/${id}/inventory`)
+
+/**
+ * The whole stored training result in one call.
+ *
+ * `/metrics` and `/inventory` are slices of exactly this payload, so a screen
+ * that needs a third slice (the policy backtest, the demand-risk bands) is
+ * better off asking once than asking three times and downloading the metric
+ * rows twice.
+ */
+export const getTrainingResults = (id: string) =>
+  request<TrainingResults>('GET', `/sessions/${id}/results`)
 
 // ── AI Analyst ────────────────────────────────────────────────────────────────
 export const analystQuery = (
@@ -604,16 +697,25 @@ export const deleteChat  = (chatId: string) =>
 export const getChatMessages = (chatId: string, limit = 30, before?: string) =>
   request<MessagesPage>('GET', `/analyst/chats/${chatId}/messages?limit=${limit}${before ? `&before=${before}` : ''}`)
 
+/**
+ * Ask the assistant. `language` is the UI language the answer is written in;
+ * the backend answers from the account's live data (backend/assistant/).
+ */
 export const sendChatMessage = (
   chatId: string,
   question: string,
-  sessionId?: string | null,
+  language: 'es' | 'en',
   sku?: string | null,
 ) =>
   request<{ user_message: ChatMessage; ai_message: ChatMessage }>(
     'POST', `/analyst/chats/${chatId}/messages`,
-    { question, session_id: sessionId, sku },
+    { question, language, sku },
   )
+
+/** First name, today's counts and suggested questions built from the
+ *  account's own top risks (codes + params, rendered via `analyst.suggest.*`). */
+export const getAssistantWelcome = () =>
+  request<import('./types').AssistantWelcome>('GET', '/analyst/welcome')
 
 export const getDataSourceTypes = () =>
   request<ChatSourceType[]>('GET', '/analyst/data-source-types')
@@ -698,14 +800,27 @@ export const uploadActuals = (sessionId: string, file: File) => {
 }
 
 // ── API Keys ──────────────────────────────────────────────────────────────────
-export const createApiKey = (name: string) =>
-  request<{ key: string; name: string }>('POST', '/api-keys', { name })
+// The role travels. It always could — the backend has validated it since keys
+// existed — but this helper dropped it, so every key minted from the UI silently
+// took the default: `viewer`. A read-only key cannot upload the nightly export
+// or record a purchase order, which is the entire job an integration has, and
+// the screen gave no hint that it had chosen for you.
+// The choice is sent as `scope` ('read' | 'write'), the name the public API
+// documents; the backend maps it to the role the key acts as.
+export const createApiKey = (name: string, scope: import('./types').ApiKeyScope = 'read') =>
+  request<{ key: string; name: string; role: string; scope: import('./types').ApiKeyScope }>(
+    'POST', '/api-keys', { name, scope })
 
 export const listApiKeys = () =>
   request<import('./types').ApiKey[]>('GET', '/api-keys')
 
 export const revokeApiKey = (id: string) =>
   request<{ revoked: string }>('DELETE', `/api-keys/${id}`)
+
+// API-key calls this month (UTC), by day and by key. Admin only.
+export const getApiKeyUsage = (month?: string) =>
+  request<import('./types').ApiKeyUsage>(
+    'GET', `/api-keys/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`)
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
 export const createWebhook = (url: string, events: string[]) =>
@@ -727,6 +842,35 @@ export const getSchedule = (sessionId: string) =>
       throw e
     })
 
+// Every schedule this tenant has. The screen is per-session and opens on
+// whichever session comes first, so without this an admin could not see that a
+// retrain was already armed on another one.
+export interface TenantTimezone { timezone: string; label: string; country: string | null }
+
+// The clock a scheduled retrain is read in. The frequency picker names an hour
+// ("cada lunes a las 6am"), so the screen has to say WHOSE 6am it is.
+export const getTenantTimezone = () =>
+  request<{ current: TenantTimezone; supported: TenantTimezone[] }>('GET', '/tenant/timezone')
+
+export const setTenantTimezone = (timezone: string) =>
+  request<{ current: TenantTimezone }>('PATCH', '/tenant/timezone', { timezone })
+
+export interface ScheduleRun {
+  id: string; session_id: string; session_name: string
+  status: string; created_at: string
+  started_at: string | null; completed_at: string | null; error: string | null
+}
+
+// What the scheduler has actually done. `scheduled_jobs` keeps only the LAST
+// run, so an intermittently failing schedule was invisible.
+export const listScheduleHistory = (limit = 20) =>
+  request<ScheduleRun[]>('GET', `/schedules/history?limit=${limit}`)
+
+export const listSchedules = () =>
+  request<Array<import('./types').JobSchedule & { session_name: string }>>(
+    'GET', '/schedules',
+  )
+
 export const saveSchedule = (sessionId: string, cronExpr: string, enabled: boolean) =>
   request<import('./types').JobSchedule>('POST', `/sessions/${sessionId}/schedule`, {
     cron_expr: cronExpr, enabled,
@@ -739,8 +883,11 @@ export const getUserPermissions = (id: string) =>
   request<{ user_id: string; permissions: string[]; all_permissions: string[] }>('GET', `/users/${id}/permissions`)
 
 // ── Production / BOM ──────────────────────────────────────────────────────────
+/** The English keys only — render them with `enumLabels.productTypeLabel`.
+ *  This returned `{key: Spanish label}` until the backend stopped authoring
+ *  copy for a screen that renders in two languages. */
 export const getProductTypes = () =>
-  request<Record<string, string>>('GET', '/inventory/product-types')
+  request<import('./types').ProductType[]>('GET', '/inventory/product-types')
 
 export const setProductType = (sku: string, productType: string) =>
   request<import('./types').InventoryStock>(
@@ -789,16 +936,46 @@ export const deleteInventoryStock = (sku: string) =>
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
 
-export const getInventoryStatus = (sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
+// ── Semáforo multipliers ──────────────────────────────────────────────────────
+// Tenant rule ('global') plus per-supplier / per-category overrides. Reading is
+// open to every role; saving and resetting need analyst or admin (403 else).
+export const getSignalThresholds = (opts?: RequestOpts) =>
+  request<SignalThresholdsState>('GET', '/inventory/signal-thresholds', undefined, opts)
+
+export const saveSignalThresholds = (
+  body: SignalThresholdFactors & { scope_type?: SignalThresholdScope; scope_value?: string | null },
+) => request<SignalThresholdsState & { saved: SignalThresholdRule }>(
+  'PUT', '/inventory/signal-thresholds', body)
+
+export const resetSignalThresholds = (scopeType: SignalThresholdScope = 'global', scopeValue?: string | null) => {
+  const qs = new URLSearchParams({ scope_type: scopeType })
+  if (scopeValue) qs.set('scope_value', scopeValue)
+  return request<SignalThresholdsState & { cleared: boolean }>(
+    'DELETE', `/inventory/signal-thresholds?${qs.toString()}`)
+}
+
+/** Read-only: runs the real semáforo with the candidate values (or a reset)
+ *  and reports how many products would change signal. Nothing is saved. */
+export const previewSignalThresholds = (
+  body: Partial<SignalThresholdFactors> & {
+    scope_type?: SignalThresholdScope; scope_value?: string | null; reset?: boolean
+  },
+  opts?: RequestOpts,
+) => request<SignalThresholdsPreview>('POST', '/inventory/signal-thresholds/preview', body, opts)
+
+export const getInventoryStatus =(sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
   request<InventoryStatusResponse>(
     'GET',
     `/inventory/status?session_id=${sessionId}&service_level=${serviceLevel}`,
     undefined, opts,
   )
 
-export const importInventoryCSV = (file: File) => {
+// `warehouse` is the destination for rows whose file names none — how the
+// per-warehouse tab stocks a location without asking the user to add a column.
+export const importInventoryCSV = (file: File, warehouse?: string) => {
   const fd = new FormData()
   fd.append('file', file)
+  if (warehouse) fd.append('warehouse', warehouse)
   return request<{ imported: number; total_rows: number }>('POST', '/inventory/bulk', fd)
 }
 
@@ -900,50 +1077,50 @@ export const deleteTransferLane = (fromWarehouse: string, toWarehouse: string) =
     + `&to_warehouse=${encodeURIComponent(toWarehouse)}`)
 
 // ── PDF export ────────────────────────────────────────────────────────────────
-export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.95) => {
-  const token = getToken()
-  const res = await fetch(
-    `${BASE}/inventory/report/pdf?session_id=${sessionId}&service_level=${serviceLevel}`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+//
+// These three used to do a bare `fetch` and `throw new Error('HTTP ' + status)`,
+// skipping `downloadBlob` 700 lines above — which handles a 401 by refreshing
+// the token and retrying, the way every other action in the app does. Access
+// tokens live 15 minutes and the refresh is purely reactive, so reading the
+// semáforo for twenty minutes (normal on that screen) and then pressing
+// "Exportar OC" rendered the literal string "HTTP 401" in the error banner:
+// no file, no purchase order logged, and no hint that reloading would fix it.
+export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.95) =>
+  downloadBlob(
+    `/inventory/report/pdf?session_id=${sessionId}&service_level=${serviceLevel}`,
+    `inventory_${new Date().toISOString().slice(0, 10)}.pdf`,
   )
-  if (!res.ok) throw await apiErrorFromResponse(res, '/inventory/report/pdf')
-  const blob = await res.blob()
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url
-  a.download = `inventory_${new Date().toISOString().slice(0, 10)}.pdf`
-  a.click()
-  URL.revokeObjectURL(url)
+
+export const exportInventoryPO = async (
+  sessionId: string, serviceLevel = 0.95, warehouse?: string,
+) => {
+  // `warehouse` follows the tab the buyer has open. Without it the endpoint
+  // re-derives the list at network level, so the file disagreed with the
+  // screen — and the order logged below was the one the file said
+  // (stability 11.7).
+  const wh = warehouse ? `&warehouse=${encodeURIComponent(warehouse)}` : ''
+  await downloadBlob(
+    `/inventory/status/export-po?session_id=${sessionId}&service_level=${serviceLevel}${wh}`,
+    'purchase_order.csv',
+  )
+  // The CSV is in the buyer's hands either way, but the `po_history` row is
+  // what makes the order EXIST for the product: /pedidos lists it, reception
+  // is tracked against it and supplier lead-time learning reads it. This used
+  // to be `.catch(() => {})` — "fire and forget" — so a failed log left the
+  // buyer with a file and the app with no order, and the only hint was the
+  // interceptor's generic toast landing right after a successful download.
+  // Silenced here so the caller can say the specific thing instead.
+  let logged = true
+  // Logged against the same warehouse the file was built for: the order lands
+  // in /pedidos with a destination, and reception credits the place that
+  // actually needs the goods.
+  try { await logPOGeneration(sessionId, undefined, warehouse, { silent: true }) }
+  catch { logged = false }
+  return { logged }
 }
 
-export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) => {
-  const token = getToken()
-  const res = await fetch(
-    `${BASE}/inventory/status/export-po?session_id=${sessionId}&service_level=${serviceLevel}`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-  )
-  if (!res.ok) throw await apiErrorFromResponse(res, '/inventory/status/export-po')
-  const blob = await res.blob()
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url; a.download = 'purchase_order.csv'; a.click()
-  URL.revokeObjectURL(url)
-  // After successful download, log the PO generation (fire and forget)
-  logPOGeneration(sessionId).catch(() => {})
-}
-
-export const downloadInventoryTemplate = async () => {
-  const token = getToken()
-  const res = await fetch(`${BASE}/inventory/template.csv`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (!res.ok) throw await apiErrorFromResponse(res, '/inventory/template.csv')
-  const blob = await res.blob()
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href = url; a.download = 'inventory_template.csv'; a.click()
-  URL.revokeObjectURL(url)
-}
+export const downloadInventoryTemplate = async () =>
+  downloadBlob('/inventory/template.csv', 'inventory_template.csv')
 
 // ── Inventory ROI ─────────────────────────────────────────────────────────────
 export const getInventoryROI = () =>
@@ -977,6 +1154,46 @@ export const receivePO = (
 
 export const sendPOToSuppliers = (poLogId: string) =>
   request<import('./types').SendPOResult>('POST', `/inventory/po/${poLogId}/send`)
+
+// Undoing a reception or a send. These exist because the WhatsApp assistant
+// was not allowed to record either action while they were irreversible — see
+// the comment above `WRITE_TOOLS` in backend/whatsapp/tools.py. Both are
+// analyst-or-above and both refuse rather than guess: an un-receive fails if
+// the units have already been sold, an un-send fails once goods arrived.
+export const unreceivePO = (poLogId: string) =>
+  request<{ ok: boolean }>('POST', `/inventory/po/${poLogId}/unreceive`)
+
+export const unsendPO = (poLogId: string) =>
+  request<{ ok: boolean }>('POST', `/inventory/po/${poLogId}/unsend`)
+
+// The supplier's invoice for this order is settled (or, undone, owed again).
+// Idempotent: `changed: false` means it already was. Analyst-or-above; only a
+// sent order can be marked paid (409 `po_paid_requires_sent`).
+export interface POPaymentResult {
+  po_log_id: string
+  paid_at:   string | null
+  paid_by:   string | null
+  changed:   boolean
+}
+export const markPOPaid = (poLogId: string) =>
+  request<POPaymentResult>('POST', `/inventory/po/${poLogId}/mark-paid`)
+
+export const markPOUnpaid = (poLogId: string) =>
+  request<POPaymentResult>('POST', `/inventory/po/${poLogId}/mark-unpaid`)
+
+// Cancel an order nothing was received against (409 `po_cancel_after_reception`
+// / `po_cancel_after_payment` otherwise), and reopen it. Both idempotent.
+export interface POCancelResult {
+  po_log_id:     string
+  cancelled_at:  string | null
+  cancel_reason: string | null
+  changed:       boolean
+}
+export const cancelPO = (poLogId: string, reason?: string) =>
+  request<POCancelResult>('POST', `/inventory/po/${poLogId}/cancel`, reason ? { reason } : {})
+
+export const uncancelPO = (poLogId: string) =>
+  request<POCancelResult>('POST', `/inventory/po/${poLogId}/uncancel`)
 
 export const getSupplierScorecard = () =>
   request<import('./types').SupplierScorecardRow[]>('GET', '/inventory/suppliers/scorecard')
@@ -1014,7 +1231,11 @@ export const deletePriceBreak = (priceBreakId: string) =>
 // actually edited are what gets judged.
 export const evaluatePriceBreaks = (
   sessionId: string,
-  items: { sku: string; quantity: number }[],
+  // `supplier_id` is the supplier the buyer has on the line right now. Without
+  // it the backend reads the supplier off the status row, so a line whose
+  // supplier was switched kept being quoted the previous one's ladder
+  // (stability 11.14).
+  items: { sku: string; quantity: number; supplier_id?: string }[],
 ) =>
   request<import('./types').PriceBreakEvaluation>(
     'POST', `/inventory/price-breaks/evaluate?session_id=${sessionId}`, { items },
@@ -1052,6 +1273,7 @@ export const logPOGeneration = (
   sessionId: string,
   items?: POLineDecision[],
   destinationWarehouse?: string,
+  opts?: RequestOpts,
 ) => {
   // destination_warehouse omitted = tenant default warehouse (mono-warehouse
   // tenants never send it, so their behavior is byte-identical to before 5.4).
@@ -1062,6 +1284,7 @@ export const logPOGeneration = (
     'POST',
     `/inventory/log-po?session_id=${sessionId}`,
     Object.keys(body).length ? body : undefined,
+    opts,
   )
 }
 
@@ -1163,7 +1386,7 @@ export const getSkuDecomposition = (
   )
 }
 
-// ── Currency (the customer's own money, not what Faro costs) ─────────────────
+// ── Currency (the customer's own money, not what StockAI costs) ─────────────────
 export const getTenantCurrency = (opts?: RequestOpts) =>
   request<{
     current: import('./currency').CurrencyInfo
@@ -1174,23 +1397,6 @@ export const getTenantCurrency = (opts?: RequestOpts) =>
 export const setTenantCurrency = (code: string) =>
   request<{ current: import('./currency').CurrencyInfo }>(
     'PATCH', '/tenant/currency', { code })
-
-// ── Billing ───────────────────────────────────────────────────────────────────
-export const getSubscription = (opts?: RequestOpts) =>
-  request<import('./types').SubscriptionState>('GET', '/billing/subscription',
-    undefined, opts)
-
-/** Starts a Stripe-hosted checkout and returns the URL to send the browser to.
- *
- *  Note it takes a PLAN, not a price id: the server resolves the price from its
- *  own configuration, so a client cannot check out against a price of its
- *  choosing. Admin only. */
-export const startCheckout = (plan: string, interval: 'monthly' | 'yearly' = 'monthly') =>
-  request<{ url: string }>('POST', '/billing/checkout', { plan, interval })
-
-/** Stripe's own billing portal: cards, invoices, cancellation. Admin only. */
-export const openBillingPortal = () =>
-  request<{ url: string }>('POST', '/billing/portal', {})
 
 export const analyzeDataSource = (
   id: string,
@@ -1258,10 +1464,18 @@ export function getDocumentContentUrl(docId: string): string {
 export const listSuppliers    = (opts?: RequestOpts) =>
   request<Supplier[]>('GET', '/inventory/suppliers', undefined, opts)
 
-export const createSupplier   = (body: Omit<Supplier, 'id' | 'tenant_id' | 'created_at' | 'active'>) =>
+/** What the form may send. `lead_time_days` is nullable on the way IN and a
+ *  number on the way out: leaving it empty is how a supplier is created
+ *  WITHOUT declaring a lead time, which is what stops the scorecard printing
+ *  "DECLARADO 15d" for a supplier who declared nothing (stability 11.32). */
+export type SupplierInput =
+  Omit<Supplier, 'id' | 'tenant_id' | 'created_at' | 'active' | 'lead_time_days'>
+  & { lead_time_days: number | null }
+
+export const createSupplier   = (body: SupplierInput) =>
   request<Supplier>('POST', '/inventory/suppliers', body)
 
-export const updateSupplier   = (id: string, body: Partial<Supplier>) =>
+export const updateSupplier   = (id: string, body: Partial<SupplierInput>) =>
   request<Supplier>('PATCH', `/inventory/suppliers/${id}`, body)
 
 export const deleteSupplier   = (id: string) =>
@@ -1281,8 +1495,8 @@ export const createManualPO = (body: {
   supplier_id: string
   lines: { sku: string; qty: number; unit_cost?: number; display_name?: string }[]
   destination_warehouse?: string
-}) =>
-  request<POLogEntry>('POST', '/inventory/po', body)
+}, opts?: RequestOpts) =>
+  request<POLogEntry>('POST', '/inventory/po', body, opts)
 
 export const getSkuSuppliers  = (sku: string) =>
   request<SkuSupplier[]>('GET', `/inventory/stock/${encodeURIComponent(sku)}/suppliers`)
@@ -1298,21 +1512,81 @@ export const removeSkuSupplier = (sku: string, supplierId: string) =>
     headers: { Authorization: `Bearer ${getToken()}` },
   }).then(() => undefined as void)
 
-// ── Dead stock / immobilised inventory ────────────────────────────────────────
-export const getDeadStock = (sessionId: string, minDays = 30) =>
-  request<DeadStockResponse>('GET', `/inventory/dead-stock?session_id=${sessionId}&min_days_static=${minDays}`)
+// ── Dead capital / "capital parado" ───────────────────────────────────────────
+// Needs no session: it ranks money that has not moved by real stock-level
+// history alone. `windowDays` is a screen filter (default 90), never a
+// setting stored per tenant.
+export const getDeadCapital = (windowDays = 90) =>
+  request<DeadCapitalResponse>('GET', `/inventory/dead-capital?window_days=${windowDays}`)
 
-// Default 30 matches the backend's default — see the endpoint's comment on
-// why a shorter horizon locks out any SKU whose lead time isn't configured.
-export const optimizeInventory = (sessionId: string, horizonDays = 30) =>
-  request<OptimizationResponse>(
-    'GET', `/inventory/optimize?session_id=${sessionId}&horizon_days=${horizonDays}`,
+// ── Supplier cost inflation / margin erosion (stability.md #20, 5-6) ─────────
+// Neither needs a session: both read `inventory_po_items.unit_cost` from
+// orders that were actually RECEIVED. See `cost_alerts.py`.
+export const getSupplierCostInflation = (windowDays = 365) =>
+  request<SupplierCostInflationResponse>('GET', `/inventory/supplier-cost-inflation?window_days=${windowDays}`)
+
+export const getMarginErosion = (windowDays = 365, minErosionPts = 0.5) =>
+  request<MarginErosionResponse>(
+    'GET', `/inventory/margin-erosion?window_days=${windowDays}&min_erosion_pts=${minErosionPts}`)
+
+// ── The forecast in money (stability.md #20, item 1) ──────────────────────────
+// Omit `sessionId` and the endpoint uses the tenant's active-period session,
+// same fallback as getInventoryStatus.
+export const getForecastMoney = (sessionId?: string) =>
+  request<ForecastMoneyResponse>(
+    'GET', `/inventory/forecast-money${sessionId ? `?session_id=${sessionId}` : ''}`)
+
+// ── "What did it cost me to ignore you" (stability.md 19.4) ──────────────────
+// Dates are `YYYY-MM-DD` (a plain `date`, no time component) — omit either
+// bound and the backend defaults to the last 30 days ending today.
+export const getCostOfIgnoring = (fromDate?: string, toDate?: string, poWindowDays = 14) => {
+  const params = new URLSearchParams()
+  if (fromDate) params.set('from_date', fromDate)
+  if (toDate) params.set('to_date', toDate)
+  params.set('po_window_days', String(poWindowDays))
+  return request<CostOfIgnoringResponse>('GET', `/inventory/recommendation-log/cost-of-ignoring?${params}`)
+}
+
+// ── "Why is today's number different" (stability.md 19.7) ───────────────────
+// Read-only, no session: the recommendation log the semáforo itself writes on
+// every computation. `available: false` means the log has fewer than two
+// recorded days for this SKU yet, not an error.
+export const getWhyChanged = (sku: string) =>
+  request<WhyChangedResponse>('GET', `/inventory/recommendation-log/${encodeURIComponent(sku)}/why-changed`)
+
+// Omit `horizonDays` and the endpoint derives it from the tenant's active
+// (period, horizon) — their own planning window.
+//
+// The panel used to hardcode 30 days, which is where this hurt: at 30 days the
+// MILP hits its 10s ceiling even on five SKUs and degrades to the greedy
+// fallback, and that fallback ignores transfers ENTIRELY. Measured on a
+// three-warehouse tenant: 14 days solved optimally with 22 transfers and 2
+// purchase lines; 30 days fell back to 5 purchase lines and no transfers — the
+// opposite advice, presented as "the optimisation plan". Asking for the horizon
+// the buyer actually plans on is both more honest and far likelier to solve.
+export const optimizeInventory = (sessionId: string, horizonDays?: number) => {
+  const horizon = horizonDays != null ? `&horizon_days=${horizonDays}` : ''
+  return request<OptimizationResponse>(
+    'GET', `/inventory/optimize?session_id=${sessionId}${horizon}`,
   )
+}
 
 // ── AI Narrative Intelligence ─────────────────────────────────────────────────
-export const getMorningNarrative = (sessionId: string, profile = 'distributor') =>
+// `silent: true` — the caller already renders a rules-based summary when this
+// fails or takes too long, and it says so on screen ("Análisis basado en
+// reglas"). The global toast has no way to know that, so it was raising "Algo
+// falló de nuestro lado" over a panel that had already recovered — and, because
+// the request outlived the navigation, sometimes on a completely different
+// page. A degraded AI summary is not an error the buyer needs to act on.
+// `language` is the reader's active UI language. The narrative is written by a
+// model, so the language has to travel with the request: without it the answer
+// always came back in Spanish, under an English heading, on an English page.
+export const getMorningNarrative = (
+  sessionId: string, profile = 'distributor', language = 'es',
+) =>
   request<import('./types').MorningNarrative>(
-    'POST', '/ai/narrative/morning', { session_id: sessionId, profile }
+    'POST', '/ai/narrative/morning', { session_id: sessionId, profile, language },
+    { silent: true },
   )
 
 
@@ -1322,49 +1596,32 @@ export const getSuggestedQuestions = (profile = 'distributor', hasInventory = tr
   )
 
 // ── Entitlements ──────────────────────────────────────────────────────────────
+/**
+ * What this tenant may do, and how much of it is left.
+ *
+ * `limits` and `usage` share their keys (`max_skus`, `max_users`, …) so a
+ * number is never displayed against the wrong ceiling. `null` in `limits` means
+ * unlimited — every commercial limit on the paid tier. `contact` carries only
+ * the channels the deployment actually configured; an empty string means that
+ * button is not shown at all.
+ */
 export interface Entitlements {
-  plan: string
+  tier: 'free' | 'paid' | 'demo'
   trial: { state: string; ends_at: string | null }
   limits: Record<string, number | null>
-  features: Record<string, boolean>
-  // Minimum plan that unlocks each feature (e.g. { ai_analyst: 'professional' }).
-  feature_plans: Record<string, string>
+  usage: Record<string, number>
+  contact: { whatsapp: string; email: string }
   read_only: boolean
 }
 
 export const getEntitlements = () =>
   request<Entitlements>('GET', '/entitlements')
 
-// ── Accounting integrations ────────────────────────────────────────────────────
-export interface Integration {
-  id:            string
-  provider:      string
-  status:        string
-  last_sync_at:  string | null
-  last_error:    string | null
-  created_at:    string
-}
-
-export interface ProviderInfo {
-  fields: string[]
-}
-
-export interface IntegrationsListResponse {
-  connections: Integration[]
-  providers:   Record<string, ProviderInfo>
-}
-
-export const listIntegrations = (opts?: RequestOpts) =>
-  request<IntegrationsListResponse>('GET', '/integrations', undefined, opts)
-
-export const connectIntegration = (provider: string, creds: Record<string, string>) =>
-  request<Integration>('POST', `/integrations/${encodeURIComponent(provider)}/connect`, creds)
-
-export const syncIntegration = (id: string) =>
-  request<unknown>('POST', `/integrations/${encodeURIComponent(id)}/sync`)
-
-export const deleteIntegration = (id: string) =>
-  request<{ deleted: string }>('DELETE', `/integrations/${encodeURIComponent(id)}`)
+/** Tell us this tenant wants more room. There is no checkout — this IS it. */
+export const requestUpgrade = (body: { limit_key?: string | null; message?: string; contact?: string }) =>
+  request<{ id: string; created: boolean; notified: boolean }>(
+    'POST', '/entitlements/upgrade-request', body,
+  )
 
 // ── Multi-period planning (Phase B) ──────────────────────────────────────────
 export const getPlanning = () =>
@@ -1487,10 +1744,20 @@ export const importStockFile = (
   file: File,
   mapping?: import('./stockSetupTypes').StockImportMapping,
   opts?: RequestOpts,
+  // Two answers the file cannot give and the wizard asks for:
+  //   · `thousandsDot` — is "1.250" 1250, or 1.25? Guessing it wrong divided a
+  //     whole catalogue by a thousand and reported success (11.2).
+  //   · `onlyFillMissing` — does this re-import overwrite what the buyer
+  //     corrected by hand, or only fill the gaps (11.9)?
+  choices?: { thousandsDot?: boolean; onlyFillMissing?: boolean },
 ) => {
   const fd = new FormData()
   fd.append('file', file)
   if (mapping) fd.append('mapping', JSON.stringify(mapping))
+  if (choices?.thousandsDot !== undefined) {
+    fd.append('thousands_dot', String(choices.thousandsDot))
+  }
+  if (choices?.onlyFillMissing) fd.append('only_fill_missing', 'true')
   return request<import('./stockSetupTypes').StockImportResult>(
     'POST', '/inventory/bulk', fd, opts,
   )
@@ -1508,9 +1775,204 @@ export const getAlertHistory = (limit = 20, opts?: RequestOpts) =>
     'GET', `/alerts?limit=${limit}`, undefined, opts,
   )
 
-/** Marks every alert up to now as read for the calling user. Mutating, so it
- *  takes the analyst+ guard — a viewer is never an alert recipient. */
+/** Marks every alert up to now as read for the calling user. Any signed-in
+ *  role: the row it writes is that user's own unread marker, and since the
+ *  bell started carrying tenant-wide system events a viewer can collect a
+ *  badge too. */
 export const markAlertsRead = (opts?: RequestOpts) =>
   request<import('../components/alerts/types').MarkAlertsReadResult>(
     'POST', '/alerts/read', undefined, opts,
+  )
+
+// The other half of the same store: the bell is deliberately a SUBSET (only
+// what needs a decision), and this is everything, `info` included. Filterable,
+// paged, and readable by every role — the point of the screen is that nobody
+// has to ask what happened while they were not looking.
+export const getActivity = (
+  params: { limit?: number; offset?: number; kind?: string; severity?: string } = {},
+  opts?: RequestOpts,
+) => {
+  const q = new URLSearchParams()
+  q.set('limit', String(params.limit ?? 50))
+  q.set('offset', String(params.offset ?? 0))
+  if (params.kind) q.set('kind', params.kind)
+  if (params.severity) q.set('severity', params.severity)
+  return request<import('../components/alerts/types').ActivityFeed>(
+    'GET', `/alerts/activity?${q.toString()}`, undefined, opts,
+  )
+}
+
+/** The filter vocabulary, served from the same registry the writers use so the
+ *  screen cannot offer a topic nothing can ever be recorded under. */
+export const getActivityKinds = (opts?: RequestOpts) =>
+  request<{ kinds: string[] }>('GET', '/alerts/kinds', undefined, opts)
+
+// ── Installation: which services this deployment has, and what is off ────────
+// The panel at /instalacion. Three shapes, three audiences:
+//   * `getCapabilities` — any signed-in user. Booleans only: no variable names,
+//     no sources, no hints. It exists so a screen can say "the assistant is
+//     off" instead of spinning against a service that will never answer.
+//   * `getServices` and its writes — the INSTANCE OPERATOR
+//     (`INSTANCE_ADMIN_EMAILS`), never merely a tenant admin.
+//   * `getTenantServices` — a company's own sender identity, in its own scope.
+// A stored secret never comes back: the report carries at most four trailing
+// characters, and there is no endpoint that reverses that.
+
+export type ServiceState = 'ready' | 'not_configured' | 'degraded' | 'off' | 'on'
+export type ConfigSource = 'tenant' | 'instance' | 'env' | 'default'
+
+export interface ConfigFieldView {
+  key: string
+  env: string
+  kind: 'str' | 'int' | 'float' | 'bool' | 'list'
+  secret: boolean
+  required: boolean
+  editable: boolean
+  doc: string
+  default: string
+  source: ConfigSource
+  has_value: boolean
+  /** Present only for secrets — a masked hint, never the value. Empty when the
+   *  value is inherited from the installation: a tenant may know its channel
+   *  works without being shown four characters of somebody else's credential. */
+  hint?: string
+  /** Secrets only: the value in effect belongs to the installation, not to this
+   *  tenant. */
+  inherited?: boolean
+  /** Present only for non-secrets. */
+  value?: unknown
+}
+
+export interface ProbeView {
+  ok: boolean
+  code: string
+  detail: string
+  checked_at: string
+  extra?: Record<string, unknown>
+}
+
+export interface ServiceView {
+  key: string
+  kind: 'external' | 'deployment' | 'core'
+  state: ServiceState
+  summary: string
+  what_breaks: string
+  docs_note: string
+  missing: string[]
+  /** Other ways to satisfy the same service — email runs on a Resend key OR on
+   *  SMTP credentials, so naming only one would read as the only way. */
+  missing_alternatives: string[][]
+  editable: boolean
+  tenant_scoped: boolean
+  has_probe: boolean
+  scope: 'instance' | 'tenant'
+  fields: ConfigFieldView[]
+  editable_fields: string[]
+  borrowed_fields: string[]
+  last_check: (ProbeView & { checked_at: string }) | null
+}
+
+export interface ServicesReport {
+  services: ServiceView[]
+  overrides: {
+    store_available: boolean
+    encryption_available: boolean
+    /** Where the key that encrypts stored secrets came from. `generated` means
+     *  the install made its own under storage/ — real, but worth promoting to
+     *  the environment before a second process runs on another volume. */
+    encryption_source: 'env' | 'generated' | 'none'
+    instance_fields: string[]
+    tenant_fields: string[]
+  }
+  environment: string
+  version: string
+  undocumented_settings: string[]
+  operator: {
+    env: string
+    editing_enabled: boolean
+    /** An operator list was named in the environment. */
+    explicit: boolean
+    /** You operate this installation only because yours is the only company on
+     *  it. Real access, and it ends when a second one signs up. */
+    bootstrap: boolean
+  }
+}
+
+export interface TenantServicesReport {
+  services: ServiceView[]
+  scope: 'tenant'
+  tenant_id: string
+  is_instance_operator: boolean
+  overrides: {
+    store_available: boolean
+    encryption_available: boolean
+    tenant_fields: string[]
+  }
+}
+
+export interface Capabilities {
+  assistant: boolean
+  ai_narrative: boolean
+  documents_search: boolean
+  email: boolean
+  whatsapp: boolean
+  sms: boolean
+  whatsapp_bot: boolean
+  contact_channels: { whatsapp: boolean; email: boolean }
+  background_worker: boolean
+  scheduled_jobs: boolean
+}
+
+export interface ServiceWriteResult {
+  written: string[]
+  cleared: string[]
+  service: ServiceView
+}
+
+export const getCapabilities = (opts?: RequestOpts) =>
+  request<Capabilities>('GET', '/service-config/capabilities', undefined, opts)
+
+export const getServices = (opts?: RequestOpts) =>
+  request<ServicesReport>('GET', '/service-config/services', undefined, opts)
+
+/** Values are strings on the wire even for numbers and booleans — the backend
+ *  registry owns what each field's shape is, so there is exactly one place that
+ *  decides what "true" means. An empty string CLEARS the override. */
+export const saveService = (
+  serviceKey: string, values: Record<string, string>, opts?: RequestOpts,
+) =>
+  request<ServiceWriteResult>(
+    'PUT', `/service-config/services/${serviceKey}`, { values }, opts,
+  )
+
+export const resetService = (serviceKey: string, opts?: RequestOpts) =>
+  request<{ cleared: string[]; service: ServiceView }>(
+    'DELETE', `/service-config/services/${serviceKey}`, undefined, opts,
+  )
+
+export const probeService = (serviceKey: string, opts?: RequestOpts) =>
+  request<ProbeView>(
+    'POST', `/service-config/services/${serviceKey}/probe`, undefined, opts,
+  )
+
+export const getTenantServices = (opts?: RequestOpts) =>
+  request<TenantServicesReport>(
+    'GET', '/service-config/tenant/services', undefined, opts,
+  )
+
+export const saveTenantService = (
+  serviceKey: string, values: Record<string, string>, opts?: RequestOpts,
+) =>
+  request<ServiceWriteResult>(
+    'PUT', `/service-config/tenant/services/${serviceKey}`, { values }, opts,
+  )
+
+export const resetTenantService = (serviceKey: string, opts?: RequestOpts) =>
+  request<{ cleared: string[]; service: ServiceView }>(
+    'DELETE', `/service-config/tenant/services/${serviceKey}`, undefined, opts,
+  )
+
+export const probeTenantService = (serviceKey: string, opts?: RequestOpts) =>
+  request<ProbeView>(
+    'POST', `/service-config/tenant/services/${serviceKey}/probe`, undefined, opts,
   )

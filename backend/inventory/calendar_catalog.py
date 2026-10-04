@@ -205,9 +205,9 @@ def _black_friday(year: int):
 
 
 # ── Costa Rica specific builders ────────────────────────────────────────────
-# CR no es Colombia con otro name: el aguinaldo es uno solo (diciembre, no
-# there is no June bonus), Mother's Day is fixed on 15 August, and the school
-# lectivo arranca en febrero — no a finales de enero.
+# Costa Rica is not Colombia under another name: there is ONE aguinaldo
+# (December; no June bonus), Mother's Day is fixed on 15 August, and the school
+# year starts in February rather than at the end of January.
 
 def _cr_aguinaldo(year: int):
     # Law 2412: paid within the first 20 days of December. It is the

@@ -7,12 +7,32 @@
  * by the backend. Same rule as the AppError envelope.
  */
 
-/** What the alert was about. One key per `alerts.kind.*` i18n string. */
+/** What the entry was about. One key per `events.kind.*` i18n string.
+ *
+ *  The first four are DELIVERIES — something StockAI mailed on a schedule. The
+ *  rest are system events: things the product did, declared in
+ *  `backend/activity/events.py`. They share one feed because the user is
+ *  asking one question ("what happened?"), and `source` is what tells them
+ *  apart. */
 export type AlertKind =
   | 'stockout_digest'     // daily PEDIR_YA / PEDIR_PRONTO digest
   | 'supplier_lead_time'  // a supplier drifting off its historical lead time
   | 'data_freshness'      // the tenant stopped uploading; the numbers are aging
   | 'monthly_roi'         // the month's recap
+  | 'training'            // a forecast run finished, failed or never started
+  | 'integration'         // an ERP sync
+  | 'purchase'            // an order generated, sent, or sent to nobody
+  | 'data'                // stock the tenant imported, shrank or moved
+  | 'limit'               // a plan ceiling stopped a write
+  | 'account'             // users, roles and machine credentials
+
+/** Where the entry came from. A delivery is a fan-out with recipients; a
+ *  system event happened once and carries its own severity and reason. */
+export type AlertSource = 'delivery' | 'system'
+
+/** How much of the user's attention this deserves. Only `critical` and
+ *  `warning` reach the bell; `info` is history, and lives on /actividad. */
+export type AlertSeverity = 'critical' | 'warning' | 'info'
 
 /**
  * Delivery outcome of the whole fan-out. Three-way, not a boolean: one alert
@@ -20,7 +40,7 @@ export type AlertKind =
  * failed for the third" is a real state and rounding it to 'delivered' is the
  * silence this screen exists to break.
  */
-export type AlertStatus = 'delivered' | 'failed' | 'partial'
+export type AlertStatus = 'delivered' | 'failed' | 'partial' | 'recorded'
 
 export type AlertChannel = 'email' | 'whatsapp' | 'mixed'
 
@@ -32,6 +52,16 @@ export type AlertFailureReason = 'not_configured' | 'transport_error' | string
 export interface AlertEntry {
   id:              string
   kind:            AlertKind
+  source:          AlertSource
+  /** The declared event name (`training.failed`), null on a delivery row.
+   *  Renders through `events.action.<action>`. */
+  action:          string | null
+  severity:        AlertSeverity
+  /** WHY, as a code — never prose. Rendered through `events.reason.<reason>`
+   *  with `reason_params` interpolated, the same contract as AppError. On a
+   *  delivery row it carries the transport's failure reason. */
+  reason:          string | null
+  reason_params:   Record<string, number | string>
   /** ISO-8601 UTC. */
   created_at:      string
   channel:         AlertChannel
@@ -50,6 +80,14 @@ export interface AlertHistory {
   unread_count: number
   last_read_at: string | null
   limit:        number
+}
+
+/** `GET /alerts/activity` — the full history, `info` included, paged. */
+export interface ActivityFeed {
+  items:  AlertEntry[]
+  total:  number
+  limit:  number
+  offset: number
 }
 
 export interface MarkAlertsReadResult {

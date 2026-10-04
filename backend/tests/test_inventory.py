@@ -418,10 +418,11 @@ class TestDatasetSyncSanitization:
     through StockUpsert/StockPatch's ge=0/ge=1 bounds — it parses whatever a
     sales-history column happens to contain and hands it straight to
     upsert_stock. A stray lead_time_days=0 collapses every _calc_signal
-    threshold (lead_time*0.5/1.2/3 all become 0), permanently misreporting the
-    SKU as SOBRESTOCK regardless of real coverage and silently hiding a
-    stockout risk; a stray negative current_stock corrupts the reorder-point
-    math the same way bulk_import's ge=0 guard exists to prevent.
+    threshold (lead_time*0.5, the reorder point, and its 3x-lead-time floor
+    all become 0), permanently misreporting the SKU as SOBRESTOCK regardless
+    of real coverage and silently hiding a stockout risk; a stray negative
+    current_stock corrupts the reorder-point math the same way bulk_import's
+    ge=0 guard exists to prevent.
     """
 
     def test_zero_lead_time_from_dataset_is_rejected(self, client, test_tenant):
@@ -453,6 +454,16 @@ class TestDatasetSyncSanitization:
         )
 
     def test_negative_current_stock_from_dataset_is_rejected(self, client, test_tenant):
+        """A rejected count leaves NOTHING behind on a SKU we have never counted.
+
+        The rejection itself is unchanged: a negative value never reaches the
+        column, as it never does through PUT/PATCH/bulk CSV either. What changed
+        is what is left afterwards. This used to create the row anyway and save
+        the supplier beside it — and `current_stock` is NOT NULL DEFAULT 0, so
+        the file's one statement about the shelf was thrown away and replaced by
+        a 0 the semáforo reads as an empty shelf. The SKU came out PEDIR_YA on
+        the strength of a number nobody wrote. See test_stock_seeding_zero.py.
+        """
         import pandas as pd
         from backend.inventory.service import sync_stock_from_dataset
         from backend.db.connection import query_one
@@ -465,7 +476,38 @@ class TestDatasetSyncSanitization:
             "supplier":      ["Prov Dataset"],
         })
         n = sync_stock_from_dataset(test_tenant["id"], df, group_col="sku", date_col="fecha")
-        assert n == 1
+        assert n == 0
+
+        assert query_one(
+            "SELECT current_stock FROM inventory_stock "
+            "WHERE tenant_id = %s AND sku = %s",
+            (test_tenant["id"], sku),
+        ) is None, "a rejected count still materialised a row holding 0"
+
+    def test_a_rejected_count_leaves_an_existing_row_alone_but_saves_the_rest(
+        self, client, test_tenant,
+    ):
+        """The other half: on a SKU that HAS been counted, nothing is lost.
+
+        Refusing to create must not turn the same upload into a no-op for rows
+        that already exist — the supplier is still worth saving, and the count
+        on file is the one thing the negative value must not touch.
+        """
+        import pandas as pd
+        from backend.inventory.service import sync_stock_from_dataset, upsert_stock
+        from backend.db.connection import query_one
+
+        sku = _sku()
+        upsert_stock(test_tenant["id"], sku, {"current_stock": 12})
+
+        df = pd.DataFrame({
+            "sku":           [sku],
+            "fecha":         ["2026-01-01"],
+            "current_stock": [-25],
+            "supplier":      ["Prov Dataset"],
+        })
+        assert sync_stock_from_dataset(
+            test_tenant["id"], df, group_col="sku", date_col="fecha") == 1
 
         row = query_one(
             "SELECT current_stock, supplier FROM inventory_stock "
@@ -474,7 +516,7 @@ class TestDatasetSyncSanitization:
         )
         assert row is not None
         assert row["supplier"] == "Prov Dataset"   # other valid fields still saved
-        assert float(row["current_stock"]) >= 0, (
+        assert float(row["current_stock"]) == 12, (
             "negative current_stock from a dataset column was persisted, unlike "
             "every other write path (PUT/PATCH/bulk CSV) which enforces ge=0"
         )
@@ -608,41 +650,50 @@ class TestSignalCalculation:
         assert avg == 0.0
         assert std == 0.0
 
+    # `reorder_point_days` below (stability.md 17c) is a low-safety-stock SKU's
+    # own reorder point in days of cover — a bit past the lead time itself, as
+    # `avg_daily * lead_time + safety_stock` always is. It is passed explicitly
+    # rather than derived so each test states the scenario it assumes.
+
     def test_signal_order_now(self):
         from backend.inventory.service import _calc_signal
-        # coverage_days < lead_time * 0.5 → PEDIR_YA
-        assert _calc_signal(coverage_days=3, lead_time=15) == "PEDIR_YA"
+        # coverage_days < lead_time * 0.5 → PEDIR_YA, whatever the reorder point.
+        assert _calc_signal(coverage_days=3, lead_time=15, reorder_point_days=16) == "PEDIR_YA"
 
     def test_signal_order_soon(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=14, lead_time=15) == "PEDIR_PRONTO"
+        # 14 < reorder_point_days(16) → at/below the reorder point → ordering.
+        assert _calc_signal(coverage_days=14, lead_time=15, reorder_point_days=16) == "PEDIR_PRONTO"
 
     def test_signal_ok(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=25, lead_time=15) == "OK"
+        # Past the reorder point (16) and below the 3x-lead-time floor (45).
+        assert _calc_signal(coverage_days=25, lead_time=15, reorder_point_days=16) == "OK"
 
     def test_signal_overstock(self):
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=60, lead_time=15) == "SOBRESTOCK"
+        assert _calc_signal(coverage_days=60, lead_time=15, reorder_point_days=16) == "SOBRESTOCK"
 
-    def test_recommended_order_respects_moq(self):
+    def test_recommended_order_respects_moq_as_a_floor(self):
         from backend.inventory.service import _calc_recommended
-        # With avg_daily=10, lead=14, stock=50 → demand_lt=140, safety~=23 → raw~=113
+        # With avg_daily=10, lead=14, stock=50 → demand_lt=140, safety~=6 → raw~=96
         qty = _calc_recommended(current_stock=50, avg_daily=10, avg_std=1.0, lead_time=14, moq=50)
-        assert qty % 50 == 0  # must be a multiple of MOQ
-        assert qty >= 0
+        # Above the minimum, so the minimum does not move it. This used to
+        # assert `qty % 50 == 0` and got 100 — four units of real demand
+        # rounded into fifty units of purchase order.
+        assert qty == 97
+        assert qty >= 50
 
     def test_recommended_order_zero_when_overstock(self):
         from backend.inventory.service import _calc_recommended
         qty = _calc_recommended(current_stock=10_000, avg_daily=1, avg_std=0.1, lead_time=14, moq=1)
         assert qty == 0
 
-    def test_recommended_order_rounds_up_moq(self):
+    def test_recommended_order_is_lifted_to_the_moq_when_below_it(self):
         from backend.inventory.service import _calc_recommended
-        # With high demand and moq=100, result must be ceiling multiple of 100
-        qty = _calc_recommended(current_stock=0, avg_daily=50, avg_std=5, lead_time=14, moq=100)
-        assert qty > 0
-        assert qty % 100 == 0
+        # Needs ~13 units, but the supplier's minimum order is 100.
+        qty = _calc_recommended(current_stock=0, avg_daily=1, avg_std=0.5, lead_time=12, moq=100)
+        assert qty == 100
 
     def test_recommended_gated_to_ordering_signals(self):
         from backend.inventory.service import _gate_recommended_by_signal
@@ -789,7 +840,11 @@ class TestPOExport:
             f"/api/v1/inventory/status/export-po?session_id={uuid4().hex}",
             headers=auth_headers,
         )
-        content = resp.content.decode("utf-8")
+        # `utf-8-sig`, not `utf-8`: the file starts with a UTF-8 BOM so Excel on
+        # a Spanish-locale Windows reads `Señal` as `Señal` instead of `SeÃ±al`
+        # (stability 11.25). Every real consumer strips it; a test that does
+        # not was reading the first column as `﻿SKU`.
+        content = resp.content.decode("utf-8-sig")
         reader = csv.reader(io.StringIO(content))
         header = next(reader, None)
         assert header is not None
@@ -797,7 +852,7 @@ class TestPOExport:
         assert "Cantidad recomendada" in header
         # The exported PO must be transparent about the lead time it used and
         # whether that lead time was learned from real receptions or configured
-        # by hand (Faro plan open risk #6).
+        # by hand (StockAI plan open risk #6).
         assert "Lead time (días)" in header
         assert "Origen lead time" in header
 

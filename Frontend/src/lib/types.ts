@@ -37,6 +37,9 @@ export interface SessionSummary {
   horizon:          number | null
   granularity:      string | null
   sku_count:        number | null
+  // Why the run failed, straight from the job that died. Null for every other
+  // status — and for a FAILED session old enough that its job row is gone.
+  failure_reason?:  string | null
   tags:             string[]
 }
 
@@ -62,10 +65,50 @@ export interface ProfileColumn {
   sample:    unknown[]
 }
 
+/** One way out of a blocking-but-fixable finding, with what it costs.
+ *
+ * The cost is the whole point: "fill the gaps with zero" and "interpolate the
+ * gaps" are not two flavours of one button, they are two different claims about
+ * what happened, and only the user knows which is true. `action` and
+ * `consequence` arrive in English from the engine and are the fallback; the
+ * Spanish comes from `gateopt.<code>.*` in translations.ts, per CLAUDE.md. */
+export interface RemediationOption {
+  code:        string
+  action:      string
+  consequence: string
+  params:      Record<string, unknown>
+  recommended: boolean
+  applied_by:  string
+}
+
 export interface DataQualityIssue {
   type:     string
   severity: 'error' | 'warning' | 'info'
   message:  string
+  // Set only by issues that make a forecast impossible, not merely worse.
+  // Severity cannot carry this: `all_zeros` and the granularity conflict are
+  // already 'error' and the user may still continue past them.
+  blocking?: boolean
+  // Which of the gate's three outcomes this is. Absent on issues produced
+  // before the gate existed, which the UI treats as advisory.
+  classification?: 'blocking_fatal' | 'blocking_fixable' | 'advisory'
+  // False for something we can see, cannot fix, and must still say out loud.
+  remediable?:    boolean
+  params?:        Record<string, unknown>
+  remediations?:  RemediationOption[]
+  [key: string]: unknown
+}
+
+/** `GET /sessions/{id}/data-gate` — the same computation `POST /train` enforces. */
+export interface DataGate {
+  issues:              DataQualityIssue[]
+  blocking_fatal?:     string[]
+  blocking_fixable?:   string[]
+  advisory?:           string[]
+  // {issue_type: option_code} already recorded for this session.
+  chosen_remediations: Record<string, string>
+  // Fixable findings with no answer yet. Training stays blocked while non-empty.
+  unresolved:          string[]
   [key: string]: unknown
 }
 
@@ -86,6 +129,9 @@ export interface OutlierInfo {
 export interface DataQuality {
   issues:          DataQualityIssue[]
   gap_fill_needed: boolean
+  // True when at least one issue is blocking — training this file cannot
+  // produce a forecast.
+  blocking?:       boolean
   outliers?:       OutlierInfo
 }
 
@@ -158,6 +204,12 @@ export interface CanonicalColumnsBody {
   defaults_override?: Record<string, unknown>
 }
 
+// Mirrors `SKUReport.to_dict()` in the engine
+// (ForecastingCore/forecasting_core/data/quality.py). The fields below the
+// original seven were always sent and simply undeclared, so the UI could not
+// reach the engine's own decisions — which is why the quality panel ended up
+// re-printing its English sentences instead of rebuilding them from the data.
+// Optional because a session trained before a field existed lacks it.
 export interface QualityReport {
   [sku: string]: {
     quality_score: number
@@ -167,6 +219,15 @@ export interface QualityReport {
     n_outliers:    number
     warnings:      string[]
     is_valid:      boolean
+    /** The engine's own "is there enough history" verdict, not a threshold the
+     *  UI may re-derive. */
+    has_min_history?: boolean
+    missing_dates?:   number
+    zero_ratio?:      number
+    /** Multi-label classification: 'seasonal', 'intermittent', 'volatile', … */
+    series_flags?:    string[]
+    /** flag → why the engine assigned it, e.g. "STL strength=0.32 > 0.3". */
+    series_reasons?:  Record<string, string>
   }
 }
 
@@ -299,8 +360,103 @@ export interface MetricRow {
   bias:       number | null
   mape:       number | null
   smape:      number | null
+  // Asymmetric per-unit error: a unit short is charged more than a unit spare.
+  // This — not WAPE — is what the engine ranks each SKU's models by, so any
+  // screen naming "the model used" has to rank by the same thing.
+  cost:       number | null
+  // The same asymmetric cost measured over the FULL h-step forecast, which is
+  // the only version comparable across model families. The engine and the
+  // backend both prefer it; a screen that stops at `cost` will name a different
+  // model than the one the purchase order came from.
+  cost_horizon: number | null
   n_folds:    number | null
   validation: string | null
+}
+
+// ── Policy backtest ───────────────────────────────────────────────────────────
+//
+// What the buyer would have LIVED THROUGH, not how close the curve was. The
+// engine replays the ordering policy over demand that actually happened, twice:
+// once driven by the model's forecast and once by "repeat the last value" — the
+// policy a distributor runs without the product. Every `baseline_` field is the
+// second run, so the pair is the only meaningful reading; either number alone is
+// an absolute floating free of any reference.
+//
+// See ForecastingCore/forecasting_core/business/policy_backtest.py.
+
+/** One run of the simulation over one series. */
+export interface PolicyOutcome {
+  n_buckets:        number
+  total_demand:     number
+  units_short:      number
+  units_ordered:    number
+  stockout_buckets: number
+  fill_rate:        number
+  stockout_rate:    number
+  avg_inventory:    number
+  peak_inventory:   number
+  days_of_cover:    number
+  /** null when the session has no unit cost to value the stock with. */
+  capital_tied_up:  number | null
+}
+
+export interface PolicySkuComparison {
+  model:             string
+  policy:            PolicyOutcome
+  baseline:          PolicyOutcome
+  fill_rate_gain:    number
+  stockouts_avoided: number
+  inventory_delta:   number
+  capital_freed:     number | null
+}
+
+export interface PolicyBacktestSummary {
+  /** How many series the simulation actually covers — usually FEWER than the
+   *  catalogue, since only series whose model ran a rolling-origin backtest
+   *  have both a past forecast and the actuals that followed it. Never render
+   *  these figures without it. */
+  n_series:                  number
+  fill_rate:                 number
+  baseline_fill_rate:        number
+  stockout_buckets:          number
+  baseline_stockout_buckets: number
+  stockouts_avoided:         number
+  avg_inventory:             number
+  baseline_avg_inventory:    number
+  capital_tied_up:           number | null
+  baseline_capital_tied_up:  number | null
+}
+
+/** `{}` for runs whose models produced no rolling-origin backtest, and for
+ *  every session trained before the engine computed this. Absent, not zero. */
+export interface PolicyBacktest {
+  summary?: PolicyBacktestSummary
+  by_sku?:  Record<string, PolicySkuComparison>
+}
+
+/** Measured uncertainty of CUMULATIVE demand over a lead time: add
+ *  `cumulative_offsets[L][q]` to the summed point forecast over L buckets to get
+ *  that quantile of total lead-time demand. Present only for SKUs whose champion
+ *  model ran a rolling-origin backtest. */
+export interface DemandRiskEntry {
+  model:              string
+  quantiles:          number[]
+  cumulative_offsets: Record<string, Record<string, number>>
+}
+
+/** GET /sessions/{id}/results — the whole stored training result. Every field is
+ *  optional because sessions trained before a field existed simply lack it. */
+export interface TrainingResults {
+  job_id?:          string
+  run_id?:          string
+  completed_at?:    string
+  metrics?:         MetricsResponse
+  inventory?:       InventoryResponse
+  demand_risk?:     Record<string, DemandRiskEntry>
+  policy_backtest?: PolicyBacktest
+  routing?:         RoutingPlan
+  data_quality?:    Record<string, unknown>
+  warnings?:        RunWarnings
 }
 
 export interface MetricsResponse {
@@ -637,11 +793,27 @@ export interface AccuracyReport {
 }
 
 // ── API Keys ──────────────────────────────────────────────────────────────────
+export type ApiKeyScope = 'read' | 'write'
+
 export interface ApiKey {
   id:         string
   name:       string
+  role:       'viewer' | 'analyst'
+  scope:      ApiKeyScope
+  last4:      string | null
   last_used:  string | null
+  expires_at: string | null
   created_at: string
+}
+
+export interface ApiKeyUsage {
+  month:    string            // YYYY-MM, UTC
+  timezone: 'UTC'
+  total:    number
+  today:    number | null     // null when `month` is not the current one
+  by_day:   { day: string; calls: number }[]
+  by_key:   { api_key_id: string; name: string; scope: ApiKeyScope | null; active: boolean; calls: number }[]
+  limits:   { per_minute_per_key: number; per_day_per_key: number | null }
 }
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
@@ -659,10 +831,55 @@ export interface JobSchedule {
   cron_expr:  string
   next_run:   string
   enabled:    boolean
+  // A trigger that has been failing for weeks looks identical to a healthy one
+  // without these, which is why the API sends them.
+  last_run?:       string | null
+  last_error?:     string | null
+  last_error_at?:  string | null
 }
 
 // ── Inventory ─────────────────────────────────────────────────────────────────
 export type InventorySignal = 'PEDIR_YA' | 'PEDIR_PRONTO' | 'OK' | 'SOBRESTOCK' | 'SIN_DATOS'
+
+// ── Semáforo multipliers (backend/inventory/signal_thresholds.py) ─────────────
+/** PEDIR_YA below `order_now_factor` x lead time; SOBRESTOCK from
+ *  `overstock_factor` x lead time (or twice the reorder point, if larger). The
+ *  PEDIR_PRONTO boundary is the reorder point and is not a multiplier. */
+export interface SignalThresholdFactors {
+  order_now_factor: number
+  overstock_factor: number
+}
+export type SignalThresholdScope = 'global' | 'supplier' | 'category'
+export interface ResolvedSignalThresholds extends SignalThresholdFactors {
+  source:      'default' | SignalThresholdScope
+  scope_value: string | null
+}
+export interface SignalThresholdRule extends SignalThresholdFactors {
+  scope_type:  SignalThresholdScope
+  scope_value: string | null
+  updated_at:  string | null
+}
+export interface SignalThresholdsState {
+  defaults:  SignalThresholdFactors
+  /** The tenant-wide rule; null when nobody configured one (defaults apply). */
+  tenant:    SignalThresholdRule | null
+  effective: SignalThresholdFactors
+  source:    'default' | 'global'
+  overrides: SignalThresholdRule[]
+  bounds:    Record<keyof SignalThresholdFactors, { min: number; max: number }>
+  overstock_reorder_point_multiple: number
+}
+export interface SignalThresholdsPreview {
+  available:      boolean
+  reason?:        'no_session'
+  total?:         number
+  changed?:       number
+  counts_before?: Record<InventorySignal, number>
+  counts_after?:  Record<InventorySignal, number>
+  /** "FROM>TO" -> how many products make that move. */
+  transitions?:   Record<string, number>
+  sample?:        { sku: string; name: string | null; from: InventorySignal; to: InventorySignal }[]
+}
 
 export interface InventoryStock {
   id?:            string
@@ -695,7 +912,7 @@ export interface InventoryCalcExplanation {
   daily_demand?:    number
   lead_time_days?:    number
   // Where the lead time came from: user | file | supplier_rule | learned |
-  // default. 'default' means Faro assumed it — the case the old
+  // default. 'default' means StockAI assumed it — the case the old
   // 'learned' | 'configured' pair could not express, so an untouched SKU was
   // labelled "configurado por ti".
   lead_time_source?: ValueSource
@@ -705,8 +922,37 @@ export interface InventoryCalcExplanation {
   safety_stock?:      number
   current_stock?:      number
   antes_moq?:         number
+  // Units already on their way (sent POs + transfers in transit), subtracted
+  // before `antes_moq`.
+  incoming?:          number
   moq?:               number
   final_qty?:    number
+  // Days the order has to cover: lead time + the supplier's review period.
+  protection_interval_days?: number
+  // A declared event (stability.md 19.5) that overlaps THIS sku's lead-time
+  // window and moved the recommendation — never a simulation, a standing
+  // fact the semáforo already applied. Empty when no event touches the
+  // window right now, even if one is declared for a different date range.
+  events_applied?:     InventoryCalcEventApplied[]
+}
+
+/** One declared event whose window overlapped this sku's lead-time window,
+ *  as `_event_demand_multiplier` (backend/inventory/service.py) resolved it. */
+export interface InventoryCalcEventApplied {
+  event_id:           string
+  event_name:         string
+  /** The multiplier actually resolved for this sku — the event's own figure,
+   *  or the narrowest override that matched it. */
+  multiplier:          number
+  /** 'event' = the event's own multiplier; 'sku' | 'family' | 'category' =
+   *  an override the tenant set took effect instead. */
+  multiplier_source:  'sku' | 'family' | 'category' | 'event'
+  overlap_days:        number
+  window_days:         number
+  /** What was actually applied to the window's demand after blending for
+   *  partial overlap — smaller than `multiplier` whenever the event covers
+   *  only part of the lead-time window. */
+  blended_multiplier: number
 }
 
 export interface InventoryEvent {
@@ -764,12 +1010,24 @@ export interface Warehouse {
  * The backend NEVER ships a rendered sentence — the UI renders the Spanish
  * from `transfers.reason_<reason_code>` with these params. */
 export interface TransferReason {
-  reason_code: 'transfer_faster_and_cheaper' | 'transfer_too_slow' | 'transfer_more_expensive'
+  reason_code:
+    | 'transfer_faster_and_cheaper'
+    /** Accepted on the time argument alone — no unit cost on file, so the money
+     *  comparison never ran. This used to be reported as
+     *  `transfer_faster_and_cheaper`, which told the buyer the move "costs less
+     *  than buying" about a comparison that never happened. */
+    | 'transfer_faster_price_unknown'
+    | 'transfer_too_slow'
+    | 'transfer_more_expensive'
   params: {
     from_warehouse: string
     qty: number
     lane_days: number
     purchase_days: number
+    /** True when this pair has no configured lane, so `lane_days` and the costs
+     *  are transfer_lane_service's optimistic fallback rather than a
+     *  measurement. */
+    lane_is_default?: boolean
     /** Money saved vs buying; null when no unit cost is on file. */
     saving?: number | null
     transfer_cost?: number
@@ -812,12 +1070,27 @@ export interface WarehouseStatusItem {
   coverage_days: number | null
   reorder_point: number | null
   signal: InventorySignal
+  /** Why this row has no signal, when the reason is something the buyer can
+   *  fix. `stock_not_recorded_in_this_warehouse` means nobody ever recorded
+   *  stock for this SKU HERE — which is not the same as zero, and reading it as
+   *  zero is what put every branch of an ERP-synced tenant in PEDIR_YA at full
+   *  reorder quantity (stability 11.5). */
+  sin_datos_reason?: string | null
   recommended_qty: number | null
   recommended_action: 'order' | 'transfer' | null
   transfer_suggestion: TransferSuggestion | null
   /** Set when a transfer was possible on coverage but LOST against buying
    * (too slow / more expensive). Rendered as plain text, never as an alert. */
   transfer_rejected_reason?: TransferReason | null
+  /** An OPTION next to the purchase, not the recommendation: a donor that can
+   *  cover part of the gap on a sound lane. Accepting it leaves the rest to be
+   *  bought, and the purchase shrinks by itself (in-transit units net out). */
+  partial_transfer?: {
+    from_warehouse: string
+    qty: number
+    remaining_qty: number
+    lane_days: number
+  } | null
   unit_cost: number | null
 }
 
@@ -867,6 +1140,9 @@ export interface Transfer {
   items: TransferItem[]
 }
 
+/** Why a row's service level cannot be taken at face value. */
+export type ServiceLevelCaveat = 'intermittent_demand'
+
 export interface InventoryStatusItem extends InventoryStock {
   has_forecast:         boolean
   has_stock:            boolean
@@ -877,7 +1153,20 @@ export interface InventoryStatusItem extends InventoryStock {
   lead_time_demand:    number | null
   coverage_days:       number | null
   signal:               InventorySignal
+  /** The lead-time multipliers this row's signal was judged by, and which
+   *  rule they came from. Absent on a backend older than the feature. */
+  signal_thresholds?:   ResolvedSignalThresholds
   recommended_qty: number | null
+  /** Units already on their way and not yet received: purchase orders the buyer
+   *  has SENT, plus transfers in transit into this warehouse. Subtracted from
+   *  `recommended_qty` — without it the buyer was told to order the same units
+   *  again every day until they landed. Show it wherever the quantity is shown,
+   *  or a drop to 0 looks like the app forgetting. */
+  incoming_qty?:        number
+  /** Which open orders / transfers make up `incoming_qty`, so the screen can
+   *  say "426 on the way (OC-000001, OC-000002)". `reference` is the order
+   *  number for a PO and the origin warehouse for a transfer. */
+  incoming_sources?:    IncomingSource[]
   inventory_value:     number | null
   n_models:             number
   abc:                  string
@@ -896,6 +1185,9 @@ export interface InventoryStatusItem extends InventoryStock {
   moq_rule_scope?:        RuleScope | null
   service_level_source?:  ValueSource
   service_level_rule_scope?: RuleScope | null
+  /** Set when this SKU's cushion was MEASURED unable to keep the service
+   *  level (stability.md 17b). The screen must say so next to the %. */
+  service_level_caveat?:  ServiceLevelCaveat | null
   reorder_point?:         number | null
   // English fallback sentence. The Spanish is rendered by the frontend from
   // explanation_code + explanation_params (lib/explanationCopy.ts).
@@ -992,6 +1284,9 @@ export interface ExcludedSku {
   sku:     string
   n_rows:  number
   reason:  'insufficient_history' | 'no_forecast' | string
+  // Rows needed, present only on `insufficient_history` — the sentence quotes it.
+  min_history?: number
+  // English fallback. The rendered line comes from `inventory.excluded_reason.<reason>`.
   detail:  string
 }
 
@@ -1003,6 +1298,17 @@ export interface OptimizationOrder {
   qty:             number
   unit_cost:  number | null
   supplier:       string | null
+  // The solve ran on a placeholder cost for this line, so its share of
+  // `total_cost` means nothing. Optional: a response from before this existed
+  // has no flag. See backend/inventory/optimizer_service.py.
+  assumed_unit_cost?:  boolean
+  // Math audit O1, owner's decision "igual que el Panel": a SKU whose next
+  // order lands past the horizon is not solved by the MILP; it carries the
+  // Panel's own quantity, and `effective_horizon_days` is the lead time +
+  // review period that quantity protects.
+  sized_like_panel?:       boolean
+  horizon_extended?:       boolean
+  effective_horizon_days?: number
 }
 
 export interface OptimizationTransfer {
@@ -1018,6 +1324,12 @@ export interface OptimizationResponse {
   horizon_days:  number
   orders:        OptimizationOrder[]
   transfers:     OptimizationTransfer[]
+  // Lines whose plan reaches past `horizon_days` (see OptimizationOrder).
+  extended_lines?: number
+  // SKUs left out of the optimization because nobody has told us what is on the
+  // shelf. How much to buy depends on how much is left, so there is no honest
+  // quantity to show — the screen names them instead of printing a number.
+  needs_stock?:  string[]
 }
 
 export type CoverageUnit = 'day' | 'week' | 'month'
@@ -1070,6 +1382,12 @@ export interface InventoryROISummary {
   pos_last_month:            number
 }
 
+/** Why `capital_freed` is what it is. A single null used to mean both "we never
+ *  took one of the two measurements" and "we took both and overstock GREW", and
+ *  the UI printed the first sentence for both cases — so the column could only
+ *  ever report good news. */
+export type CapitalFreedStatus = 'measured' | 'not_measured' | 'grew'
+
 export interface ROIMonthlyRow {
   month:             string          // 'YYYY-MM'
   pos_count:         number
@@ -1077,6 +1395,7 @@ export interface ROIMonthlyRow {
   total_value:       number
   adoption_rate:     number | null
   capital_freed:     number | null
+  capital_freed_status: CapitalFreedStatus
 }
 
 // Monthly recap (feature 3.2). A null metric means "could not be derived from
@@ -1090,7 +1409,17 @@ export interface ROIMonthReport {
   adoption_rate:           number | null
   stockout_risks_handled:  number | null
   managed_purchase_value:  number | null
+  /** false when only SOME ordered lines carried a unit cost, so the value above
+   *  is a floor rather than the month's total. */
+  managed_purchase_value_complete: boolean
   capital_freed:           number | null
+  capital_freed_status:    CapitalFreedStatus
+}
+
+export interface IncomingSource {
+  kind:      'po' | 'transfer'
+  reference: string
+  qty:       number
 }
 
 export interface POLogEntry {
@@ -1113,7 +1442,22 @@ export interface POLogEntry {
   rejected_count?:   number
   // Reception (feature 1.4): pending | partial | received | not_received
   reception_status?: 'pending' | 'partial' | 'received' | 'not_received'
+  /** When the order was sent to the supplier; null if it never was.
+   *  The payables calendar reads it, which is why undoing a send is a real
+   *  action and not a cosmetic flag. (`incoming_qty` does not: every open
+   *  order counts as on its way, sent from here or not.) */
+  sent_at?: string | null
   received_at?:      string | null
+  /** When the buyer marked the supplier's invoice as paid; null while owed.
+   *  A paid order leaves the payments calendar. */
+  paid_at?:          string | null
+  /** When the order was cancelled; null while it stands. A cancelled order
+   *  is not on its way, not overdue and not owed. */
+  cancelled_at?:     string | null
+  cancel_reason?:    string | null
+  /** True when the server answered an `Idempotency-Key` it had already seen:
+   *  this is the order the FIRST request created, nothing new was written. */
+  replayed?: boolean
 }
 
 // A line of a PO as stored server-side, with reception progress.
@@ -1159,7 +1503,7 @@ export interface SendPOResult {
 
 // ── Event / promo impact simulation (feature 2.3) ────────────────────────────
 
-/** El "por qué" del multiplier, para no mostrar un ×2.2 sin justificar. */
+/** The "why" behind the multiplier, so a ×2.2 is never shown unjustified. */
 export interface MultiplierExplanation {
   base_multiplier:      number
   source:                  'catalog' | 'user'
@@ -1250,8 +1594,32 @@ export interface SupplierScorecardRow {
   deviation_days:      number | null
   on_time_rate:         number | null
   fill_rate:            number | null
-  purchased_value:       number
+  /** null when no ordered line of this supplier carries a unit cost — the same
+   *  rule /impacto applies to managed_purchase_value. A confident 0 would read
+   *  as "you bought nothing from them", which is a different statement. */
+  purchased_value:       number | null
+  /** false when only SOME ordered lines carried a cost, so the figure above is
+   *  a floor rather than the total. */
+  purchased_value_complete: boolean
   last_reception:     string | null
+  /** Enough receptions, none of them saying anything: every delivery landed the
+   *  same day it was ordered, so the observed average is 0. Same rule as
+   *  `lead_time_learned_unusable` on the supplier card — one definition. */
+  lead_time_unusable?:  boolean
+  /** A trend needs two points. False on 0 or 1 reception. */
+  trend_measurable?:    boolean
+  /** False when the on-time percentage is computed off too few receptions to
+   *  mean anything. The backend has produced these two since the day it added
+   *  the sample floor, with a comment naming the defect ("one reception printed
+   *  100% in bold green") — and the screen never declared them, so it printed
+   *  the raw number anyway and the fix lived only in the API. */
+  on_time_measurable?:   boolean
+  /** Same rule for the fill rate, over orders rather than receptions. */
+  fill_rate_measurable?: boolean
+  /** Orders left out of `fill_rate` because they are still inside the delivery
+   *  window the supplier promised. An empty fill rate with orders in transit is
+   *  a supplier nobody can judge yet, not a supplier nobody buys from. */
+  orders_in_transit?:    number
 }
 
 // Feature 2.5 — a supplier the PO-send path would silently skip.
@@ -1268,16 +1636,20 @@ export interface SupplierContactHealthRow {
 
 // Feature 3.3 — a supplier whose recent lead time drifted off its own history.
 export interface SupplierLeadTimeAlert {
-  supplier:           string
-  lead_time_historico: number
-  lead_time_reciente:  number
-  deviation_days:     number
-  z_score:             number
-  sigma:               number
-  n_baseline:          number
-  n_reciente:          number
-  severidad:           'media' | 'alta'
-  mensaje:             string
+  supplier:             string
+  lead_time_historical: number
+  lead_time_recent:     number
+  deviation_days:       number
+  z_score:              number
+  sigma:                number
+  n_baseline:           number
+  n_recent:             number
+  severity:             'medium' | 'high'
+  // `message` is the English fallback; the rendered sentence comes from
+  // `scorecard.<message_code>` with `message_params`.
+  message:              string
+  message_code:         string
+  message_params:       Record<string, unknown>
 }
 
 // Feature 3.5 — a supplier quantity scale: "from min_qty units on, each unit
@@ -1341,6 +1713,9 @@ export interface PayableItem {
   days_until_due: number
   overdue:        boolean
   within_horizon: boolean
+  // Lines of this (PO, supplier) with no unit cost: `amount` leaves them out.
+  uncosted_lines?:  number
+  amount_complete?: boolean
 }
 
 export interface PayableUnknownTerms {
@@ -1348,6 +1723,8 @@ export interface PayableUnknownTerms {
   supplier_name: string | null
   amount:        number
   payment_terms: string | null
+  uncosted_lines?:  number
+  amount_complete?: boolean
 }
 
 export interface CashWeek {
@@ -1366,6 +1743,12 @@ export interface CashCalendar {
   horizon_total:       number
   unknown_terms:       PayableUnknownTerms[]
   unknown_terms_total: number
+  // Lines on sent, unpaid orders that carry no unit cost — the totals above
+  // are missing them (math audit O3). Optional for older responses.
+  uncosted_lines?:           number
+  uncosted_lines_committed?: number
+  uncosted_po_count?:        number
+  totals_complete?:          boolean
 }
 
 export interface CashFitLine {
@@ -1390,7 +1773,15 @@ export interface CashFitResult {
   purchase_in_horizon:         number
   required_total:              number
   fits:                        boolean | null
+  // Why `fits` is null: no budget typed, or costs missing so a "fits" would
+  // be a guess. Over budget is still `false` either way — a missing cost can
+  // only add to what is required.
+  fits_unknown_reason?:        'no_budget' | 'missing_costs' | null
   shortfall:                   number | null
+  total_complete?:             boolean
+  uncosted_committed_lines?:   number
+  uncosted_purchase_lines?:    number
+  uncosted_purchase_skus?:     string[]
   lines:                       CashFitLine[]
   suppliers_assumed_immediate: string[]
   unknown_terms_total:         number
@@ -1423,6 +1814,10 @@ export interface Supplier {
   whatsapp:       string | null
   lead_time_days: number
   lead_time_std:  number
+  /** How often the buyer orders from this supplier, in days. 0 means no
+   *  declared cadence: the order then only has to cover the lead time,
+   *  which is how every tenant behaved before the field existed. */
+  review_period_days?: number
   payment_terms:  string | null
   notes:          string | null
   active:         boolean
@@ -1451,8 +1846,15 @@ export interface BriefingRecommendation {
   sku:       string
   name:      string
   rec_type:  'STOCKOUT_RISK' | 'REORDER_SOON' | 'DEMAND_UP' | 'DEMAND_DOWN' | 'OVERSTOCK'
+  // English, and only the fallback: the sentence the user reads is built from
+  // `rec_type` + `text_params` against the catalogue, so it follows the language
+  // toggle. Kept for a frontend older than its API — see recText/recAction.
   text:      string
   action:    string
+  text_code?:     string
+  text_params?:   Record<string, unknown>
+  action_code?:   string
+  action_params?: Record<string, unknown>
   signal:    string
 }
 
@@ -1465,6 +1867,10 @@ export interface MorningBriefingKPIs {
   sin_datos:             number
   avg_accuracy:          number | null
   total_inventory_value: number
+  // How many products that value could be computed from. 0 means nobody
+  // recorded a unit cost, so the total is not "₡0 of stock" — it is unknown.
+  // Optional: a briefing from before this existed does not carry it.
+  valued_skus?:          number
   capital_in_overstock:  number
   demand_alerts:         number
   demand_spikes?:        number
@@ -1532,22 +1938,6 @@ export interface SkuIntelligenceData {
   } | null
 }
 
-// ── Billing ───────────────────────────────────────────────────────────────────
-export interface SubscriptionState {
-  plan: string | null
-  /** Stripe's own vocabulary, stored verbatim: trialing | active | past_due |
-   *  canceled | unpaid. Null when the tenant has never subscribed. */
-  subscription_status: string | null
-  has_billing_account: boolean
-  trial_ends_at: string | null
-  /** False on a deployment with no STRIPE_SECRET_KEY: show nothing rather than
-   *  a buy button that cannot work. */
-  billing_enabled: boolean
-  /** What this deployment can actually sell, plan -> interval -> price id. A
-   *  plan absent here has no configured price, so it is not offered. */
-  purchasable: Record<string, Record<string, string>>
-}
-
 // ── Series decomposition ──────────────────────────────────────────────────────
 /** One bucket of the STL split. The four values are aligned by construction on
  *  the backend — `observed === trend + seasonal + residual` for every row — so
@@ -1579,9 +1969,19 @@ export interface DecompositionData {
 }
 
 // ── AI Narratives ─────────────────────────────────────────────────────────────
+// The key points survive a SUCCESSFUL AI call — the narrative comes back in the
+// reader's language but these are composed by the backend — so they travel as
+// code + params and get their wording from the catalogue (`narrative.kp.*`).
+// `text` is the English fallback for a code this build does not know.
+export interface NarrativeKeyPoint {
+  code:   string
+  params: Record<string, unknown>
+  text:   string
+}
+
 export interface MorningNarrative {
   narrative:   string
-  key_points:  string[]
+  key_points:  NarrativeKeyPoint[]
   urgency:     'critical' | 'warning' | 'ok'
   fallback:    boolean
   error?:      string
@@ -1598,34 +1998,298 @@ export interface ForecastExplanation {
   fallback:    boolean
 }
 
+/** GET /analyst/welcome — the assistant screen's personal opening. */
+export interface AssistantWelcome {
+  first_name: string
+  company: string
+  has_forecast: boolean
+  summary: {
+    order_now: number
+    order_soon: number
+    overstock: number
+    no_stock_data: number
+    overdue_orders: number
+  } | null
+  /** `code` selects `analyst.suggest.<code>`; `params` fill its placeholders. */
+  suggestions: { code: string; params: Record<string, string | number> }[]
+}
+
 export interface SuggestedQuestion {
+  // Clicking one puts it in the composer and sends it, so it has to be in the
+  // reader's language: `analyst.q.<code>` is what gets rendered, `text` is the
+  // English fallback.
+  code: string
   text: string
   icon: string
 }
 
-// ── Dead stock / immobilised inventory ────────────────────────────────────────
-export interface DeadStockItem {
-  sku:                    string
-  display_name:           string | null
-  supplier:              string | null
+/** Why a unit's value could not be priced. Never a silent 0 — see
+ *  `backend/inventory/dead_capital.py`'s module docstring. */
+export type DeadCapitalValueUnknownReason = 'no_unit_cost'
+
+export interface DeadCapitalItem {
+  sku:                     string
+  display_name:            string | null
+  supplier:                string | null
+  category:                string | null
   current_stock:           number
-  unit_cost:         number | null
-  capital_trapped:        number
-  holding_cost_monthly:   number
-  days_without_movement:  number
-  depletion_pct:          number
-  avg_daily_demand:       number
-  signal:                 string
-  abc:                    string
-  action_suggested:       string
+  unit_cost:               number | null
+  /** null when the unit cost is unknown — never 0. See `value_unknown_reason`. */
+  value:                   number | null
+  value_unknown_reason:    DeadCapitalValueUnknownReason | null
+  days_still:              number
+  /** true when a real stock decrease was found and dated; false means no
+   *  decrease was ever observed and `days_still` is only the span the
+   *  recorded history covers — a floor, not a confirmed count. */
+  days_still_exact:        boolean
+  /** The SKU's current semáforo signal, when a session exists to compute it
+   *  — null otherwise. This view does not need a session to work. */
+  signal:                  InventorySignal | null
 }
 
-export interface DeadStockResponse {
-  items:                        DeadStockItem[]
-  total_capital_trapped:        number
-  total_holding_cost_monthly:   number
+export interface DeadCapitalResponse {
+  window_days:            number
+  items:                  DeadCapitalItem[]
+  /** Sum of `value` over priced items only — unpriced items are never folded
+   *  in as 0. */
+  total_value:            number
+  sku_count:              number
+  unpriced_sku_count:     number
+  total_skus_with_stock:  number
+  excluded_no_history:    number
+  excluded_too_recent:    number
+}
+
+// Supplier cost inflation (stability.md #20 item 5): `inventory_po_items
+// .unit_cost` read as a price history, but only from orders that were
+// actually RECEIVED — a quote or a rejected order proves nothing was paid.
+// See `backend/inventory/cost_alerts.py`.
+export interface SupplierInflationProduct {
+  sku:                 string
+  display_name:        string | null
+  first_cost:          number
+  last_cost:            number
+  first_observed_at:    string
+  last_observed_at:     string
+  cumulative_pct:      number
+  increases_count:      number
+  observations_count:  number
+}
+
+export interface SupplierInflation {
+  supplier:              string
+  sku_count_affected:    number
+  increases_count:       number
+  /** Qty-weighted across the supplier's affected SKUs — see the aggregation
+   *  comment in `cost_alerts.get_supplier_cost_inflation`. */
+  cumulative_pct:        number
+  worst_products:        SupplierInflationProduct[]
+}
+
+export interface SupplierCostInflationResponse {
+  window_days:                 number
+  suppliers:                   SupplierInflation[]
+  supplier_count:               number
+  skus_single_observation:      number
+  skus_zero_cost_base:          number
+  lines_excluded_no_supplier:  number
+}
+
+// Margin erosion (stability.md #20 item 6): cost history crossed with the
+// SKU's CURRENT sale_price — the only one StockAI stores. `margin_pct_then` is
+// therefore not a historical margin; see `price_history_available` below and
+// `cost_alerts.get_margin_erosion`'s docstring.
+export interface MarginErosionItem {
+  sku:                 string
+  display_name:        string | null
+  sale_price:          number
+  cost_then:            number
+  cost_now:             number
+  /** null when cost_then is 0 — a % change from a zero base is undefined. */
+  cost_change_pct:      number | null
+  /** `calc_unit_margin`'s discipline: never clamped, negative reported as-is. */
+  unit_margin_then:    number
+  unit_margin_now:      number
+  margin_pct_then:      number
+  margin_pct_now:        number
+  erosion_pts:          number
+  first_observed_at:    string
+  last_observed_at:      string
+}
+
+export interface MarginErosionResponse {
+  window_days:              number
+  items:                    MarginErosionItem[]
+  sku_count:                number
+  /** Always false today — StockAI stores no sale_price history. Load-bearing:
+   *  it is what stops `margin_pct_then` from being read as a historical
+   *  fact rather than a today's-price hypothetical. */
+  price_history_available: boolean
+  excluded_no_cost_history: number
+  excluded_no_sale_price:   number
+  excluded_invalid_price:   number
+  lines_excluded_no_supplier: number
+}
+
+// ── The forecast in money (stability.md #20, item 1) ─────────────────────────
+// The engine predicts units; the product already knows price and cost per
+// SKU. See `backend/inventory/forecast_money.py`'s module docstring for the
+// honesty constraints this payload is built under.
+export type ForecastMoneyUnknownReason = 'no_sale_price' | 'no_unit_cost'
+
+export interface ForecastMoneyItem {
+  sku:                     string
+  display_name:            string | null
+  supplier:                string | null
+  category:                string | null
+  units_forecast:          number
+  /** The CURRENT price/cost on file — StockAI stores no price history, so this
+   *  is what the projection is built from, not a claim about the future. */
+  sale_price:              number | null
+  unit_cost:               number | null
+  /** null when `sale_price` is unknown — NEVER 0. See `revenue_unknown_reason`. */
+  revenue:                 number | null
+  revenue_unknown_reason:  ForecastMoneyUnknownReason | null
+  /** null when `unit_cost` is unknown — NEVER 0. See `cost_unknown_reason`. */
+  cost:                    number | null
+  cost_unknown_reason:     ForecastMoneyUnknownReason | null
+  /** null exactly when either `revenue` or `cost` is null. A negative
+   *  margin (selling below cost) is reported as-is, never clamped. */
+  margin:                  number | null
+  margin_pct:              number | null
+  /** This SKU's share of `total_margin`, null when its own margin is
+   *  unknown or the total is 0. What lets the screen say "these products
+   *  are N% of it". */
+  contribution_pct:        number | null
+}
+
+export interface ForecastMoneyResponse {
+  session_id:                  string
+  /** The session's real forecast horizon, in days — derived from the
+   *  forecast actually stored, not a screen default. */
+  horizon_days:                number
+  horizon_start:               string | null
+  horizon_end:                 string | null
+  /** Always false today — StockAI stores no sale_price history, so this
+   *  projection is built entirely on today's price. Same flag
+   *  `MarginErosionResponse` uses for the identical caveat. */
+  price_history_available:     boolean
+  items:                       ForecastMoneyItem[]
+  /** Sum of `revenue` over priced items only. */
+  total_revenue:                number
+  /** Sum of `cost` over items with both price and cost known. */
+  total_cost:                   number
+  /** Sum of `margin` over items with both price and cost known — never a
+   *  mix with unpriced/uncosted SKUs folded in as 0. */
+  total_margin:                 number
+  /** null when no SKU has both price and cost known. */
+  total_margin_pct:             number | null
   sku_count:                    number
-  min_days_static:              number
+  priced_sku_count:             number
+  costed_sku_count:             number
+  excluded_no_price_count:      number
+  excluded_no_cost_count:       number
+  excluded_no_forecast_count:   number
+  top_contributors:             number
+  /** null when `total_margin` is 0. */
+  top10_margin_share_pct:       number | null
+}
+
+// ── "What did it cost me to ignore you" (stability.md 19.4) ──────────────────
+// Per-SKU, over a window: did the semáforo ask to order, did a purchase order
+// follow, and — only when it did not AND a snapshot actually recorded stock
+// at or below zero — the estimated unserved units and their value.
+// `no_po_no_stockout_observed` is the honest default: it means the report
+// cannot show a cost, not that the cost was zero. See
+// `backend/inventory/recommendation_reports.py`.
+export type CostOfIgnoringOutcome = 'ordered' | 'likely_stockout' | 'no_po_no_stockout_observed'
+
+/** Why `lost_value` is null even though the SKU is a likely stockout. */
+export type CostOfIgnoringValueUnknownReason = 'no_stockout_detected' | 'no_demand_rate_recorded' | 'sale_price_unknown'
+
+export interface CostOfIgnoringSku {
+  sku:                       string
+  times_flagged:             number
+  first_flagged_on:          string
+  last_flagged_on:           string
+  latest_signal:             string
+  latest_recommended_qty:    number | null
+  po_window_days:            number
+  outcome:                   CostOfIgnoringOutcome
+  /** Set only when `outcome === 'ordered'`. */
+  po_generated_at?:          string
+  /** Set only when `outcome === 'likely_stockout'`. */
+  stockout_observed_at?:     string
+  recovery_observed_at?:     string | null
+  /** true when the window ended before stock was observed to recover — the
+   *  units/value below are a LOWER BOUND, not the full cost: nothing past
+   *  the requested window was visible. */
+  partial_window?:           boolean
+  days_out_of_stock?:        number
+  avg_daily_demand_used?:    number | null
+  /** null unless a stockout was actually observed. */
+  lost_units:                number | null
+  /** null whenever `lost_units` is null, OR the SKU has no current
+   *  sale_price on file — NEVER a silent 0. See `lost_value_reason`. */
+  lost_value:                number | null
+  lost_value_reason:         CostOfIgnoringValueUnknownReason | null
+}
+
+export interface CostOfIgnoringSummary {
+  skus_flagged:                            number
+  skus_ordered:                            number
+  skus_likely_stockout:                    number
+  /** "Unclear" on purpose — no PO followed AND no stockout was observed, so
+   *  the report cannot say ignoring the advice cost anything. Not a good
+   *  outcome by default: it may simply mean the buyer was still covered. */
+  skus_unclear:                            number
+  /** Sum over priced+quantified SKUs only — never padded with SKUs whose
+   *  units or value are unknown. */
+  total_estimated_lost_units:              number | null
+  total_estimated_lost_value:              number | null
+  skus_with_lost_units_but_unknown_value:  number
+}
+
+export interface CostOfIgnoringResponse {
+  from_date:       string
+  to_date:         string
+  po_window_days:  number
+  summary:         CostOfIgnoringSummary
+  skus:            CostOfIgnoringSku[]
+}
+
+// ── "Why is today's number different" (stability.md 19.7) ───────────────────
+// The latest recorded recommendation for one SKU against the previous
+// recorded one, decomposed into the inputs that moved. See
+// `backend/inventory/recommendation_reports.why_changed`.
+export type WhyChangedFieldOrigin = 'session' | 'operational' | 'derived'
+
+export interface WhyChangedField {
+  previous: number | string | null
+  current:  number | string | null
+  delta:    number | null
+  origin:   WhyChangedFieldOrigin
+}
+
+export type WhyChangedExplanationCode =
+  | 'recommendation_change_new_session'
+  | 'recommendation_change_same_session'
+
+export interface WhyChangedResponse {
+  available:              boolean
+  sku:                    string
+  /** Set when `available` is false: why there is nothing to compare yet. */
+  reason?:                'no_recorded_recommendations' | 'no_previous_recommendation'
+  latest?:                Record<string, unknown>
+  latest_recorded_on?:    string
+  previous_recorded_on?:  string
+  latest_session_id?:     string | null
+  previous_session_id?:   string | null
+  /** true when the change came from a new training run (a model opinion)
+   *  rather than the tenant's own operational data moving. */
+  session_changed?:       boolean
+  fields?:                Record<string, WhyChangedField>
+  explanation_code?:      WhyChangedExplanationCode
 }
 
 // Multi-period planning (Phase B): the tenant's active view granularity.

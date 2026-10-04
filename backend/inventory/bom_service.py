@@ -12,15 +12,23 @@ from backend.db.connection import query, execute
 
 log = logging.getLogger(__name__)
 
-# Product type labels
-PRODUCT_TYPES = {
-    'finished_good':  'Producto terminado',
-    'semi_finished':  'Semiterminado',
-    'component':      'Componente',
-    'raw_material':   'Materia prima',
-    'packaging':      'Empaque',
-    'service':        'Servicio',
-}
+# The closed vocabulary of product types.
+#
+# This used to be a dict mapping each key to a Spanish label, and
+# `GET /inventory/product-types` returned that dict verbatim — so the backend
+# shipped Spanish copy to a frontend that renders in two languages, and an
+# English-mode user got Spanish. The labels live in the frontend's i18n
+# catalogue now (`enum.product_type_*`, resolved by `productTypeLabel`),
+# keyed by these English values. The backend owns the vocabulary; the
+# frontend owns how it reads.
+PRODUCT_TYPES = (
+    'finished_good',
+    'semi_finished',
+    'component',
+    'raw_material',
+    'packaging',
+    'service',
+)
 
 
 # ── BOM CRUD ──────────────────────────────────────────────────────────────────
@@ -97,16 +105,23 @@ def get_parents_using(tenant_id: str, child_sku: str) -> list[dict]:
 
 # ── MRP Level 1 Explosion ─────────────────────────────────────────────────────
 
-def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30) -> dict:
+def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30,
+                         period: str = "daily") -> dict:
     """
     MRP Level 1 explosion:
     Given forecasted demand for finished goods + BOM,
     calculates required quantities of each component and raw material.
     Flags shortages and calculates purchase requirements.
+
+    `period` is read at the tenant's own planning grain, like every other reader
+    of the status. Without it a weekly tenant's per-week demand for finished
+    goods was treated as per-day, and every component requirement below it was
+    multiplied by the same error. Default "daily" keeps existing callers
+    byte-identical.
     """
     from backend.inventory.service import get_inventory_status
 
-    items = get_inventory_status(tenant_id, session_id)
+    items = get_inventory_status(tenant_id, session_id, period=period)
     if not items:
         return _empty_explosion(session_id, horizon_days)
 
@@ -130,7 +145,14 @@ def explode_requirements(tenant_id: str, session_id: str, horizon_days: int = 30
         if sku not in bom_map:
             continue
 
-        forecast_demand = round((item.get('daily_demand') or 0) * horizon_days, 1)
+        # `daily_demand` is per bucket of `period` (per WEEK on a weekly
+        # tenant) and the horizon is in days. Passing `period` to the status
+        # call above was half the fix the docstring describes; without this
+        # conversion every requirement was still 7x (weekly) or 30x (monthly)
+        # too high (math audit 2026-10-01).
+        from backend.inventory.service import _days_per_period
+        per_day = (item.get('daily_demand') or 0) / _days_per_period(period)
+        forecast_demand = round(per_day * horizon_days, 1)
         current_stock   = item.get('current_stock') or 0
         to_produce      = max(0.0, forecast_demand - current_stock)
 

@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from backend.inventory import stock_defaults_service as _sd_svc
+
 log = logging.getLogger(__name__)
 
 # Same conversion factor inventory/service.py uses: a weekly session forecasts
@@ -115,7 +117,7 @@ def _as_float(value) -> Optional[float]:
         return None
 
 
-def _missing_fields(row: Optional[dict]) -> list[str]:
+def _missing_fields(row: Optional[dict], rule_index: Optional[dict] = None) -> list[str]:
     """
     What this SKU still needs. With no row at all everything is missing.
 
@@ -124,6 +126,23 @@ def _missing_fields(row: Optional[dict]) -> list[str]:
     distinguishing "configured as 0" from "never set" is plan #2's provenance
     migration, not this endpoint's job. Until that lands, a SKU with a row
     counts as having its stock configured.
+
+    `lead_time` used to be listed only in the no-row branch, so an existing row
+    could never report it — while the screen's own copy promised "cuántos días
+    tarda en llegar … mientras falten, ese producto no aparece en el semáforo".
+    Both halves were wrong: the field was never reported, and the SKU appears in
+    the semáforo regardless, planned on `lead_time_days INT NOT NULL DEFAULT 15`.
+    An importer with 45 days of real transit reorders 30 days late on their best
+    sellers, every cycle, and nothing on screen says why.
+
+    It is reported exactly when the planner would fall back to that invented 15
+    — `resolve_field` returning SOURCE_DEFAULT — so a SKU covered by a supplier
+    or category rule is not flagged for a value the tenant has, in fact, already
+    given us. Same cascade the semáforo resolves on, so the two cannot disagree
+    about whether this SKU's lead time is known.
+
+    It stays OUT of BLOCKING_FIELDS: a missing lead time makes the plan wrong,
+    not impossible, and `is_gap` drives the "you must fill this" workflow.
     """
     if row is None:
         return ["stock", "lead_time", "cost", "price", "supplier"]
@@ -134,6 +153,14 @@ def _missing_fields(row: Optional[dict]) -> list[str]:
         missing.append("price")
     if not (row.get("supplier") or "").strip():
         missing.append("supplier")
+    if rule_index is not None:
+        _, lead_source, _ = _sd_svc.resolve_field(
+            "lead_time_days", row, rule_index,
+            supplier=(row.get("supplier") or None),
+            category=(row.get("category") or None),
+        )
+        if lead_source == _sd_svc.SOURCE_DEFAULT:
+            missing.append("lead_time")
     return missing
 
 
@@ -180,6 +207,11 @@ def get_setup_gaps(
     ]
     median_money = _median(known_costs) or _median(known_prices)
 
+    # Built once for the whole listing, the way the semáforo builds it once per
+    # request — `resolve_field` takes the prebuilt index precisely so asking it
+    # per SKU costs no queries.
+    rule_index = _sd_svc.build_rule_index(tenant_id)
+
     entries: list[dict] = []
     for sku in sorted(forecasts.keys()):
         row = stock_by_sku.get(sku)
@@ -199,7 +231,7 @@ def get_setup_gaps(
         else:
             unit_price, price_source = None, "none"
 
-        missing = _missing_fields(row)
+        missing = _missing_fields(row, rule_index)
         entries.append({
             "sku": sku,
             "display_name": (row or {}).get("display_name"),

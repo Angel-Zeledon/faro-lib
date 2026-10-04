@@ -1,5 +1,5 @@
 """Team messaging (direct_messages): send/read/thread endpoints, tenant
-isolation, plan gating and the SMS heads-up trigger.
+isolation, and the SMS heads-up trigger.
 
 Role note: messaging is deliberately open to every role (viewer included) —
 it is communication, not a business-data mutation — so the permission pair
@@ -105,7 +105,7 @@ class TestTenantIsolation:
         self, client, auth_headers, registered_user, make_tenant_user_headers,
     ):
         other_headers, other_tenant_id = make_tenant_user_headers(
-            plan="professional", role="admin", return_tenant_id=True,
+            role="admin", return_tenant_id=True,
         )
         other_user = query_one(
             "SELECT id FROM users WHERE tenant_id = %s", (other_tenant_id,),
@@ -130,7 +130,7 @@ class TestTenantIsolation:
             json={"recipient_id": analyst_user["user"]["id"], "body": "secret"},
             headers=auth_headers,
         )
-        other_headers = make_tenant_user_headers(plan="professional", role="admin")
+        other_headers = make_tenant_user_headers(role="admin")
         resp = client.get(
             f"/api/v1/messages/thread?with_user={registered_user['user']['id']}",
             headers=other_headers,
@@ -224,24 +224,19 @@ class TestReadAndCounts:
         assert data["counterpart"]["id"] == analyst_user["user"]["id"]
 
 
-class TestPlanGating:
-    def test_starter_plan_denied(self, client, make_tenant_user_headers, monkeypatch):
-        from backend.config import settings
-        headers = make_tenant_user_headers(plan="starter", role="admin")
-        monkeypatch.setattr(settings, "testing_mode", False)
-        resp = client.get("/api/v1/messages/unread-count", headers=headers)
-        assert resp.status_code == 403
-        detail = resp.json()["detail"]
-        assert detail["code"] == "PLAN_UPGRADE_REQUIRED"
-        assert detail["feature"] == "team_messaging"
-        assert "professional" in detail["required_plans"]
+class TestNoPlanWall:
+    """Messaging used to be Professional-only. There is one plan now, so the
+    only thing that may refuse this endpoint is authentication — and this runs
+    with testing_mode OFF, which is what used to switch the wall on."""
 
-    def test_professional_plan_allowed(self, client, make_tenant_user_headers, monkeypatch):
+    def test_any_tenant_can_read_its_unread_count(
+        self, client, make_tenant_user_headers, monkeypatch,
+    ):
         from backend.config import settings
-        headers = make_tenant_user_headers(plan="professional", role="admin")
+        headers = make_tenant_user_headers(role="admin")
         monkeypatch.setattr(settings, "testing_mode", False)
         resp = client.get("/api/v1/messages/unread-count", headers=headers)
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
 
 
 class TestHeadsUpNotification:
@@ -263,11 +258,12 @@ class TestHeadsUpNotification:
         wa_calls, sms_calls = [], []
         monkeypatch.setattr(
             "backend.api.v1.messages.whatsapp.send_whatsapp_and_confirm",
-            lambda to, body, wait_seconds=8.0: wa_calls.append((to, body)) or whatsapp_ok,
+            lambda to, body, wait_seconds=8.0, **_kw:
+                wa_calls.append((to, body)) or whatsapp_ok,
         )
         monkeypatch.setattr(
             "backend.api.v1.messages.sms.send_sms",
-            lambda to, body: sms_calls.append((to, body)) or True,
+            lambda to, body, **_kw: sms_calls.append((to, body)) or True,
         )
         return wa_calls, sms_calls
 

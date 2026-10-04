@@ -1,6 +1,5 @@
 annotated-doc==0.0.4
 annotated-types==0.7.0
-anthropic==0.104.1
 anyio==4.13.0
 bcrypt==5.0.0
 cryptography>=42.0.0
@@ -52,6 +51,3 @@ websockets==16.0
 # production image had never been built.
 PyMySQL==1.2.0
 pyodbc==5.3.0
-# Billing. Imported lazily inside backend/billing/service.py, so the app still
-# boots and every non-billing route still works if this is ever missing.
-stripe==12.5.1

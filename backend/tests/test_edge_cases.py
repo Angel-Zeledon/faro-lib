@@ -46,8 +46,16 @@ UNAUTHENTICATED = {
     "POST /api/v1/auth/forgot-password": "you are locked out by definition",
     "POST /api/v1/auth/forgot-password/verify": "same flow, still locked out",
     "POST /api/v1/auth/reset-password": "the emailed token is the credential",
+    # Social sign-in (backend/auth/social/): the person is not signed in yet.
+    "GET /api/v1/auth/providers": "which sign-in buttons to draw; no tenant data",
+    "GET /api/v1/auth/oauth/{provider}/start": "redirects to the provider",
+    "GET /api/v1/auth/oauth/{provider}/callback": "single-use state + browser cookie are the credential",
+    "POST /api/v1/auth/oauth/{provider}/callback": "Apple's form_post; same state + cookie",
+    "POST /api/v1/auth/oauth/exchange": "the one-time handoff code is the credential",
+    # The landing visitor has no account yet: this mints a throwaway one. It
+    # reads no tenant's data; abuse is bounded in backend/trial/service.py.
+    "POST /api/v1/trial": "creates a 24-hour trial account for a visitor",
     # Machine callers authorised by request signature, not by a user token.
-    "POST /api/v1/billing/webhook": "Stripe webhook, verified by signature",
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
     # Deliberate: Twilio's MediaUrl fetch cannot carry a Bearer token, and the
     # id is unguessable. See the docstring on the route itself.
@@ -250,7 +258,7 @@ class TestForgotPasswordIsNotAnEnumerationOracle:
 
     def test_unknown_address_issues_no_code_and_looks_identical(self, client, registered_user):
         tenant_id = registered_user["tenant"]["id"]
-        ghost = f"ghost-{uuid4().hex}@faro-e2e.io"
+        ghost = f"ghost-{uuid4().hex}@stockai-e2e.io"
 
         ghost_resp = client.post("/api/v1/auth/forgot-password", json={"email": ghost})
         assert ghost_resp.status_code == 200
@@ -449,7 +457,7 @@ class TestTenantIsolation:
         original_name = query_one("SELECT name FROM sessions WHERE id = %s", (sid,))["name"]
 
         t2 = create_tenant(f"isolated-{uuid4().hex[:8]}")
-        email2 = f"iso-{uuid4().hex[:8]}@faro-e2e.io"
+        email2 = f"iso-{uuid4().hex[:8]}@stockai-e2e.io"
         u2 = user_svc.create_user(t2["id"], email2, "TestPass123!", "admin")
         user_svc.mark_verified(t2["id"], u2["id"])
         try:
@@ -482,7 +490,7 @@ class TestTenantIsolation:
 
 # ── Inventory permissions: mutations require analyst or above ────────────────
 #
-# 2026-07-04 audit (docs/auditoria_integral_faro_2026-07-04.md, finding #1):
+# 2026-07-04 audit, finding #1 (doc retired 2026-08-11; see git history):
 # the previous "intentionally ungated" decision was reversed — inventory data
 # drives real purchase orders, so a read-only viewer must not be able to mutate
 # stock, events, suppliers, BOM or run bulk imports. Every mutation now depends
@@ -794,19 +802,25 @@ class TestInputValidation:
         assert row["validation_cfg"]["train_ratio"] == 0.75
 
     def test_signup_missing_required_fields_creates_no_user(self, client):
-        email = f"partial-{uuid4().hex[:8]}@faro-e2e.io"
+        email = f"partial-{uuid4().hex[:8]}@stockai-e2e.io"
         resp = client.post("/api/v1/auth/signup", json={"email": email})
         assert resp.status_code == 422
         assert query_one("SELECT id FROM users WHERE email = %s", (email,)) is None
 
-    def test_upload_oversized_file_is_blocked_by_plan_limit(self, client, auth_headers, test_tenant, monkeypatch):
+    def test_upload_oversized_file_is_blocked_by_the_size_limit(self, client, auth_headers, test_tenant, monkeypatch):
         # The size cap is bypassed under TESTING_MODE, so the test must turn it
         # off itself or it can never fail on a local .env with TESTING_MODE=true.
         from backend.config import settings
+        from backend.db.connection import execute, _json
         monkeypatch.setattr(settings, "testing_mode", False)
-        # >200MB: over the Starter plan's max_dataset_size_mb, which is now the
-        # authoritative cap (403 PLAN_LIMIT_REACHED, not the old generic 400).
-        fake_big = b"a" * (200 * 1024 * 1024 + 1)
+        # The shipped ceiling is 2 GB, which is not a file anyone wants to build
+        # in a test, so the tenant is narrowed to 1 MB through its quota — the
+        # same path a real agreement uses. What is under test is the guard, not
+        # the number: an over-size upload must be refused with the canonical
+        # error and store nothing.
+        execute("UPDATE tenants SET quota = %s WHERE id = %s",
+                (_json({"max_dataset_size_mb": 1}), test_tenant["id"]))
+        fake_big = b"sku,date,sales\n" + b"a" * (2 * 1024 * 1024)
         resp = client.post(
             "/api/v1/datasets",
             files={"file": ("big.csv", fake_big, "text/csv")},
@@ -818,7 +832,7 @@ class TestInputValidation:
         assert detail["limit"] == "max_dataset_size_mb"
         assert query_one(
             "SELECT COUNT(*) AS n FROM datasets WHERE tenant_id = %s", (test_tenant["id"],)
-        )["n"] == 0, "the upload was refused over the plan limit and stored anyway"
+        )["n"] == 0, "the upload was refused over the size limit and stored anyway"
 
     def test_attach_nonexistent_dataset_leaves_the_session_unattached(
         self, client, auth_headers, test_session,
@@ -916,17 +930,53 @@ class TestInputValidation:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestSessionStateEdgeCases:
-    def test_cannot_delete_running_session(self, client, auth_headers, test_tenant):
-        from backend.sessions.service import create_session, force_status
+    @pytest.mark.parametrize("job_status", ["QUEUED", "RUNNING"])
+    def test_cannot_delete_session_with_a_job_in_flight(
+        self, job_status, client, auth_headers, test_tenant,
+    ):
+        """The shape the real flow produces, which is NOT session=RUNNING.
 
-        s = create_session(test_tenant["id"], "usr_test", "running-session")
-        force_status(test_tenant["id"], s["id"], "RUNNING")
+        `runner.py` writes only COMPLETED or FAILED back onto the session, so a
+        session whose worker is training right now reads QUEUED. Forcing the
+        session to RUNNING — which is what this test used to do — builds a
+        state no worker ever creates, and the delete guard passed against it
+        while a real training run could be deleted out from under its worker.
+        """
+        from backend.sessions.service import create_session
+        from backend.training import job_service
+
+        s = create_session(test_tenant["id"], "usr_test", f"in-flight-{job_status}")
+        job = job_service.create_job(test_tenant["id"], s["id"], "usr_test")
+        if job_status == "RUNNING":
+            job_service.mark_running(test_tenant["id"], job["id"], "worker-test")
+        # The session is left exactly where the real flow leaves it.
+        assert query_one(
+            "SELECT status FROM sessions WHERE id = %s", (s["id"],)
+        )["status"] != "RUNNING"
+
         resp = client.delete(f"/api/v1/sessions/{s['id']}", headers=auth_headers)
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "session_running_cannot_delete"
-        row = query_one("SELECT status FROM sessions WHERE id = %s", (s["id"],))
-        assert row is not None, "the 409 was returned and the running session was deleted anyway"
-        assert row["status"] == "RUNNING"
+        assert query_one("SELECT status FROM sessions WHERE id = %s", (s["id"],)) is not None, \
+            "the 409 was returned and the training session was deleted anyway"
+        assert query_one(
+            "SELECT status FROM jobs WHERE id = %s", (job["id"],)
+        ) is not None, "the delete cascaded the in-flight job away"
+
+    def test_can_delete_a_session_whose_job_is_finished(
+        self, client, auth_headers, test_tenant,
+    ):
+        """The guard must not become a door that never opens."""
+        from backend.sessions.service import create_session
+        from backend.training import job_service
+
+        s = create_session(test_tenant["id"], "usr_test", "finished-job")
+        job = job_service.create_job(test_tenant["id"], s["id"], "usr_test")
+        job_service.mark_failed(test_tenant["id"], job["id"], "boom")
+
+        resp = client.delete(f"/api/v1/sessions/{s['id']}", headers=auth_headers)
+        assert resp.status_code == 204
+        assert query_one("SELECT id FROM sessions WHERE id = %s", (s["id"],)) is None
 
     def test_cannot_start_training_on_running_session(self, client, auth_headers, test_tenant):
         from backend.sessions.service import create_session, force_status

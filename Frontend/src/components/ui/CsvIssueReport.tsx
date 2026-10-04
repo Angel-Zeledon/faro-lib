@@ -8,9 +8,11 @@ import { AlertTriangle, AlertCircle, Download } from 'lucide-react'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import { downloadCsvTemplate, csvText, csvIssueText } from '@/lib/csvCheck'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 export function CsvTemplateButton({ compact = false }: { compact?: boolean }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   return (
     <button
       type="button"
@@ -25,6 +27,7 @@ export function CsvTemplateButton({ compact = false }: { compact?: boolean }) {
         fontSize: compact ? 12 : 13,
         fontWeight: 600,
         cursor: 'pointer',
+        ...(narrow ? { minHeight: 44, boxSizing: 'border-box', fontSize: 14, borderRadius: 10 } : {}),
       }}
     >
       <Download size={compact ? 13 : 15} />

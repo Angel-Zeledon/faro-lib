@@ -5,6 +5,7 @@ import { getTenantCurrency } from '@/lib/api'
 import { setActiveCurrency } from '@/lib/currency'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
+import SectionTabs, { SECTION_TABS_HEIGHT, hasSectionTabs } from './SectionTabs'
 import AuthGuard from './AuthGuard'
 import SkuSearchOverlay from './SkuSearchOverlay'
 import { SidebarProvider } from '@/contexts/SidebarContext'
@@ -18,9 +19,15 @@ import TourOverlay from '@/components/tour/TourOverlay'
 import ToastContainer from '@/components/ui/Toast'
 import ApiErrorBridge from './ApiErrorBridge'
 import { EntitlementsProvider } from '@/lib/entitlements'
+import { CapabilitiesProvider } from '@/lib/capabilities'
+import { UpgradeProvider } from '@/components/limits/UpgradeDialog'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import VerifyEmailBanner from './VerifyEmailBanner'
-import MobileNavButton from '@/components/mobile/MobileNavButton'
+import TrialBanner from './TrialBanner'
+import AppIntro from './AppIntro'
+import { PwaRegister } from './PwaRegister'
+import MobileTabBar from '@/components/mobile/MobileTabBar'
+import { MobileHeaderProvider } from '@/components/mobile/MobileHeaderContext'
 import DesktopOnlyNotice from '@/components/mobile/DesktopOnlyNotice'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
@@ -28,14 +35,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
       <EntitlementsProvider>
+      <CapabilitiesProvider>
       <WarehousesProvider>
       <PlanningProvider>
         <ToastProvider>
+          {/* Above ApiErrorBridge, which opens it when the backend answers
+              PLAN_LIMIT_REACHED, and above the screens that open it by hand. */}
+          <UpgradeProvider>
           <ConfirmProvider>
           <SidebarProvider>
             <SkuSearchProvider>
               <TourProvider>
-                <Shell>{children}</Shell>
+                <MobileHeaderProvider>
+                  <Shell>{children}</Shell>
+                </MobileHeaderProvider>
                 <ToastContainer />
                 <ApiErrorBridge />
                 <SkuSearchOverlay />
@@ -47,9 +60,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </SkuSearchProvider>
           </SidebarProvider>
           </ConfirmProvider>
+          </UpgradeProvider>
         </ToastProvider>
       </PlanningProvider>
       </WarehousesProvider>
+      </CapabilitiesProvider>
       </EntitlementsProvider>
     </AuthGuard>
   )
@@ -60,13 +75,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
  * has to run *inside* `SidebarProvider`, since the drawer trigger it renders
  * reads that context.
  *
- * Narrow viewports get exactly two changes here:
- *   · a 44px hamburger beside the top bar, because the sidebar has become an
- *     off-canvas drawer and would otherwise be unreachable;
+ * Narrow viewports (≤768px) get the mobile shell instead of the desktop one:
+ *   · no sidebar — a fixed bottom tab bar (components/mobile/MobileTabBar)
+ *     carries the four daily screens, and its "Más" sheet everything else;
+ *   · TopBar renders its compact mobile header (title, back, ⋯, bell);
+ *   · `.app-shell-mobile` (globals.css) sizes the shell to the dynamic
+ *     viewport and pads the scroll container by `--mobile-nav-h`, so the last
+ *     row of any screen clears the tab bar;
  *   · `overflowX: hidden` on the scroll container, so one over-wide table
- *     cannot turn every vertical swipe on every page into a fight with a
- *     horizontal scrollbar.
- * `TopBar` itself is untouched — it is shared with four other screens.
+ *     cannot turn every vertical swipe into a fight with a sideways scroll.
+ * Desktop renders exactly what it always has.
  */
 /**
  * Loads the tenant's currency once, for the whole app.
@@ -93,20 +111,30 @@ function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
   return (
-    <div className="app-shell">
+    <div className={narrow ? 'app-shell app-shell-mobile' : 'app-shell'}>
       <CurrencyBoot />
-      <Sidebar />
-      <div className="main-content" style={narrow ? { minWidth: 0 } : undefined}>
+      <AppIntro />
+      <PwaRegister />
+      {!narrow && <Sidebar />}
+      <div
+        className="main-content"
+        style={{
+          ...(narrow ? { minWidth: 0 } : {}),
+          // A screen sized to the viewport subtracts the analysis tab strip.
+          ['--section-tabs-h' as string]: hasSectionTabs(pathname) ? `${SECTION_TABS_HEIGHT}px` : '0px',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, minWidth: 0 }}>
-          {narrow && <MobileNavButton />}
           <div style={{ flex: 1, minWidth: 0 }}>
             <TopBar />
           </div>
         </div>
+        <SectionTabs />
         <div
           className="page-content"
-          style={narrow ? { overflowX: 'hidden', padding: 12 } : undefined}
+          style={narrow ? { overflowX: 'hidden', padding: '12px 12px calc(var(--mobile-nav-h, 0px) + 16px)' } : undefined}
         >
+          <TrialBanner />
           <ReadOnlyBanner />
           <VerifyEmailBanner />
           <DesktopOnlyNotice />
@@ -118,6 +146,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <div key={pathname} className="page-enter">{children}</div>
         </div>
       </div>
+      {narrow && <MobileTabBar />}
     </div>
   )
 }

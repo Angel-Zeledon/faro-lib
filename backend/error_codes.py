@@ -7,8 +7,7 @@ travel up through ``HTTPException(detail=str(e))``. The user must not read
 those English sentences, and a frontend that string-matches prose is brittle.
 
 This module is the single bridge: ``describe_http_error(detail)`` maps the
-well-known sentences — and the structured ``{"code": "PLAN_LIMIT_REACHED", …}``
-dicts the entitlement guards raise — to ``(code, params)``. The HTTPException
+well-known sentences to ``(code, params)``. The HTTPException
 handler in ``main.py`` adds them to the response as ``error_code`` /
 ``error_params`` next to the untouched ``detail``, so API consumers keep the
 English text they already parse and the web app renders ``errors.<code>`` in
@@ -36,7 +35,6 @@ _RULES: list[tuple[re.Pattern[str], str]] = [
         (r"Token expired", "token_expired"),
         (r"Invalid token( type)?(: .*)?", "token_invalid"),
         (r"Token has been revoked", "token_revoked"),
-        (r"Role '(?P<role>.+?)' not permitted\. Required: .*", "role_not_permitted"),
         (r"Access denied", "access_denied"),
         (r"API key not found", "api_key_not_found"),
         # ── Not found ────────────────────────────────────────────────────────
@@ -110,42 +108,33 @@ _RULES: list[tuple[re.Pattern[str], str]] = [
     ]
 ]
 
-# Entitlement guards raise ``detail={"code": "PLAN_LIMIT_REACHED", …}``; the
-# machine code is the lower-cased upper-case code. Limit ceilings get one code
-# per limit key so each reads as its own sentence ("2 users on this plan").
+# Entitlement guards raise ``detail={"code": "PLAN_LIMIT_REACHED", …}`` and the
+# HTTPException handler in ``main.py`` lifts that to ``error_code`` UNCHANGED:
+# the upper-case code is part of the public contract (docs at /desarrolladores,
+# the upgrade dialog). The web app derives the catalogue key from it with
+# ``errors.<code lower-cased>``, and for a ceiling one key per limit
+# (``errors.plan_limit_<limit>``) so each reads as its own sentence. Those keys
+# are listed here so the translation check covers them.
 PLAN_LIMIT_KEYS = (
     "max_skus", "max_users", "max_locations", "max_sessions",
     "max_concurrent_jobs", "max_dataset_size_mb",
 )
-_STRUCTURED_CODES = {"PLAN_UPGRADE_REQUIRED": "plan_upgrade_required",
-                     "TRIAL_EXPIRED": "trial_expired"}
+_STRUCTURED_CODES = ("plan_upgrade_required", "trial_expired")
 
 
 def all_bridge_codes() -> set[str]:
-    """Every code this module can emit — the translation check reads this."""
+    """Every catalogue key suffix this module (and its frontend derivation) needs."""
     codes = {code for _, code in _RULES}
-    codes.update(_STRUCTURED_CODES.values())
+    codes.update(_STRUCTURED_CODES)
     codes.update(f"plan_limit_{key}" for key in PLAN_LIMIT_KEYS)
     return codes
 
 
 def describe_http_error(detail: Any) -> Optional[tuple[str, dict[str, Any]]]:
-    """Return ``(code, params)`` for an HTTPException ``detail``, else ``None``."""
-    if isinstance(detail, dict):
-        raw = detail.get("code")
-        params = {k: v for k, v in detail.items() if k != "code"}
-        if raw == "PLAN_LIMIT_REACHED":
-            key = str(detail.get("limit", ""))
-            if key in PLAN_LIMIT_KEYS:
-                return f"plan_limit_{key}", {
-                    "current": detail.get("current"), "max": detail.get("max"),
-                }
-            return None
-        if raw in _STRUCTURED_CODES:
-            # The feature / plan names are ids, not copy; the UI sentence does
-            # not interpolate them.
-            return _STRUCTURED_CODES[raw], params
-        return None
+    """Return ``(code, params)`` for a plain-sentence HTTPException ``detail``.
+
+    Dict details are not handled here — they already carry their own code.
+    """
     if isinstance(detail, str):
         for pattern, code in _RULES:
             m = pattern.fullmatch(detail)

@@ -21,16 +21,26 @@ TRANSLATIONS = ROOT / "Frontend" / "src" / "i18n" / "translations.ts"
 _APP_ERROR = re.compile(r"""AppError\(\s*(?:code\s*=\s*)?(["'])([a-z][a-z0-9_]*)\1""")
 
 
+# Handlers in main.py build the envelope by hand: `"error_code": "server_busy"`.
+_ENVELOPE = re.compile(r"""["']error_code["']\s*:\s*(["'])([a-z][a-z0-9_]*)\1""")
+
+# Deliberately NOT in the catalogue: a 422 `validation_error` carries per-field
+# failures rendered from `errors.validation.<type>` / `errors.field.*`; a
+# code-level sentence would hide them behind one vague line.
+FIELD_LEVEL_CODES = {"validation_error"}
+
+
 def backend_codes() -> dict[str, str]:
     """Map every literal code in the backend to one file that raises it."""
     found: dict[str, str] = {}
     for path in sorted((ROOT / "backend").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
-        if "/tests/" in rel or "/.venv/" in rel:
+        if "/tests/" in rel or "/.venv/" in rel or rel.endswith("scripts/check_error_codes.py"):
             continue
         text = path.read_text(encoding="utf-8")
-        for m in _APP_ERROR.finditer(text):
-            found.setdefault(m.group(2), rel)
+        for m in list(_APP_ERROR.finditer(text)) + list(_ENVELOPE.finditer(text)):
+            if m.group(2) not in FIELD_LEVEL_CODES:
+                found.setdefault(m.group(2), rel)
     from backend.error_codes import all_bridge_codes
     for code in all_bridge_codes():
         found.setdefault(code, "backend/error_codes.py")

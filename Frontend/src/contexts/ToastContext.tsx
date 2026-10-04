@@ -11,6 +11,10 @@ export type ToastType = 'success' | 'error' | 'info'
 export interface ToastAction {
   label: string
   onClick: () => void
+  /** 'undo' (the default) is what Ctrl/Cmd-Z triggers; 'report' opens an
+   *  error report and 'link' navigates somewhere — neither may ever fire from
+   *  a keyboard shortcut meant to undo. */
+  kind?: 'undo' | 'report' | 'link'
 }
 
 export interface ToastOptions {
@@ -32,6 +36,7 @@ export interface ToastItem {
   type: ToastType
   /** Present when the toast carries an action; the handler lives in a ref. */
   actionLabel?: string
+  actionKind?: 'undo' | 'report' | 'link'
   exiting?: boolean
 }
 
@@ -123,7 +128,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const id = `t_${Date.now()}_${Math.random().toString(36).slice(2)}`
     if (options?.action) actions.current.set(id, options.action.onClick)
     if (options?.onExpire) expiries.current.set(id, options.onExpire)
-    setToasts(prev => [...prev.slice(-4), { id, title, message, type, actionLabel: options?.action?.label }])
+    setToasts(prev => [...prev.slice(-4), { id, title, message, type, actionLabel: options?.action?.label, actionKind: options?.action?.kind ?? 'undo' }])
     timers.current.set(id, setTimeout(() => dismiss(id), options?.duration ?? 4500))
     return id
   }, [dismiss])
@@ -155,7 +160,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
-      const newest = [...toasts].reverse().find(t => !t.exiting && t.actionLabel && actions.current.has(t.id))
+      const newest = [...toasts].reverse().find(t => !t.exiting && t.actionLabel && t.actionKind === 'undo' && actions.current.has(t.id))
       if (!newest) return
       e.preventDefault()
       runAction(newest.id)

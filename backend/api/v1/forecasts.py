@@ -455,6 +455,28 @@ def get_forecast_series(
     })
 
 
+def _champion_model(
+    sku: str, sku_metrics: list[dict], available_models: list[str],
+) -> Optional[str]:
+    """The model this SKU's purchases are computed from, if we can draw it.
+
+    Delegates to `best_model_by_sku` rather than re-deciding: that function is
+    the one the semáforo and the accuracy figure already obey, and the comment
+    above it records what happened the last time a second copy of this question
+    drifted — three layers describing three different models on one session.
+
+    Returns None when the champion has no stored forecast, which is not an
+    error: metrics can exist for a model whose series was never persisted, and
+    naming a curve we cannot draw would be worse than falling back.
+    """
+    if not sku_metrics or not available_models:
+        return None
+    from backend.inventory.service import best_model_by_sku
+
+    champion = best_model_by_sku(sku_metrics).get(sku)
+    return champion if champion in available_models else None
+
+
 @router.get("/sessions/{session_id}/sku-intelligence/{sku:path}")
 def get_sku_intelligence(
     session_id: str,
@@ -475,9 +497,20 @@ def get_sku_intelligence(
 
     historical_raw = _historical_for_sku(user.tenant_id, session_id, sku)
 
+    metrics_rows = result.get("metrics", {}).get("rows", [])
+    sku_metrics  = [r for r in metrics_rows if r.get("sku") == sku]
+
     sku_forecasts = forecasts_data.get(sku, {})
-    chosen_model  = model or next(iter(sku_forecasts.keys()), None)
     available_models = list(sku_forecasts.keys()) if isinstance(sku_forecasts, dict) else []
+    # Default to the model this SKU is actually BOUGHT from, not to whichever
+    # key the forecasts dict happened to store first. Serving the first key made
+    # the chart an accident of insertion order: on a real session it drew
+    # prophet at 45.7% WAPE while the purchase quantity came from xgboost at
+    # 24.6%, and the screen showed both numbers without ever saying they belong
+    # to different models. `best_model_by_sku` is the same authority the
+    # semáforo and the accuracy figure use, so all three now describe one model.
+    chosen_model = model or _champion_model(sku, sku_metrics, available_models) \
+        or next(iter(sku_forecasts.keys()), None)
 
     forecast_raw: list = []
     if chosen_model and isinstance(sku_forecasts, dict):
@@ -520,8 +553,6 @@ def get_sku_intelligence(
     values  = [p["value"] for p in historical_out if isinstance(p.get("value"), (int, float))]
     stats   = compute_stats(values)
 
-    metrics_rows = result.get("metrics", {}).get("rows", [])
-    sku_metrics  = [r for r in metrics_rows if r.get("sku") == sku]
     data_quality = result.get("data_quality", {})
     sku_quality  = data_quality.get(sku) if isinstance(data_quality, dict) else None
 

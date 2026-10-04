@@ -16,7 +16,7 @@ def _no_twilio(monkeypatch):
     def _unexpected_send(*args, **kwargs):
         raise AssertionError("unexpected real Twilio send during tests")
 
-    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda: False)
+    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda *_a, **_kw: False)
     monkeypatch.setattr("backend.notifications.whatsapp.send_whatsapp", _unexpected_send)
 
 
@@ -213,8 +213,15 @@ def test_link_resend_cooldown_429(client, auth_headers, registered_user, monkeyp
     assert row["whatsapp_verified_at"] is not None
 
 
-def test_link_cooldown_bypassed_in_testing_mode(client, auth_headers, registered_user):
-    # TESTING_MODE=true (the suite default) must keep back-to-back links working.
+def test_link_cooldown_bypassed_in_testing_mode(
+    client, auth_headers, registered_user, monkeypatch,
+):
+    # This test is ABOUT testing mode, so it sets it rather than inheriting it.
+    # The house rule is that a test depending on quotas or rate limits owns that
+    # setting: `backend/.env` differs between machines, and a test that reads
+    # "bypassed in testing mode" while testing mode happens to be off is a red
+    # that accuses the cooldown of a bug it does not have.
+    monkeypatch.setattr("backend.config.settings.testing_mode", True)
     first = _link(client, auth_headers, "+573009990018")
     assert first.status_code == 200, first.text
     second = _link(client, auth_headers, "+573009990018")
@@ -226,12 +233,12 @@ def test_link_cooldown_bypassed_in_testing_mode(client, auth_headers, registered
 def test_link_sends_code_via_twilio_when_configured(client, auth_headers, registered_user, monkeypatch):
     sent = {}
 
-    def fake_send(to_number, body, media_url=None):
+    def fake_send(to_number, body, media_url=None, *_a, **_kw):
         sent["to"] = to_number
         sent["body"] = body
         return True
 
-    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda: True)
+    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda *_a, **_kw: True)
     monkeypatch.setattr("backend.notifications.whatsapp.send_whatsapp", fake_send)
 
     uid = registered_user["user"]["id"]
@@ -259,7 +266,7 @@ def test_link_sends_code_via_twilio_when_configured(client, auth_headers, regist
 
 
 def test_link_twilio_delivery_failure_503(client, auth_headers, registered_user, monkeypatch):
-    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda: True)
+    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda *_a, **_kw: True)
     monkeypatch.setattr("backend.notifications.whatsapp.send_whatsapp", lambda *a, **k: False)
 
     uid = registered_user["user"]["id"]
@@ -273,7 +280,7 @@ def test_link_twilio_delivery_failure_503(client, auth_headers, registered_user,
 
 def test_link_production_without_twilio_503(client, auth_headers, registered_user, monkeypatch):
     monkeypatch.setattr(settings, "environment", "production")
-    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda: False)
+    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda *_a, **_kw: False)
 
     uid = registered_user["user"]["id"]
     resp = _link(client, auth_headers, "+573009990021")
@@ -291,7 +298,7 @@ def test_link_production_without_twilio_503(client, auth_headers, registered_use
 
 
 def test_link_no_twilio_outside_production_returns_debug_code(client, auth_headers, monkeypatch):
-    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda: False)
+    monkeypatch.setattr("backend.notifications.whatsapp.is_configured", lambda *_a, **_kw: False)
     resp = _link(client, auth_headers, "+573009990022")
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]

@@ -11,7 +11,7 @@ Now:
      genuinely-resent addresses.
   2. Login succeeds for an unverified user and mints a token carrying
      ``email_verified: false``. That claim — not a 403 at the door — gates the
-     handful of actions that reach outside the tenant (invites, integrations,
+     handful of actions that reach outside the tenant (invites,
      notification sends). Everything else stays open.
   3. When signup's mail could not be sent, the response carries the
      verification URL so the UI shows it instead of pointing at an empty inbox.
@@ -355,6 +355,7 @@ class TestSignupShowsTheLinkWhenMailFails:
             "password": PASSWORD,
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         }
 
     @pytest.fixture(autouse=True)

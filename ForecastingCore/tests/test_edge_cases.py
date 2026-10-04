@@ -261,14 +261,18 @@ class TestWalkForwardSplitterEdgeCases:
 
 class TestWeightedEnsembleEdgeCases:
 
-    def test_model_in_weights_not_in_predictions_gives_partial_sum(self):
+    def test_model_in_weights_not_in_predictions_renormalizes(self):
+        """A weighted model that produced no forecast must not shrink the result.
+
+        Both models carry weight 0.5. Supplying only 'a' used to return
+        0.5 * 10 = 5 — half the forecast of the only model that ran, with no
+        error anywhere. The weights are now renormalized over the models that
+        actually produced points, so the answer is 'a'.
+        """
         ens = WeightedEnsemble()
         ens.fit({"S": {"a": 1.0, "b": 1.0}})
-        # Only supply model 'a', model 'b' is missing from predictions
         preds = ens.predict("S", {"a": np.array([10.0])})
-        # weight["b"] * missing = 0, so result = weight["a"] * 10
-        # ⚠️ This is a SILENT FAILURE if weights don't sum to 1 for provided models
-        assert np.isfinite(preds[0])
+        assert preds[0] == pytest.approx(10.0)
 
     def test_single_model_gets_full_weight(self):
         ens = WeightedEnsemble()

@@ -82,14 +82,33 @@ function fieldErrorSentence(fe: FieldErrorLike, lang: Lang): string {
   const rule = lookup(`errors.validation.${fe.type}`, lang)
   if (!rule) return ''
   const ruleText = fill(rule, fe.ctx)
+  // A `model_validator` failure is about the request as a whole (loc ["body"]):
+  // there is no field to name, so the rule sentence has to stand alone.
+  if (fe.field === 'body' || !fe.field) return ruleText
   const fieldLabel = fe.field ? lookup(`errors.field.${fe.field}`, lang) : undefined
   if (fieldLabel) return `${fieldLabel} ${ruleText}`
   return fe.field ? `${fe.field}: ${ruleText}` : ruleText
 }
 
+/**
+ * Catalogue keys to try for a backend code, best first. Entitlement guards send
+ * upper-case codes that are part of the public API contract (`PLAN_LIMIT_REACHED`,
+ * `TRIAL_EXPIRED`), so they are lower-cased, and a ceiling resolves to one key
+ * per limit (`errors.plan_limit_max_users`) so each reads as its own sentence.
+ */
+function catalogueKeys(code: string, params: Record<string, unknown>): string[] {
+  if (!code) return []
+  if (code === 'PLAN_LIMIT_REACHED' && typeof params.limit === 'string') {
+    return [`errors.plan_limit_${params.limit}`]
+  }
+  return code === code.toLowerCase()
+    ? [`errors.${code}`]
+    : [`errors.${code}`, `errors.${code.toLowerCase()}`]
+}
+
 export function translateErrorParts(parts: ErrorParts, lang: Lang = activeLang): string {
-  if (parts.code) {
-    const text = lookup(`errors.${parts.code}`, lang)
+  for (const key of catalogueKeys(parts.code, parts.params)) {
+    const text = lookup(key, lang)
     if (text) return fill(text, parts.params)
   }
   if (parts.fieldErrors.length) {
