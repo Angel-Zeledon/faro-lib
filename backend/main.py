@@ -183,6 +183,33 @@ async def app_error_handler(request: Request, exc: AppError):
         },
     )
 
+@app.middleware("http")
+async def reject_nul_in_path(request: Request, call_next):
+    """A NUL byte in a URL is the caller's mistake, and must be answered as one.
+
+    `%00` decodes into the path, travels through the route as an ordinary id,
+    and dies at psycopg2 (`A string literal cannot contain NUL`). The unhandled
+    handler then dresses that as a 500 `internal_error` — so the user is told
+    the SERVER broke on a URL they malformed, and it pages whoever is on call.
+    Measured on `/sessions/%00x/results`, and reachable on every route that
+    takes an id.
+
+    Refusing it once, here, is cheaper and more honest than a guard in each of
+    the two hundred handlers that read an id. Nothing legitimate carries a NUL
+    in a path.
+    """
+    if "\x00" in request.url.path:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": "The request path contains a NUL byte.",
+                "error_code": "malformed_path",
+                "error_params": {},
+            },
+        )
+    return await call_next(request)
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """FastAPI's own errors, plus a promotion for the ones that carry a code.
