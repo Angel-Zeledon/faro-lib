@@ -1,0 +1,50 @@
+/* Phone forms (MobileFormScope). Two rules a native app gets for free:
+   - iOS Safari zooms the whole page into any field whose text is under 16px,
+     and does not zoom back out. The desktop inputs are 12–13px on purpose.
+   - A field shorter than 44px is a miss-tap waiting to happen.
+   Scoped to `.m-form` under the phone breakpoint, so desktop is untouched. */
+@media (max-width: 768px) {
+  .m-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .m-form select,
+  .m-form textarea {
+    font-size: 16px !important;
+  }
+  .m-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .m-form select {
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+  .m-form input[type="checkbox"] { width: 20px; height: 20px; }
+
+  /* Shared components dropped into a phone screen (e.g. LimitsSection's
+     contact buttons) whose buttons are sized for a mouse. */
+  /* Same, keeping each control's own width (a row of mixed buttons). */
+  .m-tap-min button { min-height: 44px; box-sizing: border-box; }
+  .m-tap-min input[type="file"] { min-height: 44px; }
+
+  /* Auth screens ((auth)/layout.tsx). */
+  .m-auth .auth-tool { min-width: 44px; min-height: 44px; }
+  .m-auth form button[type="submit"] { min-height: 48px; }
+  .m-auth p > a { display: inline-flex; align-items: center; min-height: 44px; }
+  .m-auth main button, .m-auth .auth-back-btn { min-height: 44px !important; box-sizing: border-box; }
+  .m-auth .auth-eye {
+    width: 44px !important; height: 44px !important; right: 0 !important;
+    /* !important throughout: the button's inline `all: unset` would win. */
+    display: flex !important; align-items: center !important; justify-content: center !important;
+  }
+  .m-auth .auth-resend-row { flex-direction: column; }
+
+  .m-tap44 button, .m-tap44 a {
+    min-height: 44px; box-sizing: border-box;
+    flex: 1 1 100%; justify-content: center;
+  }
+}
+
+/* A drilled-in settings section slides in from the right, like a pushed
+   screen. Transform/opacity only; the global reduced-motion rule stills it. */
+.m-drill-enter { animation: mDrillEnter var(--dur-3, 240ms) var(--ease-out, ease-out); }
+@keyframes mDrillEnter {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .m-drill-enter { animation: none; } }

@@ -39,7 +39,7 @@ from backend.db.connection import execute, query, query_one
 @pytest.fixture
 def registered_user(test_tenant):
     from backend.users import service as user_svc
-    email = f"audit-{uuid4().hex[:8]}@faro-e2e.io"
+    email = f"audit-{uuid4().hex[:8]}@stockai-e2e.io"
     password = "TestPass123!"
     user = user_svc.create_user(
         tenant_id=test_tenant["id"],
@@ -252,21 +252,39 @@ class TestInventoryEdgeCases:
 
     # ── service_level ─────────────────────────────────────────────────────────
 
-    @pytest.mark.parametrize("service_level", [0, 1.0, 0.5, 0.42])
-    def test_unknown_service_level_falls_back_to_z_of_0_95(self, service_level):
+    @pytest.mark.parametrize("service_level,expected", [(0, 90.0), (0.42, 90.0),
+                                                        (0.5, 90.0), (1.0, 126.0)])
+    def test_an_out_of_range_service_level_is_clamped_not_rounded_to_95(
+        self, service_level, expected
+    ):
         """
-        A service level absent from `_Z` falls back to z=1.645, i.e. it must
-        produce exactly the 0.95 answer — and that answer must differ from a
-        service level that IS in the table, otherwise "falls back" would be
-        indistinguishable from "ignores the parameter".
+        FIXED. This used to assert that every one of these produced exactly the
+        0.95 answer (103), because `_Z.get(service_level, 1.645)` gave them all
+        the z of 95%. The old name said "falls_back_to_z_of_0_95" and the
+        docstring defended it: the fallback had to differ from a listed level
+        "otherwise 'falls back' would be indistinguishable from 'ignores the
+        parameter'". But silently substituting 95% IS ignoring the parameter —
+        the test was checking that the substitution happened, not that it was
+        right.
 
-        Hand-derived (stock=50, avg=10, std=2, lead=14):
-            z=1.645 → 140 + 1.645*2*sqrt(14) - 50 = 102.31005… → ceil → 103
-            z=2.326 → 140 + 2.326*2*sqrt(14) - 50 = 107.40739… → ceil → 108
+        `_z_for` now clamps to the range the API accepts ([0.5, 0.999]; the
+        next test proves the API rejects everything outside it) and computes
+        the quantile:
+
+            0, 0.42, 0.5 → clamp to 0.5 → z=0 → no cushion at all
+                           140 + 0 - 50 = 90
+            1.0          → clamp to 0.999999 → z=4.7534
+                           140 + 4.7534*2*sqrt(14) - 50 = 125.57… → ceil → 126
+
+        z=0 at 0.5 is correct, not a degenerate case: a 50% service level means
+        covering the median, which needs no safety stock by definition. These
+        values reach `_calc_recommended` only from an internal caller or a
+        stored default, never from the API.
         """
         from backend.inventory.service import _calc_recommended
         args = dict(current_stock=50.0, avg_daily=10.0, avg_std=2.0, lead_time=14, moq=1)
-        assert _calc_recommended(**args, service_level=service_level) == 103.0
+        assert _calc_recommended(**args, service_level=service_level) == expected
+        # The listed levels are untouched, and the ordering still holds.
         assert _calc_recommended(**args, service_level=0.95) == 103.0
         assert _calc_recommended(**args, service_level=0.99) == 108.0
 
@@ -1138,7 +1156,7 @@ class TestEventEdgeCases:
         from backend.users import service as user_svc
 
         t2 = create_tenant(f"tenant-b-{uuid4().hex[:6]}")
-        email2 = f"b-{uuid4().hex[:6]}@faro-e2e.io"
+        email2 = f"b-{uuid4().hex[:6]}@stockai-e2e.io"
         u2 = user_svc.create_user(t2["id"], email2, "TestPass123!", "admin", "B")
         user_svc.mark_verified(t2["id"], u2["id"])
 
@@ -1179,7 +1197,7 @@ class TestEventEdgeCases:
         from backend.users import service as user_svc
 
         t2 = create_tenant(f"tenant-c-{uuid4().hex[:6]}")
-        email2 = f"c-{uuid4().hex[:6]}@faro-e2e.io"
+        email2 = f"c-{uuid4().hex[:6]}@stockai-e2e.io"
         u2 = user_svc.create_user(t2["id"], email2, "TestPass123!", "admin", "C")
         user_svc.mark_verified(t2["id"], u2["id"])
 
@@ -1233,7 +1251,7 @@ class TestCrossTenantMutations:
         from backend.tenants.service import create_tenant
         from backend.users import service as user_svc
         t2 = create_tenant(f"{prefix}-{uuid4().hex[:6]}")
-        email2 = f"{prefix}-{uuid4().hex[:6]}@faro-e2e.io"
+        email2 = f"{prefix}-{uuid4().hex[:6]}@stockai-e2e.io"
         user = user_svc.create_user(t2["id"], email2, "TestPass123!", "admin", prefix)
         user_svc.mark_verified(t2["id"], user["id"])
         return t2, email2
@@ -1549,13 +1567,20 @@ class TestPureCalculationEdgeCases:
         A forecast point whose `value` is None counts as 0 demand (`p.get("value")
         or 0.0`), and its sigma still comes from the spread. Over
         [(None, upper 10), (5.0, upper 6)]:
-            avg = (0 + 5) / 2       = 2.5
-            std = ((10-0) + (6-5))/2 = 5.5
+            avg = (0 + 5) / 2                 = 2.5
+            std = ((10-0) + (6-5)) / 2 / z90  = 5.5 / 1.2816
+
+        The division by z90 is the point: `upper` is the top of a band, about a
+        90th percentile, not a standard deviation. Returning the raw spread gave
+        the caller ~1.28 sigma and the caller applied z(service_level) on top, so
+        a configured 95% service level was really being served at about 98%.
+
         The old test asserted `isinstance(avg, float) and avg >= 0`, which a
         function returning 0.0 would satisfy — and 0.0 demand is precisely the
         bug that drops a SKU off the semáforo.
         """
-        from backend.inventory.service import _avg_daily_forecast
+        import pytest as _pytest
+        from backend.inventory.service import _Q90_Z, _avg_daily_forecast
         avg, std = _avg_daily_forecast({
             "model1": {"forecast": [
                 {"date": "2026-01-01", "value": None, "upper": 10.0},
@@ -1563,7 +1588,9 @@ class TestPureCalculationEdgeCases:
             ]}
         }, lead_time=2)
         assert avg == 2.5, f"None was not treated as zero demand: avg={avg}"
-        assert std == 5.5, f"sigma from the spread is wrong: std={std}"
+        assert std == _pytest.approx(5.5 / _Q90_Z, rel=1e-9), (
+            f"sigma from the spread is wrong: std={std}"
+        )
 
     def test_avg_daily_forecast_negative_upper(self):
         """upper < value would make sigma negative; it is clamped to 0, and the
@@ -1594,33 +1621,45 @@ class TestPureCalculationEdgeCases:
             {"sku": "B", "daily_demand": 0.0, "unit_cost": 200.0},
         ]) == {"A": "C", "B": "C"}
 
-    @pytest.mark.parametrize("coverage,lead,expected", [
-        (4.0, 10, "PEDIR_YA"),       # < 0.5 * lead
-        (4.99, 10, "PEDIR_YA"),
-        (5.0, 10, "PEDIR_PRONTO"),   # < 1.2 * lead
-        (11.99, 10, "PEDIR_PRONTO"),
-        (12.0, 10, "OK"),            # < 3 * lead
-        (29.99, 10, "OK"),
-        (30.0, 10, "SOBRESTOCK"),
-        (0.0, 10, "PEDIR_YA"),
+    # stability.md 17c: the PEDIR_PRONTO/OK boundary is now the SKU's own
+    # reorder point (`reorder_point_days`), not a flat `1.2 * lead_time` — a
+    # flat threshold could sit below the reorder point for a volatile SKU and
+    # report OK (with the recommendation zeroed) while the SKU was already due
+    # to be ordered. `rop_days=12` below models a SKU with a small safety
+    # stock (reorder point a bit past its lead time of 10), matching the old
+    # `1.2 * lead` boundary's position closely enough that only the exact
+    # boundary values differ from before.
+    @pytest.mark.parametrize("coverage,lead,rop_days,expected", [
+        (4.0, 10, 12, "PEDIR_YA"),        # < 0.5 * lead
+        (4.99, 10, 12, "PEDIR_YA"),
+        (5.0, 10, 12, "PEDIR_PRONTO"),    # >= 0.5*lead, <= reorder point
+        (11.99, 10, 12, "PEDIR_PRONTO"),
+        (12.0, 10, 12, "PEDIR_PRONTO"),   # AT the reorder point: still ordering
+        (12.01, 10, 12, "OK"),            # just past the reorder point
+        (29.99, 10, 12, "OK"),            # < max(3*lead, 2*rop_days) = 30
+        (30.0, 10, 12, "SOBRESTOCK"),
+        (0.0, 10, 12, "PEDIR_YA"),
     ])
-    def test_calc_signal_thresholds(self, coverage, lead, expected):
+    def test_calc_signal_thresholds(self, coverage, lead, rop_days, expected):
         """The semáforo's actual boundaries, pinned. Every one of these was
         previously covered only by `assert result in (the four signals)`, which
         is true for any return value the function can produce."""
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=coverage, lead_time=lead) == expected
+        assert _calc_signal(coverage_days=coverage, lead_time=lead,
+                             reorder_point_days=rop_days) == expected
 
     def test_calc_signal_with_zero_lead_time_does_not_crash(self):
         """
-        lead_time=0 collapses every threshold to 0, so nothing is ever "below"
-        one and the answer is SOBRESTOCK even at zero coverage. Unreachable
-        through the API (`lead_time_days` is ge=1) and via
+        lead_time=0 collapses every threshold to 0 (the reorder point is 0
+        too), so at zero coverage the SKU is exactly AT its own reorder point
+        -- read as an ordering signal, not SOBRESTOCK as before this fix.
+        Unreachable through the API (`lead_time_days` is ge=1) and via
         DEFAULT_LEAD_TIME_DAYS, so this pins "does not raise, returns a real
         signal" rather than endorsing the reading.
         """
         from backend.inventory.service import _calc_signal
-        assert _calc_signal(coverage_days=0.0, lead_time=0) == "SOBRESTOCK"
+        assert _calc_signal(coverage_days=0.0, lead_time=0,
+                             reorder_point_days=0.0) == "PEDIR_PRONTO"
 
     def test_recommended_quantity_rises_with_the_service_level(self):
         """

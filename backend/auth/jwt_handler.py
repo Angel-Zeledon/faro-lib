@@ -33,6 +33,22 @@ def create_access_token(
         "email_verified": bool(email_verified),
         "jti": secrets.token_hex(8),
         "type": "access",
+        # When this token was minted. It is what lets a password change
+        # invalidate tokens it has never seen: the reset flow is unauthenticated
+        # and holds no `jti`, so the only way to disown someone else's live
+        # token is to compare when it was issued against when the account last
+        # cut its sessions (users.sessions_invalid_before — see guards.py).
+        #
+        # SUB-SECOND on purpose, like `exp` below. A first attempt floored both
+        # sides to the second, to keep a login made in the same second as a
+        # reset from being mistaken for an older token and locking the user out
+        # of the account they had just recovered. The suite then caught the
+        # other half of that trade: run under load, the pre-reset token and the
+        # reset itself landed in the SAME second too, and the token survived a
+        # password change it should not have. A second is simply too coarse to
+        # separate "issued just before" from "issued just after"; microseconds
+        # separate both cases correctly and neither compromise is needed.
+        "iat": datetime.now(timezone.utc).timestamp(),
         # timezone-aware UTC: datetime.utcnow().timestamp() misreads the naive
         # value as local time, so on a non-UTC host the token would live longer
         # (or shorter) than _ACCESS_EXPIRE_MIN by the host's UTC offset.

@@ -1,8 +1,9 @@
 'use client'
 /**
- * Shown on every authed page once the tenant's trial has expired without an
- * active plan. The backend (`GET /entitlements` → `read_only`) is the single
- * source of truth for this state — this component only renders it.
+ * Shown on every authed page once the tenant's trial has expired. The backend
+ * (`GET /entitlements` → `read_only`) is the single source of truth for this
+ * state — this component only renders it. It used to point at /planes; there
+ * are no plans to compare, so the copy asks them to write to us instead.
  */
 import { AlertTriangle } from 'lucide-react'
 import { useEntitlements } from '@/lib/entitlements'

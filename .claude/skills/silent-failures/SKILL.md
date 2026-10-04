@@ -1,11 +1,11 @@
 ---
 name: silent-failures
-description: Use when reviewing or writing code that reports an outcome to a user — sends, saves, imports, background jobs, scheduled work, defaults, or anything with a fallback. Also when a user says a feature "doesn't work" but nothing errors, or when hunting for bugs in Faro. The lens that found almost every real defect in this codebase.
+description: Use when reviewing or writing code that reports an outcome to a user — sends, saves, imports, background jobs, scheduled work, defaults, or anything with a fallback. Also when a user says a feature "doesn't work" but nothing errors, or when hunting for bugs in StockAI. The lens that found almost every real defect in this codebase.
 ---
 
 # Silent failures
 
-Faro's expensive bugs share one shape: **the app reported success while nothing
+StockAI's expensive bugs share one shape: **the app reported success while nothing
 happened.** None of them raised a visible error — which is exactly why none of
 them had been found. Reading the diff never surfaces these; asking these
 questions does.

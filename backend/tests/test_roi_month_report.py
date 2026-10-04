@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import pytest
 
 from backend.db.connection import execute, query_one
+from backend.notifications.locale import render_es
 
 
 def _insert_po(tid, when, *, suggested, approved, order_now, total_value):
@@ -78,6 +79,7 @@ class TestCapitalFreedAttribution:
 
         report = get_month_report(tid, _YEAR, _MONTH)
         assert report["capital_freed"] is None
+        assert report["capital_freed_status"] == "not_measured"
 
     def test_growing_overstock_is_not_reported_as_zero_saving(self, client, test_tenant):
         from backend.inventory.roi_service import get_month_report
@@ -91,6 +93,10 @@ class TestCapitalFreedAttribution:
         # Overstock grew by 3000. That is not a saving, and 0.0 would read as
         # "we saved nothing" rather than "this did not happen".
         assert report["capital_freed"] is None
+        # And it is NOT the same None as the missing-snapshot case above: both
+        # measurements exist, so telling this tenant we lack data would be
+        # false. The screen says their overstock went up.
+        assert report["capital_freed_status"] == "grew"
 
 
 class TestMonthReportMath:
@@ -129,6 +135,63 @@ class TestMonthReportMath:
         # unavailable, not shown ₡0 of "purchases managed".
         assert r["managed_purchase_value"] is None
         assert r["orders_generated"] == 1
+
+    def test_partial_cost_coverage_is_flagged_instead_of_passing_for_the_total(
+        self, client, test_tenant,
+    ):
+        """
+        `total_value` sums only the lines that carried a unit cost — a NULL cost
+        annuls the product and SQL drops it. The all-missing case was already
+        honest (None, not 0); the PARTIAL case was not, and partial is the
+        common state while a tenant is still filling costs in. 40 ordered lines
+        with 6 costed reported those 6 as the month's managed purchasing, and it
+        looked exact: ₡30M could read as ₡2,1M.
+        """
+        from backend.inventory.roi_service import get_month_report
+
+        tid = test_tenant["id"]
+        _insert_po(tid, _IN_MONTH, suggested=3, approved=3, order_now=1, total_value=250)
+        po = query_one(
+            "SELECT id FROM inventory_po_log WHERE tenant_id = %s ORDER BY generated_at DESC LIMIT 1",
+            (tid,),
+        )
+        # Two ordered lines: one costed (10 x 25 = 250), one with no cost at all.
+        for sku, cost in (("COSTED", 25.0), ("BARE", None)):
+            execute(
+                """INSERT INTO inventory_po_items
+                       (po_log_id, tenant_id, sku, recommended_qty, final_qty,
+                        unit_cost, status, warehouse)
+                   VALUES (%s, %s, %s, 10, 10, %s, 'approved', 'principal')""",
+                (po["id"], tid, sku, cost),
+            )
+
+        r = get_month_report(tid, _YEAR, _MONTH)
+
+        assert r["managed_purchase_value"] == 250.0
+        assert r["managed_purchase_value_complete"] is False
+
+    def test_full_cost_coverage_reports_the_figure_as_complete(self, client, test_tenant):
+        from backend.inventory.roi_service import get_month_report
+
+        tid = test_tenant["id"]
+        _insert_po(tid, _IN_MONTH, suggested=2, approved=2, order_now=1, total_value=500)
+        po = query_one(
+            "SELECT id FROM inventory_po_log WHERE tenant_id = %s ORDER BY generated_at DESC LIMIT 1",
+            (tid,),
+        )
+        for sku in ("A", "B"):
+            execute(
+                """INSERT INTO inventory_po_items
+                       (po_log_id, tenant_id, sku, recommended_qty, final_qty,
+                        unit_cost, status, warehouse)
+                   VALUES (%s, %s, %s, 10, 10, 25.0, 'approved', 'principal')""",
+                (po["id"], tid, sku),
+            )
+
+        r = get_month_report(tid, _YEAR, _MONTH)
+
+        assert r["managed_purchase_value"] == 500.0
+        assert r["managed_purchase_value_complete"] is True
 
     def test_adoption_rate_none_when_nothing_was_suggested(self, client, test_tenant):
         from backend.inventory.roi_service import get_month_report
@@ -216,7 +279,8 @@ class TestRunMonthlyRoiEmails:
         captured = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url, currency=None: (captured.append((to, report, currency)), True)[1],
+            lambda to, report, roi_url, currency=None, **_kw:
+                (captured.append((to, report, currency)), True)[1],
         )
 
         sent = roi_service.run_monthly_roi_emails(
@@ -249,7 +313,7 @@ class TestRunMonthlyRoiEmails:
         calls = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url, currency=None: (calls.append(to), True)[1],
+            lambda to, report, roi_url, currency=None, **_kw: (calls.append(to), True)[1],
         )
 
         now = datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc)
@@ -274,7 +338,7 @@ class TestRunMonthlyRoiEmails:
         calls = []
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url, currency=None: (calls.append(to), True)[1],
+            lambda to, report, roi_url, currency=None, **_kw: (calls.append(to), True)[1],
         )
 
         sent = roi_service.run_monthly_roi_emails(
@@ -297,7 +361,7 @@ class TestRunMonthlyRoiEmails:
 
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email",
-            lambda to, report, roi_url, currency=None: False,
+            lambda to, report, roi_url, currency=None, **_kw: False,
         )
 
         sent = roi_service.run_monthly_roi_emails(
@@ -322,7 +386,7 @@ class TestMonthlyRecapEmailTemplate:
         captured = {}
         monkeypatch.setattr(
             email_mod, "_send",
-            lambda to, subject, html, attachment=None: captured.update(
+            lambda to, subject, html, attachment=None, **_kw: captured.update(
                 to=to, subject=subject, html=html
             ),
         )
@@ -344,12 +408,16 @@ class TestMonthlyRecapEmailTemplate:
 
         html = captured["html"]
         assert "75%" in html
-        assert "riesgos de quiebre atendidos" in html
+        # Asserted through the catalog rather than a literal: the wording of
+        # these tiles is exactly what this test is not about, and pinning the
+        # sentence made a copy correction look like a regression.
+        assert render_es("roi_email_metric_risks_label") in html
         # Underivable metrics must be absent, not rendered as ₡0.
-        assert "compras gestionadas" not in html
-        assert "capital liberado" not in html
-        # And the subject must not promise a savings figure we cannot back.
-        assert "liberaste" not in captured["subject"]
+        assert render_es("roi_email_metric_purchases_label") not in html
+        assert render_es("roi_email_metric_capital_label") not in html
+        # And the subject must not carry an amount we cannot back.
+        assert captured["subject"] == render_es(
+            "roi_email_subject_default", month="marzo de 2026")
 
     def test_capital_freed_headline_uses_colones(self, monkeypatch):
         from backend.notifications import email as email_mod
@@ -357,7 +425,7 @@ class TestMonthlyRecapEmailTemplate:
         captured = {}
         monkeypatch.setattr(
             email_mod, "_send",
-            lambda to, subject, html, attachment=None: captured.update(
+            lambda to, subject, html, attachment=None, **_kw: captured.update(
                 subject=subject, html=html
             ),
         )

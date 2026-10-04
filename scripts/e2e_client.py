@@ -219,11 +219,29 @@ def verify_email_in_db(db_url: str, email: str) -> None:
 
 
 def delete_tenant(db_url: str, tenant_id: str) -> None:
+    """Delete a test tenant's DATABASE rows. Storage files are NOT touched.
+
+    This used to report "CASCADE cleaned all rows" when no cascade existed —
+    only four tables referenced `tenants`, so the delete stranded everything
+    else and the script said it had cleaned up. That is how the local database
+    reached 1.3M orphan rows from 24,794 tenants that no longer existed.
+
+    The cascade is real now (migration `cascade_tenant_id_foreign_keys`), so the
+    rows do go. What still does not go is `storage/<category>/<tenant_id>/` on
+    disk — only `backend.tenants.data_export.delete_tenant()` removes those, and
+    this script is deliberately standalone (no backend import, no settings, no
+    pool). So the message says what actually happened, no more.
+    """
     conn = _db_connect(db_url)
     with conn.cursor() as cur:
         cur.execute("DELETE FROM tenants WHERE id = %s", (tenant_id,))
+        deleted = cur.rowcount
     conn.close()
-    ok(f"Test tenant deleted (CASCADE cleaned all rows)", f"tenant_id={tenant_id}")
+    if deleted == 0:
+        warn(f"No tenant matched id={tenant_id} — nothing was deleted")
+        return
+    ok("Test tenant rows deleted (DB cascade; storage files left on disk)",
+       f"tenant_id={tenant_id}")
 
 
 # ── HTTP client ───────────────────────────────────────────────────────────────
@@ -310,6 +328,7 @@ def main() -> None:
         "password": password,
         "tenant_name": tenant_name,
         "full_name": "E2E Tester",
+        "accept_terms": True,
     }, label="POST /auth/signup")
     tenant_id: str = data["tenant"]["id"]
     user_id: str = data["user"]["id"]

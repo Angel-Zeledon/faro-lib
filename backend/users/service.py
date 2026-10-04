@@ -17,18 +17,28 @@ def create_user(
     full_name: Optional[str] = None,
     status: str = "active",
     whatsapp_number: Optional[str] = None,
+    terms_version: Optional[str] = None,
 ) -> dict:
     """`whatsapp_number` is stored UNVERIFIED (whatsapp_verified_at stays NULL):
     signup collects it so purchase orders can be sent to the buyer, while the
-    inbound bot still requires an explicit verification step."""
+    inbound bot still requires an explicit verification step.
+
+    `terms_version` is passed only by the paths where the person themselves
+    accepted the Terms and the Privacy Policy (signup, trial account). It
+    stamps `terms_accepted_at` with the creation time. A user an admin invites
+    is created without it: the admin's acceptance is not theirs."""
     user_id = generate_id("usr")
     execute(
         """INSERT INTO users
            (id, tenant_id, email, full_name, role, hashed_password,
-            email_verified, status, whatsapp_number, created_at, updated_at)
-           VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s, NOW(), NOW())""",
+            email_verified, status, whatsapp_number,
+            terms_accepted_at, terms_version, created_at, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s,
+                   CASE WHEN %s::text IS NULL THEN NULL ELSE NOW() END, %s,
+                   NOW(), NOW())""",
         (user_id, tenant_id, email.lower().strip(), full_name, role,
-         hash_password(password), status, (whatsapp_number or "").strip() or None),
+         hash_password(password), status, (whatsapp_number or "").strip() or None,
+         terms_version, terms_version),
     )
     return _public(get_user(tenant_id, user_id))
 
@@ -60,6 +70,11 @@ def get_user_by_email(tenant_id: str, email: str) -> Optional[dict]:
 
 def verify_credentials(tenant_id: str, email: str, password: str) -> Optional[dict]:
     u = get_user_by_email(tenant_id, email)
+    # `has_password` FALSE: the stored hash is random (a provider-only account,
+    # or a password dropped when a provider proved the mailbox) — no password
+    # opens it, however it is guessed.
+    if u and u.get("has_password", True) is False:
+        return None
     if u and verify_password(password, u["hashed_password"]):
         return u
     return None
@@ -75,8 +90,29 @@ def mark_verified(tenant_id: str, user_id: str) -> None:
 
 
 def update_password(tenant_id: str, user_id: str, new_password: str) -> None:
+    """Change the password AND cut every session that predates the change.
+
+    Deleting the refresh tokens alone only stops a session from being RENEWED.
+    Measured on 2026-08-10 before `sessions_invalid_before` existed: after a
+    completed reset the access token issued beforehand kept answering 200 —
+    full write access — for the rest of its 15 minutes, which is exactly the
+    window that matters to someone resetting because they think an intruder is
+    inside.
+
+    The cut keeps full microsecond precision, and tokens carry a sub-second
+    `iat` to match. An earlier version floored both to the second so a login in
+    the same second as the reset would not be mistaken for an older token — and
+    the suite promptly caught the other half: under load the pre-reset token was
+    minted in that same second too, and survived. A second cannot separate "just
+    before" from "just after"; microseconds can, so neither side rounds.
+    """
     execute(
-        "UPDATE users SET hashed_password = %s, updated_at = NOW() WHERE id = %s AND tenant_id = %s",
+        """UPDATE users
+              SET hashed_password = %s,
+                  has_password = TRUE,
+                  sessions_invalid_before = NOW(),
+                  updated_at = NOW()
+            WHERE id = %s AND tenant_id = %s""",
         (hash_password(new_password), user_id, tenant_id),
     )
     execute("DELETE FROM refresh_tokens WHERE user_id = %s", (user_id,))
@@ -148,8 +184,13 @@ def update_last_login(tenant_id: str, user_id: str) -> None:
     )
 
 
-def count_users(tenant_id: str) -> int:
-    row = query_one("SELECT COUNT(*) AS c FROM users WHERE tenant_id = %s", (tenant_id,))
+def count_users(tenant_id: str, conn=None) -> int:
+    """`conn` matters when this count is about to be enforced as a ceiling: it
+    has to be read on the connection holding the tenant's limit_guard lock, or
+    the count and the write it authorises are two different moments again."""
+    row = query_one(
+        "SELECT COUNT(*) AS c FROM users WHERE tenant_id = %s", (tenant_id,), conn=conn,
+    )
     return row["c"] if row else 0
 
 

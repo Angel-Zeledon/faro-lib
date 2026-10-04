@@ -14,6 +14,7 @@
  *   ErrorState — a legible reason (derived from ApiError.kind, so the copy for
  *     "no permission" is written once) plus a retry affordance.
  */
+import { useBugReport } from '@/lib/bugReport'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { RefreshCw, AlertTriangle, Lock, SearchX, WifiOff, ServerCrash } from 'lucide-react'
@@ -91,6 +92,12 @@ function fieldErrorText(
 ): string {
   const ruleKey = `errors.validation.${fe.type}`
   if (!(ruleKey in translations.es)) return fe.field ? `${fe.field}: ${fe.msg}` : fe.msg
+
+  // A `model_validator` failure is about the request as a whole, so Pydantic
+  // reports it on loc ["body"] and there is no field to name. Left in, it read
+  // as "body: no es válido." on screen — measured when saving an event whose
+  // end date preceded its start. The rule sentence has to stand alone.
+  if (fe.field === 'body' || !fe.field) return t(ruleKey, fe.ctx)
 
   const fieldKey = `errors.field.${fe.field}`
   const named = fe.field ? fieldKey in translations.es : false
@@ -284,6 +291,9 @@ export function ErrorState({ error, onRetry, compact }: {
   const copy = ERROR_COPY[kind]
   const detail = errorDetail(error)
   const showRetry = Boolean(onRetry) && copy.retryable
+  const reportBug = useBugReport()
+  // Only failures on our side are worth a report; the rest say what to do.
+  const reportable = kind === 'server' || kind === 'unknown'
 
   return (
     <div role="alert" style={{
@@ -326,6 +336,20 @@ export function ErrorState({ error, onRetry, compact }: {
         >
           <RefreshCw size={13} /> {t('states.retry')}
         </button>
+      )}
+
+      {reportable && (
+        <div style={{ marginTop: 12 }}>
+          <button
+            onClick={() => reportBug({ code: (error as { code?: string })?.code || undefined, detail: detail || t(copy.body) })}
+            style={{
+              all: 'unset', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: C.muted,
+              textDecoration: 'underline', textUnderlineOffset: 3,
+            }}
+          >
+            {t('bugreport.action')}
+          </button>
+        </div>
       )}
     </div>
   )

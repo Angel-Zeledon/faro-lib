@@ -6,6 +6,7 @@ from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.schemas.session import SessionCreate, SessionUpdate
 from backend.sessions import service as session_svc
+from backend.training import job_service
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -26,11 +27,15 @@ def create_session(
     body: SessionCreate,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    from backend.entitlements.service import enforce_limit
-    enforce_limit(user.tenant_id, "max_sessions", session_svc.count_sessions(user.tenant_id))
-    session = session_svc.create_session(
-        user.tenant_id, user.user_id, body.name, body.description, body.tags
-    )
+    from backend.entitlements.service import enforce_limit, limit_guard
+    # Counted and created under one per-tenant lock: two tabs starting a
+    # forecast at the same moment must not both pass the same stale count.
+    with limit_guard(user.tenant_id) as conn:
+        enforce_limit(user.tenant_id, "max_sessions",
+                      session_svc.count_sessions(user.tenant_id), conn=conn)
+        session = session_svc.create_session(
+            user.tenant_id, user.user_id, body.name, body.description, body.tags
+        )
     return ok(session)
 
 
@@ -99,10 +104,16 @@ def delete_session(
     s = session_svc.get_session(user.tenant_id, session_id)
     if not s:
         raise AppError("session_not_found", "Session not found", status_code=404)
-    if s["status"] == "RUNNING":
+    # Ask the JOB, not the session. `runner.py` only ever writes COMPLETED or
+    # FAILED back onto the session, so a session whose worker is training right
+    # now still reads QUEUED — this guard was checking a status the real flow
+    # never produces, and the two tests covering it write RUNNING by hand.
+    # Deleting mid-training cascades the job row away under a worker that then
+    # writes results for a session that no longer exists.
+    if job_service.has_in_flight_job(user.tenant_id, session_id):
         raise AppError(
             "session_running_cannot_delete",
-            "Cannot delete a running session",
+            "Cannot delete a session while its training is queued or running",
             status_code=409,
         )
     session_svc.delete_session(user.tenant_id, session_id)

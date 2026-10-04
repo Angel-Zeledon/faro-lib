@@ -21,7 +21,7 @@ export const sessionsTour: TourDefinition = {
     es: {
       name: 'Cómo funciona el historial',
       intro_title: 'Cada vez que actualizaste, aquí queda',
-      intro_body: 'Esta lista no es un registro decorativo. Cada fila es el cálculo completo que Faro hizo con tus ventas, y es la pieza a la que apunta todo lo demás.\n\nEl semáforo de stock, las proyecciones por producto y los escenarios se calculan siempre a partir de una de estas filas. Cuando dos pantallas te muestran números distintos, casi siempre están leyendo actualizaciones distintas.\n\nVamos columna por columna: cada una responde una pregunta concreta cuando algo no te cuadra.',
+      intro_body: 'Esta lista no es un registro decorativo. Cada fila es el cálculo completo que StockAI hizo con tus ventas, y es la pieza a la que apunta todo lo demás.\n\nEl semáforo de stock, las proyecciones por producto y los escenarios se calculan siempre a partir de una de estas filas. Cuando dos pantallas te muestran números distintos, casi siempre están leyendo actualizaciones distintas.\n\nVamos columna por columna: cada una responde una pregunta concreta cuando algo no te cuadra.',
       row_title: 'Una fila es un cálculo entero',
       row_body: 'Dentro de cada una va todo junto: el archivo que subiste, los ajustes con que se calculó, los modelos que ganaron y la proyección de cada producto.\n\nHaz clic en cualquier parte de una fila completada y se abren sus resultados producto por producto. Las que no terminaron no abren nada, porque no hay resultados que ver — el cursor te lo avisa antes de hacer clic.\n\nLos dos iconos de la derecha son la excepción: ahí el clic no abre la fila, actúa sobre ella.',
       name_col_title: 'Nombre: la etiqueta que le pusiste',
@@ -46,7 +46,7 @@ export const sessionsTour: TourDefinition = {
     en: {
       name: 'How the history works',
       intro_title: 'Every update you ran stays here',
-      intro_body: 'This list is not a decorative log. Each row is the complete calculation Faro ran on your sales, and it is the piece everything else points at.\n\nThe stock signal, the per-product projections and the scenarios are always computed from one of these rows. When two screens show you different numbers, they are almost always reading different updates.\n\nWe will go column by column: each one answers a concrete question when something does not add up.',
+      intro_body: 'This list is not a decorative log. Each row is the complete calculation StockAI ran on your sales, and it is the piece everything else points at.\n\nThe stock signal, the per-product projections and the scenarios are always computed from one of these rows. When two screens show you different numbers, they are almost always reading different updates.\n\nWe will go column by column: each one answers a concrete question when something does not add up.',
       row_title: 'A row is one whole calculation',
       row_body: 'Each one bundles it all together: the file you uploaded, the settings it was computed with, the models that won, and the projection for every product.\n\nClick anywhere on a completed row and its product-by-product results open. The ones that did not finish open nothing, because there are no results to see — the cursor tells you before you click.\n\nThe two icons on the right are the exception: there, a click does not open the row, it acts on it.',
       name_col_title: 'Name: the label you gave it',

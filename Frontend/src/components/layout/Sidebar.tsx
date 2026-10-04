@@ -1,92 +1,30 @@
 'use client'
+import { InstallAppButton } from './InstallAppButton'
 import Link from 'next/link'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import {
-  TrendingUp, Package,
-  BrainCircuit, Settings, KeyRound, LogOut, User, Users,
-  ChevronLeft, ChevronRight, X,
-  ShoppingCart, Truck, Upload, Zap, ClipboardList, Plug, History,
-  FlaskConical, ListChecks, MessageSquare, Target, Clock,
-} from 'lucide-react'
+import { LogOut, User, ChevronLeft, ChevronRight, X, LifeBuoy } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
 import { useSidebar } from '@/contexts/SidebarContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
-import { useEntitlements } from '@/lib/entitlements'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { Wordmark } from '@/components/brand/Wordmark'
+import { NAV, TOOLS_NAV, SETTINGS_ITEM, canSee, activePrimary, rememberOrigin, type Screen } from './navItems'
+import { siteHref } from '@/lib/siteUrls'
 
-// ── Nav definition ────────────────────────────────────────────────────────────
-interface NavItem {
-  href:       string
-  labelKey:   string
-  Icon:       React.ElementType
-  group:      string
-  adminOnly?: boolean
-  /** Feature enum value gating this route (see backend `Feature`). Items
-   *  without this always render as a normal link. */
-  feature?:   string
-  /** Sibling routes this one entry stands for, so the item still reads as
-   *  active while the user is on a tab that is not `href`. */
-  alsoActive?: string[]
-}
-
-const NAV: NavItem[] = [
-  { href: '/compras',             labelKey: 'nav.hoy',         Icon: ShoppingCart,    group: 'operation' },
-  { href: '/pedidos',             labelKey: 'nav.orders',      Icon: ClipboardList,   group: 'operation' },
-  { href: '/mensajes',            labelKey: 'nav.messages',    Icon: MessageSquare,   group: 'operation', feature: 'team_messaging' },
-
-  // One door, not two. "Subir mis ventas" and "mis archivos" are the same
-  // errand to the person doing it, so the nav carries a single entry and the
-  // two routes are tabs of each other (see components/layout/DataTabs.tsx).
-  { href: '/ventas',              labelKey: 'nav.data',        Icon: Upload,          group: 'data',
-    alsoActive: ['/archivos'] },
-
-  { href: '/inventario',          labelKey: 'nav.inventory',   Icon: Package,         group: 'purchasing' },
-  // Ahead of the full inventory list on purpose: a tenant with 2.000
-  // unconfigured products needs the 40 that carry 82% of the spend, not the
-  // 2.000. Kept flat as /configurar-inventario rather than nested under
-  // /inventario, so it can never inherit a layout that screen does not want.
-  { href: '/configurar-inventario', labelKey: 'nav.inventory_setup', Icon: ListChecks, group: 'purchasing' },
-  { href: '/proveedores',         labelKey: 'nav.suppliers',   Icon: Truck,           group: 'purchasing' },
-
-  // Forecasts belong here, not under Operación. Nobody opens this screen to
-  // get today's work done — they open it to understand a product.
-  { href: '/pronosticos',         labelKey: 'nav.skus',        Icon: TrendingUp,      group: 'analysis' },
-  { href: '/impacto',             labelKey: 'nav.roi',         Icon: Target,          group: 'analysis' },
-  { href: '/historial',           labelKey: 'nav.sessions',    Icon: History,         group: 'analysis' },
-  { href: '/asistente',           labelKey: 'nav.analyst',     Icon: BrainCircuit,    group: 'analysis', feature: 'ai_analyst' },
-  { href: '/escenarios',          labelKey: 'nav.scenarios',   Icon: FlaskConical,    group: 'analysis', feature: 'event_simulator' },
-
-  { href: '/usuarios',            labelKey: 'nav.users',       Icon: Users,           group: 'system',  adminOnly: true },
-  // Integraciones is hidden for now, for the same reason as the API-keys and
-  // webhooks tabs: connecting Alegra or Siigo works, but whether it is sold —
-  // and to which plan — is an open business decision, so today it is an
-  // entitlement lock that upsells a thing nobody has priced. The route and its
-  // page still exist; restore this line to bring it back.
-  //
-  // These two used to be crossed: /config held your own profile while being
-  // called "Configuración", and /settings held scheduled recalculation while
-  // being called "Tareas programadas". Both routes said "settings" and neither
-  // matched its screen.
-  { href: '/mi-cuenta',           labelKey: 'nav.account',     Icon: User,            group: 'system' },
-  // Gated on what the page actually holds. It was gated on api_access while
-  // the only live tab is scheduled retraining — a Professional feature — so a
-  // Professional tenant was sold recurring retraining and given no door to it.
-  { href: '/automatizacion',      labelKey: 'nav.automation',  Icon: Clock,           group: 'system',  adminOnly: true, feature: 'scheduled_reports' },
-]
-
-const GROUPS = ['operation', 'data', 'purchasing', 'analysis', 'system']
+// The nav definition lives in ./navItems: six daily screens, then
+// Configuración pinned at the foot. Every other screen is reached from the one
+// it belongs to, and lights up that entry while it is open.
 
 export default function Sidebar() {
   const path    = usePathname()
   const router  = useRouter()
   const user    = getUser()
   const { collapsed, toggle, drawerOpen, closeDrawer } = useSidebar()
-  const { t, lang, setLang } = useLanguage()
-  const { has } = useEntitlements()
+  const { t } = useLanguage()
 
   // On a phone the rail is not a column of the layout — it is a drawer that
   // slides over the page. `collapsed` (the icons-only desktop rail) is
@@ -122,20 +60,53 @@ export default function Sidebar() {
     router.replace('/login')
   }
 
-  // Locked features are hidden, not shown padlocked. Four of the fourteen nav
-  // items were permanent locks, so the nav taught a new user more about what
-  // they do NOT have than about what they do. The upsell belongs where someone
-  // reaches for the feature, not as fixed furniture.
-  const visibleNav = NAV.filter(item => {
-    if (item.adminOnly && user?.role !== 'admin') return false
-    if (item.feature && !has(item.feature)) return false
-    return true
-  })
+  // Six daily screens and Configuración. Role still hides an entry, never a
+  // plan: there are no locks.
+  const visibleNav = NAV.filter(item => canSee(item, user?.role))
+  const order = [...visibleNav, ...TOOLS_NAV, SETTINGS_ITEM]
 
-  // ...but hiding every lock would orphan /planes, which today is only reached
-  // through the padlock's upsell (and through Integraciones, itself a lock). So
-  // the four padlocks collapse into one deliberate way in.
-  const hasLockedFeature = NAV.some(item => item.feature && !has(item.feature))
+  // Where the user came from, so a secondary screen lights the entry it was
+  // opened from (see activePrimary).
+  const [origin, setOrigin] = useState<string | null>(null)
+  useEffect(() => { setOrigin(rememberOrigin(path)) }, [path])
+  const lit = activePrimary(path, origin)
+
+  function renderItem(item: Screen) {
+    const { href, labelKey, Icon } = item
+    const active = lit === href
+    const label = t(labelKey)
+    return (
+      <Link key={href} href={href} onClick={isDrawer ? closeDrawer : undefined}
+            aria-current={active ? 'page' : undefined}
+            style={{ textDecoration: 'none' }} title={collapsedNow ? label : undefined}>
+        <div
+          className={clsx('nav-item', 'sb-unfold', active ? 'nav-item-active' : 'nav-item-idle')}
+          style={{
+            // The menu unfolds top to bottom when the app opens
+            // (globals.css "Sidebar unfold"). The sidebar stays
+            // mounted across navigations, so it plays once per load.
+            animationDelay: `${0.15 + order.indexOf(item) * 0.035}s`,
+            display: 'flex', alignItems: 'center',
+            // A finger, not a mouse pointer: 44px minimum in the
+            // drawer, a roomier 9px row on desktop now that there are
+            // seven entries instead of eighteen.
+            minHeight: isDrawer ? 44 : undefined,
+            justifyContent: collapsedNow ? 'center' : 'flex-start',
+            gap: collapsedNow ? 0 : 10,
+            padding: collapsedNow ? '9px 0' : isDrawer ? '8px 12px' : '9px 10px',
+            borderRadius: 7, marginBottom: 2,
+            background: active ? 'var(--sidebar-active-bg)' : 'transparent',
+            color: active ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
+            fontWeight: active ? 600 : 400, fontSize: 13,
+            transition: 'all 0.15s', cursor: 'pointer',
+          }}
+        >
+          <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
+          {!collapsedNow && label}
+        </div>
+      </Link>
+    )
+  }
 
   // Off-canvas on a phone: taken out of the flex row entirely (so the page gets
   // the full width) and slid in over it. On desktop this object is empty and
@@ -182,23 +153,19 @@ export default function Sidebar() {
     >
 
       {/* Logo */}
-      <div style={{
-        padding: collapsedNow ? '18px 0' : '22px 20px 18px',
+      {(!collapsedNow || isDrawer) && <div style={{
+        padding: '22px 20px 18px',
         borderBottom: '1px solid var(--sidebar-border)',
         display: 'flex', alignItems: 'center',
-        justifyContent: collapsedNow ? 'center' : 'flex-start',
       }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: 'var(--brand-grad)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Zap size={17} color="#fff" strokeWidth={2.5} />
-        </div>
+        {/* Type-only mark; the sidebar is petrol in both themes, so "ai"
+            takes the light end of the brand gradient to hold its contrast.
+            On the collapsed rail there is no mark at all: an initial or a
+            fragment of the name is not the name. */}
         {!collapsedNow && (
-          <div style={{ marginLeft: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.02em', color: 'var(--sidebar-text-active)' }}>Faro</div>
-            <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', marginTop: 1 }}>
+          <div>
+            <Wordmark size={21} color="var(--sidebar-text-active)" accent="#4CC3B5" />
+            <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', marginTop: 5 }}>
               {t('sidebar.tagline')}
             </div>
           </div>
@@ -217,58 +184,55 @@ export default function Sidebar() {
             <X size={18} aria-hidden="true" />
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Navigation */}
-      <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: collapsedNow ? '12px 6px' : '12px 10px' }}>
-        {GROUPS.map(group => {
-          const items = visibleNav.filter(n => n.group === group)
-          if (!items.length) return null
-          return (
-            <div key={group} style={{ marginBottom: collapsedNow ? 12 : 20 }}>
-              {!collapsedNow && (
-                <div style={{
-                  fontSize: 10, fontWeight: 700, color: 'var(--sidebar-dim)',
-                  textTransform: 'uppercase', letterSpacing: '0.08em',
-                  padding: '0 10px', marginBottom: 4,
-                }}>
-                  {t(`group.${group}`)}
-                </div>
-              )}
-              {items.map(({ href, labelKey, Icon, alsoActive }) => {
-                const matches = (p: string) => path === p || path.startsWith(`${p}/`)
-                const active = matches(href) || (alsoActive?.some(matches) ?? false)
-                const label = t(labelKey)
+      <nav aria-label={t('mobile.tabbar_label')} style={{
+        flex: 1, overflowY: 'auto', overflowX: 'hidden',
+        padding: collapsedNow ? '12px 6px' : '14px 10px',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Collapsed to an icon rail, the daily screens share the height
+            evenly instead of bunching at the top. */}
+        {collapsedNow ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly', minHeight: 0 }}>
+            {[...visibleNav, ...TOOLS_NAV.filter(item => canSee(item, user?.role))].map(renderItem)}
+          </div>
+        ) : (
+          <>
+            {visibleNav.map(renderItem)}
+            {/* Tools that belong to no single flow. */}
+            <div style={{ borderTop: '1px solid var(--sidebar-border)', margin: '8px 0 10px' }} />
+            {TOOLS_NAV.filter(item => canSee(item, user?.role)).map(renderItem)}
+            {/* Configuración sits apart from the daily screens: it is where the
+                rest of the product lives (account, team, data, automation). */}
+            <div style={{ flex: 1, minHeight: 16 }} />
+          </>
+        )}
+        <div style={{ borderTop: '1px solid var(--sidebar-border)', paddingTop: 10, marginBottom: 2 }}>
+          {renderItem(SETTINGS_ITEM)}
+        </div>
 
-                return (
-                  <Link key={href} href={href} onClick={isDrawer ? closeDrawer : undefined}
-                        style={{ textDecoration: 'none' }} title={collapsedNow ? label : undefined}>
-                    <div
-                      className={clsx('nav-item', active ? 'nav-item-active' : 'nav-item-idle')}
-                      style={{
-                        display: 'flex', alignItems: 'center',
-                        // A finger, not a mouse pointer: 44px minimum in the
-                        // drawer, unchanged 8px padding on desktop.
-                        minHeight: isDrawer ? 44 : undefined,
-                        justifyContent: collapsedNow ? 'center' : 'flex-start',
-                        gap: collapsedNow ? 0 : 10,
-                        padding: collapsedNow ? '8px 0' : isDrawer ? '8px 12px' : '8px 10px',
-                        borderRadius: 7, marginBottom: 1,
-                        background: active ? 'var(--sidebar-active-bg)' : 'transparent',
-                        color: active ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
-                        fontWeight: active ? 600 : 400, fontSize: 13,
-                        transition: 'all 0.15s', cursor: 'pointer',
-                      }}
-                    >
-                      <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
-                      {!collapsedNow && label}
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
-          )
-        })}
+        <InstallAppButton collapsed={collapsedNow} />
+
+        {/* The help center lives on the landing, which may be another origin,
+            so it opens in its own tab and the screen behind keeps its state. */}
+        <a
+          href={siteHref('/docs')}
+          target="_blank"
+          rel="noopener"
+          title={collapsedNow ? t('help.center') : t('help.center_hint')}
+          style={{
+            all: 'unset', cursor: 'pointer', boxSizing: 'border-box', marginTop: 4,
+            display: 'flex', alignItems: 'center', justifyContent: collapsedNow ? 'center' : 'flex-start',
+            gap: collapsedNow ? 0 : 8, width: '100%',
+            padding: collapsedNow ? '8px 0' : '8px 10px', borderRadius: 7,
+            color: 'var(--sidebar-text)', fontSize: 12.5,
+          }}
+        >
+          <LifeBuoy size={14} aria-hidden="true" />
+          {!collapsedNow && <span>{t('help.center')}</span>}
+        </a>
 
         {/* Collapse toggle — desktop only. In the drawer there is nothing to
             collapse to: the panel is either open over the page or gone. */}
@@ -289,45 +253,6 @@ export default function Sidebar() {
         </button>
         )}
 
-        {/* The single remaining way to the plan comparison. */}
-        {!collapsedNow && hasLockedFeature && (
-          <div style={{ marginTop: 8, padding: '0 10px' }}>
-            <Link
-              href="/planes"
-              style={{
-                display: 'block', textAlign: 'center',
-                padding: '7px 0', borderRadius: 7,
-                border: '1px dashed rgba(255,255,255,0.25)',
-                color: 'var(--sidebar-dim)', fontSize: 11.5, fontWeight: 600,
-              }}
-            >
-              {t('sidebar.see_plans')}
-            </Link>
-          </div>
-        )}
-
-        {/* Language switcher */}
-        {!collapsedNow && (
-          <div style={{ marginTop: 8, padding: '0 10px' }}>
-            <div style={{ display: 'flex', gap: 4, border: '1px solid var(--sidebar-border)', borderRadius: 7, padding: 3 }}>
-              {(['es', 'en'] as const).map(l => (
-                <button
-                  key={l}
-                  onClick={() => setLang(l)}
-                  style={{
-                    all: 'unset', cursor: 'pointer', flex: 1, textAlign: 'center',
-                    padding: '4px 0', borderRadius: 5, fontSize: 11, fontWeight: 600,
-                    background: lang === l ? 'var(--sidebar-active-bg)' : 'transparent',
-                    color: lang === l ? 'var(--sidebar-text-active)' : 'var(--sidebar-dim)',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {l.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </nav>
 
       {/* User footer — no profile selector */}
@@ -347,12 +272,14 @@ export default function Sidebar() {
             </div>
             {!collapsedNow && (
               <>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                {/* The name opens your own account: profile and security
+                    are one click away without a sidebar entry of their own. */}
+                <Link href="/mi-cuenta" title={t('nav.account')} style={{ flex: 1, minWidth: 0, textDecoration: 'none' }}>
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--sidebar-text-active)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {user.full_name || user.email.split('@')[0]}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--sidebar-dim)' }}>{roleLabel(t, user.role)}</div>
-                </div>
+                </Link>
                 <button
                   onClick={handleLogout}
                   title={t('sidebar.logout')}
@@ -362,11 +289,6 @@ export default function Sidebar() {
                 </button>
               </>
             )}
-          </div>
-        )}
-        {!collapsedNow && (
-          <div style={{ padding: '4px 16px 12px', fontSize: 11, color: 'var(--sidebar-dim)', opacity: 0.6 }}>
-            v{process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'}
           </div>
         )}
       </div>

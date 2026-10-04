@@ -134,6 +134,7 @@ class TestHotPathErrorCodes:
             "password": "TestPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 409, resp.text
         assert resp.json()["error_code"] == "email_already_registered"
@@ -151,6 +152,7 @@ class TestHotPathErrorCodes:
             "password": "abc",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 400, resp.text
         assert resp.json()["error_code"] == "password_invalid"
@@ -166,10 +168,16 @@ class TestHotPathErrorCodes:
     def test_deleting_a_running_session_is_blocked_with_a_code(
         self, client, auth_headers, test_session, registered_user
     ):
-        from backend.db.connection import execute
+        # A worker leaves the session in QUEUED and the JOB in RUNNING — it
+        # never writes RUNNING onto the session. Building the state by hand the
+        # other way round made this guard look covered while the real one was
+        # open.
+        from backend.training import job_service
 
+        tid = registered_user["tenant"]["id"]
         sid = test_session["id"]
-        execute("UPDATE sessions SET status = 'RUNNING' WHERE id = %s", (sid,))
+        job = job_service.create_job(tid, sid, "usr_test")
+        job_service.mark_running(tid, job["id"], "worker-test")
 
         resp = client.delete(f"/api/v1/sessions/{sid}", headers=auth_headers)
         assert resp.status_code == 409, resp.text

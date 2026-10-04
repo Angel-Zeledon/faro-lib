@@ -39,6 +39,7 @@ MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 PUBLIC = {
     "POST /api/v1/auth/login": "you cannot be authorised before you log in",
     "POST /api/v1/auth/signup": "creates the account and its tenant",
+    "POST /api/v1/trial": "the landing visitor has no account yet; it creates one",
     "POST /api/v1/auth/refresh": "the refresh token IS the credential",
     "POST /api/v1/auth/logout": "revoking your own session needs no role",
     "POST /api/v1/auth/forgot-password": "you are locked out by definition",
@@ -46,6 +47,8 @@ PUBLIC = {
     "POST /api/v1/auth/reset-password": "the emailed token is the credential",
     "POST /api/v1/auth/verify-email": "the emailed token is the credential",
     "POST /api/v1/auth/resend-verification": "you cannot verify without it",
+    "POST /api/v1/auth/oauth/{provider}/callback": "Apple's form_post; the single-use state is the credential",
+    "POST /api/v1/auth/oauth/exchange": "the one-time handoff code is the credential",
 }
 
 SELF = {
@@ -57,6 +60,7 @@ SELF = {
     "POST /api/v1/users/me/whatsapp/confirm": "your own phone number",
     "POST /api/v1/users/me/change-password/request": "your own password",
     "POST /api/v1/users/me/change-password/confirm": "your own password",
+    "DELETE /api/v1/auth/identities/{provider}": "unlinking your own sign-in provider",
     "PATCH /api/v1/me/preferences": "your own preferences",
     "POST /api/v1/analyst/chats": "your own conversation with the analyst",
     "POST /api/v1/analyst/chats/{chat_id}/messages": "your own conversation",
@@ -64,17 +68,17 @@ SELF = {
     "DELETE /api/v1/analyst/chats/{chat_id}": "deleting your own conversation",
     "POST /api/v1/messages": "sending a message is communication, not company state",
     "POST /api/v1/messages/read": "marking your own unread count",
+    # Same category, and for a concrete reason: the bell now carries tenant-wide
+    # SYSTEM events (a failed training is addressed to nobody in particular), so
+    # a viewer collects a badge. Requiring analyst-or-above to clear it would
+    # leave the one role that cannot clear it staring at it forever.
+    "POST /api/v1/alerts/read": "marking your own unread count",
 }
 
 INFRA = {
     # Not a user at all: Twilio posting an inbound WhatsApp message. Authorised
     # by request signature, so a role guard here would reject the only caller.
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
-    # Stripe's callback, and the only path that changes tenants.plan. A role
-    # guard here would reject the only legitimate caller, so its authorisation
-    # is the signature instead — see test_billing.py, which asserts an unsigned,
-    # wrongly-signed or tampered body is refused and changes nothing.
-    "POST /api/v1/billing/webhook": "Stripe webhook, verified by signature",
 }
 
 # POSTs that read. HTTP makes you POST anything with a body, so a query, an
@@ -97,6 +101,14 @@ READ_ONLY_POSTS = {
     "/reconcile": "recomputes a hierarchy total and returns it",
     "/run": "runs a saved scenario and returns the comparison",
     "cash-calendar/fit": "fits a payment pattern and returns it",
+    # MCP is JSON-RPC: the method lives in the BODY, so `tools/list` and every
+    # read tool arrive as a POST. The excuse holds only because the catalogue
+    # (`backend/mcp/catalog.py`) is closed and every entry in it reads — which
+    # `test_mcp_server.py::test_every_tool_actually_only_calls_GET_endpoints`
+    # enforces structurally, by resolving each handler's calls to their FastAPI
+    # routes and demanding {GET}. Add a write tool there and this line becomes
+    # a lie; that test goes red first, which is the point.
+    "/mcp": "JSON-RPC over a closed catalogue of reads; see backend/mcp/catalog.py",
 }
 
 
@@ -117,10 +129,8 @@ def _dependency_calls(dependant) -> list:
 
 
 # A dependency created by a factory is an inner function called `guard`, so the
-# name alone tells you nothing: `require_role("admin")` and
-# `require_feature(Feature.TEAM_MESSAGING)` both produce one. Only the first
-# authorises a write — a plan gate says the tenant PAID for something, not that
-# this user may change it. The qualname is what separates them.
+# name alone tells you nothing about what it authorises. The qualname is what
+# separates a role check from any other factory-made dependency.
 ROLE_FACTORIES = ("require_role", "require_analyst", "require_admin", "require_verified")
 
 

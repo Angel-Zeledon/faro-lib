@@ -46,7 +46,8 @@ log = logging.getLogger(__name__)
 _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("users", "users",
      "id, tenant_id, email, full_name, role, email_verified, status, "
-     "last_login_at, pending_email, whatsapp_number, created_at, updated_at"),
+     "last_login_at, pending_email, whatsapp_number, terms_accepted_at, "
+     "terms_version, created_at, updated_at"),
     ("datasets", "datasets", "*"),
     ("sessions", "sessions", "*"),
     ("session_configs", "session_configs", "*"),
@@ -76,11 +77,14 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("scheduled_jobs", "scheduled_jobs", "*"),
     # key_hash / secret are never exported — only metadata about the key/hook.
     ("api_keys", "api_keys", "id, tenant_id, name, last_used, created_at"),
+    # Calls per key per day: what a call-based bill is computed from.
+    ("api_usage_daily", "api_usage_daily", "*"),
     ("webhooks", "webhooks", "id, tenant_id, url, events, created_at"),
     ("user_permissions", "user_permissions", "*"),
-    # credentials is never exported — only connection metadata.
-    ("integration_connections", "integration_connections",
-     "id, tenant_id, provider, status, last_sync_at, last_error, created_at"),
+    # Which sign-in providers each person linked. Who they are at Google /
+    # Apple / Facebook is the person's data, so it travels with the export.
+    ("user_identities", "user_identities",
+     "id, user_id, tenant_id, provider, subject, email, created_at, last_used_at"),
 ]
 
 # Deliberately NOT exported: pure security/credential artifacts, not "the
@@ -139,6 +143,15 @@ def build_export_zip(tenant_id: str) -> bytes:
 # explicitly, children-before-parents so no live FK constraint is ever
 # tripped (see module docstring for the verification against migrations.py).
 _DELETE_ORDER: list[str] = [
+    # Both added 2026-09-13. They DO carry `REFERENCES tenants(id) ON DELETE
+    # CASCADE`, so their rows were already going with the tenant — the
+    # behavioural test proves it. They are listed anyway because this list is
+    # the reviewable answer to "what belongs to a tenant", and a table that is
+    # only cleaned by a cascade is one `ON DELETE` clause away from being
+    # forgotten for real. The guard that names them is doing its job.
+    "service_config",
+    "training_run_metrics",
+    "upgrade_requests",
     "whatsapp_conversations",
     "chat_messages",
     "chats",
@@ -151,9 +164,14 @@ _DELETE_ORDER: list[str] = [
     "inventory_event_multipliers",
     "inventory_events",
     "bom_items",
+    "inventory_transfer_items",
+    "inventory_transfer_log",
+    "transfer_lanes",
     "warehouses",
+    "stock_defaults",
     "inventory_stock",
     "inventory_snapshots",
+    "inventory_recommendation_log",
     "inventory_shrinkage",
     "inventory_overstock_snapshots",
     "inventory_roi_email_log",
@@ -161,18 +179,24 @@ _DELETE_ORDER: list[str] = [
     "forecast_overrides",
     "scheduled_jobs",
     "webhooks",
+    "api_usage_daily",
     "api_keys",
     "documents",
     "user_permissions",
-    "integration_connections",
+    "user_identities",
     "refresh_tokens",
     "pw_change_codes",
     "training_logs",
     "session_results",
     "session_configs",
+    "report_runs",
+    "scenarios",
     "jobs",
     "sessions",
     "datasets",
+    "direct_messages",
+    "activity_logs",
+    "user_preferences",
     "users",
 ]
 

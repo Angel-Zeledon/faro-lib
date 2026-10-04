@@ -13,14 +13,18 @@ export const stockSetupEs = {
   // ── Page ────────────────────────────────────────────────────────────────
   'setupStock.page.title': 'Configurar mi inventario',
   'setupStock.page.subtitle': 'Empieza por los productos que mueven tu plata. No necesitas configurarlos todos.',
-  // Why the screen exists at all. Without stock, costo y días de entrega no hay
-  // semáforo: Faro sabe cuánto vas a vender, pero no con qué lo comparás.
-  'setupStock.page.why': 'Faro ya sabe cuánto vas a vender de cada producto. Para decirte qué pedir necesita tres datos más por producto: cuánto tienes hoy, cuánto te cuesta y cuántos días tarda en llegar. Mientras falten, ese producto no aparece en el semáforo.',
+  // Why the screen exists at all. With no stock, cost and lead time there is no
+  // semáforo: StockAI knows how much you will sell, but not what to compare it to.
+  // Says exactly which of the three blocks the semáforo and which only makes it
+  // wrong. It used to promise all three blocked it — but a product with no lead
+  // time DOES appear, planned on an assumed 15 days, which is how an importer
+  // with 45 days of transit reorders a month late without ever being told.
+  'setupStock.page.why': 'StockAI ya sabe cuánto vas a vender de cada producto. Para decirte qué pedir necesita tres datos más: cuánto tienes hoy, cuánto te cuesta y cuántos días tarda en llegar. Sin stock o sin costo, ese producto no aparece en el semáforo. Sin los días de entrega sí aparece, pero calculado sobre 15 días que estamos suponiendo — si tu proveedor tarda más, te va a avisar tarde.',
 
   // ── Pareto gaps ─────────────────────────────────────────────────────────
   'setupStock.gaps.title': 'Empieza por estos',
-  'setupStock.gaps.headline': 'Con {count} de tus {total} productos cubres el {pct}% de tu compra del mes.',
-  'setupStock.gaps.headline_units': 'Con {count} de tus {total} productos cubres el {pct}% de las unidades que vas a mover este mes.',
+  'setupStock.gaps.headline': 'Completando {count} de tus {total} productos llegas al {pct}% de tu compra del mes.',
+  'setupStock.gaps.headline_units': 'Completando {count} de tus {total} productos llegas al {pct}% de las unidades que vas a mover este mes.',
   'setupStock.gaps.basis_units': 'Todavía no nos has dado costos ni precios, así que ordenamos por volumen. Cuando subas los costos, ordenamos por plata.',
   'setupStock.gaps.progress_label': '{pct}% de tu compra del mes ya configurado',
   'setupStock.gaps.progress_hint': 'La barra mide plata, no filas: {done} de {total} productos listos.',
@@ -59,6 +63,11 @@ export const stockSetupEs = {
   'setupStock.gaps.legend_lead_time': 'cuántos días pasan desde que le haces el pedido a tu proveedor hasta que la mercadería está en tu bodega.',
   'setupStock.gaps.save': 'Guardar',
   'setupStock.gaps.saved': 'Guardado',
+  // Shown when a product has no inventory row yet and the user saved without
+  // a count. The panel refuses to invent a 0: an invented zero is
+  // indistinguishable from a counted one and turns the semáforo red for
+  // goods sitting on the shelf.
+  'setupStock.gaps.stock_required': 'Escribe cuánto tienes hoy de este producto. Si lo dejamos en blanco tendríamos que suponer cero, y el semáforo te lo pediría de urgencia aunque tengas bodega llena.',
   'setupStock.gaps.save_error': 'No se pudo guardar. Revisa los valores e inténtalo de nuevo.',
   'setupStock.gaps.units_suffix': 'unidades',
   'setupStock.gaps.price_source.unit_cost': 'con tu costo',
@@ -86,6 +95,11 @@ export const stockSetupEs = {
   'setupStock.import.done': 'Productos importados: {count}.',
   'setupStock.import.done_with_errors': 'Productos importados: {count}. Filas que quedaron fuera: {failed}.',
   'setupStock.import.preview_title': 'Vista previa',
+  'setupStock.import.number_question': 'Tu archivo escribe números como {sample}. ¿Cuánto es?',
+  'setupStock.import.only_fill_missing': 'No sobrescribir lo que corregí a mano',
+  'setupStock.import.only_fill_missing_hint': 'Solo llena lo que está vacío o lo que vino de una importación anterior. Lo que editaste tú se queda como está.',
+  'setupStock.import.write_failed': 'Filas que se leyeron bien y no se pudieron guardar: {count}',
+  'setupStock.import.done_nothing_to_fill': 'No había nada que llenar: cada producto del archivo ya tiene ese dato, y pediste no sobrescribir lo tuyo.',
   'setupStock.import.template': 'Descargar plantilla',
   'setupStock.import.field.sku': 'Código del producto',
   'setupStock.import.field.display_name': 'Nombre',
@@ -142,11 +156,11 @@ export const stockSetupEs = {
 export const stockSetupEn: Record<keyof typeof stockSetupEs, string> = {
   'setupStock.page.title': 'Set up my inventory',
   'setupStock.page.subtitle': 'Start with the products that move your money. You do not need to configure them all.',
-  'setupStock.page.why': 'Faro already knows how much of each product you will sell. To tell you what to order it needs three more things per product: how much you hold today, what it costs you, and how many days it takes to arrive. Until those are there, that product cannot appear in the traffic light.',
+  'setupStock.page.why': 'StockAI already knows how much of each product you will sell. To tell you what to order it needs three more things: how much you hold today, what it costs you, and how many days it takes to arrive. Without stock or cost, that product does not appear in the traffic light. Without the lead time it does appear — but planned on an assumed 15 days, so if your supplier takes longer, we will warn you late.',
 
   'setupStock.gaps.title': 'Start with these',
-  'setupStock.gaps.headline': 'With {count} of your {total} products you cover {pct}% of this month\'s purchase.',
-  'setupStock.gaps.headline_units': 'With {count} of your {total} products you cover {pct}% of the units you will move this month.',
+  'setupStock.gaps.headline': 'Completing {count} of your {total} products gets you to {pct}% of this month\'s purchase.',
+  'setupStock.gaps.headline_units': 'Completing {count} of your {total} products gets you to {pct}% of the units you will move this month.',
   'setupStock.gaps.basis_units': 'You have not given us costs or prices yet, so we rank by volume. Upload costs and we rank by money.',
   'setupStock.gaps.progress_label': '{pct}% of this month\'s purchase already configured',
   'setupStock.gaps.progress_hint': 'The bar measures money, not rows: {done} of {total} products done.',
@@ -183,6 +197,7 @@ export const stockSetupEn: Record<keyof typeof stockSetupEs, string> = {
 
   'setupStock.gaps.save': 'Save',
   'setupStock.gaps.saved': 'Saved',
+  'setupStock.gaps.stock_required': 'Enter how much of this product you have today. Left blank we would have to assume zero, and the traffic light would flag it as urgent even with a full warehouse.',
   'setupStock.gaps.save_error': 'Could not save. Check the values and try again.',
   'setupStock.gaps.units_suffix': 'units',
   'setupStock.gaps.price_source.unit_cost': 'using your cost',
@@ -209,6 +224,11 @@ export const stockSetupEn: Record<keyof typeof stockSetupEs, string> = {
   'setupStock.import.done': 'Products imported: {count}.',
   'setupStock.import.done_with_errors': 'Products imported: {count}. Rows left out: {failed}.',
   'setupStock.import.preview_title': 'Preview',
+  'setupStock.import.number_question': 'Your file writes numbers like {sample}. How much is that?',
+  'setupStock.import.only_fill_missing': 'Do not overwrite what I corrected by hand',
+  'setupStock.import.only_fill_missing_hint': 'Fills only what is empty or came from an earlier import. Anything you edited yourself stays as it is.',
+  'setupStock.import.write_failed': 'Rows that read correctly and could not be saved: {count}',
+  'setupStock.import.done_nothing_to_fill': 'There was nothing to fill: every product in the file already has that value, and you asked us not to overwrite yours.',
   'setupStock.import.template': 'Download template',
   'setupStock.import.field.sku': 'Product code',
   'setupStock.import.field.display_name': 'Name',

@@ -96,13 +96,59 @@ const browser = await chromium.launch()
   check(y > 500, 'the wheel actually scrolls it', `scrollY=${y}`)
 
   // Reveal-on-scroll must not leave anything permanently invisible.
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  //
+  // Reaching the bottom takes more than one jump, and that is a property of
+  // the page rather than flakiness: the tour screenshots load after first
+  // paint and the document grows from ~17,400px to ~19,100px. A single
+  // scrollTo(scrollHeight) aims at a height that is already stale by the time
+  // it lands, parks the viewport ~1,700px short, and then reports the blocks
+  // that are still legitimately below the fold as "permanently invisible" —
+  // a real failure and a false one look identical from there. So: scroll,
+  // let it grow, scroll again, until the height stops moving. Only then is
+  // "nothing is left invisible" a claim about the reveal logic.
+  let lastHeight = -1
+  for (let i = 0; i < 8; i++) {
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await page.waitForTimeout(700)
+    const h = await page.evaluate(() => document.documentElement.scrollHeight)
+    if (h === lastHeight) break
+    lastHeight = h
+  }
   await page.waitForTimeout(2500)
   const hidden = await page.evaluate(() =>
     [...document.querySelectorAll('[data-reveal]')]
       .filter(el => getComputedStyle(el).opacity !== '1').length)
   check(hidden === 0, 'nothing is left invisible after scrolling to the bottom',
         `${hidden} hidden`)
+  await page.close()
+}
+
+// ── 1b. The same page, read the way a person reads it ─────────────────────────
+// The jump-to-the-bottom check above cannot see the defect this one was written
+// for. `rootMargin` is measured ONCE at mount, and the document keeps growing as
+// the tour screenshots arrive, so blocks near the end could finish a normal
+// read still armed — invisible, with no further scroll coming to correct it.
+// An ordinary scroll to the end left the FAQ section hidden that way, and the
+// settled-bottom check above passes with or without the fix, because repeated
+// jumps give the observer extra chances the reader never gives it.
+{
+  group('landing, read normally')
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 180000 })
+  await page.waitForTimeout(3000)
+  const height = await page.evaluate(() => document.documentElement.scrollHeight)
+  for (let y = 0; y < height; y += 600) {
+    await page.evaluate(v => window.scrollTo(0, v), y)
+    await page.waitForTimeout(90)
+  }
+  await page.waitForTimeout(2000)
+  const stranded = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-reveal]')]
+      .filter(el => getComputedStyle(el).opacity !== '1')
+      .map(el => (el.textContent || '').trim().slice(0, 40)))
+  check(stranded.length === 0,
+        'one ordinary scroll to the end leaves nothing invisible',
+        stranded.length ? `${stranded.length} stranded: ${stranded.join(' | ')}` : '')
   await page.close()
 }
 

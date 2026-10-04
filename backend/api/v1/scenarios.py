@@ -8,9 +8,8 @@ POST   /sessions/{session_id}/scenarios/{id}/run     — run a saved scenario
 GET    /scenarios/{id}                               — read one scenario
 DELETE /scenarios/{id}                               — delete a scenario
 
-Every route sits behind the EVENT_SIMULATOR entitlement (professional+), the
-same gate the promo/event simulator uses. Running is a pure read — nothing is
-persisted — so it only needs `get_current_user`.
+Running a scenario is a pure read — nothing is persisted — so it only needs
+`get_current_user`; saving and deleting need an analyst.
 """
 
 from typing import Literal, Optional
@@ -19,15 +18,11 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, model_validator
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
 from backend.errors import AppError
 from backend.scenarios import service as svc
 from backend.schemas.common import ok
 
 router = APIRouter(tags=["scenarios"])
-
-_GATE = Depends(require_feature(Feature.EVENT_SIMULATOR))
 
 MAX_RULES = 50
 
@@ -86,7 +81,7 @@ def _serialize(row: dict) -> dict:
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
-@router.post("/sessions/{session_id}/scenarios", status_code=201, dependencies=[_GATE])
+@router.post("/sessions/{session_id}/scenarios", status_code=201)
 def create_scenario(
     session_id: str,
     body: ScenarioCreate,
@@ -101,13 +96,13 @@ def create_scenario(
     return ok(_serialize(row))
 
 
-@router.get("/sessions/{session_id}/scenarios", dependencies=[_GATE])
+@router.get("/sessions/{session_id}/scenarios")
 def list_scenarios(session_id: str, user: CurrentUser = Depends(get_current_user)):
     """Saved scenarios for this session, newest first."""
     return ok([_serialize(r) for r in svc.list_scenarios(user.tenant_id, session_id)])
 
 
-@router.get("/scenarios/{scenario_id}", dependencies=[_GATE])
+@router.get("/scenarios/{scenario_id}")
 def get_scenario(scenario_id: str, user: CurrentUser = Depends(get_current_user)):
     row = svc.get_scenario(user.tenant_id, scenario_id)
     if not row:
@@ -115,7 +110,7 @@ def get_scenario(scenario_id: str, user: CurrentUser = Depends(get_current_user)
     return ok(_serialize(row))
 
 
-@router.delete("/scenarios/{scenario_id}", dependencies=[_GATE])
+@router.delete("/scenarios/{scenario_id}")
 def delete_scenario(scenario_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     if not svc.delete_scenario(user.tenant_id, scenario_id):
         raise AppError("scenario_not_found", "Scenario not found", status_code=404)
@@ -124,7 +119,7 @@ def delete_scenario(scenario_id: str, user: CurrentUser = Depends(require_analys
 
 # ── Running ───────────────────────────────────────────────────────────────────
 
-@router.post("/sessions/{session_id}/scenarios/preview", dependencies=[_GATE])
+@router.post("/sessions/{session_id}/scenarios/preview")
 def preview_scenario(
     session_id: str,
     body: ScenarioPreview,
@@ -142,7 +137,7 @@ def preview_scenario(
     ))
 
 
-@router.post("/sessions/{session_id}/scenarios/{scenario_id}/run", dependencies=[_GATE])
+@router.post("/sessions/{session_id}/scenarios/{scenario_id}/run")
 def run_scenario(
     session_id: str,
     scenario_id: str,

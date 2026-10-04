@@ -16,6 +16,7 @@ from backend.auth.guards import (
 )
 from backend.config import settings
 from backend.db.connection import execute, query_one
+from backend.activity.events import record_event
 from backend.errors import AppError
 from backend.schemas.auth import (
     CreateUserRequest, UpdateUserRequest,
@@ -38,7 +39,7 @@ def _hash_code(code: str) -> str:
 
 # Short-lived + attempt-capped: a 6-digit code only resists brute force if the
 # window is minutes and a handful of wrong guesses burns it.
-_CODE_EXPIRE_MINUTES = 15
+from backend.config import OTP_EXPIRE_MINUTES as _CODE_EXPIRE_MINUTES
 _CODE_MAX_ATTEMPTS   = 5
 
 
@@ -215,13 +216,25 @@ def create_user_admin(
             "email_already_registered", "Email already registered", status_code=409,
         )
 
-    from backend.entitlements.service import enforce_limit
-    enforce_limit(user.tenant_id, "max_users", user_svc.count_users(user.tenant_id))
+    from backend.entitlements.service import enforce_limit, limit_guard
 
-    temp_password = secrets.token_urlsafe(16)
-    new_user = user_svc.create_user_admin(
-        user.tenant_id, body.email, temp_password, body.role, body.full_name
-    )
+    # Seats are the ceiling a growing team hits first, so this is the one people
+    # race by accident: two admins inviting the last two members at the same
+    # time. Eight simultaneous invitations against a ceiling of two used to
+    # leave NINE users, because all eight counted before any had committed.
+    #
+    # The guard's lock is held across the create, and `create_user_admin`
+    # commits on its own connection INSIDE the block — which is all the
+    # ordering this needs: the next waiter cannot start counting until this
+    # user is both written and visible.
+    with limit_guard(user.tenant_id) as conn:
+        enforce_limit(user.tenant_id, "max_users",
+                      user_svc.count_users(user.tenant_id, conn=conn), conn=conn)
+
+        temp_password = secrets.token_urlsafe(16)
+        new_user = user_svc.create_user_admin(
+            user.tenant_id, body.email, temp_password, body.role, body.full_name
+        )
 
     from backend.auth.jwt_handler import create_signed_token
     verify_token = create_signed_token(
@@ -235,6 +248,14 @@ def create_user_admin(
     if not email_sent:
         log.warning("[create-user] email delivery failed for user=%s — check SMTP config", new_user["id"])
     log.info("[create-user] admin=%s created user=%s email=%s email_sent=%s", user.user_id, new_user["id"], body.email, email_sent)
+
+    # A seat was taken and somebody outside the tenant was mailed a way in.
+    # Both are facts the other admins should be able to find later without
+    # asking anyone.
+    record_event(
+        user.tenant_id, user.user_id, "account.user_invited",
+        resource=new_user["id"], details={"email": body.email, "role": body.role},
+    )
 
     # An invite that never left strands an account nobody can activate, so the
     # admin gets the reason as a stable code the UI localizes (CLAUDE.md).
@@ -303,6 +324,16 @@ def update_user_admin(
         email=str(body.email) if body.email else None,
     )
 
+    # Only the ROLE change is recorded, not a renamed profile: this row exists
+    # so somebody can answer "who gave that account write access, and when".
+    if body.role is not None and body.role != target.get("role"):
+        record_event(
+            user.tenant_id, user.user_id, "account.user_role_changed",
+            resource=user_id, reason="changed_by_an_account_admin",
+            details={"email": target["email"], "role": body.role,
+                     "previous_role": target.get("role")},
+        )
+
     if email_changed:
         from backend.auth.jwt_handler import create_signed_token
         verify_token = create_signed_token(
@@ -337,6 +368,11 @@ def delete_user_admin(
         raise AppError("user_not_found", "User not found", status_code=404)
     user_svc.delete_user(user.tenant_id, user_id)
     log.info("[delete-user] admin=%s deleted user=%s", user.user_id, user_id)
+    record_event(
+        user.tenant_id, user.user_id, "account.user_deactivated",
+        resource=user_id, reason="changed_by_an_account_admin",
+        details={"email": target["email"]},
+    )
     return ok({"deleted": user_id})
 
 
@@ -357,6 +393,14 @@ def set_user_status(
         raise AppError("user_not_found", "User not found", status_code=404)
     user_svc.update_status(user.tenant_id, user_id, body.status)
     updated = user_svc.get_user(user.tenant_id, user_id)
+    # Suspending an account is the same event as deleting one as far as the
+    # person losing access is concerned; reactivating it is not an alarm.
+    if body.status != "active":
+        record_event(
+            user.tenant_id, user.user_id, "account.user_deactivated",
+            resource=user_id, reason="changed_by_an_account_admin",
+            details={"email": target["email"]},
+        )
     return ok(user_svc._public(updated))
 
 
@@ -482,13 +526,20 @@ def invite_user(
             "email_already_registered", "Email already registered", status_code=409,
         )
 
-    from backend.entitlements.service import enforce_limit
-    enforce_limit(user.tenant_id, "max_users", user_svc.count_users(user.tenant_id))
+    from backend.entitlements.service import enforce_limit, limit_guard
 
-    temp_password = secrets.token_urlsafe(16)
-    new_user = user_svc.create_user_admin(
-        user.tenant_id, body.email, temp_password, body.role, body.full_name
-    )
+    # The second seat-consuming path (POST /users is the other). Both have to
+    # be guarded, or the ceiling is only as strong as whichever one a racing
+    # client happens to call.
+    with limit_guard(user.tenant_id) as _seat_conn:
+        enforce_limit(user.tenant_id, "max_users",
+                      user_svc.count_users(user.tenant_id, conn=_seat_conn),
+                      conn=_seat_conn)
+
+        temp_password = secrets.token_urlsafe(16)
+        new_user = user_svc.create_user_admin(
+            user.tenant_id, body.email, temp_password, body.role, body.full_name
+        )
 
     from backend.auth.jwt_handler import create_signed_token
     verify_token = create_signed_token(
@@ -499,6 +550,11 @@ def invite_user(
     from backend.notifications import email as email_mod
     from backend.notifications.email import send_account_setup_email
     email_sent = send_account_setup_email(body.email, body.full_name or "", setup_url)
+
+    record_event(
+        user.tenant_id, user.user_id, "account.user_invited",
+        resource=new_user["id"], details={"email": body.email, "role": body.role},
+    )
 
     return ok({
         "user": new_user,

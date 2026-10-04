@@ -81,7 +81,7 @@ def _flat_forecast(daily: float, spread: float, days: int = 30) -> dict:
 
 def _learn_lead_time(client, headers, *, sku: str, supplier: str, days_ago: int) -> str:
     """
-    Makes Faro LEARN a real lead time for `supplier` by walking the actual
+    Makes StockAI LEARN a real lead time for `supplier` by walking the actual
     product flow: log a PO, backdate it, then record its reception today.
     Returns the po_log_id.
     """
@@ -349,10 +349,18 @@ class TestStatusExposesWhyFields:
         assert 11.5 <= item["lead_time_learned"] <= 12.5
 
         # Hand-checkable: demand 10/day, lead 12 -> 120 units of lead-time demand;
-        # safety = z(0.95)=1.645 * std(4.0) * sqrt(12); reorder point is their sum.
+        # safety = z(0.95)=1.645 * sigma * sqrt(12); reorder point is their sum.
+        #
+        # The fixture's forecast points carry `upper` and no `q90`, and `upper`
+        # is the TOP of a band — about a 90th percentile — not a sigma. The
+        # 4.0 spread is therefore divided by z90 to recover one. Before that,
+        # the caller received ~1.28 sigma and applied z(0.95) on top, so the
+        # configured 95% service level was really being served at about 98%.
+        from backend.inventory.service import _Q90_Z
+
         assert item["daily_demand"] == 10.0
         assert item["lead_time_demand"] == 120.0
-        expected_safety = 1.645 * 4.0 * math.sqrt(12)
+        expected_safety = 1.645 * (4.0 / _Q90_Z) * math.sqrt(12)
         assert item["reorder_point"] == pytest.approx(120.0 + expected_safety, abs=0.05)
 
         # Coverage: 20 units / 10 per day = 2 days -> below 12*0.5 -> PEDIR_YA.
@@ -418,7 +426,7 @@ class TestStatusExposesWhyFields:
         line = next(r for r in data["risks"] if r["sku"] == sku)
         for field in ("explanation", "reorder_point", "lead_time_source",
                       "daily_demand", "current_stock", "coverage_days", "unit_margin"):
-            assert field in line, f"falta {field} en la línea del carrito"
+            assert field in line, f"missing {field} in the cart line"
         assert line["explanation"]
         assert line["unit_margin"] == 2.40
 

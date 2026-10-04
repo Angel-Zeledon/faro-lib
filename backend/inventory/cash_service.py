@@ -3,7 +3,7 @@ Cash calendar / accounts payable (feature 3.6).
 
 The binding constraint for a LatAm SMB distributor is cash, not information: an
 order can be perfectly justified by the semáforo and still be impossible to pay
-this week. This module turns two things Faro already has — sent POs and supplier
+this week. This module turns two things StockAI already has — sent POs and supplier
 payment terms — into "this week $X falls due; the recommended purchase fits /
 does not fit".
 
@@ -31,12 +31,26 @@ log = logging.getLogger(__name__)
 MAX_CREDIT_DAYS = 365
 
 # Terms meaning "pay on the spot" — zero credit days, not unknown.
+#
+# `anticip` rather than `anticipad`: the stem covers "anticipado" AND the far
+# more common noun form "anticipo". Without it "50% anticipo" fell through to
+# the number extractor and was reported as 50 DAYS of credit — an invoice dated
+# seven weeks after money that is actually due on the spot, and reported with
+# `terms_known: True` on top.
 _IMMEDIATE_RE = re.compile(
-    r"contado|cash|anticipad|prepag|inmediat|contra\s?entrega|\bcod\b",
+    r"contado|cash|anticip|adelant|prepag|inmediat|contra\s?entrega|\bcod\b",
     re.IGNORECASE,
 )
 _MONTHS_RE = re.compile(r"(\d+)\s*mes", re.IGNORECASE)
 _FORTNIGHT_RE = re.compile(r"quincen", re.IGNORECASE)
+# Two numbers joined by x, / or -: "2x30" (two instalments of 30 days),
+# "30/60/90" (three dated instalments), "30-45 días" (a range). A schedule has
+# no single credit-day answer, and the first number in it is never that answer:
+# the old parser read "2x30" as 2 days and "30/60/90" as 30. These are exactly
+# the strings the module docstring promises to leave as None.
+_INSTALMENTS_RE = re.compile(r"\d+\s*[x/×-]\s*\d+", re.IGNORECASE)
+# A number carrying a % sign is a share of the invoice, not a day count.
+_PERCENT_RE = re.compile(r"\d+\s*%")
 _NUMBER_RE = re.compile(r"\d+")
 
 
@@ -47,14 +61,19 @@ def parse_payment_terms_days(text: Optional[str]) -> Optional[int]:
     Rule order matters and mirrors the SQL backfill in db/migrations.py
     ('backfill_suppliers_payment_terms_days'):
 
-      1. "contado" / "contra entrega" / "prepago" / "COD"  -> 0
+      1. "contado" / "contra entrega" / "anticipo" / "prepago" / "COD"  -> 0
          Checked first because "pago de contado a 8 dias" must not be read as
-         8 days of credit.
-      2. "N mes(es)"                                       -> N * 30
+         8 days of credit, and "50% anticipo" must not be read as 50.
+      2. an instalment schedule ("2x30", "30/60/90", "30-45")           -> None
+         Before every number rule: the first number in a schedule is not the
+         credit period, so answering with it is worse than admitting the gap.
+      3. "N mes(es)"                                       -> N * 30
          Before the generic number rule, otherwise "2 meses" reads as 2 days.
-      3. "quincenal"                                       -> 15
-      4. first number found ("30 días", "net 30", "30d")   -> N
-      5. anything else ("a convenir")                      -> None
+      4. "quincenal"                                       -> 15
+      5. first number found ("30 días", "net 30", "30d")   -> N
+         Percentages are stripped before this rule runs: in "50% a 30 dias" the
+         day count is 30, and in a bare "50%" there is no day count at all.
+      6. anything else ("a convenir")                      -> None
 
     Results are clamped to 0..365: a typo of "3000 días" must not push an
     invoice a decade into the future.
@@ -68,6 +87,9 @@ def parse_payment_terms_days(text: Optional[str]) -> Optional[int]:
     if _IMMEDIATE_RE.search(raw):
         return 0
 
+    if _INSTALMENTS_RE.search(raw):
+        return None
+
     months = _MONTHS_RE.search(raw)
     if months:
         return min(int(months.group(1)) * 30, MAX_CREDIT_DAYS)
@@ -75,7 +97,7 @@ def parse_payment_terms_days(text: Optional[str]) -> Optional[int]:
     if _FORTNIGHT_RE.search(raw):
         return 15
 
-    number = _NUMBER_RE.search(raw)
+    number = _NUMBER_RE.search(_PERCENT_RE.sub(" ", raw))
     if number:
         return min(int(number.group(0)), MAX_CREDIT_DAYS)
 
@@ -101,6 +123,35 @@ def _today() -> date:
     return datetime.now(timezone.utc).date()
 
 
+def _suppliers_by_name(tenant_id: str) -> dict[str, dict]:
+    """
+    Every supplier of the tenant keyed by lower-cased name — INCLUDING the
+    deactivated ones.
+
+    Deactivating a supplier is a statement about future purchases ("stop
+    ordering from them"); it says nothing about the invoices they already
+    issued. Filtering them out here moved a sent-and-unpaid PO into
+    `unknown_terms` and out of `committed_total`, so archiving a supplier card
+    silently shrank the money the buyer still owes — the one number this module
+    exists to keep honest. `supplier_service` filters on `active` on purpose
+    (a PO must not auto-send to a supplier the business dropped); accounts
+    payable is the opposite case and must not inherit that filter.
+
+    `COALESCE(active, TRUE) DESC` decides a key collision only case can produce
+    ("Andina" and "andina" are two rows under UNIQUE (tenant_id, name)): the
+    active card is the one still being maintained. The column is nullable, and
+    a NULL there has always meant active.
+    """
+    by_name: dict[str, dict] = {}
+    for supplier in query(
+        "SELECT * FROM suppliers WHERE tenant_id = %s "
+        "ORDER BY COALESCE(active, TRUE) DESC, name",
+        (tenant_id,),
+    ):
+        by_name.setdefault((supplier["name"] or "").strip().lower(), supplier)
+    return by_name
+
+
 def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
     """
     Invoices coming due from POs already SENT to a supplier.
@@ -112,16 +163,36 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
 
     A PO can span several suppliers, so payables are grouped by (PO, supplier):
     each supplier invoices its own lines under its own terms.
+
+    **Paid and cancelled orders are not payables** (math audit 2026-10-01,
+    O3). Before
+    `paid_at` existed nothing ever left this calendar, so `overdue_total`
+    only grew and every cart eventually "did not fit".
+
+    **A line with no unit cost is counted, not priced at 0.** The sum used
+    `COALESCE(unit_cost, 0)`, so an uncosted line silently added nothing and an
+    order with NO costed line had amount 0 and was dropped entirely — even from
+    `unknown_terms`. Now each group carries `uncosted_lines`, a group with only
+    uncosted lines is kept (amount 0, `amount_complete: False`), and the
+    response says how many lines the totals are missing (`uncosted_lines`,
+    `totals_complete`). A stored 0 counts as no cost, the same rule the
+    optimizer applies (`optimizer_service._usable_unit_cost`): a free line is
+    far rarer than a blank one that happens to be a number.
     """
     rows = query(
         """SELECT l.id            AS po_log_id,
                   l.sent_at,
                   i.supplier,
-                  SUM(i.final_qty * COALESCE(i.unit_cost, 0)) AS amount
+                  SUM(CASE WHEN i.unit_cost > 0
+                           THEN i.final_qty * i.unit_cost ELSE 0 END) AS amount,
+                  COUNT(*) FILTER (WHERE i.unit_cost IS NULL OR i.unit_cost <= 0)
+                      AS uncosted_lines
              FROM inventory_po_log l
              JOIN inventory_po_items i ON i.po_log_id = l.id
             WHERE l.tenant_id = %s
               AND l.sent_at IS NOT NULL
+              AND l.paid_at IS NULL
+              AND l.cancelled_at IS NULL
               AND i.status IN ('approved', 'modified')
               AND i.final_qty > 0
             GROUP BY l.id, l.sent_at, i.supplier
@@ -129,13 +200,7 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
         (tenant_id,),
     )
 
-    suppliers_by_name = {
-        (s["name"] or "").strip().lower(): s
-        for s in query(
-            "SELECT * FROM suppliers WHERE tenant_id = %s AND active = TRUE",
-            (tenant_id,),
-        )
-    }
+    suppliers_by_name = _suppliers_by_name(tenant_id)
 
     today = _today()
     horizon_end = today + timedelta(days=horizon_days)
@@ -145,7 +210,8 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
 
     for r in rows:
         amount = round(float(r["amount"] or 0), 2)
-        if amount <= 0:
+        uncosted = int(r.get("uncosted_lines") or 0)
+        if amount <= 0 and uncosted == 0:
             continue
         name = (r.get("supplier") or "").strip()
         supplier = suppliers_by_name.get(name.lower())
@@ -159,6 +225,8 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
                 "po_log_id": r["po_log_id"],
                 "supplier_name": name or None,
                 "amount": amount,
+                "uncosted_lines": uncosted,
+                "amount_complete": uncosted == 0,
                 "payment_terms": (supplier or {}).get("payment_terms"),
             })
             continue
@@ -170,6 +238,8 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
             "po_log_id": r["po_log_id"],
             "supplier_name": name or None,
             "amount": amount,
+            "uncosted_lines": uncosted,
+            "amount_complete": uncosted == 0,
             "sent_date": sent_date.isoformat(),
             "credit_days": credit_days,
             "due_date": due_date.isoformat(),
@@ -185,9 +255,22 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
     this_week_total = round(
         sum(
             d["amount"] for d in due_items
-            if not d["overdue"] and 0 <= d["days_until_due"] <= 7
+            # Days 0..6 — the same seven days as the first bucket of `weeks`.
+            # `<= 7` counted eight, so a payment due on day 7 was in "this
+            # week" and in the second week's bucket at once (math audit
+            # 2026-10-01).
+            if not d["overdue"] and 0 <= d["days_until_due"] < 7
         ),
         2,
+    )
+
+    # What the totals above are missing. `uncosted_lines_committed` is the part
+    # that falls inside the money the affordability check counts (overdue or
+    # due within the horizon); `uncosted_lines` is everything still owed.
+    every_group = due_items + unknown_terms
+    uncosted_lines = sum(g["uncosted_lines"] for g in every_group)
+    uncosted_lines_committed = sum(
+        d["uncosted_lines"] for d in due_items if d["overdue"] or d["within_horizon"]
     )
 
     return {
@@ -200,6 +283,10 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
         "horizon_total": horizon_total,
         "unknown_terms": unknown_terms,
         "unknown_terms_total": round(sum(u["amount"] for u in unknown_terms), 2),
+        "uncosted_lines": uncosted_lines,
+        "uncosted_lines_committed": uncosted_lines_committed,
+        "uncosted_po_count": len({g["po_log_id"] for g in every_group if g["uncosted_lines"]}),
+        "totals_complete": uncosted_lines == 0,
     }
 
 
@@ -243,19 +330,13 @@ def evaluate_purchase_fit(
     telling a buyer an order fits when it might be cash-on-delivery is the
     expensive mistake.
 
-    `budget` is user-supplied; Faro stores no cash balance. Without it the
+    `budget` is user-supplied; StockAI stores no cash balance. Without it the
     committed and purchase totals are still returned, and `fits` is None
     (unknown), never a guess.
     """
     payables = get_payables(tenant_id, horizon_days)
 
-    suppliers_by_name = {
-        (s["name"] or "").strip().lower(): s
-        for s in query(
-            "SELECT * FROM suppliers WHERE tenant_id = %s AND active = TRUE",
-            (tenant_id,),
-        )
-    }
+    suppliers_by_name = _suppliers_by_name(tenant_id)
 
     today = _today()
     horizon_end = today + timedelta(days=horizon_days)
@@ -264,10 +345,17 @@ def evaluate_purchase_fit(
     purchase_in_horizon = 0.0
     assumed_immediate: list[str] = []
     lines_out: list[dict] = []
+    # Lines being bought that carry no price. They used to be skipped here
+    # (`amount <= 0: continue`), so a cart of uncosted lines added ₡0 and the
+    # verdict was "fits" — about a purchase whose cost nobody knows.
+    uncosted_skus: list[str] = []
 
     for line in purchase_lines:
         quantity = float(line.get("quantity") or 0)
         unit_cost = float(line.get("unit_cost") or 0)
+        if quantity > 0 and unit_cost <= 0:
+            uncosted_skus.append(str(line.get("sku") or ""))
+            continue
         amount = quantity * unit_cost
         if amount <= 0:
             continue
@@ -300,11 +388,27 @@ def evaluate_purchase_fit(
     purchase_in_horizon = round(purchase_in_horizon, 2)
     required = round(committed + purchase_in_horizon, 2)
 
+    # Every missing cost can only ADD to `required`, so a total already over
+    # budget is a sound "does not fit"; a total under budget is not a sound
+    # "fits" while any of the money it is made of is unpriced.
+    uncosted_committed = int(payables["uncosted_lines_committed"])
+    uncosted_purchase = len(uncosted_skus)
+    total_complete = uncosted_committed == 0 and uncosted_purchase == 0
+
     fits: Optional[bool] = None
+    fits_unknown_reason: Optional[str] = None
     shortfall: Optional[float] = None
-    if budget is not None:
-        fits = required <= float(budget)
+    if budget is None:
+        fits_unknown_reason = "no_budget"
+    else:
         shortfall = round(max(0.0, required - float(budget)), 2)
+        if required > float(budget):
+            fits = False
+        elif total_complete:
+            fits = True
+        else:
+            fits = None
+            fits_unknown_reason = "missing_costs"
 
     return {
         "today": today.isoformat(),
@@ -317,7 +421,12 @@ def evaluate_purchase_fit(
         "purchase_in_horizon": purchase_in_horizon,
         "required_total": required,
         "fits": fits,
+        "fits_unknown_reason": fits_unknown_reason,
         "shortfall": shortfall,
+        "total_complete": total_complete,
+        "uncosted_committed_lines": uncosted_committed,
+        "uncosted_purchase_lines": uncosted_purchase,
+        "uncosted_purchase_skus": uncosted_skus,
         "lines": lines_out,
         "suppliers_assumed_immediate": assumed_immediate,
         "unknown_terms_total": payables["unknown_terms_total"],

@@ -42,7 +42,7 @@ class TestStageWeights:
         and the old 'training' plateau (40 -> 85) must be split into pieces."""
         w = dict(JOB_STAGES)
         total = sum(w.values())
-        fit = w["ml_training"] + w["ml_quantiles"] + w["stat_training"]
+        fit = w["ml_training"] + w["global_model"] + w["stat_training"]
         assert 0.4 < fit / total < 0.7
         # No single stage may own more than a quarter of the bar, otherwise it
         # would show as a long plateau followed by a jump.
@@ -129,7 +129,7 @@ class TestMonotonic:
 
     def test_dropping_every_optional_stage_still_ends_near_the_top(self):
         tracker, _ = _collect()
-        for k in ("gap_fill", "outliers", "ml_quantiles", "stat_training"):
+        for k in ("gap_fill", "outliers", "global_model", "stat_training"):
             tracker.drop(k)
         for k in tracker.stages:
             tracker.begin(k)

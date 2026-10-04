@@ -30,9 +30,9 @@
     --ease-in:  cubic-bezier(0.4, 0, 1, 1);
   }
 
-  /* Light is the default: for this audience (distribuidor SMB, luz de oficina
-     o bodega) light reads as trustworthy work software. Dark stays as an
-     explicit choice via the toggle. */
+  /* Light is the default: for this audience (SMB distributor, office light
+     or warehouse floor) light reads as trustworthy work software. Dark stays
+     as an explicit choice via the toggle. */
   :root,
   [data-theme="light"] {
     --bg:            #F5F7F6;
@@ -41,7 +41,7 @@
     --surface-3:     #E4EAE9;
     --border:        #DFE6E4;
     --border-strong: #C2CFCC;
-    --accent:        #0F766E;   /* Faro teal — 4.7:1 as text on --bg, 4.8:1 under white text */
+    --accent:        #0F766E;   /* StockAI teal — 4.7:1 as text on --bg, 4.8:1 under white text */
     --accent-dim:    rgba(15,118,110,0.10);
     --text:          #16262A;
     --muted:         #465A5D;
@@ -204,6 +204,22 @@
      real height instead of reporting a box smaller than what it paints. */
   .page-content > .page-enter { flex: 1 0 auto; }
 
+  /* The endpoint rail on /api. A class rather than an inline style because the
+     whole point is :hover and :focus-visible, which inline styles cannot
+     express — and a navigation list that does not answer the cursor reads as
+     decoration rather than as something you can click. */
+  .api-nav-link {
+    transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+  }
+  .api-nav-link:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .api-nav-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
   /* Card */
   .card {
     background: var(--surface);
@@ -301,6 +317,20 @@
     background: rgba(255,255,255,0.06) !important;
     color: var(--sidebar-text-active) !important;
   }
+
+  /* /configuracion: the hub's rows and account band. Hover only shades the
+     row it is on; the band lifts its own petrol a step. */
+  .hub-row { transition: background var(--dur-2) var(--ease-out); }
+  .hub-row:hover { background: var(--surface-2); }
+  .hub-row:focus-visible, .hub-account:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .hub-account { transition: filter var(--dur-2) var(--ease-out); }
+  .hub-account:hover { filter: brightness(1.12); }
+
+  /* The analysis tab strip scrolls sideways on a very narrow phone; its
+     scrollbar would only add a second line under the tabs. */
+  .section-tabs::-webkit-scrollbar { display: none; }
 
   .form-select {
     appearance: none;
@@ -588,7 +618,6 @@
   content: ''; position: absolute; top: 0; left: -60%; width: 38%; height: 100%;
   background: linear-gradient(115deg, transparent, rgba(255,255,255,0.30), transparent);
   transform: skewX(-18deg); pointer-events: none;
-  animation: auth-btn-sheen 9s ease-in-out infinite;
 }
 .auth-submit:hover::after { animation: none; left: 130%; transition: left 0.6s ease; }
 
@@ -796,8 +825,8 @@
 
      The attribute selector is doing the real work here. Every spinner in this
      app declares its animation in an INLINE style — `animation: spin 1s ...`,
-     `integrations-spin`, `qs-spin` — so a class-based selector would match
-     none of them and the blanket 1ms rule above would freeze all of them.
+     `qs-spin` — so a class-based selector would match none of them and the
+     blanket 1ms rule above would freeze all of them.
      `[style*="spin"]` catches the lot, whatever the keyframe name. */
   [style*="spin"], [class*="spinner"], svg[data-spinner] {
     animation-duration:        2.4s     !important;
@@ -853,3 +882,360 @@
     margin-block: -13px;   /* the taller box grows over its own row, not the layout */
   }
 }
+
+/* The product tour on the landing: image on one side, explanation on the other,
+   sides alternating. `direction: rtl` on the grid is what flips a row without
+   duplicating the markup — every child resets to `ltr` so only the COLUMN ORDER
+   swaps, never the text.
+   Below 900px there is no room for two columns, and an alternating layout that
+   has collapsed to one column would show half its rows with the caption above
+   the screenshot it describes. So: one column, image always first. */
+@media (max-width: 900px) {
+  .tour-row {
+    grid-template-columns: 1fr !important;
+    direction: ltr !important;
+    gap: 22px !important;
+    margin-bottom: 44px !important;
+  }
+}
+
+/* ── Auth split: form left, the morning list right (/login, /signup) ───────── */
+.auth-split {
+  position: fixed; inset: 0; background: #fff;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+}
+.auth-split-form { display: flex; flex-direction: column; min-height: 0; }
+.auth-split-mark { padding: clamp(24px, 3.5vw, 40px) clamp(24px, 5vw, 64px) 0; flex-shrink: 0; }
+.auth-split-body { flex: 1; min-height: 0; overflow-y: auto; }
+.auth-split .auth-shell {
+  height: 100%; display: flex; align-items: center; justify-content: center;
+  padding: 24px clamp(24px, 5vw, 64px) 6vh !important;
+}
+
+.auth-panel {
+  position: relative; overflow: hidden;
+  background: #0C3A40; color: #e7f0ef;
+  display: flex; align-items: center; justify-content: center;
+  padding: clamp(32px, 5vw, 72px);
+}
+/* One quiet structural cue: the list sits on a slightly lifted field. */
+.auth-panel::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(120% 80% at 100% 0%, rgba(15,118,110,0.35), transparent 60%);
+  pointer-events: none;
+}
+.auth-panel-inner { position: relative; width: 100%; max-width: 460px; }
+.auth-panel-title {
+  font-family: var(--font-brand), system-ui, sans-serif;
+  font-size: clamp(28px, 2.6vw, 38px); font-weight: 500; line-height: 1.12;
+  letter-spacing: -0.025em; color: #fff; margin: 0 0 36px; text-wrap: balance;
+}
+.auth-panel-list {
+  border-radius: 14px; background: rgba(255,255,255,0.045);
+  border: 1px solid rgba(255,255,255,0.09); padding: 6px 0;
+}
+.auth-panel-list-head {
+  display: flex; justify-content: space-between; padding: 10px 18px 8px;
+  font-size: 12px; color: rgba(231,240,239,0.55);
+}
+.auth-panel-row {
+  display: grid; grid-template-columns: 8px minmax(0,1fr) auto 64px; gap: 14px;
+  align-items: center; padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.07);
+  animation: auth-row-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.auth-panel-dot { width: 8px; height: 8px; border-radius: 50%; }
+.auth-panel-name { display: flex; flex-direction: column; min-width: 0; font-size: 14px; color: #fff; }
+.auth-panel-name > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.auth-panel-supplier { font-size: 12px; color: rgba(231,240,239,0.55); margin-top: 2px; }
+.auth-panel-signal { font-size: 12px; font-weight: 600; }
+.auth-panel-qty {
+  text-align: right; font-size: 14px; font-weight: 600; color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.auth-panel-note { margin: 22px 2px 0; font-size: 13px; line-height: 1.55; color: rgba(231,240,239,0.62); max-width: 40ch; }
+
+@keyframes auth-row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .auth-panel-row { animation: none; }
+}
+@media (max-width: 900px) {
+  .auth-split { grid-template-columns: 1fr; }
+  .auth-panel { display: none; }
+}
+@media (max-width: 560px) {
+  .auth-split .auth-shell { align-items: flex-start; padding: 28px 20px 32px !important; height: auto; }
+}
+
+/* ── Auth split: theme tokens + finishing (overrides the block above) ────── */
+.auth-split {
+  --a-bg: #ffffff;
+  --a-ink: #16262A;
+  --a-muted: #465A5D;
+  --a-dim: #8A9A9C;
+  --a-accent: #0F766E;
+  --a-field: #F4F7F6;
+  --a-field-focus: #ffffff;
+  --a-line: rgba(22,38,42,0.12);
+  --a-line-hover: rgba(22,38,42,0.30);
+  --a-ring: rgba(15,118,110,0.16);
+  --a-cta-bg: #0C3A40;
+  --a-cta-fg: #ffffff;
+  --a-cta-hover: #0F4C53;
+  background: var(--a-bg);
+  color: var(--a-ink);
+}
+[data-theme="dark"] .auth-split {
+  --a-bg: #0A1517;
+  --a-ink: #E3EBEA;
+  --a-muted: #A3B6B4;
+  --a-dim: #6F8688;
+  --a-accent: #2BA79A;
+  --a-field: #101D20;
+  --a-field-focus: #13262A;
+  --a-line: rgba(227,235,234,0.12);
+  --a-line-hover: rgba(227,235,234,0.28);
+  --a-ring: rgba(43,167,154,0.26);
+  --a-cta-bg: #2BA79A;
+  --a-cta-fg: #04201D;
+  --a-cta-hover: #35BAAC;
+}
+[data-theme="dark"] .auth-panel { background: #0B2E33; box-shadow: inset 1px 0 0 rgba(255,255,255,0.06); }
+
+.auth-split-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: clamp(22px, 3.2vw, 36px) clamp(24px, 5vw, 64px) 0; flex-shrink: 0;
+}
+.auth-split-tools { display: flex; gap: 6px; }
+.auth-tool {
+  all: unset; box-sizing: border-box; cursor: pointer;
+  min-width: 36px; height: 36px; padding: 0 10px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+  color: var(--a-muted); border: 1px solid var(--a-line);
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
+}
+.auth-tool:hover { color: var(--a-ink); border-color: var(--a-line-hover); }
+.auth-tool:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 2px; }
+.auth-split-foot {
+  flex-shrink: 0; padding: 0 clamp(24px, 5vw, 64px) clamp(18px, 2.4vw, 28px);
+  font-size: 12px; color: var(--a-dim);
+}
+
+/* Fields, themed. `.auth-split` in front of every selector outranks the
+   generic auth-field rules above without !important. */
+.auth-split .auth-field input.auth-input {
+  background: var(--a-field); border-color: var(--a-line);
+  color: var(--a-ink); -webkit-text-fill-color: var(--a-ink); caret-color: var(--a-accent);
+}
+.auth-split .auth-field input.auth-input::placeholder { color: var(--a-dim); -webkit-text-fill-color: var(--a-dim); }
+.auth-split .auth-field input.auth-input:hover:not(:focus) { border-color: var(--a-line-hover); }
+.auth-split .auth-field input.auth-input:focus {
+  background: var(--a-field-focus); border-color: var(--a-accent);
+  box-shadow: 0 0 0 4px var(--a-ring); transform: none;
+}
+.auth-split .auth-field input.auth-input:focus-visible { outline: none; }
+.auth-split .auth-field input.auth-input:-webkit-autofill,
+.auth-split .auth-field input.auth-input:-webkit-autofill:hover {
+  -webkit-box-shadow: 0 0 0 1000px var(--a-field) inset; box-shadow: 0 0 0 1000px var(--a-field) inset;
+  -webkit-text-fill-color: var(--a-ink); caret-color: var(--a-ink);
+}
+.auth-split .auth-field input.auth-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--a-field-focus) inset, 0 0 0 4px var(--a-ring);
+  box-shadow: 0 0 0 1000px var(--a-field-focus) inset, 0 0 0 4px var(--a-ring);
+}
+.auth-split .auth-field:focus-within label { color: var(--a-ink); }
+.auth-split .auth-eye { color: var(--a-dim); }
+.auth-split .auth-eye:hover { color: var(--a-ink); }
+.auth-split .auth-eye:focus-visible { outline-color: var(--a-accent); }
+.auth-split .auth-submit { transition: background .18s ease, box-shadow .18s ease; }
+.auth-split .auth-submit:not(:disabled):hover { background: var(--a-cta-hover) !important; box-shadow: 0 8px 20px -10px var(--a-cta-bg); }
+.auth-split .auth-submit:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 3px; }
+
+/* Panel finishing: the oversized mark, and a live dot on the list. */
+.auth-panel-mark {
+  position: absolute; right: -40px; bottom: -70px; pointer-events: none; line-height: 1;
+  user-select: none;
+}
+.auth-panel-live { display: inline-flex; align-items: center; gap: 8px; }
+.auth-panel-pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
+  box-shadow: 0 0 0 0 rgba(74,222,128,0.5); animation: auth-pulse 2.4s ease-out infinite;
+}
+@keyframes auth-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(74,222,128,0.45); }
+  70%, 100% { box-shadow: 0 0 0 8px rgba(74,222,128,0); }
+}
+.auth-panel-qty { font-family: var(--font-brand), system-ui, sans-serif; font-size: 16px; }
+@media (prefers-reduced-motion: reduce) { .auth-panel-pulse { animation: none; } }
+.auth-panel-row { grid-template-columns: 8px minmax(0,1fr) auto minmax(64px, auto); }
+.auth-panel-qty { white-space: nowrap; }
+.auth-panel-mark { right: auto; left: -18px; bottom: -58px; }
+.auth-split .auth-shell { padding-top: 40px !important; }
+@media (max-width: 560px) { .auth-split-foot { display: none; } }
+
+/* ── Login tips panel (components/auth/TipsPanel.tsx) ───────────────────── */
+.tips-panel { animation: tips-panel-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.tips-kicker {
+  display: inline-flex; align-items: center; gap: 7px; margin: 0 0 26px;
+  padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  color: #CCFBF1; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+}
+.tips-card { min-height: 236px; animation: tips-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.tips-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 56px; height: 56px; border-radius: 16px; margin-bottom: 22px; color: #5EEAD4;
+  background: linear-gradient(145deg, rgba(94,234,212,0.16), rgba(94,234,212,0.04));
+  border: 1px solid rgba(94,234,212,0.22);
+  animation: tips-icon-in 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.05s both;
+}
+.tips-title {
+  font-family: var(--font-brand), system-ui, sans-serif;
+  font-size: clamp(26px, 2.4vw, 34px); font-weight: 600; line-height: 1.12;
+  letter-spacing: -0.025em; color: #fff; margin: 0 0 14px; text-wrap: balance;
+  animation: tips-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both;
+}
+.tips-body {
+  margin: 0; font-size: 15.5px; line-height: 1.6; color: rgba(231,240,239,0.74); max-width: 42ch;
+  animation: tips-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both;
+}
+.tips-progress {
+  margin-top: 30px; height: 3px; border-radius: 3px; overflow: hidden;
+  background: rgba(255,255,255,0.1);
+}
+.tips-progress-fill {
+  display: block; height: 100%; width: 100%; transform-origin: left center;
+  background: linear-gradient(90deg, #2BA79A, #5EEAD4);
+  animation-name: tips-fill; animation-timing-function: linear; animation-fill-mode: both;
+}
+.tips-dots { display: flex; align-items: center; gap: 7px; margin-top: 18px; }
+.tips-dot {
+  all: unset; cursor: pointer; width: 7px; height: 7px; border-radius: 999px;
+  background: rgba(255,255,255,0.22); transition: width 0.35s ease, background 0.35s ease;
+}
+.tips-dot:hover { background: rgba(255,255,255,0.45); }
+.tips-dot.is-on { width: 22px; background: #5EEAD4; }
+.tips-dot:focus-visible { outline: 2px solid #5EEAD4; outline-offset: 3px; }
+.tips-count { margin-left: auto; font-size: 12px; color: rgba(231,240,239,0.5); font-variant-numeric: tabular-nums; }
+
+@keyframes tips-panel-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tips-in { from { opacity: 0; transform: translateY(14px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes tips-icon-in { from { opacity: 0; transform: scale(0.6) rotate(-8deg); } to { opacity: 1; transform: none; } }
+@keyframes tips-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tips-panel, .tips-card, .tips-icon, .tips-title, .tips-body { animation: none; }
+  .tips-progress-fill { animation: none; transform: scaleX(1); opacity: 0.4; }
+}
+
+/* ── App entrance (components/layout/AppIntro.tsx) ─────────────────────── */
+.app-intro {
+  position: fixed; inset: 0; z-index: 20000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  background: radial-gradient(900px 520px at 80% 0%, rgba(43,167,154,0.32), transparent 60%), #0C3A40;
+  color: #fff; animation: app-intro-out 0.5s ease-in 1.15s both;
+}
+.app-intro-mark { animation: app-intro-mark 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.app-intro-bar { width: 180px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.app-intro-bar > span {
+  display: block; height: 100%; width: 100%; transform-origin: left center;
+  background: linear-gradient(90deg, #2BA79A, #5EEAD4);
+  animation: tips-fill 1.15s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.app-intro-tip {
+  max-width: 40ch; text-align: center; font-size: 14px; line-height: 1.55;
+  color: rgba(231,240,239,0.72); padding: 0 24px;
+  animation: tips-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+@keyframes app-intro-mark { from { opacity: 0; transform: translateY(10px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes app-intro-out { to { opacity: 0; visibility: hidden; } }
+
+/* ── Sidebar unfold (components/layout/Sidebar.tsx) ───────────────────── */
+.sb-unfold { animation: sb-unfold 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes sb-unfold { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sb-unfold { animation: none; } }
+.intro-playing .sb-unfold { animation-play-state: paused; }
+
+/* ── Mobile shell (components/mobile/, AppShell narrow branch) ──────────────
+   The same 768px line as hooks/useIsNarrow.ts. `--mobile-nav-h` is the bottom
+   tab bar's height INCLUDING the home-indicator inset; everything that sits at
+   the bottom of a phone screen (StickyActionBar, toasts, the /compras cart
+   bar) offsets by it, and the scroll container is padded by it, so nothing is
+   ever hidden behind the tabs. Outside the app shell no tab bar renders, and
+   nothing reads the variable. */
+@media (max-width: 768px) {
+  :root { --mobile-nav-h: calc(56px + env(safe-area-inset-bottom, 0px)); }
+
+  /* 100vh on a phone includes the area behind the browser's toolbars, which
+     put the bottom of every screen under them. dvh is the visible height. */
+  .app-shell-mobile { height: 100vh; height: 100dvh; }
+
+  /* Toasts float above the tab bar, full width, instead of bottom-right. */
+  .toast-stack {
+    left: 12px !important; right: 12px !important;
+    bottom: calc(var(--mobile-nav-h, 0px) + 12px) !important;
+    align-items: stretch;
+  }
+}
+
+/* The shared <Button> (components/ui/Button, class `.btn`) is 30px tall at
+   size "sm" — fine for a mouse, under the 44px a thumb needs. On phones every
+   one of them grows to 44px; the inline styles set no min-height, so this
+   wins without touching desktop. */
+@media (max-width: 768px) {
+  .btn { min-height: 44px; box-sizing: border-box; justify-content: center; }
+  /* Same for the shared <Input>/<Select>/<Textarea> (`.form-input`): 44px,
+     and 16px text — below 16px iOS zooms the whole page on focus. The
+     font-size is set inline by controlStyle(), hence !important. */
+  .form-input { min-height: 44px; box-sizing: border-box; font-size: 16px !important; }
+  /* ConfirmDialog's two answers share the row at thumb height. */
+  .confirm-btn { min-height: 44px; flex: 1; }
+}
+
+/* Dividers between cards in a MobileList. */
+.mobile-list-item + .mobile-list-item { border-top: 1px solid var(--border); }
+
+/* Press feedback on touch: a brief dim, like a native list row or tab. Only
+   where hover does not exist, so desktop pointers never see it. */
+@media (hover: none) {
+  .tap-feedback { -webkit-tap-highlight-color: transparent; transition: opacity var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out); }
+  .tap-feedback:active { opacity: 0.6; }
+}
+
+/* MobileTabs: a strip that scrolls, without a scrollbar painted over it. */
+.mobile-tabs-scroller { scrollbar-width: none; }
+.mobile-tabs-scroller::-webkit-scrollbar { display: none; }
+
+/* The header title swaps with a short fade when the screen changes. */
+.mobile-title-enter { animation: mobileTitleEnter var(--dur-3) var(--ease-out); }
+@keyframes mobileTitleEnter {
+  from { opacity: 0; transform: translateX(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* In-route navigation on a phone (a list opening one item, and back): the new
+   view slides in from the side it came from, like a pushed/popped native
+   screen. Panels switched by tabs only fade. Transform/opacity only; the global
+   reduced-motion rule turns all three off. */
+.mobile-push-enter { animation: mobilePushEnter var(--dur-3) var(--ease-out); }
+.mobile-pop-enter  { animation: mobilePopEnter  var(--dur-3) var(--ease-out); }
+.mobile-fade-enter { animation: mobileFadeEnter var(--dur-2) var(--ease-out); }
+@keyframes mobilePushEnter { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes mobilePopEnter  { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+@keyframes mobileFadeEnter { from { opacity: 0; } to { opacity: 1; } }
+
+/* Buttons for phone screens (StickyActionBar, sheets): 48px, sharing the row,
+   one primary. */
+.mobile-btn {
+  all: unset; box-sizing: border-box; cursor: pointer; flex: 1; min-width: 0;
+  min-height: 48px; padding: 0 16px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 15px; font-weight: 700; text-align: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+.mobile-btn:active { transform: scale(0.98); }
+.mobile-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mobile-btn:disabled, .mobile-btn[aria-disabled="true"] { opacity: 0.45; cursor: default; transform: none; }
+.mobile-btn-primary { background: var(--accent); color: #fff; }
+.mobile-btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.mobile-btn-danger { background: var(--signal-order-now-fg); color: #fff; }

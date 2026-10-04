@@ -26,6 +26,7 @@ from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute, _json
 from backend.errors import AppError
+from backend.inventory.defaults import SOURCE_USER
 
 log = logging.getLogger(__name__)
 
@@ -288,6 +289,7 @@ def _apply_supply_rules(
     stock_rows: list[dict],
     learned_lead_times: dict,
     base_service_level: float,
+    tenant_id: Optional[str] = None,
 ) -> tuple[list[dict], dict, float]:
     """
     Supply-side overrides: returns (stock_rows, learned_lead_times,
@@ -296,10 +298,51 @@ def _apply_supply_rules(
     A supplier delay is added to BOTH the configured lead time on the SKU row
     and the learned-from-receptions average, because `resolve_lead_time` prefers
     whichever it has — the delay must land regardless of which one wins.
+
+    Two things had to be true for the delay to land, and neither was:
+
+    1. **The result has to be believed.** These rows are fed to
+       `_compute_inventory_status`, which resolves lead time through
+       `stock_defaults_service.resolve_field` — and that honours the row's own
+       value ONLY when `lead_time_set_by` says a human set it. The scenario
+       wrote the number and never the provenance, so for every SKU whose lead
+       time was not configured by hand (the majority) the delayed value was
+       discarded and the supplier rule, or the 15-day default, won instead. You
+       simulated "my supplier is 21 days late" before high season, the screen
+       answered *"this scenario changes no purchasing decision"*, and you did
+       not buy ahead.
+
+    2. **It has to be added to the right base.** `row["lead_time_days"]` is the
+       RAW column, `NOT NULL DEFAULT 15`. A SKU whose real lead time comes from
+       a supplier rule of 45 was delayed to 15+21=36 — shorter than its
+       undelayed reality. The base is now the resolved value, the same one the
+       semáforo plans on.
+
+    `tenant_id` is what makes (2) possible: without it there is no rule index to
+    resolve against and the old raw-column behaviour is kept, so existing
+    callers cannot break.
     """
     rows = [dict(r) for r in stock_rows]
     learned = dict(learned_lead_times or {})
     service_level = base_service_level
+
+    rule_index = None
+    if tenant_id:
+        from backend.inventory import stock_defaults_service as _sd_svc
+        rule_index = _sd_svc.build_rule_index(tenant_id)
+
+    def _effective_lead_time(row: dict) -> int:
+        """What the semáforo would plan this SKU on, before the delay."""
+        if rule_index is not None:
+            from backend.inventory import stock_defaults_service as _sd_svc
+            value, _source, _scope = _sd_svc.resolve_field(
+                "lead_time_days", row, rule_index,
+                supplier=(row.get("supplier") or None),
+                category=(row.get("category") or None),
+            )
+            if value is not None:
+                return int(value)
+        return int(row.get("lead_time_days") or 15)
 
     for rule in rules:
         if rule["type"] == "supplier_delay":
@@ -310,8 +353,13 @@ def _apply_supply_rules(
             for row in rows:
                 supplier = (row.get("supplier") or "").strip().lower()
                 if target is None or supplier == target:
-                    current = int(row.get("lead_time_days") or 15)
+                    current = _effective_lead_time(row)
                     row["lead_time_days"] = min(MAX_EXTRA_DAYS, current + extra)
+                    # Without this the number above is written and then ignored.
+                    # These rows are in-memory copies that never reach the DB,
+                    # so claiming the value is deliberate is exactly right: in a
+                    # what-if, the user IS stating the lead time.
+                    row["lead_time_set_by"] = SOURCE_USER
             for supplier_key in list(learned):
                 if target is None or supplier_key == target:
                     learned[supplier_key] = min(
@@ -449,7 +497,7 @@ def run_scenario(
     series_adjusted = _series_touched(core_rules, forecasts)
     scenario_forecasts = bridge.apply_rules_to_forecasts(forecasts, core_rules)
     scenario_rows, scenario_learned, scenario_service_level = _apply_supply_rules(
-        clean_rules, stock_rows, learned_lead_times, service_level,
+        clean_rules, stock_rows, learned_lead_times, service_level, tenant_id,
     )
 
     scenario_items = inv_svc._compute_inventory_status(

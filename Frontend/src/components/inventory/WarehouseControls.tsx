@@ -9,7 +9,15 @@ import {
 } from '@/lib/api'
 import type { Warehouse, TransferLane } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { Warehouse as WarehouseIcon, Percent, Plus, X, ArrowLeftRight } from 'lucide-react'
+import { getUser } from '@/lib/auth'
+import { Warehouse as WarehouseIcon, Percent, Plus, X, ArrowLeftRight, Settings2 } from 'lucide-react'
+import MenuButton from '@/components/ui/MenuButton'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+
+/** Phone sizing for the inline controls here: 44px tall targets, and 16px
+ *  text in fields so iOS does not zoom the page when one takes focus. */
+const TAP: React.CSSProperties = { minHeight: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center' }
+const TAP_FIELD: React.CSSProperties = { minHeight: 44, fontSize: 16, boxSizing: 'border-box', borderRadius: 10, padding: '8px 10px' }
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -105,13 +113,24 @@ export function useWarehouses(): WarehousesValue {
   return { warehouses, multi: warehouses.length >= 2, reload }
 }
 
-function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: boolean }) {
+function AddWarehouse({ onCreated, subtle, open, onOpenChange }: {
+  onCreated: () => void
+  subtle?: boolean
+  /** Controlled mode: the trigger lives elsewhere (the setup menu) and
+   *  only the inline editor renders here. Uncontrolled when omitted. */
+  open?: boolean
+  onOpenChange?: (v: boolean) => void
+}) {
   // The chicken-and-egg closer (walkthrough finding #14): warehouses used to
   // be creatable only via API or a stock CSV, so a customer clicking around
   // could never START using multi-warehouse. For mono-warehouse tenants this
   // renders as one subtle pill — the only multi-warehouse affordance they see.
   const { t } = useLanguage()
-  const [adding, setAdding] = useState(false)
+  const narrow = useIsNarrow()
+  const [addingLocal, setAddingLocal] = useState(false)
+  const controlled = open !== undefined
+  const adding = controlled ? open : addingLocal
+  const setAdding = (v: boolean) => { controlled ? onOpenChange?.(v) : setAddingLocal(v) }
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -131,33 +150,46 @@ function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: b
     } finally { setSaving(false) }
   }
 
+  // The catch below already noted "the 403 a viewer gets" and let the button
+  // stand anyway. Offering it at all is the defect: the viewer types a name,
+  // submits, and the only possible outcome is a refusal.
+  const role = getUser()?.role
+  if (role !== 'admin' && role !== 'analyst') return null
+
   if (!adding) {
+    // Controlled: the menu owns the trigger, so render nothing here.
+    if (controlled) return null
     return (
       <button onClick={() => setAdding(true)}
               style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
                        alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 7,
                        fontSize: 11.5, fontWeight: 600,
-                       color: subtle ? 'var(--dim)' : C.indigo }}>
+                       color: subtle ? 'var(--dim)' : C.indigo,
+                       ...(narrow ? { ...TAP, fontSize: 14 } : {}) }}>
         <Plus size={12} /> {t('inventory.wh_add_btn')}
       </button>
     )
   }
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, ...(narrow ? { width: '100%', gap: 10 } : {}) }}>
       <input autoFocus value={name}
              name="warehouse_name" aria-label={t('inventory.wh_add_placeholder')}
              placeholder={t('inventory.wh_add_placeholder')}
              onChange={e => setName(e.target.value)}
              onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setAdding(false) }}
+             enterKeyHint="done"
              style={{ width: 140, background: 'transparent', border: `1px solid ${C.border}`,
-                      borderRadius: 6, color: C.text, fontSize: 12, padding: '4px 8px' }} />
+                      borderRadius: 6, color: C.text, fontSize: 12, padding: '4px 8px',
+                      ...(narrow ? { ...TAP_FIELD, flex: 1, minWidth: 0 } : {}) }} />
       <button onClick={save} disabled={saving || !name.trim()}
-              style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo }}>
+              style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo,
+                       ...(narrow ? { ...TAP, fontSize: 14 } : {}) }}>
         {saving ? t('common.saving') : t('common.save')}
       </button>
       <button onClick={() => setAdding(false)} aria-label={t('common.cancel')}
-              style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
-        <X size={13} color={C.dim} />
+              style={{ all: 'unset', cursor: 'pointer', display: 'flex',
+                       ...(narrow ? { ...TAP, minWidth: 44, justifyContent: 'center' } : {}) }}>
+        <X size={narrow ? 18 : 13} color={C.dim} />
       </button>
     </span>
   )
@@ -165,10 +197,11 @@ function AddWarehouse({ onCreated, subtle }: { onCreated: () => void; subtle?: b
 
 function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
   // Transfer lanes (PENDIENTES #2): a lane gives a move between two warehouses
-  // a lead time and a cost, which is what lets Faro decide whether moving
+  // a lead time and a cost, which is what lets StockAI decide whether moving
   // stock actually beats buying it. Unconfigured pairs use the backend default
   // (1 day, free) — the empty state says so instead of pretending it's broken.
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   const [lanes, setLanes] = useState<TransferLane[] | null>(null)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -213,7 +246,12 @@ function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
   const field: React.CSSProperties = {
     background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6,
     color: C.text, fontSize: 12, padding: '3px 6px',
+    ...(narrow ? { ...TAP_FIELD, width: '100%' } : {}),
   }
+  // Phone: each lane field on its own labelled cell of a two-column grid.
+  const lbl: React.CSSProperties = narrow
+    ? { fontSize: 12, color: C.dim, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }
+    : { fontSize: 11, color: C.dim }
 
   return (
     <div style={{
@@ -239,21 +277,24 @@ function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
           </span>
           <button onClick={() => remove(lane)}
                   aria-label={`${t('transfers.lanes_delete')} ${lane.from_warehouse} ${lane.to_warehouse}`}
-                  style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
-            <X size={12} color={C.dim} />
+                  style={{ all: 'unset', cursor: 'pointer', display: 'flex',
+                           ...(narrow ? { ...TAP, minWidth: 44, justifyContent: 'center', flexShrink: 0 } : {}) }}>
+            <X size={narrow ? 16 : 12} color={C.dim} />
           </button>
         </div>
       ))}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 11, color: C.dim }}>
+      <div style={narrow
+        ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }
+        : { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <label style={lbl}>
           {t('transfers.lanes_from')}{' '}
           <select name="lane_from" value={effectiveFrom}
                   onChange={e => setFrom(e.target.value)} style={field}>
             {names.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 11, color: C.dim }}>
+        <label style={lbl}>
           {t('transfers.lanes_to')}{' '}
           <select name="lane_to" value={effectiveTo}
                   onChange={e => setTo(e.target.value)} style={field}>
@@ -261,27 +302,28 @@ function TransferLanesEditor({ warehouses }: { warehouses: Warehouse[] }) {
                   .map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 11, color: C.dim }}>
+        <label style={lbl}>
           {t('transfers.lanes_days')}{' '}
-          <input type="number" min={0} name="lane_days" value={days}
+          <input type="number" inputMode="numeric" min={0} name="lane_days" value={days}
                  onChange={e => setDays(e.target.value)}
-                 style={{ ...field, width: 56 }} />
+                 style={{ ...field, width: narrow ? '100%' : 56 }} />
         </label>
-        <label style={{ fontSize: 11, color: C.dim }}>
+        <label style={lbl}>
           {t('transfers.lanes_cost_per_unit')}{' '}
-          <input type="number" min={0} step="0.01" name="lane_cost_per_unit"
+          <input type="number" inputMode="decimal" min={0} step="0.01" name="lane_cost_per_unit"
                  value={costPerUnit} onChange={e => setCostPerUnit(e.target.value)}
-                 style={{ ...field, width: 72 }} />
+                 style={{ ...field, width: narrow ? '100%' : 72 }} />
         </label>
-        <label style={{ fontSize: 11, color: C.dim }}>
+        <label style={lbl}>
           {t('transfers.lanes_fixed_cost')}{' '}
-          <input type="number" min={0} step="0.01" name="lane_fixed_cost"
+          <input type="number" inputMode="decimal" min={0} step="0.01" name="lane_fixed_cost"
                  value={fixedCost} onChange={e => setFixedCost(e.target.value)}
-                 style={{ ...field, width: 72 }} />
+                 style={{ ...field, width: narrow ? '100%' : 72 }} />
         </label>
         <button onClick={save} disabled={saving || effectiveFrom === effectiveTo}
                 style={{ all: 'unset', cursor: 'pointer', fontSize: 12,
-                         fontWeight: 600, color: C.indigo }}>
+                         fontWeight: 600, color: C.indigo,
+                         ...(narrow ? { ...TAP, fontSize: 14, alignSelf: 'end', justifyContent: 'center' } : {}) }}>
           {saving ? t('common.saving') : t('transfers.lanes_add')}
         </button>
       </div>
@@ -298,10 +340,15 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
   onCreated?: () => void
 }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   // Warehouse mutations refresh the shared state directly; the optional
   // callbacks are for page-specific side effects (e.g. reloading status).
   const { reload } = useWarehouses()
   const [editingShares, setEditingShares] = useState(false)
+  const [addingWarehouse, setAddingWarehouse] = useState(false)
+  // Same gate AddWarehouse applies to itself: a viewer offered these three
+  // can only ever reach a 403.
+  const canConfigure = ['admin', 'analyst'].includes(getUser()?.role ?? '')
   const [editingLanes, setEditingLanes] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -316,6 +363,33 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
   }
 
   const noShares = warehouses.every(w => w.demand_share == null)
+
+  /** The split that will really apply, and which warehouses get nothing.
+   *
+   *  Mirrors `warehouse_service.get_demand_shares`: it normalises over the
+   *  warehouses that HAVE a value, so a blank box means 0% of the demand — not
+   *  "untouched". Shown because the arithmetic is invisible otherwise.
+   */
+  const shareEffect = (() => {
+    const value = (w: { name: string; demand_share?: number | null }) => {
+      const raw = draft[w.name]
+      if (raw !== undefined) return raw.trim() === '' ? null : Number(raw)
+      return w.demand_share ?? null
+    }
+    const set = warehouses.filter(w => {
+      const v = value(w)
+      return v != null && Number.isFinite(v) && v > 0
+    })
+    if (!set.length) return null
+    const total = set.reduce((sum, w) => sum + Number(value(w)), 0)
+    return {
+      effective: set.map(w => ({
+        name: w.name,
+        pct: Math.round((Number(value(w)) / total) * 1000) / 10,
+      })),
+      blank: warehouses.filter(w => !set.includes(w)).map(w => w.name),
+    }
+  })()
 
   async function saveShares() {
     setSaving(true)
@@ -341,13 +415,17 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
     fontSize: 11.5, fontWeight: 600,
     background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
     color: active ? C.indigo : C.dim,
+    ...(narrow ? { ...TAP, fontSize: 14, padding: '0 14px', borderRadius: 999, flexShrink: 0, whiteSpace: 'nowrap',
+                   border: `1px solid ${active ? 'var(--accent)' : C.border}` } : {}),
   })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div role="tablist" aria-label={t('inventory.wh_selector_aria')}
-           style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-        <WarehouseIcon size={14} color={C.dim} />
+           className={narrow ? 'mobile-tabs-scroller' : undefined}
+           style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 4,
+                    ...(narrow ? { flexWrap: 'nowrap', overflowX: 'auto', minWidth: 0, paddingBottom: 2 } : { flexWrap: 'wrap' }) }}>
+        <WarehouseIcon size={14} color={C.dim} style={{ flexShrink: 0 }} />
         <button role="tab" aria-selected={value === null}
                 onClick={() => onChange(null)} style={pill(value === null)}>
           {t('inventory.wh_all')}
@@ -358,17 +436,30 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
             {w.name}
           </button>
         ))}
-        <button onClick={() => { setEditingShares(v => !v); setDraft({}) }}
-                aria-label={t('inventory.wh_shares_edit_aria')}
-                style={{ ...pill(false), display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Percent size={12} /> {t('inventory.wh_shares_btn')}
-        </button>
-        <button onClick={() => setEditingLanes(v => !v)}
-                aria-label={t('transfers.lanes_edit_aria')}
-                style={{ ...pill(false), display: 'flex', alignItems: 'center', gap: 4 }}>
-          <ArrowLeftRight size={12} /> {t('transfers.lanes_btn')}
-        </button>
-        <AddWarehouse onCreated={() => { reload(); onCreated?.() }} />
+        {/* These three are SETUP, not the daily read, and they used to sit in
+            the tab row pretending to be warehouses — three extra pills between
+            "Norte" and "Sur". Behind one icon they stop competing with the
+            thing this row is for: choosing which warehouse you are looking at. */}
+        {canConfigure && (
+          <MenuButton
+            icon={<Settings2 size={13} />}
+            title={t('inventory.wh_setup_menu')}
+            align="left"
+            items={[
+              { label: t('inventory.wh_shares_btn'), icon: <Percent size={12} />,
+                onSelect: () => { setEditingShares(v => !v); setDraft({}) } },
+              { label: t('transfers.lanes_btn'), icon: <ArrowLeftRight size={12} />,
+                onSelect: () => setEditingLanes(v => !v) },
+              { label: t('inventory.wh_add_btn'), icon: <Plus size={12} />,
+                onSelect: () => setAddingWarehouse(true) },
+            ]}
+          />
+        )}
+        <AddWarehouse
+          onCreated={() => { reload(); onCreated?.() }}
+          open={canConfigure ? addingWarehouse : undefined}
+          onOpenChange={setAddingWarehouse}
+        />
       </div>
 
       {editingLanes && <TransferLanesEditor warehouses={warehouses} />}
@@ -387,26 +478,51 @@ export function WarehouseSelector({ value, onChange, warehouses, onSharesChanged
         }}>
           <span style={{ fontSize: 11, color: C.dim }}>{t('inventory.wh_shares_label')}</span>
           {warehouses.map(w => (
-            <label key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.text }}>
+            <label key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.text, ...(narrow ? { fontSize: 14, gap: 6 } : {}) }}>
               {w.name}
               <input
                 type="number" min={0} max={100}
                 name={`demand-share-${w.name}`}
                 defaultValue={w.demand_share ?? ''}
                 onChange={e => setDraft(d => ({ ...d, [w.name]: e.target.value }))}
+                inputMode="decimal"
                 style={{ width: 56, background: 'transparent', border: `1px solid ${C.border}`,
-                         borderRadius: 6, color: C.text, fontSize: 12, padding: '3px 6px' }}
+                         borderRadius: 6, color: C.text, fontSize: 12, padding: '3px 6px',
+                         ...(narrow ? { ...TAP_FIELD, width: 72 } : {}) }}
               />%
             </label>
           ))}
           <button onClick={saveShares} disabled={saving}
-                  style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo }}>
+                  style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.indigo,
+                           ...(narrow ? { ...TAP, fontSize: 14 } : {}) }}>
             {saving ? t('common.saving') : t('common.save')}
           </button>
           <button onClick={() => setEditingShares(false)} aria-label={t('common.cancel')}
-                  style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}>
-            <X size={13} color={C.dim} />
+                  style={{ all: 'unset', cursor: 'pointer', display: 'flex',
+                           ...(narrow ? { ...TAP, minWidth: 44, justifyContent: 'center' } : {}) }}>
+            <X size={narrow ? 18 : 13} color={C.dim} />
           </button>
+
+          {/* What these numbers will ACTUALLY do. The backend normalises over
+              the warehouses that have a value, so the figures need not add to
+              100 — but that also means a blank box is not "leave it alone", it
+              is 0%. Measured: Cartago 35 with principal blank gave Cartago the
+              whole 78.8/day and left principal with no demand at all, silently
+              dropping it out of planning. */}
+          {shareEffect && (
+            <div style={{ flexBasis: '100%', fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
+              {shareEffect.blank.length > 0 && (
+                <div style={{ color: 'var(--signal-order-now-fg)' }}>
+                  {t('inventory.wh_shares_blank_warning',
+                     { names: shareEffect.blank.join(', ') })}
+                </div>
+              )}
+              <div>
+                {t('inventory.wh_shares_effective')}{' '}
+                {shareEffect.effective.map(e => `${e.name} ${e.pct}%`).join(' · ')}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -24,8 +24,15 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
 from forecasting_core.aggregation.rollup import aggregate_by_sku, aggregate_by_store
+from forecasting_core.evaluation.metrics import CHAMPION_METRIC_ORDER
 
 log = logging.getLogger(__name__)
+
+# norm.ppf(0.9). The engine writes q90 = value + 1.2816 * residual_std (see
+# inference/predictor.py), so dividing the q90 spread by this recovers the
+# residual sigma exactly — the same constant backend/inventory/service.py
+# ::_point_sigma uses, so both layers agree on what "sigma" means.
+_Q90_Z = 1.2816
 
 
 def _primary_group(c) -> "Optional[str]":
@@ -60,60 +67,15 @@ class PipelineResults:
     forecast_by_store_df: Optional[pd.DataFrame] = None   # rollup: sum by store across SKUs
     inventory_df:         Optional[pd.DataFrame] = None
     quality_df:           Optional[pd.DataFrame] = None
+    # {sku: cumulative demand-uncertainty bands} — see Pipeline._demand_risk.
+    demand_risk:          dict = field(default_factory=dict)
+    # Purchasing outcome the forecast would have produced — see _policy_backtest.
+    policy_backtest:      dict = field(default_factory=dict)
     run_id:               str = ""
     config_hash:          str = ""
     metadata:             dict = field(default_factory=dict)
     fitted_models:        dict = field(default_factory=dict)   # {key: ML trainer result}
     stat_forecasts:       dict = field(default_factory=dict)   # {model: {sku: {forecast, residuals}}}
-
-
-# ---------------------------------------------------------------------------
-# ML recursive multi-step forecaster
-# ---------------------------------------------------------------------------
-
-def _ml_recursive_forecast(
-    model,
-    target_history: np.ndarray,
-    last_feature_row: np.ndarray,
-    feature_names: List[str],
-    horizon: int,
-) -> np.ndarray:
-    """
-    Iterative horizon-step forecast for an sklearn-compatible ML model.
-
-    Updates lag features after each step; rolling/calendar features are held
-    constant (valid approximation for short horizons).
-    """
-    # Map lag_N column names → their index in feature_names
-    lag_map: Dict[int, int] = {}
-    for i, col in enumerate(feature_names):
-        if col.startswith("lag_"):
-            try:
-                lag_map[int(col.split("_")[1])] = i
-            except (ValueError, IndexError):
-                pass
-
-    max_lag = max(lag_map.keys()) if lag_map else 1
-    buffer = list(target_history[-max(max_lag, 1):]) if len(target_history) > 0 else [0.0]
-
-    preds = []
-    feat = last_feature_row.copy().astype(float)
-
-    for _ in range(horizon):
-        try:
-            pred = float(model.predict(feat.reshape(1, -1))[0])
-            pred = max(0.0, pred)
-        except Exception:
-            pred = float(buffer[-1]) if buffer else 0.0
-        preds.append(pred)
-        buffer.append(pred)
-
-        # Update lag features: lag_n = value n steps back from end of buffer
-        for n, idx in lag_map.items():
-            if len(buffer) >= n:
-                feat[idx] = buffer[-n]
-
-    return np.array(preds)
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +119,17 @@ class Pipeline:
         from forecasting_core.config.config import SessionConfig
         self.config = config if isinstance(config, object) else SessionConfig.from_dict(config)
         self._df = df  # Optional pre-loaded DataFrame; if None, loads from cfg.data.path
+        # SKUs where a naive baseline scored better than every real model. Set
+        # by _select_champions; carried out in the run metadata rather than left
+        # in a log line nobody reads.
+        self._outperformed_by_baseline: List[dict] = []
+        # SKUs that finished the run with no inventory recommendation. See
+        # _inventory: on screen this is indistinguishable from "well stocked".
+        self._skipped_no_forecast: List[dict] = []
+        # {sku: champion model}, set by _select_champions. _demand_risk needs it
+        # so the ONE band it publishes per SKU belongs to the model the purchase
+        # is actually computed from.
+        self._champion_by_sku: Dict[str, str] = {}
 
     def _maybe_resample(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -175,7 +148,16 @@ class Pipeline:
         # single-key. Extend resample_to_frequency to group by all of
         # group_keys before wiring multi-warehouse data through Estrategia B.
         group_col = _primary_group(c)
-        return resample_to_frequency(df, c.date, group_col, c.target, g.target_freq)
+        # Inventory has to survive the resample or censored-demand recovery
+        # silently switches off for every Estrategia B session. `min` is the
+        # right aggregation: a week in which stock touched zero on any day is a
+        # week in which demand was truncated, and `last` would miss it whenever
+        # the shelf was restocked before the week closed.
+        inventory_col = getattr(c, "inventory", "") or ""
+        return resample_to_frequency(
+            df, c.date, group_col, c.target, g.target_freq,
+            extra_cols={inventory_col: "min"} if inventory_col else None,
+        )
 
     def run(self, on_progress: Optional[Callable[[dict], None]] = None) -> PipelineResults:
         """
@@ -275,6 +257,22 @@ class Pipeline:
         for entry in correction_log.to_list():
             log.info(f"[auto_correct] {entry['action']}: {entry['description']}")
 
+        # 2c. Censored demand: a stockout day records what could be sold, not
+        # what was wanted. Runs BEFORE quality checks and feature engineering so
+        # every later step sees demand, not availability. No-op unless the user
+        # mapped an inventory column (see data/censoring.py).
+        from forecasting_core.data.censoring import recover_censored_demand
+        df, censoring_report = recover_censored_demand(
+            df, date_col=c.date, target_col=c.target,
+            group_col=_primary_group(c),
+            inventory_col=getattr(c, "inventory", "") or "",
+        )
+        if censoring_report.changed_anything:
+            log.info(
+                f"[censoring] recovered {censoring_report.n_recovered} stockout "
+                f"buckets (+{censoring_report.units_recovered:.0f} units)"
+            )
+
         _stage("quality", "Checking data quality", PipelineStatus.QUALITY)
 
         # 3. Data Quality
@@ -311,6 +309,19 @@ class Pipeline:
             group_cols=group_cols,
         )
         df_ml = engineer.transform(df)
+        df_ml, unservable = self._drop_unservable_features(df_ml, df, c)
+        if unservable:
+            validation_findings.append({
+                "error_id": "FEATURE_NOT_AVAILABLE_AT_FORECAST_TIME",
+                "severity": "warning",
+                "layer": "features",
+                "message": (
+                    "Dropped column(s) that exist in the history but cannot be "
+                    f"known for a future date: {', '.join(unservable)}."
+                ),
+                "context": {"columns": unservable},
+                "suggestions": [],
+            })
 
         # 6. Baselines
         baselines = self._compute_baselines(df, c, t)
@@ -322,7 +333,7 @@ class Pipeline:
 
             for col in df.columns:
                 if df[col].dtype == "object":
-                    # intentar convertir a numérico
+                    # try converting to numeric
                     converted = pd.to_numeric(df[col], errors="coerce")
 
                     # almost everything converted cleanly -> treat as numeric
@@ -343,12 +354,22 @@ class Pipeline:
             ml_skus.update(router.skus_for_model(routing, mn))
         df_ml_f = df_ml[df_ml[_primary_group(c)].astype(str).isin(ml_skus)] if _primary_group(c) and ml_skus else df_ml
 
-        # 🔧 FIX CRÍTICO: sanitizar features antes de ML
+        # CRITICAL FIX: sanitize features before ML
         df_ml_f = sanitize_ml_dataframe(df_ml_f)
         trainer = Trainer(
             t.train_ratio, t.walk_forward, t.wfv_splits,
             tuning=t.tuning, tuning_trials=t.tuning_trials,
             max_workers=t.max_workers,
+            # Score the model on the problem the product actually solves: a
+            # forecast for h buckets out cannot have seen the h buckets before
+            # it. See WalkForwardSplitter.
+            gap=h,
+            # …and grade the final model over the whole h-step forecast, on the
+            # same protocol the statistical and global models are graded on, so
+            # champion selection compares like with like. See
+            # Trainer._horizon_metrics.
+            horizon=h,
+            features_cfg=cfg.features,
         )
         results_ml = trainer.train(
             df_ml_f, ml_models,
@@ -361,35 +382,76 @@ class Pipeline:
             _stage("ml_training", "Training ML models", finished=True)
         else:
             _stage("ml_training", skipped=True)
-            _stage("ml_quantiles", skipped=True)
 
-        # 7b. Quantile ML models — train p10/p50/p90 regressors and attach to results
-        if ml_models:
-            log.info("Pipeline: training quantile ML models (p10/p50/p90)...")
-            q_levels = [(0.1, "p10"), (0.5, "p50"), (0.9, "p90")]
-            for q_idx, (q_level, key_suffix) in enumerate(q_levels):
-                try:
-                    q_models = factory.build_quantile_ml(q_level)
+        # 7b. There is no separate p10/p50/p90 pass, and that is deliberate.
+        #
+        # This step used to fit three extra quantile regressors per ML model per
+        # SKU. Measured on the demo catalogue: the point models took 15.7s and
+        # the three quantile passes 21.5s — 58% of all ML training time, the
+        # single most expensive thing the trainer did.
+        #
+        # Nothing that decides anything used them. Their metrics were discarded
+        # by design, and the layer that turns a band into a purchase quantity
+        # refused their band: `backend/inventory/service.py::_point_sigma`
+        # prefers `q90` and records why — "xgboost's upper spread is 43%
+        # narrower than its own honest q90", because a quantile model fitted on
+        # the training set and then run recursively is graded on nothing and
+        # tightens on its own residuals. So the product was paying the majority
+        # of its training budget for a band drawn on a chart while the money was
+        # computed from a different one.
+        #
+        # One band now, the one the decision already used: the empirical
+        # quantiles of the out-of-fold residual bank (`_compute_quantile_bounds`
+        # in the predictor), with p10/p50/p90 as aliases of q10/q50/q90 so the
+        # chart and the reorder point cannot disagree again.
 
-                    def _q_unit(d, n, _i=q_idx):
-                        # Three refits share one stage: pass i covers
-                        # [i/3, (i+1)/3) of it.
-                        _stage("ml_quantiles", "Training quantile models",
-                               done=_i * n + d, total=len(q_levels) * n)
+        # 7c. Global cross-learning model — ONE fit over every series at once.
+        # Trained on the full feature frame (not `df_ml_f`, which is narrowed to
+        # the SKUs routed to the per-SKU ML models): a global model's whole
+        # value is the series the routing table would have excluded.
+        if not factory.global_names():
+            _stage("global_model", skipped=True)
+        if factory.global_names():
+            _stage("global_model", "Training the global cross-learning model",
+                   PipelineStatus.TRAINING)
+            log.info("Pipeline: training global model over all series...")
+            try:
+                from forecasting_core.training.global_trainer import GlobalTrainer
 
-                    q_results = trainer.train(
-                        df_ml_f, q_models,
-                        group_cols=group_cols,
-                        target=c.target, dt=c.date,
-                        on_unit=_q_unit,
-                    )
-                    for res_key, q_res in q_results.items():
-                        if res_key in results_ml:
-                            results_ml[res_key][f"fitted_model_{key_suffix}"] = q_res.get("fitted_model")
-                except Exception as e:
-                    log.warning(f"Pipeline: quantile {key_suffix} training failed: {e}")
+                # Built with the warm-up rows KEPT. A series shorter than the
+                # widest configured lag loses every row to the standard warm-up
+                # drop — a 24-bucket SKU against a lag_28 config produces an
+                # empty frame — so it never reaches the model that exists to
+                # serve it. Measured on a real run: the one newly-launched SKU
+                # in a 13-series catalogue was excluded as "no_forecast" while
+                # the global model trained happily on the other twelve, which is
+                # the exact opposite of the point. LightGBM splits on missing
+                # values natively, so the warm-up NaNs cost nothing.
+                df_ml_global = engineer.transform(df, drop_warmup=False)
+                global_skus = set(router.skus_for_model(routing, "global_lgbm"))
+                df_global = (
+                    df_ml_global[df_ml_global[_primary_group(c)].astype(str).isin(global_skus)]
+                    if _primary_group(c) and global_skus else df_ml_global
+                )
+                global_results = GlobalTrainer(
+                    horizon=h,
+                    train_ratio=t.train_ratio,
+                    walk_forward=t.walk_forward,
+                    wfv_splits=t.wfv_splits,
+                    max_workers=t.max_workers,
+                    params=cfg.models.get("global_lgbm") or {},
+                ).train(
+                    sanitize_ml_dataframe(df_global),
+                    group_cols=group_cols, target=c.target, dt=c.date,
+                )
+                log.info(f"Pipeline: global model produced {len(global_results)} series")
+                results_ml.update(global_results)
+            except Exception as e:
+                # A global-model failure must not take the whole run down: every
+                # per-SKU model has already trained and is still usable.
+                log.warning(f"Pipeline: global model failed: {e}", exc_info=True)
 
-        _stage("ml_quantiles", finished=True)
+        _stage("global_model", finished=True)
         _stage("stat_training", "Training statistical models", PipelineStatus.TRAINING)
 
         # 8. Statistical models — tracked via PartialResultCollector
@@ -432,11 +494,16 @@ class Pipeline:
                 continue
             sub = df[df[_primary_group(c)].astype(str).isin(skus)] if _primary_group(c) else df
             log.info(f"Pipeline: running {model_name} on {len(skus)} SKUs...")
+            # Prophet is the one runner that takes the holiday calendar. The ML
+            # path has had it all along; giving it to Prophet too means both
+            # families see the same holidays for the same tenant.
+            extra = ({"holiday_country": getattr(cfg.features, "holiday_country", "") or ""}
+                     if model_name == "prophet" else {})
             try:
                 result = run_fn(
                     sub, c.date, c.target, _primary_group(c),
                     t.train_ratio, t.min_history, t.seasonal_period,
-                    horizon=h, on_unit=_stat_unit_cb(model_name),
+                    horizon=h, on_unit=_stat_unit_cb(model_name), **extra,
                 )
                 results_stat[model_name] = result
                 for sku in skus:
@@ -483,18 +550,18 @@ class Pipeline:
         _stage("stat_training", finished=True)
         _stage("ensemble", "Building ensemble", PipelineStatus.TRAINING)
 
-        # 9. Ensemble
-        sku_model_mae: dict = {}
-        for key, res in results_ml.items():
-            sku, model = res.get("sku"), res.get("model")
-            if sku and model:
-                sku_model_mae.setdefault(sku, {})[model] = res.get("mae", float("inf"))
-        ensemble = WeightedEnsemble()
-        if sku_model_mae:
-            ensemble.fit(sku_model_mae)
-
-        # 10. Flatten evaluation metrics
+        # 9. Flatten evaluation metrics
         metrics_df = self._flatten(results_ml, results_stat, baselines)
+
+        # 10. Ensemble — fitted AFTER the metrics table, from the metrics table.
+        # It used to be fitted before it, from `results_ml` alone and on the
+        # 1-step `mae`: the statistical models were handed a weight of zero
+        # while still being fed into the average, and the weighting metric was
+        # one no other layer in the product uses.
+        ensemble = WeightedEnsemble()
+        ensemble_scores = self._ensemble_scores(metrics_df)
+        if ensemble_scores:
+            ensemble.fit(ensemble_scores)
 
         _stage("ensemble", finished=True)
         _stage("future_forecast", "Generating forecasts", PipelineStatus.FORECASTING)
@@ -510,6 +577,12 @@ class Pipeline:
 
         _stage("inventory", finished=True)
         _stage("registry", "Logging the run", PipelineStatus.INVENTORY)
+        # 12b. Two outcomes of step 12 that the user has to be told about. They
+        # are emitted as ordinary validation findings so they travel the channel
+        # that already exists and already has a panel — inventing a second
+        # reporting path for them would just be a second thing to forget.
+        validation_findings.extend(self._inventory_findings())
+
         # 13. Registry
         registry = ModelRegistry(path=cfg.data.registry_path)
         run_id = registry.log_run(
@@ -535,6 +608,8 @@ class Pipeline:
             forecast_df=forecast_df,
             inventory_df=inventory_df,
             quality_df=quality_df,
+            demand_risk=self._demand_risk(results_ml, cfg.forecast.quantiles),
+            policy_backtest=self._policy_backtest(results_ml, b),
             run_id=run_id,
             config_hash=cfg.hash,
             metadata={
@@ -542,7 +617,20 @@ class Pipeline:
                 # Carried out of the pipeline so the caller can surface them;
                 # see _run_validation for why logging alone was not enough.
                 "validation_findings": validation_findings,
-                "corrections": correction_log.to_list(),
+                # The censoring report travels with the corrections so the user
+                # is told which observations are estimates rather than
+                # measurements. Silently rewriting someone's sales figures and
+                # only logging it would be the worst version of this feature.
+                "corrections": correction_log.to_list() + (
+                    [censoring_report.to_dict()]
+                    if censoring_report.changed_anything else []
+                ),
+                "censoring": censoring_report.to_dict(),
+                # SKUs no trained model could beat a naive forecast on. Worth
+                # telling a distributor about: it is the honest signal that the
+                # history for that product carries no pattern worth modelling.
+                "outperformed_by_baseline": list(self._outperformed_by_baseline),
+                "skipped_no_forecast": list(self._skipped_no_forecast),
             },
             fitted_models=results_ml,
             stat_forecasts=results_stat,
@@ -722,6 +810,458 @@ class Pipeline:
     # Helpers
     # ------------------------------------------------------------------
 
+    # Defined in evaluation/metrics.py because the backend's inventory layer
+    # walks the SAME list to answer the same question, and the two drifting
+    # apart means the engine plans from one model while the purchase order
+    # comes from another. See CHAMPION_METRIC_ORDER for the measurement.
+    CHAMPION_METRICS = CHAMPION_METRIC_ORDER
+
+    @staticmethod
+    def _ensemble_scores(metrics_df) -> Dict[str, Dict[str, float]]:
+        """
+        {sku: {model: error}} for the ensemble weights, on the champion metric.
+
+        Same column and same exclusion as `_select_champions`: baselines are a
+        floor to beat, not members of an average, and a naive forecast dragging
+        on the ensemble would be the same defect as crowning one.
+        """
+        if metrics_df is None or metrics_df.empty or "sku" not in metrics_df.columns:
+            return {}
+        metric = next((m for m in Pipeline.CHAMPION_METRICS if m in metrics_df.columns), None)
+        if metric is None:
+            return {}
+        rows = metrics_df[metrics_df["type"] != "baseline"] if "type" in metrics_df.columns else metrics_df
+        rows = rows.dropna(subset=[metric, "model"])
+        scores: Dict[str, Dict[str, float]] = {}
+        for sku_val, model, value in zip(rows["sku"], rows["model"], rows[metric]):
+            scores.setdefault(str(sku_val), {})[str(model)] = float(value)
+        return scores
+
+    def _select_champions(self, metrics_df, norm_sku) -> Dict[str, str]:
+        """
+        Pick the model that will drive each SKU's purchase recommendation.
+
+        This used to be `mae.idxmin()`. MAE is symmetric: it scores a forecast
+        that is 10 units low exactly as well as one that is 10 units high, so it
+        crowned models that split the difference on a business where the two
+        mistakes cost different amounts. Ordering by the asymmetric cost picks
+        the model that is wrong in the cheaper direction.
+
+        Ranking is by `cost_horizon`: the same asymmetric cost, but measured
+        over the whole h-step forecast for EVERY family. The per-SKU ML models
+        used to be ranked on a 1-step score — their validation rows carry their
+        own true lag features, so each one was a fresh one-step problem — while
+        the statistical models forecast their entire test window from the end of
+        train and the global model runs a rolling-origin backtest. Mixing those
+        in one column was comparing an easy question with a hard one, and it
+        handed the ML models a systematic advantage on every SKU. They are now
+        all asked the same question (see Trainer._horizon_metrics).
+
+        A second, quieter version of the same bug was in the LENGTH of the
+        statistical models' window, not just its origin, and it survived the
+        fix above (docs/stability.md #17(d)). `models/ets.py`, `arima.py`,
+        `prophet.py`, `croston.py`, `sarimax.py` and `lstm.py` each forecast
+        their WHOLE held-out tail — `len(test)` steps — and this method used to
+        take that whole-tail `cost` and put it straight into `cost_horizon`
+        unchanged. On a 450-row daily series at `train_ratio=0.8` that tail is
+        ~90 buckets against the ML models' 30: a strictly harder question, so
+        the statistical families were handicapped by construction and lost the
+        champion race for a reason that had nothing to do with being worse.
+        Each statistical runner now computes its OWN `cost_horizon`, windowed
+        to `min(horizon, len(test))`, before its result ever reaches this
+        table — the length gap is closed at the source, not patched here. Their
+        other metrics (`mae`, `rmse`, `wape`, `bias`, `mape`, `smape`, `cost`)
+        deliberately still cover the WHOLE held-out tail: "how wrong is this
+        model over everything it was asked to forecast" is a real question and
+        nothing else in the product reads those columns as if they were
+        windowed — only `cost_horizon` is the comparable one.
+
+        What is still not identical, and is worth stating plainly rather than
+        burying:
+
+        * The h-step forecasts are produced at different origins. The ML and
+          statistical models are scored from the single final train cutoff; the
+          global model averages several rolling origins, so its number rests on
+          more evidence and is less at the mercy of one unusual window.
+        * A series with less held-out data than the horizon is scored over
+          fewer steps than a longer one. The shortfall is visible — in
+          `horizon_metrics["by_horizon"]` (and the flattened `horizon_steps`
+          column) for the ML/global rows, in each statistical runner's own
+          `horizon_steps` for the rest — not hidden, but two SKUs' figures can
+          still cover different numbers of steps.
+        * `cost` uses the product's standard 3:1 shortfall-to-surplus ratio for
+          every tenant, not the tenant's configured stockout multiplier. The
+          configured value drives the actual order quantity; here it would only
+          have to be threaded through six model runners to change a ranking it
+          rarely reorders.
+        """
+        champions: Dict[str, str] = {}
+        self._outperformed_by_baseline = []
+        self._champion_by_sku = {}
+        if metrics_df is None or metrics_df.empty or "sku" not in metrics_df.columns:
+            return champions
+
+        metric = next((m for m in self.CHAMPION_METRICS if m in metrics_df.columns), None)
+        if metric is None:
+            return champions
+
+        has_type = "type" in metrics_df.columns
+        for sku_val, grp in metrics_df.groupby("sku"):
+            valid = grp.dropna(subset=[metric])
+            if valid.empty:
+                continue
+
+            # Baselines are scored so the real models have something to beat;
+            # they are not candidates. Buying from a naive forecast because it
+            # happened to win a fold is a defect, not a fallback — the same rule
+            # `backend/inventory/service.py::best_model_by_sku` already applies,
+            # and the two layers disagreeing was itself the bug: a baseline
+            # crowned here produced no forecast rows downstream, so `_inventory`
+            # dropped the SKU with no recommendation and no trace.
+            #
+            # The information is not discarded, only kept out of the race: a SKU
+            # no real model can beat a naive forecast on is something the
+            # business should hear about, and it is recorded for the caller.
+            candidates = valid[valid["type"] != "baseline"] if has_type else valid
+            if candidates.empty:
+                continue
+
+            champion = candidates.loc[candidates[metric].idxmin(), "model"]
+            champions[norm_sku(sku_val)] = champion
+            # Kept for `_demand_risk`: only the champion's band may survive
+            # into the payload, because the champion is the model the purchase
+            # is computed from. See that method.
+            self._champion_by_sku[str(sku_val)] = str(champion)
+
+            if has_type:
+                baselines = valid[valid["type"] == "baseline"]
+                if not baselines.empty:
+                    best_baseline = baselines[metric].min()
+                    if best_baseline < candidates[metric].min():
+                        self._outperformed_by_baseline.append({
+                            "sku": norm_sku(sku_val),
+                            "model": champion,
+                            "baseline": baselines.loc[baselines[metric].idxmin(), "model"],
+                        })
+
+        if self._outperformed_by_baseline:
+            log.warning(
+                "%d SKU(s) had no model beat a naive baseline on %s — e.g. %s",
+                len(self._outperformed_by_baseline), metric,
+                [e["sku"] for e in self._outperformed_by_baseline[:5]],
+            )
+        return champions
+
+    @staticmethod
+    def _drop_unservable_features(df_ml, raw_df, c) -> tuple:
+        """
+        Remove features the inference path cannot reproduce for a future date.
+
+        A model may only use inputs that exist on both sides of the forecast
+        boundary. The engineered features qualify — calendar, Fourier, lags and
+        rolling statistics are all computed for future dates by the predictor.
+        Columns that merely came along with the upload do not: `inventory`,
+        `price`, `cost`, the censoring flag. `recursive_ml_predict` builds each
+        future row from the feature NAMES and fills anything it cannot compute
+        with `row.get(f, 0.0)`, so every one of them is a real number during
+        fitting and a hard zero at serve time.
+
+        Measured before removing them: on a series whose demand is genuinely
+        truncated by stock, `inventory` came back with the highest feature
+        importance of all — above the lag — while shifting the served forecast
+        by only ~2%, because a tree cannot extrapolate below its lowest split
+        and the zero simply lands in an average leaf. So the forecast damage is
+        mild. The reporting damage is not: that column tops the SHAP list the
+        product shows the user as the explanation for a number it never
+        influenced.
+
+        Returns (frame, dropped_column_names).
+        """
+        reserved = {c.date, c.target, *(c.group_keys or [])}
+        generated = [col for col in df_ml.columns if col not in raw_df.columns]
+        passthrough = [
+            col for col in df_ml.columns
+            if col in raw_df.columns
+            and col not in reserved
+            and col not in generated
+            and pd.api.types.is_numeric_dtype(df_ml[col])
+        ]
+        if not passthrough:
+            return df_ml, []
+
+        log.warning(
+            "Dropping %d feature column(s) the forecast cannot supply for a "
+            "future date: %s. They are constant-filled at inference, so keeping "
+            "them only adds a feature the model leans on and the forecast never "
+            "receives.",
+            len(passthrough), passthrough,
+        )
+
+        # Everything above is dropped. Only some of it is worth TELLING the user
+        # about, and getting that wrong is its own defect: the first version of
+        # this warning fired on every single session and named `inventory`,
+        # `lead_time`, `promo` and `discount` — columns the canonical schema
+        # broadcasts as constants into files that never contained them. "We
+        # dropped your inventory column" is a confusing thing to read when you
+        # never uploaded one.
+        #
+        # A column is worth naming only if it actually varies (a broadcast
+        # default does not) and is not the target under another name (the
+        # canonical alias, which the Trainer's leakage guard would have removed
+        # anyway).
+        #
+        # The alias is skipped by NAME as well as by value, because the two stop
+        # matching. `apply_canonical_defaults` copies the mapped column into
+        # `demand` before the backend collapses same-day rows, and the collapse
+        # aggregates the target only — so a file with two rows for one day left
+        # `demand` holding one of them and the target holding their sum. On
+        # measured data that produced the user-visible warning "Dropped
+        # column(s) ... : demand", naming a column nobody uploaded, about a
+        # divergence the pipeline created itself.
+        target_alias = "demand" if c.target != "demand" else None
+        target_values = df_ml[c.target] if c.target in df_ml.columns else None
+        reportable = []
+        for col in passthrough:
+            series = df_ml[col]
+            if col == target_alias:
+                continue
+            if series.nunique(dropna=True) <= 1:
+                continue
+            if target_values is not None and series.astype(float).equals(
+                    target_values.astype(float)):
+                continue
+            reportable.append(col)
+
+        return df_ml.drop(columns=passthrough), reportable
+
+    def _inventory_findings(self) -> List[dict]:
+        """
+        Turn the two silent outcomes of inventory generation into findings.
+
+        `NO_MODEL_BEAT_BASELINE` — every model trained for this SKU scored worse
+        than simply repeating the last value. That is not a crash and the SKU
+        still gets a recommendation, but it says the history carries no pattern
+        worth modelling, and a distributor deciding how much to trust a number
+        deserves to know which numbers those are.
+
+        `SKU_WITHOUT_RECOMMENDATION` — the SKU finished the run with nothing.
+        This is the one that must never be quiet: on the semáforo, a product
+        with no recommendation looks exactly like a product that is well
+        stocked, so the failure mode is the user not buying something they
+        needed to buy.
+        """
+        findings: List[dict] = []
+        for entry in self._outperformed_by_baseline:
+            findings.append({
+                "error_id": "NO_MODEL_BEAT_BASELINE",
+                "severity": "warning",
+                "layer": "inventory",
+                "message": (
+                    f"No trained model beat the {entry['baseline']} baseline for "
+                    f"SKU {entry['sku']}; planning uses {entry['model']}."
+                ),
+                "context": entry,
+                "suggestions": [],
+            })
+        for entry in self._skipped_no_forecast:
+            findings.append({
+                "error_id": "SKU_WITHOUT_RECOMMENDATION",
+                "severity": "error",
+                "layer": "inventory",
+                "message": (
+                    f"SKU {entry['sku']} got no purchase recommendation: its "
+                    f"selected model ({entry['model']}) produced no forecast."
+                ),
+                "context": entry,
+                "suggestions": [],
+            })
+        return findings
+
+    def _policy_backtest(self, results_ml: dict, business) -> dict:
+        """
+        Replay the purchasing decision the forecast would have driven.
+
+        This is the number a distributor can actually check against their own
+        experience: how much of demand was served, how many stockouts, how much
+        stock sat in the warehouse. Accuracy metrics cannot express it — a
+        forecast biased 25% high and one biased 25% low post the same WAPE and
+        produce opposite businesses.
+
+        Scoped to the series whose model ran a rolling-origin backtest, because
+        those are the only ones for which a past forecast and the actuals that
+        followed it both exist. Series without one are absent from the result
+        rather than guessed at, and `n_series` in the payload says how many were
+        covered so the headline can never be read as catalogue-wide when it is
+        not.
+        """
+        from forecasting_core.business.policy_backtest import (
+            PolicyComparison, aggregate, backtest_policy,
+        )
+
+        lead_time = max(1, int(getattr(business, "lead_time_days", 7) or 7))
+        service_level = float(getattr(business, "service_level", 0.95) or 0.95)
+
+        comparisons: List[PolicyComparison] = []
+        per_sku: Dict[str, dict] = {}
+
+        for entry in results_ml.values():
+            records = entry.get("backtest_records") or []
+            if not records:
+                continue
+            # Origins are appended fold by fold; the last is the most recent and
+            # the most representative of what the model would do now.
+            record = records[-1]
+            actual = np.asarray(record.get("actual", []), dtype=float)
+            predicted = np.asarray(record.get("pred", []), dtype=float)
+            if actual.size < 2 or predicted.size < 2:
+                continue
+
+            history = np.concatenate([r["actual"] for r in records[:-1]]) \
+                if len(records) > 1 else actual[:1]
+            # The cushion the policy would really have used, from the same
+            # measured bands the reorder point uses in production.
+            forecaster = entry.get("direct_forecaster")
+            safety = 0.0
+            if forecaster is not None:
+                from forecasting_core.evaluation.conformal import horizon_bands
+                bands = horizon_bands(
+                    forecaster.cumulative_residuals_by_horizon, [service_level],
+                )
+                key = min(len(actual), max(bands) if bands else 1)
+                band = bands.get(key, {})
+                if band:
+                    safety = max(0.0, float(list(band.values())[0])
+                                 * float(forecaster.profile.scale))
+
+            try:
+                comparison = backtest_policy(
+                    demand=actual, forecast=predicted, history=history,
+                    lead_time=min(lead_time, max(1, len(actual) - 1)),
+                    safety_stock=safety, model_name=str(entry.get("model", "")),
+                )
+            except Exception as exc:
+                log.warning(f"Policy backtest failed for {entry.get('sku')}: {exc}")
+                continue
+
+            comparisons.append(comparison)
+            per_sku[str(entry.get("sku"))] = comparison.to_dict()
+
+        if not comparisons:
+            return {}
+        return {"summary": aggregate(comparisons), "by_sku": per_sku}
+
+    def _demand_risk(self, results_ml: dict, quantiles) -> dict:
+        """
+        Per-SKU uncertainty of CUMULATIVE demand, which is what a reorder point
+        is actually exposed to.
+
+        A safety stock covers the demand that accumulates while the order is in
+        transit, so the quantity to bound is the SUM over the lead time, not any
+        single bucket. The textbook `z * sigma_daily * sqrt(L)` is one way to
+        approximate that sum's quantile, and it assumes the per-bucket errors
+        are normal and independent. They are neither — a forecast that is high
+        today is usually high tomorrow — so `sqrt(L)` understates the risk on
+        exactly the SKUs with the most persistent bias.
+
+        The rolling-origin backtest measured the cumulative error directly, so
+        the honest number is available and gets published here as an offset in
+        UNITS, per lead time L and per quantile:
+
+            demand over L buckets at quantile q
+                = sum(point forecast over L) + offsets[L][q]
+
+        Two sources can supply this, and both produce the same shape so the
+        consumer (`backend/inventory/service.py::_measured_safety_stock`)
+        needs no new vocabulary to read either:
+
+          * the global model's own rolling-origin backtest
+            (`GlobalDirectForecaster.cumulative_residuals_by_horizon`);
+          * the per-SKU `Trainer`'s pooled bank — built from the SAME
+            walk-forward folds every per-SKU champion is already scored on
+            (see `Trainer._bank_fold_cumulative_residuals`), pooled across the
+            whole catalogue in scaled units, the same way GlobalTrainer pools
+            across every series it fits.
+
+        A SKU whose champion has neither — no folds ran, or the run's pooled
+        bank could not fund `MIN_RESIDUALS_PER_HORIZON` at any horizon — is
+        absent from the result and the consumer keeps its classical formula
+        rather than being handed a quantile estimated from a handful of
+        points.
+        """
+        from forecasting_core.evaluation.conformal import (
+            MIN_RESIDUALS_PER_HORIZON, enforce_horizon_monotonic,
+            enforce_monotonic, horizon_bands,
+        )
+
+        levels = [float(q) for q in (quantiles or [0.5, 0.9, 0.95])]
+        risk: dict = {}
+        for entry in results_ml.values():
+            forecaster = entry.get("direct_forecaster")
+            if forecaster is not None:
+                cumulative = getattr(forecaster, "cumulative_residuals_by_horizon", None)
+                scale = float(getattr(forecaster.profile, "scale", 1.0))
+            else:
+                # The per-SKU Trainer's pooled bank. Unlike the global model's
+                # own backtest it has no per-series fallback to borrow from
+                # when a horizon is thin (cumulative residuals must not pool
+                # across HORIZONS — see conformal.py), so a horizon under the
+                # floor is dropped here instead of being quantile-d from a
+                # handful of points into a confident-looking number.
+                cumulative = entry.get("cumulative_residuals_by_horizon")
+                scale = entry.get("series_scale")
+                if cumulative:
+                    cumulative = {
+                        h: v for h, v in cumulative.items()
+                        if len(v) >= MIN_RESIDUALS_PER_HORIZON
+                    }
+            if not cumulative or scale is None:
+                continue
+            scale = float(scale)
+            # Cumulative residuals must NOT be pooled across horizons — their
+            # scale grows with the horizon by construction. The structure is
+            # restored afterwards instead, which is where it belongs.
+            bands = enforce_horizon_monotonic(
+                horizon_bands(cumulative, levels, pool_across_horizons=False)
+            )
+            offsets = {
+                str(h): {
+                    str(q): round(float(offset) * scale, 4)
+                    for q, offset in enforce_monotonic(band).items()
+                }
+                for h, band in sorted(bands.items())
+            }
+            if not offsets:
+                continue
+
+            # ONE band per SKU, and it must be the CHAMPION's.
+            #
+            # This dict is keyed by SKU while `results_ml` holds one entry per
+            # (model, SKU), so several entries compete to write the same key
+            # and, before this, the last writer won. The global model is added
+            # with `results_ml.update(global_results)` AFTER the per-SKU ones,
+            # so it always won — measured on the demo catalogue, all ten SKUs
+            # came out labelled `global_lgbm` even where the champion was
+            # xgboost.
+            #
+            # That is not a cosmetic mislabel. `backend/inventory/service.py`
+            # drops a band whose model is not the SKU's champion, so every
+            # per-SKU champion silently fell back to `z*sigma*sqrt(L)` — the
+            # classical cushion this whole exercise exists to replace (see
+            # stability.md 17b: it delivers 69-84% against a promised 95%).
+            sku_key = str(entry.get("sku"))
+            champion = self._champion_by_sku.get(sku_key)
+            if champion is not None and str(entry.get("model")) != champion:
+                continue
+            # No champion known yet (a caller that reaches here before
+            # `_select_champions` has run) keeps the old last-writer-wins
+            # behaviour rather than emitting nothing.
+            risk[sku_key] = {
+                "model": entry.get("model"),
+                "quantiles": levels,
+                "cumulative_offsets": offsets,
+            }
+        return risk
+
     def _compute_baselines(self, df, c, t):
         from forecasting_core.evaluation.baselines import BaselineEvaluator
         results = {}
@@ -737,15 +1277,48 @@ class Pipeline:
             )
         return results
 
+    @staticmethod
+    def _horizon_cost(res: dict):
+        """
+        The `cost` measured over the whole h-step forecast, or None.
+
+        `mae`/`rmse`/`wape`/`cost` on an ML or global row are 1-step numbers, by
+        construction (see Trainer._horizon_metrics). The h-step figure lives
+        under `horizon_metrics` and is the only one that answers the same
+        question the statistical models were asked.
+        """
+        hm = res.get("horizon_metrics") or {}
+        return (hm.get("all_horizons") or {}).get("cost")
+
+    @staticmethod
+    def _horizon_steps(res: dict):
+        """
+        How many steps `_horizon_cost` was actually computed over, or None.
+
+        `by_horizon` already carries exactly one entry per step the trainer
+        could fund (see `Trainer._horizon_metrics`'s docstring on short
+        series), so this is its length, not a re-derivation — the visible
+        counterpart to `cost_horizon` for ML/global rows, mirroring the
+        `horizon_steps` each statistical runner now reports for itself.
+        """
+        hm = res.get("horizon_metrics") or {}
+        by_h = hm.get("by_horizon")
+        return len(by_h) if isinstance(by_h, dict) else None
+
     def _flatten(self, results_ml, results_stat, baselines) -> pd.DataFrame:
         rows = []
         for key, res in results_ml.items():
+            model_name = res.get("model", key)
             rows.append({
-                "model": res.get("model", key), "type": "ml",
+                "model": model_name,
+                "type": "global" if model_name == "global_lgbm" else "ml",
                 "sku": res.get("sku", key), "mae": res.get("mae"),
                 "rmse": res.get("rmse"), "wape": res.get("wape"),
                 "bias": res.get("bias"), "mape": res.get("mape"),
-                "smape": res.get("smape"), "n_folds": res.get("n_folds"),
+                "smape": res.get("smape"), "cost": res.get("cost"),
+                "cost_horizon": self._horizon_cost(res),
+                "horizon_steps": self._horizon_steps(res),
+                "n_folds": res.get("n_folds"),
                 "validation": res.get("validation"),
             })
         for model_name, res_dict in results_stat.items():
@@ -757,12 +1330,38 @@ class Pipeline:
                         "mae": res.get("mae"), "rmse": res.get("rmse"),
                         "wape": res.get("wape"), "bias": res.get("bias"),
                         "mape": res.get("mape"), "smape": res.get("smape"),
+                        "cost": res.get("cost"),
+                        # Each statistical runner (models/ets.py, arima.py,
+                        # prophet.py, croston.py, sarimax.py, lstm.py) now
+                        # computes its OWN `cost_horizon`, windowed to
+                        # `min(horizon, len(test))` so it answers the same
+                        # h-step question as the ML/global rows above rather
+                        # than the whole held-out tail `cost` does
+                        # (docs/stability.md #17(d)). A result produced before
+                        # that existed — a legacy persisted session, or a raw
+                        # dict handed to this method by a test — carries no
+                        # `cost_horizon` key, and falling back to `cost` there
+                        # reproduces the OLD (whole-tail, and on a long series
+                        # too easy for the h-step race) behaviour for that
+                        # data rather than inventing a number that was never
+                        # computed under the new protocol.
+                        "cost_horizon": res.get("cost_horizon", res.get("cost")),
+                        "horizon_steps": res.get("horizon_steps"),
                     })
                 else:
                     rows.append({"model": model_name, "type": model_type, "sku": sku, "mae": float(res)})
         for sku, blines in baselines.items():
             for bname, bm in blines.items():
-                rows.append({"model": bname, "type": "baseline", "sku": sku, **bm})
+                # Baselines are still evaluated over the entire test window in
+                # one shot (BaselineEvaluator.evaluate_baselines is not
+                # windowed) and are not part of this fix's scope: a baseline
+                # is never a champion candidate (`_select_champions` excludes
+                # `type == "baseline"`), it is only compared against the
+                # candidates' minimum cost to flag when none of them beat it.
+                # That comparison is still a length mismatch after this
+                # change — noted here rather than silently left implied.
+                rows.append({"model": bname, "type": "baseline", "sku": sku,
+                             **bm, "cost_horizon": bm.get("cost")})
         return pd.DataFrame(rows)
 
     def _inventory(
@@ -784,10 +1383,18 @@ class Pipeline:
         )
 
         fc_arrays: Dict[str, np.ndarray] = {}
+        # {sku: sigma}, sigma = one standard deviation of the forecast ERROR,
+        # recovered from the q90 band the same way backend/inventory/service.py
+        # ::_point_sigma does, so the engine and the backend agree on what
+        # "sigma" means. A SKU with no band is left out of this dict, which
+        # sends InventoryAdvisor.recommend down its own (poorer) fallback —
+        # see the comment there.
+        std_by_sku: Dict[str, float] = {}
+        # SKUs whose champion produced no forecast rows, so they end the run with
+        # no recommendation. Carried out of here because on screen "no
+        # recommendation" and "well stocked" look identical.
+        skipped_no_forecast: List[dict] = []
 
-        # -----------------------------
-        # 🔧 NORMALIZE SKU FUNCTION
-        # -----------------------------
         def norm_sku(x):
             if pd.isna(x):
                 return None
@@ -798,13 +1405,7 @@ class Pipeline:
         # -----------------------------
         if forecast_df is not None and not forecast_df.empty and "forecast" in forecast_df.columns:
 
-            best_model_per_sku: Dict[str, str] = {}
-
-            if metrics_df is not None and not metrics_df.empty and "mae" in metrics_df.columns:
-                for sku_val, grp in metrics_df.groupby("sku"):
-                    valid = grp.dropna(subset=["mae"])
-                    if not valid.empty:
-                        best_model_per_sku[norm_sku(sku_val)] = valid.loc[valid["mae"].idxmin(), "model"]
+            best_model_per_sku = self._select_champions(metrics_df, norm_sku)
 
             for sku_val, sku_fc in forecast_df.groupby("sku"):
                 sku = norm_sku(sku_val)
@@ -815,17 +1416,25 @@ class Pipeline:
 
                 if best:
                     rows = sku_fc[sku_fc["model"] == best]
-                    # ❗ NO fallback silencioso global
+                    # Deliberately NO silent global fallback: pooling every
+                    # model's forecast here would answer with a number that
+                    # belongs to no model. But dropping the SKU must not be
+                    # silent either — it leaves the product with no
+                    # recommendation, which on screen is indistinguishable from
+                    # "well stocked". Say so.
                     if rows.empty:
+                        log.warning(
+                            "SKU %s: champion %r produced no forecast rows — "
+                            "no inventory recommendation will be generated",
+                            sku, best,
+                        )
+                        skipped_no_forecast.append({"sku": sku, "model": best})
                         continue
                 else:
                     rows = sku_fc
 
-                arr = (
-                    rows.sort_values("step")["forecast"]
-                    .astype(float)
-                    .to_numpy()
-                )
+                rows_sorted = rows.sort_values("step")
+                arr = rows_sorted["forecast"].astype(float).to_numpy()
 
                 if len(arr) == 0:
                     continue
@@ -834,6 +1443,20 @@ class Pipeline:
                     arr = np.pad(arr, (0, horizon - len(arr)), constant_values=arr[-1])
 
                 fc_arrays[sku] = np.clip(arr, 0.0, None)
+
+                # sigma per step, averaged over the horizon — NOT np.std(arr),
+                # which is the spread of the forecast path (near-zero for a
+                # flat, stable-SKU forecast, exactly what a good model
+                # produces). Only computed where q90 is present: legacy
+                # sessions and non-quantile models leave this SKU out of
+                # std_by_sku entirely.
+                if "q90" in rows_sorted.columns:
+                    q90_vals = rows_sorted["q90"].astype(float).to_numpy()
+                    fc_vals  = rows_sorted["forecast"].astype(float).to_numpy()
+                    valid = ~np.isnan(q90_vals)
+                    if valid.any():
+                        sigmas = np.clip((q90_vals[valid] - fc_vals[valid]) / _Q90_Z, 0.0, None)
+                        std_by_sku[sku] = float(np.mean(sigmas))
 
         # -----------------------------
         # FALLBACK SAFE (PER SKU ONLY)
@@ -869,5 +1492,6 @@ class Pipeline:
         if not fc_arrays:
             return None
 
-        recs = advisor.batch_recommend(fc_arrays)
+        self._skipped_no_forecast = skipped_no_forecast
+        recs = advisor.batch_recommend(fc_arrays, std_by_sku=std_by_sku)
         return advisor.summary_df(recs)

@@ -12,9 +12,12 @@ This module owns the database side of that: hashing, lookup, expiry and the
 """
 
 import hashlib
+import logging
 from typing import Optional
 
 from backend.db.connection import execute, query_one
+
+log = logging.getLogger(__name__)
 
 KEY_PREFIX = "sk_live_"
 
@@ -54,7 +57,7 @@ def resolve(credential: str) -> Optional[dict]:
     key that never did are the same 401.
     """
     row = query_one(
-        """SELECT id, tenant_id, role, expires_at
+        """SELECT id, tenant_id, name, role, expires_at
              FROM api_keys
             WHERE key_hash = %s
               AND (expires_at IS NULL OR expires_at > NOW())""",
@@ -78,6 +81,147 @@ def touch(key_id: str) -> None:
                AND (last_used IS NULL OR last_used < NOW() - INTERVAL '{LAST_USED_THROTTLE}')""",
         (key_id,),
     )
+
+
+# How many calls one key may make per minute. Chosen for the job the API exists
+# to do — a nightly ERP push and the polling around it — not to be generous: an
+# integration that needs more than this per minute is looping, and a loop with a
+# valid key is exactly what nothing currently stops.
+#
+# It used to be a per-tier number (60 / 120 / unlimited) with this constant as
+# the floor under them. There is one plan now, so this IS the policy: one
+# ceiling, the same for everybody, living in the module that enforces it.
+RATE_MAX_PER_MINUTE = 120
+
+RATE_WINDOW_SECONDS = 60
+
+
+DAY_WINDOW_SECONDS = 86_400
+
+
+def check_rate(key_id: str, tenant_id: str | None = None) -> bool:
+    """Whether this key may make one more call now; records it when it may.
+
+    Two windows, and a call has to clear both:
+
+    - **Per minute**, the same for everybody. It exists to stop a loop, not to
+      sell anything.
+    - **Per day**, only when the tenant's plan sets `max_api_calls_per_day` —
+      which is the free tier. A nightly ERP push and the polling around it fit
+      inside it; an integration that reads all day does not, and that is the
+      difference the tiers are actually selling. Pass `tenant_id` to have it
+      checked; without it only the per-minute window applies (the callers that
+      exercise the limiter directly do not know a tenant).
+
+    Reuses `auth_rate_events`, the same table the login endpoints use, keyed by
+    `apikey:<id>` and `apikeyday:<id>`. A second table would have been a second
+    definition of "a window", with its own pruning to forget.
+
+    Fails OPEN on a database problem, deliberately. This runs on every
+    authenticated machine call: if the rate store is unreachable, refusing every
+    integration in the product is a far worse outcome than briefly not counting.
+    The customer's nightly sync must not go down because a limiter cannot write.
+    """
+    from backend.db.connection import query_one as _query_one, transaction
+    try:
+        daily = _daily_ceiling(tenant_id)
+        # Counting and then inserting in two steps is how a limiter admits more
+        # than its ceiling: twenty simultaneous calls against a ceiling of five
+        # let SIXTEEN through, because each read a counter none of the others
+        # had written yet (measured 2026-08-22). A machine credential — the one
+        # that runs unattended, in a cron, with retries — is precisely what
+        # arrives in parallel, so the ceiling has to be decided under a lock.
+        #
+        # The lock is keyed on the KEY, not the tenant: two integrations
+        # belonging to the same customer never wait on each other, and the
+        # section it protects is three short statements.
+        with transaction() as conn:
+            _query_one("SELECT pg_advisory_xact_lock(hashtext(%s))",
+                       (f"ratelimit:{key_id}",), conn=conn)
+            if not _within(f"apikey:{key_id}", RATE_MAX_PER_MINUTE,
+                           RATE_WINDOW_SECONDS, conn=conn):
+                return False
+            if daily is not None and not _within(f"apikeyday:{key_id}", daily,
+                                                 DAY_WINDOW_SECONDS, conn=conn):
+                return False
+            # Recorded once both windows agreed: a call refused by the daily
+            # ceiling must not also consume a slot in the minute it was refused
+            # in. Both inserts commit with the lock, so the next caller in line
+            # counts them.
+            execute("INSERT INTO auth_rate_events (key) VALUES (%s)",
+                    (f"apikey:{key_id}",), conn=conn)
+            if daily is not None:
+                execute("INSERT INTO auth_rate_events (key) VALUES (%s)",
+                        (f"apikeyday:{key_id}",), conn=conn)
+        return True
+    except Exception:
+        return True
+
+
+def _within(bucket: str, ceiling: int, window_secs: int, conn=None) -> bool:
+    """Whether `bucket` is under `ceiling` over the last `window_secs`.
+
+    Checks only. Recording is `check_rate`'s job and happens after BOTH windows
+    have agreed, so a request refused by the daily ceiling does not also burn a
+    slot in the minute it was refused in. `conn` is the locked transaction from
+    `check_rate` — the count has to be read there, not on a connection that
+    cannot see the writes the lock is protecting.
+    """
+    execute(
+        "DELETE FROM auth_rate_events WHERE key = %s AND created_at < NOW() - make_interval(secs => %s)",
+        (bucket, window_secs), conn=conn,
+    )
+    row = query_one("SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s",
+                    (bucket,), conn=conn)
+    used = int(row["n"]) if row else 0
+    return used < ceiling
+
+
+def _daily_ceiling(tenant_id: str | None) -> int | None:
+    """The tenant's daily call ceiling, or None when it has none (paid tier, or
+    a per-tenant quota override that says so)."""
+    if not tenant_id:
+        return None
+    from backend.entitlements.service import tenant_limits
+    tenant = query_one(
+        "SELECT tier, quota FROM tenants WHERE id = %s", (tenant_id,)
+    )
+    if tenant is None:
+        return None
+    return tenant_limits(dict(tenant))["max_api_calls_per_day"]
+
+
+def meter(key_id: str, tenant_id: str, key_name: str) -> bool:
+    """Count one API-key call against its tenant, its key and today (UTC).
+
+    One statement: an upsert whose increment happens inside the row lock the
+    conflict takes, so twenty simultaneous calls count twenty — there is no
+    read-then-write for two requests to interleave in. Per-day rows are what
+    the monthly bill sums; `key_name` is copied in because revoking a key
+    deletes its row and the calls it already made are still owed.
+
+    Never raises. The call has already been authorised and must not fail
+    because a counter could not be written — but an uncounted call is unbilled
+    work, so the failure is logged at ERROR, with the tenant and key, every
+    single time. Returns whether the call was counted.
+    """
+    try:
+        execute(
+            """INSERT INTO api_usage_daily (tenant_id, api_key_id, key_name, day, calls)
+               VALUES (%s, %s, %s, (NOW() AT TIME ZONE 'UTC')::date, 1)
+               ON CONFLICT (tenant_id, api_key_id, day)
+               DO UPDATE SET calls = api_usage_daily.calls + 1,
+                             key_name = EXCLUDED.key_name""",
+            (tenant_id, key_id, key_name),
+        )
+        return True
+    except Exception:  # noqa: BLE001 — metering must never fail the call
+        log.error(
+            "[api-metering] UNMETERED API CALL: could not count a call for "
+            "tenant=%s key=%s — this call will be missing from the usage and "
+            "the bill", tenant_id, key_id, exc_info=True,
+        )
+        return False
 
 
 def actor_id(key_id: str) -> str:

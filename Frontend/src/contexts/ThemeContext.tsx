@@ -1,5 +1,6 @@
 'use client'
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { persistPreference } from '@/lib/persistPreference'
 
 type Theme = 'dark' | 'light'
 
@@ -26,6 +27,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setThemeState(t)
     localStorage.setItem('theme', t)
     document.documentElement.setAttribute('data-theme', t)
+    // Same reason as the language toggle: the choice lived only in this
+    // browser, and /mi-cuenta's getPreferences() on mount put the server's
+    // untouched value back.
+    void persistPreference({ theme: t })
   }, [])
 
   const toggle = useCallback(() => setTheme(theme === 'dark' ? 'light' : 'dark'), [theme, setTheme])

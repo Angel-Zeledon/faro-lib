@@ -748,6 +748,8 @@ class ForecastEngine:
         self._fitted_models  = results.fitted_models
         self._stat_forecasts = results.stat_forecasts
         self._run_metadata   = results.metadata or {}
+        self._demand_risk    = results.demand_risk or {}
+        self._policy_backtest = results.policy_backtest or {}
 
         # Apply hierarchical reconciliation if configured
         hierarchy_cfg = self._config.to_dict().get("hierarchy", {})
@@ -756,7 +758,20 @@ class ForecastEngine:
                 from forecasting_core.hierarchy import HierarchicalReconciler
                 reconciler = HierarchicalReconciler(levels=hierarchy_cfg["levels"])
                 method = hierarchy_cfg.get("reconciliation", "bottom_up")
-                if method == "top_down" and self._df is not None:
+                if method == "mint":
+                    # Residuals per leaf let MinT weight the levels by how
+                    # reliable each one has proven; without them it degrades to
+                    # the OLS projection, which is still coherent.
+                    residuals = {
+                        str(entry.get("sku")): entry.get("residuals")
+                        for entry in (self._fitted_models or {}).values()
+                        if entry.get("residuals") is not None
+                    }
+                    self._forecast_df = reconciler.mint(
+                        self._forecast_df, residuals=residuals,
+                        date_col="date", value_col="forecast",
+                    )
+                elif method == "top_down" and self._df is not None:
                     self._forecast_df = reconciler.top_down(
                         self._forecast_df, self._df,
                         date_col="date", value_col="forecast",
@@ -798,6 +813,37 @@ class ForecastEngine:
             "validation":  meta.get("validation_findings") or [],
             "corrections": meta.get("corrections") or [],
         }
+
+    def get_demand_risk(self) -> dict:
+        """
+        Per-SKU cumulative demand uncertainty, for the inventory layer.
+
+        {sku: {model, quantiles, cumulative_offsets: {L: {q: units}}}} — add the
+        offset to the summed point forecast over L buckets to get that quantile
+        of total lead-time demand. Empty for runs with no rolling-origin
+        backtest; the consumer must fall back rather than assume it is there.
+
+        Used by:
+            - API: the reorder point in backend/inventory/service.py
+        """
+        return getattr(self, "_demand_risk", {}) or {}
+
+    def get_policy_backtest(self) -> dict:
+        """
+        What the forecast would have done to the warehouse.
+
+        {"summary": {fill_rate, stockouts_avoided, avg_inventory, ...},
+         "by_sku": {sku: {...}}} — the purchasing outcome simulated over real
+        past demand, against the same policy driven by a naive forecast.
+
+        Empty when no model in the run produced a rolling-origin backtest;
+        `summary.n_series` states how many series it actually covers, so the
+        headline is never mistaken for the whole catalogue.
+
+        Used by:
+            - API: GET /sessions/{id}/results
+        """
+        return getattr(self, "_policy_backtest", {}) or {}
 
     def get_metrics(self) -> dict:
         """

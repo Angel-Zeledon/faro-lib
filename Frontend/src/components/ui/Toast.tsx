@@ -1,5 +1,5 @@
 'use client'
-import { CheckCircle2, AlertTriangle, Info, X, Undo2 } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Info, X, Undo2, Mail, ArrowRight } from 'lucide-react'
 import { useToast, type ToastItem } from '@/contexts/ToastContext'
 
 const ICONS = {
@@ -42,7 +42,11 @@ function ToastRow({ t }: { t: ToastItem }) {
             fontSize: 12, fontWeight: 700, color: 'var(--accent)',
           }}
         >
-          <Undo2 size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />
+          {t.actionKind === 'report'
+            ? <Mail size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />
+            : t.actionKind === 'link'
+              ? <ArrowRight size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />
+              : <Undo2 size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />}
           {t.actionLabel}
         </button>
       )}
@@ -60,7 +64,8 @@ export default function ToastContainer() {
   const { toasts } = useToast()
   if (!toasts.length) return null
   return (
-    <div role="status" aria-live="polite" style={{
+    // `.toast-stack` lifts it above the mobile tab bar (globals.css).
+    <div role="status" aria-live="polite" className="toast-stack" style={{
       position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
       display: 'flex', flexDirection: 'column', gap: 8,
       pointerEvents: 'none',

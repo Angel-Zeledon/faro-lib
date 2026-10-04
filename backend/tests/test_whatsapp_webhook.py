@@ -78,11 +78,12 @@ class _FakeLLM:
         self.messages = self
 
     def create(self, *a, **k):
+        # The assistant core reads `tool_calls` and `message` off the response,
+        # so this returns the client's real response type, not a Mock (a Mock's
+        # auto-attributes would read as a tool call).
+        from backend.ai.local_llm import _ContentBlock, _LLMResponse
         self.calls += 1
-        text = self._payloads.pop(0)
-        blk = mock.Mock(); blk.text = text
-        r = mock.Mock(); r.content = [blk]; r.usage = mock.Mock(input_tokens=1, output_tokens=1)
-        return r
+        return _LLMResponse(content=[_ContentBlock(text=self._payloads.pop(0))])
 
 
 def test_invalid_signature_403(client, twilio_token, registered_user):
@@ -110,44 +111,104 @@ def test_query_turn_over_http_no_mutation(client, twilio_token, registered_user)
     num = _verified_number(registered_user, "+573003330000")
     _seed_po(registered_user["tenant"]["id"], sku="A")
     fake = _FakeLLM([json.dumps({"tool": "list_pending_pos", "args": {}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", return_value=fake):
         resp = _post(client, {"From": f"whatsapp:{num}", "Body": "órdenes?", "MessageSid": "SMq"})
     assert resp.status_code == 200
 
 
-def test_confirmation_gate_over_http(client, twilio_token, registered_user):
+def test_the_core_answer_is_sent_back_and_the_turn_persisted(
+    client, twilio_token, registered_user, _no_outbound,
+):
+    """The turn runs after the 200 (background task); its answer must still
+    reach the phone and the conversation must still be stored."""
+    from backend.whatsapp import conversation_store as cs
+    num = _verified_number(registered_user, "+573003331111")
+    fake = _FakeLLM(["Hola, todo en orden por hoy."])
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", return_value=fake):
+        resp = _post(client, {"From": f"whatsapp:{num}", "Body": "¿cómo voy?", "MessageSid": "SM-bg"})
+    assert resp.status_code == 200
+    assert fake.calls == 1
+    sent = [c.args for c in _no_outbound.call_args_list]
+    assert (num, "Hola, todo en orden por hoy.") in sent
+    state = cs.load(registered_user["tenant"]["id"], registered_user["user"]["id"])
+    assert state["history"][-1] == {"role": "assistant", "content": "Hola, todo en orden por hoy."}
+
+
+_FAKE_WRITE = "fake_reversible_write"
+
+
+def _reversible_write_tool(monkeypatch):
+    """Stand-in for a confirmable write, because the two real ones
+    (`approve_po`, `register_reception`) are suspended from WRITE_TOOLS until
+    they have inverses. These tests are about the gate and the dedupe over
+    HTTP, which must stay under test either way — `executed` is what they
+    actually assert on."""
+    from backend.whatsapp import tools as wt
+    executed: list = []
+    monkeypatch.setitem(wt.WRITE_TOOLS, _FAKE_WRITE,
+                        lambda ctx, args: {"type": _FAKE_WRITE,
+                                           "summary": "¿Confirmas? (responde SÍ)"})
+    monkeypatch.setattr(wt, "execute_pending_action",
+                        lambda ctx, action: executed.append(action) or "HECHO ✅")
+    return executed
+
+
+def test_confirmation_gate_over_http(client, twilio_token, registered_user, monkeypatch):
+    """A stored confirmable action: a question in between executes nothing and
+    discards it; a stored one confirmed with 'sí' executes once, with no LLM.
+    (Proposals are no longer created by the bot — the assistant core only
+    reads — so the pending action is put in the store directly.)"""
+    from backend.whatsapp import conversation_store as cs
+    executed = _reversible_write_tool(monkeypatch)
     num = _verified_number(registered_user, "+573004440000", role="admin")
-    po_id = _seed_po(registered_user["tenant"]["id"])
-    fake = _FakeLLM([json.dumps({"tool": "approve_po", "args": {"po_log_id": po_id}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
-        r1 = _post(client, {"From": f"whatsapp:{num}", "Body": f"aprueba {po_id}", "MessageSid": "SM-p"})
+    tid, uid = registered_user["tenant"]["id"], registered_user["user"]["id"]
+    cs.save(tid, uid, num, history=[], pending_action={"type": _FAKE_WRITE},
+            last_message_sid="SM-0")
+    fake = _FakeLLM(["Claro."])
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", return_value=fake):
+        r1 = _post(client, {"From": f"whatsapp:{num}", "Body": "¿cómo voy?", "MessageSid": "SM-p"})
     assert r1.status_code == 200
-    # Proposal turn mutated nothing.
-    assert query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"] is None
+    assert executed == []  # a question is not a confirmation
+    assert cs.load(tid, uid)["pending_action"] is None
+    cs.save(tid, uid, num, history=[], pending_action={"type": _FAKE_WRITE},
+            last_message_sid="SM-1")
     # Confirm turn — no LLM needed.
     r2 = _post(client, {"From": f"whatsapp:{num}", "Body": "sí", "MessageSid": "SM-c"})
     assert r2.status_code == 200
-    assert query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"] is not None
+    assert len(executed) == 1
 
 
-def test_idempotency_same_sid_single_execution(client, twilio_token, registered_user):
-    num = _verified_number(registered_user, "+573005550000", role="admin")
+def test_an_approval_over_http_is_never_executed(client, twilio_token, registered_user):
+    """The suspension, at the layer that is actually exposed to the internet."""
+    num = _verified_number(registered_user, "+573004441111", role="admin")
     po_id = _seed_po(registered_user["tenant"]["id"])
-    # Set up a pending approve action directly in the store.
+    fake = _FakeLLM([json.dumps({"tool": "approve_po", "args": {"po_log_id": po_id}})])
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", return_value=fake):
+        r1 = _post(client, {"From": f"whatsapp:{num}", "Body": f"aprueba {po_id}",
+                            "MessageSid": "SM-sp"})
+    assert r1.status_code == 200
+    # And a "sí" right after, which is what a user would send anyway.
+    r2 = _post(client, {"From": f"whatsapp:{num}", "Body": "sí", "MessageSid": "SM-sc"})
+    assert r2.status_code == 200
+    assert query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"] is None
+
+
+def test_idempotency_same_sid_single_execution(client, twilio_token, registered_user, monkeypatch):
+    executed = _reversible_write_tool(monkeypatch)
+    num = _verified_number(registered_user, "+573005550000", role="admin")
+    # Set up a pending action directly in the store.
     from backend.whatsapp import conversation_store as cs
     cs.save(registered_user["tenant"]["id"], registered_user["user"]["id"], num,
-            history=[], pending_action={"type": "approve_po", "po_log_id": po_id},
+            history=[], pending_action={"type": _FAKE_WRITE},
             last_message_sid="SM-prev")
     # First confirm executes.
     r1 = _post(client, {"From": f"whatsapp:{num}", "Body": "sí", "MessageSid": "SM-confirm"})
     assert r1.status_code == 200
-    sent_first = query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"]
-    assert sent_first is not None
+    assert len(executed) == 1
     # Twilio retry with the SAME MessageSid must be a no-op (dedupe short-circuits).
     r2 = _post(client, {"From": f"whatsapp:{num}", "Body": "sí", "MessageSid": "SM-confirm"})
     assert r2.status_code == 200
-    sent_second = query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"]
-    assert sent_first == sent_second  # not re-approved / no second write
+    assert len(executed) == 1  # not executed twice
 
 
 def test_rate_limit_blocks_without_llm(client, twilio_token, registered_user, monkeypatch):
@@ -160,7 +221,7 @@ def test_rate_limit_blocks_without_llm(client, twilio_token, registered_user, mo
     payloads = [json.dumps({"tool": None, "args": {}, "reply": "hola"})] * (wh.RATE_LIMIT_MAX + 5)
     fake = _FakeLLM(payloads)
     last = None
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", return_value=fake):
         for i in range(wh.RATE_LIMIT_MAX + 3):
             last = _post(client, {"From": f"whatsapp:{num}", "Body": "hola", "MessageSid": f"SM{i}"})
     assert last.status_code == 200
@@ -173,8 +234,8 @@ def test_rate_limit_blocks_without_llm(client, twilio_token, registered_user, mo
 # An unknown sender yields a polite 200 once the signature passes, so 200-vs-403 cleanly
 # isolates whether signature validation used the right (public) url.
 
-PUBLIC_BASE = "https://app.faro.com"
-PUBLIC_URL = "https://app.faro.com/api/v1/whatsapp/inbound"
+PUBLIC_BASE = "https://app.stockai.com"
+PUBLIC_URL = "https://app.stockai.com/api/v1/whatsapp/inbound"
 _UNKNOWN = {"From": "whatsapp:+59999999999", "Body": "hola", "MessageSid": "SM-proxy"}
 
 
@@ -201,7 +262,7 @@ def test_forwarded_headers_public_signature_accepted(client, twilio_token, monke
     monkeypatch.setattr(settings, "whatsapp_webhook_base_url", "")
     resp = _post_signed_over(
         client, _UNKNOWN, PUBLIC_URL,
-        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.faro.com"},
+        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.stockai.com"},
     )
     assert resp.status_code == 200
 
@@ -211,7 +272,7 @@ def test_forwarded_headers_internal_signature_rejected(client, twilio_token, mon
     monkeypatch.setattr(settings, "whatsapp_webhook_base_url", "")
     resp = _post_signed_over(
         client, _UNKNOWN, INBOUND_URL,
-        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.faro.com"},
+        extra_headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "app.stockai.com"},
     )
     assert resp.status_code == 403
 
@@ -228,7 +289,7 @@ def test_viewer_denied_over_http(client, twilio_token, registered_user):
     num = _verified_number(registered_user, "+573007770000", role="viewer")
     po_id = _seed_po(registered_user["tenant"]["id"])
     fake = _FakeLLM([json.dumps({"tool": "approve_po", "args": {"po_log_id": po_id}})])
-    with mock.patch("backend.whatsapp.agent.get_local_llm_client", return_value=fake):
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", return_value=fake):
         resp = _post(client, {"From": f"whatsapp:{num}", "Body": f"aprueba {po_id}", "MessageSid": "SM-v"})
     assert resp.status_code == 200
     assert query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"] is None

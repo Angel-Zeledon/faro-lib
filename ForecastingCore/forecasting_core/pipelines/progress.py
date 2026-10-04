@@ -23,15 +23,15 @@ from typing import Callable, Dict, Iterable, Iterator, Optional, Sequence, Tuple
 #
 # Stages owned by the engine pipeline (Pipeline.run). Weights reflect where the
 # time actually goes on a typical dataset: the ML walk-forward fits (point model
-# plus three quantile refits) and the per-SKU statistical models dominate.
+# plus the global model) and the per-SKU statistical models dominate.
 ENGINE_STAGES: Tuple[Tuple[str, float], ...] = (
     ("pipeline_load", 2.0),
     ("validate", 3.0),
     ("quality", 3.0),
     ("assign_models", 1.0),
     ("features", 5.0),
-    ("ml_training", 22.0),
-    ("ml_quantiles", 16.0),
+    ("ml_training", 26.0),
+    ("global_model", 8.0),
     ("stat_training", 22.0),
     ("ensemble", 1.0),
     ("future_forecast", 5.0),

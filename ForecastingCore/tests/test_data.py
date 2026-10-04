@@ -35,8 +35,12 @@ class TestDataLoader:
             DataLoader().load(str(tmp_path / "nope.csv"))
 
     def test_load_unsupported_extension_raises(self, tmp_path):
-        p = tmp_path / "data.json"
-        p.write_text("{}")
+        """Uses .txt, not .json: JSON is a format the product accepts at upload
+        and reads throughout backend/dataframes/io.py, and this loader refusing
+        it was the defect, not the contract. See test_non_utf8_and_json_files.py.
+        """
+        p = tmp_path / "data.txt"
+        p.write_text("hola")
         with pytest.raises(LoadError, match="Unsupported format"):
             DataLoader().load(str(p))
 

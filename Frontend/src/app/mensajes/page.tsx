@@ -11,6 +11,7 @@ import Spinner from '@/components/ui/Spinner'
 import Input from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import MessagesMobile from './MessagesMobile'
 
 const CONVERSATIONS_POLL_MS = 15000
 const THREAD_POLL_MS = 5000
@@ -134,6 +135,34 @@ export default function MessagesPage() {
     } catch { /* toast via interceptor */ } finally {
       setSending(false)
     }
+  }
+
+  // Phone: a messaging app — list, then a full-screen thread (MessagesMobile).
+  // Same state and requests as below; only the layout forks.
+  if (narrow) {
+    return (
+      <MessagesMobile
+        meId={me?.id ?? null}
+        conversations={conversations}
+        contactsCount={contacts.length}
+        shownConversations={shownConversations}
+        newContacts={newContacts}
+        search={search}
+        onSearch={setSearch}
+        activeId={activeId}
+        activeName={activeName}
+        onOpen={openThread}
+        onBack={() => setActiveId(null)}
+        messages={messages}
+        threadLoading={threadLoading}
+        draft={draft}
+        onDraft={setDraft}
+        sending={sending}
+        onSend={handleSend}
+        displayName={displayName}
+        timeLabel={iso => timeLabel(iso, lang)}
+      />
+    )
   }
 
   const showList   = !narrow || activeId === null

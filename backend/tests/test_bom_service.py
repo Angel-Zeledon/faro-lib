@@ -34,7 +34,7 @@ class TestExplodeRequirementsEstimatedCost:
 
         monkeypatch.setattr(
             service, "get_inventory_status",
-            lambda t, s: [
+            lambda t, s, **_kw: [
                 {"sku": parent, "product_type": "finished_good",
                  "daily_demand": 10.0, "current_stock": 0,
                  "display_name": "Widget", "signal": "PEDIR_YA"},
@@ -66,7 +66,7 @@ class TestExplodeRequirementsEstimatedCost:
 
         monkeypatch.setattr(
             service, "get_inventory_status",
-            lambda t, s: [
+            lambda t, s, **_kw: [
                 {"sku": parent, "product_type": "finished_good",
                  "daily_demand": 10.0, "current_stock": 0,
                  "display_name": "Widget", "signal": "PEDIR_YA"},
@@ -94,7 +94,7 @@ class TestExplodeRequirementsEstimatedCost:
 
         monkeypatch.setattr(
             service, "get_inventory_status",
-            lambda t, s: [
+            lambda t, s, **_kw: [
                 {"sku": parent, "product_type": "finished_good",
                  "daily_demand": 1.0, "current_stock": 1000,
                  "display_name": "Widget", "signal": "OK"},
@@ -143,3 +143,59 @@ class TestBomCrud:
         bom_service.delete_bom_item(tid, parent, child)
 
         assert bom_service.list_bom(tid, parent) == []
+
+
+class TestProductTypesCarryNoCopy:
+    """`GET /inventory/product-types` returns the vocabulary, not the wording.
+
+    It used to answer `{'finished_good': 'Producto terminado', ...}` — backend
+    -authored Spanish, handed to a frontend that renders in two languages, so
+    an English-mode user read Spanish. CLAUDE.md's Language rule puts that copy
+    in `translations.ts` under `enum.product_type_*`, keyed by these English
+    values.
+
+    Scope, measured rather than assumed: the fix is in two places — the
+    constant is a tuple, and the handler wraps it in `list()`. Reverting
+    EITHER alone still passes here, because `list(dict)` yields the keys and a
+    tuple serialises as a JSON array. Only reverting BOTH fails, which was
+    confirmed by doing it. So this is a contract test on the endpoint's
+    response, not a guard on the constant's type; do not read a green run as
+    proof that `PRODUCT_TYPES` never regained its labels.
+    """
+
+    def test_the_endpoint_returns_english_keys_only(self, client, auth_headers):
+        r = client.get("/api/v1/inventory/product-types", headers=auth_headers)
+        assert r.status_code == 200
+
+        types = r.json()["data"]
+        assert isinstance(types, list), "a mapping here means labels came back"
+        assert set(types) == {
+            "finished_good", "semi_finished", "component",
+            "raw_material", "packaging", "service",
+        }
+
+    def test_no_returned_value_is_spanish_copy(self, client, auth_headers):
+        """The mutation guard: any label would have to be prose, and prose
+        carries one of these. A plain `is list` check would pass a list of
+        Spanish labels, which is the exact defect this pins."""
+        r = client.get("/api/v1/inventory/product-types", headers=auth_headers)
+
+        for value in r.json()["data"]:
+            assert value == value.lower(), f"{value!r} is capitalised like copy"
+            assert " " not in value, f"{value!r} has a space, so it is a phrase"
+            assert value.isascii(), f"{value!r} carries an accent"
+
+    def test_an_invalid_type_is_still_refused(self, client, analyst_headers, test_tenant):
+        """The vocabulary went from dict to tuple; `not in` must still guard.
+        A tuple makes this pass for the right reason — over the keys, which is
+        what the dict's membership test checked too."""
+        from backend.inventory import service
+
+        sku = f"PT-{uuid4().hex[:6]}"
+        service.bulk_upsert(test_tenant["id"], [{"sku": sku, "current_stock": 1}])
+
+        r = client.patch(
+            f"/api/v1/inventory/stock/{sku}/product-type?product_type=Producto%20terminado",
+            headers=analyst_headers,
+        )
+        assert r.status_code == 422

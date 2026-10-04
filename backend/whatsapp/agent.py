@@ -1,47 +1,51 @@
 """
-The WhatsApp tool-calling agent. One LLM completion per non-confirming turn
-routes the message to a query tool, a write-tool proposal, or a free-text
-reply. The confirmation gate is system-controlled: a turn that confirms a
-stored pending_action executes it WITHOUT calling the LLM; any non-affirmative
-message discards the pending action and is handled as a fresh intent.
+The WhatsApp channel adapter for the assistant core (`backend/assistant/`).
 
-The LLM is used only for intent routing / small talk; it never touches the DB
-and never decides whether a write executes.
+A fresh message is answered by the SAME core the web chat uses — same account
+context, same read-only tools, same persona and grounding guard — with the
+"whatsapp" channel's formatting (short plain text, absolute links). The bot used
+to run its own JSON router over three canned query tools; it answered from a
+different, poorer picture of the account than the app (it even read the newest
+completed session at a daily grain while `/compras` read the active one at the
+tenant's planning grain), so the same question got two answers.
+
+What stays here is WhatsApp-specific:
+
+* The confirmation gate. A turn that confirms a stored `pending_action`
+  executes it WITHOUT calling the LLM; any non-affirmative message discards it
+  and is handled as a fresh question. The core proposes nothing — it is
+  read-only by charter (`docs/assistant-actions.md`) — so a pending action can
+  only be one stored by older code, and the two that existed (`approve_po`,
+  `register_reception`) are suspended and dropped (see `whatsapp/tools.py`).
+* Generic mode (`whatsapp_bot_generic_mode`): a canned reply, no LLM at all.
+* Spanish: WhatsApp is a Spanish-only channel for this product.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import unicodedata
 
-from backend.ai.local_llm import get_local_llm_client
+from backend.notifications.locale import render_es
 from backend.whatsapp import tools as wt
 from backend.whatsapp.tools import ToolContext, ToolError
 
 log = logging.getLogger(__name__)
 
-MAX_TOKENS = 400
+# The turn runs after the webhook has answered Twilio (api/v1/whatsapp.py), so
+# Twilio's 15 s timeout does not bound it; this does. Measured against DeepSeek
+# a turn with one tool round takes 6-13 s.
+WHATSAPP_BUDGET_S = 25.0
 
+# These two match what the USER types, so they are Spanish on purpose — the same
+# exemption as the CSV header aliases: values read from real user input, not copy.
 _AFFIRMATIVE = {
     "si", "sisi", "s", "y", "yes", "ok", "oka", "okay", "dale", "listo",
     "confirmo", "confirmar", "confirmado", "aprobar", "apruebo", "correcto",
     "deacuerdo", "vale", "hazlo", "adelante", "sip",
 }
 _NEGATIVE = {"no", "cancela", "cancelar", "mejorno", "nop", "negativo"}
-
-_HELP = ("Puedo ayudarte con tu inventario: pregúntame por el semáforo "
-         "(qué pedir), tus órdenes pendientes o el pronóstico de un SKU. "
-         "También puedo aprobar una orden o registrar una recepción.")
-
-# Honest reply used while the bot runs without a hosted LLM (generic mode): it
-# does not promise Q&A it cannot answer, but confirmations still work.
-_BASIC_MODE = ("Recibí tu mensaje. Por ahora estoy en modo básico: puedo "
-               "confirmar una acción pendiente si respondes \"sí\". Muy pronto "
-               "podré responder tus consultas de inventario por aquí.")
-
-_APOLOGY = "Perdón, tuve un problema procesando tu mensaje. ¿Puedes intentarlo de nuevo?"
 
 
 def _strip_accents(s: str) -> str:
@@ -63,46 +67,14 @@ def is_affirmative(text: str) -> bool:
     return norm.split(" ", 1)[0] in _AFFIRMATIVE if norm else False
 
 
-def _system_prompt() -> str:
-    lines = [
-        "Eres el asistente de inventario de Faro por WhatsApp. Decide qué "
-        "herramienta usar para responder al usuario. Responde SOLO con un "
-        "objeto JSON, sin texto adicional.",
-        'Formato: {"tool": <nombre|null>, "args": {...}, "reply": <texto|null>}.',
-        "Si ninguna herramienta aplica, usa tool=null y escribe una respuesta breve en 'reply'.",
-        "Herramientas disponibles:",
-    ]
-    for spec in wt.TOOL_SPECS:
-        lines.append(f'- {spec["name"]} ({spec["kind"]}): {spec["description"]} args={spec["args"]}')
-    return "\n".join(lines)
-
-
-_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
-
-
-def _route(ctx: ToolContext, text: str, history: list[dict]) -> dict:
-    client = get_local_llm_client()
-    messages = [{"role": t["role"], "content": t["content"]} for t in (history or [])[-6:]]
-    messages.append({"role": "user", "content": text})
-    resp = client.messages.create(
-        model="whatsapp-agent",
-        max_tokens=MAX_TOKENS,
-        system=_system_prompt(),
-        messages=messages,
+def _answer(ctx: ToolContext, text: str, history: list[dict]) -> str:
+    """One question, answered by the shared assistant core."""
+    from backend.assistant import answer
+    reply = answer(
+        ctx.tenant_id, ctx.user_id, "whatsapp", text, history,
+        role=ctx.role, language="es", budget_s=WHATSAPP_BUDGET_S,
     )
-    raw = resp.content[0].text if resp and resp.content else ""
-    m = _JSON_RE.search(raw or "")
-    if not m:
-        return {"tool": None, "args": {}, "reply": None}
-    try:
-        obj = json.loads(m.group(0))
-    except (ValueError, TypeError):
-        return {"tool": None, "args": {}, "reply": None}
-    return {
-        "tool": obj.get("tool"),
-        "args": obj.get("args") or {},
-        "reply": obj.get("reply"),
-    }
+    return reply.text
 
 
 def run_turn(ctx: ToolContext, incoming_text: str, state: dict):
@@ -125,52 +97,41 @@ def run_turn(ctx: ToolContext, incoming_text: str, state: dict):
 def _handle(ctx, incoming_text, history, pending):
     # 1. Confirmation gate — system-controlled, no LLM call.
     if pending:
-        if is_affirmative(incoming_text):
+        # A proposal stored BEFORE these two were suspended must not execute
+        # today just because the user answers "sí" now. It is dropped, and the
+        # "sí" is answered with where the action actually lives. A message that
+        # was NOT a confirmation falls through to a fresh question as always.
+        if (pending or {}).get("type") in wt.SUSPENDED_WRITE_TOOLS:
+            log.info("[whatsapp] dropped a pending %s: the action is suspended",
+                     pending.get("type"))
+            if is_affirmative(incoming_text):
+                return render_es("wa_write_in_app"), None
+            pending = None
+        elif is_affirmative(incoming_text):
             try:
                 return wt.execute_pending_action(ctx, pending), None
             except ToolError as e:
                 return str(e), None
             except Exception:  # noqa: BLE001 — never leave a half-applied write ambiguous
                 log.exception("[whatsapp] execute_pending_action failed")
-                return _APOLOGY, None
-        # Non-confirming: discard and treat as a fresh intent below.
+                return render_es("wa_apology"), None
+        # Non-confirming: discard and treat as a fresh question below.
         pending = None
 
     # Generic mode: no hosted LLM available — reply fast and honest instead of
-    # hanging on a slow local model. Confirmations above already executed.
-    from backend.config import settings
-    if settings.whatsapp_bot_generic_mode:
-        return _BASIC_MODE, None
+    # hanging. Confirmations above already executed.
+    from backend.service_config.resolver import effective
+    # Read in the tenant's scope: `whatsapp_bot_generic_mode` is offered per
+    # tenant in the panel, and reading it at instance scope would store a
+    # choice nothing acts on.
+    if effective(ctx.tenant_id).whatsapp_bot_generic_mode:
+        return render_es("wa_generic_mode"), None
 
-    # 2. Fresh intent routing (one LLM completion).
+    # 2. A fresh question — the shared assistant core. It never raises for a
+    # missing key or a slow model (it answers from the data by rules and says
+    # so); anything else is a bug, and the user still gets an apology.
     try:
-        decision = _route(ctx, incoming_text, history)
-    except Exception:  # noqa: BLE001 — LLM/timeout: apologize, mutate nothing
-        log.exception("[whatsapp] routing failed")
-        return _APOLOGY, None
-
-    tool = decision.get("tool")
-    args = decision.get("args") or {}
-
-    if tool in wt.QUERY_TOOLS:
-        try:
-            return wt.QUERY_TOOLS[tool](ctx, args), None
-        except ToolError as e:
-            return str(e), None
-        except Exception:  # noqa: BLE001
-            log.exception("[whatsapp] query tool failed: %s", tool)
-            return _APOLOGY, None
-
-    if tool in wt.WRITE_TOOLS:
-        if not ctx.is_analyst_or_above:
-            return ("Tu perfil es de solo lectura, así que no puedo ejecutar acciones. "
-                    "Puedo darte información de inventario si quieres."), None
-        try:
-            proposal = wt.WRITE_TOOLS[tool](ctx, args)
-        except ToolError as e:
-            return str(e), None
-        return proposal["summary"], proposal
-
-    # 3. No tool — free-text reply from the LLM, or default help.
-    reply = decision.get("reply")
-    return (reply or _HELP), None
+        return _answer(ctx, incoming_text, history), None
+    except Exception:  # noqa: BLE001
+        log.exception("[whatsapp] assistant core failed")
+        return render_es("wa_apology"), None

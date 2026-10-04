@@ -140,7 +140,7 @@ class TestBlackFridayIsNotUniform:
     def test_electronics_spike_while_milk_does_not(self):
         """
         Black Friday with a x2.2 catalog multiplier: electronics go to x4,
-        milk stays at x1. Without overrides, Faro would over-order milk.
+        milk stays at x1. Without overrides, StockAI would over-order milk.
         """
         start = date.today() + timedelta(days=20)
         end = start + timedelta(days=3)   # 4 días
@@ -271,7 +271,7 @@ class TestMultiplierEndpoints:
             (test_tenant["id"], saved_event),
         )
         assert row["scope"] == "category"
-        assert row["scope_value"] == "electronica"  # categorías normalizadas al save
+        assert row["scope_value"] == "electronica"  # categories are normalized on save
         assert row["multiplier"] == 4.0
 
     def test_analyst_sets_family_multiplier_persisted_normalized(
@@ -327,7 +327,7 @@ class TestMultiplierEndpoints:
             assert resp.status_code == 200, resp.text
 
         rows = _overrides(test_tenant["id"], saved_event)
-        assert len(rows) == 1, "el upsert no debe duplicar filas"
+        assert len(rows) == 1, "the upsert must not duplicate rows"
         assert rows[0]["multiplier"] == 4.5
 
     def test_viewer_cannot_delete_and_row_survives(
@@ -446,6 +446,6 @@ class TestMultiplierEndpoints:
                WHERE event_id = %s AND scope = 'category'""",
             (saved_event,),
         )
-        assert len(rows) == 1, f"esperaba 1 fila tras 3 upserts, hay {len(rows)}: {rows}"
+        assert len(rows) == 1, f"expected 1 row after 3 upserts, got {len(rows)}: {rows}"
         assert rows[0]["scope_value"] == "lacteos"
-        assert float(rows[0]["multiplier"]) == 1.0  # gana el último upsert
+        assert float(rows[0]["multiplier"]) == 1.0  # the last upsert wins

@@ -23,14 +23,23 @@ lower unit price is only half the trade. We compare, in money, both halves:
       buy now   : q1*p1                          (ALL-UNITS discount)
       gross_saving = q1 * (p0 - p1)
 
-  HOLDING COST. The extra units sit in the warehouse until demand drains them.
-  They add (q1-q0)/d days of coverage, and because they are consumed gradually
-  the AVERAGE unit sits for half of that. So the extra unit-days are
-      (q1-q0) * ((q1-q0)/d) / 2
-  priced at the daily holding rate p1 * holding_cost_pct / 365. This is the
-  standard inventory-carrying rate and already includes the cost of capital,
-  which is what "immobilizing cash" means in money terms.
-      holding_cost = ((q1-q0)^2 / (2*d)) * p1 * holding_cost_pct / 365
+  HOLDING COST. Against the same "buy them later" alternative, done the way
+  the buyer already buys: in the q0-sized orders they would otherwise keep
+  placing. Stock falls linearly at d, so a batch landing on S units left holds
+  (S + q)^2 / 2d unit-days until it is gone.
+      buy now   : (S + q1)^2 / 2d
+      buy later : (S + q0)^2 / 2d  +  ((q1-q0)/q0) batches of q0^2 / 2d
+      extra unit-days = (q1-q0) * (2S + q1) / 2d
+  S is the stock left when the order lands — current stock minus lead-time
+  demand, never below 0. Priced at the daily holding rate
+  p1 * holding_cost_pct / 365, the standard carrying rate, which already
+  includes the cost of capital ("immobilizing cash" in money terms).
+      holding_cost = (q1-q0) * (2S + q1) / (2d) * p1 * holding_cost_pct / 365
+
+  This used to be (q1-q0)^2 / 2d — the special case S = 0 AND q0 = 0. It
+  ignored that the extra units cannot start selling until the shelf and the
+  order already being placed are gone, so it understated the cost of stepping
+  up exactly when the shelf was full (math audit 2026-10-01).
 
   net_saving = gross_saving - holding_cost
 
@@ -41,12 +50,13 @@ way a bigger order can be wrong:
      would be infinite and the "we'd buy them later anyway" premise collapses.
      Never recommended, whatever the discount.
 
-  b) NEVER RECOMMEND WHAT THE SEMÁFORO WILL CALL OVERSTOCK. Faro paints a SKU
-     SOBRESTOCK at coverage >= lead_time * 3 (service._calc_signal). Advising a
+  b) NEVER RECOMMEND WHAT THE SEMÁFORO WILL CALL OVERSTOCK. StockAI paints a SKU
+     SOBRESTOCK at coverage >= lead_time * overstock_factor (service._calc_signal;
+     the factor is the SKU's resolved `signal_thresholds`, 3 by default). Advising a
      purchase this same product would flag as overstock tomorrow destroys the
      semáforo's credibility, which is the product. We also cap at 90 days in
      absolute terms for obsolescence/perishability risk on long lead times.
-     limit = min(lead_time * 3, MAX_COVERAGE_DAYS)
+     limit = min(lead_time * overstock_factor, MAX_COVERAGE_DAYS)
 
   c) MATERIALITY. A net saving of a few colones is not worth a nudge, an extra
      decision or the risk of being wrong about the forecast. It must be at
@@ -63,6 +73,8 @@ import logging
 from typing import Optional
 
 from backend.db.connection import query, query_one, execute
+from backend.inventory.service import _days_per_period
+from backend.inventory import signal_thresholds
 
 log = logging.getLogger(__name__)
 
@@ -176,6 +188,7 @@ def evaluate_step_up(
     current_stock: float,
     lead_time_days: int,
     holding_cost_pct: float = DEFAULT_HOLDING_COST_PCT,
+    overstock_factor: Optional[float] = None,
 ) -> Optional[dict]:
     """
     Best price-break opportunity above `current_quantity` for one SKU, or None
@@ -199,7 +212,11 @@ def evaluate_step_up(
     if not higher:
         return None
 
-    coverage_limit = min(float(lead_time_days) * 3.0, MAX_COVERAGE_DAYS)
+    # The SAME overstock multiple the semáforo judged this SKU by (the status
+    # row's resolved `signal_thresholds`), never a private copy of it.
+    if overstock_factor is None:
+        overstock_factor = signal_thresholds.DEFAULT_OVERSTOCK_FACTOR
+    coverage_limit = min(float(lead_time_days) * float(overstock_factor), MAX_COVERAGE_DAYS)
     demand = float(daily_demand or 0.0)
 
     candidates: list[dict] = []
@@ -213,12 +230,13 @@ def evaluate_step_up(
         if demand > 0:
             extra_coverage_days = extra_units / demand
             total_coverage_days = (current_stock + step_quantity) / demand
-            # Units drain gradually, so the average unit is held half the time
-            # the batch adds.
-            holding_cost = (
-                (extra_units * extra_coverage_days / 2.0)
-                * step_price * holding_cost_pct / 365.0
+            # Unit-days the step-up adds over buying the same units later in
+            # q0-sized orders — see the module docstring for the derivation.
+            stock_at_arrival = max(0.0, float(current_stock) - demand * float(lead_time_days))
+            extra_unit_days = (
+                extra_units * (2.0 * stock_at_arrival + step_quantity) / (2.0 * demand)
             )
+            holding_cost = extra_unit_days * step_price * holding_cost_pct / 365.0
         else:
             extra_coverage_days = None
             total_coverage_days = None
@@ -280,46 +298,134 @@ def evaluate_step_up(
     return min(candidates, key=lambda c: c["step_quantity"]) if candidates else None
 
 
+def _ladders_for_status(
+    ladders: list[dict], status: dict, cart_supplier_id: str | None = None,
+) -> list[dict]:
+    """
+    The ladders that may legitimately be quoted for this SKU: the one belonging
+    to the SKU's own supplier when there is one, otherwise all of them.
+
+    `cart_supplier_id` is the supplier the BUYER has on the line right now, and
+    it wins over everything else. The panel used to read the supplier off the
+    status row only, so switching supplier on a line kept quoting the previous
+    one's ladder — "Andina: order 500 and save ~1,400" about a price only Norte
+    ever quoted, which is the exact defect this function's docstring says it
+    fixed, reintroduced through the supplier-switch path (stability 11.14).
+
+    `supplier_id` on the status row is only set when the stock's supplier name
+    and the primary supplier agree (service.get_inventory_status), so the name
+    is matched too — case-insensitively, which is how every other
+    supplier-by-name lookup in the product resolves.
+    """
+    if cart_supplier_id:
+        owned = [l for l in ladders if l["supplier_id"] == cart_supplier_id]
+        # An empty list is the honest answer when the chosen supplier quotes no
+        # ladder for this SKU: there is no offer to show, and falling through to
+        # "all of them" is how another supplier's price gets printed under this
+        # one's name.
+        return owned
+
+    supplier_id = status.get("supplier_id")
+    if supplier_id:
+        owned = [l for l in ladders if l["supplier_id"] == supplier_id]
+        if owned:
+            return owned
+
+    name = (status.get("supplier") or "").strip().lower()
+    if name:
+        owned = [l for l in ladders if (l["supplier_name"] or "").strip().lower() == name]
+        if owned:
+            return owned
+
+    return ladders
+
+
 def evaluate_cart(
     tenant_id: str,
     cart_items: list[dict],
     status_items: list[dict],
     holding_cost_pct: float = DEFAULT_HOLDING_COST_PCT,
+    period: str = "daily",
 ) -> list[dict]:
     """
     Runs evaluate_step_up over a cart the browser sends in.
 
+    `period` is the tenant's planning grain. `status["daily_demand"]` is the
+    forecast PER BUCKET of that grain (per week on a weekly tenant), while every
+    figure in evaluate_step_up is in days — lead time, the coverage limit, the
+    /365 holding rate. It is converted here; without it a weekly tenant's
+    coverage came out 7x short and its holding cost 7x low, so step-ups past
+    the overstock line were recommended (math audit 2026-10-01).
+
     `cart_items` are {sku, quantity} as the buyer currently has them (which may
-    differ from what Faro recommended — the buyer can edit quantities); the
+    differ from what StockAI recommended — the buyer can edit quantities); the
     demand/stock/lead-time inputs come from `status_items`, i.e. from
     service.get_inventory_status, never from the client.
+
+    A ladder belongs to a (SKU, SUPPLIER) pair, never to a SKU
+    ----------------------------------------------------------
+    Two suppliers quoting the same SKU are two independent scales. Grouping the
+    rungs by SKU alone merged them into one imaginary ladder and then credited
+    the whole thing to whichever supplier happened to own the lowest rung, so
+    the panel could say "Andina: order 500 and save ~1400" about a price only
+    Norte ever quoted — a number the buyer cannot act on and a supplier who will
+    deny it on the phone.
+
+    Each supplier's ladder is therefore evaluated on its own. When the SKU has a
+    known supplier, only that supplier's ladder is considered: this panel
+    compares two quantities from the SAME supplier, not two suppliers (nothing
+    in it prices a supplier switch — see the docstring at the top of the
+    module). When it does not, every ladder is evaluated separately and the best
+    opportunity wins, still named after the supplier that actually quoted it.
     """
     status_by_sku = {i["sku"]: i for i in status_items}
-    breaks_by_sku: dict[str, list[dict]] = {}
+    ladders_by_sku: dict[str, dict[str, dict]] = {}
     for b in list_price_breaks(tenant_id):
-        breaks_by_sku.setdefault(b["sku"], []).append(b)
+        ladder = ladders_by_sku.setdefault(b["sku"], {}).setdefault(
+            b["supplier_id"],
+            {"supplier_id": b["supplier_id"],
+             "supplier_name": b.get("supplier_name"),
+             "breaks": []},
+        )
+        ladder["breaks"].append(b)
 
     results: list[dict] = []
     for line in cart_items:
         sku = line.get("sku")
         quantity = float(line.get("quantity") or 0)
-        breaks = breaks_by_sku.get(sku or "", [])
+        # The supplier the buyer has on the line, when the client sends one.
+        cart_supplier_id = line.get("supplier_id")
         status = status_by_sku.get(sku or "")
-        if not sku or not breaks or not status:
+        ladders = list(ladders_by_sku.get(sku or "", {}).values())
+        if not sku or not ladders or not status:
             continue
-        opportunity = evaluate_step_up(
-            sku=sku,
-            supplier_name=breaks[0].get("supplier_name") or status.get("supplier"),
-            current_quantity=quantity,
-            base_cost=status.get("unit_cost"),
-            breaks=breaks,
-            daily_demand=status.get("daily_demand"),
-            current_stock=float(status.get("current_stock") or 0),
-            lead_time_days=int(status.get("lead_time_days") or 15),
-            holding_cost_pct=holding_cost_pct,
-        )
-        if opportunity:
-            results.append(opportunity)
+
+        opportunities = [
+            opportunity
+            for ladder in _ladders_for_status(ladders, status, cart_supplier_id)
+            if (opportunity := evaluate_step_up(
+                sku=sku,
+                supplier_name=ladder["supplier_name"],
+                current_quantity=quantity,
+                base_cost=status.get("unit_cost"),
+                breaks=ladder["breaks"],
+                daily_demand=(
+                    float(status["daily_demand"]) / _days_per_period(period)
+                    if status.get("daily_demand") is not None else None
+                ),
+                current_stock=float(status.get("current_stock") or 0),
+                lead_time_days=int(status.get("lead_time_days") or 15),
+                holding_cost_pct=holding_cost_pct,
+                overstock_factor=(status.get("signal_thresholds") or {}).get(
+                    "overstock_factor"),
+            )) is not None
+        ]
+        if opportunities:
+            # One line of the cart, one recommendation: the actionable ones
+            # first, then the largest net saving — the same order the results
+            # list uses below.
+            results.append(
+                min(opportunities, key=lambda o: (not o["worth_it"], -o["net_saving"])))
 
     # Actionable ones first, then by net saving.
     results.sort(key=lambda r: (not r["worth_it"], -r["net_saving"]))

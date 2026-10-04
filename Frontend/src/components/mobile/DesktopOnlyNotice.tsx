@@ -21,9 +21,48 @@ import { useLanguage } from '@/contexts/LanguageContext'
  */
 
 /** Routes with a real narrow-screen implementation.
- *  `/pedidos` earned its place here because registering a delivery is warehouse
- *  work — see app/pedidos/PedidosMobile.tsx. */
-const MOBILE_READY = ['/hoy', '/pedidos']
+ *  `/compras` (formerly `/hoy`) has a dedicated narrow layout — see
+ *  app/compras/HoyMobile.tsx. `/pedidos` earned its place here because
+ *  registering a delivery is warehouse work — see app/pedidos/PedidosMobile.tsx.
+ *  `/mensajes` switches between a conversation list and a single thread with
+ *  a back button on a narrow screen — see app/mensajes/MessagesMobile.tsx —
+ *  rather than laying out a two-pane table. `/asistente` is a chat app on a
+ *  phone — see app/asistente/AssistantMobile.tsx. */
+export const MOBILE_READY = [
+  '/compras',
+  '/pedidos',
+  '/mensajes',
+  '/asistente',
+  // Cards per SKU, detail + editor + stock count in sheets (app/inventario/InventoryMobile.tsx).
+  '/inventario',
+  // Setup gaps as cards with inline boxes; semáforo rules save from a sticky bar.
+  '/configurar-inventario',
+  // Supplier cards + detail/form sheets; also covers /proveedores/scorecard (cards).
+  '/proveedores',
+  // Upload wizard: stacked mapping, sticky confirm, wrapping step bar.
+  '/ventas',
+  // Source list ⇄ full-screen source detail; result sets as record cards.
+  '/archivos',
+  '/pronosticos',   // app/pronosticos/PronosticosMobile.tsx — list, then one SKU
+  '/impacto',       // cards for the monthly table, month detail in a sheet
+  '/historial',     // runs as cards; rename/delete/open in a sheet
+  '/actividad',     // full-width filters, thumb-sized "show more"
+  '/escenarios',    // rules as cards, stepped rule sheet, sticky "Simular"
+  '/configuracion', // the settings hub is a grouped list on a phone
+  '/usuarios',
+  '/mi-cuenta',
+  '/automatizacion',
+  '/api',
+  '/instalacion',
+]
+
+/** Does `path` have a real phone layout? Links that lead from a phone screen
+ *  into one that does not use this to say so BEFORE the tap (see
+ *  AssumptionsBanner on /compras), and stop saying it the day a screen is
+ *  added above — no second list to keep in step. */
+export function isMobileReady(path: string): boolean {
+  return MOBILE_READY.some(p => path === p || path.startsWith(`${p}/`))
+}
 
 const DISMISS_KEY = 'fp_mobile_notice_dismissed'
 
@@ -40,7 +79,7 @@ export default function DesktopOnlyNotice() {
   }, [])
 
   if (!narrow || dismissed) return null
-  if (MOBILE_READY.some(p => path === p || path.startsWith(`${p}/`))) return null
+  if (isMobileReady(path)) return null
 
   function dismiss() {
     sessionStorage.setItem(DISMISS_KEY, '1')

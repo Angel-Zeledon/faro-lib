@@ -104,6 +104,12 @@ _ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("warehouse", (
         "warehouse", "bodega", "almacen", "deposito", "sucursal", "tienda",
         "ubicacion", "local", "centro",
+        # "sede" is what a Colombian ERP calls a branch, and it was missing
+        # while "sucursal" and "tienda" were here: a file exporting one row per
+        # branch under a `Sede` header left the column unmapped, so every
+        # branch's rows collapsed onto `principal` and the last one won —
+        # 300 + 200 + 40 landed in the DB as 40.
+        "sede", "punto de venta", "pdv",
     )),
     ("notes", ("notes", "notas", "observaciones", "comentarios", "nota")),
 )
@@ -234,7 +240,51 @@ def has_decimal_comma(samples: list[str]) -> bool:
     return False
 
 
-def parse_number(raw, decimal_comma: Optional[bool] = None) -> Optional[float]:
+# A cell that is a digit group, a dot, and exactly three more digits: "1.250".
+# It is 1250 in a dot-as-thousands file and 1.25 in a dot-as-decimals one, and
+# nothing inside the cell can tell you which.
+_DOT_THEN_THREE = re.compile(r"(?<!\d)\d{1,3}(?:\.\d{3})+(?!\d)")
+# A dot followed by one or two digits ("3.50"): only a decimal point does that.
+_DOT_DECIMAL = re.compile(r"\.\d{1,2}(?!\d)")
+
+
+def dot_is_ambiguous(samples: list[str]) -> list[str]:
+    """Cells whose dot could be a thousands separator or a decimal point, when
+    the file itself does not settle it. Empty list means there is no question.
+
+    `has_decimal_comma` only ever detected a decimal COMMA; there was no mirror
+    rule for dot-as-thousands, so `["1.250", "980", "12.500"]` imported as 1.25
+    and 12.5 — no row errors, the wizard said "1,200 products imported", and
+    the whole catalogue dropped to PEDIR_YA with the stock divided by a
+    thousand (stability 11.2). Measured against the real module, not
+    inferred.
+
+    Two things settle the question and leave nothing to ask:
+      * a decimal COMMA anywhere ("3,50") — then the dot is thousands;
+      * a dot followed by one or two digits ("3.50") — then the dot is a
+        decimal point, and "1.250" really is 1.25.
+
+    Otherwise the answer is the user's to give. Returning the offending cells
+    rather than a boolean is deliberate: the question the wizard asks has to
+    quote the file ("does 1.250 mean 1,250 or 1.25?"), because that is the only
+    form a person can answer without knowing what a thousands separator is.
+    """
+    text_samples = [str(x) for x in samples if x not in (None, "")]
+    if has_decimal_comma(text_samples):
+        return []
+    if any(_DOT_DECIMAL.search(t) for t in text_samples):
+        return []
+    seen: list[str] = []
+    for t in text_samples:
+        if _DOT_THEN_THREE.search(t) and t not in seen:
+            seen.append(t)
+        if len(seen) >= 5:
+            break
+    return seen
+
+
+def parse_number(raw, decimal_comma: Optional[bool] = None,
+                 thousands_dot: Optional[bool] = None) -> Optional[float]:
     """
     Read a spreadsheet cell as a number, or None when it is not one.
 
@@ -242,6 +292,11 @@ def parse_number(raw, decimal_comma: Optional[bool] = None) -> Optional[float]:
     "1 234", accounting negatives "(50)", and the trailing "-" some ERPs
     append. `decimal_comma` overrides the per-cell guess with the file-level
     verdict from has_decimal_comma().
+
+    `thousands_dot` is the answer to the question `dot_is_ambiguous` asks: True
+    means "1.250" is 1250 in this file. It is only ever set from a person's
+    reply in the import wizard — the parser does not guess it, because guessing
+    it wrong divides a whole catalogue by a thousand and reports success.
     """
     if raw is None:
         return None
@@ -297,8 +352,10 @@ def parse_number(raw, decimal_comma: Optional[bool] = None) -> Optional[float]:
         # "1.234.567" is a thousands-formatted integer, never a decimal.
         if len(groups) > 2 and all(len(g) == 3 for g in groups[1:]):
             text = text.replace(".", "")
-        elif len(groups) == 2 and len(groups[1]) == 3 and decimal_comma:
-            # In a comma-decimal file a lone dot before 3 digits is thousands.
+        elif len(groups) == 2 and len(groups[1]) == 3 and (decimal_comma or thousands_dot):
+            # A lone dot before exactly 3 digits is a thousands separator when
+            # the file writes decimals with a comma — or when the user answered
+            # that it does (thousands_dot).
             text = text.replace(".", "")
 
     if not re.fullmatch(r"\d*\.?\d+(?:[eE][+-]?\d+)?", text):

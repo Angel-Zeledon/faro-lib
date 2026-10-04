@@ -1,17 +1,18 @@
 """
-Plan-limit enforcement regressions:
+Limit enforcement regressions. There is one plan now, so every limit under test
+here is either the shipped ceiling or a per-tenant `quota` override — the way a
+single account gets widened or narrowed without a deploy.
 
 1. max_dataset_size_mb — uploads used to validate ONLY against the global
-   settings.max_upload_size_mb (200 MB), so professional (500) / enterprise
-   (2000) tenants were silently capped at 200 MB and the per-plan limit was
-   never enforced at all. The plan (or per-tenant quota override) value is now
-   authoritative; the global setting is only an infra ceiling when the plan
-   defines no limit (None).
+   settings.max_upload_size_mb (200 MB), so a tenant entitled to more was
+   silently capped and its own limit was never enforced at all. The tenant
+   value is authoritative; the global setting is only an infra ceiling when the
+   tenant limit is None.
 
 2. max_concurrent_jobs — the worker only honored the process-wide
-   settings.max_concurrent_jobs; a tenant's per-plan concurrent-job limit was
-   never enforced. Dequeue now skips (postpones) jobs of tenants already at
-   their RUNNING-job limit while other tenants' jobs keep flowing.
+   settings.max_concurrent_jobs; a tenant's own concurrent-job limit was never
+   enforced. Dequeue now skips (postpones) jobs of tenants already at their
+   RUNNING-job limit while other tenants' jobs keep flowing.
 """
 
 from uuid import uuid4
@@ -36,7 +37,7 @@ def _csv_of_mb(mb: float) -> bytes:
     return header + b"a" * (int(mb * 1024 * 1024) - len(header))
 
 
-# ── 1. Dataset size: plan/quota limit enforced on upload ────────────────────
+# ── 1. Dataset size: the tenant's limit is enforced on upload ───────────────
 
 def test_upload_blocked_beyond_plan_dataset_size(
     monkeypatch, make_tenant_user_headers, client,
@@ -47,7 +48,7 @@ def test_upload_blocked_beyond_plan_dataset_size(
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 
     headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="analyst", return_tenant_id=True
+        role="analyst", return_tenant_id=True
     )
     _set_quota(tenant_id, {"max_dataset_size_mb": 1})
 
@@ -69,14 +70,14 @@ def test_plan_dataset_size_wins_over_global_infra_ceiling(
     monkeypatch, make_tenant_user_headers, client,
 ):
     """THE original bug: the global settings.max_upload_size_mb silently capped
-    paid plans below their entitlement. With the global ceiling shrunk to 1 MB
-    and the tenant's plan limit at 5 MB, a 2 MB upload must SUCCEED — the plan
-    limit is authoritative, not the global setting."""
+    tenants below what they were entitled to. With the global ceiling shrunk to
+    1 MB and the tenant's own limit at 5 MB, a 2 MB upload must SUCCEED — the
+    tenant limit is authoritative, not the global setting."""
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     monkeypatch.setattr("backend.config.settings.max_upload_size_mb", 1)
 
     headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="analyst", return_tenant_id=True
+        role="analyst", return_tenant_id=True
     )
     _set_quota(tenant_id, {"max_dataset_size_mb": 5})
 
@@ -100,13 +101,13 @@ def test_plan_dataset_size_wins_over_global_infra_ceiling(
 def test_global_ceiling_applies_when_plan_limit_is_none(
     monkeypatch, make_tenant_user_headers, client,
 ):
-    """When the resolved plan/quota limit is None (unlimited), the global
+    """When the resolved tenant limit is None (unlimited), the global
     settings.max_upload_size_mb still acts as the hard infra ceiling."""
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     monkeypatch.setattr("backend.config.settings.max_upload_size_mb", 1)
 
     headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="analyst", return_tenant_id=True
+        role="analyst", return_tenant_id=True
     )
     _set_quota(tenant_id, {"max_dataset_size_mb": None})
 
@@ -130,7 +131,7 @@ def test_session_upload_shortcut_enforces_plan_dataset_size(
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 
     headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="analyst", return_tenant_id=True
+        role="analyst", return_tenant_id=True
     )
     r = client.post("/api/v1/sessions", json={"name": "upload-cap"}, headers=headers)
     assert r.status_code == 201, r.text
@@ -164,7 +165,7 @@ def test_upload_permission_pair(make_tenant_user_headers, client):
     """Viewer is denied (403) with no dataset row created; analyst succeeds
     and the row lands in the DB."""
     viewer_headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="viewer", return_tenant_id=True
+        role="viewer", return_tenant_id=True
     )
     before = _dataset_count(tenant_id)
     r = client.post(
@@ -176,7 +177,7 @@ def test_upload_permission_pair(make_tenant_user_headers, client):
     assert _dataset_count(tenant_id) == before  # denied request wrote nothing
 
     analyst_headers, analyst_tid = make_tenant_user_headers(
-        plan="starter", role="analyst", return_tenant_id=True
+        role="analyst", return_tenant_id=True
     )
     r2 = client.post(
         "/api/v1/datasets",
@@ -235,8 +236,8 @@ def test_dequeue_postpones_tenant_at_concurrent_job_limit(
 
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 
-    _, tenant_a = make_tenant_user_headers(plan="starter", return_tenant_id=True)
-    _, tenant_b = make_tenant_user_headers(plan="starter", return_tenant_id=True)
+    _, tenant_a = make_tenant_user_headers(return_tenant_id=True)
+    _, tenant_b = make_tenant_user_headers(return_tenant_id=True)
     _set_quota(tenant_a, {"max_concurrent_jobs": 1})
 
     sess_a = _mk_session(tenant_a)
@@ -265,15 +266,18 @@ def test_tenant_at_concurrent_job_limit_predicate(
     monkeypatch, make_tenant_user_headers,
 ):
     """Direct predicate checks: blocked exactly when RUNNING count reaches the
-    plan/quota limit; None means unlimited; testing mode disables the check."""
+    tenant's limit; None means unlimited; testing mode disables the check."""
     from backend.workers.worker import _tenant_at_concurrent_job_limit
 
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 
-    _, tenant_id = make_tenant_user_headers(plan="starter", return_tenant_id=True)
+    _, tenant_id = make_tenant_user_headers(return_tenant_id=True)
     sess = _mk_session(tenant_id)
 
-    # Starter plan default is max_concurrent_jobs=2; 1 RUNNING -> below limit.
+    # The shipped ceiling is 8, too many jobs to insert for a predicate check,
+    # so the tenant is narrowed to 2 the same way a real agreement would be.
+    _set_quota(tenant_id, {"max_concurrent_jobs": 2})
+
     _mk_job(tenant_id, sess, "RUNNING", _VERY_OLD)
     assert _tenant_at_concurrent_job_limit(tenant_id) is False
 

@@ -87,7 +87,20 @@ class TestSeedingFromTheWizard:
         assert _stock(tid) is None
 
     def test_cost_and_price_are_translated(self, client, test_tenant):
+        """`cost`/`price` reach unit_cost/sale_price — on a row that exists.
+
+        Money is not a count, so it no longer CREATES the row: a file whose only
+        inventory-ish mapping was a price used to seed the whole catalogue at
+        current_stock = 0 and light it up as PEDIR_YA (see
+        test_stock_seeding_zero.py). The translation this test is named after is
+        unchanged, which is why the SKU is counted first — as it would be by any
+        upload that actually says something about the shelf.
+        """
         tid = test_tenant["id"]
+        sync_stock_from_dataset(
+            tid, _df(inventory=[7.0, 7.0]), group_col="sku", date_col="date",
+            canonical_mapping={"inventory": "existencias"},
+        )
         df = _df(cost=[3.5, 4.0], price=[9.0, 9.5])
         sync_stock_from_dataset(
             tid, df, group_col="sku", date_col="date",
@@ -96,6 +109,7 @@ class TestSeedingFromTheWizard:
         row = _stock(tid)
         assert float(row["unit_cost"]) == 4.0
         assert float(row["sale_price"]) == 9.5
+        assert float(row["current_stock"]) == 7.0, "a price upload moved the count"
 
     def test_a_native_header_still_wins_over_the_canonical_alias(self, client, test_tenant):
         """A file whose own header says current_stock keeps its meaning; the

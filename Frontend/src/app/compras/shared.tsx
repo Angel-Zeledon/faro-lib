@@ -11,9 +11,11 @@
  * screen where a confident green over month-old stock does the most damage.
  */
 import Link from 'next/link'
-import { Info, ArrowRight } from 'lucide-react'
+import { Info, ArrowRight, Monitor, Truck, Check } from 'lucide-react'
+import { isMobileReady } from '@/components/mobile/DesktopOnlyNotice'
 import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
-import type { MorningBriefing, InventoryStatusItem } from '@/lib/types'
+import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat, CoverageUnit, IncomingSource } from '@/lib/types'
+import { incomingText } from '@/lib/incomingCopy'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { useLanguage } from '@/contexts/LanguageContext'
 
@@ -34,7 +36,12 @@ export const C = {
 }
 
 // ── Cart types ────────────────────────────────────────────────────────────────
-export type ActionStatus = 'pending' | 'approved' | 'modified' | 'rejected'
+// 'ordered' = this line is already on a purchase order generated from this
+// screen. Terminal for the session: it leaves the cart, cannot be approved,
+// edited or ordered again, and is never re-sent as a decision. Before it
+// existed the line stayed 'approved' after "Descargar orden de compra", the
+// cart bar stayed up, and a second tap wrote an identical second PO.
+export type ActionStatus = 'pending' | 'approved' | 'modified' | 'rejected' | 'ordered'
 
 export interface ActionItem {
  sku:            string
@@ -44,11 +51,12 @@ export interface ActionItem {
  // buyer picked one in the cart. Free-text names from the SKU card have none.
  supplier_id:   string | null
  qty:            number
- recommended:    number   // original quantity Faro suggested (immutable)
+ recommended:    number   // original quantity StockAI suggested (immutable)
  unit_cost:      number | null
  sale_price:   number | null   // sale price — for the margin-protected summary
  signal:         string
- days:           number | null
+ days:           number | null   // coverage, in `coverage_unit`
+ coverage_unit?: CoverageUnit
  lead_time:      number
  daily_demand: number | null   // forecasted daily demand — for the "why" panel
  current_stock:   number | null   // current stock — for the "why" panel
@@ -59,11 +67,14 @@ export interface ActionItem {
  lead_time_source: ValueSource
  lead_time_rule_scope: RuleScope | null
  // Same question for the other three values that decide the order. The buyer
- // must be able to tell "I chose 95%" from "Faro assumed 95%" before approving.
+ // must be able to tell "I chose 95%" from "StockAI assumed 95%" before approving.
  unit_cost_source: ValueSource
  service_level:        number | null
  service_level_source: ValueSource
  service_level_rule_scope: RuleScope | null
+ // Measured unable to keep that service level (stability.md 17b): the panel
+ // says so beside the percentage instead of printing it bare.
+ service_level_caveat: ServiceLevelCaveat | null
  moq:              number | null
  moq_source:       ValueSource
  moq_rule_scope:   RuleScope | null
@@ -83,6 +94,15 @@ export interface ActionItem {
  unit_margin:  number | null   // null = SKU sin price o sin cost
  reason:         string
  status:         ActionStatus
+ /** PO number (OC-000123) once the line was ordered from this screen. */
+ ordered_ref?:   string | null
+ /** The decision (approve/modify/reject) already went out on a PO, so the
+  *  next order from this screen must not log it again. */
+ decision_logged?: boolean
+ /** Units already on open orders / transfers, and which ones — the reason
+  *  the quantity is lower than the gap suggests (or 0). */
+ incoming_qty?:     number
+ incoming_sources?: IncomingSource[]
 }
 
 // `t` returns the key itself when the catalog has no entry for it; printing
@@ -98,7 +118,7 @@ export function tOr(
 
 // ── Which of these numbers are ours, not yours? ──────────────────────────────
 // Every planning value now carries a provenance, and 'default' is the one that
-// means "nobody told us — this is Faro's assumption". The buyer approving an
+// means "nobody told us — this is StockAI's assumption". The buyer approving an
 // order deserves to know how much of it rests on our guesses before they spend
 // the money, and to get one link to the screen that ranks those gaps by money.
 //
@@ -177,6 +197,8 @@ const ASSUMPTION_FIELD_FALLBACK_EN: Record<string, string> = {
  moq:           'the minimum order',
 }
 
+const SETUP_PATH = '/configurar-inventario'
+
 export function AssumptionsBanner({ summary, stacked = false }: {
  summary: AssumptionSummary
  /** Narrow screens put the CTA under the text instead of beside it; at 390px
@@ -197,7 +219,7 @@ export function AssumptionsBanner({ summary, stacked = false }: {
 
  return (
   <Link
-   href="/configurar-inventario"
+   href={SETUP_PATH}
    style={{
     display: 'flex',
     flexDirection: stacked ? 'column' : 'row',
@@ -232,11 +254,22 @@ export function AssumptionsBanner({ summary, stacked = false }: {
     {tOr(t, 'hoy.assumptions_cta', 'See what to configure first')}
     <ArrowRight size={12} aria-hidden="true" />
    </span>
+   {/* On a phone this leads into a screen built for a computer. Say so before
+       the tap, not after it (DesktopOnlyNotice decides which screens are). */}
+   {stacked && !isMobileReady(SETUP_PATH) && (
+    <span style={{
+     display: 'inline-flex', alignItems: 'center', gap: 5,
+     marginLeft: 25, marginTop: -4, fontSize: 11, color: C.dim,
+    }}>
+     <Monitor size={11} aria-hidden="true" />
+     {t('mobile.opens_desktop_screen')}
+    </span>
+   )}
   </Link>
  )
 }
 
-// A muted dotted "estimado" badge on a value Faro assumed rather than received.
+// A muted dotted "estimado" badge on a value StockAI assumed rather than received.
 // Only assumed values are badged: no badge means the number is the buyer's own
 // (typed, imported, ruled, or learned from their receptions). Mirrors the badge
 // on /inventory so the two screens make the same promise.
@@ -246,7 +279,7 @@ export function SourceBadge({ source }: { source?: ValueSource | null }) {
  return (
   <span
    title={tOr(t, 'inventory.source_assumed_tip',
-    'Faro assumed this value — you have not given us one yet.')}
+    'StockAI assumed this value — you have not given us one yet.')}
    style={{
     marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
     textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4,
@@ -263,17 +296,97 @@ export function SourceBadge({ source }: { source?: ValueSource | null }) {
 // a red signal is not evidence that nothing is wrong: it is evidence that we
 // cannot see. So the green all-clear becomes an explicit "no lo podemos
 // confirmar" instead of quietly reassuring the buyer.
-export function AllClear({ stale }: { stale: boolean }) {
+//
+// `unmeasured` is the harder version of the same problem: stale data is old
+// data, but an uncounted catalogue is NO data. Every counter that would raise
+// an alarm reads 0 because nothing was ever measured, so the all-clear here is
+// not weak evidence — it is none at all, and it must not be shown as calm.
+export function AllClear({ stale, unmeasured = false }: {
+ stale: boolean
+ unmeasured?: boolean
+}) {
  const { t } = useLanguage()
+ const doubtful = stale || unmeasured
  return (
   <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)' }}>
    {stale && <div style={{ marginBottom: 10 }}><StaleSignalChip /></div>}
    <div style={{ fontSize: 15, marginBottom: 8 }}>
-    {t(stale ? 'hoy.no_pending_actions_unverified' : 'hoy.no_pending_actions')}
+    {t(unmeasured ? 'hoy.no_pending_actions_unmeasured'
+      : stale ? 'hoy.no_pending_actions_unverified'
+      : 'hoy.no_pending_actions')}
    </div>
    <div style={{ fontSize: 13, color: 'var(--dim)' }}>
-    {t(stale ? 'hoy.inventory_unverified' : 'hoy.inventory_under_control')}
+    {t(unmeasured ? 'hoy.inventory_unmeasured'
+      : doubtful ? 'hoy.inventory_unverified'
+      : 'hoy.inventory_under_control')}
+   </div>
+   {/* "Regístralo" used to be the whole call to action, with nothing to tap.
+       Stock is recorded on /inventario. */}
+   {unmeasured && (
+    <Link
+     href="/inventario"
+     style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+      marginTop: 14, minHeight: 44, padding: '0 18px', borderRadius: 10, boxSizing: 'border-box',
+      background: 'var(--accent)', color: '#fff', fontSize: 14, fontWeight: 700,
+      textDecoration: 'none',
+     }}
+    >
+     {t('hoy.inventory_unmeasured_cta')}
+     <ArrowRight size={14} aria-hidden="true" />
+    </Link>
+   )}
+  </div>
+ )
+}
+
+// ── What is already on its way, and on which order ──────────────────────────
+// The quantity on a card is NET of open purchase orders and transfers. Without
+// this line a drop to 0 (or to less than the gap) reads as the app forgetting;
+// with it the buyer sees exactly which order already covers the units.
+export function IncomingNote({ item }: { item: ActionItem }) {
+ const { t } = useLanguage()
+ const text = incomingText(t, item.incoming_qty, item.incoming_sources)
+ if (!text) return null
+ return (
+  <div style={{
+   display: 'flex', alignItems: 'center', gap: 6, marginTop: 6,
+   fontSize: 12, color: 'var(--accent)', overflowWrap: 'anywhere',
+  }}>
+   <Truck size={13} aria-hidden="true" style={{ flexShrink: 0 }} />
+   <span>{text}</span>
+  </div>
+ )
+}
+
+/** Replaces the decision controls once the line is on a purchase order. */
+export function OrderedNote({ item }: { item: ActionItem }) {
+ const { t } = useLanguage()
+ if (item.status !== 'ordered') return null
+ const ref = item.ordered_ref ?? ''
+ return (
+  <div style={{ marginTop: 10 }}>
+   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+    <span style={{
+     display: 'inline-flex', alignItems: 'center', gap: 5,
+     fontSize: 12, fontWeight: 700, color: '#22c55e',
+     background: 'rgba(34,197,94,0.1)', padding: '3px 10px', borderRadius: 20,
+    }}>
+     <Check size={12} aria-hidden="true" />
+     {tOr(t, 'hoy.line_ordered_badge', `Ordered on ${ref}`, { ref })}
+    </span>
+    <Link href="/pedidos" style={{
+     display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 32,
+     fontSize: 12, color: 'var(--accent)', textDecoration: 'none',
+    }}>
+     {tOr(t, 'hoy.toast_view_orders', 'View orders')} <ArrowRight size={12} aria-hidden="true" />
+    </Link>
+   </div>
+   <div style={{ fontSize: 11.5, color: 'var(--dim)', marginTop: 4, lineHeight: 1.45 }}>
+    {tOr(t, 'hoy.line_ordered_hint',
+     'It is already on a purchase order. It counts as on the way until you record the reception in Orders.')}
    </div>
   </div>
  )
 }
+

@@ -1,13 +1,17 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, ChevronLeft } from 'lucide-react'
 import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import AlertBell from '@/components/alerts/AlertBell'
 import MessagesBadge from '@/components/messages/MessagesBadge'
 import TourLauncher from '@/components/tour/TourLauncher'
+import TopBarOverflowMenu from './TopBarOverflowMenu'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { useMobileHeaderOverride } from '@/components/mobile/MobileHeaderContext'
+import { SCREENS, ANALYSIS_TABS, screenFor } from './navItems'
 import type { LocalNotice } from '@/components/alerts/types'
 import { useToast } from '@/contexts/ToastContext'
 import { usePlanning } from '@/contexts/PlanningContext'
@@ -15,18 +19,27 @@ import { useLanguage } from '@/contexts/LanguageContext'
 
 // Titles resolved via i18n so they follow the language toggle.
 const PAGE_TITLE_KEYS: Record<string, string> = {
-  // One title for the pair: /quick-start and /data are two tabs of the same
+  // One title for the pair: /ventas and /archivos are two tabs of the same
   // sidebar entry, so the bar names the section and the tabs name the tab.
-  '/data':        'topbar.title_data',
-  '/quick-start': 'topbar.title_data',
-  '/analyst':   'topbar.title_analyst',
-  '/config':    'topbar.title_config',
-  '/users':     'topbar.title_users',
-  '/settings':  'topbar.title_settings',
-  '/skus':      'skus.page_title',
-  '/pedidos':   'orders.page_title',
-  '/mensajes':  'messages.page_title',
-  '/sessions':  'sessions.page_title',
+  '/archivos':      'topbar.title_data',
+  '/ventas':        'topbar.title_data',
+  '/asistente':     'topbar.title_analyst',
+  '/configuracion': 'nav.config',
+  // Same words as the Configuración hub card that leads here, so the bar
+  // confirms where the click went ("Configuración › Usuarios").
+  '/mi-cuenta':     'nav.account',
+  '/usuarios':      'nav.users',
+  '/automatizacion': 'nav.automation',
+  '/api':           'nav.api',
+  '/instalacion':   'nav.installation',
+  '/actividad':     'nav.activity',
+  '/configurar-inventario': 'nav.inventory_setup',
+  '/escenarios':    'nav.scenarios',
+  '/impacto':       'nav.roi',
+  '/pronosticos':   'skus.page_title',
+  '/pedidos':       'orders.page_title',
+  '/mensajes':      'messages.page_title',
+  '/historial':     'sessions.page_title',
 }
 
 // Granularity label of the active session, reusing the planning vocabulary.
@@ -34,15 +47,25 @@ const GRAIN_KEY: Record<string, string> = {
   daily: 'planning.daily', weekly: 'planning.weekly', monthly: 'planning.monthly',
 }
 
-// The page owns its session picker (deep links `/skus?session=<id>` and compare
-// mode can point at a session other than the tenant's active one), so a global
-// badge here would contradict what that page is actually showing.
-const PATHS_WITH_OWN_SESSION_PICKER = ['/skus']
+// The page owns its session picker (deep links `/pronosticos?session=<id>` and
+// compare mode can point at a session other than the tenant's active one), so
+// a global badge here would contradict what that page is actually showing.
+const PATHS_WITH_OWN_SESSION_PICKER = ['/pronosticos']
 
 export default function TopBar() {
   const path    = usePathname()
   const { t }   = useLanguage()
-  const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'Faro'
+  const narrow  = useIsNarrow()
+  const router  = useRouter()
+  const headerOverride = useMobileHeaderOverride()
+  const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'StockAI'
+  // A secondary screen names the sidebar entry it lives under: a breadcrumb
+  // on desktop, a back arrow on a phone. Only on the screen's own route — a
+  // deeper sub-route already has its own way back.
+  const screen  = screenFor(path)
+  const parent  = screen?.parent && screen.href === path
+    ? SCREENS.find(s => s.href === screen.parent) ?? null
+    : null
   const { addToast } = useToast()
   // Active-session badge source of truth.
   //
@@ -144,6 +167,74 @@ export default function TopBar() {
     ? activeSession.name.slice(0, -suffix.length)
     : activeSession?.name ?? ''
 
+  // Narrow screens: the desktop bar measured 409–461px on a 360px phone, so
+  // the bell and "report a problem" sat past the right edge and the clock
+  // wrapped onto two lines. Here it is title + "⋯" + bell, every control
+  // 44px: the clock goes (the phone shows the time already), the active-session
+  // crumb goes (it only links to /historial, reachable from the nav), and the
+  // secondary actions move into the overflow menu — none of them removed.
+  if (narrow) {
+    // Title: a screen's own override, then the desktop title map, then the
+    // nav label for the route (so /inventario reads "Inventario", not the
+    // brand), then the brand.
+    const mobileTitle = headerOverride?.title
+      ?? (PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : screen ? t(screen.labelKey) : 'StockAI')
+    // Back: a screen's in-page detail view, a nested route
+    // (/proveedores/scorecard → /proveedores), or a screen that lives under
+    // a hub (/usuarios → /configuracion, like a phone's own settings). The
+    // analysis screens are tabs of Pronósticos and switch with the tab strip
+    // instead. Top-level screens have the tab bar.
+    const segments = path.split('/').filter(Boolean)
+    const isAnalysisTab = ANALYSIS_TABS.some(tab => tab.href === path)
+    const parentHref = segments.length > 1
+      ? `/${segments.slice(0, -1).join('/')}`
+      : parent && !isAnalysisTab ? parent.href : null
+    const onBack = headerOverride?.onBack
+      ?? (headerOverride?.backHref ? () => router.push(headerOverride.backHref!) : null)
+      ?? (parentHref ? () => router.push(parentHref) : null)
+    return (
+      <header style={{
+        height: 'calc(52px + env(safe-area-inset-top, 0px))',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        boxSizing: 'border-box',
+        display: 'flex', alignItems: 'center', gap: 2,
+        paddingLeft: onBack ? 0 : 16, paddingRight: 4,
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--surface)',
+        flexShrink: 0, position: 'relative', zIndex: 20, minWidth: 0,
+      }}>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label={t('mobile.back')}
+            className="tap-feedback"
+            style={{
+              all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flexShrink: 0,
+              width: 44, height: 44, marginLeft: 2, borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text)',
+            }}
+          >
+            <ChevronLeft size={24} aria-hidden="true" />
+          </button>
+        )}
+        <h1 key={mobileTitle} className="mobile-title-enter" style={{
+          flex: 1, minWidth: 0, margin: 0,
+          fontSize: 17, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {mobileTitle}
+        </h1>
+        <TopBarOverflowMenu />
+        <AlertBell
+          localNotices={notifs}
+          onLocalRead={markLocalRead}
+          onClearLocal={clearLocal}
+        />
+      </header>
+    )
+  }
+
   return (
     <header style={{
       height: 52,
@@ -156,8 +247,19 @@ export default function TopBar() {
 
       {/* Title + breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {parent && (
+          <>
+            <Link
+              href={parent.href}
+              style={{ fontSize: 14, fontWeight: 500, color: 'var(--muted)', textDecoration: 'none', letterSpacing: '-0.01em' }}
+            >
+              {t(parent.labelKey)}
+            </Link>
+            <ChevronRight size={13} color="var(--border-strong)" aria-hidden="true" />
+          </>
+        )}
         <h1 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
-          {title}
+          {parent && !PAGE_TITLE_KEYS[path] && screen ? t(screen.labelKey) : title}
         </h1>
         {activeSession && (
           <>
@@ -212,6 +314,7 @@ export default function TopBar() {
             it is never a dead control, and it is how someone who dismissed the
             tour on their first visit gets it back. */}
         <TourLauncher />
+
 
         {/* Notification bell — durable alert history + this session's notices */}
         <AlertBell
