@@ -36,7 +36,7 @@ SECTION = {
                     "Si el archivo trae problemas que producirían un pronóstico equivocado, la pantalla te obliga a resolverlos antes de continuar y cada opción te dice qué hace y qué cuesta; los avisos que no bloquean solo se reportan.",
                     "El entrenamiento corre solo y puede tardar varios minutos según el tamaño del archivo: no cierres la pestaña, y al terminar te llevamos al semáforo con la vista diaria lista mientras las demás se siguen calculando en segundo plano.",
                     "Ahora abre «Configurar inventario» y completa los tres datos que StockAI todavía no tiene de cada producto: cuántas unidades tienes hoy en bodega, cuánto te cuesta a ti la unidad y cuántos días tarda tu proveedor en entregarte.",
-                    "Esa lista no viene alfabética sino ordenada por plata, y te dice arriba cuántos productos necesitas completar para cubrir el grueso de tu compra del mes — no hace falta configurarlos todos; si prefieres, sube el archivo de stock tal como te lo exporta tu sistema.",
+                    "Esa lista no viene alfabética sino ordenada por dinero, y te dice arriba cuántos productos necesitas completar para cubrir el grueso de tu compra del mes — no hace falta configurarlos todos; si prefieres, sube el archivo de stock tal como te lo exporta tu sistema.",
                     "Vuelve al Panel de compras y lee el semáforo — Pedir YA, Pedir pronto, OK, Sobrestock y Sin datos — con la cantidad sugerida por producto, y cuando confirmes una compra regístrala en Pedidos: sin ese registro la orden no existe para StockAI y nunca se aprende el tiempo de entrega real de tus proveedores.",
                 ],
                 "fields": [

@@ -150,7 +150,7 @@ CHAPTER = {
                 "caveats": [
                     "`capital_freed` es la diferencia entre dos fotos mensuales de sobrestock. El sobrestock también baja por vender, por merma, por borrar productos y por reentrenar: la cifra NO es atribuible a StockAI y el código lo dice.",
                     "No se calcula ningún titular de «StockAI te ahorró $X» ni un conteo de «quiebres evitados», porque ambos necesitan supuestos que no están fundados en los datos del cliente.",
-                    "La plata parada (`dead_capital.py`) no usa pronóstico: cuenta los días desde la última baja real del stock en `inventory_snapshots`, y con historial corto el número es un piso («al menos N días»), no una medición. Un SKU sin costo vale `null`, se cuenta aparte y queda fuera del total. La vista anterior basada en consumo esperado (`/dead-stock`) se retiró el 2026-09-30 porque valoraba en 0 un costo desconocido.",
+                    "El dinero parado (`dead_capital.py`) no usa pronóstico: cuenta los días desde la última baja real del stock en `inventory_snapshots`, y con historial corto el número es un piso («al menos N días»), no una medición. Un SKU sin costo vale `null`, se cuenta aparte y queda fuera del total. La vista anterior basada en consumo esperado (`/dead-stock`) se retiró el 2026-09-30 porque valoraba en 0 un costo desconocido.",
                     "El ABC usa demanda diaria × costo unitario como aproximación de ingreso, cayendo a costo 1.0 cuando no hay costo. Los cortes XYZ son CV 0.5 y 1.0, fijos en el código.",
                 ],
             },

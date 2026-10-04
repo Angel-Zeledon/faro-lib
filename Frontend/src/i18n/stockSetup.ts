@@ -12,7 +12,7 @@
 export const stockSetupEs = {
   // ── Page ────────────────────────────────────────────────────────────────
   'setupStock.page.title': 'Configurar mi inventario',
-  'setupStock.page.subtitle': 'Empieza por los productos que mueven tu plata. No necesitas configurarlos todos.',
+  'setupStock.page.subtitle': 'Empieza por los productos que mueven tu dinero. No necesitas configurarlos todos.',
   // Why the screen exists at all. With no stock, cost and lead time there is no
   // semáforo: StockAI knows how much you will sell, but not what to compare it to.
   // Says exactly which of the three blocks the semáforo and which only makes it
@@ -25,9 +25,9 @@ export const stockSetupEs = {
   'setupStock.gaps.title': 'Empieza por estos',
   'setupStock.gaps.headline': 'Completando {count} de tus {total} productos llegas al {pct}% de tu compra del mes.',
   'setupStock.gaps.headline_units': 'Completando {count} de tus {total} productos llegas al {pct}% de las unidades que vas a mover este mes.',
-  'setupStock.gaps.basis_units': 'Todavía no nos has dado costos ni precios, así que ordenamos por volumen. Cuando subas los costos, ordenamos por plata.',
+  'setupStock.gaps.basis_units': 'Todavía no nos has dado costos ni precios, así que ordenamos por volumen. Cuando subas los costos, ordenamos por dinero.',
   'setupStock.gaps.progress_label': '{pct}% de tu compra del mes ya configurado',
-  'setupStock.gaps.progress_hint': 'La barra mide plata, no filas: {done} de {total} productos listos.',
+  'setupStock.gaps.progress_hint': 'La barra mide dinero, no filas: {done} de {total} productos listos.',
   'setupStock.gaps.all_done': 'Listo: todos los productos con venta proyectada ya tienen stock y costo.',
   'setupStock.gaps.empty': 'Todavía no hay un pronóstico con el que priorizar. Sube tus ventas y vuelve a esta pantalla.',
   'setupStock.gaps.horizon': 'Próximos {days} días',
@@ -53,7 +53,7 @@ export const stockSetupEs = {
   'setupStock.gaps.col_demand_tip': 'Cuántas unidades de este producto esperamos que vendas en el período, según tu propio historial. Es un pronóstico, no una meta.',
   'setupStock.gaps.col_spend_tip': 'Lo que te va a costar reponer esa venta: las unidades proyectadas por lo que pagas por unidad. Es la cifra por la que ordenamos la lista.',
   'setupStock.gaps.col_share_tip': 'Cuánto pesa este producto dentro de toda tu compra del período. Un producto con 12 % se lleva doce de cada cien colones que vas a invertir.',
-  'setupStock.gaps.col_cumulative_tip': 'Sumando este producto y todos los de arriba, qué porcentaje de tu compra del período ya llevas cubierto. Cuando llegues al 80 % puedes parar: el resto son productos que casi no mueven plata.',
+  'setupStock.gaps.col_cumulative_tip': 'Sumando este producto y todos los de arriba, qué porcentaje de tu compra del período ya llevas cubierto. Cuando llegues al 80 % puedes parar: el resto son productos que casi no mueven dinero.',
   'setupStock.gaps.col_missing_tip': 'Los datos que todavía no nos has dado de este producto. Mientras le falte alguno, no puede entrar al semáforo.',
 
   // The three boxes at the end of each row, explained once above the table.
@@ -73,7 +73,7 @@ export const stockSetupEs = {
   'setupStock.gaps.price_source.unit_cost': 'con tu costo',
   'setupStock.gaps.price_source.sale_price': 'con tu precio de venta',
   'setupStock.gaps.price_source.tenant_median': 'con un costo estimado',
-  'setupStock.gaps.price_source.none': 'sin dato de plata',
+  'setupStock.gaps.price_source.none': 'sin dato de dinero',
   'setupStock.gaps.refresh': 'Actualizar',
 
   // ── Importer ────────────────────────────────────────────────────────────

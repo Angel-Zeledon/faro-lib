@@ -23,7 +23,7 @@ export const analystTour: TourDefinition = {
     es: {
       name: 'Cómo usar el asistente',
       intro_title: 'Tu asistente conoce tu cuenta',
-      intro_body: 'El asistente responde con los datos de tu empresa tal como están ahora: qué productos están en rojo y cuánto pedir, tus órdenes en camino o atrasadas, cómo te cumplen tus proveedores, cuánta plata tienes parada en sobrestock y qué tan frescos están tus datos.\n\nNo es un buscador de internet. Si algo nunca lo subiste, te lo dice y te indica dónde cargarlo, en vez de inventarlo.\n\nEs el mismo asistente que te responde por WhatsApp.',
+      intro_body: 'El asistente responde con los datos de tu empresa tal como están ahora: qué productos están en rojo y cuánto pedir, tus órdenes en camino o atrasadas, cómo te cumplen tus proveedores, cuánto dinero tienes parado en sobrestock y qué tan frescos están tus datos.\n\nNo es un buscador de internet. Si algo nunca lo subiste, te lo dice y te indica dónde cargarlo, en vez de inventarlo.\n\nEs el mismo asistente que te responde por WhatsApp.',
       new_title: 'El botón + : una conversación por tema',
       new_body: 'Abre una conversación vacía. El título lo pone solo con tu primera pregunta.\n\nCada conversación arrastra sus mensajes anteriores como contexto: por eso puedes repreguntar («¿y a quién se lo pido?») sin explicarlo todo de nuevo. Cuando cambies de tema, abre una nueva.',
       chats_title: 'La lista: lo que preguntaste no se pierde',
@@ -35,7 +35,7 @@ export const analystTour: TourDefinition = {
       input_title: 'El cuadro de escribir',
       input_body: 'Enter envía; Shift+Enter hace un salto de línea.\n\nEscribe como le hablarías a un compañero: «¿por qué el aceite de oliva está en rojo?» funciona; puedes nombrar el producto como lo llamas tú o por su código.\n\nUna pregunta por mensaje responde mejor que tres juntas.',
       examples_title: 'Preguntas que funcionan y preguntas que no',
-      examples_body: 'Funcionan: «¿qué debo comprar hoy y a quién?», «¿qué pasa con la orden OC-000012?», «¿qué tan cumplido es mi proveedor X?», «¿cuánta plata tengo parada en sobrestock?».\n\nNo funcionan: «¿cuánto me va a costar el flete en marzo?» o «¿mi competencia bajó precios?» — eso no está en StockAI.\n\nTampoco puede hacer cosas por ti: no crea, envía ni recibe órdenes. Te dice qué haría y en qué pantalla se hace.',
+      examples_body: 'Funcionan: «¿qué debo comprar hoy y a quién?», «¿qué pasa con la orden OC-000012?», «¿qué tan cumplido es mi proveedor X?», «¿cuánto dinero tengo parado en sobrestock?».\n\nNo funcionan: «¿cuánto me va a costar el flete en marzo?» o «¿mi competencia bajó precios?» — eso no está en StockAI.\n\nTampoco puede hacer cosas por ti: no crea, envía ni recibe órdenes. Te dice qué haría y en qué pantalla se hace.',
       badges_title: 'La etiqueta debajo de cada respuesta',
       badges_body: 'Bajo cada respuesta hay una etiqueta que dice cómo se armó:\n\nTus datos — la respondió el asistente y cada cifra coincide con tu cuenta.\nRevisa las cifras — algunas cifras no se pudieron comprobar contra tus datos; la respuesta las nombra al final.\nResumen de tus datos — no hubo respuesta con IA (no está activada o tardó demasiado), así que te muestra directamente lo que dicen tus datos.\nError — la petición falló; vuelve a intentar.',
       limits_title: 'Para qué sirve y para qué no',

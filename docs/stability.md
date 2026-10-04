@@ -4161,7 +4161,7 @@ November pays, January collects. Distributors get caught by this annually.
 nothing, but it is worth little until (1) and (2) exist, because it is their
 combination stated as a warning.
 
-**4. Where the inventory value is heading.** "Plata parada" looks backwards; the
+**4. Where the inventory value is heading.** "Dinero parado" looks backwards; the
 forward twin says "following the plan your stock goes from 18M to 21M by
 December, of which 3M is the Christmas build and unwinds in January." *Blocked
 by:* (2) — same projection, different axis.
@@ -4280,7 +4280,7 @@ agent that found this deliberately left it alone, which was the right call.
 **[DONE 2026-09-30] retired `/dead-stock`, owner's decision** (the second
 option). The route, `getDeadStock`, its types, the «Inmovilizado» / "Dead
 stock" view on `/inventario` and its 24 i18n keys per language are gone;
-«Plata parada» (`/dead-capital`) is the one surface, and it already showed an
+«Dinero parado» (`/dead-capital`) is the one surface, and it already showed an
 unpriced SKU as «Sin costo», counted apart and kept out of the total. No MCP
 tool, public-surface route or WhatsApp tool used `/dead-stock`. Tests:
 `test_dead_stock_unpriced.py`, the `/dead-stock` case in

@@ -8,6 +8,8 @@ import json
 import logging
 from typing import Any, Optional
 
+from backend.ai.style_rules import MONEY_WORDING_RULE
+
 log = logging.getLogger(__name__)
 
 # Ignored by the client — `settings.deepseek_model` is what actually runs.
@@ -31,7 +33,7 @@ Rules:
   (cost savings, top performers, reorder candidates).
 - Never invent data not present in the JSON.
 - Keep your answer under ~400 words unless the user explicitly asks for more detail.
-"""
+""" + MONEY_WORDING_RULE + "\n"
 
 
 def narrate(

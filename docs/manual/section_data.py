@@ -106,7 +106,7 @@ SECTION = {
                     "StockAI ya sabe cuánto vas a vender; esta pantalla es donde le dices contra qué "
                     "comparar esa venta. Ofrece dos caminos hacia lo mismo: subir el archivo que "
                     "tu sistema ya exporta, o llenar a mano solo los productos que se llevan tu "
-                    "plata. Los dos escriben en el mismo lugar y mueven la misma barra."
+                    "dinero. Los dos escriben en el mismo lugar y mueven la misma barra."
                 ),
                 "walkthrough": [
                     "Bajo el título «Configurar mi inventario» hay un recuadro que explica la regla: sin stock o sin costo el producto no aparece en el semáforo, y sin días de entrega sí aparece, pero calculado sobre los 15 días que StockAI supone.",
@@ -115,8 +115,8 @@ SECTION = {
                     "Debajo aparece «Así entendimos tus columnas» con un desplegable por campo; cambias el que esté mal y lo que dejes en «No importar» se queda fuera.",
                     "El resumen te dice «Filas listas para importar», «Filas con problemas que quedan fuera» y «Filas sin código de producto que se saltan», con ejemplos concretos del tipo «Fila 214 (SKU-001): \"N/D\"».",
                     "Confirmas con «Importar» — el botón lleva la cuenta entre paréntesis — y al terminar la pantalla dice cuántos productos entraron y cuántas filas quedaron fuera.",
-                    "El segundo panel, «Empieza por estos», ordena tus productos por la plata que mueven, no por orden alfabético ni por filas.",
-                    "La barra de arriba dice «X% de tu compra del mes ya configurado» y debajo aclara «La barra mide plata, no filas», con el conteo de productos listos sobre el total.",
+                    "El segundo panel, «Empieza por estos», ordena tus productos por el dinero que mueven, no por orden alfabético ni por filas.",
+                    "La barra de arriba dice «X% de tu compra del mes ya configurado» y debajo aclara «La barra mide dinero, no filas», con el conteo de productos listos sobre el total.",
                     "Cada fila muestra la venta proyectada, cuánto vale reponerla, cuánto pesa dentro del mes, el acumulado y una columna «Le falta» que nombra exactamente qué dato no tienes.",
                     "Al final de cada fila hay tres casillas — Stock, Costo y Días de entrega — y un botón «Guardar» que confirma con la palabra «Guardado».",
                     "El tercer panel, «Reglas del semáforo», dice cuándo un producto pasa a «Pedir YA» (de fábrica, con menos de 0,5 veces lo que tarda el proveedor) y cuándo a «Sobrestock» (de fábrica, desde 3 veces). Los cambias para toda la empresa o, en «Aplicar a», para un proveedor; antes de guardar te dice cuántos de tus productos cambiarían de señal, y «Volver a los valores de fábrica» lo deshace. «Pedir pronto» no es un múltiplo: es el punto de reorden.",
@@ -146,7 +146,7 @@ SECTION = {
                         " 1. Baja al panel «Empieza por estos»."
                         " 2. Sigue la columna «Acumulado» de arriba hacia abajo."
                         " 3. Llena Stock, Costo y Días de entrega de cada fila y pulsa «Guardar»."
-                        " 4. Detente cuando el acumulado llegue al 80%: el resto casi no mueve plata."
+                        " 4. Detente cuando el acumulado llegue al 80%: el resto casi no mueve dinero."
                     ),
                     (
                         "Corregir un producto que dice «Le falta costo»",
@@ -160,7 +160,7 @@ SECTION = {
                     "Un producto sin stock o sin costo no entra al semáforo, ni siquiera en verde: sencillamente no aparece. Sin días de entrega sí aparece, pero planificado sobre 15 días supuestos, así que un proveedor que tarda 45 te va a avisar tarde.",
                     "Si un producto aparece varias veces en el archivo, se queda con el valor de la última fila. Las filas con stock o costo negativos quedan fuera.",
                     "La pantalla no inventa ceros. Si guardas una fila sin escribir el stock de un producto que aún no tiene inventario registrado, te lo pide: un cero inventado es indistinguible de uno contado y pondría en rojo una bodega llena.",
-                    "Mientras no hayas dado ningún costo ni precio, la lista se ordena por volumen y lo dice: «Todavía no nos has dado costos ni precios, así que ordenamos por volumen». En cuanto subes costos, vuelve a ordenar por plata.",
+                    "Mientras no hayas dado ningún costo ni precio, la lista se ordena por volumen y lo dice: «Todavía no nos has dado costos ni precios, así que ordenamos por volumen». En cuanto subes costos, vuelve a ordenar por dinero.",
                     "El panel «Empieza por estos» necesita un pronóstico para priorizar. Si todavía no has subido ventas, muestra un aviso y te manda a hacerlo primero.",
                 ],
             },

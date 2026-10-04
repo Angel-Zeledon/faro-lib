@@ -12,6 +12,7 @@ All narratives are grounded in the data provided — never invented.
 import json
 import logging
 
+from backend.ai.style_rules import MONEY_WORDING_RULE
 from backend.formatting import money, format_coverage_en
 
 log = logging.getLogger(__name__)
@@ -101,7 +102,8 @@ def _call_llm(client, user_message: str, max_tokens: int = 600,
     """Single LLM call, returns text or raises."""
     resp = client.messages.create(
         max_tokens=max_tokens,
-        system=_SYSTEM_PROMPT.format(answer_language=_answer_language(language)),
+        system=_SYSTEM_PROMPT.format(answer_language=_answer_language(language))
+        + MONEY_WORDING_RULE + "\n",
         messages=[{"role": "user", "content": user_message}],
     )
     return resp.content[0].text

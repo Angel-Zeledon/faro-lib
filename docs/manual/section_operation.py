@@ -217,8 +217,8 @@ SECTION = {
                     "Recomendaciones de compra», y a la derecha el indicador de frescura de "
                     "los datos.",
                     "Junto a él está el selector de vistas: Tabla, Simple, Proveedor, "
-                    "Actualizar stock (solo si tu rol puede editar), Plata "
-                    "parada, Costos al alza, Margen que se achica, Pronóstico en plata y "
+                    "Actualizar stock (solo si tu rol puede editar), Dinero "
+                    "parado, Costos al alza, Margen que se achica, Pronóstico en dinero y "
                     "Costo de ignorar.",
                     "La barra de herramientas trae el botón de recarga, la importación de "
                     "CSV, «Plantilla», «Exportar OC», «Exportar OC (editada)», PDF, y los "
@@ -373,7 +373,7 @@ SECTION = {
                 ],
             },
             {
-                "name": "Plata parada",
+                "name": "Dinero parado",
                 "route": "/inventario",
                 "image": "deadcapital",
                 "purpose": (
@@ -382,13 +382,13 @@ SECTION = {
                     "lo mismo que la señal SOBRESTOCK: esa señal compara tu cobertura "
                     "contra el tiempo de entrega del producto, así que un producto puede "
                     "estar «OK» o incluso «Pedir pronto» en el semáforo y aun así ser "
-                    "plata que no se mueve hace meses, si la demanda simplemente se "
+                    "dinero que no se mueve hace meses, si la demanda simplemente se "
                     "detuvo sin que el stock llegara a cruzar el umbral de sobrestock. "
                     "Esta vista no necesita una actualización entrenada ni un pronóstico: "
                     "mira directamente el historial real de tu stock."
                 ),
                 "walkthrough": [
-                    "Se abre desde la vista «Plata parada» del selector de Inventario.",
+                    "Se abre desde la vista «Dinero parado» del selector de Inventario.",
                     "Arriba hay un total en dinero —solo cuenta los productos con costo "
                     "registrado— y una nota de cuántos productos parados no tienen costo "
                     "y quedan fuera de ese total.",
@@ -423,8 +423,8 @@ SECTION = {
                 ],
                 "tasks": [
                     (
-                        "Encontrar dónde tienes más plata parada",
-                        " 1. Abre la vista «Plata parada» en Inventario. 2. Mira el total "
+                        "Encontrar dónde tienes más dinero parado",
+                        " 1. Abre la vista «Dinero parado» en Inventario. 2. Mira el total "
                         "de arriba: solo suma los productos con costo registrado. 3. Baja "
                         "por la tabla: ya viene ordenada de más a menos dinero. 4. Si el "
                         "producto que te interesa dice «Sin costo», cárgale el costo en "
@@ -434,10 +434,10 @@ SECTION = {
                 "gotchas": [
                     "Esta vista reemplaza a la antigua «Inmovilizado». Aquella "
                     "valoraba en cero un producto sin costo registrado y lo mandaba "
-                    "al fondo de la lista, como si no hubiera plata en riesgo; por "
+                    "al fondo de la lista, como si no hubiera dinero en riesgo; por "
                     "eso se retiró y quedó una sola lista para esta pregunta.",
                     "Un producto sin costo registrado nunca cuenta como cero. Si "
-                    "contara como cero se leería como «no hay plata en riesgo aquí», "
+                    "contara como cero se leería como «no hay dinero en riesgo aquí», "
                     "que es lo contrario de lo que significa no tener el dato: se "
                     "muestra aparte y se cuenta aparte.",
                     "«Al menos N días» no es lo mismo que «N días». Aparece cuando el "
@@ -674,17 +674,17 @@ SECTION = {
                 ],
             },
             {
-                "name": "El pronóstico en plata",
+                "name": "El pronóstico en dinero",
                 "route": "/inventario",
                 "image": "forecastmoney",
                 "purpose": (
                     "Multiplica lo que el pronóstico dice que vas a vender por tu "
                     "precio y tu costo de hoy, para dar una cifra en dinero en vez de "
                     "solo en unidades: cuánto vas a vender, cuánto margen te va a "
-                    "dejar, y qué productos concentran esa plata."
+                    "dejar, y qué productos concentran ese dinero."
                 ),
                 "walkthrough": [
-                    "Se abre desde la vista «Pronóstico en plata» del selector de "
+                    "Se abre desde la vista «Pronóstico en dinero» del selector de "
                     "Inventario, y necesita una actualización activa.",
                     "Arriba hay tres cifras: ventas proyectadas, margen proyectado y "
                     "cuántos productos entraron en la cuenta.",
@@ -718,8 +718,8 @@ SECTION = {
                 ],
                 "tasks": [
                     (
-                        "Ver qué productos concentran tu plata futura",
-                        " 1. Abre la vista «Pronóstico en plata». 2. Lee la frase de "
+                        "Ver qué productos concentran tu dinero futuro",
+                        " 1. Abre la vista «Pronóstico en dinero». 2. Lee la frase de "
                         "arriba de la tabla: te dice qué parte del margen explican "
                         "los diez primeros. 3. Revisa esos diez productos primero: "
                         "son los que más te conviene no dejar sin stock.",

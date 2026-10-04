@@ -124,7 +124,7 @@ export const DAILY: DocSectionContent<DocPageIdOf<'uso-diario'>> = {
     'uso-diario/inventario': {
       title: 'Inventario',
       description:
-        'La lista completa de tus productos con su señal, cuánto pedir y de dónde sale ese número; el lugar donde corriges stock, proveedor, costo y tiempo de entrega, y las vistas que miran tu plata.',
+        'La lista completa de tus productos con su señal, cuánto pedir y de dónde sale ese número; el lugar donde corriges stock, proveedor, costo y tiempo de entrega, y las vistas que miran tu dinero.',
       blocks: [
         { t: 'p', text: '[Inventario](app:/inventario) es el semáforo completo, producto por producto. Lo que corriges aquí —stock, proveedor, tiempo de entrega, costo, precio de venta, compra mínima— se ve de inmediato en el Panel de compras.' },
         { t: 'shot', key: 'inventory', alt: 'Pantalla Inventario con las tarjetas de señales arriba y la tabla de productos con su cobertura y cantidad a pedir' },
@@ -137,13 +137,13 @@ export const DAILY: DocSectionContent<DocPageIdOf<'uso-diario'>> = {
           ['Simple', 'Lo mismo reducido a producto, señal, cantidad a pedir y proveedor.'],
           ['Proveedor', 'Productos agrupados por proveedor, con cuántos urgentes y próximos tiene cada uno.'],
           ['Actualizar stock', 'Tabla editable de stock, días de entrega y proveedor para corregir muchos productos y guardar de una vez. Solo para quien puede editar.'],
-          ['Plata parada', 'Productos cuyo stock lleva mucho sin bajar, ordenados por cuánto dinero representan. Un producto sin costo no cuenta como cero: dice «Sin costo» y va al final. No necesita pronóstico.'],
+          ['Dinero parado', 'Productos cuyo stock lleva mucho sin bajar, ordenados por cuánto dinero representan. Un producto sin costo no cuenta como cero: dice «Sin costo» y va al final. No necesita pronóstico.'],
           ['Costos al alza', 'Tus proveedores ordenados por cuánto subieron sus precios, según lo que de verdad pagaste en cada recepción.'],
           ['Margen que se achica', 'Tus productos ordenados por cuántos puntos de margen perdieron, con el precio de venta de hoy y el costo de entonces.'],
-          ['Pronóstico en plata', 'Lo que el pronóstico espera que vendas, multiplicado por tu precio y tu costo de hoy: ventas y margen proyectados.'],
+          ['Pronóstico en dinero', 'Lo que el pronóstico espera que vendas, multiplicado por tu precio y tu costo de hoy: ventas y margen proyectados.'],
           ['Costo de ignorar', 'Qué pasó después de cada alerta: si pediste a tiempo, si probablemente te quedaste sin stock o si no se puede saber con lo que tienes registrado.'],
         ] },
-        { t: 'note', tone: 'info', title: 'Precios de hoy, costos de entonces', text: 'StockAI guarda el historial de tus costos (cada recepción) pero solo tu precio de venta de hoy. Por eso «Margen que se achica» solo puede señalar una subida de costo —nunca una baja de precio— y «Costo de ignorar» y «Pronóstico en plata» valoran con el precio actual.' },
+        { t: 'note', tone: 'info', title: 'Precios de hoy, costos de entonces', text: 'StockAI guarda el historial de tus costos (cada recepción) pero solo tu precio de venta de hoy. Por eso «Margen que se achica» solo puede señalar una subida de costo —nunca una baja de precio— y «Costo de ignorar» y «Pronóstico en dinero» valoran con el precio actual.' },
         { t: 'h2', id: 'table', text: 'La tabla' },
         { t: 'dl', items: [
           ['Señal', 'Pedir YA, Pedir pronto, OK, Sobrestock o Sin datos. La regla está en [El semáforo](/docs/conceptos/semaforo).'],

@@ -5,7 +5,7 @@ arrived since, and every one of them renders an empty state on the demo tenant
 — which is the one thing a manual screenshot must never show, because an empty
 screen documents nothing and reads as an unfinished product.
 
-    /inventario · Plata parada          stock that has not moved, ranked by money
+    /inventario · Dinero parado          stock that has not moved, ranked by money
     /inventario · Costos al alza        a supplier's own price history
     /inventario · Margen que se achica  cost up, price flat
     /inventario · Qué costó ignorar     what we recommended and what followed
