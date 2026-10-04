@@ -179,6 +179,101 @@ class TestNoTargetLeakageInDiffs:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# pct_change on a zero-inflated target must not delete the row (stability.md
+# 17b: found while measuring intermittent-demand coverage)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# `pct_change_{d}` divides by the PREVIOUS value. On an intermittent series
+# that previous value is zero most of the time, which computes to inf, gets
+# replaced with NaN, and used to force the row itself out of `dropna`. That is
+# not a warm-up gap — the lag/rolling windows are already full — it is a ratio
+# that is genuinely undefined, and dropping the row over it throws away a real
+# demand observation for exactly the SKUs with the fewest to spare. Measured
+# on a 12-SKU, ~75%-zero synthetic catalogue before this fix: `diffs=[1]`
+# alone took 400 rows per SKU down to ~30.
+
+class TestPctChangeZeroDenominatorKeepsRows:
+
+    def test_zero_denominator_does_not_drop_the_row(self):
+        """A single zero in the middle of an otherwise dense series must not
+        remove the row whose `pct_change_1` divides by it — `diff_1` and
+        every lag stay well-defined there regardless.
+
+        `pct_change_1` is computed on the SHIFT(1) series (see `_lags`'s own
+        no-leakage rationale), so the undefined ratio lands one row later
+        than the zero itself — found by construction below rather than
+        hardcoded, so this test does not silently start checking the wrong
+        row if the shift convention ever changes.
+        """
+        df = pd.DataFrame({
+            "date": pd.date_range("2022-01-01", periods=6, freq="D"),
+            "sales": [10.0, 20.0, 0.0, 5.0, 8.0, 3.0],
+        })
+        cfg = _make_cfg(lags=[1], diffs=[1], rolling=[], calendar=False)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
+
+        # What pct_change_1 looks like BEFORE any row is dropped, to find the
+        # NaN row this fix is about (independent of the dropna behaviour
+        # under test — see `transform`'s own `drop_warmup=False` path).
+        # Filtered to where `diff_1` IS defined, so this isolates the
+        # zero-denominator case from lag_1/diff_1's own genuine warm-up rows
+        # (which this fix does not, and should not, rescue).
+        pre_drop = eng.transform(df, drop_warmup=False)
+        undefined = pre_drop[pre_drop["pct_change_1"].isna() & pre_drop["diff_1"].notna()]
+        undefined_dates = undefined["date"]
+        assert len(undefined_dates) >= 1, "fixture must produce an undefined pct_change_1"
+
+        out = eng.transform(df)
+        assert set(undefined_dates) <= set(out["date"]), (
+            "a row whose pct_change_1 is undefined (zero denominator) was "
+            "dropped — diff_1 and every lag were still well-defined there"
+        )
+        # Only genuine warm-up is lost: lag_1's first row, and diff_1 needs
+        # one more point of history than lag_1 alone.
+        assert len(out) == 4
+
+    def test_pct_change_column_survives_with_its_own_nan(self):
+        """The column itself is kept (LightGBM/XGBoost route NaN natively —
+        see `FeatureEngineer.transform`'s own docstring) — only the ROW-DROP
+        is what this fix removes."""
+        df = pd.DataFrame({
+            "date": pd.date_range("2022-01-01", periods=6, freq="D"),
+            "sales": [10.0, 20.0, 0.0, 5.0, 8.0, 3.0],
+        })
+        cfg = _make_cfg(lags=[1], diffs=[1], rolling=[], calendar=False)
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
+        out = eng.transform(df)
+        assert "pct_change_1" in out.columns
+        # The row this fix keeps is precisely the one with a NaN here — a
+        # fabricated finite value would defeat the point of the test.
+        assert out["pct_change_1"].isna().sum() == 1
+
+    def test_intermittent_catalogue_retains_most_of_its_history(self):
+        """The end-to-end regression this fix exists for: a 75%-zero, 400-day
+        SKU used to lose the vast majority of its rows to this one column.
+        Pins a floor loose enough to survive an unrelated tweak to the
+        synthetic fixture, tight enough to fail against the pre-fix code
+        (which kept well under half)."""
+        rng = np.random.default_rng(11)
+        n = 400
+        hit = rng.random(n) < 0.25
+        size = rng.poisson(4.0, n) + 1.0
+        demand = np.where(hit, size, 0.0)
+        df = pd.DataFrame({
+            "date": pd.date_range("2022-01-01", periods=n, freq="D"),
+            "sales": demand,
+        })
+        cfg = _make_cfg(lags=[1, 7, 14, 28], diffs=[1], rolling=[7, 14, 28],
+                        calendar=True, ewm_spans=[7, 14])
+        eng = FeatureEngineer(cfg, dt_col="date", target="sales", group_cols=[])
+        out = eng.transform(df)
+        assert len(out) >= 0.8 * n, (
+            f"kept only {len(out)}/{n} rows on a 75%-zero series — "
+            "pct_change_1 is still forcing rows out over an undefined ratio"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Calendar feature correctness
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -208,10 +303,11 @@ class TestCalendarFeatures:
         assert (out["cos_month"].abs() <= 1.0).all()
 
     def test_easter_date_algorithm(self):
-        # Known Easter dates
-        eng = FeatureEngineer(_make_cfg(), dt_col="date", target="sales")
-        assert eng._easter_date(2022) == pd.Timestamp("2022-04-17")
-        assert eng._easter_date(2023) == pd.Timestamp("2023-04-09")
+        # Known Easter dates. The algorithm moved to features/calendar.py so
+        # that inference computes it the same way training does.
+        from forecasting_core.features.calendar import easter_date
+        assert easter_date(2022) == pd.Timestamp("2022-04-17")
+        assert easter_date(2023) == pd.Timestamp("2023-04-09")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

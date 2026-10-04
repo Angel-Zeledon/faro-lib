@@ -5,33 +5,21 @@ import {
 } from 'react'
 import {
   listChats, createChat, updateChat, deleteChat,
-  getChatMessages, sendChatMessage, getDataSourceTypes, getSessions,
-  getSuggestedQuestions,
+  getChatMessages, sendChatMessage, getAssistantWelcome,
 } from '@/lib/api'
-import type { Chat, ChatMessage, ChatSourceType, SessionInfo, SuggestedQuestion } from '@/lib/types'
+import type { AssistantWelcome, Chat, ChatMessage } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useCapabilities } from '@/lib/capabilities'
 import { useToast } from '@/contexts/ToastContext'
-import { chatSourceLabel, chatDataSourceLabel } from '@/lib/enumLabels'
+import { MessageBubble, TypingBubble, Welcome } from './parts'
+import AssistantMobile from './AssistantMobile'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
-  Plus, Search, Star, Trash2, Bot, User, Send,
-  Sparkles, MessageSquare, ChevronDown, X, Filter,
-  CheckSquare, Square, AlertTriangle,
+  Plus, Search, Star, Trash2, Send,
+  Lightbulb, MessageSquare, X, AlertTriangle,
 } from 'lucide-react'
-
-// ── Colour helpers ─────────────────────────────────────────────────────────────
-// Colour only — the badge text comes from `chatSourceLabel`, so the copy the
-// user reads lives in the i18n catalog and not in this map.
-const SOURCE_COLOR: Record<string, string> = {
-  rag:           'var(--accent)',
-  rag_retrieved: 'var(--accent)',
-  fallback:      '#f59e0b',
-  general:       '#22c55e',
-  off_topic:     '#f59e0b',
-  no_access:     '#ef4444',
-  error:         '#ef4444',
-}
 
 // ── Shell geometry ─────────────────────────────────────────────────────────────
 // This screen bleeds to the edges of the app shell instead of living inside its
@@ -44,228 +32,12 @@ const SOURCE_COLOR: Record<string, string> = {
 // would have gone quietly wrong the day the top bar changed height.
 const PAGE_PAD = 21
 
-function fmtTime(iso: string) {
-  const d = new Date(iso)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
 function fmtRelative(iso: string, t: (k: string) => string) {
   const diff = Date.now() - new Date(iso).getTime()
   if (diff < 60_000)  return t('analyst.time_just_now')
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}${t('analyst.time_minutes_ago_suffix')}`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}${t('analyst.time_hours_ago_suffix')}`
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' })
-}
-
-// ── Markdown lite renderer ─────────────────────────────────────────────────────
-function Md({ text }: { text: string }) {
-  return (
-    <div style={{ fontSize: 13, lineHeight: 1.75, color: 'var(--text)' }}>
-      {text.split('\n').map((line, i) => {
-        if (!line.trim()) return <div key={i} style={{ height: 7 }} />
-        const bold = (s: string) =>
-          s.split(/(\*\*[^*]+\*\*)/).map((p, j) =>
-            p.startsWith('**') ? <strong key={j}>{p.slice(2, -2)}</strong> : p,
-          )
-        if (/^(\*|-|\d+\.) /.test(line.trim())) {
-          return (
-            <div key={i} style={{ display: 'flex', gap: 7, margin: '2px 0' }}>
-              <span style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 1 }}>·</span>
-              <span>{bold(line.replace(/^(\s*(\*|-|\d+\.)\s*)/, ''))}</span>
-            </div>
-          )
-        }
-        return <div key={i} style={{ margin: '2px 0' }}>{bold(line)}</div>
-      })}
-    </div>
-  )
-}
-
-// ── Typing indicator ───────────────────────────────────────────────────────────
-function TypingBubble() {
-  return (
-    <div data-testid="typing-indicator" style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 4 }}>
-      <div style={{
-        width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-        background: 'rgba(34,197,94,0.12)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Bot size={14} color="#22c55e" />
-      </div>
-      <div style={{
-        background: 'var(--surface-2)', border: '1px solid var(--border)',
-        borderRadius: '4px 16px 16px 16px', padding: '10px 16px',
-        display: 'flex', alignItems: 'center', gap: 5,
-      }}>
-        {[0, 1, 2].map(i => (
-          <span key={i} style={{
-            display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
-            background: 'var(--dim)',
-            animation: 'typing-dot 1.4s ease-in-out infinite',
-            animationDelay: `${i * 0.2}s`,
-          }} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ── Message bubble ─────────────────────────────────────────────────────────────
-function MessageBubble({ msg }: { msg: ChatMessage }) {
-  const { t }  = useLanguage()
-  const isUser = msg.role === 'user'
-  const srcColor = msg.source ? (SOURCE_COLOR[msg.source] ?? '#94a3b8') : null
-  return (
-    <div
-      data-testid={isUser ? 'user-message' : 'assistant-message'}
-      style={{
-        display: 'flex', gap: 10, alignItems: 'flex-end',
-        flexDirection: isUser ? 'row-reverse' : 'row',
-        marginBottom: 12,
-        animation: 'slideUp 0.2s ease-out',
-      }}
-    >
-      {/* Avatar */}
-      <div style={{
-        width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-        background: isUser ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'rgba(34,197,94,0.12)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        {isUser ? <User size={13} color="var(--accent)" /> : <Bot size={13} color="#22c55e" />}
-      </div>
-
-      {/* Bubble */}
-      <div style={{
-        maxWidth: '75%', display: 'flex', flexDirection: 'column',
-        alignItems: isUser ? 'flex-end' : 'flex-start', gap: 3,
-      }}>
-        <div style={{
-          background: isUser ? 'color-mix(in srgb, var(--accent) 14%, transparent)' : 'var(--surface-2)',
-          border: `1px solid ${isUser ? 'color-mix(in srgb, var(--accent) 22%, transparent)' : 'var(--border)'}`,
-          borderRadius: isUser ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-          padding: '10px 14px',
-        }}>
-          {isUser
-            ? <div style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{msg.content}</div>
-            : <Md text={msg.content} />}
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 10, color: 'var(--dim)' }}>{fmtTime(msg.created_at)}</span>
-          {srcColor && msg.source && !isUser && (
-            <span style={{
-              fontSize: 9, fontWeight: 600, letterSpacing: '0.05em',
-              color: srcColor, background: srcColor + '18',
-              borderRadius: 4, padding: '1px 6px',
-            }}>
-              {chatSourceLabel(t, msg.source)}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Sources filter popover ─────────────────────────────────────────────────────
-function SourcesFilter({
-  sources, allTypes, onChange, dataTour,
-}: {
-  sources: string[]
-  allTypes: ChatSourceType[]
-  onChange: (v: string[]) => void
-  /** `data-tour` anchor. Only the header copy carries it, so it resolves once. */
-  dataTour?: string
-}) {
-  const { t } = useLanguage()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function outside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', outside)
-    return () => document.removeEventListener('mousedown', outside)
-  }, [])
-
-  const toggle = (id: string) => {
-    const next = sources.includes(id) ? sources.filter(s => s !== id) : [...sources, id]
-    onChange(next)
-  }
-
-  const active = sources.length > 0
-
-  return (
-    <div ref={ref} data-tour={dataTour} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        title={t('analyst.filter_data_sources_title')}
-        style={{
-          all: 'unset', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: 5,
-          padding: '6px 10px', borderRadius: 7,
-          background: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--surface-2)',
-          border: `1px solid ${active ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : 'var(--border)'}`,
-          fontSize: 11, color: active ? 'var(--accent)' : 'var(--muted)',
-          transition: 'all 0.15s',
-        }}
-      >
-        <Filter size={11} />
-        {active ? `${sources.length} ${sources.length > 1 ? t('analyst.sources_plural') : t('analyst.sources_singular')}` : t('analyst.all_sources')}
-        <ChevronDown size={10} />
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', bottom: '110%', left: 0,
-          width: 220, background: 'var(--surface)',
-          border: '1px solid var(--border-strong)', borderRadius: 10,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)', overflow: 'hidden', zIndex: 100,
-        }}>
-          <div style={{
-            padding: '8px 12px 6px', fontSize: 10, fontWeight: 700,
-            color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.07em',
-            borderBottom: '1px solid var(--border)',
-          }}>
-            {t('analyst.data_sources_header')}
-          </div>
-          {allTypes.map(st => {
-            const selected = sources.includes(st.id)
-            return (
-              <div
-                key={st.id}
-                onClick={() => toggle(st.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '7px 12px', cursor: 'pointer', fontSize: 12,
-                  color: selected ? 'var(--text)' : 'var(--muted)',
-                  background: selected ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'transparent',
-                  transition: 'all 0.1s',
-                }}
-              >
-                {selected
-                  ? <CheckSquare size={13} color="var(--accent)" />
-                  : <Square size={13} color="var(--dim)" />}
-                {chatDataSourceLabel(t, st.id, st.label)}
-              </div>
-            )
-          })}
-          {sources.length > 0 && (
-            <div
-              onClick={() => { onChange([]); setOpen(false) }}
-              style={{
-                padding: '6px 12px', fontSize: 11, color: 'var(--dim)',
-                borderTop: '1px solid var(--border)', cursor: 'pointer',
-                textAlign: 'center',
-              }}
-            >
-              {t('analyst.clear_filter')}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Chat sidebar item ─────────────────────────────────────────────────────────
@@ -323,12 +95,6 @@ function ChatItem({
         paddingLeft: 17, marginTop: 3,
       }}>
         <span style={{ fontSize: 10, color: 'var(--dim)' }}>{fmtRelative(chat.last_message_at, t)}</span>
-        {chat.session_id && (
-          <span style={{
-            fontSize: 9, padding: '1px 5px', borderRadius: 3,
-            background: 'rgba(34,197,94,0.1)', color: '#22c55e',
-          }}>RAG</span>
-        )}
       </div>
 
       {/* Action buttons on hover */}
@@ -381,29 +147,40 @@ function ChatItem({
 }
 
 // ── Empty state ────────────────────────────────────────────────────────────────
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({
+  onCreate, welcome, onAsk, disabled,
+}: {
+  onCreate: () => void
+  welcome: AssistantWelcome | null
+  onAsk: (question: string) => void
+  disabled: boolean
+}) {
   const { t } = useLanguage()
   return (
     <div data-tour="an.start" style={{
       flex: 1, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      gap: 16, padding: '40px 32px', textAlign: 'center',
+      gap: 16, padding: '40px 32px', textAlign: 'center', overflowY: 'auto',
     }}>
       <div style={{
-        width: 64, height: 64, borderRadius: '50%',
+        width: 64, height: 64, borderRadius: '50%', flexShrink: 0,
         background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
         border: '1px solid color-mix(in srgb, var(--accent) 15%, transparent)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <Sparkles size={28} color="var(--accent)" strokeWidth={1.5} />
+        <Lightbulb size={28} color="var(--accent)" strokeWidth={1.5} />
       </div>
-      <div>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('analyst.title')}</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300 }}>
-          {t('analyst.empty_state_description')}
+      {welcome ? (
+        <Welcome welcome={welcome} onAsk={onAsk} disabled={disabled} />
+      ) : (
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('analyst.title')}</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300 }}>
+            {t('analyst.empty_state_description')}
+          </div>
         </div>
-      </div>
-      <Button variant="primary" icon={<Plus size={14} />} onClick={onCreate}>
+      )}
+      <Button variant="secondary" icon={<Plus size={14} />} onClick={onCreate}>
         {t('analyst.new_chat')}
       </Button>
     </div>
@@ -412,8 +189,14 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AnalystPage() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const { undoable, addToast } = useToast()
+  // Whether this deployment HAS a language model at all. Without it the answer
+  // is always the same and always late: the user writes a question, waits out
+  // the request, and reads "the assistant could not answer". Asking first turns
+  // that into a sentence at the top of the screen, before anybody types.
+  const { can } = useCapabilities()
+  const assistantOff = !can('assistant')
   const [chats,       setChats]       = useState<Chat[]>([])
   const [activeChatId, setActive]     = useState<string | null>(null)
   const [messages,    setMessages]    = useState<ChatMessage[]>([])
@@ -426,13 +209,13 @@ export default function AnalystPage() {
   const [creatingChat, setCreatingChat] = useState(false)
   const [input,       setInput]       = useState('')
   const [search,      setSearch]      = useState('')
-  const [sessions,    setSessions]    = useState<SessionInfo[]>([])
-  const [sourceTypes, setSourceTypes] = useState<ChatSourceType[]>([])
-  const [suggestedQs, setSuggestedQs] = useState<SuggestedQuestion[]>([])
+  const [welcome,     setWelcome]     = useState<AssistantWelcome | null>(null)
+  const narrow = useIsNarrow()
   const msgsRef    = useRef<HTMLDivElement>(null)
   const inputRef   = useRef<HTMLTextAreaElement>(null)
   const bottomRef  = useRef<HTMLDivElement>(null)
   const loadingRef = useRef(false)
+  const justCreatedRef = useRef<string | null>(null)
 
   const activeChat = chats.find(c => c.id === activeChatId) ?? null
 
@@ -441,13 +224,9 @@ export default function AnalystPage() {
     listChats().then(setChats).catch((e: unknown) => {
       setChatsError(e instanceof Error ? e.message : t('analyst.err_load_chats'))
     })
-    getSessions().then(setSessions).catch(console.error)
-    getDataSourceTypes().then(setSourceTypes).catch(console.error)
-
-    const bp = (typeof window !== 'undefined' ? localStorage.getItem('bp') : null) || 'distributor'
-    getSuggestedQuestions(bp, true, false)
-      .then(setSuggestedQs)
-      .catch(() => {})
+    // The greeting is decoration over a working screen: if it fails, the chat
+    // still works and the screen falls back to its generic description.
+    getAssistantWelcome().then(setWelcome).catch(console.error)
   }, [])
 
   // ── Load messages when chat changes ───────────────────────────────────────
@@ -467,6 +246,15 @@ export default function AnalystPage() {
   }, [t])
 
   useEffect(() => {
+    // A chat handleSend just created to carry a question: it is empty on the
+    // server and already shows the optimistic question here. Resetting would
+    // wipe that question, and loading would race the POST that stores it —
+    // the GET can land after the question is saved and before the answer,
+    // and the thread then shows the question twice.
+    if (activeChatId && justCreatedRef.current === activeChatId) {
+      justCreatedRef.current = null
+      return
+    }
     setMessages([]); setHasMore(false); setMsgsError(null)
     if (!activeChatId) return
     loadMessages(activeChatId)
@@ -478,8 +266,9 @@ export default function AnalystPage() {
   }, [])
 
   // ── Infinite scroll: load older messages when near top ────────────────────
-  const handleScroll = useCallback(async (e: UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget
+  // Takes the scroll container rather than the event, so the phone layout —
+  // where the whole page scrolls — can call it with `.page-content`.
+  const loadOlder = useCallback(async (el: HTMLElement) => {
     if (el.scrollTop > 120 || !hasMore || loadingRef.current || !activeChatId) return
     loadingRef.current = true
     setLoadingMore(true)
@@ -500,6 +289,8 @@ export default function AnalystPage() {
       loadingRef.current = false
     }
   }, [hasMore, activeChatId, messages])
+  const handleScroll = useCallback(
+    (e: UIEvent<HTMLDivElement>) => { loadOlder(e.currentTarget) }, [loadOlder])
 
   // ── Create a new chat ────────────────────────────────────────────────────
   const handleNewChat = useCallback(async (sessionId?: string) => {
@@ -520,6 +311,7 @@ export default function AnalystPage() {
       setCreatingChat(true)
       try {
         const chat = await createChat()
+        justCreatedRef.current = chat.id
         setChats(prev => [chat, ...prev])
         setActive(chat.id)
         targetId = chat.id
@@ -528,6 +320,9 @@ export default function AnalystPage() {
     }
 
     setSending(true)
+    // Stamped before the call so the catch can tell a slow model from a broken
+    // one — the two need different advice.
+    const startedAt = Date.now()
     try {
       // Optimistically show user message
       const optimistic: ChatMessage = {
@@ -540,10 +335,7 @@ export default function AnalystPage() {
       setMessages(prev => [...prev, optimistic])
       setTimeout(() => scrollToBottom(), 30)
 
-      const res = await sendChatMessage(
-        targetId, q,
-        chats.find(c => c.id === targetId)?.session_id,
-      )
+      const res = await sendChatMessage(targetId, q, lang)
 
       // Replace optimistic with real messages
       setMessages(prev => [
@@ -573,7 +365,15 @@ export default function AnalystPage() {
       setTimeout(() => scrollToBottom(), 30)
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err)
-      const friendly = raw.includes('429') || raw.toLowerCase().includes('too many')
+      const code = (err as { error_code?: string })?.error_code
+      // A failure that took the whole window is the model being slow, not a
+      // broken server, and "intenta de nuevo en unos segundos" is the wrong
+      // advice for it: measured against a local model, the proxy cut the request
+      // at 30.0s while the answer landed at 63s. Say which one happened.
+      const tookTooLong = Date.now() - startedAt >= 20_000
+      const friendly = code === 'ai_unavailable' || tookTooLong
+        ? t('analyst.err_slow_model')
+        : raw.includes('429') || raw.toLowerCase().includes('too many')
         ? t('analyst.err_too_many_requests')
         : raw.includes('500') || raw.toLowerCase().includes('server error')
         ? t('analyst.err_server_error')
@@ -588,12 +388,15 @@ export default function AnalystPage() {
         source: 'error',
         created_at: new Date().toISOString(),
       }
-      setMessages(prev => [...prev.filter(m => !m.id.startsWith('opt-')), errMsg])
+      // Keep the question. It used to be filtered out with the optimistic
+      // message, so a failed answer erased what the user had asked and they had
+      // to retype it to try again.
+      setMessages(prev => [...prev, errMsg])
     } finally {
       setSending(false)
       inputRef.current?.focus()
     }
-  }, [activeChatId, chats, sending, scrollToBottom, t])
+  }, [activeChatId, chats, sending, creatingChat, scrollToBottom, t, lang])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -645,20 +448,43 @@ export default function AnalystPage() {
     })
   }
 
-  // ── Update sources for active chat ───────────────────────────────────────
-  const handleSourcesChange = async (sources: string[]) => {
-    if (!activeChatId) return
-    setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, data_sources: sources } : c))
-    await updateChat(activeChatId, { data_sources: sources })
-  }
-
   // ── Separate favorites / recent ───────────────────────────────────────────
   const filtered  = chats.filter(c => !search || c.title.toLowerCase().includes(search.toLowerCase()))
   const favorites = filtered.filter(c => c.is_favorite)
   const recent    = filtered.filter(c => !c.is_favorite)
 
-  // ── Attach session to active chat ─────────────────────────────────────────
-  const completedSessions = sessions.filter(s => s.status === 'COMPLETED')
+  // A suggestion is a complete question about the user's own data: send it.
+  // With no chat open, handleSend creates one first.
+  const askNow = (question: string) => { if (!assistantOff) handleSend(question) }
+
+  // Phone: a chat app (AssistantMobile) over the same state and requests.
+  if (narrow) {
+    return (
+      <AssistantMobile
+        chats={chats}
+        chatsError={chatsError}
+        activeChat={activeChat}
+        activeChatId={activeChatId}
+        onOpenChat={setActive}
+        messages={messages}
+        loadingMsgs={loadingMsgs}
+        msgsError={msgsError}
+        onRetryMessages={() => activeChatId && loadMessages(activeChatId)}
+        loadingMore={loadingMore}
+        onNearTop={loadOlder}
+        sending={sending}
+        creatingChat={creatingChat}
+        input={input}
+        onInput={setInput}
+        onSend={q => { if (!assistantOff) handleSend(q) }}
+        welcome={welcome}
+        assistantOff={assistantOff}
+        onToggleFavorite={toggleFav}
+        onDelete={handleDelete}
+        relTime={iso => fmtRelative(iso, t)}
+      />
+    )
+  }
 
   return (
     <>
@@ -691,7 +517,7 @@ export default function AnalystPage() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Sparkles size={14} color="var(--accent)" />
+                <Lightbulb size={14} color="var(--accent)" />
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t('analyst.title')}</span>
               </div>
               <button
@@ -806,8 +632,29 @@ export default function AnalystPage() {
           flex: 1, display: 'flex', flexDirection: 'column',
           background: 'var(--bg)', overflow: 'hidden',
         }}>
+          {/* Above the branch on purpose. This used to sit inside the composer,
+              which only renders once a chat is open — so the reader met an
+              inviting empty state, created a chat, typed a question, and only
+              THEN learned that this installation has no model. The sentence
+              belongs before the first click, not after the third. */}
+          {assistantOff && (
+            <div role="status" style={{
+              display: 'flex', gap: 8, alignItems: 'flex-start',
+              padding: '12px 16px', margin: '12px 16px 0', borderRadius: 8,
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+              fontSize: 12, color: 'var(--text)', lineHeight: 1.55, flexShrink: 0,
+            }}>
+              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: '#f59e0b' }} aria-hidden="true" />
+              <span>{t('analyst.unavailable_banner')}</span>
+            </div>
+          )}
           {!activeChatId ? (
-            <EmptyState onCreate={() => handleNewChat()} />
+            <EmptyState
+              onCreate={() => handleNewChat()}
+              welcome={welcome}
+              onAsk={askNow}
+              disabled={assistantOff || sending || creatingChat}
+            />
           ) : (
             <>
               {/* Chat header */}
@@ -821,52 +668,6 @@ export default function AnalystPage() {
                   {activeChat?.title ?? t('analyst.chat_fallback_title')}
                 </span>
 
-                {/* Session picker */}
-                {completedSessions.length > 0 && (
-                  <div data-tour="an.session" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('analyst.session_label')}</span>
-                    <select
-                      name="chat_session"
-                      aria-label={t('analyst.session_label')}
-                      value={activeChat?.session_id ?? ''}
-                      onChange={async e => {
-                        const sid = e.target.value || null
-                        setChats(prev => prev.map(c =>
-                          c.id === activeChatId ? { ...c, session_id: sid } : c,
-                        ))
-                        if (activeChatId) await updateChat(activeChatId, { session_id: sid })
-                      }}
-                      style={{
-                        background: 'var(--surface-2)', border: '1px solid var(--border)',
-                        borderRadius: 6, padding: '4px 8px', fontSize: 11,
-                        color: 'var(--text)', cursor: 'pointer', maxWidth: 160,
-                      }}
-                    >
-                      <option value="">{t('analyst.session_general_option')}</option>
-                      {completedSessions.map(s => (
-                        <option key={s.session_id} value={s.session_id}>{s.name}</option>
-                      ))}
-                    </select>
-                    {activeChat?.session_id && (
-                      <span style={{
-                        fontSize: 9, padding: '2px 6px', borderRadius: 4,
-                        background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontWeight: 600,
-                      }}>
-                        RAG
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Sources filter */}
-                {sourceTypes.length > 0 && activeChat?.session_id && (
-                  <SourcesFilter
-                    dataTour="an.sources"
-                    sources={activeChat?.data_sources ?? []}
-                    allTypes={sourceTypes}
-                    onChange={handleSourcesChange}
-                  />
-                )}
               </div>
 
               {/* Messages area */}
@@ -917,65 +718,14 @@ export default function AnalystPage() {
                     alignItems: 'center', justifyContent: 'center',
                     gap: 10, color: 'var(--dim)', textAlign: 'center',
                   }}>
-                    <Bot size={32} strokeWidth={1} style={{ opacity: 0.3 }} />
-                    <div style={{ fontSize: 13 }}>
-                      {activeChat?.session_id
-                        ? t('analyst.empty_messages_with_session')
-                        : t('analyst.empty_messages_general')}
-                    </div>
-                    {/* Suggestion chips */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 8 }}>
-                      {(activeChat?.session_id
-                        ? ['analyst.chip_model_accuracy', 'analyst.chip_skus_attention', 'analyst.chip_inventory_risks']
-                        : ['analyst.chip_what_is_wape', 'analyst.chip_how_platform_works', 'analyst.chip_available_models']
-                      ).map(chipKey => (
-                        <button
-                          key={chipKey}
-                          onClick={() => { setInput(t(chipKey)); inputRef.current?.focus() }}
-                          style={{
-                            all: 'unset', cursor: 'pointer',
-                            padding: '6px 12px', borderRadius: 20,
-                            background: 'var(--surface-2)', border: '1px solid var(--border)',
-                            fontSize: 12, color: 'var(--muted)', transition: 'all 0.15s',
-                          }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)' }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
-                        >
-                          {t(chipKey)}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* AI-generated suggested questions */}
-                    {suggestedQs.length > 0 && (
-                      <div style={{ marginTop: 20, width: '100%', maxWidth: 480, textAlign: 'left' }}>
-                        <div style={{
-                          fontSize: 11, fontWeight: 700, color: 'var(--dim)',
-                          textTransform: 'uppercase' as const, letterSpacing: '0.07em', marginBottom: 10,
-                          textAlign: 'center',
-                        }}>
-                          {t('analyst.suggested_questions_header')}
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8, justifyContent: 'center' }}>
-                          {suggestedQs.map(q => (
-                            <button
-                              key={q.text}
-                              onClick={() => { setInput(q.text); inputRef.current?.focus() }}
-                              style={{
-                                all: 'unset', cursor: 'pointer',
-                                padding: '6px 12px', borderRadius: 20, fontSize: 12,
-                                border: '1px solid var(--border)', color: 'var(--muted)',
-                                background: 'var(--surface-2)',
-                                transition: 'all 0.15s',
-                              }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)' }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
-                            >
-                              {q.text}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                    {welcome ? (
+                      <Welcome welcome={welcome} onAsk={askNow}
+                               disabled={assistantOff || sending || creatingChat} />
+                    ) : (
+                      <>
+                        <MessageSquare size={32} strokeWidth={1} style={{ opacity: 0.3 }} />
+                        <div style={{ fontSize: 13 }}>{t('analyst.empty_messages_account')}</div>
+                      </>
                     )}
                   </div>
                 ) : (
@@ -999,17 +749,6 @@ export default function AnalystPage() {
                 background: 'var(--surface)', flexShrink: 0,
               }}>
                 <div data-tour="an.input" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                  {/* Sources filter (mobile-friendly placement) */}
-                  {sourceTypes.length > 0 && activeChat?.session_id && (
-                    <div style={{ flexShrink: 0 }}>
-                      <SourcesFilter
-                        sources={activeChat?.data_sources ?? []}
-                        allTypes={sourceTypes}
-                        onChange={handleSourcesChange}
-                      />
-                    </div>
-                  )}
-
                   <textarea
                     ref={inputRef}
                     name="analyst_message"
@@ -1017,8 +756,12 @@ export default function AnalystPage() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={onKeyDown}
-                    placeholder={creatingChat ? t('analyst.creating_chat_placeholder') : t('analyst.input_placeholder')}
-                    disabled={creatingChat}
+                    placeholder={
+                      assistantOff ? t('analyst.unavailable_placeholder')
+                      : creatingChat ? t('analyst.creating_chat_placeholder')
+                      : t('analyst.input_placeholder')
+                    }
+                    disabled={creatingChat || assistantOff}
                     rows={1}
                     style={{
                       flex: 1, resize: 'none', minHeight: 40, maxHeight: 160,
@@ -1027,7 +770,7 @@ export default function AnalystPage() {
                       fontSize: 13, color: 'var(--text)', lineHeight: 1.5,
                       outline: 'none', fontFamily: 'inherit',
                       transition: 'border-color 0.15s',
-                      opacity: creatingChat ? 0.6 : 1,
+                      opacity: creatingChat || assistantOff ? 0.6 : 1,
                     }}
                     onFocus={e => { e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)' }}
                     onBlur={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
@@ -1035,7 +778,7 @@ export default function AnalystPage() {
 
                   <button
                     onClick={() => { handleSend(input); setInput('') }}
-                    disabled={!input.trim() || sending || creatingChat}
+                    disabled={!input.trim() || sending || creatingChat || assistantOff}
                     style={{
                       all: 'unset', width: 40, height: 40, borderRadius: 10,
                       background: input.trim() && !sending && !creatingChat ? 'var(--accent)' : 'var(--surface-2)',

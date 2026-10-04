@@ -28,6 +28,32 @@ def _make_stat_df(n=80, skus=("A",), seed=1):
     return pd.DataFrame(rows)
 
 
+def _make_shocked_tail_df(n_train=120, horizon=10, tail_extra=30, level=50.0, seed=3):
+    """
+    A train window plus a held-out tail whose FIRST `horizon` steps continue
+    the train level and whose LATER steps are deliberately wrong by two
+    orders of magnitude.
+
+    A model fit on the flat train level forecasts something near `level`
+    throughout the whole test window — it has no way to know the tail jumps.
+    So the windowed cost (first `horizon` steps) stays small regardless; the
+    whole-tail cost balloons once the shocked steps enter the average. This
+    is what makes the fixture able to fail on the pre-fix code: if the shocked
+    tail leaks into `cost_horizon`, the number moves by orders of magnitude.
+
+    `train_ratio` is returned alongside the frame so `cut` lands exactly on
+    `n_train` (`int(len(series) * train_ratio) == n_train`).
+    """
+    rng = np.random.default_rng(seed)
+    steady = np.maximum(1.0, rng.normal(level, level * 0.06, n_train + horizon))
+    shocked = np.full(tail_extra, level * 100.0)
+    values = np.concatenate([steady, shocked])
+    dates = pd.date_range("2021-01-01", periods=len(values), freq="D")
+    df = pd.DataFrame({"date": dates, "sku": "A", "sales": values})
+    train_ratio = n_train / len(values)
+    return df, train_ratio
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Croston
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,6 +74,47 @@ class TestCroston:
         series = np.array([1, 0, 2, 0, 3])
         result = croston_forecast(series, n_ahead=7)
         assert len(result) == 7
+
+    def test_rate_is_size_over_interval_debiased_by_sba(self):
+        """10 units every 5 buckets is a raw rate of 2 per bucket. At
+        alpha=0.1 the SBA factor is (1 - 0.1/2) = 0.95, so the de-biased
+        rate is 1.9, not 2.0.
+
+        The intervals used to be built with `prepend=idx[0]`, which injected a
+        zero-length first gap and seeded the interval smoothing with it. This
+        same series came out at ~7.4 per bucket — 3.7x the truth — and Croston
+        is routed precisely at the intermittent SKUs where nothing else would
+        catch it. This test now also protects the SBA correction: it fails
+        equally if the correction is dropped (result would be 2.0) as if the
+        interval bug regresses.
+        """
+        series = np.zeros(20)
+        series[[0, 5, 10, 15]] = 10.0
+        assert croston_forecast(series, alpha=0.1, n_ahead=1)[0] == pytest.approx(1.9)
+
+    def test_one_demand_in_the_whole_series_rates_it_over_that_series_debiased(self):
+        """One sale of 10 in 50 buckets has a raw rate of 0.2 per bucket, not
+        10. At alpha=0.1 the SBA factor is 0.95, so the de-biased rate is
+        0.19, not 0.2 and nowhere near 10.
+        """
+        series = np.zeros(50)
+        series[30] = 10.0
+        assert croston_forecast(series, n_ahead=1)[0] == pytest.approx(0.19)
+
+    def test_sba_correction_factor_is_one_minus_alpha_over_two(self):
+        """The SBA de-bias multiplies the raw rate by (1 - alpha/2), not by
+        (1 - alpha) and not by 1 (i.e. not skipped).
+
+        This series is constant in both demand size (10) and interval (5), so
+        the exponential smoothing of z and p converges to those exact values
+        regardless of alpha — the raw rate is 2.0 for any alpha. That isolates
+        the correction factor: at alpha=0.4, (1 - alpha/2) = 0.8 gives 1.6.
+        The wrong-but-plausible (1 - alpha) = 0.6 would give 1.2, and skipping
+        the correction entirely would give 2.0 — both fail this assertion.
+        """
+        series = np.zeros(20)
+        series[[0, 5, 10, 15]] = 10.0
+        assert croston_forecast(series, alpha=0.4, n_ahead=1)[0] == pytest.approx(1.6)
 
     def test_run_croston_core_returns_dict(self):
         df = _make_stat_df()
@@ -75,6 +142,26 @@ class TestCroston:
         })
         results = run_croston_core(df, "date", "sales", None, 0.8, 20, 7)
         assert "__all__" in results
+
+    def test_cost_horizon_ignores_the_tail_past_the_horizon(self):
+        """The champion race compares `cost_horizon` across every model
+        family; it must not be the whole-tail `cost` in disguise (see
+        docs/stability.md #17(d))."""
+        df, train_ratio = _make_shocked_tail_df()
+        results = run_croston_core(df, "date", "sales", "sku", train_ratio, 20, 7, horizon=10)
+        res = results["A"]
+        assert res["horizon_steps"] == 10
+        assert res["cost_horizon"] < res["cost"] / 10
+        assert res["cost_horizon"] < 50.0
+
+    def test_short_tail_reports_over_available_steps_without_padding(self):
+        df = _make_stat_df(n=80)
+        results = run_croston_core(df, "date", "sales", "sku", 0.8, 20, 7, horizon=30)
+        res = results["A"]
+        held_out = 80 - int(80 * 0.8)
+        assert held_out < 30, "fixture assumption: tail shorter than horizon"
+        assert res["horizon_steps"] == held_out
+        assert np.isfinite(res["cost_horizon"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,6 +203,39 @@ class TestArima:
         results = run_arima_core(df, "date", "sales", None, 0.8, 20, 7)
         assert "__all__" in results
 
+    def test_cost_horizon_ignores_the_tail_past_the_horizon(self):
+        df, train_ratio = _make_shocked_tail_df()
+        results = run_arima_core(
+            df, "date", "sales", "sku", train_ratio, 20, 7,
+            order=(1, 1, 0), horizon=10,
+        )
+        res = results["A"]
+        assert res["horizon_steps"] == 10
+        # Old code copied the whole-tail `cost` straight into `cost_horizon`;
+        # on this fixture that number is dominated by the 30 shocked steps
+        # and would be orders of magnitude larger than the windowed one.
+        assert res["cost_horizon"] < res["cost"] / 10
+        assert res["cost_horizon"] < 50.0
+
+    def test_short_tail_reports_over_available_steps_without_padding(self):
+        df = _make_stat_df(n=80)
+        results = run_arima_core(df, "date", "sales", "sku", 0.8, 20, 7,
+                                 order=(1, 1, 0), horizon=30)
+        res = results["A"]
+        held_out = 80 - int(80 * 0.8)
+        assert held_out < 30, "fixture assumption: tail shorter than horizon"
+        assert res["horizon_steps"] == held_out
+        assert np.isfinite(res["cost_horizon"])
+
+    def test_no_horizon_means_no_cost_horizon(self):
+        """A caller that did not ask for an h-step evaluation must not
+        receive a fabricated one."""
+        df = _make_stat_df()
+        results = run_arima_core(df, "date", "sales", "sku", 0.8, 20, 7, order=(1, 1, 0))
+        res = results["A"]
+        assert res["cost_horizon"] is None
+        assert res["horizon_steps"] is None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ETS
@@ -151,6 +271,23 @@ class TestETS:
         results = run_ets_core(zeros, "date", "sales", "sku", 0.8, 20, 7)
         # Either succeeds or skips (both are acceptable behavior)
         assert isinstance(results, dict)
+
+    def test_cost_horizon_ignores_the_tail_past_the_horizon(self):
+        df, train_ratio = _make_shocked_tail_df()
+        results = run_ets_core(df, "date", "sales", "sku", train_ratio, 20, 7, horizon=10)
+        res = results["A"]
+        assert res["horizon_steps"] == 10
+        assert res["cost_horizon"] < res["cost"] / 10
+        assert res["cost_horizon"] < 50.0
+
+    def test_short_tail_reports_over_available_steps_without_padding(self):
+        df = _make_stat_df(n=80)
+        results = run_ets_core(df, "date", "sales", "sku", 0.8, 20, 7, horizon=30)
+        res = results["A"]
+        held_out = 80 - int(80 * 0.8)
+        assert held_out < 30, "fixture assumption: tail shorter than horizon"
+        assert res["horizon_steps"] == held_out
+        assert np.isfinite(res["cost_horizon"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -234,11 +371,15 @@ class TestModelFactory:
         model = factory.build_ml()["lightgbm"]
         assert model.get_params()["n_jobs"] == 4
 
-    def test_build_quantile_ml_defaults_n_jobs_to_one(self):
-        factory = ModelFactory({"lightgbm": {"n_estimators": 20}, "xgboost": {"n_estimators": 20}})
-        models = factory.build_quantile_ml(0.1)
-        assert models["lightgbm"].get_params()["n_jobs"] == 1
-        assert models["xgboost"].get_params()["n_jobs"] == 1
+    def test_there_is_no_quantile_model_builder(self):
+        """The p10/p50/p90 pass is gone on purpose — see pipeline.py step 7b.
+
+        Asserted rather than merely deleted: bringing the builder back means
+        bringing back 58% of the training cost for a band the purchase quantity
+        does not read, so it should be a deliberate act with this test in the
+        diff, not a quiet re-addition.
+        """
+        assert not hasattr(ModelFactory({"lightgbm": {}}), "build_quantile_ml")
 
     def test_create_defaults_n_jobs_to_one(self):
         assert ModelFactory.create("lightgbm", {}).get_params()["n_jobs"] == 1
@@ -287,6 +428,53 @@ class TestStatModelsReportFullMetrics:
         results = run_lstm_core(df, "date", "sales", "sku", 0.8, 20, 7)
         if results:  # LSTM returns empty dict if TensorFlow is not installed
             self._assert_full_and_finite(results["A"])
+
+
+class TestLSTMCostHorizonWindow:
+    """LSTM's `cost_horizon` must be windowed the same way as the other
+    statistical families — see models/ets.py for the full rationale.
+
+    LSTM's test predictions are built from sliding windows over the whole
+    series (window=14 by default), so the target of test sequence `i` sits
+    at raw index `i + window`, not at `cut + i`. The fixture places the shock
+    so it starts exactly one step after the first `horizon` test targets end,
+    accounting for that offset — see the inline arithmetic below.
+    """
+
+    WINDOW = 14
+    HORIZON = 10
+    CUT = 100  # cut in sequence-space, i.e. int(len(X) * train_ratio)
+
+    def _make_df(self):
+        rng = np.random.default_rng(4)
+        # First test target is at raw index CUT + WINDOW; the shock must start
+        # no earlier than HORIZON steps after that, i.e. at
+        # CUT + WINDOW + HORIZON.
+        shock_start = self.CUT + self.WINDOW + self.HORIZON
+        steady = np.maximum(1.0, rng.normal(50.0, 3.0, shock_start))
+        shocked = np.full(90, 5000.0)
+        values = np.concatenate([steady, shocked])
+        dates = pd.date_range("2021-01-01", periods=len(values), freq="D")
+        # len(X) = len(values) - WINDOW; train_ratio picked so
+        # int(len(X) * train_ratio) == CUT exactly.
+        train_ratio = self.CUT / (len(values) - self.WINDOW)
+        return pd.DataFrame({"date": dates, "sku": "A", "sales": values}), train_ratio
+
+    def test_cost_horizon_ignores_the_tail_past_the_horizon(self):
+        df, train_ratio = self._make_df()
+        results = run_lstm_core(
+            df, "date", "sales", "sku", train_ratio=train_ratio, min_rows=20,
+            seasonal_period=7, horizon=self.HORIZON, window=self.WINDOW,
+            epochs=20, patience=5,
+        )
+        if not results:
+            pytest.skip("TensorFlow not installed")
+        res = results["A"]
+        assert res["horizon_steps"] == self.HORIZON
+        # Old code copied the whole-tail `cost` (dominated by ~90 shocked
+        # steps) straight into `cost_horizon`. The windowed number must stay
+        # close to the steady-level error instead.
+        assert res["cost_horizon"] < res["cost"] / 3
 
 
 class TestWeightedEnsemble:

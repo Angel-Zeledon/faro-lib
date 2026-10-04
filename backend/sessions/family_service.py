@@ -133,9 +133,39 @@ def launch_training_family(
     grain's horizon (see plan_family). Both are persisted into the base
     session's forecast_cfg for auditability.
     """
+    from backend.activity.events import record_event
     from backend.db.connection import execute
     from backend.db import session_store
+    from backend.errors import AppError
+    from backend.sessions import data_gate
     from backend.sessions import service as session_svc
+
+    # THE gate, and it lives here on purpose. Every launch path goes through
+    # this function — POST /sessions/{id}/train, POST /demo/quickstart, the
+    # scheduled retrain and the seed script — so a caller cannot start a run on
+    # data the gate rejected by talking to a different endpoint. Enforcing it in
+    # the REST handler alone is what made it a suggestion.
+    #
+    # Refusing is recorded for the same reason it is enforced here: a person at
+    # the wizard reads the 422 and knows, but the launches nobody is watching
+    # (a scheduled run) refused into silence, and the tenant's only symptom was
+    # numbers that stopped moving.
+    try:
+        data_gate.enforce(tenant_id, base_session_id)
+    except AppError as exc:
+        record_event(
+            tenant_id, user_id, "training.blocked",
+            resource=base_session_id, reason="data_gate_blocked",
+            reason_params={"detail": (exc.params or {}).get("issues", "")},
+            details={
+                "session_id": base_session_id,
+                "session_name": (session_svc.get_session(tenant_id, base_session_id)
+                                  or {}).get("name"),
+                "issues": (exc.params or {}).get("issues"),
+            },
+            status="error",
+        )
+        raise
 
     dates = _read_dataset_dates(tenant_id, base_session_id)
     specs = plan_family(dates, user_granularity, user_horizon_days)  # always >= 1

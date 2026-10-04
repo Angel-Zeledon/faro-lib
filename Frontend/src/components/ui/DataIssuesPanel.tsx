@@ -61,10 +61,26 @@ export default function DataIssuesPanel({ issues, granularity }: {
   const all = conflict ? [conflict, ...(issues || [])] : (issues || [])
   if (all.length === 0) return null
 
+  // A blocking issue outranks every severity: it is the reason the user is
+  // being stopped, so it reads first no matter what else the file contains.
   const sorted = [...all].sort(
-    (a, b) => (SEVERITY_RANK[a.severity] ?? 3) - (SEVERITY_RANK[b.severity] ?? 3),
+    (a, b) =>
+      Number(!!b.blocking) - Number(!!a.blocking) ||
+      (SEVERITY_RANK[a.severity] ?? 3) - (SEVERITY_RANK[b.severity] ?? 3),
   )
-  const worst = sorted[0].severity
+  // "Este archivo no puede generar un pronóstico" is a statement about a dead
+  // end, and it must not be made about a problem that has an answer. Once the
+  // gate classifies findings, a `blocking_fixable` one is a QUESTION — asked by
+  // RemediationChoices right below this panel — and saying "impossible" above a
+  // list of ways forward contradicts the next thing the user reads.
+  //
+  // The plain `blocking` flag stays the fallback for issues produced before the
+  // gate existed, which carry no classification.
+  const classified = all.some(i => i.classification)
+  const blocked = classified
+    ? all.some(i => i.classification === 'blocking_fatal')
+    : all.some(i => i.blocking)
+  const worst = blocked ? 'error' : sorted[0].severity
   const { color, bg } = tone(worst)
 
   return (
@@ -85,11 +101,14 @@ export default function DataIssuesPanel({ issues, granularity }: {
           : worst === 'warning' ? <AlertCircle size={16} color={color} />
           : <Info size={16} color={color} />}
         <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text)' }}>
-          {t('dqissue.title')}
+          {t(blocked ? 'dqissue.blocked_title' : 'dqissue.title')}
         </span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 3, lineHeight: 1.5 }}>
-        {t('dqissue.subtitle')}
+        {/* "You may continue anyway" is exactly the wrong promise when the
+            file cannot train — that sentence is what let a one-row upload
+            spend two minutes on its way to `no_models_trained`. */}
+        {t(blocked ? 'dqissue.blocked_subtitle' : 'dqissue.subtitle')}
       </div>
 
       <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -18,6 +18,10 @@ from typing import Dict, Any
 ML_MODELS   = {"lightgbm", "xgboost"}
 STAT_MODELS = {"arima", "sarimax", "prophet", "ets", "croston"}
 DL_MODELS   = {"lstm"}
+# Fitted ONCE over every series instead of once per series, so it is deliberately
+# not in ML_MODELS: build_ml() must never hand it to the per-SKU Trainer, which
+# would fit one "global" model per SKU — the exact opposite of the point.
+GLOBAL_MODELS = {"global_lgbm"}
 
 
 class ModelFactory:
@@ -40,25 +44,10 @@ class ModelFactory:
                 models[name] = XGBRegressor(**{"n_jobs": 1, **params, "verbosity": 0})
         return models
 
-    def build_quantile_ml(self, quantile: float) -> dict:
-        """Return quantile-regression ML models for a given quantile (0.1, 0.5, 0.9)."""
-        from lightgbm import LGBMRegressor
-        from xgboost import XGBRegressor
-
-        models = {}
-        for name, params in self.config.items():
-            params = {k: v for k, v in (params or {}).items()
-                      if k not in ("objective", "alpha", "quantile_alpha")}
-            if name == "lightgbm":
-                models[name] = LGBMRegressor(
-                    **{"n_jobs": 1, **params}, objective="quantile", alpha=quantile, verbosity=-1
-                )
-            elif name == "xgboost":
-                models[name] = XGBRegressor(
-                    **{"n_jobs": 1, **params}, objective="reg:quantileerror",
-                    quantile_alpha=quantile, verbosity=0
-                )
-        return models
+    # There is no build_quantile_ml(). Separately-fitted p10/p50/p90 regressors
+    # were 58% of ML training time and produced a band no decision used; the
+    # intervals come from the out-of-fold residual bank instead. The reasoning
+    # and the measurement are in pipelines/pipeline.py, step 7b.
 
     def ml_names(self) -> list:
         return [n for n in self.config if n in ML_MODELS]
@@ -68,6 +57,9 @@ class ModelFactory:
 
     def dl_names(self) -> list:
         return [n for n in self.config if n in DL_MODELS]
+
+    def global_names(self) -> list:
+        return [n for n in self.config if n in GLOBAL_MODELS]
 
     @staticmethod
     def create(name: str, params: dict):
@@ -83,4 +75,4 @@ class ModelFactory:
 
     @staticmethod
     def available_models() -> list:
-        return sorted(ML_MODELS | STAT_MODELS | DL_MODELS)
+        return sorted(ML_MODELS | STAT_MODELS | DL_MODELS | GLOBAL_MODELS)

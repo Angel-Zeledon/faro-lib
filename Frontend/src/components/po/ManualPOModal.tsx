@@ -5,6 +5,7 @@
  * POST /inventory/po and refreshes the history on save.
  */
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { listSuppliers, createManualPO } from '@/lib/api'
 import type { Supplier } from '@/lib/types'
 import {
@@ -14,6 +15,8 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useErrorDetail } from '@/components/ui/States'
 import Spinner from '@/components/ui/Spinner'
 import { ClipboardList, Plus, Trash2, X } from 'lucide-react'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import BottomSheet from '@/components/mobile/BottomSheet'
 
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
@@ -41,6 +44,7 @@ export function ManualPOModal({ onClose, onSaved }: {
   const [lines,      setLines]      = useState<LineDraft[]>([{ ...EMPTY_LINE }])
   const [saving,     setSaving]     = useState(false)
   const [error,      setError]      = useState<string | null>(null)
+  const narrow = useIsNarrow()
 
   useEffect(() => {
     listSuppliers()
@@ -108,6 +112,138 @@ export function ManualPOModal({ onClose, onSaved }: {
       setError(errorDetail(e) || t('common.error'))
       setSaving(false)
     }
+  }
+
+  // On a phone: a bottom sheet with one card per product line — a four-column
+  // table of inputs does not fit 360px, and the confirm button stays pinned
+  // above the keyboard-free area instead of at the end of the form.
+  if (narrow) {
+    const field: React.CSSProperties = {
+      display: 'block', boxSizing: 'border-box', width: '100%', marginTop: 4,
+      minHeight: 48, padding: '0 12px', borderRadius: 10,
+      border: `1px solid ${C.border}`, background: C.card, color: C.text, fontSize: 16,
+    }
+    const label: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: C.dim }
+    return (
+      <BottomSheet
+        open
+        onClose={onClose}
+        maxHeight="94dvh"
+        title={t('po.manual_title')}
+        footer={suppliers && suppliers.length > 0 ? (
+          <>
+            <button className="mobile-btn mobile-btn-secondary" onClick={onClose}>{t('common.cancel')}</button>
+            <button className="mobile-btn mobile-btn-primary" onClick={save} disabled={!canSave} aria-busy={saving}>
+              {saving ? t('po.manual_saving') : t('po.manual_confirm')}
+            </button>
+          </>
+        ) : undefined}
+      >
+        <p style={{ margin: '0 0 14px', fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('po.manual_subtitle')}</p>
+        {!suppliers && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={18} /></div>}
+        {suppliers && suppliers.length === 0 && (
+          <>
+            <p style={{ fontSize: 14, color: C.dim, lineHeight: 1.5 }}>{t('po.manual_no_suppliers')}</p>
+            <Link href="/proveedores" className="mobile-btn mobile-btn-secondary" style={{ width: '100%', textDecoration: 'none' }}>
+              {t('po.manual_go_suppliers')}
+            </Link>
+          </>
+        )}
+        {suppliers && suppliers.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <label style={label}>
+              {t('po.manual_supplier_label')}
+              <select value={supplierId} onChange={e => setSupplierId(e.target.value)} style={field}>
+                <option value="">{t('po.manual_supplier_placeholder')}</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </label>
+            {multi && (
+              <label style={label}>
+                {t('po.manual_warehouse_label')}
+                <select value={warehouse} onChange={e => setWarehouse(e.target.value)} style={field}>
+                  {!defaultWh && <option value="">{t('po.manual_warehouse_default')}</option>}
+                  {warehouses.map(w => (
+                    <option key={w.name} value={w.name}>
+                      {w.name === defaultWh?.name
+                        ? t('po.manual_warehouse_default_option').replace('{name}', w.name)
+                        : w.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {lines.map((l, idx) => (
+              <fieldset key={idx} style={{
+                margin: 0, border: `1px solid ${C.border}`, borderRadius: 12,
+                padding: '10px 12px 12px', background: C.surface, minWidth: 0,
+              }}>
+                <legend style={{ padding: '0 4px', fontSize: 12, fontWeight: 700, color: C.dim }}>
+                  {t('po.manual_line_n', { n: idx + 1 })}
+                </legend>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <label style={{ ...label, flex: 1, minWidth: 0 }}>
+                    {t('po.manual_col_sku')}
+                    <input
+                      value={l.sku}
+                      onChange={e => setLine(idx, { sku: e.target.value })}
+                      placeholder="SKU-001"
+                      autoCapitalize="characters" autoCorrect="off" spellCheck={false}
+                      style={{ ...field, fontFamily: 'monospace' }}
+                    />
+                  </label>
+                  {lines.length > 1 && (
+                    <button
+                      onClick={() => setLines(prev => prev.filter((_, i) => i !== idx))}
+                      aria-label={t('po.manual_remove_line')}
+                      style={{
+                        all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flexShrink: 0,
+                        width: 48, height: 48, borderRadius: 10, border: `1px solid ${C.border}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.red,
+                      }}
+                    >
+                      <Trash2 size={18} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <label style={{ ...label, flex: 1, minWidth: 0 }}>
+                    {t('po.manual_col_qty')}
+                    <input
+                      type="number" min={0} inputMode="numeric"
+                      value={l.qty}
+                      onChange={e => setLine(idx, { qty: e.target.value })}
+                      style={{ ...field, fontVariantNumeric: 'tabular-nums' }}
+                    />
+                  </label>
+                  <label style={{ ...label, flex: 1, minWidth: 0 }}>
+                    {t('po.manual_col_cost')}
+                    <input
+                      type="number" min={0} step="0.01" inputMode="decimal"
+                      value={l.unit_cost}
+                      onChange={e => setLine(idx, { unit_cost: e.target.value })}
+                      placeholder={t('po.manual_cost_optional')}
+                      style={{ ...field, fontVariantNumeric: 'tabular-nums' }}
+                    />
+                  </label>
+                </div>
+              </fieldset>
+            ))}
+            <button
+              className="mobile-btn mobile-btn-secondary"
+              onClick={() => setLines(prev => [...prev, { ...EMPTY_LINE }])}
+              style={{ color: C.indigo, flex: 'none', width: '100%' }}
+            >
+              <Plus size={17} aria-hidden="true" /> {t('po.manual_add_line')}
+            </button>
+            {badLine && !error && (
+              <p role="alert" style={{ margin: 0, fontSize: 13, color: C.red, lineHeight: 1.5 }}>{t('po.manual_invalid_line')}</p>
+            )}
+          </div>
+        )}
+        {error && <p role="alert" style={{ margin: '12px 0 0', fontSize: 13, color: C.red, lineHeight: 1.5 }}>{error}</p>}
+      </BottomSheet>
+    )
   }
 
   return (

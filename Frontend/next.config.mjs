@@ -13,6 +13,16 @@
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:8010'
 const isDev = process.env.NODE_ENV === 'development'
 
+// One id per build, shared by the bundle (NEXT_PUBLIC_BUILD_ID is inlined into
+// the client code) and by Next's own build id. The running server answers
+// /build-id with the id it was built with; an open tab compares that to the
+// one it was loaded with and reloads when they differ (lib/pwa.ts). Set
+// BUILD_ID (or GIT_SHA) in the image build to make it reproducible.
+const BUILD_ID = process.env.BUILD_ID || process.env.GIT_SHA || Date.now().toString(36)
+// Next evaluates this file in more than one process during a build; written back
+// to the environment, the worker processes it spawns inherit the same id.
+process.env.BUILD_ID = BUILD_ID
+
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
@@ -40,11 +50,22 @@ const nextConfig = {
   // to the in-network API address (the Dockerfile defaults it to the compose
   // service name).
   output: 'standalone',
+  generateBuildId: async () => BUILD_ID,
   env: {
     NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version ?? '1.0.0',
+    NEXT_PUBLIC_BUILD_ID: BUILD_ID,
   },
   async rewrites() {
     return [
+      // The versioned public base an integration is told to use
+      // (`https://<domain>/api/v1/...`, see /desarrolladores and /api). Without
+      // this rule it fell into the one below and became `/api/v1/v1/...` — a
+      // 404 on every documented URL. First, so it wins; the app's own calls
+      // never start with `v1/`, so they are unaffected.
+      {
+        source: '/api/v1/:path*',
+        destination: `${BACKEND_URL}/api/v1/:path*`,
+      },
       {
         source: '/api/:path*',
         destination: `${BACKEND_URL}/api/v1/:path*`,
@@ -84,6 +105,9 @@ const nextConfig = {
   async headers() {
     return [
       { source: '/(.*)', headers: SECURITY_HEADERS },
+      // The worker must be re-fetched on every check, or a new deploy's worker
+      // is never seen by a browser that cached the old one.
+      { source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache, max-age=0' }] },
     ]
   },
 }

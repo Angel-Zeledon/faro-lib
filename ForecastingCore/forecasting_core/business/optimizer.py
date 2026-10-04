@@ -38,6 +38,7 @@ Objective (minimize):
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
@@ -366,6 +367,51 @@ def build_problem(inp: OptimizationInput) -> MilpProblem:
 # unsolved case — a fast approximate answer beats an unbounded solve.
 _SOLVE_TIME_LIMIT_S = 10.0
 
+# Every HiGHS solve in this process runs on ONE dedicated thread.
+#
+# Concurrent solves deadlock. A mutex around `milp()` was the first fix and is
+# NOT enough — measured 2026-08-06 with the lock in place, same tiny input
+# (2 SKUs x 2 warehouses x 6 periods), a solve that takes 0.01s alone:
+#
+#     each concurrency test alone      -> passes in ~1.5s
+#     both tests in ONE process        -> wedged, killed at 3m20 (exit 124)
+#     8 threads x 2 rounds             -> wedged
+#     8 threads x 3 and x 5 rounds     -> clean
+#
+# So it is a race, and serialising the call does not close it. The thread dump
+# shows the expected shape — workers queued on the mutex, one inside
+# `_highs_wrapper`, the MAIN thread stuck in `Thread.start()` — which is the
+# tell: what breaks is not two solves overlapping, it is HiGHS being ENTERED
+# FROM DIFFERENT OS THREADS across a process's life. Its internal scheduler
+# does not survive that, and a mutex cannot express "always the same thread".
+# A single-worker executor can, and that is the whole reason for it.
+#
+# (Ruled out, do not re-chase: the hundreds of `Windows fatal exception: access
+# violation` lines faulthandler prints are first-chance exceptions HiGHS handles
+# internally — a run with 57 of them exits 0 with no errors. And it is not raw
+# concurrency: 1 thread x 20 rounds is clean.)
+#
+# scipy does not forward HiGHS's `threads` option (checked: `_milp` accepts no
+# such key), so the solver's internal parallelism cannot be capped from here.
+#
+# Only the `milp()` call is handed off. Building the problem is pure Python and
+# numpy, costs a fraction of the solve, and stays parallel — callers that arrive
+# together still overlap on everything except the part that breaks.
+#
+# This lives in the ENGINE rather than in the API's `solve_slot` because it is a
+# property of the solver, not of one caller: a script, the training worker, or a
+# future endpoint would otherwise each have to remember. `solve_slot` remains
+# the admission control that returns a fast 503 instead of queueing requests.
+_SOLVE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stockai-milp")
+
+# How long a caller waits for the solver thread before giving up on it. HiGHS
+# already gets `time_limit_s`; this is the outer bound that keeps the promise
+# the time limit alone cannot keep — that a solve never wedges its caller. If
+# the solver thread ever does hang, callers time out and degrade to the greedy
+# fallback instead of blocking forever, so the product answers (worse) rather
+# than disappearing.
+_SOLVE_WAIT_GRACE_S = 5.0
+
 
 def optimize(
     inp: OptimizationInput,
@@ -401,14 +447,18 @@ def optimize(
         if problem.A_ub is not None:
             constraints.append(
                 LinearConstraint(problem.A_ub, lb=-np.inf, ub=problem.b_ub))
-        res = milp(
+        res = _SOLVE_EXECUTOR.submit(
+            milp,
             problem.c,
             integrality=problem.integrality,
             bounds=problem.bounds,
             constraints=constraints,
             options={"time_limit": time_limit_s},
-        )
+        ).result(timeout=time_limit_s + _SOLVE_WAIT_GRACE_S)
     except Exception:
+        # Includes concurrent.futures.TimeoutError from the wait above: a solver
+        # thread that stops answering degrades to the fallback like any other
+        # unsolved case, rather than holding the caller.
         return _fallback_recommend(inp, idx)
 
     if not getattr(res, "success", False):

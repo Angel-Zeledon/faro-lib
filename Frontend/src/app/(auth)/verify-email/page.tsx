@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { authResendVerification, authVerifyEmail } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
-import { CheckCircle2, XCircle, Loader2, Zap } from 'lucide-react'
+import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Wordmark } from '@/components/brand/Wordmark'
 
 function VerifyEmailContent() {
   const { t } = useLanguage()
@@ -53,12 +54,8 @@ function VerifyEmailContent() {
         background: 'var(--surface)', border: '1px solid var(--surface)',
         borderRadius: 14, padding: '40px 28px',
       }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 11, margin: '0 auto 16px',
-          background: 'linear-gradient(135deg, var(--accent), var(--accent))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Zap size={20} color="#fff" strokeWidth={2.5} />
+        <div style={{ marginBottom: 16 }}>
+          <Wordmark size={26} />
         </div>
 
         {status === 'loading' && (
@@ -92,7 +89,7 @@ function VerifyEmailContent() {
                 <label htmlFor="resend-email" style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 7 }}>
                   {t('auth.resend_verification_prompt')}
                 </label>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="auth-resend-row" style={{ display: 'flex', gap: 8 }}>
                   <input
                     id="resend-email" name="email" type="email" required
                     value={resendEmail} onChange={e => setResendEmail(e.target.value)}
@@ -118,7 +115,7 @@ function VerifyEmailContent() {
               </form>
             )}
 
-            <Link href="/signup" style={{
+            <Link href="/signup" className="auth-back-btn" style={{
               display: 'inline-block', padding: '10px 28px',
               background: 'var(--surface)', color: 'var(--text)', borderRadius: 8,
               fontSize: 13, fontWeight: 600, textDecoration: 'none',

@@ -11,8 +11,9 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, AlertCircle, ChevronDown, ChevronRight, Wrench } from 'lucide-react'
 import { getRunWarnings } from '@/lib/api'
-import type { RunWarnings, RunWarningGroup } from '@/lib/types'
+import type { RunWarnings, RunWarningGroup, RunWarningSample } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { modelLabel } from '@/lib/modelLabel'
 
 // Codes with no dedicated copy fall back to the engine's English message
 // rather than rendering a raw i18n key.
@@ -32,9 +33,43 @@ function contextLine(context: Record<string, unknown>): string {
     .join('  ·  ')
 }
 
+/** One detail line, in the reader's language when we can build it.
+ *
+ * The detail used to be the engine's raw sentence, always: a Spanish user
+ * opening "Ver detalle" read `SKU 'SKU-A' / model 'croston': Croston is
+ * designed for intermittent series (zero_ratio=0% < 20%)`. Two problems in one
+ * line — English prose, and the algorithm name that the forecast screen goes
+ * out of its way to hide behind "Modelo N".
+ *
+ * The payload already carries what a sentence needs: a stable `code` and a
+ * structured `context`. So: template first, then the neutral key/value line,
+ * and only then the engine's English — which is still better than nothing when
+ * the message holds a detail the context does not (UNSORTED_DATES names the
+ * column in prose and sends an empty context).
+ */
+function useSampleLine() {
+  const { t } = useLanguage()
+  return (code: string, sample: RunWarningSample): string => {
+    const key = `runwarn.${code}.sample`
+    // `model` arrives as the engine's id. Numbering it here is the whole point
+    // of sharing MODEL_ORDER with /pronosticos rather than copying it.
+    const params: Record<string, unknown> = { ...sample.context }
+    if (typeof params.model === 'string') params.model = modelLabel(t, params.model)
+    if (Array.isArray(params.columns)) params.columns = params.columns.join(', ')
+
+    const text = t(key, params)
+    // A leftover {placeholder} means this run predates the field the sentence
+    // needs — the same guard the corrections list below already uses.
+    const usable = text !== key && !/\{[a-z_]+\}/i.test(text)
+    if (usable) return text
+    return contextLine(sample.context) || sample.message || ''
+  }
+}
+
 function Group({ group }: { group: RunWarningGroup }) {
   const { t } = useLanguage()
   const codeText = useCodeText()
+  const sampleLine = useSampleLine()
   const [open, setOpen] = useState(false)
 
   const isError = group.severity === 'error'
@@ -87,26 +122,36 @@ function Group({ group }: { group: RunWarningGroup }) {
           listStyle: 'none', margin: '7px 0 0', padding: 0,
           display: 'flex', flexDirection: 'column', gap: 4,
         }}>
-          {group.samples.map((s, i) => (
-            <li key={i} style={{
-              fontSize: 12, color: 'var(--dim)', lineHeight: 1.55,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            }}>
-              {/* Findings raised by the backend's own prep step carry no
-                  sentence — only the numbers that identify the offending
-                  rows — so the context is what the user actually needs. */}
-              {s.message || contextLine(s.context)}
-            </li>
-          ))}
+          {group.samples.map((s, i) => {
+            const line = sampleLine(group.code, s)
+            if (!line) return null
+            return (
+              <li key={i} style={{
+                fontSize: 12, color: 'var(--dim)', lineHeight: 1.55,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              }}>
+                {line}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
   )
 }
 
-export default function RunWarningsPanel({ sessionId }: { sessionId: string | null }) {
+export default function RunWarningsPanel(
+  { sessionId, collapsible = false }: { sessionId: string | null; collapsible?: boolean },
+) {
   const { t } = useLanguage()
   const [data, setData] = useState<RunWarnings | null>(null)
+  // Collapsed by default where the page's job is to show something else.
+  // On /pronosticos this panel had grown to ~600px of prose above the fold, so
+  // a page called "Predicciones" opened without a single prediction in view.
+  // The finding still has to be reachable — it is the only place the user can
+  // learn the accuracy is inflated — so it keeps its line and its colour, and
+  // gives up only the room.
+  const [open, setOpen] = useState(!collapsible)
 
   useEffect(() => {
     if (!sessionId) { setData(null); return }
@@ -124,6 +169,7 @@ export default function RunWarningsPanel({ sessionId }: { sessionId: string | nu
   if (groups.length === 0 && corrections.length === 0) return null
 
   const hasError = groups.some(g => g.severity === 'error')
+  const findings = groups.length + (corrections.length > 0 ? 1 : 0)
   const accent   = hasError ? '#dc2626' : '#d97706'
 
   return (
@@ -138,23 +184,46 @@ export default function RunWarningsPanel({ sessionId }: { sessionId: string | nu
         marginBottom: 18,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+      <button
+        type="button"
+        onClick={collapsible ? () => setOpen(v => !v) : undefined}
+        aria-expanded={collapsible ? open : undefined}
+        style={{
+          all: 'unset', width: '100%',
+          cursor: collapsible ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+        }}
+      >
         {hasError
           ? <AlertTriangle size={17} color={accent} style={{ flexShrink: 0, marginTop: 1 }} />
           : <AlertCircle   size={17} color={accent} style={{ flexShrink: 0, marginTop: 1 }} />}
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
             {t('runwarn.title')}
+            {collapsible && findings > 0 && (
+              <span style={{
+                marginLeft: 8, fontSize: 12, fontWeight: 700, color: accent,
+                background: `${accent}1a`, borderRadius: 20, padding: '1px 8px',
+              }}>{findings}</span>
+            )}
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--dim)', marginTop: 3, lineHeight: 1.5 }}>
             {t('runwarn.subtitle')}
           </div>
         </div>
-      </div>
+        {collapsible && (
+          <ChevronDown
+            size={16} color="var(--dim)" aria-hidden="true"
+            style={{ flexShrink: 0, marginTop: 2,
+                     transform: open ? 'rotate(180deg)' : 'none',
+                     transition: 'transform .15s' }}
+          />
+        )}
+      </button>
 
-      {groups.map(g => <Group key={g.code} group={g} />)}
+      {open && groups.map(g => <Group key={g.code} group={g} />)}
 
-      {corrections.length > 0 && (
+      {open && corrections.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
@@ -177,9 +246,17 @@ export default function RunWarningsPanel({ sessionId }: { sessionId: string | nu
               const key = `runcorr.${c.action}`
               const text = t(key, c as unknown as Record<string, unknown>)
               const usable = text !== key && !/\{[a-z_]+\}/i.test(text)
+              const line = usable ? text : c.description
+              // Both unusable means we have nothing to say about a change we
+              // made to the user's data. An empty bullet is the worst of the
+              // three options: it claims something happened and then refuses to
+              // say what — and that is exactly how the censored-demand notice
+              // shipped, silently blank, while the engine rewrote sales figures.
+              // Rendering nothing at least does not pretend.
+              if (!line) return null
               return (
                 <li key={i} style={{ fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.55 }}>
-                  {usable ? text : c.description}
+                  {line}
                 </li>
               )
             })}

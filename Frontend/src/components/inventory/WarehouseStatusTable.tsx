@@ -3,7 +3,7 @@
 // by-warehouse status and renders one warehouse's rows, including the
 // TRANSFER suggestions produced by the backend's network pass.
 import { useCallback, useEffect, useState } from 'react'
-import { getStatusByWarehouse, createTransfer } from '@/lib/api'
+import { getStatusByWarehouse, createTransfer, upsertInventoryStock } from '@/lib/api'
 import type { WarehouseStatusItem, CoverageUnit } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/States'
@@ -11,6 +11,7 @@ import SignalBadge from '@/components/ui/SignalBadge'
 import { coverageUnitShort } from '@/lib/period'
 import { transferReasonText } from '@/lib/transferReason'
 import { ArrowLeftRight } from 'lucide-react'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -23,11 +24,15 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
   onTransferCreated?: () => void
 }) {
   const { t } = useLanguage()
+  // Phone: one card per SKU instead of a five-column table.
+  const narrow = useIsNarrow()
   const [items, setItems] = useState<WarehouseStatusItem[] | null>(null)
   const [coverageUnit, setCoverageUnit] = useState<CoverageUnit>('day')
   const [error, setError] = useState<unknown>(null)
   const [sendingSku, setSendingSku] = useState<string | null>(null)
   const [sentSkus, setSentSkus] = useState<Set<string>>(new Set())
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [savingSku, setSavingSku] = useState<string | null>(null)
 
   const load = useCallback(() => {
     setError(null)
@@ -47,6 +52,40 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                        body={t('inventory.wh_empty_sub')} />
   }
 
+  /** Count this warehouse's stock, in this warehouse's row.
+   *
+   *  The "Todas" editor could not do this: it shows the network SUM and posts
+   *  without a warehouse, so a typed total landed on one location and the rest
+   *  was added on top. Here the destination is the tab the user is looking at.
+   */
+  async function saveStock(sku: string, raw: string) {
+    const value = Number(raw)
+    if (!Number.isFinite(value) || value < 0) return
+    setSavingSku(sku)
+    try {
+      await upsertInventoryStock(sku, { current_stock: value, warehouse })
+      setDrafts(prev => { const next = { ...prev }; delete next[sku]; return next })
+      load()
+    } catch (e) {
+      setError(e)
+    } finally { setSavingSku(null) }
+  }
+
+  /** Move the part a donor CAN spare; the rest stays a purchase. */
+  async function sendPartial(row: WarehouseStatusItem) {
+    const pt = row.partial_transfer
+    if (!pt) return
+    const key = `${row.sku}|${row.warehouse}`
+    setSendingSku(key)
+    try {
+      await createTransfer(pt.from_warehouse, row.warehouse,
+                           [{ sku: row.sku, qty: pt.qty }])
+      setSentSkus(prev => new Set(prev).add(key))
+      onTransferCreated?.()
+      load()
+    } finally { setSendingSku(null) }
+  }
+
   async function sendTransfer(row: WarehouseStatusItem) {
     const ts = row.transfer_suggestion
     if (!ts) return
@@ -64,35 +103,73 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
 
   const th: React.CSSProperties = { textAlign: 'left', fontSize: 10.5, color: C.dim,
     fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '6px 10px' }
-  const td: React.CSSProperties = { fontSize: 12.5, color: C.text, padding: '8px 10px',
-    borderTop: `1px solid ${C.border}` }
+  // On a phone each row is a small grid card: name across the top, stock
+  // input and coverage side by side, then the signal and the action.
+  const td: React.CSSProperties = narrow
+    ? { display: 'block', padding: 0, border: 0, fontSize: 13, color: C.text, minWidth: 0, gridColumn: '1 / -1' }
+    : { fontSize: 12.5, color: C.text, padding: '8px 10px', borderTop: `1px solid ${C.border}` }
+  const tdHalf: React.CSSProperties = narrow ? { ...td, gridColumn: 'auto', alignSelf: 'center' } : td
 
   return (
-    <div style={{ overflowX: 'auto', border: `1px solid ${C.border}`, borderRadius: 10 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', background: C.surface }}>
-        <thead><tr>
+    <div style={{ overflowX: narrow ? 'visible' : 'auto', border: `1px solid ${C.border}`, borderRadius: narrow ? 14 : 10, background: narrow ? C.surface : undefined }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', background: C.surface, display: narrow ? 'block' : undefined }}>
+        <thead style={narrow ? { display: 'none' } : undefined}><tr>
           <th style={th}>SKU</th>
           <th style={th}>{t('inventory.wh_col_stock')}</th>
           <th style={th}>{t('inventory.wh_col_coverage')}</th>
           <th style={th}>{t('inventory.wh_col_signal')}</th>
           <th style={th}>{t('inventory.wh_col_action')}</th>
         </tr></thead>
-        <tbody>
+        <tbody style={narrow ? { display: 'block' } : undefined}>
           {rows.map(row => {
             const ts = row.transfer_suggestion
             const key = `${row.sku}|${row.warehouse}`
             const sent = sentSkus.has(key)
             const rejected = transferReasonText(row.transfer_rejected_reason, t)
             return (
-              <tr key={key}>
-                <td style={td}>{row.display_name || row.sku}</td>
-                <td style={td}>{row.current_stock ?? '—'}</td>
-                <td style={td}>{row.coverage_days != null
+              <tr key={key} style={narrow ? { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '6px 12px', padding: '12px 14px', borderTop: `1px solid ${C.border}` } : undefined}>
+                <td style={narrow ? { gridColumn: '1 / -1', fontSize: 15, fontWeight: 600, color: C.text, minWidth: 0 } : td}>{row.display_name || row.sku}</td>
+                <td style={tdHalf}>
+                  <input
+                    type="number" min={0}
+                    name={`wh-stock-${row.sku}`}
+                    aria-label={`${t('inventory.wh_col_stock')} — ${row.display_name || row.sku} — ${warehouse}`}
+                    disabled={savingSku === row.sku}
+                    value={drafts[row.sku] ?? String(row.current_stock ?? '')}
+                    onChange={e => setDrafts(p => ({ ...p, [row.sku]: e.target.value }))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); void saveStock(row.sku, (e.target as HTMLInputElement).value) }
+                      if (e.key === 'Escape') setDrafts(p => { const n = { ...p }; delete n[row.sku]; return n })
+                    }}
+                    onBlur={e => {
+                      if (drafts[row.sku] !== undefined) void saveStock(row.sku, e.target.value)
+                    }}
+                    inputMode="decimal"
+                    style={{ width: 92, background: 'var(--bg)', border: `1px solid ${C.border}`,
+                             borderRadius: 6, padding: '4px 7px', fontSize: 12, color: C.text,
+                             outline: 'none',
+                             ...(narrow ? { width: 120, minHeight: 44, fontSize: 16, borderRadius: 10, padding: '8px 10px', boxSizing: 'border-box' } : {}) }}
+                  />
+                </td>
+                <td style={narrow ? { ...tdHalf, textAlign: 'right' } : td}>
+                  {narrow && <span style={{ display: 'block', fontSize: 11.5, color: C.dim }}>{t('inventory.wh_col_coverage')}</span>}
+                  {row.coverage_days != null
                   ? `${row.coverage_days} ${coverageUnitShort(coverageUnit, t)}` : '—'}</td>
                 <td style={td}>
                   {/* Shared badge: icon + translated label + WCAG palette —
                       never a raw colored enum (see SignalBadge header). */}
                   <SignalBadge signal={row.signal} />
+                  {/* SIN_DATOS has more than one cause, and this one the buyer
+                      can fix: nobody ever recorded stock for this SKU here. It
+                      used to be read as zero, which is how an ERP-synced tenant
+                      was told to buy a full reorder for every branch while the
+                      goods sat in principal (stability 11.5). */}
+                  {row.sin_datos_reason === 'stock_not_recorded_in_this_warehouse' && (
+                    <div style={{ fontSize: 11, color: C.dim, marginTop: 3, maxWidth: 260,
+                                  lineHeight: 1.4 }}>
+                      {t('inventory.wh_no_stock_record')}
+                    </div>
+                  )}
                 </td>
                 <td style={td}>
                   {row.recommended_action === 'transfer' && ts ? (
@@ -105,7 +182,8 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                               disabled={sendingSku === key}
                               style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
                                        alignItems: 'center', gap: 6, color: C.indigo,
-                                       fontSize: 12, fontWeight: 600 }}>
+                                       fontSize: 12, fontWeight: 600,
+                                       ...(narrow ? { minHeight: 44, fontSize: 14 } : {}) }}>
                         <ArrowLeftRight size={13} />
                         {t('inventory.wh_transfer_btn')
                           .replace('{qty}', String(ts.qty))
@@ -119,6 +197,25 @@ export function WarehouseStatusTable({ sessionId, warehouse, onTransferCreated }
                           text, never an alert (it is a recommendation). */}
                       {rejected && (
                         <span style={{ display: 'block', marginTop: 2 }}>{rejected}</span>
+                      )}
+                      {/* The donor next door cannot cover the whole gap, so
+                          buying stays the recommendation — but moving what it
+                          has is the buyer's call to make, and they can only make
+                          it if it is on screen. Taking it shrinks the purchase on
+                          its own: in-transit units net out of the next one. */}
+                      {row.partial_transfer && !sent && (
+                        <button onClick={() => sendPartial(row)}
+                                disabled={sendingSku === key}
+                                style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex',
+                                         alignItems: 'center', gap: 6, marginTop: 4,
+                                         color: C.indigo, fontSize: 12, fontWeight: 600,
+                                         ...(narrow ? { minHeight: 44, fontSize: 14 } : {}) }}>
+                          <ArrowLeftRight size={13} />
+                          {t('inventory.wh_partial_transfer_btn')
+                            .replace('{qty}', String(row.partial_transfer.qty))
+                            .replace('{from}', row.partial_transfer.from_warehouse)
+                            .replace('{rest}', String(row.partial_transfer.remaining_qty))}
+                        </button>
                       )}
                     </span>
                   ) : '—'}

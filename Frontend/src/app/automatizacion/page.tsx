@@ -3,18 +3,26 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   listApiKeys, createApiKey, revokeApiKey,
   listWebhooks, createWebhook, deleteWebhook,
-  getSessions, getSchedule, saveSchedule, deleteSchedule,
+  getSessions, getSchedule, saveSchedule, deleteSchedule, listSchedules,
+  getTenantTimezone, listScheduleHistory,
 } from '@/lib/api'
-import type { ApiKey, Webhook, JobSchedule, SessionInfo } from '@/lib/types'
+import type { ApiKey, ApiKeyScope, Webhook, JobSchedule, SessionInfo } from '@/lib/types'
+import type { TenantTimezone, ScheduleRun } from '@/lib/api'
 import Button from '@/components/ui/Button'
 import Input, { Select } from '@/components/ui/Input'
 import Card from '@/components/ui/Card'
 import Spinner from '@/components/ui/Spinner'
 import { Key, Webhook as WebhookIcon, Clock, Copy, Check, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { webhookEventLabel } from '@/lib/enumLabels'
+import { webhookEventLabel, timezoneLabel } from '@/lib/enumLabels'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/contexts/ToastContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import {
+  MobileList, MobileCard, MobileSection, MobileTabs, StickyActionBar,
+} from '@/components/mobile'
+import MobileFormScope from '@/components/mobile/MobileFormScope'
+import ApiKeysMobile from './ApiKeysMobile'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
 
@@ -36,11 +44,16 @@ const CRON_OPTIONS = [
 function ApiKeysTab() {
   const { t } = useLanguage()
   const confirm = useConfirm()
+  const narrow = useIsNarrow()
   const [keys,    setKeys]    = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
+  // Defaults to read-only, the safer of the two. The choice is explicit because
+  // the two kinds do different jobs: a read key can read the semáforo, and
+  // only a write key can push the nightly export or record an order.
+  const [newScope, setNewScope] = useState<ApiKeyScope>('read')
   const [creating, setCreating] = useState(false)
   const [newKey,  setNewKey]  = useState<string | null>(null)
   const [copied,  setCopied]  = useState(false)
@@ -59,9 +72,10 @@ function ApiKeysTab() {
     if (!newName.trim()) return
     setCreating(true); setError(null)
     try {
-      const result = await createApiKey(newName.trim())
+      const result = await createApiKey(newName.trim(), newScope)
       setNewKey(result.key)
       setNewName('')
+      setNewScope('read')
       load()
     } catch (e: any) { setError(e.message) }
     finally { setCreating(false) }
@@ -69,9 +83,27 @@ function ApiKeysTab() {
 
   const handleRevoke = async (id: string) => {
     if (!(await confirm({ title: t('settings.revoke_title'), message: t('settings.revoke_confirm'), danger: true }))) return
+    await revokeNow(id)
+  }
+
+  // The revoke itself, without the question. The phone asks inside the key's
+  // own sheet (a dialog stacked on a sheet is two modals deep), so it calls
+  // this directly; desktop asks first through `handleRevoke`.
+  const revokeNow = async (id: string): Promise<boolean> => {
     setRevoking(id)
-    try { await revokeApiKey(id); load() }
-    catch (e: any) { setError(e.message) }
+    try {
+      await revokeApiKey(id)
+      // Drop the "copy it now" banner. It survived a revoke, so the screen went
+      // on offering to copy a credential that had just been killed — and a key
+      // that 401s reads as a broken integration, not as a revoked key. Cleared
+      // unconditionally: the banner only ever holds the key from THIS session,
+      // and after any revoke the safe assumption is that it is the one that
+      // just died.
+      setNewKey(null)
+      load()
+      return true
+    }
+    catch (e: any) { setError(e.message); return false }
     finally { setRevoking(null) }
   }
 
@@ -79,11 +111,30 @@ function ApiKeysTab() {
     if (newKey) { navigator.clipboard.writeText(newKey); setCopied(true); setTimeout(() => setCopied(false), 2000) }
   }
 
+  if (narrow) {
+    return (
+      <ApiKeysMobile
+        keys={keys} loading={loading} error={error}
+        newName={newName} setNewName={setNewName}
+        newScope={newScope} setNewScope={setNewScope}
+        creating={creating} handleCreate={handleCreate}
+        newKey={newKey} clearNewKey={() => setNewKey(null)}
+        copied={copied} copyKey={copyKey}
+        revoking={revoking} revoke={revokeNow}
+      />
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: 'var(--text)' }}>
-        <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1, color: '#f59e0b' }} aria-hidden="true" />
-        <span>{t('settings.api_keys_coming_soon')}</span>
+      {/* Was an amber "coming soon — keys cannot authenticate yet". That stopped
+          being true: the public surface was walked end to end with a real key.
+          Leaving the warning up would have told customers the working thing does
+          not work. What replaces it is the one fact they need before minting
+          one — the secret is shown once and never again. */}
+      <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--text)' }}>
+        <Key size={14} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent)' }} aria-hidden="true" />
+        <span>{t('settings.api_keys_shown_once')}</span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 12, color: 'var(--dim)' }}>
@@ -103,6 +154,20 @@ function ApiKeysTab() {
             onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
             style={{ flex: 1, fontSize: 12 }}
           />
+          <select
+            name="api_key_scope"
+            aria-label={t('settings.key_role_label')}
+            value={newScope}
+            onChange={e => setNewScope(e.target.value as ApiKeyScope)}
+            style={{
+              fontSize: 12, padding: '0 8px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--text)',
+            }}
+          >
+            <option value="read">{t('settings.key_role_viewer')}</option>
+            <option value="write">{t('settings.key_role_analyst')}</option>
+          </select>
           <Button variant="primary" size="sm" loading={creating} disabled={!newName.trim()} onClick={handleCreate}>
             {t('settings.create')}
           </Button>
@@ -147,12 +212,22 @@ function ApiKeysTab() {
       ) : (
         <table className="data-table">
           <thead>
-            <tr><th>{t('settings.col_name')}</th><th>{t('settings.col_created')}</th><th>{t('settings.col_last_used')}</th><th></th></tr>
+            <tr><th>{t('settings.col_name')}</th><th>{t('settings.col_scope')}</th><th>{t('settings.col_created')}</th><th>{t('settings.col_last_used')}</th><th></th></tr>
           </thead>
           <tbody>
             {keys.map(k => (
               <tr key={k.id}>
-                <td style={{ fontWeight: 500 }}>{k.name}</td>
+                <td style={{ fontWeight: 500 }}>
+                  {k.name}
+                  {k.last4 && (
+                    <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--dim)', fontFamily: 'monospace' }}>…{k.last4}</span>
+                  )}
+                </td>
+                {/* Which kind it is was invisible after creation: a list of
+                    names cannot tell you which key is allowed to write. */}
+                <td style={{ fontSize: 11, color: k.scope === 'write' ? 'var(--warning)' : 'var(--dim)' }}>
+                  {k.scope === 'write' ? t('settings.scope_write') : t('settings.scope_read')}
+                </td>
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{k.created_at.slice(0, 10)}</td>
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{k.last_used ? k.last_used.slice(0, 10) : t('settings.never')}</td>
                 <td>
@@ -314,8 +389,9 @@ function WebhooksTab() {
 
 // ── Schedules tab ─────────────────────────────────────────────────────────────
 function SchedulesTab() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   const confirm = useConfirm()
+  const narrow = useIsNarrow()
   const [sessions,   setSessions]  = useState<SessionInfo[]>([])
   const [sessionId,  setSessionId] = useState<string>('')
   const [schedule,   setSchedule]  = useState<JobSchedule | null>(null)
@@ -326,6 +402,29 @@ function SchedulesTab() {
   const [saved,      setSaved]     = useState(false)
   const [cronExpr,   setCron]      = useState(CRON_OPTIONS[0].value)
   const [enabled,    setEnabled]   = useState(true)
+  // Everything already armed, whatever session it belongs to. This form opens on
+  // the FIRST completed session, so an admin whose retrain lives on another one
+  // saw an empty "create a schedule" form and no sign the first existed.
+  const [allSchedules, setAllSchedules] =
+    useState<Array<JobSchedule & { session_name: string }>>([])
+
+  const [tz, setTz] = useState<TenantTimezone | null>(null)
+  const [history, setHistory] = useState<ScheduleRun[]>([])
+
+  // Instants render in the COMPANY's zone, not the reader's browser. The cron
+  // is read there now, so "cada lunes a las 6am" and this hour have to agree —
+  // on a laptop set to another zone they did not, and the screen contradicted
+  // the picker sitting right above it. Falls back to browser-local only while
+  // the zone is still loading or unavailable.
+  const inTenantZone = (iso: string) => new Date(iso).toLocaleString(lang, {
+    ...(tz ? { timeZone: tz.timezone } : {}), dateStyle: 'short', timeStyle: 'short',
+  })
+
+  const reloadAll = useCallback(() => {
+    listSchedules().then(setAllSchedules).catch(() => setAllSchedules([]))
+    getTenantTimezone().then(r => setTz(r.current)).catch(() => setTz(null))
+    listScheduleHistory(10).then(setHistory).catch(() => setHistory([]))
+  }, [])
 
   useEffect(() => {
     getSessions()
@@ -335,7 +434,8 @@ function SchedulesTab() {
         if (completed.length) setSessionId(completed[0].session_id)
       })
       .catch(e => setError(e.message))
-  }, [])
+    reloadAll()
+  }, [reloadAll])
 
   useEffect(() => {
     if (!sessionId) return
@@ -354,6 +454,11 @@ function SchedulesTab() {
     try {
       const s = await saveSchedule(sessionId, cronExpr, enabled)
       setSchedule(s); setSaved(true); setTimeout(() => setSaved(false), 3000)
+      // The "already scheduled" list exists so nobody arms a second schedule
+      // without seeing the first — it has to include the one just armed.
+      // Measured: saved a schedule, /schedules returned it, the list stayed
+      // empty until a full page reload.
+      reloadAll()
     } catch (e: any) { setError(e.message) }
     finally { setSaving(false) }
   }
@@ -361,9 +466,134 @@ function SchedulesTab() {
   const handleDelete = async () => {
     if (!(await confirm({ title: t('settings.remove_schedule_confirm'), danger: true }))) return
     setDeleting(true)
-    try { await deleteSchedule(sessionId); setSchedule(null) }
+    try { await deleteSchedule(sessionId); setSchedule(null); reloadAll() }
     catch (e: any) { setError(e.message) }
     finally { setDeleting(false) }
+  }
+
+  // Phone: what is armed and what ran as card lists, the form as full-width
+  // native pickers, and Save pinned above the tab bar.
+  if (narrow) {
+    const cronLabel = (expr: string) => {
+      const o = CRON_OPTIONS.find(x => x.value === expr)
+      return o ? t(o.labelKey) : expr
+    }
+    const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <p style={{ margin: '0 4px 14px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+          {t('settings.schedules_desc')}
+        </p>
+
+        {allSchedules.length > 0 && (
+          <MobileSection title={t('settings.schedules_active_title')}>
+            <MobileList>
+              {allSchedules.map(sc => (
+                <MobileCard
+                  key={sc.id}
+                  title={sc.session_name}
+                  subtitle={sc.last_error
+                    ? `${t('settings.schedule_last_error')} ${sc.last_error.slice(0, 90)}`
+                    : sc.next_run && sc.enabled
+                      ? `${cronLabel(sc.cron_expr)} · ${t('settings.next_run')} ${inTenantZone(sc.next_run)}`
+                      : cronLabel(sc.cron_expr)}
+                  status={sc.last_error
+                    ? { label: t('common.error'), tone: 'danger' }
+                    : !sc.enabled ? { label: t('settings.schedule_paused'), tone: 'neutral' } : undefined}
+                  selected={sc.session_id === sessionId}
+                  onClick={() => setSessionId(sc.session_id)}
+                />
+              ))}
+            </MobileList>
+          </MobileSection>
+        )}
+
+        <MobileSection>
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
+            padding: 14, display: 'flex', flexDirection: 'column', gap: 14,
+          }}>
+            <label data-tour="settings.session">
+              <span style={labelStyle}>{t('settings.session_label')}</span>
+              <Select chevron value={sessionId} onChange={e => setSessionId(e.target.value)} style={{ width: '100%' }}>
+                {sessions.length === 0 && <option value="">{t('settings.no_completed_sessions')}</option>}
+                {sessions.map(s => <option key={s.session_id} value={s.session_id}>{s.name}</option>)}
+              </Select>
+            </label>
+
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 20 }}><Spinner /></div>
+            ) : sessionId ? (
+              <>
+                <label data-tour="settings.frequency">
+                  <span style={labelStyle}>{t('settings.frequency')}</span>
+                  <Select chevron value={cronExpr} onChange={e => setCron(e.target.value)} style={{ width: '100%' }}>
+                    {CRON_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(o.labelKey)}</option>)}
+                  </Select>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--dim)', marginTop: 4, fontFamily: 'monospace' }}>{cronExpr}</span>
+                </label>
+                <label data-tour="settings.enabled" style={{
+                  display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, cursor: 'pointer', fontSize: 15, color: 'var(--text)',
+                }}>
+                  <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)}
+                         style={{ accentColor: 'var(--accent)', margin: 0 }} />
+                  {t('settings.schedule_enabled')}
+                </label>
+                {schedule?.next_run && (
+                  <div style={{ fontSize: 13, color: 'var(--dim)', lineHeight: 1.6 }}>
+                    {t('settings.next_run')} <strong style={{ color: 'var(--text)' }}>{inTenantZone(schedule.next_run)}</strong>
+                    {tz && <div>{t('settings.schedule_timezone_note', { zone: timezoneLabel(t, tz.timezone, tz.label) })}</div>}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 16, color: 'var(--dim)', fontSize: 14 }}>
+                {t('settings.no_sessions_available')}
+              </div>
+            )}
+            {error && (
+              <div role="alert" style={{ fontSize: 13, color: '#ef4444', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />{error}
+              </div>
+            )}
+          </div>
+        </MobileSection>
+
+        {history.length > 0 && (
+          <MobileSection title={t('settings.schedule_history_title')}>
+            <MobileList>
+              {history.map(run => (
+                <MobileCard
+                  key={run.id}
+                  title={run.session_name}
+                  subtitle={run.error ? `${inTenantZone(run.created_at)} · ${run.error.slice(0, 120)}` : inTenantZone(run.created_at)}
+                  status={{
+                    label: t(`settings.schedule_run_${run.status.toLowerCase()}`),
+                    tone: run.status === 'FAILED' ? 'danger' : run.status === 'COMPLETED' ? 'success' : 'neutral',
+                  }}
+                />
+              ))}
+            </MobileList>
+          </MobileSection>
+        )}
+
+        {sessionId && !loading && (
+          <StickyActionBar>
+            {schedule && (
+              <button type="button" className="mobile-btn mobile-btn-secondary" style={{ color: 'var(--danger)', flex: '0 1 40%' }}
+                      disabled={deleting} onClick={handleDelete}>
+                {deleting ? <Spinner size={16} /> : <Trash2 size={16} aria-hidden="true" />}{t('settings.remove')}
+              </button>
+            )}
+            <button type="button" className="mobile-btn mobile-btn-primary" data-tour="settings.save"
+                    disabled={saving} onClick={handleSave}>
+              {saving ? <Spinner size={16} /> : saved ? <Check size={18} aria-hidden="true" /> : null}
+              {saved ? t('settings.saved') : schedule ? t('settings.update_schedule') : t('settings.save_schedule')}
+            </button>
+          </StickyActionBar>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -371,6 +601,85 @@ function SchedulesTab() {
       <div style={{ fontSize: 12, color: 'var(--dim)' }}>
         {t('settings.schedules_desc')}
       </div>
+
+      {/* What is armed right now, across every session. The form below edits ONE
+          session and opens on the first one, so this is the only place the state
+          of the feature is visible without guessing which session to pick. */}
+      {allSchedules.length > 0 && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: '7px 12px', background: 'var(--surface)', fontSize: 11,
+                        fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase',
+                        letterSpacing: '0.05em' }}>
+            {t('settings.schedules_active_title')}
+          </div>
+          {allSchedules.map(sc => (
+            <button
+              key={sc.id}
+              onClick={() => setSessionId(sc.session_id)}
+              style={{ all: 'unset', cursor: 'pointer', display: 'flex', width: '100%',
+                       boxSizing: 'border-box', gap: 10, flexWrap: 'wrap',
+                       alignItems: 'center', padding: '8px 12px', fontSize: 12,
+                       borderTop: '1px solid var(--border)' }}
+            >
+              <span style={{ fontWeight: 600, color: 'var(--text)' }}>{sc.session_name}</span>
+              <span style={{ color: 'var(--dim)' }}>
+                {CRON_OPTIONS.find(o => o.value === sc.cron_expr)?.labelKey
+                  ? t(CRON_OPTIONS.find(o => o.value === sc.cron_expr)!.labelKey)
+                  : sc.cron_expr}
+              </span>
+              {!sc.enabled && (
+                <span style={{ color: 'var(--dim)' }}>· {t('settings.schedule_paused')}</span>
+              )}
+              {sc.next_run && sc.enabled && (
+                <span style={{ color: 'var(--dim)' }}>
+                  · {t('settings.next_run')} {inTenantZone(sc.next_run)}
+                </span>
+              )}
+              {/* A trigger that has been failing for weeks used to look exactly
+                  like a healthy one. */}
+              {sc.last_error && (
+                <span style={{ color: 'var(--signal-order-now-fg)' }}>
+                  · {t('settings.schedule_last_error')} {sc.last_error.slice(0, 90)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* What the scheduler HAS done, not just what it will do next. The
+          schedule row keeps only the last run, so a trigger that fails every
+          other night looked healthy between failures. */}
+      {history.length > 0 && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: '7px 12px', background: 'var(--surface)', fontSize: 11,
+                        fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase',
+                        letterSpacing: '0.05em' }}>
+            {t('settings.schedule_history_title')}
+          </div>
+          {history.map(run => (
+            <div key={run.id}
+                 style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline',
+                          padding: '7px 12px', fontSize: 12,
+                          borderTop: '1px solid var(--border)' }}>
+              <span style={{ color: 'var(--dim)' }}>
+                {inTenantZone(run.created_at)}
+              </span>
+              <span style={{ fontWeight: 600, color: 'var(--text)' }}>{run.session_name}</span>
+              <span style={{ color: run.status === 'FAILED' ? 'var(--signal-order-now-fg)'
+                                   : run.status === 'COMPLETED' ? 'var(--signal-ok-fg)'
+                                   : 'var(--dim)' }}>
+                {t(`settings.schedule_run_${run.status.toLowerCase()}`)}
+              </span>
+              {run.error && (
+                <span style={{ color: 'var(--dim)', maxWidth: 420, whiteSpace: 'normal' }}>
+                  {run.error.slice(0, 120)}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div data-tour="settings.session" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <label style={{ fontSize: 12, color: 'var(--dim)', whiteSpace: 'nowrap' }}>{t('settings.session_label')}</label>
@@ -414,8 +723,16 @@ function SchedulesTab() {
           </label>
 
           {schedule?.next_run && (
-            <div style={{ fontSize: 11, color: 'var(--dim)' }}>
-              {t('settings.next_run')} <strong style={{ color: 'var(--text)' }}>{new Date(schedule.next_run).toLocaleString()}</strong>
+            <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.6 }}>
+              {t('settings.next_run')} <strong style={{ color: 'var(--text)' }}>{inTenantZone(schedule.next_run)}</strong>
+              {/* Whose clock the hours in the picker refer to. The cron is now
+                  read in the tenant's timezone, so "cada lunes a las 6am" means
+                  6am there — but only if the screen says where "there" is. */}
+              {tz && (
+                <div>{t('settings.schedule_timezone_note', {
+                  zone: timezoneLabel(t, tz.timezone, tz.label),
+                })}</div>
+              )}
             </div>
           )}
 
@@ -462,21 +779,54 @@ function SchedulesTab() {
  * the tabs and their components are untouched underneath.
  */
 const ENABLED: Record<Tab, boolean> = {
-  'api-keys':  false,
+  // Turned on 2026-08-11. It was off because keys could not authenticate against
+  // the API — true when the flag was written, false now: the public surface was
+  // walked end to end with a real key (docs/public-api.md). With the tab off
+  // there was no way to obtain a key from the product at all, so the API existed
+  // for nobody.
+  'api-keys':  true,
   'webhooks':  false,
   'schedules': true,
 }
 
+// Schedules first: it is the one thing on this screen a distributor actually
+// uses (the landing sells it), while api-keys and webhooks are for wiring up
+// an ERP — nobody, for most tenants. `TABS[0]` below is also the page's
+// default tab, so this order is the only place that decision lives.
 const ALL_TABS: { id: Tab; labelKey: string; Icon: React.ComponentType<any> }[] = [
+  { id: 'schedules',  labelKey: 'settings.tab_schedules',  Icon: Clock },
   { id: 'api-keys',   labelKey: 'settings.tab_api_keys',   Icon: Key },
   { id: 'webhooks',   labelKey: 'settings.tab_webhooks',   Icon: WebhookIcon },
-  { id: 'schedules',  labelKey: 'settings.tab_schedules',  Icon: Clock },
 ]
 const TABS = ALL_TABS.filter(tab => ENABLED[tab.id])
 
 export default function SettingsPage() {
   const { t } = useLanguage()
   const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? 'schedules')
+  const narrow = useIsNarrow()
+
+  if (narrow) {
+    return (
+      <MobileFormScope>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ margin: '0 4px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>{t('settings.subtitle')}</p>
+          {TABS.length > 1 && (
+            <MobileTabs
+              ariaLabel={t('settings.title')}
+              value={tab}
+              onChange={id => setTab(id as Tab)}
+              tabs={TABS.map(({ id, labelKey, Icon }) => ({ id, label: t(labelKey), icon: <Icon size={14} /> }))}
+            />
+          )}
+          <div key={tab} className="page-enter" data-tour={`settings.${tab}`}>
+            {ENABLED['api-keys']  && tab === 'api-keys'  && <ApiKeysTab />}
+            {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
+            {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
+          </div>
+        </div>
+      </MobileFormScope>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>

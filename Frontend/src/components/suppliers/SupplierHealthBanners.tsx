@@ -65,7 +65,7 @@ export function SupplierLeadTimeAlertBanner({ alerts }: { alerts: SupplierLeadTi
   if (alerts.length === 0) return null
 
   const worst = alerts[0]
-  const color = alerts.some(a => a.severidad === 'alta') ? RED : AMBER
+  const color = alerts.some(a => a.severity === 'high') ? RED : AMBER
 
   return (
     <div style={{ ...bannerStyle(color), alignItems: 'flex-start', flexDirection: 'column', gap: 8 }}>
@@ -81,15 +81,15 @@ export function SupplierLeadTimeAlertBanner({ alerts }: { alerts: SupplierLeadTi
       {alerts.map(a => (
         <div key={a.supplier} style={{ fontSize: 12, color: 'var(--text)', paddingLeft: 24 }}>
           <strong>{a.supplier}</strong>{' '}
-          {t('suppliers.leadtime_now')} <strong style={{ color }}>{a.lead_time_reciente}</strong>{' '}
+          {t('suppliers.leadtime_now')} <strong style={{ color }}>{a.lead_time_recent}</strong>{' '}
           {t('suppliers.leadtime_days_not')}{' '}
-          <strong>{a.lead_time_historico}</strong>{' '}
+          <strong>{a.lead_time_historical}</strong>{' '}
           <span style={{ color: 'var(--dim)' }}>
-            ({t('suppliers.leadtime_based_on')} {a.n_reciente}/{a.n_baseline})
+            ({t('suppliers.leadtime_based_on')} {a.n_recent}/{a.n_baseline})
           </span>
         </div>
       ))}
-      {worst.severidad === 'alta' && (
+      {worst.severity === 'high' && (
         <div style={{ fontSize: 11, color: 'var(--dim)', paddingLeft: 24 }}>
           {t('suppliers.leadtime_advice')}
         </div>

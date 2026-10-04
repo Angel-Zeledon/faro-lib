@@ -1,7 +1,7 @@
 """
 Data freshness: the two clocks, the degraded semáforo, and the reminder that
 fires when the user has stopped opening the app (plan #6 of
-docs/friccion-onboarding-2026-07-27.md).
+the 2026-07-27 onboarding-friction review, retired 2026-08-11).
 
 What is pinned here:
 
@@ -23,6 +23,7 @@ from uuid import uuid4
 
 import pytest
 
+from backend.config import settings as config_settings
 from backend.db.connection import _json, execute, query, query_one
 from backend.notifications import freshness_service as fs
 
@@ -308,7 +309,7 @@ def _capture_emails(monkeypatch) -> list[dict]:
     from backend.notifications import email as email_mod
     monkeypatch.setattr(
         email_mod, "_send",
-        lambda to, subject, html, attachment=None: sent.append(
+        lambda to, subject, html, attachment=None, **_kw: sent.append(
             {"to": to, "subject": subject, "html": html}),
     )
     return sent
@@ -429,13 +430,13 @@ class TestFreshnessReminder:
         tid = test_tenant["id"]
         _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
         _only_this_tenant(monkeypatch, tid)
-        monkeypatch.setattr("backend.notifications.email.is_configured", lambda: True)
+        monkeypatch.setattr("backend.notifications.email.is_configured", lambda *_a, **_kw: True)
 
         # A transport that is down today and back up tomorrow.
         up = {"value": False}
         sent: list[dict] = []
 
-        def _sender(*, to, sales_age_days, stock_age_days, upload_url):
+        def _sender(*, to, sales_age_days, stock_age_days, upload_url, **_kw):
             if not up["value"]:
                 return False
             sent.append({"to": to, "sales_age_days": sales_age_days})
@@ -467,9 +468,9 @@ class TestFreshnessReminder:
         tid = test_tenant["id"]
         _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
         _only_this_tenant(monkeypatch, tid)
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_user", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_pass", "")
+        monkeypatch.setattr(config_settings, "resend_api_key", "")
+        monkeypatch.setattr(config_settings, "smtp_user", "")
+        monkeypatch.setattr(config_settings, "smtp_pass", "")
         monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
         assert fs.run_daily_freshness_reminders(NOW) == 0
@@ -508,7 +509,6 @@ class TestFreshnessReminder:
         _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
         _only_this_tenant(monkeypatch, tid)
         _capture_emails(monkeypatch)
-        monkeypatch.setattr("backend.entitlements.service.has_feature", lambda *a, **kw: True)
 
         wa_sent: list[tuple] = []
         monkeypatch.setattr(
@@ -529,23 +529,6 @@ class TestFreshnessReminder:
         assert rows[0]["status"] == "success"
         assert rows[0]["context"]["recipient"] == "+573001112222"
 
-    def test_whatsapp_is_not_sent_without_the_entitlement(
-        self, monkeypatch, registered_user, test_tenant,
-    ):
-        tid = test_tenant["id"]
-        uid = registered_user["user"]["id"]
-        execute("UPDATE users SET whatsapp_number = %s WHERE id = %s", ("+573001112222", uid))
-        _completed_session(tid, trained_days_ago=40, data_through_days_ago=40)
-        _only_this_tenant(monkeypatch, tid)
-        _capture_emails(monkeypatch)
-        monkeypatch.setattr("backend.entitlements.service.has_feature", lambda *a, **kw: False)
-        monkeypatch.setattr(
-            "backend.notifications.whatsapp.send_whatsapp",
-            lambda *a, **kw: pytest.fail("WhatsApp sent without the plan feature"))
-
-        fs.run_daily_freshness_reminders(NOW)
-        assert _activity(tid, fs.REMINDER_WHATSAPP_ACTION) == []
-
     def test_one_tenants_failure_does_not_stop_the_others(
         self, monkeypatch, registered_user, test_tenant,
     ):
@@ -563,6 +546,19 @@ class TestFreshnessReminder:
 
 
 # ── 6. It has to be wired into the loop that actually runs daily ─────────────
+#
+# `_inventory_alert_loop` reaches its three daily jobs two different ways —
+# catch up immediately after a restart (no sleep first), or sleep and wake at
+# the 08:00 boundary — and the two must be tested separately, because they
+# differ in exactly the way that used to hide a bug here. The old single test
+# faked a sleep that "returns once" without saying which branch that sleep
+# belonged to, and without controlling what `system_loop_runs` already held —
+# a table this suite never resets, so the branch taken depended on whatever an
+# earlier test (or an earlier run, on an earlier calendar day) had left there.
+# On the catch-up branch that produced SIX calls instead of three; whichever
+# branch a fresh run of the day happened to land on, the NEXT run that day saw
+# the row the first run had just written and always took the sleep branch —
+# so the test read as flaky-then-green, not reliably red.
 
 class _StopLoop(BaseException):
     """Escapes the infinite scheduler loop. A BaseException on purpose: the
@@ -570,29 +566,131 @@ class _StopLoop(BaseException):
     Same convention as tests/test_worker_schedulers.py."""
 
 
+@pytest.fixture
+def _inventory_alerts_loop_state():
+    """Isolates `system_loop_runs` for the inventory-alerts loop around a test.
+
+    That row is process-wide state (backend/workers/loop_state.py) and this
+    suite never truncates it, so a test that drives `_inventory_alert_loop`
+    must seed exactly the row it wants to react to, and must put back whatever
+    it found — otherwise it leaks into whichever test (in this file or
+    tests/test_worker_schedulers.py) runs next.
+    """
+    from backend.workers import loop_state
+    saved = query_one(
+        "SELECT last_boundary, last_run_at, last_status, last_error "
+        "FROM system_loop_runs WHERE loop = %s", (loop_state.INVENTORY_ALERTS,))
+    execute("DELETE FROM system_loop_runs WHERE loop = %s", (loop_state.INVENTORY_ALERTS,))
+    yield
+    execute("DELETE FROM system_loop_runs WHERE loop = %s", (loop_state.INVENTORY_ALERTS,))
+    if saved:
+        execute(
+            """INSERT INTO system_loop_runs
+                   (loop, last_boundary, last_run_at, last_status, last_error)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (loop_state.INVENTORY_ALERTS, saved["last_boundary"], saved["last_run_at"],
+             saved["last_status"], saved["last_error"]),
+        )
+
+
+class _MovingClock:
+    """A fake `datetime.now()` whose value only changes when told to.
+
+    The original test's fake `time.sleep` returned without moving the clock
+    at all — which is indistinguishable, to the loop, from the system clock
+    standing still (or jumping backwards) during a real sleep. That is not
+    just a test artefact: it is the exact scenario TASK 2 fixes. Tests of the
+    NORMAL path advance the clock on sleep, as a real sleep would; the
+    idempotency test below deliberately does not, to reproduce the bug.
+    """
+
+    def __init__(self, start: datetime):
+        self.current = start
+
+    def frozen_datetime(self):
+        clock = self
+
+        class _Frozen(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return clock.current
+        return _Frozen
+
+    def advance(self, seconds: float) -> None:
+        self.current += timedelta(seconds=seconds)
+
+
+def _wire_loop_calls(monkeypatch) -> list[str]:
+    """Point the loop's three daily jobs at a list recording call order."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "backend.inventory.service.run_daily_inventory_alerts",
+        lambda: calls.append("stockout"))
+    monkeypatch.setattr(
+        "backend.inventory.supplier_health_service.run_daily_supplier_lead_time_alerts",
+        lambda: calls.append("supplier_lead_time"))
+    monkeypatch.setattr(
+        fs, "run_daily_freshness_reminders", lambda: calls.append("freshness"))
+    return calls
+
+
 class TestReminderRunsInTheDailyLoop:
-    def test_the_08_utc_loop_fires_the_freshness_reminder(self, monkeypatch):
-        """A reminder nothing calls is a reminder nobody receives. Time is
-        faked — this never sleeps."""
-        from backend.workers import worker
+    def test_catch_up_path_runs_the_jobs_without_sleeping_first(
+        self, monkeypatch, _inventory_alerts_loop_state,
+    ):
+        """A restart 30 minutes after 08:00: yesterday's pass is recorded,
+        today's is not, and we are well inside the 6-hour catch-up window —
+        `missed_boundary` must hand back today's boundary and the loop must
+        run the jobs before it ever calls `time.sleep`."""
+        from backend.workers import worker, loop_state
 
-        calls: list[str] = []
-        monkeypatch.setattr(
-            "backend.inventory.service.run_daily_inventory_alerts",
-            lambda: calls.append("stockout"))
-        monkeypatch.setattr(
-            "backend.inventory.supplier_health_service.run_daily_supplier_lead_time_alerts",
-            lambda: calls.append("supplier_lead_time"))
-        monkeypatch.setattr(
-            fs, "run_daily_freshness_reminders", lambda: calls.append("freshness"))
+        now = datetime(2026, 1, 15, 8, 30, tzinfo=timezone.utc)
+        loop_state.mark_run(loop_state.INVENTORY_ALERTS,
+                             datetime(2026, 1, 14, 8, 0, tzinfo=timezone.utc))
 
-        # The first sleep returns so the loop reaches the jobs; the second one
-        # (waiting for tomorrow) ends the test.
-        slept = {"n": 0}
+        calls = _wire_loop_calls(monkeypatch)
+        clock = _MovingClock(now)
+        monkeypatch.setattr(worker, "datetime", clock.frozen_datetime())
+
+        slept: list[float] = []
 
         def _fake_sleep(secs):
-            slept["n"] += 1
-            if slept["n"] > 1:
+            # The loop's FIRST sleep call, if one ever happens, can only be
+            # the "wait for tomorrow" step that follows the catch-up pass —
+            # ending the test here proves nothing slept before the jobs ran.
+            slept.append(secs)
+            raise _StopLoop
+
+        monkeypatch.setattr(worker.time, "sleep", _fake_sleep)
+        with pytest.raises(_StopLoop):
+            worker._inventory_alert_loop()
+
+        assert calls == ["stockout", "supplier_lead_time", "freshness"]
+        assert len(slept) == 1, "a sleep happened before the catch-up jobs ran"
+
+    def test_normal_path_sleeps_then_runs_the_jobs_once(
+        self, monkeypatch, _inventory_alerts_loop_state,
+    ):
+        """06:00, well before today's boundary, with yesterday's pass already
+        recorded: nothing to catch up, the ordinary nightly wait. The fake
+        sleep advances the clock the way a real sleep would, so waking lands
+        exactly on 08:00 and the jobs run exactly once."""
+        from backend.workers import worker, loop_state
+
+        start = datetime(2026, 1, 15, 6, 0, tzinfo=timezone.utc)
+        loop_state.mark_run(loop_state.INVENTORY_ALERTS,
+                             datetime(2026, 1, 14, 8, 0, tzinfo=timezone.utc))
+
+        calls = _wire_loop_calls(monkeypatch)
+        clock = _MovingClock(start)
+        monkeypatch.setattr(worker, "datetime", clock.frozen_datetime())
+
+        slept: list[float] = []
+
+        def _fake_sleep(secs):
+            slept.append(secs)
+            clock.advance(secs)
+            if len(slept) > 1:
                 raise _StopLoop
 
         monkeypatch.setattr(worker.time, "sleep", _fake_sleep)
@@ -600,18 +698,31 @@ class TestReminderRunsInTheDailyLoop:
             worker._inventory_alert_loop()
 
         assert calls == ["stockout", "supplier_lead_time", "freshness"]
+        # First sleep carries the loop from 06:00 to 08:00 and runs the jobs;
+        # the second is the wait for tomorrow that ends the test — never a
+        # THIRD call, which would mean the jobs ran twice.
+        assert len(slept) == 2
 
-    def test_a_broken_stockout_digest_does_not_cancel_the_reminder(self, monkeypatch):
+    def test_a_broken_stockout_digest_does_not_cancel_the_reminder(
+        self, monkeypatch, _inventory_alerts_loop_state,
+    ):
         """The three daily jobs are independent: the freshness reminder is the
         only one that still has something to say when the tenant's data is so
-        old that the stockout digest cannot be computed at all."""
-        from backend.workers import worker
+        old that the stockout digest cannot be computed at all.
 
-        calls: list[str] = []
+        Driven through the same deterministic normal-path setup as the test
+        above, for the same reason: this test depended on `system_loop_runs`
+        leftovers exactly like its sibling did, just with a weaker assertion
+        (`== ["freshness"]`, which a duplicate `["freshness", "freshness"]`
+        would ALSO have failed) — so in practice the same flakiness never
+        actually got exercised here, but the fragility was identical.
+        """
+        from backend.workers import worker, loop_state
 
         def _boom():
             raise RuntimeError("stockout digest exploded")
 
+        calls: list[str] = []
         monkeypatch.setattr("backend.inventory.service.run_daily_inventory_alerts", _boom)
         monkeypatch.setattr(
             "backend.inventory.supplier_health_service.run_daily_supplier_lead_time_alerts",
@@ -619,11 +730,18 @@ class TestReminderRunsInTheDailyLoop:
         monkeypatch.setattr(
             fs, "run_daily_freshness_reminders", lambda: calls.append("freshness"))
 
-        slept = {"n": 0}
+        start = datetime(2026, 1, 15, 6, 0, tzinfo=timezone.utc)
+        loop_state.mark_run(loop_state.INVENTORY_ALERTS,
+                             datetime(2026, 1, 14, 8, 0, tzinfo=timezone.utc))
+        clock = _MovingClock(start)
+        monkeypatch.setattr(worker, "datetime", clock.frozen_datetime())
+
+        slept: list[float] = []
 
         def _fake_sleep(secs):
-            slept["n"] += 1
-            if slept["n"] > 1:
+            slept.append(secs)
+            clock.advance(secs)
+            if len(slept) > 1:
                 raise _StopLoop
 
         monkeypatch.setattr(worker.time, "sleep", _fake_sleep)
@@ -633,6 +751,88 @@ class TestReminderRunsInTheDailyLoop:
         assert calls == ["freshness"]
 
 
+class TestLoopIsIdempotentPerBoundary:
+    """TASK 2's defect: `missed_boundary` guards the top of the loop (the
+    restart path) but nothing guarded the path after the sleep. If the clock
+    does not advance past the boundary while asleep — the observable symptom
+    a backwards NTP correction produces — the loop used to run the three
+    daily jobs a second time for a boundary it had already recorded, mailing
+    every tenant a duplicate of all three digests."""
+
+    def test_a_clock_stuck_at_the_boundary_does_not_rerun_the_jobs(
+        self, monkeypatch, _inventory_alerts_loop_state,
+    ):
+        from backend.workers import worker, loop_state
+
+        # A restart 5 minutes late: catches up immediately (no sleep), then
+        # the loop goes back around. If the wall clock never advances past
+        # 08:00 through the sleeps that follow — stuck, or stepped
+        # backwards — `boundary` keeps resolving to the SAME pass catch-up
+        # already ran and recorded.
+        now = datetime(2026, 1, 15, 8, 5, tzinfo=timezone.utc)
+        loop_state.mark_run(loop_state.INVENTORY_ALERTS,
+                             datetime(2026, 1, 14, 8, 0, tzinfo=timezone.utc))
+
+        calls = _wire_loop_calls(monkeypatch)
+        clock = _MovingClock(now)
+        monkeypatch.setattr(worker, "datetime", clock.frozen_datetime())
+
+        slept: list[float] = []
+
+        def _stuck_sleep(secs):
+            slept.append(secs)
+            # Deliberately do NOT advance the clock.
+            if len(slept) > 2:
+                raise _StopLoop
+
+        monkeypatch.setattr(worker.time, "sleep", _stuck_sleep)
+        with pytest.raises(_StopLoop):
+            worker._inventory_alert_loop()
+
+        # The catch-up pass ran the jobs once. Without the guard this would
+        # read ["stockout", "supplier_lead_time", "freshness"] TWICE over.
+        assert calls == ["stockout", "supplier_lead_time", "freshness"]
+        # And it kept sleeping rather than busy-looping: each skipped repeat
+        # still went through a real, hours-long `time.sleep` call — not a
+        # tight spin of zero-second sleeps.
+        assert len(slept) == 3
+        assert all(s > 3600 for s in slept), "the guard must not busy-loop"
+
+    def test_the_ordinary_next_day_boundary_still_runs(
+        self, monkeypatch, _inventory_alerts_loop_state,
+    ):
+        """The guard must not swallow a GENUINELY new day — only a repeat of
+        one already recorded. Two full days, back to back, both fire."""
+        from backend.workers import worker, loop_state
+
+        start = datetime(2026, 1, 15, 6, 0, tzinfo=timezone.utc)
+        loop_state.mark_run(loop_state.INVENTORY_ALERTS,
+                             datetime(2026, 1, 14, 8, 0, tzinfo=timezone.utc))
+
+        calls = _wire_loop_calls(monkeypatch)
+        clock = _MovingClock(start)
+        monkeypatch.setattr(worker, "datetime", clock.frozen_datetime())
+
+        slept: list[float] = []
+
+        def _fake_sleep(secs):
+            slept.append(secs)
+            clock.advance(secs)  # a real sleep on day 2 as well
+            if len(slept) > 2:
+                raise _StopLoop
+
+        monkeypatch.setattr(worker.time, "sleep", _fake_sleep)
+        with pytest.raises(_StopLoop):
+            worker._inventory_alert_loop()
+
+        assert calls == [
+            "stockout", "supplier_lead_time", "freshness",
+            "stockout", "supplier_lead_time", "freshness",
+        ]
+        assert loop_state.last_boundary(loop_state.INVENTORY_ALERTS) == datetime(
+            2026, 1, 16, 8, 0, tzinfo=timezone.utc)
+
+
 # ── 7. The message layer itself ──────────────────────────────────────────────
 
 class TestReminderMessages:
@@ -640,9 +840,9 @@ class TestReminderMessages:
         """Same contract as every other sender: a non-delivery is never a send."""
         from backend.notifications import email as email_mod
 
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_user", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_pass", "")
+        monkeypatch.setattr(config_settings, "resend_api_key", "")
+        monkeypatch.setattr(config_settings, "smtp_user", "")
+        monkeypatch.setattr(config_settings, "smtp_pass", "")
         monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
         assert email_mod.send_data_freshness_reminder_email(
@@ -655,7 +855,8 @@ class TestReminderMessages:
 
         sales_only = build_freshness_reminder_text(34, None, "http://x/quick-start")
         assert "34 días" in sales_only
-        assert "stock" not in sales_only.lower()
+        # Not a bare "stock" substring: the brand, StockAI, contains it.
+        assert "tu stock" not in sales_only.lower()
 
         stock_only = build_freshness_reminder_text(None, 25, "http://x/quick-start")
         assert "25 días" in stock_only

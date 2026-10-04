@@ -178,7 +178,7 @@ const SKU_HINTS  = ['sku', 'producto', 'product', 'articulo', 'artículo', 'item
 // (forecasting_core/data/canonical.py `REQUIRED_FIELDS`); the rest are optional
 // and may be deleted.
 
-export const CSV_TEMPLATE_FILENAME = 'plantilla_faro.csv'
+export const CSV_TEMPLATE_FILENAME = 'plantilla_stockai.csv'
 
 /** Canonical header row of the template, in order. */
 export const CSV_TEMPLATE_HEADERS = [

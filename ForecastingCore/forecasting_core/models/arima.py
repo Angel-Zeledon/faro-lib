@@ -27,8 +27,22 @@ def run_arima_core(df, dt, target, group, train_ratio, min_rows, seasonal_period
         try:
             model = ARIMA(series.iloc[:cut], order=order).fit()
             preds = model.forecast(len(series) - cut)
-            result = evaluate_all(series.iloc[cut:].values, preds.values)
+            test_actual = series.iloc[cut:].values
+            test_pred = preds.values
+            result = evaluate_all(test_actual, test_pred)
+            # See models/ets.py for the full rationale: `cost_horizon` is
+            # windowed to `min(horizon, len(test))` so ARIMA is asked the same
+            # h-step question as every other family, while
+            # mae/rmse/wape/bias/mape/smape/cost keep covering the whole
+            # held-out tail — a separate, still-useful question.
+            result["cost_horizon"] = None
+            result["horizon_steps"] = None
             if horizon > 0:
+                h_steps = min(horizon, len(test_actual))
+                result["cost_horizon"] = evaluate_all(
+                    test_actual[:h_steps], test_pred[:h_steps]
+                )["cost"]
+                result["horizon_steps"] = h_steps
                 full_model = ARIMA(series, order=order).fit()
                 fc_obj = full_model.get_forecast(steps=horizon)
                 fc_mean = fc_obj.predicted_mean.values

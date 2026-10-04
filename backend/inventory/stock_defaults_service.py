@@ -224,14 +224,40 @@ def build_rule_index(tenant_id: str) -> dict:
         # `suppliers.lead_time_days` is NOT NULL DEFAULT 15, so without the
         # provenance flag every supplier row would inject a 15 nobody chose and
         # the SKU would proudly report 'supplier_rule' for our own assumption.
+        # Deactivated suppliers are INCLUDED here, deliberately.
+        #
+        # Deactivating a supplier means "stop acting towards them" — do not
+        # auto-send a PO, do not pick them for new work. That is why
+        # `supplier_service` keeps its own `active` filter. It does NOT mean
+        # "forget what we know about them", and this index is knowledge.
+        #
+        # Filtering here made a deactivation silently degrade planning: the
+        # card's declared lead time vanished and every SKU naming that supplier
+        # fell back to the 15-day SYSTEM DEFAULT — a worse number than the one
+        # the user had typed, applied without a word. Worse, it was the odd one
+        # out: a `stock_defaults` rule scoped to the same supplier name kept
+        # applying (it is keyed by free text and never joined to `suppliers`),
+        # and so did the lead time LEARNED from that supplier's receptions.
+        # Three sources of "this supplier's lead time", one of them reacting to
+        # a deactivation and two ignoring it.
+        #
+        # Now none of them react, which is the coherent half: the SKU still
+        # names that supplier, so the honest planning input is still what that
+        # supplier's deliveries showed. Pointing the SKU somewhere else is the
+        # act that should change its lead time — and that act is editing the
+        # SKU, not archiving a card.
         for s in query(
             "SELECT name, lead_time_days FROM suppliers "
-            "WHERE tenant_id = %s AND active = TRUE "
-            "  AND lead_time_days IS NOT NULL AND lead_time_set_by IS NOT NULL",
+            "WHERE tenant_id = %s "
+            "  AND lead_time_days IS NOT NULL AND lead_time_set_by IS NOT NULL "
+            "ORDER BY COALESCE(active, TRUE) DESC",
             (tenant_id,),
         ):
             name = (s.get("name") or "").strip().lower()
-            if name:
+            # First writer wins, and the ORDER BY puts active rows first: two
+            # cards differing only in case ('andina' beside 'Andina') collapse
+            # to one key here, and the live one has to be the one that answers.
+            if name and name not in idx["supplier"]:
                 idx["supplier"][name] = {"lead_time_days": s["lead_time_days"]}
     except Exception as e:
         log.warning("supplier lead-time index unavailable tenant=%s: %s", tenant_id, e)

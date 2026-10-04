@@ -1,6 +1,6 @@
 """
 End-to-end pipeline tests for forecasting_core.
-Tests the full Pipeline.run() flow and the _ml_recursive_forecast helper.
+Tests the full Pipeline.run() flow.
 """
 
 import pytest
@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.config.config import SessionConfig
-from forecasting_core.pipelines.pipeline import Pipeline, PipelineResults, _ml_recursive_forecast
+from forecasting_core.pipelines.pipeline import Pipeline, PipelineResults
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -38,76 +38,6 @@ def _make_sales_df(n=100, skus=("A", "B"), seed=0):
         for i, d in enumerate(pd.date_range("2021-01-01", periods=n, freq="D")):
             rows.append({"date": d, "sku": sku, "sales": float(sales[i])})
     return pd.DataFrame(rows)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# _ml_recursive_forecast unit tests
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestMlRecursiveForecast:
-
-    def _make_model(self):
-        from lightgbm import LGBMRegressor
-        rng = np.random.default_rng(0)
-        X = rng.normal(0, 1, (100, 3))
-        y = X[:, 0] * 2 + 10
-        model = LGBMRegressor(n_estimators=10, verbosity=-1)
-        model.fit(X, y)
-        return model
-
-    def test_output_length_equals_horizon(self):
-        model = self._make_model()
-        history = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-        feat = np.array([50.0, 45.0, 3.0])
-        names = ["lag_1", "lag_2", "other"]
-        preds = _ml_recursive_forecast(model, history, feat, names, horizon=5)
-        assert len(preds) == 5
-
-    def test_predictions_are_non_negative(self):
-        model = self._make_model()
-        history = np.arange(10, dtype=float)
-        feat = np.array([10.0, 8.0, 3.0])
-        names = ["lag_1", "lag_2", "other"]
-        preds = _ml_recursive_forecast(model, history, feat, names, horizon=7)
-        assert (preds >= 0).all()
-
-    def test_lag_features_update_correctly(self):
-        """A model that returns lag_1 exactly should give a random walk."""
-        from sklearn.base import BaseEstimator
-        class IdentityLag(BaseEstimator):
-            def predict(self, X):
-                return X[:, 0]  # returns lag_1
-
-        model = IdentityLag()
-        history = np.array([19.0])
-        feat = np.array([19.0])  # lag_1 = 19
-        names = ["lag_1"]
-        preds = _ml_recursive_forecast(model, history, feat, names, horizon=4)
-        # With lag_1 = previous pred and identity model: [19, 19, 19, 19]
-        assert preds[0] == pytest.approx(19.0)
-
-    def test_empty_history_does_not_crash(self):
-        model = self._make_model()
-        preds = _ml_recursive_forecast(model, np.array([]), np.array([0.0, 0.0, 0.0]),
-                                       ["lag_1", "lag_2", "x"], horizon=3)
-        assert len(preds) == 3
-
-    def test_no_lag_columns_in_feature_names(self):
-        model = self._make_model()
-        history = np.arange(10, dtype=float)
-        feat = np.array([10.0, 5.0, 2.0])
-        # No lag_* columns → no buffer updates, still runs
-        preds = _ml_recursive_forecast(model, history, feat, ["a", "b", "c"], horizon=3)
-        assert len(preds) == 3
-
-    def test_model_exception_uses_buffer_fallback(self):
-        from sklearn.base import BaseEstimator
-        class FailModel(BaseEstimator):
-            def predict(self, X): raise RuntimeError("always fails")
-
-        preds = _ml_recursive_forecast(FailModel(), np.array([42.0]), np.array([42.0]), ["lag_1"], horizon=3)
-        assert len(preds) == 3
-        assert all(p >= 0 for p in preds)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -357,6 +287,66 @@ class TestPipelineInventory:
         # Clipped to 0 → should produce valid result (not NaN or crash)
         assert inv is not None
 
+    # -- Safety stock driven by the q90 band, not forecast-path dispersion ----
+
+    def test_flat_forecast_with_q90_band_gets_nonzero_safety_stock(self):
+        """A flat, constant-value forecast is what a GOOD model produces on a
+        stable SKU, and np.std(a constant array) == 0. Before wiring q90 in,
+        InventoryAdvisor.recommend() defaulted demand_std to np.std(forecast)
+        whenever _inventory called it without std_by_sku — so every
+        stable SKU got safety_stock == 0 regardless of the model's actual
+        uncertainty. A q90 band above the flat forecast must now produce a
+        positive cushion."""
+        pipeline, df, c, b, h = self._setup(horizon=7)
+        rows = [
+            {"sku": "A", "model": "lgbm", "step": s, "forecast": 50.0, "q90": 70.0}
+            for s in range(1, h + 1)
+        ]
+        fc_df = pd.DataFrame(rows)
+        inv = pipeline._inventory(df, c, b, h, forecast_df=fc_df)
+        safety_stock = inv.loc[inv["sku"] == "A", "safety_stock"].values[0]
+        assert safety_stock > 0
+
+    def test_safety_stock_matches_q90_derived_sigma_exactly(self):
+        """sigma fed to the advisor must be exactly (q90 - forecast) / 1.2816
+        — the same quantity backend/inventory/service.py::_point_sigma
+        computes — not np.std(forecast) or some other derivation. A flat
+        forecast with a known band lets the expected safety_stock be computed
+        independently (z * sigma * sqrt(lead_time_days)) and compared."""
+        from scipy import stats as scipy_stats
+        pipeline, df, c, b, h = self._setup(horizon=7)
+        sigma = 10.0
+        q90_z = 1.2816  # norm.ppf(0.9)
+        band = sigma * q90_z
+        rows = [
+            {"sku": "A", "model": "lgbm", "step": s, "forecast": 50.0, "q90": 50.0 + band}
+            for s in range(1, h + 1)
+        ]
+        fc_df = pd.DataFrame(rows)
+        inv = pipeline._inventory(df, c, b, h, forecast_df=fc_df)
+        safety_stock = inv.loc[inv["sku"] == "A", "safety_stock"].values[0]
+        z = float(scipy_stats.norm.ppf(b.service_level))
+        expected = z * sigma * np.sqrt(b.lead_time_days)
+        assert safety_stock == pytest.approx(expected, rel=0.02)
+
+    # -- The engine has no stock source: unknown, never an assumed zero ------
+
+    def test_engine_generated_inventory_reports_stock_as_unknown(self):
+        """Pipeline._inventory never has a stocks_by_sku source — there is no
+        stock column anywhere in the engine's inputs. Before the None-state
+        fix, batch_recommend() defaulted every SKU's current_stock to 0.0,
+        which produced stockout_risk~1.0, days_coverage=0.0 and
+        action="REORDER" for every single SKU regardless of the real stock
+        position (see backend/ai/rag_service.py ~line 723 for where that
+        reached a tenant as "100% of your products are critical"). It must
+        now come back as an explicit unknown, not a number."""
+        pipeline, df, c, b, h = self._setup(horizon=7)
+        fc_df = self._make_forecast_df(["A", "B"], h, demand=100.0)
+        inv = pipeline._inventory(df, c, b, h, forecast_df=fc_df)
+        assert inv["stockout_risk"].isna().all()
+        assert inv["days_coverage"].isna().all()
+        assert (inv["action"] == "UNKNOWN").all()
+
     # -- Fallback to historical mean -----------------------------------------
 
     def test_falls_back_to_historical_mean_when_no_forecast(self):
@@ -502,3 +492,188 @@ class TestForecastDfEnsembleAndQuantiles:
         others = fdf[fdf["model"] != "ensemble"]["forecast"].values
         assert ens.min() >= 0.0
         assert ens.max() <= others.max() * 1.01  # allow tiny float rounding
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline._demand_risk (stability.md 17b) — the per-SKU cumulative band
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Unit-level tests against fabricated `results_ml` entries rather than a full
+# Pipeline.run(): the property under test is how `_demand_risk` reads and
+# filters `Trainer`'s pooled bank, not whether training itself succeeds — that
+# is what test_training.py's TestCumulativeResidualBank* classes cover.
+
+class _FakeProfile:
+    def __init__(self, scale):
+        self.scale = scale
+
+
+class _FakeGlobalForecaster:
+    """Stands in for `GlobalDirectForecaster` — `_demand_risk` only reads
+    `.cumulative_residuals_by_horizon` and `.profile.scale` off it."""
+
+    def __init__(self, cumulative, scale):
+        self.cumulative_residuals_by_horizon = cumulative
+        self.profile = _FakeProfile(scale)
+
+
+def _ascending_residuals(n, scale=1.0):
+    """n ascending values scaled by `scale`. `np.quantile(., 0.95)` on this
+    array is deterministic (index 0.95*(n-1), linear interpolation) — for
+    n=40 that is exactly `37.05 * scale` — which is what the monotonicity
+    test below depends on to predict the exact clamped value."""
+    return (np.arange(n, dtype=float) * scale).tolist()
+
+
+class TestDemandRiskBank:
+
+    def _pipeline(self):
+        return Pipeline(_make_config())
+
+    # -- thin evidence: a horizon below the floor publishes nothing --------
+
+    def test_horizon_below_the_floor_is_dropped(self):
+        from forecasting_core.evaluation.conformal import MIN_RESIDUALS_PER_HORIZON
+        entry = {
+            "sku": "S1", "model": "lgbm",
+            "cumulative_residuals_by_horizon": {
+                1: _ascending_residuals(MIN_RESIDUALS_PER_HORIZON - 1),
+            },
+            "series_scale": 10.0,
+        }
+        pipeline = self._pipeline()
+        pipeline._champion_by_sku = {"S1": "lgbm"}
+        risk = pipeline._demand_risk({"lgbm_S1": entry}, [0.95])
+        assert "S1" not in risk, (
+            "a horizon under MIN_RESIDUALS_PER_HORIZON must not publish a "
+            "quantile fabricated from a handful of points"
+        )
+
+    def test_horizon_at_the_floor_publishes(self):
+        """The boundary itself — not just comfortably above or below it."""
+        from forecasting_core.evaluation.conformal import MIN_RESIDUALS_PER_HORIZON
+        entry = {
+            "sku": "S1", "model": "lgbm",
+            "cumulative_residuals_by_horizon": {
+                1: _ascending_residuals(MIN_RESIDUALS_PER_HORIZON),
+            },
+            "series_scale": 10.0,
+        }
+        pipeline = self._pipeline()
+        pipeline._champion_by_sku = {"S1": "lgbm"}
+        risk = pipeline._demand_risk({"lgbm_S1": entry}, [0.95])
+        assert "S1" in risk
+
+    def test_no_folds_at_all_emits_no_band(self):
+        entry = {
+            "sku": "S1", "model": "lgbm",
+            "cumulative_residuals_by_horizon": {},
+            "series_scale": 10.0,
+        }
+        pipeline = self._pipeline()
+        pipeline._champion_by_sku = {"S1": "lgbm"}
+        risk = pipeline._demand_risk({"lgbm_S1": entry}, [0.95])
+        assert risk == {}
+
+    # -- one band per SKU, and it is the champion's -------------------------
+
+    def test_champion_band_survives_over_a_later_global_entry(self):
+        """
+        THE regression this task exists to prevent.
+
+        `results_ml` holds one entry per (model, SKU), and the global model's
+        results are `.update()`-d in AFTER the per-SKU ones (pipeline.py
+        step 7c). Before the fix, iterating `results_ml.values()` let the
+        later global entry overwrite the earlier per-SKU one at the same SKU
+        key regardless of which one was actually the champion — every
+        per-SKU champion silently lost its band to `global_lgbm`.
+        """
+        n = 40
+        per_sku_entry = {
+            "sku": "S1", "model": "xgboost",
+            "cumulative_residuals_by_horizon": {1: _ascending_residuals(n, scale=1.0)},
+            "series_scale": 10.0,
+        }
+        global_entry = {
+            "sku": "S1", "model": "global_lgbm",
+            "direct_forecaster": _FakeGlobalForecaster(
+                cumulative={1: _ascending_residuals(n, scale=5.0)}, scale=5.0,
+            ),
+        }
+        # Insertion order mirrors the real pipeline: per-SKU results first,
+        # global results merged in afterwards.
+        results_ml = {"xgboost_S1": per_sku_entry, "global_lgbm_S1": global_entry}
+
+        pipeline = self._pipeline()
+        pipeline._champion_by_sku = {"S1": "xgboost"}
+        risk = pipeline._demand_risk(results_ml, [0.95])
+
+        assert risk["S1"]["model"] == "xgboost", (
+            "the later global entry overwrote the per-SKU champion's band"
+        )
+
+    def test_global_champion_still_wins_when_it_actually_is_the_champion(self):
+        """The fix must not simply always prefer the per-SKU model — when the
+        global model genuinely is the champion its existing (pre-17b) path
+        through `direct_forecaster` must still be the one that is read."""
+        n = 40
+        per_sku_entry = {
+            "sku": "S1", "model": "xgboost",
+            "cumulative_residuals_by_horizon": {1: _ascending_residuals(n, scale=1.0)},
+            "series_scale": 10.0,
+        }
+        global_entry = {
+            "sku": "S1", "model": "global_lgbm",
+            "direct_forecaster": _FakeGlobalForecaster(
+                cumulative={1: _ascending_residuals(n, scale=5.0)}, scale=5.0,
+            ),
+        }
+        results_ml = {"xgboost_S1": per_sku_entry, "global_lgbm_S1": global_entry}
+
+        pipeline = self._pipeline()
+        pipeline._champion_by_sku = {"S1": "global_lgbm"}
+        risk = pipeline._demand_risk(results_ml, [0.95])
+
+        assert risk["S1"]["model"] == "global_lgbm"
+        # Read from the forecaster's own band and scale, not the per-SKU
+        # entry's series_scale (10.0, which would give a different number).
+        expected_offset = round(
+            float(np.quantile(_ascending_residuals(n, scale=5.0), 0.95)) * 5.0, 4,
+        )
+        assert risk["S1"]["cumulative_offsets"]["1"]["0.95"] == pytest.approx(expected_offset)
+
+    # -- cumulative bands are monotonic in the horizon -----------------------
+
+    def test_bands_are_non_decreasing_across_the_horizon(self):
+        """
+        A dip at h=2 below h=1 is sampling noise, not a real property — the
+        uncertainty of a sum cannot shrink as terms are added to it.
+        `enforce_horizon_monotonic` exists precisely for this.
+        """
+        n = 40
+        entry = {
+            "sku": "S1", "model": "lgbm",
+            "cumulative_residuals_by_horizon": {
+                1: _ascending_residuals(n, scale=1.0),   # raw q95 ~= 37.05
+                2: _ascending_residuals(n, scale=0.5),   # raw q95 ~= 18.525 (the dip)
+                3: _ascending_residuals(n, scale=2.0),   # raw q95 ~= 74.1
+            },
+            "series_scale": 1.0,
+        }
+        pipeline = self._pipeline()
+        pipeline._champion_by_sku = {"S1": "lgbm"}
+        risk = pipeline._demand_risk({"lgbm_S1": entry}, [0.95])
+        offsets = risk["S1"]["cumulative_offsets"]
+        v1 = offsets["1"]["0.95"]
+        v2 = offsets["2"]["0.95"]
+        v3 = offsets["3"]["0.95"]
+
+        assert v1 <= v2 <= v3, f"bands are not monotonic in the horizon: {v1}, {v2}, {v3}"
+        # Not merely non-decreasing by coincidence: h=2's own raw quantile
+        # (~18.525) is smaller than h=1's (~37.05). A monotone result at h=2
+        # equal to h=1 proves the dip was actually clamped upward, not that
+        # this fixture happened not to trigger it.
+        assert v2 == pytest.approx(v1), (
+            f"h=2 reported its own (smaller) empirical quantile {v2} instead "
+            f"of being clamped to h=1's {v1}"
+        )

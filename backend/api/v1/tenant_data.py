@@ -34,7 +34,7 @@ def export_tenant_data(user: CurrentUser = Depends(require_admin)):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
-    filename = f"faro_export_{user.tenant_id}_{date.today().isoformat()}.zip"
+    filename = f"stockai_export_{user.tenant_id}_{date.today().isoformat()}.zip"
     return StreamingResponse(
         iter([zip_bytes]),
         media_type="application/zip",

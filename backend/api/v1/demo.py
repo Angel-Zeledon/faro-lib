@@ -1,5 +1,6 @@
 """
-One-click demo (quick-start feature 1.2, docs/features_propuestas_faro_2026-07-05.md).
+One-click demo (quick-start feature 1.2 of the 2026-07-05 proposals; that doc
+ was retired in the 2026-08-11 docs cleanup and lives in git history).
 
 POST /demo/quickstart seeds everything a new user would otherwise have to
 prepare by hand — bundled sales dataset, column mapping, model/validation
@@ -49,8 +50,8 @@ _DEMO_STOCK = {
 }
 
 # Same defaults the quick-start wizard posts (Frontend quick-start page).
-# Lifted into backend/sessions/defaults.py so the accounting-integrations
-# sync service can seed the identical six config blobs (pure constant
+# Lifted into backend/sessions/defaults.py so any future auto-provisioning
+# path seeds the identical six config blobs rather than its own (pure constant
 # extraction — this call returns an equal dict each time).
 _DEMO_CONFIGS = default_quickstart_configs()
 
@@ -129,7 +130,7 @@ def demo_quickstart(
     )
 
     # 2. Session with dataset attached and the quick-start configs pre-seeded
-    session_name = ((body.name if body else None) or "").strip() or "Demo Faro"
+    session_name = ((body.name if body else None) or "").strip() or "Demo StockAI"
     s = session_svc.create_session(user.tenant_id, user.user_id, session_name)
     session_id = s["session_id"] if "session_id" in s else s["id"]
     session_svc.attach_dataset(user.tenant_id, session_id, dataset_id)
@@ -145,8 +146,8 @@ def demo_quickstart(
             inv_svc.upsert_stock(user.tenant_id, sku, stock)
             seeded.append(sku)
 
-    # 4. Train — fan out into the granularity family (same path the wizard and
-    # the integrations sync now use).
+    # 4. Train — fan out into the granularity family (the same path the
+    # wizard uses).
     from backend.sessions import family_service as fam
     family = fam.launch_training_family(
         user.tenant_id, session_id, user.user_id,

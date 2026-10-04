@@ -1,6 +1,5 @@
 """Team messaging — 1-to-1 direct messages between users of the same tenant.
 
-Professional-plan feature (Feature.TEAM_MESSAGING gates the whole router).
 Viewers can chat too: messaging is communication, not a business-data
 mutation, so the security boundary here is the tenant, not the role.
 """
@@ -14,8 +13,6 @@ from pydantic import BaseModel, Field
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.config import settings
 from backend.db.connection import execute, query, query_one
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
 from backend.notifications import sms, whatsapp
 from backend.notifications.locale import render_es
 from backend.preferences import service as pref_svc
@@ -26,7 +23,6 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/messages",
     tags=["messages"],
-    dependencies=[Depends(require_feature(Feature.TEAM_MESSAGING))],
 )
 
 _MAX_BODY_LEN = 4000
@@ -232,7 +228,8 @@ def _maybe_send_heads_up(sender: CurrentUser, recipient: dict, new_message_id: i
             url=f"{settings.frontend_url.rstrip('/')}/mensajes",
         )
         number = recipient["whatsapp_number"]
-        if not whatsapp.send_whatsapp_and_confirm(number, text):
-            sms.send_sms(number, text)
+        if not whatsapp.send_whatsapp_and_confirm(number, text,
+                                                  tenant_id=sender.tenant_id):
+            sms.send_sms(number, text, tenant_id=sender.tenant_id)
     except Exception as exc:
         log.error("DM heads-up notification failed (message %s): %s", new_message_id, exc)

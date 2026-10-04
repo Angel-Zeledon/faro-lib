@@ -1,8 +1,10 @@
 import {
   ShoppingCart, ClipboardList, Package, Boxes, Truck, TrendingUp, Database,
-  History, BrainCircuit, FlaskConical, Plug, Settings, Users, KeyRound,
-  Upload, Plus, SunMoon, Languages, type LucideIcon,
+  History, MessagesSquare, FlaskConical, Plug, Settings, Users, KeyRound,
+  Upload, Plus, SunMoon, Languages, LifeBuoy, MessageSquare, ListChecks, ScrollText,
+  Clock, Code2, ServerCog, User, type LucideIcon,
 } from 'lucide-react'
+import { siteHref } from '@/lib/siteUrls'
 import type { InventoryStatusItem } from '@/lib/types'
 
 /**
@@ -36,7 +38,6 @@ export interface Command {
   aliasKey?: string
   Icon: LucideIcon
   /** Backend `Feature` value gating this command; absent = always available. */
-  feature?: string
   adminOnly?: boolean
   /** Hidden for viewers, who cannot perform mutating actions. */
   writerOnly?: boolean
@@ -54,15 +55,22 @@ export const COMMANDS: Command[] = [
   { id: 'go.roi',          group: 'navigate', href: '/impacto',       labelKey: 'nav.roi',           aliasKey: 'cmd.alias.roi',        Icon: TrendingUp },
   { id: 'go.data',         group: 'navigate', href: '/archivos',                labelKey: 'nav.data',          aliasKey: 'cmd.alias.data',       Icon: Database },
   { id: 'go.sessions',     group: 'navigate', href: '/historial',            labelKey: 'nav.sessions',      aliasKey: 'cmd.alias.sessions',   Icon: History },
-  { id: 'go.analyst',      group: 'navigate', href: '/asistente',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: BrainCircuit, feature: 'ai_analyst' },
-  { id: 'go.scenarios',    group: 'navigate', href: '/escenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical, feature: 'event_simulator' },
-  // Integraciones is hidden from the sidebar for now (see the note there), so
-  // it must not be reachable from the palette either — a command palette that
-  // navigates somewhere the nav deliberately hides is a back door, not a
-  // shortcut.
-  { id: 'go.config',       group: 'navigate', href: '/mi-cuenta',              labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
-  { id: 'go.users',        group: 'navigate', href: '/usuarios',               labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
-  { id: 'go.api',          group: 'navigate', href: '/automatizacion',            labelKey: 'nav.settings',                                        Icon: KeyRound,     adminOnly: true, feature: 'scheduled_reports' },
+  { id: 'go.analyst',      group: 'navigate', href: '/asistente',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: MessagesSquare },
+  { id: 'go.scenarios',    group: 'navigate', href: '/escenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical },
+  // The palette lists EVERY screen, including the ones the sidebar now
+  // reaches through Pronósticos, Inventario or Configuración: it is the power
+  // user's shortcut past the hubs. It must still hide what role hides
+  // (adminOnly, same rule as components/layout/navItems.ts) — a palette entry
+  // to a screen the nav withholds is a back door, not a shortcut.
+  { id: 'go.messages',     group: 'navigate', href: '/mensajes',             labelKey: 'nav.messages',      aliasKey: 'cmd.alias.messages',   Icon: MessageSquare },
+  { id: 'go.inventory_setup', group: 'navigate', href: '/configurar-inventario', labelKey: 'nav.inventory_setup', aliasKey: 'cmd.alias.inventory_setup', Icon: ListChecks },
+  { id: 'go.activity',     group: 'navigate', href: '/actividad',            labelKey: 'nav.activity',      aliasKey: 'cmd.alias.activity',   Icon: ScrollText },
+  { id: 'go.config',       group: 'navigate', href: '/configuracion',        labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
+  { id: 'go.account',      group: 'navigate', href: '/mi-cuenta',            labelKey: 'nav.account',       aliasKey: 'cmd.alias.account',    Icon: User },
+  { id: 'go.users',        group: 'navigate', href: '/usuarios',             labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
+  { id: 'go.automation',   group: 'navigate', href: '/automatizacion',       labelKey: 'nav.automation',    aliasKey: 'cmd.alias.automation', Icon: Clock,        adminOnly: true },
+  { id: 'go.api',          group: 'navigate', href: '/api',                  labelKey: 'nav.api',                                             Icon: Code2 },
+  { id: 'go.installation', group: 'navigate', href: '/instalacion',          labelKey: 'nav.installation',                                    Icon: ServerCog,    adminOnly: true },
 
   // ── Do ─────────────────────────────────────────────────────────────────────
   { id: 'act.upload',    group: 'action', href: '/ventas',   labelKey: 'cmd.upload_sales',    aliasKey: 'cmd.alias.upload',       Icon: Upload,    writerOnly: true },
@@ -71,18 +79,15 @@ export const COMMANDS: Command[] = [
   { id: 'act.new_order', group: 'action', href: '/pedidos?new=1', labelKey: 'cmd.create_order',    aliasKey: 'cmd.alias.create_order', Icon: Plus,      writerOnly: true },
   { id: 'act.theme',     group: 'action',                         labelKey: 'cmd.toggle_theme',    aliasKey: 'cmd.alias.theme',        Icon: SunMoon,   run: c => c.toggleTheme() },
   { id: 'act.language',  group: 'action',                         labelKey: 'cmd.toggle_language', aliasKey: 'cmd.alias.language',     Icon: Languages, run: c => c.setLang(c.lang === 'es' ? 'en' : 'es') },
+  // The help center is on the landing (maybe another origin): a new tab, not a route.
+  { id: 'act.help',      group: 'action',                         labelKey: 'help.center',         aliasKey: 'cmd.alias.help',         Icon: LifeBuoy,  run: () => { window.open(siteHref('/docs'), '_blank', 'noopener') } },
 ]
 
-/**
- * Locked features are hidden, never padlocked — the same choice the nav made,
- * for the same reason: a palette that lists four things the tenant cannot do
- * teaches them about their plan instead of about their work.
- */
-export function visibleCommands(has: (f: string) => boolean, role?: string): Command[] {
+/** What this user may reach. Role only: there are no locked features left. */
+export function visibleCommands(role?: string): Command[] {
   return COMMANDS.filter(c => {
     if (c.adminOnly && role !== 'admin') return false
     if (c.writerOnly && role === 'viewer') return false
-    if (c.feature && !has(c.feature)) return false
     return true
   })
 }
