@@ -21,7 +21,7 @@ export const ASSISTANT: DocSectionContent<DocPageIdOf<'asistente'>> = {
         { t: 'ul', items: [
           'Quién eres (tu nombre, tu rol y tu empresa) y qué tan reciente es tu pronóstico.',
           'Los productos en rojo y en ámbar de hoy, con la cantidad sugerida, la cobertura, el proveedor y su tiempo de entrega.',
-          'El sobrestock y la plata parada en él.',
+          'El sobrestock y el dinero parado en él.',
           'Tus órdenes de compra abiertas y las atrasadas.',
           'El tiempo de entrega real y la confiabilidad de tus proveedores.',
           'La tendencia de la demanda, los picos que vienen y lo que hiciste últimamente en StockAI.',

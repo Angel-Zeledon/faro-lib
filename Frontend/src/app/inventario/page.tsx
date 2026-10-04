@@ -2072,7 +2072,7 @@ export default function InventoryPage() {
  const [suppliers, setSuppliers] = useState<Supplier[]>([])
  const importRef = useRef<HTMLInputElement>(null)
  const savingRef = useRef(false)
- // "Plata parada" (capital parado): the one view of money that is not
+ // "Dinero parado" (capital parado): the one view of money that is not
  // moving — needs no session, reads real stock-level history. See
  // getDeadCapital. The session-bound "dead stock" view it used to sit beside
  // was retired 2026-09-30 (stability.md 19.2).
@@ -2149,7 +2149,7 @@ export default function InventoryPage() {
 
  useEffect(() => { if (sessionId) load(sessionId) }, [sessionId, load])
 
- // ── Dead capital ("plata parada") load ─────────────────────────────────────
+ // ── Dead capital ("dinero parado") load ─────────────────────────────────────
  // No session dependency: it works off real stock-level history alone, so a
  // tenant with no completed session yet can still see it.
  useEffect(() => {
@@ -3317,7 +3317,7 @@ export default function InventoryPage() {
  </div>
 
  ) : viewMode === 'capital' ? (
- /* ── Capital parado / "plata parada" ─────────────────────────
+ /* ── Capital parado / "dinero parado" ─────────────────────────
     The one view of money that is not moving: needs no session, ranks every
     SKU by money that has not moved (real stock-level history), worst first,
     with the tenant's total at the top. See getDeadCapital / dead_capital.py. */

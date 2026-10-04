@@ -11,6 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from backend.ai.style_rules import MONEY_WORDING_RULE
 from backend.assistant import grounding
 from backend.assistant import tools as assistant_tools
 from backend.assistant.account import AccountData
@@ -91,7 +92,7 @@ then one concrete next step. No filler, no generic advice that ignores their num
 
 Language: always answer in {LANGUAGE_NAMES[ctx.language]}. In Spanish, write neutral Latin \
 American Spanish with "tu" forms — never voseo ("decime", "contame", "sabes" stressed on \
-the last syllable): say "dime", "cuentame", "sabes".
+the last syllable): say "dime", "cuentame", "sabes". {MONEY_WORDING_RULE}
 
 Facts — these rules are checked after you answer:
 - Every number you write must appear in the ACCOUNT DATA or in a tool result of this \

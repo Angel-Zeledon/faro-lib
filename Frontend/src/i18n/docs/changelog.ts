@@ -34,7 +34,7 @@ export const CHANGELOG: DocSectionContent<'novedades'> = {
           '**Servidor MCP de solo lectura**: un asistente de IA compatible (por ejemplo Claude) puede consultar tu cuenta con una llave de API y preguntar qué comprar hoy. Ver [MCP](/docs/integraciones/mcp).',
           '**Deshacer en Pedidos:** «Deshacer recepción» devuelve las unidades y quita lo que esa recepción enseñó sobre el proveedor; «Deshacer envío» marca la orden como no enviada.',
           '**Vista comprador y vista técnica** en Pronósticos: la vista comprador muestra solo lo que hace falta para decidir; la técnica suma los modelos, sus métricas y la calidad de los datos. Ver [Pronósticos](/docs/analisis/pronosticos).',
-          '**Nuevas vistas en Inventario:** Plata parada, Pronóstico en plata, Costos al alza, Margen que se achica y Costo de ignorar.',
+          '**Nuevas vistas en Inventario:** Dinero parado, Pronóstico en dinero, Costos al alza, Margen que se achica y Costo de ignorar.',
           '**La variabilidad del tiempo de entrega de cada proveedor ahora cuenta** en el stock de seguridad. Antes se pedía en la ficha del proveedor y no se usaba. Con proveedores irregulares, el colchón y la cantidad sugerida suben. Ver [Stock de seguridad](/docs/conceptos/stock-de-seguridad).',
           '**Pronósticos más exactos:** el modelo que pronostica ahora aprende de todo tu historial (antes algunos se quedaban con el 80 %); los productos de venta intermitente ya no se pronostican de más; y el modelo de temporadas ya no inventa un ciclo anual cuando tienes menos de un año de historia.',
           'Cuando un producto de venta intermitente no puede sostener el nivel de servicio pedido, el panel lo dice junto al porcentaje.',

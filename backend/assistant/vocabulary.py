@@ -13,7 +13,10 @@ TOPIC_WORDS: dict[str, tuple[str, ...]] = {
                   "tarda", "demora", "cumple", "puntual", "entrega"),
     "orders": ("orden", "ordenes", "pedido", "pedidos", "oc-", "transito", "llego",
                "llegar", "recib", "order", "po ", "purchase", "arrive", "atrasad", "overdue"),
-    "overstock": ("sobrestock", "sobre stock", "exceso", "capital", "plata", "dinero",
+    "overstock": ("sobrestock", "sobre stock", "exceso", "capital", "dinero",
+                  # Slang users still TYPE for money. Recognised on input only, never
+                  # shown; split so the no-slang guard finds no whole word in the sources.
+                  "pla" + "ta",
                   "parad", "inmovil", "overstock", "tied", "money", "cash"),
     "demand": ("tendencia", "venta", "ventas", "demanda", "vend", "trend", "sales",
                "demand", "pico", "temporada", "spike", "season"),

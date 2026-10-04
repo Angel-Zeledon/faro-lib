@@ -26,6 +26,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from backend.ai.style_rules import MONEY_WORDING_RULE
 from backend.service_config.resolver import effective, fingerprint
 
 # The fields both RAG surfaces are built from. Shared with `document_indexer`
@@ -67,7 +68,7 @@ Guidelines:
 - If the context does not contain enough information to answer, say so explicitly.
 - When comparing models, rank them by WAPE (lower is better) unless asked otherwise.
 - Always close with one concrete, actionable recommendation.
-"""
+""" + MONEY_WORDING_RULE + "\n"
 
 _OFF_TOPIC_REPLY = (
     "I can only answer questions about the forecast results, model accuracy, "
