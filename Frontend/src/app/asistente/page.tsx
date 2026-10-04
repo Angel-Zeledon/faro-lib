@@ -6,7 +6,7 @@ import {
 import {
   listChats, createChat, updateChat, deleteChat,
   getChatMessages, sendChatMessage, getDataSourceTypes, getSessions,
-  getSuggestedQuestions,
+  getSuggestedQuestions, isApiError,
 } from '@/lib/api'
 import type { Chat, ChatMessage, ChatSourceType, SessionInfo, SuggestedQuestion } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
@@ -572,12 +572,12 @@ export default function AnalystPage() {
 
       setTimeout(() => scrollToBottom(), 30)
     } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err)
-      const friendly = raw.includes('429') || raw.toLowerCase().includes('too many')
-        ? t('analyst.err_too_many_requests')
-        : raw.includes('500') || raw.toLowerCase().includes('server error')
-        ? t('analyst.err_server_error')
-        : err instanceof TypeError || raw.toLowerCase().includes('network') || raw.toLowerCase().includes('fetch')
+      // An ApiError already carries the user's-language sentence for its code
+      // or HTTP class (lib/errorMessage.ts); only a non-API failure (a dropped
+      // connection surfaces as a TypeError) needs its own copy here.
+      const friendly = isApiError(err)
+        ? err.message
+        : err instanceof TypeError
         ? t('analyst.err_connection')
         : t('analyst.err_failed_response')
       const errMsg: ChatMessage = {

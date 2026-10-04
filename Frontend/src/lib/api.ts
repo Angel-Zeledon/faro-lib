@@ -14,6 +14,7 @@ import type {
   PlanningState, PlanningPeriod, MeUser,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
+import { translateErrorParts } from './errorMessage'
 
 const BASE = '/api'
 
@@ -69,9 +70,16 @@ export class ApiError extends Error {
     code = '', params: Record<string, unknown> = {},
     fieldErrors: FieldError[] = [],
   ) {
-    // `message` stays the most specific text available so existing
-    // `e.message` call sites (and console traces) keep working.
+    // `message` is what the user may read, in their language (see
+    // errorMessage.ts) — dozens of `catch (e) { …e.message… }` call sites show
+    // it verbatim, so it must never be the backend's English. The English
+    // original stays on `detail` for logs.
     super(detail || `HTTP ${status}`)
+    Object.defineProperty(this, 'message', {
+      configurable: true,
+      get: () => translateErrorParts({ status, code, params, fieldErrors })
+        || detail || `HTTP ${status}`,
+    })
     this.name   = 'ApiError'
     this.kind   = kind
     this.status = status
@@ -178,6 +186,16 @@ function extractErrorParams(err: unknown): Record<string, unknown> {
   return params && typeof params === 'object' ? (params as Record<string, unknown>) : {}
 }
 
+/** Build the ApiError for a non-2xx response whose body may be JSON. */
+async function apiErrorFromResponse(res: Response, path: string): Promise<ApiError> {
+  const payload = await res.json().catch(() => ({ detail: res.statusText }))
+  return new ApiError(
+    kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
+    extractErrorCode(payload), extractErrorParams(payload),
+    extractFieldErrors(payload),
+  )
+}
+
 function _doFetch(method: string, path: string, body?: unknown): Promise<Response> {
   const isForm = body instanceof FormData
   const token  = getToken()
@@ -243,12 +261,7 @@ async function request<T = unknown>(
   }
 
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({ detail: res.statusText }))
-    const err = new ApiError(
-      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
-      extractErrorCode(payload), extractErrorParams(payload),
-      extractFieldErrors(payload),
-    )
+    const err = await apiErrorFromResponse(res, path)
     notify(err, silent)
     throw err
   }
@@ -280,12 +293,7 @@ async function downloadBlob(path: string, filename: string): Promise<void> {
     }
   }
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({ detail: res.statusText }))
-    const err = new ApiError(
-      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
-      extractErrorCode(payload), extractErrorParams(payload),
-      extractFieldErrors(payload),
-    )
+    const err = await apiErrorFromResponse(res, path)
     notify(err, false)
     throw err
   }
@@ -320,12 +328,7 @@ async function downloadBlobPost(path: string, body: unknown, filename: string): 
     }
   }
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({ detail: res.statusText }))
-    const err = new ApiError(
-      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
-      extractErrorCode(payload), extractErrorParams(payload),
-      extractFieldErrors(payload),
-    )
+    const err = await apiErrorFromResponse(res, path)
     notify(err, false)
     throw err
   }
@@ -903,7 +906,7 @@ export const downloadInventoryPDF = async (sessionId: string, serviceLevel = 0.9
     `${BASE}/inventory/report/pdf?session_id=${sessionId}&service_level=${serviceLevel}`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   )
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) throw await apiErrorFromResponse(res, '/inventory/report/pdf')
   const blob = await res.blob()
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
@@ -919,7 +922,7 @@ export const exportInventoryPO = async (sessionId: string, serviceLevel = 0.95) 
     `${BASE}/inventory/status/export-po?session_id=${sessionId}&service_level=${serviceLevel}`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   )
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) throw await apiErrorFromResponse(res, '/inventory/status/export-po')
   const blob = await res.blob()
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
@@ -934,7 +937,7 @@ export const downloadInventoryTemplate = async () => {
   const res = await fetch(`${BASE}/inventory/template.csv`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) throw await apiErrorFromResponse(res, '/inventory/template.csv')
   const blob = await res.blob()
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')

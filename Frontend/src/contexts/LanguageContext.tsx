@@ -1,6 +1,7 @@
 'use client'
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { translations, type Lang } from '@/i18n/translations'
+import { setErrorLanguage } from '@/lib/errorMessage'
 
 interface LangCtx {
   lang: Lang
@@ -15,6 +16,10 @@ const Ctx = createContext<LangCtx>({ lang: 'es', t: (k: string) => k, setLang: (
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>('es')
+
+  // The api layer has no React context; it reads the language from here so
+  // `ApiError.message` is always in the language the user chose.
+  useEffect(() => { setErrorLanguage(lang) }, [lang])
 
   useEffect(() => {
     const saved = (localStorage.getItem('lang') as Lang | null) ?? 'es'

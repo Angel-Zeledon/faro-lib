@@ -20,6 +20,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, integrations as integrations_router, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from backend.error_codes import describe_http_error
 from backend.errors import AppError
 from backend.api.ws.training_progress import router as ws_router
 from backend.config import settings
@@ -156,6 +159,27 @@ async def app_error_handler(request: Request, exc: AppError):
             "error_params": exc.params,
         },
     )
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """FastAPI's default envelope plus a stable ``error_code`` / ``error_params``.
+
+    ``detail`` is passed through untouched (string or dict) so API consumers
+    keep what they already parse; the code is derived by
+    ``backend/error_codes.py`` so the web app can render the user's language
+    instead of the English sentence. Errors with no known code get no code and
+    the frontend falls back to a translated sentence per HTTP class.
+    """
+    content: dict = {"detail": exc.detail}
+    described = describe_http_error(exc.detail)
+    if described is not None:
+        content["error_code"], content["error_params"] = described
+    # Same rule as FastAPI's own handler: some statuses carry no body at all.
+    if exc.status_code in (204, 304) or 100 <= exc.status_code < 200:
+        from fastapi.responses import Response
+        return Response(status_code=exc.status_code, headers=exc.headers)
+    return JSONResponse(content, status_code=exc.status_code, headers=exc.headers)
+
 
 # ── Routers ────────────────────────────────────────────────────────────────
 

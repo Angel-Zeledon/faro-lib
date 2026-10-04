@@ -403,7 +403,7 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
       setState(await setPlanning(period, Math.max(1, Math.min(state.horizon, state.max_horizon))))
       addToast(t('planning.saved'), '', 'success')
     } catch (e) {
-      addToast(t('planning.save_error'), isApiError(e) ? e.detail : '', 'error')
+      addToast(t('planning.save_error'), isApiError(e) ? e.message : '', 'error')
     } finally {
       setBusy(false)
     }
