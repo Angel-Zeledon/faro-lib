@@ -178,12 +178,12 @@ class TestSupplierImport:
         self, client, analyst_headers, test_tenant
     ):
         tid = test_tenant["id"]
-        text = "name,email,phone\nAcme,,111\nACME,a@acme.com,\nAcme ,,\n"
+        text = "name,email,phone\nAcme,,+50688887777\nACME,a@acme.com,\nAcme ,,\n"
         r = client.post(f"{BASE}/suppliers/import", files=_csv(text), headers=analyst_headers)
         d = r.json()["data"]
         assert d["created"] == 1 and d["duplicate_rows"] == 2
         row = _suppliers(tid)["Acme"]
-        assert (row["email"], row["phone"]) == ("a@acme.com", "111")   # field-wise merge
+        assert (row["email"], row["phone"]) == ("a@acme.com", "+50688887777")   # field-wise merge
         event = query_one(
             "SELECT action FROM activity_logs WHERE tenant_id=%s ORDER BY created_at DESC LIMIT 1",
             (tid,))
