@@ -13,6 +13,7 @@ import { DEFAULT_LEAD_TIME_DAYS } from '@/lib/inventoryDefaults'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import Card from '@/components/ui/Card'
 import Input, { Field, Select, Textarea } from '@/components/ui/Input'
+import PhoneInput from '@/components/ui/PhoneInput'
 import Table, { Th, Td } from '@/components/ui/Table'
 import Tooltip from '@/components/ui/Tooltip'
 import PriceBreakManager from '@/components/suppliers/PriceBreakManager'
@@ -215,14 +216,14 @@ function SupplierFormPanel({
           <Input name="supplier_email" inputMode="email" autoComplete="email" aria-label={t('suppliers.form_email_label')} type="email" placeholder={t('suppliers.form_email_placeholder')} value={form.email} onChange={set('email')} />
         </Field>
         <Field label={t('suppliers.form_phone_label')} labelStyle={FORM_LABEL_STYLE}>
-          <Input name="supplier_phone" type="tel" inputMode="tel" aria-label={t('suppliers.form_phone_label')} placeholder="+506 8888 8888" value={form.phone} onChange={set('phone')} />
+          <PhoneInput name="supplier_phone" aria-label={t('suppliers.form_phone_label')} value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} />
         </Field>
       </div>
 
       {/* WhatsApp + Payment Terms */}
       <div style={pair}>
         <Field label={t('suppliers.form_whatsapp_label')} labelStyle={FORM_LABEL_STYLE}>
-          <Input name="supplier_whatsapp" type="tel" inputMode="tel" aria-label={t('suppliers.form_whatsapp_label')} placeholder="+506 8888 8888" value={form.whatsapp} onChange={set('whatsapp')} />
+          <PhoneInput name="supplier_whatsapp" aria-label={t('suppliers.form_whatsapp_label')} value={form.whatsapp} onChange={v => setForm(f => ({ ...f, whatsapp: v }))} />
         </Field>
         <Field label={t('suppliers.form_payment_terms_label')} labelStyle={FORM_LABEL_STYLE}>
           {/* The chevron is drawn here rather than via `chevron`, because it has

@@ -1,6 +1,7 @@
 'use client'
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { translations, type Lang } from '@/i18n/translations'
+import { setErrorLanguage } from '@/lib/errorMessage'
 import { setNumberLocale } from '@/lib/numberLocale'
 import { persistPreference } from '@/lib/persistPreference'
 
@@ -18,6 +19,9 @@ const Ctx = createContext<LangCtx>({ lang: 'es', t: (k: string) => k, setLang: (
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>('es')
 
+  // The api layer has no React context; it reads the language from here so
+  // `ApiError.message` is always in the language the user chose.
+  useEffect(() => { setErrorLanguage(lang) }, [lang])
   // Set during render, not in an effect: children format numbers on their very
   // first paint, and an effect would run after them — showing one frame of
   // Spanish separators on an English screen. See lib/numberLocale.ts.

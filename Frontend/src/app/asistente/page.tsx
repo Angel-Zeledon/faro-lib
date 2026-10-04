@@ -5,7 +5,7 @@ import {
 } from 'react'
 import {
   listChats, createChat, updateChat, deleteChat,
-  getChatMessages, sendChatMessage, getAssistantWelcome,
+  getChatMessages, sendChatMessage, getAssistantWelcome, isApiError,
 } from '@/lib/api'
 import type { AssistantWelcome, Chat, ChatMessage } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
@@ -17,9 +17,10 @@ import { MessageBubble, TypingBubble, Welcome } from './parts'
 import AssistantMobile from './AssistantMobile'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
-  Plus, Search, Star, Trash2, Send,
+  Plus, Search, Star, Trash2, Send, Mic, Square,
   Lightbulb, MessageSquare, X, AlertTriangle,
 } from 'lucide-react'
+import { useSpeechToText } from '@/hooks/useSpeechToText'
 
 // ── Shell geometry ─────────────────────────────────────────────────────────────
 // This screen bleeds to the edges of the app shell instead of living inside its
@@ -219,6 +220,17 @@ export default function AnalystPage() {
 
   const activeChat = chats.find(c => c.id === activeChatId) ?? null
 
+  // Dictation: the browser transcribes, the words land in the message box as
+  // they are spoken. `inputValueRef` hands the hook the box's content at the
+  // moment recording starts without re-creating the hook on every keystroke.
+  const inputValueRef = useRef('')
+  inputValueRef.current = input
+  const speech = useSpeechToText({
+    lang,
+    getBase: () => inputValueRef.current,
+    onText: setInput,
+  })
+
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
     listChats().then(setChats).catch((e: unknown) => {
@@ -364,20 +376,20 @@ export default function AnalystPage() {
 
       setTimeout(() => scrollToBottom(), 30)
     } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err)
-      const code = (err as { error_code?: string })?.error_code
+      // An ApiError already carries the user's-language sentence for its code
+      // or HTTP class (lib/errorMessage.ts); only a non-API failure (a dropped
+      // connection surfaces as a TypeError) needs its own copy here.
+      //
       // A failure that took the whole window is the model being slow, not a
       // broken server, and "intenta de nuevo en unos segundos" is the wrong
       // advice for it: measured against a local model, the proxy cut the request
       // at 30.0s while the answer landed at 63s. Say which one happened.
       const tookTooLong = Date.now() - startedAt >= 20_000
-      const friendly = code === 'ai_unavailable' || tookTooLong
+      const friendly = (isApiError(err) && err.code === 'ai_unavailable') || tookTooLong
         ? t('analyst.err_slow_model')
-        : raw.includes('429') || raw.toLowerCase().includes('too many')
-        ? t('analyst.err_too_many_requests')
-        : raw.includes('500') || raw.toLowerCase().includes('server error')
-        ? t('analyst.err_server_error')
-        : err instanceof TypeError || raw.toLowerCase().includes('network') || raw.toLowerCase().includes('fetch')
+        : isApiError(err)
+        ? err.message
+        : err instanceof TypeError
         ? t('analyst.err_connection')
         : t('analyst.err_failed_response')
       const errMsg: ChatMessage = {
@@ -400,7 +412,7 @@ export default function AnalystPage() {
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(input); setInput('') }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); speech.stop(); handleSend(input); setInput('') }
   }
   // ── Toggle favorite ───────────────────────────────────────────────────────
   const toggleFav = async (chatId: string) => {
@@ -754,10 +766,13 @@ export default function AnalystPage() {
                     name="analyst_message"
                     aria-label={t('analyst.input_placeholder')}
                     value={input}
-                    onChange={e => setInput(e.target.value)}
+                    // Typing while the microphone is open would be overwritten by the
+                    // next transcript update, so a keystroke ends the dictation.
+                    onChange={e => { if (speech.listening) speech.stop(); setInput(e.target.value) }}
                     onKeyDown={onKeyDown}
                     placeholder={
                       assistantOff ? t('analyst.unavailable_placeholder')
+                      : speech.listening ? t('analyst.mic_listening')
                       : creatingChat ? t('analyst.creating_chat_placeholder')
                       : t('analyst.input_placeholder')
                     }
@@ -765,7 +780,8 @@ export default function AnalystPage() {
                     rows={1}
                     style={{
                       flex: 1, resize: 'none', minHeight: 40, maxHeight: 160,
-                      background: 'var(--surface-2)', border: '1px solid var(--border)',
+                      background: 'var(--surface-2)',
+                      border: `1px solid ${speech.listening ? '#ef4444' : 'var(--border)'}`,
                       borderRadius: 10, padding: '10px 14px',
                       fontSize: 13, color: 'var(--text)', lineHeight: 1.5,
                       outline: 'none', fontFamily: 'inherit',
@@ -773,11 +789,56 @@ export default function AnalystPage() {
                       opacity: creatingChat || assistantOff ? 0.6 : 1,
                     }}
                     onFocus={e => { e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)' }}
-                    onBlur={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
+                    onBlur={e => { e.currentTarget.style.borderColor = speech.listening ? '#ef4444' : 'var(--border)' }}
                   />
 
+                  {/* A disabled button swallows hover in several browsers, so the
+                      explanation rides on the wrapper too. */}
+                  <span
+                    title={speech.supported ? undefined : t('analyst.mic_unsupported')}
+                    style={{ display: 'inline-flex', flexShrink: 0 }}
+                  >
+                    <button
+                      type="button"
+                      data-testid="analyst-mic"
+                      onClick={speech.toggle}
+                      disabled={!speech.supported || creatingChat || assistantOff}
+                      aria-pressed={speech.listening}
+                      aria-label={
+                        !speech.supported ? t('analyst.mic_unsupported')
+                        : speech.listening ? t('analyst.mic_stop')
+                        : t('analyst.mic_start')
+                      }
+                      title={
+                        !speech.supported ? t('analyst.mic_unsupported')
+                        : speech.listening ? t('analyst.mic_stop')
+                        : t('analyst.mic_start')
+                      }
+                      style={{
+                        all: 'unset', position: 'relative', width: 40, height: 40, borderRadius: 10,
+                        background: speech.listening ? '#ef4444' : 'var(--surface-2)',
+                        border: `1px solid ${speech.listening ? '#ef4444' : 'var(--border)'}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: speech.supported && !creatingChat && !assistantOff ? 'pointer' : 'not-allowed',
+                        opacity: speech.supported && !assistantOff ? 1 : 0.5,
+                        flexShrink: 0, transition: 'all 0.15s',
+                      }}
+                    >
+                      {speech.listening
+                        ? <Square size={14} color="#fff" fill="#fff" />
+                        : <Mic size={16} color="var(--muted)" />}
+                      {speech.listening && (
+                        <span aria-hidden style={{
+                          position: 'absolute', top: 5, right: 5, width: 7, height: 7,
+                          borderRadius: '50%', background: '#fff',
+                          animation: 'pulse-dot 1s ease-in-out infinite',
+                        }} />
+                      )}
+                    </button>
+                  </span>
+
                   <button
-                    onClick={() => { handleSend(input); setInput('') }}
+                    onClick={() => { speech.stop(); handleSend(input); setInput('') }}
                     disabled={!input.trim() || sending || creatingChat || assistantOff}
                     style={{
                       all: 'unset', width: 40, height: 40, borderRadius: 10,
@@ -790,6 +851,18 @@ export default function AnalystPage() {
                   >
                     {sending || creatingChat ? <Spinner size={14} /> : <Send size={14} color={input.trim() && !sending && !creatingChat ? '#fff' : 'var(--dim)'} />}
                   </button>
+                </div>
+                {/* Announced politely: it is feedback on an action, not an alarm. */}
+                <div role="status" aria-live="polite">
+                  {speech.error && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span>{t(`analyst.mic_err_${speech.error}`)}</span>
+                      <button
+                        type="button" onClick={speech.clearError} aria-label={t('common.close')}
+                        style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', display: 'inline-flex' }}
+                      ><X size={12} /></button>
+                    </div>
+                  )}
                 </div>
               </div>
             </>

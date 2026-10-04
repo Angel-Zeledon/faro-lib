@@ -2267,6 +2267,45 @@ def _validated_email(value: Optional[str]) -> Optional[str]:
     return text
 
 
+_PHONE_SEPARATORS = re.compile(r"[\s().\-]")
+
+
+def _validated_phone(value: Optional[str]) -> Optional[str]:
+    """Normalize a supplier phone / WhatsApp number; blank stays None.
+
+    The UI sends E.164 (``+50688887777``), but API clients and numbers saved
+    before the country picker existed arrive as ``+506 8888-7777``,
+    ``00506 8888 7777`` or a bare local ``8888-7777``. Separators are stripped
+    and a ``00`` international prefix becomes ``+``, so the stored value is what
+    Twilio can actually deliver to.
+
+    Rejected: letters and other junk, and anything that opens with ``+`` but is
+    not valid E.164. A bare local number is kept as digits rather than rejected
+    — editing an old supplier must not start failing on a field the user never
+    touched — and the purchase-order send reports it per supplier if it cannot
+    be delivered.
+    """
+    if value is None:
+        return None
+    text = _PHONE_SEPARATORS.sub("", value.strip())
+    if not text:
+        return None
+    if text.startswith("00"):
+        text = "+" + text[2:]
+    if text.startswith("+"):
+        valid = re.fullmatch(r"\+[1-9]\d{7,14}", text) is not None
+    else:
+        valid = re.fullmatch(r"\d{6,15}", text) is not None
+    if not valid:
+        raise PydanticCustomError(
+            "supplier_phone_shape",
+            "'{phone}' is not a phone number. Use the country code and digits, "
+            "like +50688887777.",
+            {"phone": value.strip()[:32]},
+        )
+    return text
+
+
 class SupplierCreate(BaseModel):
     name:           str
     email:          Optional[str] = None
@@ -2302,6 +2341,11 @@ class SupplierCreate(BaseModel):
     def _check_email(cls, value: Optional[str]) -> Optional[str]:
         return _validated_email(value)
 
+    @field_validator("phone", "whatsapp")
+    @classmethod
+    def _check_phone(cls, value: Optional[str]) -> Optional[str]:
+        return _validated_phone(value)
+
 
 class SupplierPatch(BaseModel):
     name:           Optional[str]   = None
@@ -2319,6 +2363,11 @@ class SupplierPatch(BaseModel):
     @classmethod
     def _check_email(cls, value: Optional[str]) -> Optional[str]:
         return _validated_email(value)
+
+    @field_validator("phone", "whatsapp")
+    @classmethod
+    def _check_phone(cls, value: Optional[str]) -> Optional[str]:
+        return _validated_phone(value)
 
 
 class SkuSupplierUpsert(BaseModel):

@@ -37,7 +37,7 @@ export default function PlanningControl() {
       await planningCtx.apply(period, capped)
       addToast(t('planning.saved'), '', 'success')
     } catch (e) {
-      addToast(t('planning.save_error'), isApiError(e) ? e.detail : '', 'error')
+      addToast(t('planning.save_error'), isApiError(e) ? e.message : '', 'error')
     } finally {
       setBusy(false)
     }

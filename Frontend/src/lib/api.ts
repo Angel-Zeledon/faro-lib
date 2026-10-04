@@ -18,6 +18,7 @@ import type {
   SignalThresholdsState, SignalThresholdsPreview,
 } from './types'
 import { getToken, clearAuth, tryRefresh } from './auth'
+import { translateErrorParts } from './errorMessage'
 
 const BASE = '/api'
 
@@ -73,9 +74,16 @@ export class ApiError extends Error {
     code = '', params: Record<string, unknown> = {},
     fieldErrors: FieldError[] = [],
   ) {
-    // `message` stays the most specific text available so existing
-    // `e.message` call sites (and console traces) keep working.
+    // `message` is what the user may read, in their language (see
+    // errorMessage.ts) — dozens of `catch (e) { …e.message… }` call sites show
+    // it verbatim, so it must never be the backend's English. The English
+    // original stays on `detail` for logs.
     super(detail || `HTTP ${status}`)
+    Object.defineProperty(this, 'message', {
+      configurable: true,
+      get: () => translateErrorParts({ status, code, params, fieldErrors })
+        || detail || `HTTP ${status}`,
+    })
     this.name   = 'ApiError'
     this.kind   = kind
     this.status = status
@@ -188,6 +196,16 @@ function extractErrorParams(err: unknown): Record<string, unknown> {
   return params && typeof params === 'object' ? (params as Record<string, unknown>) : {}
 }
 
+/** Build the ApiError for a non-2xx response whose body may be JSON. */
+async function apiErrorFromResponse(res: Response, path: string): Promise<ApiError> {
+  const payload = await res.json().catch(() => ({ detail: res.statusText }))
+  return new ApiError(
+    kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
+    extractErrorCode(payload), extractErrorParams(payload),
+    extractFieldErrors(payload),
+  )
+}
+
 function _doFetch(
   method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>,
 ): Promise<Response> {
@@ -256,12 +274,7 @@ async function request<T = unknown>(
   }
 
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({ detail: res.statusText }))
-    const err = new ApiError(
-      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
-      extractErrorCode(payload), extractErrorParams(payload),
-      extractFieldErrors(payload),
-    )
+    const err = await apiErrorFromResponse(res, path)
     notify(err, silent)
     throw err
   }
@@ -293,12 +306,7 @@ async function downloadBlob(path: string, filename: string): Promise<void> {
     }
   }
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({ detail: res.statusText }))
-    const err = new ApiError(
-      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
-      extractErrorCode(payload), extractErrorParams(payload),
-      extractFieldErrors(payload),
-    )
+    const err = await apiErrorFromResponse(res, path)
     notify(err, false)
     throw err
   }
@@ -333,12 +341,7 @@ async function downloadBlobPost(path: string, body: unknown, filename: string): 
     }
   }
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({ detail: res.statusText }))
-    const err = new ApiError(
-      kindForStatus(res.status), res.status, extractErrorMessage(payload) || '', path,
-      extractErrorCode(payload), extractErrorParams(payload),
-      extractFieldErrors(payload),
-    )
+    const err = await apiErrorFromResponse(res, path)
     notify(err, false)
     throw err
   }

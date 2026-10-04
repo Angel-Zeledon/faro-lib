@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router, service_config as service_config_router
+from backend.error_codes import describe_http_error
 from backend.errors import AppError
 from backend.db.connection import PoolExhausted
 from backend.api.ws.training_progress import router as ws_router
@@ -182,34 +183,6 @@ async def app_error_handler(request: Request, exc: AppError):
         },
     )
 
-
-@app.middleware("http")
-async def reject_nul_in_path(request: Request, call_next):
-    """A NUL byte in a URL is the caller's mistake, and must be answered as one.
-
-    `%00` decodes into the path, travels through the route as an ordinary id,
-    and dies at psycopg2 (`A string literal cannot contain NUL`). The unhandled
-    handler then dresses that as a 500 `internal_error` — so the user is told
-    the SERVER broke on a URL they malformed, and it pages whoever is on call.
-    Measured on `/sessions/%00x/results`, and reachable on every route that
-    takes an id.
-
-    Refusing it once, here, is cheaper and more honest than a guard in each of
-    the two hundred handlers that read an id. Nothing legitimate carries a NUL
-    in a path.
-    """
-    if "\x00" in request.url.path:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "detail": "The request path contains a NUL byte.",
-                "error_code": "malformed_path",
-                "error_params": {},
-            },
-        )
-    return await call_next(request)
-
-
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """FastAPI's own errors, plus a promotion for the ones that carry a code.
@@ -229,7 +202,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """
     detail = exc.detail
     body: dict = {"detail": detail}
-    if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+    # Known sentences and the entitlement dicts get a stable lower-case code
+    # the catalogue translates (backend/error_codes.py); any other dict that
+    # carries a string `code` is still lifted as-is.
+    described = describe_http_error(detail)
+    if described is not None:
+        body["error_code"], body["error_params"] = described
+    elif isinstance(detail, dict) and isinstance(detail.get("code"), str):
         body["error_code"] = detail["code"]
         body["error_params"] = {k: v for k, v in detail.items() if k != "code"}
     return JSONResponse(

@@ -19,6 +19,7 @@ import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
 import BaseCard from '@/components/ui/Card'
 import Input, { FieldLabel } from '@/components/ui/Input'
+import PhoneInput from '@/components/ui/PhoneInput'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel, activityActionLabel } from '@/lib/enumLabels'
 import { getUser, patchUser } from '@/lib/auth'
@@ -453,7 +454,7 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
       setState(await setPlanning(period, Math.max(1, Math.min(state.horizon, state.max_horizon))))
       addToast(t('planning.saved'), '', 'success')
     } catch (e) {
-      addToast(t('planning.save_error'), isApiError(e) ? e.detail : '', 'error')
+      addToast(t('planning.save_error'), isApiError(e) ? e.message : '', 'error')
     } finally {
       setBusy(false)
     }
@@ -1228,17 +1229,14 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             <FieldLabel htmlFor="wa-number" variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 6 }}>
               {t('config.wa_number_label')}
             </FieldLabel>
-            <Input
+            <PhoneInput
               id="wa-number"
               name="whatsapp_number"
-              type="tel"
-              inputMode="tel"
-              placeholder="+50688888888"
               value={number}
-              onChange={e => { setNumber(e.target.value); if (error) setError(null) }}
+              onChange={v => { setNumber(v); if (error) setError(null) }}
               autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleSendCode()}
-              style={{ fontSize: 13, maxWidth: 240 }}
+              onEnter={handleSendCode}
+              style={{ maxWidth: 360 }}
             />
             <p style={{ fontSize: 11, color: 'var(--dim)', margin: '6px 0 0' }}>{t('config.wa_hint')}</p>
           </div>
