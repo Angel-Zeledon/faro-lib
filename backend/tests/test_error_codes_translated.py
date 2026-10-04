@@ -63,7 +63,7 @@ def test_bridge_ignores_unknown_sentences_and_non_strings():
 
 def test_http_exception_envelope_carries_code_and_keeps_detail(client, auth_headers):
     """The wire shape: `detail` stays the English sentence, `error_code` is added."""
-    r = client.get("/api/v1/chats/does-not-exist", headers=auth_headers)
+    r = client.get("/api/v1/analyst/chats/does-not-exist", headers=auth_headers)
     assert r.status_code == 404
     body = r.json()
     assert body["detail"] == "Chat not found"
