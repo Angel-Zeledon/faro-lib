@@ -853,3 +853,14 @@
     margin-block: -13px;   /* the taller box grows over its own row, not the layout */
   }
 }
+
+/* ── Explainer visuals (components/ui/ExplainerVisual.tsx) ──────────────────
+   Calm entrance + a slow arrow nudge. All motion is off under
+   prefers-reduced-motion; the static layout carries the meaning on its own. */
+@keyframes xv-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes xv-nudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(3px); } }
+.xv-in { animation: xv-in 320ms ease both; }
+.xv-arrow { animation: xv-nudge 1800ms ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .xv-in, .xv-arrow { animation: none !important; }
+}

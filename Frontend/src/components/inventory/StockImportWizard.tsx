@@ -13,6 +13,7 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, Check, FileSpreadsheet, Upload } from 'lucide-react'
 
+import UploadGuide from '@/components/upload/UploadGuide'
 import Button from '@/components/ui/Button'
 import { useSetupCopy } from '@/i18n/useSetupCopy'
 import { importStockFile, previewStockImport } from '@/lib/api'
@@ -111,6 +112,8 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
       <p style={{ fontSize: 12.5, color: 'var(--dim)', margin: '6px 0 12px', lineHeight: 1.5 }}>
         {c('setupStock.import.subtitle')}
       </p>
+
+      <UploadGuide kind="stock" defaultOpen={false} />
 
       <input
         ref={fileInput} type="file" accept=".csv,.txt,.xlsx,.xlsm,.xls"
