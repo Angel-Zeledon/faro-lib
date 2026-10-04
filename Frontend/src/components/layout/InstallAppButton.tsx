@@ -2,13 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Download, Share, X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { useInstall, registerServiceWorker } from '@/lib/pwa'
-
-/** Mounted once by AppShell: registers the service worker. */
-export function PwaRegister() {
-  useEffect(() => { registerServiceWorker() }, [])
-  return null
-}
+import { useInstall } from '@/lib/pwa'
 
 /**
  * "Install the app", in the sidebar. Shown only when this browser can install

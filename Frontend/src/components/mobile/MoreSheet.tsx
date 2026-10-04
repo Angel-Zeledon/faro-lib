@@ -182,9 +182,6 @@ export default function MoreSheet({ open, onClose, unread }: {
       </button>
       <h3 style={groupTitle}>{t('legal.group')}</h3>
       <LegalLinks onNavigate={onClose} />
-      <div style={{ padding: '8px 12px 4px', fontSize: 11, color: 'var(--dim)', opacity: 0.7 }}>
-        v{process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'}
-      </div>
     </BottomSheet>
   )
 }

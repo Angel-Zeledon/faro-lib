@@ -80,9 +80,15 @@ export const SCREENS: Screen[] = [
  *  at the foot of the rail (SETTINGS_ITEM). */
 const PRIMARY = ['/compras', '/pedidos', '/inventario', '/proveedores', '/pronosticos', '/asistente']
 
+/** Standalone tools that belong to no single flow (a what-if, an upload, the
+ *  inbox, the activity log). The desktop sidebar lists them under the daily
+ *  screens; each lights itself when open. */
+const TOOLS = ['/ventas', '/escenarios', '/mensajes', '/actividad']
+
 const byHref = (href: string) => SCREENS.find(s => s.href === href)!
 
 export const NAV: Screen[] = PRIMARY.map(byHref)
+export const TOOLS_NAV: Screen[] = TOOLS.map(byHref)
 export const SETTINGS_ITEM: Screen = byHref(SETTINGS_HREF)
 
 /** Pronósticos and the three analysis screens reached from it, shown as one
@@ -107,4 +113,36 @@ export function screenFor(path: string): Screen | undefined {
 export function navItemMatches(item: Screen, path: string): boolean {
   if (routeMatches(item.href, path)) return true
   return screenFor(path)?.parent === item.href
+}
+
+/** The primary entries (sidebar / tab bar), Configuración included. */
+const PRIMARY_HREFS = [...PRIMARY, ...TOOLS, SETTINGS_HREF]
+
+/** The primary entry `path` itself belongs to, or null on a secondary screen. */
+export function primaryFor(path: string): string | null {
+  return PRIMARY_HREFS.find(h => routeMatches(h, path)) ?? null
+}
+
+/**
+ * Which primary entry to light up. On a primary screen, that screen. On a
+ * secondary one (no menu entry of its own), the primary the user came from —
+ * /configurar-inventario opened from Inventario lights Inventario, not
+ * Configuración — and only when nothing is known (a pasted link, a reload),
+ * the screen's registered parent.
+ */
+export function activePrimary(path: string, origin: string | null): string | null {
+  return primaryFor(path) ?? origin ?? screenFor(path)?.parent ?? null
+}
+
+const ORIGIN_KEY = 'stockai_nav_origin'
+
+/** Remember the last primary screen visited (per tab, sessionStorage). */
+export function rememberOrigin(path: string): string | null {
+  const primary = primaryFor(path)
+  try {
+    if (primary) sessionStorage.setItem(ORIGIN_KEY, primary)
+    return primary ?? sessionStorage.getItem(ORIGIN_KEY)
+  } catch {
+    return primary
+  }
 }
