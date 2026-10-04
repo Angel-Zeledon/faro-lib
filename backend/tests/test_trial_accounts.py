@@ -72,8 +72,11 @@ def test_the_trial_fits_the_one_click_demo(client, trial):
     resp = client.post("/api/v1/demo/quickstart", json={},
                        headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 202, resp.text
-    assert query_one("SELECT COUNT(*) AS n FROM inventory_stock WHERE tenant_id = %s",
-                     (trial["tenant_id"],))["n"] == 5
+    from backend.api.v1.demo import _DEMO_STOCK
+    seeded = query_one("SELECT COUNT(*) AS n FROM inventory_stock WHERE tenant_id = %s",
+                       (trial["tenant_id"],))["n"]
+    assert seeded == len(_DEMO_STOCK)
+    assert seeded <= PLANS[DEMO].max_skus
     assert query_one("SELECT COUNT(*) AS n FROM jobs WHERE tenant_id = %s",
                      (trial["tenant_id"],))["n"] >= 1
 

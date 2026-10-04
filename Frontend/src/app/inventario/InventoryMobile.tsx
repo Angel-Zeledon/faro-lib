@@ -74,20 +74,22 @@ export function MobileMetricGrid({ metrics, ariaLabel }: { metrics: MobileMetric
       {metrics.map(m => {
         const inner = (
           <>
-            <span style={{ display: 'block', fontSize: 20, fontWeight: 800, color: m.color, lineHeight: 1.15,
+            <span style={{ display: 'block', fontSize: 20, fontWeight: 600, color: 'var(--text)', lineHeight: 1.15,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
               {m.value}
             </span>
-            <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.3 }}>{m.label}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.3 }}>
+              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
+              {m.label}
+            </span>
             {m.sub && <span style={{ display: 'block', fontSize: 11, color: 'var(--dim)', marginTop: 2, lineHeight: 1.3 }}>{m.sub}</span>}
           </>
         )
         const box: React.CSSProperties = {
           boxSizing: 'border-box', minWidth: 0, minHeight: 64, padding: '10px 12px',
-          borderRadius: 12, background: 'var(--surface)',
-          border: `1px solid ${m.active ? m.color : 'var(--border)'}`,
-          borderTop: `3px solid ${m.color}`,
-          boxShadow: m.active ? `0 0 0 1px ${m.color} inset` : undefined,
+          borderRadius: 12,
+          border: `1px solid ${m.active ? 'var(--accent)' : 'var(--border)'}`,
+          background: m.active ? 'var(--accent-dim)' : 'var(--surface)',
           textAlign: 'left',
         }
         return m.onClick ? (
