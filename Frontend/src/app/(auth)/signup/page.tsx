@@ -7,6 +7,7 @@ import { Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 import TermsSentence from '@/components/legal/TermsSentence'
+import PhoneInput from '@/components/ui/PhoneInput'
 import { SocialButtons, socialErrorText } from '@/components/auth/SocialButtons'
 
 // Composition, deliberately NOT a mirror of /login: this screen carries more
@@ -266,12 +267,10 @@ function SignupPageContent() {
                   <label htmlFor="signup-whatsapp" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
                     {t('auth.whatsapp_label')} <span style={{ color: '#dc2626' }}>*</span>
                   </label>
-                  <input
-                    id="signup-whatsapp" name="whatsapp_number"
-                    type="tel" value={form.whatsapp_number} required
-                    onChange={e => set('whatsapp_number', e.target.value)}
-                    placeholder="+50688887777"
-                    className="auth-input"
+                  <PhoneInput
+                    id="signup-whatsapp" name="whatsapp_number" variant="auth"
+                    value={form.whatsapp_number} required
+                    onChange={v => set('whatsapp_number', v)}
                   />
                   <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--a-muted)', lineHeight: 1.45 }}>
                     {t('auth.whatsapp_hint')}
