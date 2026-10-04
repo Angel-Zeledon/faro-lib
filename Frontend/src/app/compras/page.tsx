@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
- RefreshCw, ArrowRight, BarChart2, Package, Zap, Truck,
+ RefreshCw, ArrowRight, BarChart2, Package, Truck,
  ChevronDown, ChevronUp, Send, X, Upload, PlayCircle,
 } from 'lucide-react'
 import {
@@ -633,7 +633,7 @@ function SpikeCard({ s }: { s: DemandSpike }) {
    background:   'var(--surface)',
   }}>
    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-    <Zap size={16} color={accent} style={{ flexShrink: 0, marginTop: 2 }} />
+    <TrendingUp size={16} color={accent} style={{ flexShrink: 0, marginTop: 2 }} />
     <div style={{ flex: 1, minWidth: 0 }}>
      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
       <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{s.display_name}</span>
@@ -2280,7 +2280,7 @@ export default function HoyPage() {
        {(briefing.demand_spikes?.length ?? 0) > 0 && (
         <section style={{ marginTop: 32, marginBottom: 28 }}>
          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <Zap size={16} color={C.amber} />
+          <TrendingUp size={16} color={C.amber} />
           <h2 style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
            {t('hoy.section_anticipate_title')}
           </h2>
@@ -2582,7 +2582,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
    {(briefing.demand_spikes?.length ?? 0) > 0 && (
     <section>
      <h2 style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: 6 }}>
-      <Zap size={16} color={C.amber} aria-hidden="true" /> {t('hoy.section_anticipate_title')}
+      <TrendingUp size={16} color={C.amber} aria-hidden="true" /> {t('hoy.section_anticipate_title')}
      </h2>
      <p style={sectionDesc}>{t('hoy.section_anticipate_desc')}</p>
      {(briefing.demand_spikes ?? []).map(sp => <SpikeCard key={sp.sku} s={sp} />)}

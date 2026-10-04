@@ -18,7 +18,7 @@ import AssistantMobile from './AssistantMobile'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
   Plus, Search, Star, Trash2, Send, Mic, Square,
-  Lightbulb, MessageSquare, X, AlertTriangle,
+  MessageSquare, X, AlertTriangle,
 } from 'lucide-react'
 import { useSpeechToText } from '@/hooks/useSpeechToText'
 
@@ -168,7 +168,7 @@ function EmptyState({
         border: '1px solid color-mix(in srgb, var(--accent) 15%, transparent)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <Lightbulb size={28} color="var(--accent)" strokeWidth={1.5} />
+        <MessageSquare size={28} color="var(--accent)" strokeWidth={1.5} />
       </div>
       {welcome ? (
         <Welcome welcome={welcome} onAsk={onAsk} disabled={disabled} />
@@ -528,7 +528,7 @@ export default function AnalystPage() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Lightbulb size={14} color="var(--accent)" />
+                <MessageSquare size={14} color="var(--accent)" />
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t('analyst.title')}</span>
               </div>
               <button

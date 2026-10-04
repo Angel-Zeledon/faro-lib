@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Lightbulb } from 'lucide-react'
+import { Info } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { Wordmark } from '@/components/brand/Wordmark'
 import { TIPS, randomTipIndex } from '@/lib/tips'
@@ -42,7 +42,7 @@ export function TipsPanel() {
       </div>
       <div className="auth-panel-inner">
         <p className="tips-kicker">
-          <Lightbulb size={14} aria-hidden="true" />
+          <Info size={14} aria-hidden="true" />
           {t('tips.kicker')}
         </p>
 

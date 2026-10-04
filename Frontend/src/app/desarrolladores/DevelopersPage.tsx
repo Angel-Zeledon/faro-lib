@@ -22,7 +22,7 @@
 import Link from 'next/link'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Ban, Bot, Braces, Check, ChevronRight, Copy, Gauge, KeyRound, ListOrdered, Receipt,
+  Ban, Plug, Braces, Check, ChevronRight, Copy, Gauge, KeyRound, ListOrdered, Receipt,
   Search, TriangleAlert, X, PanelLeft,
 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -738,7 +738,7 @@ export default function DevelopersPage() {
                   <p>{D.pagination.body}</p>
                 </div>
                 <div className="dv-card c-violet">
-                  <span className="dv-icon" aria-hidden><Bot size={18} /></span>
+                  <span className="dv-icon" aria-hidden><Plug size={18} /></span>
                   <h3>{D.mcp.title}</h3>
                   <p>{D.mcp.body}</p>
                 </div>

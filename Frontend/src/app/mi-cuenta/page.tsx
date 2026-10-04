@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useContext, createContext, useRef } from 'react'
 import {
-  User, Settings2, Cpu, Activity,
+  User, Settings2, Info, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
   ChevronDown, Clock, Shield, Lock, Eye, EyeOff, Mail,
   MessageCircle, Unlink, CalendarClock, MessageSquare, Coins, Gauge,
@@ -528,7 +528,7 @@ function ModelsSection({ t }: { t: (k: string) => string }) {
   return (
     <Card>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Cpu size={16} color="var(--dim)" strokeWidth={1.8} style={{ flexShrink: 0 }} />
+        <Info size={16} color="var(--dim)" strokeWidth={1.8} style={{ flexShrink: 0 }} />
         <span style={{ fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.5 }}>
           {t('config.how_stockai_calculates')}
         </span>
@@ -1861,7 +1861,7 @@ function MobileSettings() {
       </MobileSection>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '0 4px 8px' }}>
-        <Cpu size={16} color="var(--dim)" strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+        <Info size={16} color="var(--dim)" strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
         <span style={{ fontSize: 13, color: 'var(--dim)', lineHeight: 1.5 }}>{t('config.how_stockai_calculates')}</span>
       </div>
     </div>
