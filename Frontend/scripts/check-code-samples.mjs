@@ -30,7 +30,7 @@ const specOf = (ep) => {
     headers: ep.parameters.filter(p => p.in === 'header').map(h => ({ name: h.name, value: `<${h.name.toLowerCase()}>` })),
     body: !b ? null
       : b.content_type.startsWith('multipart/')
-        ? { kind: 'multipart', fields: b.fields.map(f => ({ name: f.name, file: f.type === 'file' })) }
+        ? { kind: 'multipart', fields: (b.schema.fields ?? []).map(f => ({ name: f.name, file: f.type === 'file' })) }
         : { kind: 'json', value: b.example ?? {} },
     expectsJson: ep.success_status !== 204,
   }

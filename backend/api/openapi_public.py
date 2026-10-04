@@ -16,7 +16,7 @@ Annotation only: nothing here changes what a route does or returns.
 """
 from __future__ import annotations
 
-from backend.api.public_docs import DOCS
+from backend.api.public_docs import DOCS, SUMMARIES
 from backend.api.public_surface import API_PREFIX, exposure
 
 API_ENVELOPE = {
@@ -38,11 +38,18 @@ API_ERROR = {
     "title": "ApiError",
     "type": "object",
     "description": (
-        "Every error. Branch on `error_code` (stable, snake_case); `detail` is an "
-        "English fallback sentence and may change."
+        "Every error. Branch on `error_code` when there is one (stable, snake_case; "
+        "a few older limit errors spell it in capitals, e.g. `PLAN_LIMIT_REACHED`); "
+        "`detail` is an English fallback and may change. `error_code` is absent on "
+        "framework answers: a missing or malformed Authorization header "
+        "(401 `Not authenticated`), an unknown route (404), a wrong method (405) and "
+        "the rate-limit answer (429)."
     ),
     "properties": {
-        "detail": {"description": "English fallback message (or FastAPI's validation list on 422)."},
+        "detail": {"description": (
+            "English fallback message. On 422 it is a list of {type, loc, msg, input} "
+            "objects, one per invalid field; on `PLAN_LIMIT_REACHED` it is an object "
+            "that repeats `error_params`.")},
         "error_code": {"type": "string", "example": "api_key_scope_insufficient"},
         "error_params": {"type": "object", "description": "The values the message is about."},
     },
@@ -50,13 +57,13 @@ API_ERROR = {
 }
 
 _KEY_ERRORS = {
-    "401": "API key missing, invalid, revoked or expired.",
+    "401": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`).",
     "403": (
         "The key may not call this endpoint (`api_key_route_not_exposed`), is "
         "read-only on a write (`api_key_scope_insufficient`), or another "
         "permission check refused it."
     ),
-    "429": "Rate limit or daily ceiling reached. Honour `Retry-After`.",
+    "429": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds).",
 }
 
 
@@ -82,6 +89,8 @@ def annotate(app, schema: dict) -> dict:
             doc = DOCS.get((method.upper(), route.path_format[len(API_PREFIX):]))
             if doc:
                 op["summary"], op["description"] = doc
+            elif (method.upper(), route.path_format[len(API_PREFIX):]) in SUMMARIES:
+                op["summary"] = SUMMARIES[(method.upper(), route.path_format[len(API_PREFIX):])]
             responses = op.setdefault("responses", {})
             for code, response in responses.items():
                 if not str(code).startswith("2"):

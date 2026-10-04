@@ -9,6 +9,7 @@
 // it is generated from the backend's OpenAPI into src/data/public-api.json and
 // stays in English, the language of the code it documents.
 import type { Lang } from '@/i18n/translations'
+import type { SchemaLabels } from '@/components/apidocs/SchemaTree'
 
 export interface DevelopersCopy {
   breadcrumb: string
@@ -18,6 +19,7 @@ export interface DevelopersCopy {
   intro: string
   facts: { base: string; auth: string; endpoints: string; endpointsValue: (n: number) => string }
   toc: string
+  guideNav: string
   auth: { title: string; body: string; note: string }
   scopes: {
     title: string
@@ -32,14 +34,17 @@ export interface DevelopersCopy {
   limits: {
     title: string
     perMinute: (n: number) => string
+    perDayDemo: (n: number) => string
     perDayFree: (n: number) => string
     perDayPaid: string
     over: string
+    noHeaders: string
   }
   billing: { title: string; body: string; pricingLink: string; contact: (email: string) => string }
-  errors: { title: string; body: string; codes: [string, string][] }
-  pagination: { title: string; body: string }
-  envelope: { title: string; body: string }
+  errors: { title: string; body: string; codes: [string, string][]; shapeTitle: string; shapes: [string, string][]; sampleTitle: string }
+  pagination: { title: string; body: string; items: [string, string][] }
+  idempotency: { title: string; body: string; header: string }
+  envelope: { title: string; body: string; fileNote: string; rpcNote: string; formatsTitle: string; formats: [string, string][] }
   reference: {
     title: string
     lead: string
@@ -55,30 +60,44 @@ export interface DevelopersCopy {
     tags: Record<string, string>
   }
   mcp: { title: string; body: string }
-  /** The interactive reference (sidebar, request bar, code panel). */
+  /** The schema tree (request bodies, parameters, responses). */
+  schema: SchemaLabels
+  /** The interactive reference (sidebar, endpoint, code panel). */
   workspace: {
     browse: string
     search: string
     noResults: string
     close: string
     count: (n: number) => string
-    tabs: { params: string; body: string; headers: string; response: string }
-    noBody: string
-    headersLead: string
+    sections: { request: string; responses: string }
+    paramGroups: { path: string; query: string; header: string }
+    headersTitle: string
     authValue: string
     optional: string
-    responseLead: string
-    responseNote: string
-    exampleNote: string
-    fieldsTitle: string
+    noBody: string
     noContent: string
+    bodyTitle: string
+    bodyRequired: string
+    bodyOptional: string
+    successTitle: string
+    errorsTitle: string
+    errorsLead: string
+    responseBody: string
+    notCaptured: string
+    fileResponse: (types: string) => string
+    rpcResponse: string
+    exampleNote: string
     request: string
     response: string
     languages: string
     copy: string
     copied: string
     copyUrl: string
+    copyLink: string
     stats: { read: (n: number) => string; write: (n: number) => string }
+    scopeRead: string
+    scopeWrite: string
+    clear: string
   }
 }
 
@@ -97,6 +116,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       endpointsValue: n => `${n} documentados`,
     },
     toc: 'En esta página',
+    guideNav: 'Guía',
     auth: {
       title: 'Autenticación',
       body:
@@ -130,9 +150,11 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     limits: {
       title: 'Límites',
       perMinute: n => `${n} llamadas por minuto por clave, en cualquier plan.`,
+      perDayDemo: n => `Cuentas de prueba: ${n} llamadas por día por clave.`,
       perDayFree: n => `Plan gratis: además, ${n} llamadas por día por clave (ventana de 24 horas).`,
       perDayPaid: 'Plan completo: sin tope diario.',
-      over: 'Al pasarte recibes 429 con la cabecera Retry-After: espera esos segundos antes de reintentar.',
+      over: 'Al pasarte recibes 429 con la cabecera Retry-After (segundos). El mismo 429 sirve para el límite por minuto y para el tope diario, y su cuerpo no trae error_code.',
+      noHeaders: 'No hay cabeceras X-RateLimit-*: la única señal es el 429 con Retry-After. Cuenta tus llamadas o espera el 429.',
     },
     billing: {
       title: 'Medición y precio',
@@ -143,27 +165,59 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     },
     errors: {
       title: 'Errores',
-      body: 'Todo error trae un error_code estable y, si aplica, error_params con los valores. El texto de detail es una ayuda en inglés y puede cambiar: ramifica por el código.',
+      body: 'Casi todo error trae un error_code estable y, si aplica, error_params con los valores: ramifica por el código, no por el texto de detail, que es una ayuda en inglés y puede cambiar. Las respuestas del propio framework (cabecera ausente, ruta inexistente, método incorrecto) y el 429 solo traen detail.',
       codes: [
+        ['api_key_invalid', '401 — la clave no existe, fue revocada o venció.'],
         ['api_key_route_not_exposed', '403 — ese endpoint no se puede usar con una API key.'],
         ['api_key_scope_insufficient', '403 — la clave es de lectura y el endpoint escribe.'],
         ['api_key_tenant_unverified', '403 — enviar algo fuera de StockAI exige un administrador verificado.'],
-        ['validation_error', '422 — el cuerpo o los parámetros no son válidos; detail lista los campos.'],
-        ['PLAN_LIMIT_REACHED', '403 — llegaste a un tope del plan gratis; error_params dice cuál.'],
+        ['validation_error', '422 — el cuerpo o los parámetros no son válidos; detail es una lista con un objeto por campo.'],
+        ['PLAN_LIMIT_REACHED', '403 — llegaste a un tope del plan; detail es un objeto y error_params dice cuál.'],
         ['server_busy', '503 — el servidor está saturado; reintenta según Retry-After.'],
+        ['(sin error_code)', '401 — falta la cabecera Authorization o no es “Bearer sk_live_…”: detail es “Not authenticated”.'],
+        ['(sin error_code)', '429 — límite por minuto o tope diario: espera Retry-After segundos.'],
+        ['(sin error_code)', '404 / 405 — ruta inexistente o método no permitido.'],
       ],
+      shapeTitle: 'La forma de detail',
+      shapes: [
+        ['texto', 'La mayoría de los errores: una frase en inglés.'],
+        ['lista', '422 validation_error: [{ type, loc, msg, input }], uno por campo inválido; loc dice dónde (por ejemplo ["body", "name"]).'],
+        ['objeto', 'PLAN_LIMIT_REACHED: { code, limit, current, max, tier }, el mismo contenido que error_params.'],
+      ],
+      sampleTitle: 'Ejemplo: clave de lectura que escribe',
     },
     pagination: {
       title: 'Paginación',
-      body: 'Los listados que pueden crecer sin límite (sesiones, fuentes de datos, datasets) aceptan skip y limit. El resto devuelve el conjunto completo y se acota con sus filtros, por ejemplo signal o supplier en /inventory/status.',
+      body: 'Hay tres formas, y cada endpoint la declara en sus parámetros:',
+      items: [
+        ['skip y limit', 'Sesiones, resumen de sesiones, fuentes de datos y datasets. La respuesta trae items, total, skip y limit.'],
+        ['limit y offset', 'La actividad de alertas (/alerts/activity). La respuesta trae items, total, limit y offset.'],
+        ['solo limit', 'Los más recientes primero, hasta limit: alertas, historial de órdenes, brechas de configuración, mermas e historial de reentrenamientos.'],
+        ['sin paginación', 'El resto devuelve el conjunto completo y se acota con sus filtros, por ejemplo signal o supplier en /inventory/status.'],
+      ],
+    },
+    idempotency: {
+      title: 'Idempotencia',
+      body: 'POST /inventory/log-po y POST /inventory/po aceptan la cabecera Idempotency-Key: un valor único (un UUID) por orden que quieres colocar. Si repites la petición con la misma clave recibes la orden que ya se creó (200 con replayed: true) en vez de una segunda; la misma clave con otras líneas responde 409 po_idempotency_key_reused. Los demás endpoints de escritura no son idempotentes: antes de reintentar una escritura cuyo resultado no viste, consulta si ya se aplicó.',
+      header: 'Idempotency-Key: 3f1c9a5e-7d62-4b0e-9d6a-2c8f4a1b5e70',
     },
     envelope: {
       title: 'El formato de respuesta',
-      body: 'Toda respuesta JSON viene envuelta: { "success": true, "data": …, "meta": { "timestamp": … } }. Lo tuyo está en data. Los endpoints que devuelven un archivo (Excel, PDF, CSV) responden el archivo directamente.',
+      body: 'Toda respuesta JSON viene envuelta: { "success": true, "data": …, "meta": { "timestamp": … } }. Lo tuyo está en data, que según el endpoint es un objeto o una lista; los listados paginados traen la lista en data.items.',
+      fileNote: 'Los endpoints que devuelven un archivo (Excel, PDF, CSV) responden el archivo directamente, sin envoltorio.',
+      rpcNote: 'El endpoint MCP (POST /mcp) habla JSON-RPC 2.0 y no usa este envoltorio.',
+      formatsTitle: 'Tipos y formatos',
+      formats: [
+        ['Fechas', 'Las fechas son YYYY-MM-DD; los instantes, ISO 8601 en UTC, por ejemplo 2026-10-01T08:00:00+00:00.'],
+        ['Números', 'Cantidades y montos son números JSON, no textos. Los montos van en la moneda de la cuenta (GET /tenant/currency).'],
+        ['Sin valor', 'Un campo sin valor suele llegar como null en lugar de omitirse.'],
+        ['Identificadores', 'Cadenas opacas con prefijo (sess_…, ds_…, sup_…): guárdalas tal cual.'],
+        ['Señales', 'El semáforo usa PEDIR_YA, PEDIR_PRONTO, OK y SOBRESTOCK: valores fijos que no se traducen.'],
+      ],
     },
     reference: {
       title: 'Referencia de endpoints',
-      lead: 'Generada a partir del propio servicio: si un endpoint está aquí, se puede llamar con una API key. Las descripciones están en inglés, como el código.',
+      lead: 'Generada a partir del propio servicio: si un endpoint está aquí, se puede llamar con una API key. Las respuestas de ejemplo son llamadas reales a una cuenta de prueba. Las descripciones están en inglés, como el código.',
       read: 'Lectura',
       write: 'Escritura',
       params: 'Parámetros',
@@ -202,7 +256,25 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     },
     mcp: {
       title: 'Para clientes de IA (MCP)',
-      body: 'La misma clave abre un servidor MCP en /mcp con cinco herramientas de solo lectura, para que un asistente de IA consulte tu semáforo. Por diseño no escribe nada.',
+      body: 'La misma clave abre un servidor MCP en POST /mcp con cinco herramientas de solo lectura, para que un asistente de IA consulte tu semáforo. Por diseño no escribe nada. GET /mcp responde 405: el servidor no abre un flujo hacia el cliente.',
+    },
+    schema: {
+      required: 'obligatorio',
+      optional: 'opcional',
+      nullable: 'admite null',
+      expandAll: 'Expandir todo',
+      collapseAll: 'Contraer todo',
+      item: 'Cada elemento de la lista',
+      eachValue: 'Cada valor',
+      freeForm: 'Objeto libre: no declara campos.',
+      oneOf: 'Una de estas formas',
+      recursive: 'Estructura recursiva: se repite el mismo objeto.',
+      constraint: { min: 'mín.', max: 'máx.', default: 'por defecto', minLength: 'largo mín.', maxLength: 'largo máx.' },
+      more: n => `+${n} más`,
+      rootArray: 'Una lista. Los campos son los de cada elemento.',
+      rootObject: 'Un objeto.',
+      rootMap: 'Un mapa: las claves son datos.',
+      empty: 'Sin campos.',
     },
     workspace: {
       browse: 'Explorar endpoints',
@@ -210,23 +282,35 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       noResults: 'Ningún endpoint coincide con esa búsqueda.',
       close: 'Cerrar',
       count: n => `${n} endpoints`,
-      tabs: { params: 'Parámetros', body: 'Cuerpo', headers: 'Cabeceras', response: 'Respuesta' },
-      noBody: 'Este endpoint no lleva cuerpo.',
-      headersLead: 'Cabeceras que lleva esta llamada.',
+      sections: { request: 'Petición', responses: 'Respuestas' },
+      paramGroups: { path: 'Parámetros de ruta', query: 'Parámetros de consulta', header: 'Cabeceras' },
+      headersTitle: 'Cabeceras',
       authValue: 'Tu API key. Siempre obligatoria.',
       optional: 'opcional',
-      responseLead: 'Si todo sale bien:',
-      responseNote: 'Toda respuesta JSON viene en este sobre; lo que trae data depende de cada endpoint. Si algo falla, recibes un error_code estable (ver Errores).',
-      exampleNote: 'Respuesta real de una cuenta de demostración, recortada: las listas muestran un elemento y los textos largos se acortan.',
-      fieldsTitle: 'Campos de la respuesta',
+      noBody: 'Este endpoint no lleva cuerpo.',
       noContent: 'Responde sin cuerpo.',
+      bodyTitle: 'Cuerpo',
+      bodyRequired: 'El cuerpo es obligatorio.',
+      bodyOptional: 'El cuerpo es opcional.',
+      successTitle: 'Si sale bien',
+      errorsTitle: 'Errores posibles',
+      errorsLead: 'Además de los errores de cada endpoint, toda llamada con clave puede responder:',
+      responseBody: 'Cuerpo de la respuesta',
+      notCaptured: 'Para este endpoint no se capturó una respuesta de ejemplo. Toda respuesta JSON trae este envoltorio; lo que va en data depende del endpoint.',
+      fileResponse: types => `Devuelve un archivo (${types}), sin envoltorio.`,
+      rpcResponse: 'Responde JSON-RPC 2.0, no el envoltorio habitual.',
+      exampleNote: 'Respuesta real de una cuenta de prueba, recortada: las listas muestran un elemento y los textos largos se acortan.',
       request: 'Petición',
       response: 'Respuesta',
       languages: 'Lenguaje del ejemplo',
       copy: 'Copiar',
       copied: 'Copiado',
       copyUrl: 'Copiar URL',
+      copyLink: 'Copiar enlace',
       stats: { read: n => `${n} de lectura`, write: n => `${n} de escritura` },
+      scopeRead: 'Clave de lectura',
+      scopeWrite: 'Clave de escritura',
+      clear: 'Borrar búsqueda',
     },
   },
   en: {
@@ -243,6 +327,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       endpointsValue: n => `${n} documented`,
     },
     toc: 'On this page',
+    guideNav: 'Guide',
     auth: {
       title: 'Authentication',
       body:
@@ -276,9 +361,11 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     limits: {
       title: 'Limits',
       perMinute: n => `${n} calls per minute per key, on any plan.`,
+      perDayDemo: n => `Trial accounts: ${n} calls per day per key.`,
       perDayFree: n => `Free plan: also ${n} calls per day per key (a 24-hour window).`,
       perDayPaid: 'Full plan: no daily cap.',
-      over: 'Over the limit you get 429 with a Retry-After header: wait that many seconds before retrying.',
+      over: 'Over the limit you get 429 with a Retry-After header (seconds). The same 429 serves the per-minute limit and the daily cap, and its body has no error_code.',
+      noHeaders: 'There are no X-RateLimit-* headers: the only signal is the 429 with Retry-After. Count your own calls or wait for the 429.',
     },
     billing: {
       title: 'Metering and pricing',
@@ -289,27 +376,59 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     },
     errors: {
       title: 'Errors',
-      body: 'Every error carries a stable error_code and, where it applies, error_params with the values. The detail text is an English hint and may change: branch on the code.',
+      body: 'Almost every error carries a stable error_code and, where it applies, error_params with the values: branch on the code, not on the detail text, which is an English hint and may change. The framework\'s own answers (missing header, unknown route, wrong method) and the 429 carry only detail.',
       codes: [
+        ['api_key_invalid', '401 — the key does not exist, was revoked or has expired.'],
         ['api_key_route_not_exposed', '403 — that endpoint cannot be called with an API key.'],
         ['api_key_scope_insufficient', '403 — the key is read-only and the endpoint writes.'],
         ['api_key_tenant_unverified', '403 — sending anything outside StockAI needs a verified administrator.'],
-        ['validation_error', '422 — the body or parameters are invalid; detail lists the fields.'],
-        ['PLAN_LIMIT_REACHED', '403 — a free-plan ceiling was reached; error_params says which.'],
+        ['validation_error', '422 — the body or parameters are invalid; detail is a list with one object per field.'],
+        ['PLAN_LIMIT_REACHED', '403 — a plan ceiling was reached; detail is an object and error_params says which.'],
         ['server_busy', '503 — the server is saturated; retry after Retry-After.'],
+        ['(no error_code)', '401 — the Authorization header is missing or is not “Bearer sk_live_…”: detail is “Not authenticated”.'],
+        ['(no error_code)', '429 — per-minute limit or daily cap: wait Retry-After seconds.'],
+        ['(no error_code)', '404 / 405 — unknown route or method not allowed.'],
       ],
+      shapeTitle: 'The shape of detail',
+      shapes: [
+        ['string', 'Most errors: one English sentence.'],
+        ['list', '422 validation_error: [{ type, loc, msg, input }], one per invalid field; loc says where (for example ["body", "name"]).'],
+        ['object', 'PLAN_LIMIT_REACHED: { code, limit, current, max, tier }, the same content as error_params.'],
+      ],
+      sampleTitle: 'Example: a read key that writes',
     },
     pagination: {
       title: 'Pagination',
-      body: 'Lists that can grow without bound (sessions, data sources, datasets) take skip and limit. The rest return the whole set and are narrowed with their filters, for example signal or supplier on /inventory/status.',
+      body: 'There are three forms, and each endpoint declares its own in its parameters:',
+      items: [
+        ['skip and limit', 'Sessions, session summaries, data sources and datasets. The response has items, total, skip and limit.'],
+        ['limit and offset', 'Alert activity (/alerts/activity). The response has items, total, limit and offset.'],
+        ['limit only', 'Newest first, up to limit: alerts, order history, setup gaps, shrinkage and retraining history.'],
+        ['no pagination', 'The rest return the whole set and are narrowed with their filters, for example signal or supplier on /inventory/status.'],
+      ],
+    },
+    idempotency: {
+      title: 'Idempotency',
+      body: 'POST /inventory/log-po and POST /inventory/po accept the Idempotency-Key header: one unique value (a UUID) per order you mean to place. Repeating the request with the same key returns the order that was already created (200 with replayed: true) instead of a second one; the same key with different lines answers 409 po_idempotency_key_reused. Every other write endpoint is not idempotent: before retrying a write whose result you did not see, check whether it was applied.',
+      header: 'Idempotency-Key: 3f1c9a5e-7d62-4b0e-9d6a-2c8f4a1b5e70',
     },
     envelope: {
       title: 'Response format',
-      body: 'Every JSON response is wrapped: { "success": true, "data": …, "meta": { "timestamp": … } }. Your payload is in data. Endpoints that return a file (Excel, PDF, CSV) answer with the file itself.',
+      body: 'Every JSON response is wrapped: { "success": true, "data": …, "meta": { "timestamp": … } }. Your payload is in data, which is an object or a list depending on the endpoint; paginated lists carry their list in data.items.',
+      fileNote: 'Endpoints that return a file (Excel, PDF, CSV) answer with the file itself, with no wrapper.',
+      rpcNote: 'The MCP endpoint (POST /mcp) speaks JSON-RPC 2.0 and does not use this wrapper.',
+      formatsTitle: 'Types and formats',
+      formats: [
+        ['Dates', 'Dates are YYYY-MM-DD; instants are ISO 8601 in UTC, for example 2026-10-01T08:00:00+00:00.'],
+        ['Numbers', 'Quantities and amounts are JSON numbers, not strings. Amounts are in the account\'s currency (GET /tenant/currency).'],
+        ['Empty values', 'A field with no value usually arrives as null instead of being omitted.'],
+        ['Identifiers', 'Opaque prefixed strings (sess_…, ds_…, sup_…): store them as they are.'],
+        ['Signals', 'The traffic light uses PEDIR_YA, PEDIR_PRONTO, OK and SOBRESTOCK: fixed values that are not translated.'],
+      ],
     },
     reference: {
       title: 'Endpoint reference',
-      lead: 'Generated from the service itself: if an endpoint is listed here, it can be called with an API key.',
+      lead: 'Generated from the service itself: if an endpoint is listed here, it can be called with an API key. Example responses are real calls to a test account.',
       read: 'Read',
       write: 'Write',
       params: 'Parameters',
@@ -348,7 +467,25 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     },
     mcp: {
       title: 'For AI clients (MCP)',
-      body: 'The same key opens an MCP server at /mcp with five read-only tools, so an AI assistant can query your traffic light. By design it writes nothing.',
+      body: 'The same key opens an MCP server at POST /mcp with five read-only tools, so an AI assistant can query your traffic light. By design it writes nothing. GET /mcp answers 405: the server does not open a stream to the client.',
+    },
+    schema: {
+      required: 'required',
+      optional: 'optional',
+      nullable: 'nullable',
+      expandAll: 'Expand all',
+      collapseAll: 'Collapse all',
+      item: 'Each list item',
+      eachValue: 'Each value',
+      freeForm: 'Free-form object: it declares no fields.',
+      oneOf: 'One of these shapes',
+      recursive: 'Recursive structure: the same object repeats.',
+      constraint: { min: 'min', max: 'max', default: 'default', minLength: 'min length', maxLength: 'max length' },
+      more: n => `+${n} more`,
+      rootArray: 'A list. The fields are those of each item.',
+      rootObject: 'An object.',
+      rootMap: 'A map: the keys are data.',
+      empty: 'No fields.',
     },
     workspace: {
       browse: 'Browse endpoints',
@@ -356,23 +493,35 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       noResults: 'No endpoint matches that search.',
       close: 'Close',
       count: n => `${n} endpoints`,
-      tabs: { params: 'Parameters', body: 'Body', headers: 'Headers', response: 'Response' },
-      noBody: 'This endpoint takes no body.',
-      headersLead: 'Headers this call carries.',
+      sections: { request: 'Request', responses: 'Responses' },
+      paramGroups: { path: 'Path parameters', query: 'Query parameters', header: 'Headers' },
+      headersTitle: 'Headers',
       authValue: 'Your API key. Always required.',
       optional: 'optional',
-      responseLead: 'When it succeeds:',
-      responseNote: 'Every JSON answer comes in this envelope; what data holds depends on the endpoint. When something fails you get a stable error_code (see Errors).',
-      exampleNote: 'A real answer from a demo account, trimmed: lists show one item and long texts are shortened.',
-      fieldsTitle: 'Response fields',
+      noBody: 'This endpoint takes no body.',
       noContent: 'Answers with no body.',
+      bodyTitle: 'Body',
+      bodyRequired: 'The body is required.',
+      bodyOptional: 'The body is optional.',
+      successTitle: 'On success',
+      errorsTitle: 'Possible errors',
+      errorsLead: 'Besides the errors of each endpoint, any call made with a key can answer:',
+      responseBody: 'Response body',
+      notCaptured: 'No example response was captured for this endpoint. Every JSON answer comes in this envelope; what data holds depends on the endpoint.',
+      fileResponse: types => `Returns a file (${types}), with no wrapper.`,
+      rpcResponse: 'Answers JSON-RPC 2.0, not the usual envelope.',
+      exampleNote: 'A real answer from a test account, trimmed: lists show one item and long texts are shortened.',
       request: 'Request',
       response: 'Response',
       languages: 'Example language',
       copy: 'Copy',
       copied: 'Copied',
       copyUrl: 'Copy URL',
+      copyLink: 'Copy link',
       stats: { read: n => `${n} read`, write: n => `${n} write` },
+      scopeRead: 'Read key',
+      scopeWrite: 'Write key',
+      clear: 'Clear search',
     },
   },
 }
