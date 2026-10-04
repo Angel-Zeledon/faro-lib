@@ -984,8 +984,24 @@ function QuickStartPageContent() {
   return
  }
 
- if (Object.keys(remediationChoices).length > 0) {
-  await setRemediations(sessionId, remediationChoices)
+ // Only send answers to findings the file STILL has. A choice made against an
+ // earlier mapping (say "keep the last row" for duplicates, before the user
+ // mapped a second key column that made the duplicates disappear) is stale:
+ // the backend refuses it with `remediation_not_offered`, which used to
+ // surface as the raw token "duplicates=duplicates_keep_last".
+ const liveOffered = new Set(
+  (liveGate.issues ?? [])
+   .filter(i => (i.remediations?.length ?? 0) > 0)
+   .map(i => i.type),
+ )
+ const liveChoices = Object.fromEntries(
+  Object.entries(remediationChoices).filter(([issueType]) => liveOffered.has(issueType)),
+ )
+ if (Object.keys(liveChoices).length !== Object.keys(remediationChoices).length) {
+  setRemediationChoices(liveChoices)
+ }
+ if (Object.keys(liveChoices).length > 0) {
+  await setRemediations(sessionId, liveChoices)
  }
 
  setStep(3)
