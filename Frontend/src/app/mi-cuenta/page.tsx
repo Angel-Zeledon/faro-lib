@@ -1528,7 +1528,7 @@ function LegalSection({ t }: { t: (k: string) => string }) {
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         {LEGAL_ROWS.map(({ key, href, label, Icon }) => (
           <li key={key}>
-            <Link href={href} target="_blank" rel="noopener" style={{
+            <Link href={href} target="_blank" rel="noopener" prefetch={false} style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderRadius: 8,
               fontSize: 13, color: 'var(--text)', textDecoration: 'none',
             }}>

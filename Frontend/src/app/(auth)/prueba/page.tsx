@@ -141,7 +141,7 @@ export default function TrialPage() {
   const expires = acct
     ? new Date(acct.expires_at).toLocaleString(lang === 'es' ? 'es-CR' : 'en-US', {
         weekday: 'long', hour: '2-digit', minute: '2-digit',
-      })
+      }).replace(/\.$/, '')   // "p. m." already ends in a period; the sentence adds its own
     : ''
 
   return (

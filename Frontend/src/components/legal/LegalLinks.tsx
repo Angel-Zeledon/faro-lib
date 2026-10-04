@@ -25,14 +25,14 @@ export default function LegalLinks({ compact, onNavigate }: { compact?: boolean;
       <nav aria-label={t('legal.group')} style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
         {LEGAL_ORDER.map(k => (
           <Link
-            key={k} href={LEGAL_PATHS[k]} onClick={onNavigate} target="_blank" rel="noopener"
+            key={k} href={LEGAL_PATHS[k]} onClick={onNavigate} target="_blank" rel="noopener" prefetch={false}
             style={{ fontSize: 11, color: 'var(--sidebar-dim)', textDecoration: 'none' }}
           >
             {t(LABEL[k])}
           </Link>
         ))}
         <Link
-          href={LEGAL_HUB_PATH} onClick={onNavigate} target="_blank" rel="noopener"
+          href={LEGAL_HUB_PATH} onClick={onNavigate} target="_blank" rel="noopener" prefetch={false}
           style={{ fontSize: 11, color: 'var(--sidebar-dim)', textDecoration: 'none' }}
         >
           {t('legal.all')}
@@ -44,7 +44,7 @@ export default function LegalLinks({ compact, onNavigate }: { compact?: boolean;
     <nav aria-label={t('legal.group')} style={{ display: 'flex', flexWrap: 'wrap', gap: '0 4px', padding: '0 4px' }}>
       {LEGAL_ORDER.map(k => (
         <Link
-          key={k} href={LEGAL_PATHS[k]} onClick={onNavigate} target="_blank" rel="noopener"
+          key={k} href={LEGAL_PATHS[k]} onClick={onNavigate} target="_blank" rel="noopener" prefetch={false}
           className="tap-feedback"
           style={{
             display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 8px',
@@ -55,7 +55,7 @@ export default function LegalLinks({ compact, onNavigate }: { compact?: boolean;
         </Link>
       ))}
       <Link
-        href={LEGAL_HUB_PATH} onClick={onNavigate} target="_blank" rel="noopener"
+        href={LEGAL_HUB_PATH} onClick={onNavigate} target="_blank" rel="noopener" prefetch={false}
         className="tap-feedback"
         style={{
           display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 8px',

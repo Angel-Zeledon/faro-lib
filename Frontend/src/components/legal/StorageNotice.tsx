@@ -67,7 +67,7 @@ export default function StorageNotice({ suppress = false }: { suppress?: boolean
       <style dangerouslySetInnerHTML={{ __html: NOTICE_CSS }} />
       <p>
         {t('legal.notice_text')}{' '}
-        <Link href={LEGAL_PATHS.cookies} target="_blank" rel="noopener" onClick={close}>{t('legal.notice_more')}</Link>
+        <Link href={LEGAL_PATHS.cookies} target="_blank" rel="noopener" prefetch={false} onClick={close}>{t('legal.notice_more')}</Link>
       </p>
       <button type="button" onClick={close} className="storage-notice-ok">
         {t('legal.notice_ok')}
@@ -78,7 +78,7 @@ export default function StorageNotice({ suppress = false }: { suppress?: boolean
 
 const NOTICE_CSS = `
 .storage-notice {
- position: fixed; left: 16px; z-index: 70; box-sizing: border-box;
+ position: fixed; right: 16px; z-index: 70; box-sizing: border-box;
  width: min(400px, calc(100vw - 32px));
  display: flex; align-items: center; gap: 14px;
  padding: 10px 10px 10px 16px; border-radius: 14px;
@@ -96,7 +96,7 @@ const NOTICE_CSS = `
 .storage-notice-ok:hover { border-color: var(--accent); color: var(--accent); }
 .storage-notice button:focus-visible, .storage-notice a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 760px) {
- .storage-notice { left: 12px; width: calc(100vw - 24px); }
+ .storage-notice { left: 12px; right: auto; width: calc(100vw - 24px); }
  .storage-notice-ok { min-height: 44px; }
 }
 @keyframes storage-notice-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
