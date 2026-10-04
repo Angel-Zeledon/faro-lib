@@ -352,6 +352,8 @@ app.include_router(api_keys.router,        prefix=_PREFIX)
 app.include_router(webhooks.router,        prefix=_PREFIX)
 app.include_router(schedule.router,        prefix=_PREFIX)
 app.include_router(inventory_router.router, prefix=_PREFIX)
+from backend.api.v1 import inventory_import as inventory_import_router  # noqa: E402
+app.include_router(inventory_import_router.router, prefix=_PREFIX)
 from backend.api.v1 import inventory_recommendation_log as recommendation_log_router  # noqa: E402
 app.include_router(recommendation_log_router.router, prefix=_PREFIX)
 from backend.api.v1 import signal_thresholds as signal_thresholds_router  # noqa: E402

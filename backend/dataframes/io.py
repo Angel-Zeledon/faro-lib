@@ -282,6 +282,17 @@ def read_table(path: str, sheet: Optional[str] = None) -> dict:
     return {"columns": list(df.columns), "rows": _to_records(df)}
 
 
+def xlsx_bytes(columns: list[str], rows: list[dict]) -> bytes:
+    """An .xlsx workbook as bytes (header row + `rows`), for downloadable
+    templates. Cells are written verbatim as strings, so a phone number keeps
+    its leading zeros and nothing is evaluated as a formula."""
+    df = pd.DataFrame([{c: ("" if r.get(c) is None else str(r.get(c))) for c in columns}
+                       for r in rows], columns=columns)
+    buf = _io.BytesIO()
+    df.to_excel(buf, index=False)
+    return buf.getvalue()
+
+
 def write_rows(path: str, columns: list[str], rows: list[dict],
                fmt: str = "csv") -> None:
     """Write an edited table to disk — the ONE place edits get persisted.

@@ -1760,6 +1760,43 @@ export const importStockFile = (
   )
 }
 
+// ── Bulk import of suppliers and purchase orders ─────────────────────────────
+// Same two-step shape as the stock importer: `previewBulkImport` is a dry run
+// that writes nothing, `commitBulkImport` commits. Templates come as CSV or XLSX.
+type BulkKind = import('./bulkImportTypes').BulkImportKind
+const BULK_PATH: Record<BulkKind, string> = {
+  suppliers: '/inventory/suppliers/import',
+  orders:    '/inventory/po/import',
+}
+
+export const downloadImportTemplate = (kind: BulkKind, format: 'csv' | 'xlsx') =>
+  downloadBlob(
+    `${BULK_PATH[kind]}/template?format=${format}`,
+    `${kind === 'suppliers' ? 'suppliers' : 'purchase_orders'}_template.${format}`,
+  )
+
+export const previewBulkImport = <T = unknown>(
+  kind: BulkKind, file: File,
+  mapping?: import('./bulkImportTypes').BulkImportMapping, opts?: RequestOpts,
+) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  if (mapping) fd.append('mapping', JSON.stringify(mapping))
+  return request<T>('POST', `${BULK_PATH[kind]}/preview`, fd, opts)
+}
+
+export const commitBulkImport = <T = unknown>(
+  kind: BulkKind, file: File,
+  mapping?: import('./bulkImportTypes').BulkImportMapping,
+  choices?: { onExisting?: 'skip' | 'update' }, opts?: RequestOpts,
+) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  if (mapping) fd.append('mapping', JSON.stringify(mapping))
+  if (choices?.onExisting) fd.append('on_existing', choices.onExisting)
+  return request<T>('POST', BULK_PATH[kind], fd, opts)
+}
+
 // ── Alert history (the bell) ─────────────────────────────────────────────────
 // The 08:00 UTC loop's stockout digests, supplier lead-time warnings and
 // data-freshness reminders leave the building by email/WhatsApp and, until

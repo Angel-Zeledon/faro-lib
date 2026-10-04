@@ -165,6 +165,25 @@ EVENTS: dict[str, EventSpec] = {
         kind="data", severity=WARNING,
         detail_keys=("rows_read", "rows_written", "duplicate_rows", "rejected_rows"),
     ),
+    # Bulk imports of suppliers and of purchase orders. Same two-event shape as
+    # the stock import: a clean one is history, one that dropped rows is a
+    # warning the user is told about.
+    "data.suppliers_imported": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("rows_read", "rows_written", "duplicate_rows", "rejected_rows"),
+    ),
+    "data.suppliers_import_partial": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("rows_read", "rows_written", "duplicate_rows", "rejected_rows"),
+    ),
+    "data.orders_imported": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("rows_read", "rows_written", "duplicate_rows", "rejected_rows"),
+    ),
+    "data.orders_import_partial": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("rows_read", "rows_written", "duplicate_rows", "rejected_rows"),
+    ),
     "data.shrinkage_recorded": EventSpec(
         kind="data", severity=INFO,
         detail_keys=("sku", "quantity", "warehouse", "shrinkage_reason"),

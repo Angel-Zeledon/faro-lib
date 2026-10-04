@@ -16,6 +16,7 @@ import Input, { Field, Select, Textarea } from '@/components/ui/Input'
 import Table, { Th, Td } from '@/components/ui/Table'
 import Tooltip from '@/components/ui/Tooltip'
 import PriceBreakManager from '@/components/suppliers/PriceBreakManager'
+import BulkImportButton from '@/components/inventory/BulkImportButton'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { BottomSheet, MobileList, MobileCard } from '@/components/mobile'
 import StickyActionBar from '@/components/mobile/StickyActionBar'
@@ -642,7 +643,8 @@ function SuppliersPageInner() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <BulkImportButton kind="suppliers" onImported={load} />
           <Link href="/proveedores/scorecard" data-tour="sup.scorecard" style={{
             display: 'flex', alignItems: 'center', gap: 6,
             fontSize: 12, color: C.dim, textDecoration: 'none',

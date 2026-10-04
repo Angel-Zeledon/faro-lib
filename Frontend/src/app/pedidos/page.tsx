@@ -5,6 +5,7 @@ import type { POLogEntry, SupplierContactHealthRow, SupplierLeadTimeAlert } from
 import { POHistoryTable, ReceptionModal } from '@/components/po/POHistory'
 import { ManualPOModal } from '@/components/po/ManualPOModal'
 import { TransfersPanel } from '@/components/po/TransfersPanel'
+import BulkImportButton from '@/components/inventory/BulkImportButton'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
 import {
   SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
@@ -168,6 +169,7 @@ export default function OrdersPage() {
               {pendingCount} {t('orders.pending_suffix')}
             </span>
           )}
+          <BulkImportButton kind="orders" onImported={() => load()} />
           {canCreate && (
             <button
               data-tour="pedidos.manual"

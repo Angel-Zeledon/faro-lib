@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 211,
-  "read": 134,
-  "write": 77
+  "total": 217,
+  "read": 136,
+  "write": 81
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -4573,6 +4573,102 @@
      ]
     },
     {
+     "id": "post-inventory-po-import",
+     "method": "POST",
+     "path": "/inventory/po/import",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Po Import",
+     "description": "Create purchase orders from a CSV / Excel file, one order per (order reference, supplier, destination warehouse).",
+     "parameters": [],
+     "request_body": {
+      "content_type": "multipart/form-data",
+      "required": true,
+      "fields": [
+       {
+        "name": "file",
+        "type": "file",
+        "required": true,
+        "description": ""
+       },
+       {
+        "name": "mapping",
+        "type": "string",
+        "required": false,
+        "description": ""
+       }
+      ],
+      "example": {
+       "file": "@sales.csv",
+       "mapping": "mapping"
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "post-inventory-po-import-preview",
+     "method": "POST",
+     "path": "/inventory/po/import/preview",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Po Import Preview",
+     "description": "Dry run of POST /po/import: the orders the file would create, and every row whose supplier / product / warehouse did not resolve. Writes nothing.",
+     "parameters": [],
+     "request_body": {
+      "content_type": "multipart/form-data",
+      "required": true,
+      "fields": [
+       {
+        "name": "file",
+        "type": "file",
+        "required": true,
+        "description": ""
+       },
+       {
+        "name": "mapping",
+        "type": "string",
+        "required": false,
+        "description": ""
+       }
+      ],
+      "example": {
+       "file": "@sales.csv",
+       "mapping": "mapping"
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "get-inventory-po-import-template",
+     "method": "GET",
+     "path": "/inventory/po/import/template",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "Po Import Template",
+     "description": "Purchase-order import template: header row plus example lines (two orders, the first with two lines).",
+     "parameters": [
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "csv"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
      "id": "get-inventory-po-overdue",
      "method": "GET",
      "path": "/inventory/po/overdue",
@@ -5836,6 +5932,109 @@
      "summary": "Supplier Contact Health",
      "description": "Suppliers that POST /po/{id}/send would silently skip — no email and no WhatsApp on file, or a supplier name on PO lines with no record at all (feature 2.5).",
      "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "post-inventory-suppliers-import",
+     "method": "POST",
+     "path": "/inventory/suppliers/import",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Suppliers Import",
+     "description": "Create suppliers from a CSV / Excel file.",
+     "parameters": [],
+     "request_body": {
+      "content_type": "multipart/form-data",
+      "required": true,
+      "fields": [
+       {
+        "name": "file",
+        "type": "file",
+        "required": true,
+        "description": ""
+       },
+       {
+        "name": "mapping",
+        "type": "string",
+        "required": false,
+        "description": ""
+       },
+       {
+        "name": "on_existing",
+        "type": "string",
+        "required": false,
+        "description": ""
+       }
+      ],
+      "example": {
+       "file": "@sales.csv",
+       "mapping": "mapping",
+       "on_existing": "skip"
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "post-inventory-suppliers-import-preview",
+     "method": "POST",
+     "path": "/inventory/suppliers/import/preview",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Suppliers Import Preview",
+     "description": "Dry run of POST /suppliers/import: what was detected and what would be written. Touches no row.",
+     "parameters": [],
+     "request_body": {
+      "content_type": "multipart/form-data",
+      "required": true,
+      "fields": [
+       {
+        "name": "file",
+        "type": "file",
+        "required": true,
+        "description": ""
+       },
+       {
+        "name": "mapping",
+        "type": "string",
+        "required": false,
+        "description": ""
+       }
+      ],
+      "example": {
+       "file": "@sales.csv",
+       "mapping": "mapping"
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "get-inventory-suppliers-import-template",
+     "method": "GET",
+     "path": "/inventory/suppliers/import/template",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "Suppliers Import Template",
+     "description": "Suppliers import template: the header row plus two example rows.",
+     "parameters": [
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "csv"
+      }
+     ],
      "request_body": null,
      "success_status": 200,
      "response_content_types": [
