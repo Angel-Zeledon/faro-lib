@@ -41,6 +41,12 @@ export interface SessionSummary {
   // status — and for a FAILED session old enough that its job row is gone.
   failure_reason?:  string | null
   tags:             string[]
+  /** 1 - mean best-model WAPE over the SKUs; null until the run has results. */
+  accuracy?:        number | null
+  models?:          string[]
+  archived_at?:     string | null
+  is_backtest?:     boolean
+  backtest_holdout_periods?: number | null
 }
 
 // ── Dataset ───────────────────────────────────────────────────────────────────

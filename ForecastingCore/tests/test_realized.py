@@ -76,3 +76,28 @@ def test_verdict_levels_cover_thresholds():
     assert verdict_for(0.41, 0.0, 10)["level"] == "poor"
     assert verdict_for(0.1, BIAS_NOTABLE + 0.01, 10)["direction"] == "over"
     assert verdict_for(0.1, BIAS_NOTABLE, 10)["direction"] == "balanced"
+
+
+# ── describe_overlap: where a dataset sits against the forecast window ───────
+
+from forecasting_core.evaluation.realized import describe_overlap
+
+
+@pytest.mark.parametrize("data,expected", [
+    (("2026-01-01", "2026-03-31"), "covers"),
+    (("2026-02-01", "2026-03-31"), "partial"),
+    (("2026-01-01", "2026-02-10"), "partial"),
+    (("2025-01-01", "2025-12-20"), "ends_before_forecast"),
+    (("2026-04-01", "2026-05-01"), "starts_after_forecast"),
+])
+def test_describe_overlap_relations(data, expected):
+    out = describe_overlap("2026-01-15", "2026-03-15", *data)
+    assert out["relation"] == expected
+
+
+def test_describe_overlap_numbers():
+    out = describe_overlap("2026-01-15", "2026-03-15", "2025-01-01", "2025-12-20")
+    assert out["gap_days"] == 26 and out["overlap_from"] is None
+    out = describe_overlap("2026-01-15", "2026-03-15", "2026-02-01", "2026-03-31")
+    assert (out["overlap_from"], out["overlap_to"]) == ("2026-02-01", "2026-03-15")
+    assert describe_overlap(None, "2026-03-15", "2026-02-01", "2026-03-31")["relation"] == "unknown"

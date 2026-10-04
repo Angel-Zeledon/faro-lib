@@ -135,7 +135,7 @@ class TestSessionCRUD:
         assert row["name"] == new_name, "PATCH response echoed the new name but the DB row was not updated"
 
     def test_delete_draft_session_returns_204(self, client, auth_headers):
-        """DELETE /sessions/{id} on a DRAFT session returns 204."""
+        """DELETE /sessions/{id} archives a DRAFT session (204); the row is kept."""
         from backend.db.connection import query_one
         cr = client.post("/api/v1/sessions", headers=auth_headers,
                          json={"name": "To Delete"})
@@ -145,8 +145,9 @@ class TestSessionCRUD:
         dr = client.delete(f"/api/v1/sessions/{sid}", headers=auth_headers)
         assert dr.status_code == 204
 
-        row = query_one("SELECT id FROM sessions WHERE id = %s", (sid,))
-        assert row is None, "204 was returned but the session row still exists in the DB"
+        row = query_one("SELECT id, archived_at FROM sessions WHERE id = %s", (sid,))
+        assert row is not None, "sessions are permanent: DELETE must archive, never erase"
+        assert row["archived_at"] is not None, "204 was returned but the session was not archived"
 
     def test_delete_session_writes_activity_log_entry(self, client, auth_headers, registered_user):
         """
@@ -168,9 +169,9 @@ class TestSessionCRUD:
 
         tenant_id = registered_user["tenant"]["id"]
         user_id = registered_user["user"]["id"]
-        logs = act_svc.get_logs(tenant_id, user_id, action_filter="session.delete")
+        logs = act_svc.get_logs(tenant_id, user_id, action_filter="session.archive")
         matching = [l for l in logs["items"] if l["resource"] == sid]
-        assert len(matching) == 1, "Expected exactly one session.delete log entry for this session"
+        assert len(matching) == 1, "Expected exactly one session.archive log entry for this session"
         assert matching[0]["status"] == "success"
         assert matching[0]["context"]["name"] == name
 
@@ -179,8 +180,8 @@ class TestSessionCRUD:
         r = client.delete(f"/api/v1/sessions/{uuid4().hex}", headers=auth_headers)
         assert r.status_code == 404
 
-    def test_deleted_session_no_longer_accessible(self, client, auth_headers):
-        """After DELETE, GET on the same session_id returns 404."""
+    def test_archived_session_leaves_the_list_but_stays_readable(self, client, auth_headers):
+        """After DELETE (archive) the session is out of the working list but GET by id still works."""
         cr = client.post("/api/v1/sessions", headers=auth_headers,
                          json={"name": "Gone Session"})
         assert cr.status_code == 201
@@ -188,7 +189,9 @@ class TestSessionCRUD:
 
         client.delete(f"/api/v1/sessions/{sid}", headers=auth_headers)
         r = client.get(f"/api/v1/sessions/{sid}", headers=auth_headers)
-        assert r.status_code == 404
+        assert r.status_code == 200 and r.json()["data"]["archived_at"] is not None
+        listed = client.get("/api/v1/sessions", headers=auth_headers).json()["data"]["items"]
+        assert sid not in {s["id"] for s in listed}
 
     def test_unauthenticated_list_returns_401_or_403(self, client):
         """GET /sessions without token returns 401 or 403."""

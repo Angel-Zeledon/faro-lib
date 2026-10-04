@@ -4509,7 +4509,7 @@ def get_tenants_with_active_sessions() -> list[dict]:
                   MAX(s.updated_at) AS last_session_at
            FROM sessions s
            JOIN tenants t ON t.id = s.tenant_id
-           WHERE s.status = 'COMPLETED'
+           WHERE s.status = 'COMPLETED' AND s.archived_at IS NULL AND NOT s.is_backtest
            GROUP BY s.tenant_id, t.name""",
     )
 
@@ -4518,6 +4518,7 @@ def get_latest_completed_session(tenant_id: str) -> Optional[dict]:
     return query_one(
         """SELECT id AS session_id FROM sessions
            WHERE tenant_id = %s AND status = 'COMPLETED'
+             AND archived_at IS NULL AND NOT is_backtest
            ORDER BY updated_at DESC LIMIT 1""",
         (tenant_id,),
     )

@@ -44,6 +44,7 @@ def _newest_family_id(tenant_id: str) -> Optional[str]:
     row = query_one(
         """SELECT family_id FROM sessions
            WHERE tenant_id = %s AND family_id IS NOT NULL
+             AND archived_at IS NULL AND NOT is_backtest
            ORDER BY created_at DESC LIMIT 1""",
         (tenant_id,))
     return row["family_id"] if row else None
@@ -56,7 +57,8 @@ def _available_periods(tenant_id: str, family_id: Optional[str]) -> list[str]:
         return ["daily"]
     rows = query(
         """SELECT DISTINCT granularity FROM sessions
-           WHERE tenant_id = %s AND family_id = %s AND granularity IS NOT NULL""",
+           WHERE tenant_id = %s AND family_id = %s AND granularity IS NOT NULL
+             AND archived_at IS NULL""",
         (tenant_id, family_id))
     grains = {r["granularity"] for r in rows}
     out = [g for g in _PERIOD_ORDER if g in grains]
@@ -182,7 +184,7 @@ def resolve_active_session(tenant_id: str) -> Optional[str]:
         row = query_one(
             """SELECT id AS session_id FROM sessions
                WHERE tenant_id = %s AND family_id = %s AND granularity = %s
-                 AND status = 'COMPLETED'
+                 AND status = 'COMPLETED' AND archived_at IS NULL AND NOT is_backtest
                ORDER BY updated_at DESC LIMIT 1""",
             (tenant_id, family_id, period))
         if row:

@@ -137,3 +137,47 @@ def compare_forecast_to_actuals(
         "skus": per_sku,
         "skipped_points": skipped,
     }
+
+
+# ── Where a dataset sits relative to a forecast window ───────────────────────
+
+def describe_overlap(
+    forecast_from: Optional[str], forecast_to: Optional[str],
+    data_first: Optional[str], data_last: Optional[str],
+) -> dict:
+    """How the dates of a dataset line up with the window a forecast covers.
+
+    Inputs are ISO dates (``YYYY-MM-DD``) or None. The result is a stable code
+    plus numbers; the frontend renders the sentence, so nothing here is prose::
+
+        {"relation": ..., "overlap_from": date|None, "overlap_to": date|None,
+         "gap_days": int|None}
+
+    relation:
+      ``covers``                the data spans the whole forecast window
+      ``partial``               the data covers only part of it
+      ``ends_before_forecast``  the data stops before the forecast starts;
+                                ``gap_days`` is the distance between the two
+      ``starts_after_forecast`` the data begins after the forecast ends
+      ``unknown``               a date is missing, so nothing can be said
+    """
+    from datetime import date
+
+    def _d(x: Optional[str]) -> Optional[date]:
+        try:
+            return date.fromisoformat(str(x)[:10]) if x else None
+        except ValueError:
+            return None
+
+    ff, ft, df, dl = _d(forecast_from), _d(forecast_to), _d(data_first), _d(data_last)
+    out = {"relation": "unknown", "overlap_from": None, "overlap_to": None, "gap_days": None}
+    if None in (ff, ft, df, dl):
+        return out
+    if dl < ff:
+        return {**out, "relation": "ends_before_forecast", "gap_days": (ff - dl).days}
+    if df > ft:
+        return {**out, "relation": "starts_after_forecast", "gap_days": (df - ft).days}
+    lo, hi = max(ff, df), min(ft, dl)
+    out["overlap_from"], out["overlap_to"] = lo.isoformat(), hi.isoformat()
+    out["relation"] = "covers" if (df <= ff and dl >= ft) else "partial"
+    return out

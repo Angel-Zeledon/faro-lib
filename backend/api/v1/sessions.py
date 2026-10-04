@@ -16,9 +16,10 @@ def list_sessions(
     user: CurrentUser = Depends(get_current_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
+    archived: str = Query("active", pattern="^(active|archived|all)$"),
 ):
-    sessions = session_svc.list_sessions(user.tenant_id, skip=skip, limit=limit)
-    total = session_svc.count_sessions(user.tenant_id)
+    sessions = session_svc.list_sessions(user.tenant_id, skip=skip, limit=limit, archived=archived)
+    total = session_svc.count_sessions(user.tenant_id, archived=archived)
     return ok({"items": sessions, "total": total, "skip": skip, "limit": limit})
 
 
@@ -46,11 +47,23 @@ def list_session_summaries(
     user: CurrentUser = Depends(get_current_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
+    q: str | None = Query(None, max_length=200, description="Search name, description, dataset"),
+    status: list[str] | None = Query(None, description="Repeat to filter on several statuses"),
+    dataset_id: str | None = Query(None, max_length=100),
+    archived: str = Query("active", pattern="^(active|archived|all)$"),
+    created_from: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    created_to: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    sort: str = Query("created_at", pattern="^(created_at|updated_at|name|status|horizon|accuracy)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
-    """Session history: enriched list (dataset name, horizon, SKU count,
-    granularity) in a single batched query — no per-session lookups."""
-    items = session_svc.list_session_summaries(user.tenant_id, skip=skip, limit=limit)
-    total = session_svc.count_sessions(user.tenant_id)
+    """The sessions library: every session of the tenant, enriched (dataset name,
+    horizon, SKU count, granularity, headline accuracy, models), searchable,
+    filterable, sortable and paginated. `total` counts the rows matching the
+    filters, so a pager can be drawn."""
+    items, total = session_svc.list_session_summaries(
+        user.tenant_id, skip=skip, limit=limit, q=q, status=status,
+        dataset_id=dataset_id, archived=archived, created_from=created_from,
+        created_to=created_to, sort=sort, order=order)
     return ok({"items": items, "total": total, "skip": skip, "limit": limit})
 
 
@@ -101,23 +114,51 @@ def delete_session(
     session_id: str,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    """Archive a session. Nothing is erased: the results, forecasts and artifacts
+    stay in storage and `POST /sessions/{id}/restore` brings the session back.
+    The verb stays DELETE for the clients that already call it."""
     s = session_svc.get_session(user.tenant_id, session_id)
     if not s:
         raise AppError("session_not_found", "Session not found", status_code=404)
     # Ask the JOB, not the session. `runner.py` only ever writes COMPLETED or
     # FAILED back onto the session, so a session whose worker is training right
-    # now still reads QUEUED — this guard was checking a status the real flow
-    # never produces, and the two tests covering it write RUNNING by hand.
-    # Deleting mid-training cascades the job row away under a worker that then
-    # writes results for a session that no longer exists.
+    # now still reads QUEUED. Archiving mid-training would hide a run that is
+    # about to write its results.
     if job_service.has_in_flight_job(user.tenant_id, session_id):
         raise AppError(
             "session_running_cannot_delete",
-            "Cannot delete a session while its training is queued or running",
+            "Cannot archive a session while its training is queued or running",
             status_code=409,
         )
-    session_svc.delete_session(user.tenant_id, session_id)
+    if s.get("archived_at") is None:
+        session_svc.archive_session(user.tenant_id, session_id, user.user_id)
+        log_action(
+            user.tenant_id, user.user_id, "session.archive", resource=session_id,
+            context={"name": s["name"], "status_at_archive": s["status"],
+                     "dataset_id": s.get("dataset_id")},
+        )
+
+
+@router.post("/{session_id}/restore")
+def restore_session(
+    session_id: str,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Bring an archived session back into the working list. Counts against the
+    plan's saved-forecast ceiling like a new one: at the ceiling it is refused
+    with the same message, and the session stays archived and intact."""
+    from backend.entitlements.service import enforce_limit, limit_guard
+    s = session_svc.get_session(user.tenant_id, session_id)
+    if not s:
+        raise AppError("session_not_found", "Session not found", status_code=404)
+    if s.get("archived_at") is None:
+        return ok(s)
+    with limit_guard(user.tenant_id) as conn:
+        enforce_limit(user.tenant_id, "max_sessions",
+                      session_svc.count_sessions(user.tenant_id, conn=conn), conn=conn)
+        restored = session_svc.restore_session(user.tenant_id, session_id)
     log_action(
-        user.tenant_id, user.user_id, "session.delete", resource=session_id,
-        context={"name": s["name"], "status_at_deletion": s["status"]},
+        user.tenant_id, user.user_id, "session.restore", resource=session_id,
+        context={"name": s["name"]},
     )
+    return ok(restored)

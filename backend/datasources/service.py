@@ -245,9 +245,16 @@ async def replace_file_source(
         tmp_path.unlink(missing_ok=True)
         raise
 
-    for old in dst_dir.glob("data.*"):
-        if old != tmp_path:
-            old.unlink(missing_ok=True)
+    # The file being replaced is what any session trained on this dataset read.
+    # It is moved aside, never unlinked: a forecast that cites "sales through
+    # March" must stay reproducible after somebody uploads a corrected file.
+    superseded = [old for old in dst_dir.glob("data.*") if old != tmp_path]
+    if superseded:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        keep_dir = dst_dir / "previous" / stamp
+        keep_dir.mkdir(parents=True, exist_ok=True)
+        for old in superseded:
+            old.replace(keep_dir / old.name)
 
     file_path = dst_dir / f"data{suffix}"
     tmp_path.replace(file_path)
@@ -937,18 +944,43 @@ def count_sources(tenant_id: str) -> int:
     return row["cnt"] if row else 0
 
 
+def sessions_using(tenant_id: str, source_id: str) -> list[dict]:
+    """Every session that reads this dataset — archived ones included, since an
+    archived session is kept precisely so it can be reviewed later, and a review
+    needs the data it was trained on."""
+    return query(
+        "SELECT id, name, status, archived_at FROM sessions "
+        "WHERE tenant_id = %s AND (dataset_id = %s OR backtest_source_dataset_id = %s) "
+        "ORDER BY created_at DESC",
+        (tenant_id, source_id, source_id),
+    )
+
+
 def delete_source(tenant_id: str, source_id: str) -> None:
     src = get_source(tenant_id, source_id)
     if not src:
         return
-    # Remove file if exists
+    # Refuse BEFORE touching anything. This used to unlink the file first and
+    # only then let the database object, so a dataset a session depended on was
+    # reported as "in use" with its file already gone from disk.
+    users = sessions_using(tenant_id, source_id)
+    if users:
+        raise AppError(
+            "data_source_in_use",
+            "Cannot delete: this data source is still used by "
+            f"{len(users)} session(s). Sessions are permanent and keep their data.",
+            status_code=409,
+            params={"count": len(users),
+                    "sessions": ", ".join(u["name"] for u in users[:3])},
+        )
+    # Database first, file second: if the row cannot go, the file is untouched.
+    execute("DELETE FROM datasets WHERE id=%s AND tenant_id=%s", (source_id, tenant_id))
     if src.get("file_path"):
         p = Path(src["file_path"])
         if p.exists():
             p.unlink(missing_ok=True)
         if p.parent.exists() and not any(p.parent.iterdir()):
             p.parent.rmdir()
-    execute("DELETE FROM datasets WHERE id=%s AND tenant_id=%s", (source_id, tenant_id))
 
 
 def rename_source(tenant_id: str, source_id: str, name: str, description: Optional[str] = None) -> dict:

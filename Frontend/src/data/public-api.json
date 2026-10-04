@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 219,
+  "total": 221,
   "read": 138,
-  "write": 81
+  "write": 83
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -2769,6 +2769,51 @@
      ],
      "request_body": null,
      "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "post-sessions-session_id-backtest",
+     "method": "POST",
+     "path": "/sessions/{session_id}/backtest",
+     "tag": "forecasts",
+     "scope": "write",
+     "summary": "Start Backtest",
+     "description": "Train a back-test of a completed session: the same configuration on a copy of its dataset with the last `holdout_periods` periods held out. Its forecast then covers those periods and can be graded against the full dataset with `forecast-vs-actual`. The source session and dataset are not modified; the run counts against the plan's saved-forecast ceiling and is refused (nothing deleted) when that is full.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "type": "string",
+       "description": "",
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "fields": [
+       {
+        "name": "holdout_periods",
+        "type": "integer",
+        "required": true,
+        "description": ""
+       },
+       {
+        "name": "name",
+        "type": "string",
+        "required": false,
+        "description": ""
+       }
+      ],
+      "example": {
+       "holdout_periods": 1,
+       "name": "name"
+      }
+     },
+     "success_status": 202,
      "response_content_types": [
       "application/json"
      ]
@@ -7340,6 +7385,14 @@
        "type": "integer",
        "description": "",
        "example": 50
+      },
+      {
+       "name": "archived",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "active"
       }
      ],
      "request_body": null,
@@ -7398,7 +7451,7 @@
      "tag": "sessions",
      "scope": "read",
      "summary": "List Session Summaries",
-     "description": "Session history: enriched list (dataset name, horizon, SKU count, granularity) in a single batched query — no per-session lookups.",
+     "description": "The sessions library: every session of the tenant, enriched (dataset name, horizon, SKU count, granularity, headline accuracy, models), searchable, filterable, sortable and paginated. `total` counts the rows matching the filters, so a pager can be drawn.",
      "parameters": [
       {
        "name": "skip",
@@ -7415,6 +7468,72 @@
        "type": "integer",
        "description": "",
        "example": 50
+      },
+      {
+       "name": "q",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "Search name, description, dataset",
+       "example": "q"
+      },
+      {
+       "name": "status",
+       "in": "query",
+       "required": false,
+       "type": "array<string>",
+       "description": "Repeat to filter on several statuses",
+       "example": [
+        "status"
+       ]
+      },
+      {
+       "name": "dataset_id",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "<dataset_id>"
+      },
+      {
+       "name": "archived",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "active"
+      },
+      {
+       "name": "created_from",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "created_from"
+      },
+      {
+       "name": "created_to",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "created_to"
+      },
+      {
+       "name": "sort",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "created_at"
+      },
+      {
+       "name": "order",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "desc"
       }
      ],
      "request_body": null,
@@ -7520,6 +7639,30 @@
        ]
       }
      },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "post-sessions-session_id-restore",
+     "method": "POST",
+     "path": "/sessions/{session_id}/restore",
+     "tag": "sessions",
+     "scope": "write",
+     "summary": "Restore Session",
+     "description": "Bring an archived session back into the working list. Counts against the plan's saved-forecast ceiling like a new one: at the ceiling it is refused with the same message, and the session stays archived and intact.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "type": "string",
+       "description": "",
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": null,
      "success_status": 200,
      "response_content_types": [
       "application/json"

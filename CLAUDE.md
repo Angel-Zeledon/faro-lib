@@ -113,6 +113,18 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
 - **Notifications**: `backend/notifications/email.py` (Resend primary via RESEND_API_KEY, SMTP fallback) and `whatsapp.py` (Twilio). Daily inventory alert loop fires at 8:00 UTC from `backend/workers/worker.py`.
 - **AI features** (narrative, RAG analyst, chat, data-quality diagnosis): all go through the single factory `get_local_llm_client()` in `backend/ai/local_llm.py`, and there is exactly **one** backend behind it: **DeepSeek** (`DEEPSEEK_API_KEY`, `settings.deepseek_model`, default `deepseek-chat`), spoken over plain httpx because the API is OpenAI-shaped and needs no SDK. Anthropic and the local Ollama fallback were removed 2026-08-23 — **do not reintroduce a second provider or a fallback chain**: "whichever key is set" meant a missing or mistyped `DEEPSEEK_API_KEY` silently answered from somewhere else, and the only symptom was a different bill. With no key the factory raises `LLMNotConfigured` at the call site; every consumer already degrades to its rule-based text on an exception. `conftest.py` patches the factory session-wide, so tests never bill a real key.
 - **Storage**: Postgres for all metadata/results; binary files (datasets, artifacts, documents) on local disk under `storage/` (gitignored, never version it).
+- **Sessions are permanent** (2026-10-04, owner's rule): nothing in the product
+  erases a real tenant's session, its results/forecasts/artifacts or the dataset
+  it trained on. `DELETE /sessions/{id}` ARCHIVES (`sessions.archived_at`;
+  audited as `session.archive`, restorable with `POST /sessions/{id}/restore`);
+  the scheduled-retrain prune archives too; a dataset any session reads (archived
+  ones included) refuses deletion with `data_source_in_use`, and replacing a
+  dataset's file moves the old one to `previous/` instead of unlinking it. The
+  `max_sessions` ceiling counts ACTIVE sessions and only ever refuses to create or
+  restore. The only code that removes session rows is whole-tenant erasure
+  (`tenants/data_export.py`: typed confirmation, or the trial reaper on `demo`
+  tenants); `test_sessions_permanent.py` greps the source for any other path.
+  Back-test sessions (`is_backtest`) and archived ones never drive planning.
 - **Public surface** (2026-10-02): an `sk_live_*` key can call every route
   whose router tag is in `EXPOSED_TAGS` of `backend/api/public_surface.py`
   (~211 operations), never auth/users/keys/config/admin routes; every tag must

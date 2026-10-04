@@ -139,6 +139,7 @@ def get_sales_freshness(tenant_id: str, now: Optional[datetime] = None) -> dict:
            FROM sessions s
            LEFT JOIN session_configs sc ON sc.session_id = s.id
            WHERE s.tenant_id = %s AND s.status = 'COMPLETED'
+             AND s.archived_at IS NULL AND NOT s.is_backtest
            ORDER BY s.updated_at DESC LIMIT 1""",
         (tenant_id,),
     )
