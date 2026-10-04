@@ -16,19 +16,43 @@ looks at the diff and decides the new route belongs on a public page.
 
 The output is deterministic (sorted, no timestamps, no environment values) so
 two runs on the same code produce the same bytes.
+
+What is in an endpoint entry:
+
+* `parameters[]` and `request_body.schema` carry a SCHEMA TREE (see `_node`),
+  not a type label: arrays, objects and maps stay distinct all the way down, so
+  a page can never present an object as a list item or the reverse. A request
+  body that is itself a list (`PATCH /sessions/{id}/overrides`) has an `array`
+  root.
+* `request_body.example` is built from that tree (or hand-written in
+  `backend/api/public_examples.py` where the schema is a free-form object).
+* `responses[]` lists the non-success statuses the route can answer.
+
+Response bodies are NOT here: no route declares a response model, so there is
+nothing to export. `capture_api_examples.py` records what each endpoint really
+answers into `Frontend/public/api-response-examples.json`, and a test compares
+that file with the live routes.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT = ROOT / "Frontend" / "src" / "data" / "public-api.json"
 
-# How deep an example body is expanded before nested objects become null.
-_MAX_DEPTH = 5
+# Operations an API key reaches but that only ever answer an error: listing
+# them as callable would document a request that cannot succeed.
+# `GET /mcp` answers 405 on purpose (the server is stateless and offers no
+# server-to-client stream); the MCP endpoint is POST /mcp.
+_NOT_CALLABLE = {("GET", "/mcp")}
+
+# How deep a schema tree is expanded before a nested object is shown as an
+# opaque `object`. Cycles are cut earlier, by name.
+_MAX_DEPTH = 6
 
 
 def _resolve(schema: dict, components: dict) -> dict:
@@ -40,125 +64,225 @@ def _resolve(schema: dict, components: dict) -> dict:
     return schema or {}
 
 
+def _ref_name(schema: dict) -> str | None:
+    if isinstance(schema, dict) and "$ref" in schema:
+        return schema["$ref"].rsplit("/", 1)[-1]
+    return None
+
+
 def _is_file(schema: dict) -> bool:
-    # OpenAPI 3.1 (FastAPI ≥ 0.100) spells an upload `contentMediaType`; 3.0
+    # OpenAPI 3.1 (FastAPI >= 0.100) spells an upload `contentMediaType`; 3.0
     # spelled it `format: binary`.
     return schema.get("type") == "string" and (
         schema.get("format") == "binary" or "contentMediaType" in schema)
-
-
-def _non_null(schema: dict, components: dict) -> dict:
-    """The first non-null branch of an Optional (anyOf [X, null])."""
-    schema = _resolve(schema, components)
-    for key in ("anyOf", "oneOf"):
-        if key in schema:
-            for option in schema[key]:
-                resolved = _resolve(option, components)
-                if resolved.get("type") != "null":
-                    return resolved
-    return schema
-
-
-def _type_label(schema: dict, components: dict) -> str:
-    schema = _resolve(schema, components)
-    for key in ("anyOf", "oneOf"):
-        if key in schema:
-            parts = [_type_label(s, components) for s in schema[key]]
-            parts = [p for p in parts if p != "null"]
-            return " | ".join(dict.fromkeys(parts)) or "any"
-    t = schema.get("type")
-    if t == "array":
-        return f"array<{_type_label(schema.get('items', {}), components)}>"
-    if "enum" in schema:
-        return "enum"
-    if _is_file(schema):
-        return "file"
-    if t == "string" and schema.get("format"):
-        return f"string({schema['format']})"
-    if t:
-        return str(t)
-    if "properties" in schema:
-        return "object"
-    return "any"
-
-
-def _example(schema: dict, components: dict, name: str = "", depth: int = 0):
-    schema = _resolve(schema, components)
-    if "example" in schema:
-        return schema["example"]
-    if schema.get("examples"):
-        ex = schema["examples"]
-        return ex[0] if isinstance(ex, list) else ex
-    if "default" in schema and schema["default"] is not None:
-        return schema["default"]
-    if "enum" in schema and schema["enum"]:
-        return schema["enum"][0]
-    for key in ("anyOf", "oneOf", "allOf"):
-        if key in schema:
-            options = [s for s in schema[key] if _resolve(s, components).get("type") != "null"]
-            if options:
-                return _example(options[0], components, name, depth)
-            return None
-    if depth > _MAX_DEPTH:
-        return None
-    t = schema.get("type")
-    if t == "object" or "properties" in schema:
-        props = schema.get("properties", {})
-        required = set(schema.get("required", []))
-        # Required fields always; optional ones too while the object is small,
-        # so an example shows what CAN be sent without becoming a wall.
-        keys = list(props) if len(props) <= 8 else [k for k in props if k in required]
-        return {k: _example(props[k], components, k, depth + 1) for k in keys}
-    if t == "array":
-        return [_example(schema.get("items", {}), components, name, depth + 1)]
-    if t == "integer":
-        return int(schema.get("minimum", 1) or 1)
-    if t == "number":
-        return float(schema.get("minimum", 1) or 1)
-    if t == "boolean":
-        return False
-    if t == "string":
-        fmt = schema.get("format")
-        if fmt == "date":
-            return "2026-10-01"
-        if fmt == "date-time":
-            return "2026-10-01T08:00:00Z"
-        if _is_file(schema):
-            return "@sales.csv"
-        lowered = name.lower()
-        if lowered == "sku" or lowered.endswith("_sku"):
-            return "SKU-001"
-        if lowered.endswith("id"):
-            return f"<{name}>"
-        return name or "string"
-    return None
 
 
 def _first_paragraph(text: str | None) -> str:
     if not text:
         return ""
     para = text.strip().split("\n\n", 1)[0]
-    return " ".join(line.strip() for line in para.splitlines()).strip()
+    out = ""
+    for line in (ln.strip() for ln in para.splitlines()):
+        # A list item starts its own line; everything else flows as one paragraph.
+        out += ("\n" if line.startswith("- ") and out else " " if out else "") + line
+    return out.strip()
 
 
-def _fields(schema: dict, components: dict) -> list[dict]:
-    """Top-level fields of a body. An Optional body is unwrapped; a list body
-    (e.g. forecast overrides) documents the fields of one item."""
-    schema = _non_null(schema, components)
-    if schema.get("type") == "array":
-        schema = _non_null(schema.get("items", {}), components)
-    props = schema.get("properties", {})
-    required = set(schema.get("required", []))
-    out = []
-    for key, prop in props.items():
-        resolved = _resolve(prop, components)
-        out.append({
-            "name": key,
-            "type": _type_label(prop, components),
-            "required": key in required,
-            "description": _first_paragraph(resolved.get("description") or prop.get("description")),
-        })
-    return out
+def _node(schema: dict, components: dict, depth: int = 0, trail: tuple = ()) -> dict:
+    """A schema as a small, renderer-friendly tree.
+
+    Keys (all optional except `type`): `nullable`, `format`, `enum`, `default`,
+    `minimum`/`maximum`/`min_length`/`max_length`, `description`, and by type
+    `items` (array), `fields` (object with declared properties, each a node
+    plus `name` and `required`), `values` (object used as a map) or
+    `free_form` (an object that declares no properties at all), `any_of`
+    (a union of several non-null shapes).
+    """
+    ref = _ref_name(schema)
+    resolved = _resolve(schema, components)
+    nullable = False
+
+    if ref and ref in trail:
+        return {"type": "object", "ref": ref}
+    if depth > _MAX_DEPTH:
+        return {"type": "object"}
+    trail = trail + ((ref,) if ref else ())
+
+    for key in ("anyOf", "oneOf"):
+        if key in resolved:
+            options = []
+            for option in resolved[key]:
+                if _resolve(option, components).get("type") == "null":
+                    nullable = True
+                else:
+                    options.append(option)
+            if not options:
+                return {"type": "null"}
+            if len(options) == 1:
+                node = _node(options[0], components, depth, trail)
+            else:
+                branches = [_node(o, components, depth + 1, trail) for o in options]
+                node = {"type": " | ".join(dict.fromkeys(b["type"] for b in branches)),
+                        "any_of": branches}
+            if nullable:
+                node["nullable"] = True
+            desc = _first_paragraph(resolved.get("description"))
+            if desc and "description" not in node:
+                node["description"] = desc
+            if resolved.get("default") is not None and "default" not in node:
+                node["default"] = resolved["default"]
+            return node
+    if "allOf" in resolved and len(resolved["allOf"]) == 1:
+        node = _node(resolved["allOf"][0], components, depth, trail)
+        desc = _first_paragraph(resolved.get("description"))
+        if desc:
+            node["description"] = desc
+        return node
+
+    t = resolved.get("type")
+    if isinstance(t, list):  # OpenAPI 3.1 may spell Optional as ["string", "null"]
+        nullable = "null" in t
+        t = next((x for x in t if x != "null"), None)
+    node: dict = {}
+    if _is_file(resolved):
+        node["type"] = "file"
+    elif t == "array":
+        node["type"] = "array"
+        node["items"] = _node(resolved.get("items", {}), components, depth + 1, trail)
+    elif t == "object" or "properties" in resolved:
+        node["type"] = "object"
+        props = resolved.get("properties", {})
+        required = set(resolved.get("required", []))
+        if props:
+            node["fields"] = [
+                {"name": k, "required": k in required, **_node(v, components, depth + 1, trail)}
+                for k, v in props.items()
+            ]
+        extra = resolved.get("additionalProperties")
+        if isinstance(extra, dict) and extra:
+            node["values"] = _node(extra, components, depth + 1, trail)
+        elif not props:
+            node["free_form"] = True
+    elif t:
+        node["type"] = str(t)
+        if resolved.get("format"):
+            node["format"] = resolved["format"]
+    elif "enum" in resolved:
+        node["type"] = "string"
+    else:
+        node["type"] = "any"
+    if "enum" in resolved:
+        node["enum"] = list(resolved["enum"])
+    if "const" in resolved:
+        node["enum"] = [resolved["const"]]
+    for src, dst in (("minimum", "minimum"), ("maximum", "maximum"),
+                     ("exclusiveMinimum", "exclusive_minimum"),
+                     ("minLength", "min_length"), ("maxLength", "max_length")):
+        if src in resolved:
+            node[dst] = resolved[src]
+    if resolved.get("default") is not None:
+        node["default"] = resolved["default"]
+    desc = _first_paragraph(resolved.get("description"))
+    if desc:
+        node["description"] = desc
+    if nullable:
+        node["nullable"] = True
+    return node
+
+
+def _string_example(name: str) -> str:
+    n = name.lower()
+    if n == "sku" or n.endswith("_sku"):
+        return "SKU-001"
+    if n.endswith("id"):
+        return f"<{name}>"
+    if "email" in n:
+        return "buyer@example.com"
+    if "phone" in n or "whatsapp" in n:
+        return "+50688887777"
+    if n.endswith("date") or n == "date" or n.startswith("date_"):
+        return "2026-10-01"
+    if n in ("month", "period"):
+        return "2026-10"
+    if n.endswith("_at") or n.endswith("timestamp"):
+        return "2026-10-01T08:00:00Z"
+    if n in ("warehouse", "location") or n.endswith("_warehouse"):
+        return "principal"
+    if n in ("currency", "currency_code"):
+        return "CRC"
+    if n == "url" or n.endswith("_url"):
+        return "https://example.com/hooks/stockai"
+    if n in ("reason", "notes", "note", "comment", "description"):
+        return "Free-text note"
+    if n in ("name", "display_name", "title"):
+        return "Example name"
+    if n == "supplier" or n.endswith("_supplier"):
+        return "Distribuidora Andina"
+    if n in ("category", "family", "brand"):
+        return "Pantry"
+    if n in ("query", "sql") or n.endswith("_query"):
+        return "SELECT sku, date, quantity FROM sales"
+    if n == "host":
+        return "db.example.com"
+    if n == "database":
+        return "erp"
+    if n == "username":
+        return "readonly"
+    if n == "password":
+        return "<password>"
+    return name or "string"
+
+
+def _example(node: dict, name: str = "", depth: int = 0):
+    """A plausible value for a node, from its declared constraints."""
+    if node.get("enum"):
+        return node["enum"][0]
+    t = node["type"]
+    default = node.get("default")
+    if default is not None and (t not in ("object", "array") or default):
+        return default
+    if "any_of" in node:
+        return _example(node["any_of"][0], name, depth)
+    if t == "object":
+        if depth > _MAX_DEPTH:
+            return {}
+        fields = node.get("fields")
+        if fields is not None:
+            # Required fields always; optional ones too while the object is
+            # small, so an example shows what CAN be sent without becoming a wall.
+            chosen = fields if len(fields) <= 8 else [f for f in fields if f["required"]]
+            return {f["name"]: _example(f, f["name"], depth + 1) for f in chosen}
+        if "values" in node:
+            return {"key": _example(node["values"], name, depth + 1)}
+        return {}
+    if t == "array":
+        return [_example(node.get("items", {"type": "any"}), name, depth + 1)]
+    if t in ("integer", "number"):
+        if "minimum" in node:
+            base = node["minimum"]
+        elif "exclusive_minimum" in node:
+            base = node["exclusive_minimum"] + 1
+        else:
+            base = 1
+        base = base or 1
+        return int(base) if t == "integer" else float(base)
+    if t == "boolean":
+        return False
+    if t == "file":
+        return "@sales.csv"
+    if t == "string":
+        fmt = node.get("format")
+        if fmt == "date":
+            return "2026-10-01"
+        if fmt == "date-time":
+            return "2026-10-01T08:00:00Z"
+        if fmt == "email":
+            return "buyer@example.com"
+        text = _string_example(name)
+        if node.get("min_length") and len(text) < node["min_length"]:
+            text = text.ljust(node["min_length"], "x")
+        return text
+    return None
 
 
 def build(app=None) -> dict:
@@ -166,8 +290,9 @@ def build(app=None) -> dict:
     if app is None:
         from backend.main import app as _app
         app = _app
+    from backend.api.public_examples import BODY_EXAMPLES, BODY_FIELDS
     from backend.api.public_surface import API_PREFIX, exposure
-    from backend.auth.api_key_auth import RATE_MAX_PER_MINUTE
+    from backend.auth.api_key_auth import RATE_MAX_PER_MINUTE, RATE_WINDOW_SECONDS
     from backend.entitlements.plans import PLANS
 
     schema = app.openapi()
@@ -183,34 +308,59 @@ def build(app=None) -> dict:
             op = item.get(method.lower())
             if op is None:
                 continue
+            path = route.path_format[len(API_PREFIX):]
+            if (method.upper(), path) in _NOT_CALLABLE:
+                continue
             params = []
             for p in op.get("parameters", []):
-                pschema = p.get("schema", {})
+                pnode = _node(p.get("schema", {}), components)
+                # A query or header value cannot be sent as null: "optional" says it all.
+                pnode.pop("nullable", None)
+                if p.get("description") and "description" not in pnode:
+                    pnode["description"] = _first_paragraph(p["description"])
+                # `Query(..., description="a | b | c")` is how several routes
+                # state an enumeration the schema cannot: lift it into `enum`.
+                words = pnode.get("description", "")
+                if "enum" not in pnode and pnode["type"] == "string" and re.fullmatch(r"\w+( \| \w+)+", words):
+                    pnode["enum"] = words.split(" | ")
+                example = _example(pnode, p["name"])
+                if p["in"] in ("path", "query") and isinstance(example, str) and example == p["name"]:
+                    example = f"<{p['name']}>"
                 params.append({
                     "name": p["name"],
                     "in": p["in"],
                     "required": bool(p.get("required")),
-                    "type": _type_label(pschema, components),
-                    "description": _first_paragraph(
-                        p.get("description") or _resolve(pschema, components).get("description")),
-                    "example": _example(pschema, components, p["name"]),
+                    "schema": pnode,
+                    "example": example,
                 })
             body = None
             rb = op.get("requestBody")
+            if rb is None and (method.upper(), path) in BODY_FIELDS:
+                # Reads its body from the raw request (JSON-RPC): OpenAPI has
+                # no requestBody at all, so the entry in public_examples.py is
+                # the only description there is.
+                rb = {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}
             if rb:
                 content = rb.get("content", {})
                 ctype = "application/json" if "application/json" in content else sorted(content)[0]
-                bschema = content[ctype].get("schema", {})
+                bnode = _node(content[ctype].get("schema", {}), components)
+                if (method.upper(), path) in BODY_FIELDS:
+                    # A route that reads keys out of a bare dict: OpenAPI can
+                    # only say "object", so the fields are written by hand.
+                    bnode = {"type": "object", "fields": BODY_FIELDS[(method.upper(), path)]}
                 body = {
                     "content_type": ctype,
                     "required": bool(rb.get("required")),
-                    "fields": _fields(bschema, components),
-                    "example": _example(bschema, components),
+                    "schema": bnode,
+                    "example": BODY_EXAMPLES.get((method.upper(), path), _example(bnode)),
                 }
             ok = op.get("responses", {})
             success = next((c for c in sorted(ok) if str(c).startswith("2")), "200")
             content_types = sorted(ok.get(success, {}).get("content", {}).keys())
-            path = route.path_format[len(API_PREFIX):]
+            errors = [
+                {"status": int(code), "description": _first_paragraph(r.get("description"))}
+                for code, r in sorted(ok.items()) if str(code).isdigit() and not str(code).startswith("2")
+            ]
             endpoints.append({
                 "id": f"{method.lower()}-{path.strip('/').replace('/', '-').replace('{', '').replace('}', '')}",
                 "method": method.upper(),
@@ -223,6 +373,7 @@ def build(app=None) -> dict:
                 "request_body": body,
                 "success_status": int(success) if str(success).isdigit() else 200,
                 "response_content_types": content_types or ["application/json"],
+                "errors": errors,
             })
 
     endpoints.sort(key=lambda e: (e["tag"], e["path"], e["method"]))
@@ -240,8 +391,10 @@ def build(app=None) -> dict:
         },
         "limits": {
             "per_minute_per_key": RATE_MAX_PER_MINUTE,
+            "window_seconds": RATE_WINDOW_SECONDS,
             "per_day_per_key": {
-                tier: PLANS[tier].max_api_calls_per_day for tier in ("free", "paid") if tier in PLANS
+                tier: PLANS[tier].max_api_calls_per_day
+                for tier in ("demo", "free", "paid") if tier in PLANS
             },
         },
         "tags": [{"tag": t, "endpoints": eps} for t, eps in sorted(tags.items())],

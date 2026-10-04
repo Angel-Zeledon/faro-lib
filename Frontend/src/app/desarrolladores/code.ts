@@ -7,11 +7,12 @@
 // in advance. Pure functions, no React — the page renders the tokens.
 
 import { SAMPLE_LANGS, generateSample, highlightLangOf, type SampleLang, type SampleSpec } from '@/lib/codeSamples'
+import type { SchemaNode } from '@/lib/apiSchema'
+export type { ResponseExample } from '@/lib/useResponseExamples'
 
 export type Param = {
-  name: string; in: string; required: boolean; type: string; description: string; example: unknown
+  name: string; in: string; required: boolean; schema: SchemaNode; example: unknown
 }
-export type Field = { name: string; type: string; required: boolean; description: string }
 export type Endpoint = {
   id: string
   method: string
@@ -21,9 +22,10 @@ export type Endpoint = {
   summary: string
   description: string
   parameters: Param[]
-  request_body: { content_type: string; required: boolean; fields: Field[]; example: unknown } | null
+  request_body: { content_type: string; required: boolean; schema: SchemaNode; example: unknown } | null
   success_status: number
   response_content_types: string[]
+  errors: { status: number; description: string }[]
 }
 
 // The sample generator itself is shared with the in-app console (/api):
@@ -54,7 +56,7 @@ export function specFor(ep: Endpoint, base: string): SampleSpec {
     headers: ep.parameters.filter(p => p.in === 'header').map(h => ({ name: h.name, value: headerValue(h) })),
     body: !body ? null
       : body.content_type.startsWith('multipart/')
-        ? { kind: 'multipart', fields: body.fields.map(f => ({ name: f.name, file: f.type === 'file' })) }
+        ? { kind: 'multipart', fields: (body.schema.fields ?? []).map(f => ({ name: f.name, file: f.type === 'file' })) }
         : { kind: 'json', value: body.example ?? {} },
     expectsJson: ep.success_status !== 204,
   }

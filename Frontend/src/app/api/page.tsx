@@ -33,6 +33,8 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { getApiKeyUsage } from '@/lib/api'
 import { SAMPLE_LANGS, generateSample, type SampleSpec } from '@/lib/codeSamples'
 import { useSampleLang } from '@/lib/useSampleLang'
+import { SchemaTree, SCHEMA_TREE_CSS, type SchemaLabels } from '@/components/apidocs/SchemaTree'
+import { useResponseExample } from '@/lib/useResponseExamples'
 import { getUser } from '@/lib/auth'
 import type { ApiKeyUsage } from '@/lib/types'
 import { useUpgradePrompt } from '@/components/limits/UpgradeDialog'
@@ -163,6 +165,83 @@ function MethodChip({ method }: { method: 'GET' | 'POST' }) {
     }}>
       {method}
     </span>
+  )
+}
+
+/** The console's endpoints and their entries in the generated reference
+ *  (src/data/public-api.json), whose captured answers say what each one returns. */
+const REFERENCE_ID: Record<string, string> = {
+  planning: 'get-planning',
+  sources: 'get-data-sources',
+  file: 'post-data-sources-source_id-file',
+  train: 'post-sessions-session_id-train',
+  train_status: 'get-sessions-session_id-train-status',
+  status: 'get-inventory-status',
+  briefing: 'get-inventory-morning-briefing',
+  logpo: 'post-inventory-log-po',
+}
+
+function useSchemaLabels(): SchemaLabels {
+  const { t } = useLanguage()
+  return useMemo(() => ({
+    required: t('apidocs.schema_required'),
+    optional: t('apidocs.schema_optional'),
+    nullable: t('apidocs.schema_nullable'),
+    expandAll: t('apidocs.schema_expand_all'),
+    collapseAll: t('apidocs.schema_collapse_all'),
+    item: t('apidocs.schema_item'),
+    eachValue: t('apidocs.schema_each_value'),
+    freeForm: t('apidocs.schema_free_form'),
+    oneOf: t('apidocs.schema_one_of'),
+    recursive: t('apidocs.schema_recursive'),
+    constraint: {
+      min: t('apidocs.schema_min'),
+      max: t('apidocs.schema_max'),
+      default: t('apidocs.schema_default'),
+      minLength: t('apidocs.schema_min_length'),
+      maxLength: t('apidocs.schema_max_length'),
+    },
+    more: (n: number) => t('apidocs.schema_more', { n }),
+    rootArray: t('apidocs.schema_root_array'),
+    rootObject: t('apidocs.schema_root_object'),
+    rootMap: t('apidocs.schema_root_map'),
+    empty: t('apidocs.schema_empty'),
+  }), [t])
+}
+
+/** What this endpoint answers, from a real recorded call: the shape as a tree
+ *  and the example body. Closed by default so the console stays the first thing
+ *  you see; a list is a list here too, never an object drawn with a bullet. */
+function ResponseShape({ endpoint }: { endpoint: Endpoint }) {
+  const { t } = useLanguage()
+  const labels = useSchemaLabels()
+  const rec = useResponseExample(REFERENCE_ID[endpoint.id] ?? '')
+  const body = rec?.example !== undefined ? JSON.stringify(rec.example, null, 2) : null
+  return (
+    <details className="api-shape" style={{ borderTop: '1px solid var(--border)' }}>
+      <summary style={{
+        cursor: 'pointer', padding: '12px 24px', fontSize: 12.5, fontWeight: 600, color: 'var(--muted)',
+        display: 'flex', alignItems: 'center', gap: 10, listStyle: 'none',
+      }}>
+        <span>{t('apidocs.response_toggle')}</span>
+        {rec && (
+          <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: 'var(--success)', border: '1px solid var(--success)', borderRadius: 5, padding: '1px 7px' }}>
+            {rec.status}
+          </span>
+        )}
+      </summary>
+      <div style={{ padding: '4px 24px 20px', display: 'grid', gap: 14, minWidth: 0 }}>
+        {rec?.schema && body ? (
+          <>
+            <div className="api-st"><SchemaTree node={rec.schema} L={labels} showRequired={false} defaultOpen={2} /></div>
+            <CodeBlock text={body} label="json" />
+            <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.6 }}>{t('apidocs.response_note')}</div>
+          </>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('apidocs.response_missing')}</div>
+        )}
+      </div>
+    </details>
   )
 }
 
@@ -781,6 +860,8 @@ function EndpointCard({ endpoint, token, baseUrl }: { endpoint: Endpoint; token:
         </div>
       </div>
 
+      <ResponseShape endpoint={endpoint} />
+
       {result && (
         <div style={{ borderTop: '1px solid var(--border)', padding: narrow ? '14px 16px 16px' : '16px 24px 20px', background: 'var(--surface-2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -861,6 +942,13 @@ export default function ApiDocsPage() {
     // `m-tap-min` give every field 16px text (no iOS zoom) and every button a
     // 44px height there (components/mobile/mobileForms.css).
     <div className={narrow ? 'm-form m-tap-min' : undefined} style={{ margin: narrow ? '-12px -12px 0' : -24 }}>
+      <style dangerouslySetInnerHTML={{ __html: `${SCHEMA_TREE_CSS}
+.api-st { --st-fg: var(--text); --st-muted: var(--muted); --st-dim: var(--dim); --st-border: var(--border); --st-surface: var(--surface-2); --st-accent: var(--accent); --st-warn: var(--warning); --st-mono: ${MONO}; }
+.api-shape > summary::-webkit-details-marker { display: none; }
+.api-shape > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.api-shape > summary::before { content: ''; width: 6px; height: 6px; border-right: 1.5px solid var(--dim); border-bottom: 1.5px solid var(--dim); transform: rotate(-45deg); transition: transform 140ms ease; flex-shrink: 0; }
+.api-shape[open] > summary::before { transform: rotate(45deg); }
+` }} />
       <header style={{ background: 'var(--sidebar-bg)', color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
         <div style={{ maxWidth: 1440, margin: '0 auto', padding: narrow ? '28px 20px 24px' : '44px 48px 34px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
