@@ -4201,7 +4201,6 @@ export const translations = {
     'errors.stock_default_no_fields': 'Indica al menos un valor de planeación para la regla.',
     'errors.stock_default_out_of_range': 'Uno de los valores de la regla está fuera del rango permitido.',
     // ── Error layer, part 2: codes added on main after this branch forked
-    'errors.remediation_not_offered': 'Esas opciones no responden a ningún hallazgo de este archivo: {choices}.',
     'errors.scheduled_retrain_template_has_no_dataset': 'El pronóstico que esta programación vuelve a entrenar ya no tiene datos asociados.',
     'errors.scheduled_retrain_template_incomplete': 'Al pronóstico que esta programación vuelve a entrenar le falta configuración ({missing}). Complétala y vuelve a intentarlo.',
     'errors.scheduled_retrain_template_missing': 'El pronóstico que esta programación vuelve a entrenar ya no existe.',
@@ -8476,7 +8475,6 @@ export const translations = {
     'errors.stock_default_no_fields': 'Provide at least one planning value for the rule.',
     'errors.stock_default_out_of_range': 'One of the rule values is outside the allowed range.',
     // ── Error layer, part 2: codes added on main after this branch forked
-    'errors.remediation_not_offered': 'Those choices do not answer any finding in this file: {choices}.',
     'errors.scheduled_retrain_template_has_no_dataset': 'The forecast this schedule retrains no longer has a dataset attached.',
     'errors.scheduled_retrain_template_incomplete': 'The forecast this schedule retrains is missing configuration ({missing}). Complete it and try again.',
     'errors.scheduled_retrain_template_missing': 'The forecast this schedule retrains no longer exists.',
