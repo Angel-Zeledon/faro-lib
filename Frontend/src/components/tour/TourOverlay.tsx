@@ -76,9 +76,13 @@ export default function TourOverlay() {
   // So the final vertical position is decided here, from the measured height:
   // an un-anchored card is centred, and any card is clamped inside the
   // viewport. Runs in a layout effect, before paint, so nothing is seen to jump.
+  // Also re-decided whenever the anchor moves: the first measurement happens
+  // BEFORE scrollIntoView runs, so a step whose anchor starts below the fold
+  // (a tall page — the upload guide made /ventas one) kept a position computed
+  // for the pre-scroll rect and left the card, and its Next button, off-screen.
   useLayoutEffect(() => {
     setTopOverride(null)
-  }, [step])
+  }, [step, rect?.top, rect?.left, rect?.height])
 
   useLayoutEffect(() => {
     const el = cardRef.current
