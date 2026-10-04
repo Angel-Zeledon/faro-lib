@@ -610,6 +610,46 @@ export const getActiveTraining = () =>
 export const getJobLogs = (job_id: string) =>
   request<{ job_id: string; lines: string[]; total: number }>('GET', `/jobs/${job_id}/logs`)
 
+// ── Forecast vs. what actually sold ───────────────────────────────────────────
+export interface RealizedPoint { date: string; forecast: number; actual: number }
+export interface RealizedMetrics {
+  n_points:       number
+  wape:           number | null
+  mape:           number | null
+  /** (forecast - actual) / actual: positive = the forecast ran HIGH. */
+  bias:           number | null
+  total_forecast: number
+  total_actual:   number
+}
+export interface RealizedVerdict {
+  level:     'no_data' | 'too_little' | 'good' | 'fair' | 'poor'
+  direction: 'over' | 'under' | 'balanced'
+  wape:      number | null
+  bias:      number | null
+  n_points:  number
+}
+export interface ForecastVsActual {
+  session_id:    string
+  target_freq:   string | null
+  forecast_from: string | null
+  forecast_to:   string | null
+  candidates:    { dataset_id: string; name: string; uploaded_at: string }[]
+  status:        'ok' | 'no_later_upload' | 'no_overlap' | 'columns_missing' | 'no_rows' | 'unreadable'
+  source:        { dataset_id: string; name: string; uploaded_at: string; last_date: string } | null
+  n_skus_total?: number
+  result: null | {
+    aggregate: RealizedMetrics & { n_skus: number; series: RealizedPoint[]; verdict: RealizedVerdict }
+    skus:      (RealizedMetrics & { sku: string; points: RealizedPoint[] })[]
+    skipped_points: number
+  }
+}
+
+export const getForecastVsActual = (sessionId: string, datasetId?: string) =>
+  request<ForecastVsActual>(
+    'GET',
+    `/sessions/${sessionId}/forecast-vs-actual${datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : ''}`,
+  )
+
 // ── Results ───────────────────────────────────────────────────────────────────
 export const getMetrics = (id: string) =>
   request<MetricsResponse>('GET', `/sessions/${id}/metrics`)
