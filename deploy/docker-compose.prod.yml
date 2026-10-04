@@ -47,6 +47,8 @@ services:
         # The landing's public origin (https://stockai.es, or https://DOMAIN
         # when landing and app share one): canonical URL, sitemap, preview image.
         NEXT_PUBLIC_SITE_URL: ${SITE_URL:-}
+        # Search Console HTML-tag token; empty renders no tag.
+        NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION: ${GOOGLE_SITE_VERIFICATION:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO/dev/null", "http://127.0.0.1:5000/"]

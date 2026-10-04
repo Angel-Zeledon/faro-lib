@@ -21,7 +21,7 @@
 //    Hiding those buttons would have been the timid choice and a useless
 //    console; firing them silently would be worse. It is the customer's own
 //    tenant — they are owed the button and the truth about it.
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Play, Copy, Check, KeyRound, AlertTriangle, BookOpen } from 'lucide-react'
 import Card from '@/components/ui/Card'
@@ -31,6 +31,8 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { getApiKeyUsage } from '@/lib/api'
+import { SAMPLE_LANGS, generateSample, type SampleSpec } from '@/lib/codeSamples'
+import { useSampleLang } from '@/lib/useSampleLang'
 import { getUser } from '@/lib/auth'
 import type { ApiKeyUsage } from '@/lib/types'
 import { useUpgradePrompt } from '@/components/limits/UpgradeDialog'
@@ -57,7 +59,6 @@ type Endpoint = {
   bodyTemplate?: string
   /** The file endpoint is multipart, so it needs a picker rather than a body. */
   multipart?: boolean
-  curl: string
 }
 
 // The nightly-integration job, runnable from here. Not the whole API any more:
@@ -69,14 +70,12 @@ const ENDPOINTS: Endpoint[] = [
     id: 'planning',
     method: 'GET',
     path: '/planning',
-    curl: `curl "$STOCKAI/planning" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'sources',
     method: 'GET',
     path: '/data-sources',
     query: [{ name: 'skip', placeholder: '0' }, { name: 'limit', placeholder: '50' }],
-    curl: `curl "$STOCKAI/data-sources?limit=50" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'file',
@@ -86,7 +85,6 @@ const ENDPOINTS: Endpoint[] = [
     write: true,
     multipart: true,
     consequenceKey: 'apidocs.consequence_file',
-    curl: `curl -X POST "$STOCKAI/data-sources/$SOURCE_ID/file" \\\n  -H "Authorization: Bearer $KEY" \\\n  -F "file=@ventas.csv"`,
   },
   {
     id: 'train',
@@ -96,14 +94,12 @@ const ENDPOINTS: Endpoint[] = [
     write: true,
     bodyTemplate: '{}',
     consequenceKey: 'apidocs.consequence_train',
-    curl: `curl -X POST "$STOCKAI/sessions/$SESSION/train" \\\n  -H "Authorization: Bearer $KEY" \\\n  -H "Content-Type: application/json" -d '{}'`,
   },
   {
     id: 'train_status',
     method: 'GET',
     path: '/sessions/{session_id}/train/status',
     pathParams: [{ name: 'session_id', required: true }],
-    curl: `curl "$STOCKAI/sessions/$SESSION/train/status" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'status',
@@ -114,14 +110,12 @@ const ENDPOINTS: Endpoint[] = [
       { name: 'signal', placeholder: 'PEDIR_YA' },
       { name: 'supplier' },
     ],
-    curl: `curl "$STOCKAI/inventory/status?signal=PEDIR_YA" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'briefing',
     method: 'GET',
     path: '/inventory/morning-briefing',
     query: [{ name: 'session_id' }],
-    curl: `curl "$STOCKAI/inventory/morning-briefing" \\\n  -H "Authorization: Bearer $KEY"`,
   },
   {
     id: 'logpo',
@@ -136,7 +130,6 @@ const ENDPOINTS: Endpoint[] = [
       "status": "modified", "unit_cost": 12.5 }
   ]
 }`,
-    curl: `curl -X POST "$STOCKAI/inventory/log-po?session_id=$SESSION" \\\n  -H "Authorization: Bearer $KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"items":[{"sku":"ABC-1","recommended_qty":120,\n                "final_qty":100,"status":"modified"}]}'`,
   },
 ]
 
@@ -185,16 +178,18 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   )
 }
 
-function CodeBlock({ text, label = 'curl' }: { text: string; label?: string }) {
+function CodeBlock({ text, label = 'curl', tabs }: { text: string; label?: string; tabs?: React.ReactNode }) {
   const { t } = useLanguage()
   const narrow = useIsNarrow()
   const [copied, setCopied] = useState(false)
   return (
     <div style={{ border: '1px solid var(--border-strong)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface-3)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--dim)', textTransform: 'uppercase', flex: 1 }}>
-          {label}
-        </span>
+        {tabs ?? (
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--dim)', textTransform: 'uppercase', flex: 1 }}>
+            {label}
+          </span>
+        )}
         <Button
           variant="ghost" size="sm"
           icon={copied ? <Check size={12} /> : <Copy size={12} />}
@@ -217,6 +212,63 @@ function CodeBlock({ text, label = 'curl' }: { text: string; label?: string }) {
       </pre>
     </div>
   )
+}
+
+/** The request an endpoint card describes, in the neutral shape the shared
+ *  generator (lib/codeSamples.ts) renders into every language. Values are the
+ *  placeholders the card already shows; a required parameter is something the
+ *  caller supplies, so cURL names it as a shell variable. */
+function specFor(endpoint: Endpoint, base: string): SampleSpec {
+  let body: SampleSpec['body'] = null
+  if (endpoint.multipart) {
+    body = { kind: 'multipart', fields: [{ name: 'file', file: true }] }
+  } else if (endpoint.bodyTemplate !== undefined) {
+    let value: unknown = {}
+    try { value = JSON.parse(endpoint.bodyTemplate) } catch { /* static template: cannot happen */ }
+    body = { kind: 'json', value }
+  }
+  return {
+    method: endpoint.method,
+    base,
+    path: endpoint.path,
+    pathParams: (endpoint.pathParams ?? []).map(p => ({ name: p.name, value: `<${p.name}>` })),
+    query: (endpoint.query ?? [])
+      .filter(p => p.required || p.placeholder)
+      .map(p => ({ name: p.name, value: p.placeholder ?? `<${p.name}>`, env: !p.placeholder })),
+    headers: [],
+    body,
+    expectsJson: true,
+  }
+}
+
+/** A code block with the language tabs. The choice is remembered and shared with
+ *  /desarrolladores, so the two screens agree on what a visitor last picked. */
+function SampleBlock({ spec }: { spec: SampleSpec }) {
+  const { t } = useLanguage()
+  const [lang, setLang] = useSampleLang()
+  const text = useMemo(() => generateSample(lang, spec), [lang, spec])
+  const tabs = (
+    <div role="tablist" aria-label={t('apidocs.sample_languages')} style={{ display: 'flex', gap: 2, flex: 1, minWidth: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
+      {SAMPLE_LANGS.map(l => (
+        <button
+          key={l.id}
+          type="button"
+          role="tab"
+          aria-selected={lang === l.id}
+          onClick={() => setLang(l.id)}
+          style={{
+            all: 'unset', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 11.5, fontWeight: 600,
+            padding: '5px 9px', borderRadius: 6,
+            color: lang === l.id ? 'var(--text)' : 'var(--dim)',
+            background: lang === l.id ? 'var(--surface-3)' : 'transparent',
+          }}
+        >
+          {l.label}
+        </button>
+      ))}
+    </div>
+  )
+  return <CodeBlock text={text} tabs={tabs} />
 }
 
 /** The MCP endpoint, described rather than wired into the console.
@@ -301,7 +353,7 @@ function McpSection({ baseUrl, narrow }: { baseUrl: string; narrow: boolean }) {
       <div>
         <Eyebrow>{t('apidocs.mcp_test_heading')}</Eyebrow>
         <div style={{ marginTop: 9 }}>
-          <CodeBlock text={`curl -X POST "$STOCKAI/mcp" \\\n  -H "Authorization: Bearer $KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`} />
+          <SampleBlock spec={{ method: 'POST', base: baseUrl || 'https://app.stockai.es/api/v1', path: '/mcp', pathParams: [], query: [], headers: [], expectsJson: true, body: { kind: 'json', value: { jsonrpc: '2.0', id: 1, method: 'tools/list' } } }} />
         </div>
       </div>
 
@@ -440,7 +492,7 @@ function UsagePanel({ narrow }: { narrow: boolean }) {
   )
 }
 
-function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }) {
+function EndpointCard({ endpoint, token, baseUrl }: { endpoint: Endpoint; token: string; baseUrl: string }) {
   const { t } = useLanguage()
   const narrow = useIsNarrow()
   const safe = useSafeCopy()
@@ -725,7 +777,7 @@ function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }
 
         <div style={{ padding: narrow ? '16px' : '18px 24px 20px', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
           <Eyebrow>{t('apidocs.section_example')}</Eyebrow>
-          <CodeBlock text={endpoint.curl} />
+          <SampleBlock spec={specFor(endpoint, baseUrl || 'https://app.stockai.es/api/v1')} />
         </div>
       </div>
 
@@ -1025,7 +1077,7 @@ export default function ApiDocsPage() {
             ))}
           </div>
 
-          {ENDPOINTS.map(ep => <EndpointCard key={ep.id} endpoint={ep} token={token} />)}
+          {ENDPOINTS.map(ep => <EndpointCard key={ep.id} endpoint={ep} token={token} baseUrl={baseUrl} />)}
           <McpSection baseUrl={baseUrl} narrow={narrow} />
           <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.7 }}>
             {t('apidocs.footer_promise')}{' '}

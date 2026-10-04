@@ -26,6 +26,11 @@ export const metadata: Metadata = {
   // default is to stay out of search results; app/page.tsx opts back in.
   // robots.ts says the same thing to crawlers that read robots.txt first.
   robots: { index: false, follow: false },
+  // Google Search Console's "HTML tag" ownership proof. Set at build time
+  // (NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION); unset, no tag is rendered.
+  ...(process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION } }
+    : {}),
 }
 
 /**

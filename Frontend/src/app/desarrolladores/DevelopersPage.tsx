@@ -32,6 +32,7 @@ import { Nav, Footer } from '@/components/landing/chrome'
 import { FinalSection } from '@/components/landing/sections'
 import { CONTACT_EMAIL, mailHref } from '@/components/landing/contact'
 import { appHref, SITE_URL } from '@/lib/siteUrls'
+import { loadSampleLang, saveSampleLang } from '@/lib/codeSamples'
 import raw from '@/data/public-api.json'
 import {
   CODE_LANGS, ENVELOPE_SAMPLE, STATUS_TEXT, highlight, hlLangOf, sampleFor,
@@ -49,7 +50,6 @@ const API = raw as unknown as Snapshot
 const ALL: Endpoint[] = API.tags.flatMap(g => g.endpoints)
 const BY_ID = new Map(ALL.map(ep => [ep.id, ep]))
 const HERO_EP = BY_ID.get('get-planning') ?? ALL[0]
-const LANG_KEY = 'stockai.dev.codeLang'
 
 /** The base URL an integration types. Absolute where the build knows the
  *  app's origin, so it can be copied as is. */
@@ -573,15 +573,10 @@ export default function DevelopersPage() {
   const base = useMemo(apiBase, [])
   const perDayFree = API.limits.per_day_per_key.free
   const [codeLang, setCodeLangState] = useState<CodeLang>('curl')
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LANG_KEY)
-      if (saved === 'curl' || saved === 'js' || saved === 'python') setCodeLangState(saved)
-    } catch { /* storage blocked: cURL it is */ }
-  }, [])
+  useEffect(() => { setCodeLangState(loadSampleLang()) }, [])
   const setCodeLang = (l: CodeLang) => {
     setCodeLangState(l)
-    try { localStorage.setItem(LANG_KEY, l) } catch { /* per-visitor nicety only */ }
+    saveSampleLang(l)
   }
   const toc: [string, string][] = [
     ['#autenticacion', D.auth.title],

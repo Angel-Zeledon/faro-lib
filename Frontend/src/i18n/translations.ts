@@ -4107,6 +4107,9 @@ export const translations = {
     'scorecard.fill_rate_in_transit_hint': 'Todavía no se puede medir: sus entregas siguen dentro del tiempo de entrega que prometió.',
     'inventory.wh_no_stock_record': 'Nunca registraste stock de este producto en esta bodega. No decimos que haya cero: no lo sabemos.',
     'hoy.optimizer_fallback_empty': 'El optimizador de costo no alcanzó a terminar y la regla simple de respaldo no encontró nada que pedir en este horizonte. Eso NO quiere decir que no haya que comprar: quiere decir que no pudimos calcularlo. Vuelve a intentarlo, o acorta tu horizonte de planificación.',
+
+    // Code samples (shared generator, lib/codeSamples.ts)
+    'apidocs.sample_languages':   'Lenguaje del ejemplo',
   },
   en: {
     // ── Auth screens (pre-login) — see the `es` block.
@@ -8060,6 +8063,9 @@ export const translations = {
     'scorecard.fill_rate_in_transit_hint': 'Not measurable yet: their deliveries are still inside the window they promised.',
     'inventory.wh_no_stock_record': 'Stock for this product was never recorded in this warehouse. That is not the same as zero: we do not know.',
     'hoy.optimizer_fallback_empty': 'The cost optimiser could not finish in time, and the simple fallback rule found nothing to order in this horizon. That does NOT mean there is nothing to buy — it means we could not work it out. Try again, or shorten your planning horizon.',
+
+    // Code samples (shared generator, lib/codeSamples.ts)
+    'apidocs.sample_languages':   'Example language',
   },
 } as const
 

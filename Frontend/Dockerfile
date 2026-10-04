@@ -20,9 +20,13 @@ ARG NEXT_PUBLIC_APP_URL=
 # The landing's own public origin, for canonical URLs, the sitemap and the
 # preview image search engines and chat apps fetch (src/lib/siteUrls.ts).
 ARG NEXT_PUBLIC_SITE_URL=
+# Google Search Console's verification token (the content="" of the HTML-tag
+# method). Optional; empty renders no tag. See src/app/layout.tsx.
+ARG NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=
 ENV BACKEND_URL=$BACKEND_URL \
     NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
     NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
+    NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=$NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules

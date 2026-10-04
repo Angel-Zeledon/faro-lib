@@ -15,7 +15,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: [
-        '/$', '/precios$', '/como-funciona$', '/preguntas-frecuentes$', '/seguridad$', '/desarrolladores$', '/privacidad$', '/terminos$', '/cookies$', '/aviso-legal$', '/legal$', '/uso-aceptable$', '/procesamiento-de-datos$', '/ia$', '/divulgacion-responsable$', '/accesibilidad$', '/condiciones-comerciales$', '/licencia$', '/.well-known/', '/docs',
+        '/$', '/precios$', '/como-funciona$', '/preguntas-frecuentes$', '/seguridad$', '/desarrolladores$', '/privacidad$', '/terminos$', '/cookies$', '/aviso-legal$', '/legal$', '/uso-aceptable$', '/procesamiento-de-datos$', '/ia$', '/divulgacion-responsable$', '/accesibilidad$', '/condiciones-comerciales$', '/licencia$', '/.well-known/', '/google*.html$', '/docs',
         '/_next/', '/*.png', '/*.jpg', '/*.webp', '/*.svg', '/*.pdf'],
       disallow: ['/'],
     },
