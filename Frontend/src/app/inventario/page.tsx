@@ -58,7 +58,7 @@ import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, MoreHorizontal, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
- Zap, PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft,
+ PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft,
 } from 'lucide-react'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -944,7 +944,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
 
  return frame(<>
  <div style={{ display: narrow ? 'none' : 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
- <Zap size={16} color={C.amber} />
+ <Sliders size={16} color={C.amber} />
  <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
  {tOr(t, 'inventory.sim_modal_title', `Simulation: ${ev.name}`, { event: ev.name })}
  </span>
@@ -1538,7 +1538,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: 'var(--signal-order-soon-fg)', fontSize: 11, fontWeight: 600, flexShrink: 0,
   ...(narrow ? { ...tapS, flex: 1, fontSize: 14, borderRadius: 10, gap: 6 } : {}) }}
  >
- <Zap size={11} aria-hidden="true" /> {t('inventory.events_btn_simulate')}
+ <Sliders size={11} aria-hidden="true" /> {t('inventory.events_btn_simulate')}
  </button>
  <button
  onClick={() => onDelete(ev.id)}

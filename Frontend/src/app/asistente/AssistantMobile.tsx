@@ -16,7 +16,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, MessageSquare, MoreHorizontal, Search, Send, Lightbulb, Star, Trash2, X,
+  AlertTriangle, MessageSquare, MoreHorizontal, Search, Send, Star, Trash2, X,
 } from 'lucide-react'
 import type { AssistantWelcome, Chat, ChatMessage } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
@@ -128,7 +128,7 @@ function Home(p: AssistantMobileProps) {
           background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Lightbulb size={22} color="var(--accent)" strokeWidth={1.7} />
+          <MessageSquare size={22} color="var(--accent)" strokeWidth={1.7} />
         </span>
         <div data-testid="assistant-welcome" style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3 }}>
@@ -166,7 +166,7 @@ function Home(p: AssistantMobileProps) {
                     background: 'var(--surface)', border: '1px solid var(--border)', opacity: disabled ? 0.5 : 1,
                   }}
                 >
-                  <Lightbulb size={15} color="var(--accent)" aria-hidden="true" style={{ flexShrink: 0 }} />
+                  <MessageSquare size={15} color="var(--accent)" aria-hidden="true" style={{ flexShrink: 0 }} />
                   <span style={{ flex: 1, minWidth: 0 }}>{text}</span>
                 </button>
               )
@@ -375,7 +375,7 @@ function Thread(p: AssistantMobileProps) {
         </div>
       ) : p.messages.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '48px 16px', color: 'var(--dim)', textAlign: 'center' }}>
-          <Lightbulb size={28} strokeWidth={1.5} color="var(--accent)" aria-hidden="true" />
+          <MessageSquare size={28} strokeWidth={1.5} color="var(--accent)" aria-hidden="true" />
           <div style={{ fontSize: 14.5, lineHeight: 1.5 }}>{t('analyst.empty_messages_account')}</div>
         </div>
       ) : (

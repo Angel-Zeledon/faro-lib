@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "check:samples": "node scripts/check-code-samples.mjs"
+    "check:samples": "node scripts/check-code-samples.mjs",
+    "check:icons": "node scripts/check-icons.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
