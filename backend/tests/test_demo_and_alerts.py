@@ -104,6 +104,53 @@ class TestDemoQuickstart:
             assert job["status"] in ("QUEUED", "RUNNING", "COMPLETED")
         assert "daily" in seen_grains and "weekly" in seen_grains
 
+    def test_demo_seed_reads_mostly_healthy(self, client, auth_headers, test_tenant):
+        """The first impression must not be an alarm: of the seeded SKUs, at most
+        two are urgent, a handful are 'order soon', and the majority are covered.
+
+        The signal is computed after training, so this pins what the SEEDED
+        stock implies: coverage in days (stock / recent average daily sales from
+        the bundled CSV) as a multiple of the SKU's lead time, bucketed by the
+        same bands as inventory/service.py (< 0.5x urgent, up to 1.0x order soon,
+        up to 3x covered, beyond that surplus). Read straight from the DB rows.
+        """
+        import csv
+        from backend.api.v1.demo import _DEMO_CSV
+
+        resp = client.post("/api/v1/demo/quickstart", headers=auth_headers)
+        assert resp.status_code == 202, resp.text
+
+        sales: dict[str, list[float]] = {}
+        with open(_DEMO_CSV, encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                sales.setdefault(row["sku"], []).append(float(row["cantidad"]))
+
+        from backend.db.connection import query as query_all
+        rows = query_all(
+            "SELECT sku, current_stock, lead_time_days FROM inventory_stock "
+            "WHERE tenant_id = %s", (test_tenant["id"],),
+        )
+        assert len(rows) >= 12, "a one-SKU-in-five alarm is what a 5-SKU demo showed"
+
+        buckets = {"urgent": 0, "soon": 0, "ok": 0, "surplus": 0}
+        for r in rows:
+            recent = sales[r["sku"]][-90:]
+            coverage_days = float(r["current_stock"]) / (sum(recent) / len(recent))
+            ratio = coverage_days / float(r["lead_time_days"])
+            if ratio < 0.5:
+                buckets["urgent"] += 1
+            elif ratio <= 1.0:
+                buckets["soon"] += 1
+            elif ratio < 3.0:
+                buckets["ok"] += 1
+            else:
+                buckets["surplus"] += 1
+
+        assert buckets["urgent"] in (1, 2), buckets
+        assert 2 <= buckets["soon"] <= 4, buckets
+        assert buckets["ok"] > len(rows) / 2, buckets
+        assert sum(buckets.values()) == len(rows)
+
     def test_demo_does_not_overwrite_existing_stock(self, client, auth_headers, test_tenant):
         # Pre-set a stock value the demo would otherwise change
         put = client.put(

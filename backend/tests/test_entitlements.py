@@ -593,7 +593,8 @@ def test_demo_quickstart_respects_max_skus_atomically(
     stock_final = query_one(
         "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
     )["c"]
-    assert stock_final == stock_before + 5  # the 1 pre-existing + all 5 demo SKUs
+    from backend.api.v1.demo import _DEMO_STOCK
+    assert stock_final == stock_before + len(_DEMO_STOCK)  # the 1 pre-existing + every demo SKU
 
 
 def test_expired_trial_blocks_mutation_but_allows_read(

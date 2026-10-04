@@ -74,20 +74,22 @@ export function MobileMetricGrid({ metrics, ariaLabel }: { metrics: MobileMetric
       {metrics.map(m => {
         const inner = (
           <>
-            <span style={{ display: 'block', fontSize: 20, fontWeight: 800, color: m.color, lineHeight: 1.15,
-              overflow: 'hidden', overflowWrap: 'anywhere', fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ display: 'block', fontSize: 20, fontWeight: 600, color: 'var(--text)', lineHeight: 1.15,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
               {m.value}
             </span>
-            <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.3 }}>{m.label}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.3 }}>
+              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
+              {m.label}
+            </span>
             {m.sub && <span style={{ display: 'block', fontSize: 11, color: 'var(--dim)', marginTop: 2, lineHeight: 1.3 }}>{m.sub}</span>}
           </>
         )
         const box: React.CSSProperties = {
           boxSizing: 'border-box', minWidth: 0, minHeight: 64, padding: '10px 12px',
-          borderRadius: 12, background: 'var(--surface)',
-          border: `1px solid ${m.active ? m.color : 'var(--border)'}`,
-          borderTop: `3px solid ${m.color}`,
-          boxShadow: m.active ? `0 0 0 1px ${m.color} inset` : undefined,
+          borderRadius: 12,
+          border: `1px solid ${m.active ? 'var(--accent)' : 'var(--border)'}`,
+          background: m.active ? 'var(--accent-dim)' : 'var(--surface)',
           textAlign: 'left',
         }
         return m.onClick ? (
@@ -182,7 +184,7 @@ export function MobileProviderGroups({ groups, render }: {
               style={{ all: 'unset', boxSizing: 'border-box', width: '100%', minHeight: 44, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px 8px' }}>
               <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, color: 'var(--text)',
-                overflow: 'hidden', overflowWrap: 'anywhere', }}>
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {name || t('inventory.no_provider')}
               </span>
               {urgent > 0 && <StatusBadge tone="danger" label={`${urgent} ${urgent !== 1 ? t('inventory.urgent_plural') : t('inventory.urgent_singular')}`} />}
@@ -484,7 +486,7 @@ export function MobileStockEntry({ items, draft, modified, readOnly, savingRow, 
                   <span className="sr-only">{t('inventory.bulk_row_unsaved')}</span>
                 </span>
               )}
-              <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere', }}>{name}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
               {item.display_name && <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--dim)', flexShrink: 0 }}>{item.sku}</span>}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)', gap: 10 }}>

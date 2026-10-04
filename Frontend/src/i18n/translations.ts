@@ -4228,6 +4228,15 @@ export const translations = {
     'errors.validation.supplier_email_shape': 'no es válido: una orden enviada ahí nunca llegaría. Usa una dirección como nombre@empresa.com.',
     'errors.field.phone': 'El teléfono',
     'errors.field.whatsapp': 'El WhatsApp',
+    // ── /inventario redesign: one primary view, the rest one click away ──
+    'inventory.tab_todo': 'Qué pedir',
+    'inventory.tab_all': 'Todos los productos',
+    'inventory.tab_supplier': 'Por proveedor',
+    'inventory.tab_all_short': 'Todos',
+    'inventory.tab_supplier_short': 'Proveedor',
+    'inventory.menu_analysis': 'Análisis',
+    'inventory.back_to_stock': 'Volver al inventario',
+    'inventory.legend_toggle': 'Qué significa cada estado',
   },
   en: {
     // ── Auth screens (pre-login) — see the `es` block.
@@ -8302,6 +8311,15 @@ export const translations = {
     'errors.validation.supplier_email_shape': 'is not valid: an order sent there would never arrive. Use an address like name@company.com.',
     'errors.field.phone': 'The phone number',
     'errors.field.whatsapp': 'The WhatsApp number',
+    // ── /inventario redesign: one primary view, the rest one click away ──
+    'inventory.tab_todo': 'What to order',
+    'inventory.tab_all': 'All products',
+    'inventory.tab_supplier': 'By supplier',
+    'inventory.tab_all_short': 'All',
+    'inventory.tab_supplier_short': 'Supplier',
+    'inventory.menu_analysis': 'Analysis',
+    'inventory.back_to_stock': 'Back to inventory',
+    'inventory.legend_toggle': 'What each status means',
   },
 } as const
 

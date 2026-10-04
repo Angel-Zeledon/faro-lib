@@ -33,20 +33,49 @@ log = logging.getLogger(__name__)
 
 _DEMO_CSV = Path(__file__).resolve().parents[2] / "resources" / "demo_ventas.csv"
 
-# Stock chosen so the first semáforo shows every state at once:
-# SKU-001/002 low vs their daily demand → PEDIR_YA / PEDIR_PRONTO,
-# SKU-003/005 healthy → OK, SKU-004 absurdly high → SOBRESTOCK.
+# Stock chosen so the first semáforo reads as a believable, mostly healthy
+# business rather than an alarm: of 14 SKUs, one is urgent (PEDIR_YA), three
+# are close to their reorder point (PEDIR_PRONTO), eight are covered (OK) and
+# two carry more than they need (SOBRESTOCK). Each figure is a COVERAGE chosen
+# against the SKU's recent average daily sales in demo_ventas.csv and its lead
+# time, using the signal bands of inventory/service.py (PEDIR_YA below half a
+# lead time of cover, PEDIR_PRONTO up to the reorder point, OK up to ~3 lead
+# times, SOBRESTOCK beyond):
+#   urgent ~0.3 x lead time   soon ~0.8 x   covered ~2 x   surplus 6-8 x
+# test_demo_and_alerts.py::test_demo_seed_reads_mostly_healthy pins the mix.
 _DEMO_STOCK = {
-    "SKU-001": {"display_name": "Aceite de Oliva 1L", "current_stock": 40,   "lead_time_days": 10,
+    # urgent
+    "SKU-001": {"display_name": "Aceite de Oliva 1L", "current_stock": 100,  "lead_time_days": 10,
                 "unit_cost": 8.5, "moq": 12,  "supplier": "Distribuidora Andina"},
-    "SKU-002": {"display_name": "Arroz 5kg",          "current_stock": 350,  "lead_time_days": 7,
+    # order soon
+    "SKU-002": {"display_name": "Arroz 5kg",          "current_stock": 570,  "lead_time_days": 7,
                 "unit_cost": 5.2, "moq": 25,  "supplier": "Granos del Valle"},
-    "SKU-003": {"display_name": "Leche Entera 1L",    "current_stock": 2500, "lead_time_days": 5,
+    "SKU-009": {"display_name": "Atun en Lata 160g",  "current_stock": 620,  "lead_time_days": 9,
+                "unit_cost": 1.3, "moq": 48,  "supplier": "Distribuidora Andina"},
+    "SKU-011": {"display_name": "Papel Higienico 12 rollos", "current_stock": 390, "lead_time_days": 14,
+                "unit_cost": 6.8, "moq": 12,  "supplier": "Comercial El Sol"},
+    # covered
+    "SKU-003": {"display_name": "Leche Entera 1L",    "current_stock": 1600, "lead_time_days": 5,
                 "unit_cost": 1.1, "moq": 50,  "supplier": "Lácteos La Sabana"},
-    "SKU-004": {"display_name": "Azucar 2kg",         "current_stock": 9000, "lead_time_days": 15,
-                "unit_cost": 2.4, "moq": 100, "supplier": "Granos del Valle"},
-    "SKU-005": {"display_name": "Sal 1kg",            "current_stock": 1200, "lead_time_days": 10,
+    "SKU-005": {"display_name": "Sal 1kg",            "current_stock": 790,  "lead_time_days": 10,
                 "unit_cost": 0.9, "moq": 24,  "supplier": "Distribuidora Andina"},
+    "SKU-006": {"display_name": "Frijoles Negros 1kg", "current_stock": 800, "lead_time_days": 8,
+                "unit_cost": 1.6, "moq": 24,  "supplier": "Granos del Valle"},
+    "SKU-007": {"display_name": "Pasta Espagueti 400g", "current_stock": 1030, "lead_time_days": 7,
+                "unit_cost": 0.8, "moq": 40,  "supplier": "Comercial El Sol"},
+    "SKU-008": {"display_name": "Cafe Molido 500g",   "current_stock": 650,  "lead_time_days": 12,
+                "unit_cost": 4.1, "moq": 12,  "supplier": "Granos del Valle"},
+    "SKU-010": {"display_name": "Jabon de Bano",      "current_stock": 860,  "lead_time_days": 10,
+                "unit_cost": 0.7, "moq": 36,  "supplier": "Comercial El Sol"},
+    "SKU-013": {"display_name": "Galletas Surtidas",  "current_stock": 670,  "lead_time_days": 6,
+                "unit_cost": 1.2, "moq": 24,  "supplier": "Lácteos La Sabana"},
+    "SKU-014": {"display_name": "Agua Mineral 600ml", "current_stock": 1800, "lead_time_days": 5,
+                "unit_cost": 0.4, "moq": 48,  "supplier": "Lácteos La Sabana"},
+    # surplus
+    "SKU-004": {"display_name": "Azucar 2kg",         "current_stock": 7000, "lead_time_days": 15,
+                "unit_cost": 2.4, "moq": 100, "supplier": "Granos del Valle"},
+    "SKU-012": {"display_name": "Detergente 1kg",     "current_stock": 2100, "lead_time_days": 12,
+                "unit_cost": 3.2, "moq": 12,  "supplier": "Comercial El Sol"},
 }
 
 # Same defaults the quick-start wizard posts (Frontend quick-start page).
