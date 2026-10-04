@@ -13,7 +13,7 @@ import Button from '@/components/ui/Button'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useCapabilities } from '@/lib/capabilities'
 import { useToast } from '@/contexts/ToastContext'
-import { MessageBubble, TypingBubble, Welcome } from './parts'
+import { MessageBubble, TypingBubble, Welcome, previewText, clampStyle } from './parts'
 import AssistantMobile from './AssistantMobile'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
@@ -74,20 +74,19 @@ function ChatItem({
         <span style={{
           fontSize: 12, fontWeight: active ? 600 : 400,
           color: active ? 'var(--text)' : 'var(--muted)',
-          overflow: 'hidden', overflowWrap: 'anywhere',
-          flex: 1,
-        }}>
+          ...clampStyle(1), flex: 1, minWidth: 0,
+        }} title={chat.title}>
           {chat.title}
         </span>
       </div>
 
       {chat.last_message_preview && (
         <div style={{
-          fontSize: 11, color: 'var(--dim)', overflow: 'hidden',
-          overflowWrap: 'anywhere',
-          paddingLeft: 17,
+          fontSize: 11, lineHeight: 1.35, color: 'var(--dim)',
+          ...clampStyle(2),
+          paddingLeft: 17, paddingRight: 28,
         }}>
-          {chat.last_message_preview}
+          {previewText(chat.last_message_preview)}
         </div>
       )}
 
