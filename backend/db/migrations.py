@@ -1748,6 +1748,71 @@ _SOCIAL_LOGIN = [
 _MIGRATIONS += _SOCIAL_LOGIN
 
 
+# ── Enterprise slice (2026-10-04): retrain history, run lineage ──────────────
+_ENTERPRISE = [
+    # One row per time a schedule was due and what came of it: launched,
+    # skipped because nothing new had arrived, or failed. `jobs` only records
+    # runs that started, so a skip left no trace at all.
+    ("create_schedule_runs",
+     """CREATE TABLE IF NOT EXISTS schedule_runs (
+         id            TEXT PRIMARY KEY,
+         tenant_id     TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         schedule_id   TEXT NOT NULL,
+         ran_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         outcome       TEXT NOT NULL,
+         reason        TEXT,
+         reason_params JSONB NOT NULL DEFAULT '{}',
+         session_id    TEXT,
+         dataset_id    TEXT,
+         content_hash  TEXT
+     )"""),
+    ("create_schedule_runs_idx",
+     "CREATE INDEX IF NOT EXISTS idx_schedule_runs_tenant_time "
+     "ON schedule_runs (tenant_id, ran_at DESC)"),
+    ("create_schedule_runs_sched_idx",
+     "CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule "
+     "ON schedule_runs (schedule_id, ran_at DESC)"),
+    # Where a dataset row came from when a schedule re-materialized it, so the
+    # schedule can later free the snapshots nothing references any more.
+    ("add_datasets_created_by_schedule",
+     "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS created_by_schedule_id TEXT"),
+    # The lineage manifest: how one training run was produced. Written once when
+    # the run ends (one row per training job, so a retried session keeps every
+    # attempt); an UPDATE is refused by the trigger below. No FK to
+    # `sessions` on purpose: deleting a forecast must not erase the record of how
+    # it was made. The tenant FK keeps tenant erasure complete.
+    ("create_session_manifests",
+     """CREATE TABLE IF NOT EXISTS session_manifests (
+         id            TEXT PRIMARY KEY,
+         session_id    TEXT NOT NULL,
+         tenant_id     TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         job_id        TEXT,
+         outcome       TEXT NOT NULL,
+         manifest      JSONB NOT NULL,
+         created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_session_manifests_idx",
+     "CREATE INDEX IF NOT EXISTS idx_session_manifests_session "
+     "ON session_manifests (tenant_id, session_id, created_at DESC)"),
+    ("create_session_manifests_guard_fn",
+     """CREATE OR REPLACE FUNCTION session_manifests_immutable() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'session_manifests rows are immutable';
+        END;
+        $$ LANGUAGE plpgsql"""),
+    ("create_session_manifests_guard",
+     """DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'session_manifests_no_update') THEN
+            CREATE TRIGGER session_manifests_no_update
+              BEFORE UPDATE ON session_manifests
+              FOR EACH ROW EXECUTE FUNCTION session_manifests_immutable();
+          END IF;
+        END $$"""),
+]
+_MIGRATIONS += _ENTERPRISE
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.

@@ -203,6 +203,9 @@ def get_current_user(
 
     _reject_if_predates_password_change(payload)
 
+    from backend.auth.actor_context import set_person_actor
+    set_person_actor(request.scope, payload["tenant_id"], payload["sub"])
+
     return CurrentUser(
         user_id=payload["sub"],
         tenant_id=payload["tenant_id"],

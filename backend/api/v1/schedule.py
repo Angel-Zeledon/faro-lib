@@ -1,7 +1,9 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+
+from backend import audit
 from pydantic import BaseModel, field_validator
 
 from backend.auth.guards import (
@@ -133,7 +135,34 @@ def schedule_history(
             LIMIT %s""",
         (user.tenant_id, limit),
     )
-    return ok([dict(r) for r in rows])
+    entries = []
+    for r in rows:
+        e = dict(r)
+        e["reason"] = None
+        e["reason_params"] = {}
+        entries.append(e)
+
+    # Due but not trained (nothing new, still running) or unable to start (the
+    # SQL source refused): there is no `jobs` row for these, and they are
+    # exactly the runs a tenant wonders about. `launched` rows are the jobs above.
+    extra = query(
+        """SELECT r.id, r.session_id, COALESCE(s.name, t.name, '') AS session_name,
+                  UPPER(r.outcome) AS status, r.ran_at AS created_at,
+                  r.reason, r.reason_params
+             FROM schedule_runs r
+             LEFT JOIN scheduled_jobs j ON j.id = r.schedule_id AND j.tenant_id = r.tenant_id
+             LEFT JOIN sessions t ON t.id = j.session_id AND t.tenant_id = r.tenant_id
+             LEFT JOIN sessions s ON s.id = r.session_id AND s.tenant_id = r.tenant_id
+            WHERE r.tenant_id = %s AND r.outcome <> 'launched'
+            ORDER BY r.ran_at DESC LIMIT %s""",
+        (user.tenant_id, limit),
+    )
+    for r in extra:
+        e = dict(r)
+        e.update(started_at=None, completed_at=None, error=None)
+        entries.append(e)
+    entries.sort(key=lambda e: e["created_at"], reverse=True)
+    return ok(entries[:limit])
 
 
 @router.get("/sessions/{session_id}/schedule")
@@ -160,14 +189,21 @@ def get_schedule(session_id: str, user: CurrentUser = Depends(get_current_user))
 def save_schedule(
     session_id: str,
     body: SaveScheduleRequest,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     if not session_svc.get_session(user.tenant_id, session_id):
         raise AppError("session_not_found", "Session not found", status_code=404)
     next_run = _next_run(body.cron_expr, user.tenant_id)
     existing = query_one(
-        "SELECT id FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
+        "SELECT id, cron_expr, enabled FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
         (session_id, user.tenant_id),
+    )
+    audit.note(
+        request,
+        before=({"cron_expr": existing["cron_expr"], "enabled": existing["enabled"]}
+                if existing else None),
+        after={"cron_expr": body.cron_expr, "enabled": body.enabled},
     )
     if existing:
         execute(
@@ -194,9 +230,17 @@ def save_schedule(
 
 
 @router.delete("/sessions/{session_id}/schedule")
-def delete_schedule(session_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
+def delete_schedule(session_id: str, request: Request,
+                    user: CurrentUser = Depends(require_analyst_or_above)):
     if not session_svc.get_session(user.tenant_id, session_id):
         raise AppError("session_not_found", "Session not found", status_code=404)
+    previous = query_one(
+        "SELECT cron_expr, enabled FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
+        (session_id, user.tenant_id),
+    )
+    if previous:
+        audit.note(request, before={"cron_expr": previous["cron_expr"],
+                                    "enabled": previous["enabled"]})
     execute(
         "DELETE FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
         (session_id, user.tenant_id),

@@ -30,3 +30,17 @@ def set_machine_actor(scope: dict, tenant_id: str, actor_id: str) -> None:
 
 def get_machine_actor(scope: dict) -> Optional[tuple[str, str]]:
     return scope.get(_SCOPE_KEY)
+
+
+_PERSON_KEY = "stockai_audit_person"
+
+
+def set_person_actor(scope: dict, tenant_id: str, user_id: str) -> None:
+    """Record which PERSON is acting, for the audit trail's middleware. Kept
+    apart from the machine actor on purpose: the machine audit exists to catch
+    integrations and must not start logging every UI click."""
+    scope[_PERSON_KEY] = (tenant_id, user_id)
+
+
+def get_person_actor(scope: dict) -> Optional[tuple[str, str]]:
+    return scope.get(_PERSON_KEY)

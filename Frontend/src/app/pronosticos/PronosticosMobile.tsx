@@ -30,6 +30,7 @@ import type {
 } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import RunWarningsPanel from '@/components/ui/RunWarningsPanel'
+import RunLineagePanel from '@/components/ui/RunLineagePanel'
 import { EmptyState, InlineError, LoadingState } from '@/components/ui/States'
 import Pagination from '@/components/table/Pagination'
 import { SIGNAL_STYLES } from '@/components/ui/SignalBadge'
@@ -397,6 +398,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
       {errors}
 
       <RunWarningsPanel sessionId={p.sessionId} collapsible />
+      <RunLineagePanel sessionId={p.sessionId} />
 
       <div style={{ position: 'relative' }}>
         <Search size={16} aria-hidden="true" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--dim)' }} />

@@ -20,7 +20,9 @@ why the endpoint is admin-only and the UI says so.
 """
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+
+from backend import audit
 from pydantic import BaseModel
 
 from backend.auth.guards import CurrentUser, get_current_user, require_role
@@ -79,6 +81,7 @@ def get_currency(user: CurrentUser = Depends(get_current_user)):
 @router.patch("")
 def set_currency(
     body: CurrencyUpdate,
+    request: Request,
     # Admin only. This relabels every figure the company has already loaded.
     user: CurrentUser = Depends(require_role("admin")),
 ):
@@ -90,6 +93,10 @@ def set_currency(
             status_code=400,
             params={"code": code, "supported": sorted(SUPPORTED)},
         )
+    current = currency_of(user.tenant_id)
+    previous = current.get("code") if isinstance(current, dict) else current
     update_settings(user.tenant_id, {"currency": code})
+    audit.note(request, target_id="currency", label="currency",
+               before={"currency": previous}, after={"currency": code})
     log.info("[currency] tenant %s -> %s (by %s)", user.tenant_id, code, user.user_id)
     return ok({"current": currency_of(user.tenant_id)})

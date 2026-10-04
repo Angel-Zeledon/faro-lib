@@ -1302,6 +1302,9 @@ class JobProgress:
         self._last_write = 0.0
         self._last_stage = None
         self._last_message = None
+        # Wall-clock seconds per stage for the lineage manifest: the time from
+        # a stage's first event to the first event of the next one.
+        self._stage_marks: list[tuple[str, float]] = []
         self._tracker = ProgressTracker(JOB_STAGES, self._publish)
 
     @property
@@ -1321,9 +1324,21 @@ class JobProgress:
         """Callback handed to ``ForecastEngine.train(on_progress=...)``."""
         self._tracker.apply(event)
 
+    def stage_timings(self) -> dict:
+        """Seconds spent in each stage so far; the last one runs until now."""
+        marks = self._stage_marks
+        end = _time.monotonic()
+        out: dict[str, float] = {}
+        for i, (stage, started) in enumerate(marks):
+            stopped = marks[i + 1][1] if i + 1 < len(marks) else end
+            out[stage] = round(out.get(stage, 0.0) + (stopped - started), 2)
+        return out
+
     def _publish(self, evt: dict) -> None:
         stage, message = evt["stage"], evt.get("message") or ""
         now = _time.monotonic()
+        if not self._stage_marks or self._stage_marks[-1][0] != stage:
+            self._stage_marks.append((stage, now))
         changed = stage != self._last_stage or message != self._last_message
         if not changed and now - self._last_write < _PROGRESS_MIN_INTERVAL_S:
             return
@@ -1412,6 +1427,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             pass
         log.info(f"[MOCK_TRAINING] job {job_id} completed (no ML)")
         return
+    prog = None
     try:
         prog = JobProgress(tenant_id, session_id, job_id)
         prog.begin("init", "Building engine config...")
@@ -1741,6 +1757,12 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
 
         mark_completed(tenant_id, job_id)
         force_status(tenant_id, session_id, "COMPLETED", "results")
+        from backend.lineage.manifest import save_manifest
+        save_manifest(
+            tenant_id, session_id, job_id, outcome="COMPLETED",
+            result=result_payload, forecasts=forecasts,
+            stage_timings=prog.stage_timings(),
+        )
         fire_webhooks(tenant_id, "job.completed", {"job_id": job_id, "session_id": session_id})
         broadcaster.broadcast_sync(job_id, {"type": "completed", "job_id": job_id})
         log.info(f"Job {job_id} completed successfully")
@@ -1769,6 +1791,11 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         # only trace was a log file the tenant cannot read.
         _record_training_outcome(tenant_id, session_id, job_id, failed=True,
                                  error=error_msg)
+        from backend.lineage.manifest import save_manifest
+        save_manifest(
+            tenant_id, session_id, job_id, outcome="FAILED", error=error_msg,
+            stage_timings=prog.stage_timings() if prog is not None else {},
+        )
         fire_webhooks(tenant_id, "job.failed", {"job_id": job_id, "session_id": session_id, "error": error_msg})
         broadcaster.broadcast_sync(job_id, {
             "type": "failed",

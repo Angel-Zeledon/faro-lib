@@ -54,7 +54,8 @@ def _stamp_lead_time_provenance(safe: dict, data: dict) -> dict:
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────
 
-def list_suppliers(tenant_id: str) -> list[dict]:
+def list_suppliers(tenant_id: str, *, q: str | None = None,
+                   limit: int | None = None, offset: int = 0) -> list[dict]:
     """Active suppliers, each carrying the state of the lead-time learning.
 
     `service.resolve_lead_time` already replaces the configured lead time with
@@ -74,6 +75,17 @@ def list_suppliers(tenant_id: str) -> list[dict]:
     # this one, so a module-level import would close the cycle.
     from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
 
+    # Optional narrowing for the paged view; with neither argument this is the
+    # full list every dropdown in the app relies on.
+    extra_where, extra_params = "", []
+    if q and q.strip():
+        extra_where = " AND (s.name ILIKE %s OR s.phone ILIKE %s OR s.email ILIKE %s)"
+        like = f"%{q.strip()}%"
+        extra_params = [like, like, like]
+    paging, paging_params = "", []
+    if limit is not None:
+        paging, paging_params = " LIMIT %s OFFSET %s", [limit, offset]
+
     rows = query(
         """SELECT s.*,
                   COALESCE(o.n, 0) AS lead_time_observations,
@@ -87,9 +99,9 @@ def list_suppliers(tenant_id: str) -> list[dict]:
                WHERE tenant_id = %s
                GROUP BY LOWER(supplier)
            ) o ON o.supplier = LOWER(s.name)
-           WHERE s.tenant_id = %s AND s.active = TRUE
-           ORDER BY s.name""",
-        (tenant_id, tenant_id),
+           WHERE s.tenant_id = %s AND s.active = TRUE""" + extra_where + """
+           ORDER BY s.name""" + paging,
+        (tenant_id, tenant_id, *extra_params, *paging_params),
     )
     for row in rows:
         observations = int(row.get("lead_time_observations") or 0)
@@ -119,6 +131,17 @@ def list_suppliers(tenant_id: str) -> list[dict]:
             observations >= MIN_LEAD_TIME_OBSERVATIONS and not usable
         )
     return rows
+
+
+def count_suppliers(tenant_id: str, q: str | None = None) -> int:
+    """Active suppliers matching `q` — the `total` of the paged list."""
+    where, params = "tenant_id = %s AND active = TRUE", [tenant_id]
+    if q and q.strip():
+        where += " AND (name ILIKE %s OR phone ILIKE %s OR email ILIKE %s)"
+        like = f"%{q.strip()}%"
+        params += [like, like, like]
+    row = query_one(f"SELECT COUNT(*) AS n FROM suppliers WHERE {where}", tuple(params))
+    return int(row["n"]) if row else 0
 
 
 def get_lead_time_std_map(tenant_id: str) -> dict[str, float]:

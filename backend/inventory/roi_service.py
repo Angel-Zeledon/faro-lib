@@ -499,6 +499,73 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
     return result
 
 
+PO_FILTERS = ("all", "unpaid", "paid", "cancelled")
+
+# Mirrors `reception_service.RECEIVABLE_STATES` and the frontend's
+# `OPEN_RECEPTION_STATUSES`: an order that has not (fully) arrived.
+_OPEN_RECEPTION = ("pending", "partial", "not_received")
+
+
+def get_po_history_page(
+    tenant_id: str, limit: int = 50, offset: int = 0,
+    status: str = "all", q: Optional[str] = None,
+) -> dict:
+    """One page of the PO history, filtered and counted on the server.
+
+    `get_po_history` returns the newest N and the screen filtered those N in
+    the browser, so a tenant with more orders than N could not reach the rest
+    and a filter ("unpaid") silently searched only what happened to be loaded.
+    `total` counts the filtered set; `awaiting_reception` counts the whole
+    tenant, because the header badge answers a different question than the
+    table's filter and must not change with it.
+    """
+    clauses = ["tenant_id = %s"]
+    params: list = [tenant_id]
+    if status == "unpaid":
+        clauses.append("sent_at IS NOT NULL AND paid_at IS NULL AND cancelled_at IS NULL")
+    elif status == "paid":
+        clauses.append("paid_at IS NOT NULL")
+    elif status == "cancelled":
+        clauses.append("cancelled_at IS NOT NULL")
+    if q and q.strip():
+        clauses.append("(CAST(po_number AS TEXT) ILIKE %s OR id ILIKE %s)")
+        like = f"%{q.strip()}%"
+        params += [like, like]
+    where = " AND ".join(clauses)
+
+    rows = query(
+        f"""SELECT id, session_id, source, generated_at, sku_count, total_units,
+                   total_value, skus_order_now, skus_order_soon,
+                   reception_status, received_at, po_number, sent_at,
+                   paid_at, cancelled_at, cancel_reason
+              FROM inventory_po_log
+             WHERE {where}
+             ORDER BY generated_at DESC, id DESC
+             LIMIT %s OFFSET %s""",
+        (*params, limit, offset),
+    )
+    total = query_one(f"SELECT COUNT(*) AS n FROM inventory_po_log WHERE {where}", tuple(params))
+    awaiting = query_one(
+        """SELECT COUNT(*) AS n FROM inventory_po_log
+            WHERE tenant_id = %s AND cancelled_at IS NULL
+              AND COALESCE(reception_status, 'pending') IN %s""",
+        (tenant_id, _OPEN_RECEPTION),
+    )
+    items = []
+    for row in rows:
+        r = dict(row)
+        for k in ("generated_at", "received_at", "paid_at", "cancelled_at"):
+            if isinstance(r.get(k), datetime):
+                r[k] = r[k].isoformat()
+        items.append(r)
+    return {
+        "items": items,
+        "total": int(total["n"]) if total else 0,
+        "limit": limit, "offset": offset,
+        "awaiting_reception": int(awaiting["n"]) if awaiting else 0,
+    }
+
+
 def _next_month_key(key: str) -> str:
     """'2026-06' -> '2026-07'."""
     y, m = (int(p) for p in key.split("-"))

@@ -40,7 +40,12 @@ from typing import Optional
 from backend.db import session_store
 from backend.db.connection import execute, query, query_one
 from backend.errors import AppError
+from backend.lineage.hashing import dataset_content_hash
 from backend.sessions import service as session_svc
+from backend.sessions.schedule_runs import (
+    FAILED, LAUNCHED, REASON_LAUNCH_FAILED, REASON_NO_NEW_DATA, REASON_STILL_RUNNING,
+    REASON_SOURCE_REFRESH_FAILED, SKIPPED, last_successful_hash, record_run,
+)
 
 log = logging.getLogger(__name__)
 
@@ -133,9 +138,94 @@ def _template(tenant_id: str, session_id: str) -> dict:
     return session
 
 
+def _sql_parent(tenant_id: str, dataset_id: str) -> Optional[dict]:
+    """The SQL source a snapshot dataset was materialized from, if any."""
+    row = query_one(
+        "SELECT p.id, p.name FROM datasets d JOIN datasets p "
+        "ON p.id = d.parent_id AND p.tenant_id = d.tenant_id "
+        "WHERE d.id = %s AND d.tenant_id = %s AND p.source_type = 'sql'",
+        (dataset_id, tenant_id),
+    )
+    return dict(row) if row else None
+
+
+def _current_dataset(
+    tenant_id: str, schedule_id: str, template: dict, user_id: str,
+) -> tuple[str, Optional[str]]:
+    """The dataset this run trains on, and the id of a snapshot made just now.
+
+    A template whose dataset came from a SQL source re-runs that source's saved
+    query and trains on the fresh snapshot. A file dataset is used as it is:
+    `POST /data-sources/{id}/file` replaces the file under the same id, so the
+    schedule already sees new uploads. If the source cannot be refreshed the run
+    FAILS with that reason — retraining on the stale snapshot would report a
+    refresh that never happened.
+    """
+    dataset_id = template["dataset_id"]
+    parent = _sql_parent(tenant_id, dataset_id)
+    if not parent:
+        return dataset_id, None
+    old = query_one(
+        "SELECT name FROM datasets WHERE id = %s AND tenant_id = %s",
+        (dataset_id, tenant_id),
+    )
+    from backend.datasources.service import materialize_sql_source
+    try:
+        fresh = materialize_sql_source(
+            tenant_id, user_id, parent["id"],
+            name=(old or {}).get("name"),
+        )
+    except Exception as exc:
+        exc._schedule_run_reason = REASON_SOURCE_REFRESH_FAILED  # type: ignore[attr-defined]
+        raise
+    fresh_id = fresh["id"]
+    execute(
+        "UPDATE datasets SET created_by_schedule_id = %s WHERE id = %s AND tenant_id = %s",
+        (schedule_id, fresh_id, tenant_id),
+    )
+    return fresh_id, fresh_id
+
+
+def _free_unreferenced_snapshots(tenant_id: str, schedule_id: str, keep: str) -> None:
+    """Delete snapshots this schedule materialized earlier that no session
+    uses any more, so a nightly SQL schedule does not pile up one dataset a day.
+    Only rows it created itself (`created_by_schedule_id`) can be reached."""
+    rows = query(
+        "SELECT id FROM datasets WHERE tenant_id = %s AND created_by_schedule_id = %s "
+        "AND id <> %s AND id NOT IN "
+        "(SELECT dataset_id FROM sessions WHERE tenant_id = %s AND dataset_id IS NOT NULL)",
+        (tenant_id, schedule_id, keep, tenant_id),
+    ) or []
+    from backend.datasources.service import delete_source
+    for row in rows:
+        try:
+            delete_source(tenant_id, row["id"])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("retrain: could not free snapshot %s: %s", row["id"], exc)
+
+
 def launch_scheduled_retrain(
     tenant_id: str, schedule_id: str, template_session_id: str,
     user_id: str = "scheduler",
+) -> Optional[dict]:
+    """Run this schedule once and write what came of it to `schedule_runs`:
+    launched, skipped (and why) or failed (and why). The error still
+    propagates so the scheduler records `last_error` as before."""
+    try:
+        return _launch(tenant_id, schedule_id, template_session_id, user_id)
+    except Exception as exc:
+        record_run(
+            tenant_id, schedule_id, FAILED,
+            reason=getattr(exc, "_schedule_run_reason", REASON_LAUNCH_FAILED),
+            reason_params={
+                "detail": str(getattr(exc, "message", None) or exc)[:300],
+            },
+        )
+        raise
+
+
+def _launch(
+    tenant_id: str, schedule_id: str, template_session_id: str, user_id: str,
 ) -> Optional[dict]:
     """Run this schedule once. Returns the new family, or None when skipped.
 
@@ -147,9 +237,36 @@ def launch_scheduled_retrain(
     if already:
         log.info("Scheduled retrain skipped: %s still training for schedule %s",
                  already, schedule_id)
+        record_run(tenant_id, schedule_id, SKIPPED, reason=REASON_STILL_RUNNING,
+                   session_id=already)
         return None
 
     template = _template(tenant_id, template_session_id)
+
+    # Bring the data up to date BEFORE deciding anything. A SQL-backed schedule
+    # used to retrain on the snapshot the wizard once materialized, forever:
+    # `materialize_sql_source` makes a new dataset each run and nothing pointed
+    # the schedule at it. Now the run re-materializes the source itself.
+    dataset_id, fresh_dataset_id = _current_dataset(
+        tenant_id, schedule_id, template, user_id)
+
+    # Nothing new since the last successful run: say so, visibly, and stop. The
+    # nightly preset over a file nobody touched used to retrain identical data
+    # and replace the serving session with an equivalent one.
+    content_hash = dataset_content_hash(tenant_id, dataset_id)
+    if content_hash is not None and content_hash == last_successful_hash(
+            tenant_id, schedule_id):
+        record_run(
+            tenant_id, schedule_id, SKIPPED, reason=REASON_NO_NEW_DATA,
+            dataset_id=dataset_id, content_hash=content_hash,
+        )
+        if fresh_dataset_id:
+            # The snapshot we just took is byte-identical to the one already
+            # trained on; keeping it would only fill the datasets list.
+            from backend.datasources.service import delete_source
+            delete_source(tenant_id, fresh_dataset_id)
+        log.info("Scheduled retrain skipped: no new data for schedule %s", schedule_id)
+        return None
 
     # Free the slot this schedule used last time before asking for another one,
     # so a plan ceiling counts what the schedule actually keeps.
@@ -181,7 +298,7 @@ def launch_scheduled_retrain(
            SET dataset_id = %s, scheduled_job_id = %s, status = 'MODELS_CONFIGURED',
                pipeline_step = 'train', updated_at = NOW()
            WHERE id = %s AND tenant_id = %s""",
-        (template["dataset_id"], schedule_id, run_id, tenant_id),
+        (dataset_id, schedule_id, run_id, tenant_id),
     )
 
     from backend.sessions import family_service as fam
@@ -198,6 +315,13 @@ def launch_scheduled_retrain(
         except Exception:  # noqa: BLE001
             log.warning("retrain: could not clean up the failed run %s", run_id)
         raise
+
+    record_run(
+        tenant_id, schedule_id, LAUNCHED, session_id=run_id,
+        dataset_id=dataset_id, content_hash=content_hash,
+    )
+    if fresh_dataset_id:
+        _free_unreferenced_snapshots(tenant_id, schedule_id, keep=fresh_dataset_id)
 
     log.info("Scheduled retrain launched: schedule=%s template=%s run=%s",
              schedule_id, template_session_id, run_id)

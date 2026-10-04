@@ -58,6 +58,7 @@ INTERNAL_TAGS: dict[str, str] = {
     "users": "user and password management belongs to people, not to a credential",
     "preferences": "per-person UI preferences; a key is not a person",
     "activity": "a person's own activity feed (/me/activity)",
+    "audit": "the tenant's audit trail names its people; an administrator reads it on the screen",
     "api-keys": "key management: a key must never mint, list or revoke keys",
     "service-config": "instance and channel configuration (operators and tenant admins only)",
     "tenant": "tenant export and deletion",

@@ -464,10 +464,18 @@ export const getSessions   = () =>
   request<{ items: SessionInfo[]; total: number }>('GET', '/sessions')
     .then(r => (Array.isArray(r) ? r : r.items) ?? [])
 // Enriched history list: dataset name, horizon, SKU count, granularity.
-export const getSessionSummaries = (skip = 0, limit = 100) =>
-  request<{ items: import('./types').SessionSummary[]; total: number }>(
-    'GET', `/sessions/summary?skip=${skip}&limit=${limit}`,
+export const getSessionSummaries = (
+  skip = 0, limit = 100,
+  f: { q?: string; status?: string; sort?: string } = {},
+) => {
+  const p = new URLSearchParams({ skip: String(skip), limit: String(limit) })
+  if (f.q) p.set('q', f.q)
+  if (f.status) p.set('status', f.status)
+  if (f.sort) p.set('sort', f.sort)
+  return request<{ items: import('./types').SessionSummary[]; total: number }>(
+    'GET', `/sessions/summary?${p.toString()}`,
   )
+}
 export const getSession    = (id: string)    => request<SessionInfo>('GET', `/sessions/${id}`)
 export const createSession = (name?: string) =>
   request<SessionInfo>('POST', '/sessions', {
@@ -913,9 +921,14 @@ export const setTenantTimezone = (timezone: string) =>
   request<{ current: TenantTimezone }>('PATCH', '/tenant/timezone', { timezone })
 
 export interface ScheduleRun {
-  id: string; session_id: string; session_name: string
+  id: string; session_id: string | null; session_name: string
   status: string; created_at: string
   started_at: string | null; completed_at: string | null; error: string | null
+  /** Why a run did not train (`no_new_data`, `still_running`,
+   *  `source_refresh_failed`, `launch_failed`); null on a run that started.
+   *  Rendered through `schedule.run_reason.<code>`. */
+  reason?: string | null
+  reason_params?: Record<string, string | number>
 }
 
 // What the scheduler has actually done. `scheduled_jobs` keeps only the LAST
@@ -1198,6 +1211,22 @@ export const getROIMonthReport = (year?: number, month?: number) =>
 
 export const getPOHistory = (limit = 20, opts?: RequestOpts) =>
   request<POLogEntry[]>('GET', `/inventory/po-history?limit=${limit}`, undefined, opts)
+
+/** The PO history filtered and paged on the server. `total` counts the filtered
+ *  set; `awaiting_reception` counts every open order, whatever the filter. */
+export interface POHistoryPage {
+  items: POLogEntry[]; total: number; limit: number; offset: number
+  awaiting_reception: number
+}
+export const getPOHistoryPage = (
+  p: { limit?: number; offset?: number; status?: 'all' | 'unpaid' | 'paid' | 'cancelled'; q?: string } = {},
+  opts?: RequestOpts,
+) => {
+  const qs = new URLSearchParams({ limit: String(p.limit ?? 50), offset: String(p.offset ?? 0) })
+  if (p.status && p.status !== 'all') qs.set('status', p.status)
+  if (p.q) qs.set('q', p.q)
+  return request<POHistoryPage>('GET', `/inventory/po-history/page?${qs.toString()}`, undefined, opts)
+}
 
 // ── PO reception (cerrar el loop de purchase) ──────────────────────────────────
 export const getPOItems = (poLogId: string) =>
@@ -2070,3 +2099,73 @@ export const probeTenantService = (serviceKey: string, opts?: RequestOpts) =>
   request<ProbeView>(
     'POST', `/service-config/tenant/services/${serviceKey}/probe`, undefined, opts,
   )
+
+
+// ── Run lineage and the audit trail (2026-10-04) ─────────────────────────────
+
+export interface LineageManifest {
+  id: string; session_id: string; job_id: string | null
+  outcome: 'COMPLETED' | 'FAILED'; created_at: string
+  manifest: {
+    schema_version: number
+    outcome: string
+    error: string | null
+    session: { id: string; name: string | null; family_id: string | null; granularity: string | null }
+    trigger: { kind: 'user' | 'schedule' | 'api_key' | 'system'; actor_id: string;
+               schedule_id: string | null; label: string | null }
+    timing: { queued_at: string | null; started_at: string | null; finished_at: string | null;
+              duration_seconds: number | null }
+    dataset: { id: string | null; name: string | null; content_hash: string | null;
+               size_bytes: number | null; source_type: string | null; parent_id: string | null }
+    counts: { rows: number | null; skus_forecast: number; skus_excluded: number }
+    config: Record<string, unknown>
+    versions: { engine: string; python: string; libraries: Record<string, string | null> }
+    models: { selected: string[] | null;
+              outcomes: Record<string, { series: number; avg_wape?: number | null;
+                                         avg_mae?: number | null; avg_bias?: number | null }> }
+    stage_timings_seconds: Record<string, number>
+    forecast: { hash: string | null; series_count: number }
+  }
+}
+
+/** The lineage manifest of a session, or null when it has never finished a run
+ *  (a 404 here is an answer, not an error to toast). */
+export const getSessionManifest = (sessionId: string) =>
+  request<LineageManifest>('GET', `/sessions/${sessionId}/manifest`, undefined, { silent: true })
+    .catch((e: unknown) => {
+      if (isApiError(e) && e.kind === 'notfound') return null
+      throw e
+    })
+
+export interface AuditEntry {
+  id: string; at: string
+  actor: { id: string; kind: 'user' | 'api_key' | 'schedule' | 'system'; label: string | null }
+  action: string
+  target: { type: string | null; id: string | null; label: string | null }
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  status: string
+}
+export interface AuditPage { items: AuditEntry[]; total: number; limit: number; offset: number }
+export interface AuditFilters {
+  target_types: string[]; actions: string[]
+  actors: Array<{ id: string; kind: string; label: string | null }>
+}
+export interface AuditQuery {
+  actor?: string; target_type?: string; action?: string; target_id?: string
+  status?: string; date_from?: string; date_to?: string
+}
+
+function auditQs(q: AuditQuery, extra: Record<string, string> = {}) {
+  const p = new URLSearchParams(extra)
+  for (const [k, v] of Object.entries(q)) if (v) p.set(k, v)
+  return p.toString()
+}
+
+export const getAuditTrail = (q: AuditQuery & { limit?: number; offset?: number } = {}) => {
+  const { limit = 50, offset = 0, ...filters } = q
+  return request<AuditPage>('GET', `/audit?${auditQs(filters, { limit: String(limit), offset: String(offset) })}`)
+}
+export const getAuditFilters = () => request<AuditFilters>('GET', '/audit/filters', undefined, { silent: true })
+export const downloadAuditCsv = (q: AuditQuery = {}) =>
+  downloadBlob(`/audit/export?${auditQs(q)}`, `audit-${new Date().toISOString().slice(0, 10)}.csv`)

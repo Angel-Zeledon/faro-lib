@@ -2,8 +2,8 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 219,
-  "read": 138,
+  "total": 223,
+  "read": 142,
   "write": 81
  },
  "limits": {
@@ -4605,6 +4605,54 @@
      ]
     },
     {
+     "id": "get-inventory-po-history-page",
+     "method": "GET",
+     "path": "/inventory/po-history/page",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "Po History Page",
+     "description": "The PO history, filtered and paged on the server. `total` counts the filtered set; `awaiting_reception` counts every open order of the tenant.",
+     "parameters": [
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "type": "integer",
+       "description": "",
+       "example": 50
+      },
+      {
+       "name": "offset",
+       "in": "query",
+       "required": false,
+       "type": "integer",
+       "description": "",
+       "example": 0
+      },
+      {
+       "name": "status",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "all"
+      },
+      {
+       "name": "q",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "Matches the PO number",
+       "example": "q"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
      "id": "post-inventory-po-import",
      "method": "POST",
      "path": "/inventory/po/import",
@@ -5270,6 +5318,38 @@
        "type": "boolean",
        "description": "Per-(sku, warehouse) rows with network transfer suggestions",
        "example": false
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "type": "integer",
+       "description": "Page size. Omitted = every row (the original contract).",
+       "example": 1
+      },
+      {
+       "name": "offset",
+       "in": "query",
+       "required": false,
+       "type": "integer",
+       "description": "",
+       "example": 0
+      },
+      {
+       "name": "sort",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "urgency"
+      },
+      {
+       "name": "q",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "Matches SKU, category or supplier",
+       "example": "q"
       }
      ],
      "request_body": null,
@@ -5335,6 +5415,54 @@
      "summary": "List stock",
      "description": "Every SKU's stock record: on hand, minimum, lead time, cost, supplier and catalogue fields.",
      "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "get-inventory-stock-page",
+     "method": "GET",
+     "path": "/inventory/stock/page",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "List Stock Page",
+     "description": "Stock rows searched, filtered by warehouse and paged on the server. The plain `/stock` list stays whole for the screens that need every row.",
+     "parameters": [
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "type": "integer",
+       "description": "",
+       "example": 50
+      },
+      {
+       "name": "offset",
+       "in": "query",
+       "required": false,
+       "type": "integer",
+       "description": "",
+       "example": 0
+      },
+      {
+       "name": "q",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "Matches SKU, category or supplier",
+       "example": "q"
+      },
+      {
+       "name": "warehouse",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "warehouse"
+      }
+     ],
      "request_body": null,
      "success_status": 200,
      "response_content_types": [
@@ -6082,6 +6210,46 @@
      "summary": "Supplier Lead Time Alerts",
      "description": "Suppliers whose recent lead time is significantly slower than their own history — \"Acme is taking 12 days, not 7\" (feature 3.3).",
      "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "get-inventory-suppliers-page",
+     "method": "GET",
+     "path": "/inventory/suppliers/page",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "List Suppliers Page",
+     "description": "Active suppliers, searched and paged on the server (the plain list stays whole for the dropdowns that need every supplier).",
+     "parameters": [
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "type": "integer",
+       "description": "",
+       "example": 50
+      },
+      {
+       "name": "offset",
+       "in": "query",
+       "required": false,
+       "type": "integer",
+       "description": "",
+       "example": 0
+      },
+      {
+       "name": "q",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "Matches name, phone or email",
+       "example": "q"
+      }
+     ],
      "request_body": null,
      "success_status": 200,
      "response_content_types": [
@@ -7398,7 +7566,7 @@
      "tag": "sessions",
      "scope": "read",
      "summary": "List Session Summaries",
-     "description": "Session history: enriched list (dataset name, horizon, SKU count, granularity) in a single batched query — no per-session lookups.",
+     "description": "Session history: enriched list (dataset name, horizon, SKU count, granularity) in a single batched query — no per-session lookups. Filtered, sorted and paged on the server; `total` counts the filtered set.",
      "parameters": [
       {
        "name": "skip",
@@ -7415,6 +7583,30 @@
        "type": "integer",
        "description": "",
        "example": 50
+      },
+      {
+       "name": "q",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "Matches the run's or the dataset's name",
+       "example": "q"
+      },
+      {
+       "name": "status",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "status"
+      },
+      {
+       "name": "sort",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "created_desc"
       }
      ],
      "request_body": null,
@@ -7520,6 +7712,30 @@
        ]
       }
      },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "get-sessions-session_id-manifest",
+     "method": "GET",
+     "path": "/sessions/{session_id}/manifest",
+     "tag": "sessions",
+     "scope": "read",
+     "summary": "Get Manifest",
+     "description": "How this forecast was produced: who or what started the run, the dataset's content hash and size, the full configuration, engine and library versions, per-model outcomes, stage timings and a hash of the forecast. Written once when the run ends and never changed. 404 `manifest_not_available` for a session that has not finished a run since manifests were introduced.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "type": "string",
+       "description": "",
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": null,
      "success_status": 200,
      "response_content_types": [
       "application/json"

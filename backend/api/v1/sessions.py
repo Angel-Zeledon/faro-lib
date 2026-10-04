@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, Query
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query, Request
+
+from backend import audit
 
 from backend.activity.service import log_action
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
@@ -25,6 +29,7 @@ def list_sessions(
 @router.post("", status_code=201)
 def create_session(
     body: SessionCreate,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     from backend.entitlements.service import enforce_limit, limit_guard
@@ -36,6 +41,8 @@ def create_session(
         session = session_svc.create_session(
             user.tenant_id, user.user_id, body.name, body.description, body.tags
         )
+    audit.note(request, target_id=session["id"], label=body.name,
+               after={"name": body.name})
     return ok(session)
 
 
@@ -46,11 +53,16 @@ def list_session_summaries(
     user: CurrentUser = Depends(get_current_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
+    q: Optional[str] = Query(None, max_length=200, description="Matches the run's or the dataset's name"),
+    status: Optional[str] = Query(None, max_length=30),
+    sort: str = Query("created_desc", pattern="^(" + "|".join(session_svc.SUMMARY_SORTS) + ")$"),
 ):
     """Session history: enriched list (dataset name, horizon, SKU count,
-    granularity) in a single batched query — no per-session lookups."""
-    items = session_svc.list_session_summaries(user.tenant_id, skip=skip, limit=limit)
-    total = session_svc.count_sessions(user.tenant_id)
+    granularity) in a single batched query — no per-session lookups. Filtered,
+    sorted and paged on the server; `total` counts the filtered set."""
+    items = session_svc.list_session_summaries(
+        user.tenant_id, skip=skip, limit=limit, q=q, status=status, sort=sort)
+    total = session_svc.count_session_summaries(user.tenant_id, q=q, status=status)
     return ok({"items": items, "total": total, "skip": skip, "limit": limit})
 
 
@@ -66,6 +78,7 @@ def get_session(session_id: str, user: CurrentUser = Depends(get_current_user)):
 def update_session(
     session_id: str,
     body: SessionUpdate,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     from backend.db.connection import execute
@@ -93,7 +106,14 @@ def update_session(
                 (*values, session_id, user.tenant_id),
             )
 
-    return ok(session_svc.get_session(user.tenant_id, session_id))
+    after = session_svc.get_session(user.tenant_id, session_id)
+    audit.note(
+        request, label=(after or s).get("name"),
+        before={"name": s.get("name"), "description": s.get("description"), "tags": s.get("tags")},
+        after={"name": (after or {}).get("name"), "description": (after or {}).get("description"),
+               "tags": (after or {}).get("tags")},
+    )
+    return ok(after)
 
 
 @router.delete("/{session_id}", status_code=204)

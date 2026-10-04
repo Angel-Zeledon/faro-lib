@@ -7,7 +7,9 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+from backend import audit
 from pydantic import BaseModel
 
 from backend.api.v1.auth import _reject_weak_password
@@ -423,15 +425,20 @@ def get_user_permissions(
 def set_user_permissions(
     user_id: str,
     body: UpdatePermissionsRequest,
+    request: Request,
     user: CurrentUser = Depends(require_admin),
 ):
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
         raise AppError("user_not_found", "User not found", status_code=404)
+    before = sorted(user_svc.get_permissions(user.tenant_id, user_id))
     user_svc.set_permissions(user.tenant_id, user_id, body.permissions)
+    after = user_svc.get_permissions(user.tenant_id, user_id)
+    audit.note(request, label=target.get("email"),
+               before={"permissions": before}, after={"permissions": sorted(after)})
     return ok({
         "user_id": user_id,
-        "permissions": user_svc.get_permissions(user.tenant_id, user_id),
+        "permissions": after,
     })
 
 

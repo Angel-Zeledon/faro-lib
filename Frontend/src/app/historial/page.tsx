@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, History, Pencil, Trash2, X } from 'lucide-react'
 import { deleteSession, getSessionSummaries, patchSession } from '@/lib/api'
@@ -49,6 +49,15 @@ function StatusBadge({ status }: { status: SessionStatus }) {
   )
 }
 
+const PAGE = 50
+const STATUS_OPTIONS = ['COMPLETED', 'FAILED', 'RUNNING', 'QUEUED', 'CANCELLED'] as const
+const SORT_OPTIONS = ['created_desc', 'created_asc', 'name_asc', 'name_desc', 'status'] as const
+
+const ctlStyle: React.CSSProperties = {
+  fontSize: 12, padding: '6px 10px', borderRadius: 8, minWidth: 0,
+  border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
+}
+
 const iconBtnStyle: React.CSSProperties = {
   all: 'unset', cursor: 'pointer', padding: 5, borderRadius: 6,
   color: 'var(--dim)', display: 'inline-flex', alignItems: 'center',
@@ -62,6 +71,15 @@ export default function SessionsHistoryPage() {
   const canEdit  = user?.role === 'admin' || user?.role === 'analyst'
 
   const [items,     setItems]     = useState<SessionSummary[]>([])
+  // The history is filtered, sorted and paged by the server: a tenant with
+  // thousands of runs used to get the newest 200 and no way to reach the rest.
+  const [total,     setTotal]     = useState(0)
+  const [search,    setSearch]    = useState('')
+  const [query,     setQuery]     = useState('')        // `search`, after the typing pause
+  const [statusF,   setStatusF]   = useState('')
+  const [sort,      setSort]      = useState('created_desc')
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadedRef = useRef(0)
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState<unknown>(null)
   // Inline rename state — one row at a time.
@@ -73,18 +91,33 @@ export default function SessionsHistoryPage() {
   const narrow = useIsNarrow()
   const [detailId,  setDetailId]  = useState<string | null>(null)
 
-  const load = useCallback(async (initial = false) => {
+  useEffect(() => {
+    const id = setTimeout(() => setQuery(search.trim()), 300)
+    return () => clearTimeout(id)
+  }, [search])
+
+  const load = useCallback(async (initial = false, append = false) => {
     if (initial) setLoading(true)
+    if (append) setLoadingMore(true)
     setError(null)
     try {
-      const r = await getSessionSummaries(0, 200)
-      setItems(r.items)
+      const r = await getSessionSummaries(append ? loadedRef.current : 0, PAGE, {
+        q: query || undefined, status: statusF || undefined, sort,
+      })
+      setTotal(r.total)
+      setItems(prev => {
+        const next = append ? [...prev, ...r.items] : r.items
+        loadedRef.current = next.length
+        return next
+      })
     } catch (e: unknown) {
-      setError(e)
+      // A failed "show more" keeps the rows already on screen.
+      if (!append) setError(e)
     } finally {
       if (initial) setLoading(false)
+      setLoadingMore(false)
     }
-  }, [])
+  }, [query, statusF, sort])
 
   useEffect(() => { load(true) }, [load])
 
@@ -164,6 +197,25 @@ export default function SessionsHistoryPage() {
         </div>
       </div>
 
+      {(total > 0 || query || statusF) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            type="search" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder={t('list.search_placeholder')} aria-label={t('list.search_placeholder')}
+            style={{ ...ctlStyle, flex: narrow ? '1 1 100%' : '0 1 240px' }}
+          />
+          <select value={statusF} onChange={e => setStatusF(e.target.value)}
+                  aria-label={t('sessions.col_status')} style={ctlStyle}>
+            <option value="">{t('list.all_statuses')}</option>
+            {STATUS_OPTIONS.map(x => <option key={x} value={x}>{t(`sessions.status_${x}`)}</option>)}
+          </select>
+          <select value={sort} onChange={e => setSort(e.target.value)}
+                  aria-label={t('list.sort_label')} style={ctlStyle}>
+            {SORT_OPTIONS.map(x => <option key={x} value={x}>{t(`sessions.sort_${x}`)}</option>)}
+          </select>
+        </div>
+      )}
+
       {loading ? (
         <Card padding={8}>
           <LoadingState label={t('common.loading')}>
@@ -173,11 +225,15 @@ export default function SessionsHistoryPage() {
       ) : error ? (
         <ErrorState error={error} onRetry={() => load(true)} />
       ) : items.length === 0 ? (
-        <EmptyState
-          icon={<History size={22} />}
-          title={t('sessions.empty_title')}
-          body={t('sessions.empty_hint')}
-        />
+        query || statusF ? (
+          <EmptyState icon={<History size={22} />} title={t('list.no_results')} body="" />
+        ) : (
+          <EmptyState
+            icon={<History size={22} />}
+            title={t('sessions.empty_title')}
+            body={t('sessions.empty_hint')}
+          />
+        )
       ) : narrow ? (
         <HistoryCards
           items={items}
@@ -327,6 +383,24 @@ export default function SessionsHistoryPage() {
             </tbody>
           </Table>
         </Card>
+      )}
+
+      {!loading && !error && items.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: C.dim }}>
+            {t('list.showing', { shown: items.length, total })}
+          </span>
+          {items.length < total && (
+            <button type="button" disabled={loadingMore} onClick={() => load(false, true)}
+                    className={narrow ? 'mobile-btn mobile-btn-secondary' : undefined}
+                    style={narrow ? { flex: 'none', width: '100%' } : {
+                      all: 'unset', cursor: loadingMore ? 'default' : 'pointer', fontSize: 12,
+                      color: 'var(--accent)', opacity: loadingMore ? 0.5 : 1 }}>
+              {loadingMore ? t('common.loading') : t('list.load_more')}
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

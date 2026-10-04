@@ -50,7 +50,43 @@ def list_sessions(tenant_id: str, skip: int = 0, limit: int = 50) -> list[dict]:
     return [_fmt(r) for r in rows]
 
 
-def list_session_summaries(tenant_id: str, skip: int = 0, limit: int = 50) -> list[dict]:
+# Sort orders the history list offers. A whitelist: the key picks a fixed
+# ORDER BY, so a caller can never put its own text into the query.
+_SUMMARY_SORTS = {
+    "created_desc": "s.created_at DESC",
+    "created_asc":  "s.created_at ASC",
+    "name_asc":     "LOWER(s.name) ASC, s.created_at DESC",
+    "name_desc":    "LOWER(s.name) DESC, s.created_at DESC",
+    "status":       "s.status ASC, s.created_at DESC",
+}
+SUMMARY_SORTS = tuple(_SUMMARY_SORTS)
+
+
+def _summary_filter(tenant_id: str, q: Optional[str], status: Optional[str]) -> tuple[str, list]:
+    clause, params = "s.tenant_id = %s", [tenant_id]
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        clause += " AND (s.name ILIKE %s OR d.name ILIKE %s)"
+        params += [like, like]
+    if status:
+        clause += " AND s.status = %s"
+        params.append(status)
+    return clause, params
+
+
+def count_session_summaries(tenant_id: str, q: Optional[str] = None,
+                            status: Optional[str] = None) -> int:
+    clause, params = _summary_filter(tenant_id, q, status)
+    row = query_one(
+        "SELECT COUNT(*) AS cnt FROM sessions s "
+        "LEFT JOIN datasets d ON d.id = s.dataset_id AND d.tenant_id = s.tenant_id "
+        f"WHERE {clause}", tuple(params))
+    return row["cnt"] if row else 0
+
+
+def list_session_summaries(tenant_id: str, skip: int = 0, limit: int = 50,
+                           q: Optional[str] = None, status: Optional[str] = None,
+                           sort: str = "created_desc") -> list[dict]:
     """
     History view: one batched query per page — sessions joined with their
     dataset, config blobs and training result so the endpoint never does an
@@ -63,6 +99,7 @@ def list_session_summaries(tenant_id: str, skip: int = 0, limit: int = 50) -> li
       granularity  — sessions.granularity (family runs), else granularity_cfg.target_freq
       sku_count    — training_result.metrics.n_skus, else distinct SKUs in metrics rows
     """
+    clause, params = _summary_filter(tenant_id, q, status)
     rows = query(
         """SELECT s.id, s.name, s.description, s.status, s.pipeline_step,
                   s.created_at, s.updated_at, s.dataset_id, s.tags,
@@ -92,10 +129,11 @@ def list_session_summaries(tenant_id: str, skip: int = 0, limit: int = 50) -> li
                WHERE session_id = s.id AND error IS NOT NULL
                ORDER BY created_at DESC LIMIT 1
            ) j ON TRUE
-           WHERE s.tenant_id = %s
-           ORDER BY s.created_at DESC
-           LIMIT %s OFFSET %s""",
-        (tenant_id, limit, skip),
+           WHERE {clause}
+           ORDER BY {order}
+           LIMIT %s OFFSET %s""".format(
+            clause=clause, order=_SUMMARY_SORTS.get(sort, _SUMMARY_SORTS["created_desc"])),
+        (*params, limit, skip),
     )
     return [_fmt(r) for r in rows]
 

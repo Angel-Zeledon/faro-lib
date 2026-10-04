@@ -420,6 +420,17 @@ function SchedulesTab() {
     ...(tz ? { timeZone: tz.timezone } : {}), dateStyle: 'short', timeStyle: 'short',
   })
 
+  // Why a run did not train, as a sentence in the reader's language; a run that
+  // did start shows the engine's own error when it failed.
+  const runDetail = (run: ScheduleRun): string => {
+    if (run.reason) {
+      const key = `schedule.run_reason.${run.reason}`
+      const text = t(key)
+      return text === key ? run.reason : text
+    }
+    return run.error ? run.error.slice(0, 120) : ''
+  }
+
   const reloadAll = useCallback(() => {
     listSchedules().then(setAllSchedules).catch(() => setAllSchedules([]))
     getTenantTimezone().then(r => setTz(r.current)).catch(() => setTz(null))
@@ -566,7 +577,7 @@ function SchedulesTab() {
                 <MobileCard
                   key={run.id}
                   title={run.session_name}
-                  subtitle={run.error ? `${inTenantZone(run.created_at)} · ${run.error.slice(0, 120)}` : inTenantZone(run.created_at)}
+                  subtitle={runDetail(run) ? `${inTenantZone(run.created_at)} · ${runDetail(run)}` : inTenantZone(run.created_at)}
                   status={{
                     label: t(`settings.schedule_run_${run.status.toLowerCase()}`),
                     tone: run.status === 'FAILED' ? 'danger' : run.status === 'COMPLETED' ? 'success' : 'neutral',
@@ -671,9 +682,9 @@ function SchedulesTab() {
                                    : 'var(--dim)' }}>
                 {t(`settings.schedule_run_${run.status.toLowerCase()}`)}
               </span>
-              {run.error && (
+              {runDetail(run) && (
                 <span style={{ color: 'var(--dim)', maxWidth: 420, whiteSpace: 'normal' }}>
-                  {run.error.slice(0, 120)}
+                  {runDetail(run)}
                 </span>
               )}
             </div>

@@ -7,7 +7,9 @@ GET /planning  — the active {period, horizon}, the family's available periods,
 PUT /planning  — set {period, horizon}. Admin-only.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from backend import audit
 from pydantic import BaseModel, Field
 
 from backend.auth.guards import CurrentUser, get_current_user, require_admin
@@ -33,8 +35,10 @@ def get_planning(user: CurrentUser = Depends(get_current_user)):
 @router.put("")
 def put_planning(
     body: PlanningUpdate,
+    request: Request,
     user: CurrentUser = Depends(require_admin),
 ):
+    previous = plan.get_planning(user.tenant_id)
     try:
         data = plan.set_planning(user.tenant_id, body.period, body.horizon)
     except AppError:
@@ -44,4 +48,7 @@ def put_planning(
         raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    audit.note(request, target_id="planning", label="planning",
+               before={"period": previous.get("period"), "horizon": previous.get("horizon")},
+               after={"period": data.get("period"), "horizon": data.get("horizon")})
     return ok(data)

@@ -18,6 +18,11 @@ def ensure_table() -> None:
     execute(
         "CREATE INDEX IF NOT EXISTS idx_activity_user_time ON activity_logs(user_id, created_at DESC)"
     )
+    # The audit trail filters by action within a tenant, newest first.
+    execute(
+        "CREATE INDEX IF NOT EXISTS idx_activity_tenant_action_time "
+        "ON activity_logs(tenant_id, action, created_at DESC)"
+    )
 
 
 def log_action(

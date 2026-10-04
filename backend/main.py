@@ -163,6 +163,8 @@ app.add_middleware(RequestLoggerMiddleware)
 # the guard, and this has to still be on the stack when the response comes back
 # out to read it.
 app.add_middleware(MachineAuditMiddleware)
+from backend.middleware.audit_trail import AuditMiddleware  # noqa: E402
+app.add_middleware(AuditMiddleware)
 
 # ── Error envelope ─────────────────────────────────────────────────────────
 # A user-facing AppError becomes a JSON error response that keeps the existing
@@ -361,6 +363,9 @@ app.include_router(freshness_router.router, prefix=_PREFIX)
 app.include_router(alerts_router.router,    prefix=_PREFIX)
 app.include_router(messages_router.router,  prefix=_PREFIX)
 app.include_router(service_config_router.router, prefix=_PREFIX)
+from backend.api.v1 import audit as audit_router  # noqa: E402
+app.include_router(audit_router.router, prefix=_PREFIX)
+app.include_router(audit_router.manifest_router, prefix=_PREFIX)
 app.include_router(ws_router)
 
 
