@@ -1,7 +1,7 @@
 'use client'
 import { InstallAppButton } from './InstallAppButton'
 import Link from 'next/link'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { LogOut, User, ChevronLeft, ChevronRight, X, LifeBuoy } from 'lucide-react'
 import clsx from 'clsx'
@@ -12,8 +12,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { Wordmark } from '@/components/brand/Wordmark'
-import { NAV, SETTINGS_ITEM, canSee, navItemMatches, type Screen } from './navItems'
-import LegalLinks from '@/components/legal/LegalLinks'
+import { NAV, TOOLS_NAV, SETTINGS_ITEM, canSee, activePrimary, rememberOrigin, type Screen } from './navItems'
 import { siteHref } from '@/lib/siteUrls'
 
 // The nav definition lives in ./navItems: six daily screens, then
@@ -25,7 +24,7 @@ export default function Sidebar() {
   const router  = useRouter()
   const user    = getUser()
   const { collapsed, toggle, drawerOpen, closeDrawer } = useSidebar()
-  const { t, lang, setLang } = useLanguage()
+  const { t } = useLanguage()
 
   // On a phone the rail is not a column of the layout — it is a drawer that
   // slides over the page. `collapsed` (the icons-only desktop rail) is
@@ -64,11 +63,17 @@ export default function Sidebar() {
   // Six daily screens and Configuración. Role still hides an entry, never a
   // plan: there are no locks.
   const visibleNav = NAV.filter(item => canSee(item, user?.role))
-  const order = [...visibleNav, SETTINGS_ITEM]
+  const order = [...visibleNav, ...TOOLS_NAV, SETTINGS_ITEM]
+
+  // Where the user came from, so a secondary screen lights the entry it was
+  // opened from (see activePrimary).
+  const [origin, setOrigin] = useState<string | null>(null)
+  useEffect(() => { setOrigin(rememberOrigin(path)) }, [path])
+  const lit = activePrimary(path, origin)
 
   function renderItem(item: Screen) {
     const { href, labelKey, Icon } = item
-    const active = navItemMatches(item, path)
+    const active = lit === href
     const label = t(labelKey)
     return (
       <Link key={href} href={href} onClick={isDrawer ? closeDrawer : undefined}
@@ -148,17 +153,16 @@ export default function Sidebar() {
     >
 
       {/* Logo */}
-      <div style={{
-        padding: collapsedNow ? '18px 0' : '22px 20px 18px',
+      {(!collapsedNow || isDrawer) && <div style={{
+        padding: '22px 20px 18px',
         borderBottom: '1px solid var(--sidebar-border)',
         display: 'flex', alignItems: 'center',
-        justifyContent: collapsedNow ? 'center' : 'flex-start',
       }}>
         {/* Type-only mark; the sidebar is petrol in both themes, so "ai"
-            takes the light end of the brand gradient to hold its contrast. */}
-        {collapsedNow ? (
-          <Wordmark size={17} compact color="var(--sidebar-text-active)" accent="#4CC3B5" />
-        ) : (
+            takes the light end of the brand gradient to hold its contrast.
+            On the collapsed rail there is no mark at all: an initial or a
+            fragment of the name is not the name. */}
+        {!collapsedNow && (
           <div>
             <Wordmark size={21} color="var(--sidebar-text-active)" accent="#4CC3B5" />
             <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', marginTop: 5 }}>
@@ -180,7 +184,7 @@ export default function Sidebar() {
             <X size={18} aria-hidden="true" />
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Navigation */}
       <nav aria-label={t('mobile.tabbar_label')} style={{
@@ -188,11 +192,23 @@ export default function Sidebar() {
         padding: collapsedNow ? '12px 6px' : '14px 10px',
         display: 'flex', flexDirection: 'column',
       }}>
-        {visibleNav.map(renderItem)}
-
-        {/* Configuración sits apart from the daily screens: it is where the
-            rest of the product lives (account, team, data, automation). */}
-        <div style={{ flex: 1, minHeight: 16 }} />
+        {/* Collapsed to an icon rail, the daily screens share the height
+            evenly instead of bunching at the top. */}
+        {collapsedNow ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly', minHeight: 0 }}>
+            {[...visibleNav, ...TOOLS_NAV.filter(item => canSee(item, user?.role))].map(renderItem)}
+          </div>
+        ) : (
+          <>
+            {visibleNav.map(renderItem)}
+            {/* Tools that belong to no single flow. */}
+            <div style={{ borderTop: '1px solid var(--sidebar-border)', margin: '8px 0 10px' }} />
+            {TOOLS_NAV.filter(item => canSee(item, user?.role)).map(renderItem)}
+            {/* Configuración sits apart from the daily screens: it is where the
+                rest of the product lives (account, team, data, automation). */}
+            <div style={{ flex: 1, minHeight: 16 }} />
+          </>
+        )}
         <div style={{ borderTop: '1px solid var(--sidebar-border)', paddingTop: 10, marginBottom: 2 }}>
           {renderItem(SETTINGS_ITEM)}
         </div>
@@ -237,28 +253,6 @@ export default function Sidebar() {
         </button>
         )}
 
-        {/* Language switcher */}
-        {!collapsedNow && (
-          <div style={{ marginTop: 8, padding: '0 10px' }}>
-            <div style={{ display: 'flex', gap: 4, border: '1px solid var(--sidebar-border)', borderRadius: 7, padding: 3 }}>
-              {(['es', 'en'] as const).map(l => (
-                <button
-                  key={l}
-                  onClick={() => setLang(l)}
-                  style={{
-                    all: 'unset', cursor: 'pointer', flex: 1, textAlign: 'center',
-                    padding: '4px 0', borderRadius: 5, fontSize: 11, fontWeight: 600,
-                    background: lang === l ? 'var(--sidebar-active-bg)' : 'transparent',
-                    color: lang === l ? 'var(--sidebar-text-active)' : 'var(--sidebar-dim)',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {l.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </nav>
 
       {/* User footer — no profile selector */}
@@ -295,14 +289,6 @@ export default function Sidebar() {
                 </button>
               </>
             )}
-          </div>
-        )}
-        {!collapsedNow && (
-          <div style={{ padding: '4px 16px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <LegalLinks compact />
-            <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', opacity: 0.6 }}>
-              v{process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'}
-            </div>
           </div>
         )}
       </div>

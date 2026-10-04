@@ -67,7 +67,7 @@ export default function StorageNotice({ suppress = false }: { suppress?: boolean
       <style dangerouslySetInnerHTML={{ __html: NOTICE_CSS }} />
       <p>
         {t('legal.notice_text')}{' '}
-        <Link href={LEGAL_PATHS.cookies} onClick={close}>{t('legal.notice_more')}</Link>
+        <Link href={LEGAL_PATHS.cookies} target="_blank" rel="noopener" onClick={close}>{t('legal.notice_more')}</Link>
       </p>
       <button type="button" onClick={close} className="storage-notice-ok">
         {t('legal.notice_ok')}

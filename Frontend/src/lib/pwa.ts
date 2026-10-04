@@ -75,3 +75,80 @@ export function registerServiceWorker(): void {
     // Not installable then, and nothing else changes: the app works without it.
   })
 }
+
+// ── New version ───────────────────────────────────────────────────────────────
+//
+// An installed PWA (or a tab left open for days) keeps running the JavaScript
+// it loaded, however many times production is redeployed. The server answers
+// /build-id with the build it runs; when that differs from the build this page
+// was loaded with, the page reloads — never in the middle of what the person is
+// doing: while the tab is hidden, or at their next navigation.
+
+const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID
+const CHECK_EVERY_MS = 5 * 60 * 1000
+const RELOAD_GUARD_KEY = 'stockai_reloaded_for'
+
+async function serverBuildId(): Promise<string | null> {
+  try {
+    const res = await fetch('/build-id', { cache: 'no-store' })
+    if (!res.ok) return null
+    const body = await res.json() as { id?: string | null }
+    return body.id ?? null
+  } catch {
+    return null   // offline or mid-deploy: try again at the next check
+  }
+}
+
+/** True when the server runs a different build than this page. */
+export async function newVersionAvailable(): Promise<boolean> {
+  if (!BUILD_ID) return false
+  const live = await serverBuildId()
+  return !!live && live !== BUILD_ID
+}
+
+/** Reload to pick the new build up. Not twice within two minutes, so a server
+ *  that answers with an id the bundle can never match (a cached shell, a
+ *  half-rolled deploy) cannot cause a reload loop. */
+export function applyNewVersion(path?: string): void {
+  try {
+    const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) ?? 0)
+    if (Date.now() - last < 2 * 60 * 1000) return
+    sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()))
+  } catch { /* storage blocked: the 5-minute check interval is the only brake */ }
+  navigator.serviceWorker?.getRegistration().then(reg => reg?.update()).catch(() => {})
+  if (path) window.location.assign(path)
+  else window.location.reload()
+}
+
+/**
+ * Starts watching for a new deploy. `onPending` is told when one is waiting, so
+ * the caller can apply it at the next navigation; the watcher itself applies it
+ * as soon as the tab is hidden. Returns the cleanup.
+ */
+export function watchForNewVersion(onPending: (pending: boolean) => void): () => void {
+  if (process.env.NODE_ENV !== 'production' || !BUILD_ID || typeof document === 'undefined') return () => {}
+  let pending = false
+
+  async function check() {
+    if (pending) return
+    if (await newVersionAvailable()) {
+      pending = true
+      onPending(true)
+      if (document.hidden) applyNewVersion()
+    }
+  }
+
+  const onVisibility = () => {
+    if (document.hidden) { if (pending) applyNewVersion() }
+    else void check()
+  }
+  document.addEventListener('visibilitychange', onVisibility)
+  window.addEventListener('online', check)
+  const timer = window.setInterval(check, CHECK_EVERY_MS)
+  void check()
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibility)
+    window.removeEventListener('online', check)
+    window.clearInterval(timer)
+  }
+}

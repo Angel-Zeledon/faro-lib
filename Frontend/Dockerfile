@@ -27,7 +27,9 @@ ENV BACKEND_URL=$BACKEND_URL \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# One id for the whole build (see next.config.mjs): the running app compares it
+# with the one an open tab was loaded with and reloads when a deploy replaced it.
+RUN export BUILD_ID="$(date +%s)" && npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
