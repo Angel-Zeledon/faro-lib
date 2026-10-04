@@ -32,6 +32,31 @@ export const SOURCE_COLOR: Record<string, string> = {
   error:         '#C0504D',
 }
 
+/**
+ * The one-line text a chat list row shows for its last message: markdown marks
+ * and line breaks flattened to single spaces, so a long answer reads as a
+ * snippet and the row keeps the height of every other row. The full message is
+ * one click away (opening the chat); the CSS clamp below only cuts what the
+ * row has no room for.
+ */
+export function previewText(raw: string): string {
+  return raw
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/^\s*([*-]|\d+\.)\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+}
+
+/** Clamp a list-row text to `lines` lines with an ellipsis. */
+export function clampStyle(lines: number): React.CSSProperties {
+  return {
+    display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: lines,
+    overflow: 'hidden', overflowWrap: 'anywhere',
+  }
+}
+
 export function fmtTime(iso: string) {
   const d = new Date(iso)
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })

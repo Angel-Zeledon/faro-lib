@@ -24,7 +24,7 @@ import BottomSheet from '@/components/mobile/BottomSheet'
 import ComposerDock, { scrollPageToBottom } from '@/components/mobile/ComposerDock'
 import { useMobileHeader } from '@/components/mobile/MobileHeaderContext'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { MessageBubble, TypingBubble } from './parts'
+import { MessageBubble, TypingBubble, previewText, clampStyle } from './parts'
 
 export interface AssistantMobileProps {
   chats: Chat[]
@@ -280,14 +280,14 @@ function ChatRow({ chat, p, onActions }: { chat: Chat; p: AssistantMobileProps; 
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           {chat.is_favorite && <Star size={13} fill="#B7791F" color="#B7791F" aria-label={t('analyst.favorites_header')} style={{ flexShrink: 0 }} />}
-          <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', ...clampStyle(1) }} title={chat.title}>
             {chat.title}
           </span>
           <span style={{ fontSize: 12, color: 'var(--dim)', flexShrink: 0 }}>{p.relTime(chat.last_message_at)}</span>
         </span>
         {chat.last_message_preview && (
-          <span style={{ fontSize: 13.5, color: 'var(--dim)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
-            {chat.last_message_preview}
+          <span style={{ fontSize: 13.5, lineHeight: 1.35, color: 'var(--dim)', ...clampStyle(2) }}>
+            {previewText(chat.last_message_preview)}
           </span>
         )}
       </button>

@@ -37,7 +37,7 @@ def list_chats(
           c.id, c.title, c.is_favorite, c.session_id, c.data_sources,
           c.last_message_at, c.message_count, c.created_at,
           (
-            SELECT cm.content
+            SELECT left(cm.content, 400)
             FROM chat_messages cm
             WHERE cm.chat_id = c.id
             ORDER BY cm.created_at DESC
