@@ -16,6 +16,8 @@ Returns the same interface as all other stat models:
 import logging
 import numpy as np
 
+from forecasting_core.pipelines.progress import ticking
+
 log = logging.getLogger(__name__)
 
 
@@ -43,6 +45,7 @@ def run_sarimax_core(
     order=(1, 1, 1),
     seasonal_order=None,
     horizon: int = 0,
+    on_unit=None,
 ):
     """
     Train a SARIMAX model per SKU.
@@ -84,7 +87,7 @@ def run_sarimax_core(
     results = {}
     src = df.groupby(group) if group else [(None, df)]
 
-    for sku, g in src:
+    for sku, g in ticking(src, on_unit):
         g = g.sort_values(dt).reset_index(drop=True)
         series = g[target].astype(float)
 

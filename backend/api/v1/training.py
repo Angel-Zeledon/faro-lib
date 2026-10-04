@@ -88,6 +88,17 @@ def list_jobs(session_id: str, user: CurrentUser = Depends(get_current_user)):
     return ok(jobs)
 
 
+@router.get("/jobs/active")
+def list_active_jobs(user: CurrentUser = Depends(get_current_user)):
+    """Training runs of this tenant that are queued or running right now.
+
+    Declared before ``/jobs/{job_id}`` so "active" is not read as a job id. Backs
+    the app-wide "training in progress" indicator and lets the training screen
+    resume from server state after the user navigated away.
+    """
+    return ok({"families": job_service.list_active_training(user.tenant_id)})
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str, user: CurrentUser = Depends(get_current_user)):
     job = job_service.get_job(user.tenant_id, job_id)

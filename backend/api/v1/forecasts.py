@@ -386,6 +386,23 @@ def get_accuracy(
     return ok({"snapshots": snapshots, "overall_wape": overall_wape, "threshold": threshold})
 
 
+@router.get("/sessions/{session_id}/forecast-vs-actual")
+def get_forecast_vs_actual(
+    session_id: str,
+    dataset_id: Optional[str] = Query(
+        None,
+        description="Sales upload to compare against; default is the later upload "
+                    "that overlaps the forecast the most"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """What this session predicted vs. what the tenant's LATER sales uploads say
+    actually happened: per-SKU and pooled WAPE / MAPE / bias, the predicted-vs-
+    actual series, and a verdict code the frontend renders in words."""
+    s = _require_completed(user.tenant_id, session_id)
+    from backend.forecast_check.service import forecast_vs_actual
+    return ok(forecast_vs_actual(user.tenant_id, s, dataset_id))
+
+
 @router.get("/sessions/{session_id}/config-schema")
 def get_config_schema(session_id: str, user: CurrentUser = Depends(get_current_user)):
     session_svc.get_session(user.tenant_id, session_id)

@@ -2,8 +2,8 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 217,
-  "read": 136,
+  "total": 219,
+  "read": 138,
   "write": 81
  },
  "limits": {
@@ -2931,6 +2931,38 @@
        "type": "string",
        "description": "Filter by model name",
        "example": "model"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "get-sessions-session_id-forecast-vs-actual",
+     "method": "GET",
+     "path": "/sessions/{session_id}/forecast-vs-actual",
+     "tag": "forecasts",
+     "scope": "read",
+     "summary": "Get Forecast Vs Actual",
+     "description": "What this session predicted vs. what the tenant's LATER sales uploads say actually happened: per-SKU and pooled WAPE / MAPE / bias, the predicted-vs- actual series, and a verdict code the frontend renders in words.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "type": "string",
+       "description": "",
+       "example": "<session_id>"
+      },
+      {
+       "name": "dataset_id",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "Sales upload to compare against; default is the later upload that overlaps the forecast the most",
+       "example": "<dataset_id>"
       }
      ],
      "request_body": null,
@@ -7518,6 +7550,21 @@
   {
    "tag": "training",
    "endpoints": [
+    {
+     "id": "get-jobs-active",
+     "method": "GET",
+     "path": "/jobs/active",
+     "tag": "training",
+     "scope": "read",
+     "summary": "List Active Jobs",
+     "description": "Training runs of this tenant that are queued or running right now.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
     {
      "id": "delete-jobs-job_id",
      "method": "DELETE",

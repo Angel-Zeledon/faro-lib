@@ -6,7 +6,7 @@ import {
  chooseColumnsCanonical, setFeatures, setModels, setValidationConfig,
  setBusinessConfig, startTraining, getJob,
  startDemoQuickstart, listDatasets, getSessionSummaries, getColumnsConfig,
- getDataGate, setRemediations,
+ getDataGate, setRemediations, getActiveTraining,
 } from '@/lib/api'
 import type { TrainingFamily } from '@/lib/api'
 import {
@@ -28,6 +28,8 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 import StickyActionBar from '@/components/mobile/StickyActionBar'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { usePlanning } from '@/contexts/PlanningContext'
+import { useTraining } from '@/contexts/TrainingContext'
+import { useSmoothedPercent } from '@/hooks/useSmoothedPercent'
 
 // The worker reports data problems as a stable code (see runner.py's
 // TrainingDataError) so the user reads an actionable sentence instead of a raw
@@ -318,8 +320,10 @@ function DatasetPicker({ datasets, onPick, busy }: {
  )
 }
 
-function TrainingLoader({ message, pct, multiPeriod }: { message: string; pct: number | null; multiPeriod: boolean }) {
+function TrainingLoader({ message, pct: realPct, multiPeriod }: { message: string; pct: number | null; multiPeriod: boolean }) {
  const { t } = useLanguage()
+ // Eased toward the last REAL value from the server — never ahead of it.
+ const pct = useSmoothedPercent(realPct)
  return (
  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, paddingTop: 20 }}>
  {/* Spinner */}
@@ -577,6 +581,7 @@ function QuickStartPageContent() {
  // the active session was loaded BEFORE this training existed — see the
  // redirect in pollFamily for why it has to be refreshed there.
  const planningCtx = usePlanning()
+ const trainingCtx = useTraining()
 
  const [step, setStep] = useState(1)
  const [busy, setBusy] = useState(false)
@@ -702,6 +707,35 @@ function QuickStartPageContent() {
  handleDemo()
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [searchParams])
+
+ // Resume from SERVER state: if a training is queued/running for this tenant
+ // (the user left this screen and came back, reloaded, or opened it from the
+ // top-bar pill) show its live progress instead of an empty upload step. Local
+ // state is never the source: it is gone the moment the user navigates away.
+ const resumeCheckedRef = useRef(false)
+ useEffect(() => {
+ if (resumeCheckedRef.current) return
+ resumeCheckedRef.current = true
+ if (searchParams.get('demo') === '1') return
+ getActiveTraining()
+ .then(r => {
+ const fam = r.families?.[0]
+ if (!fam || trainLaunchedRef.current) return
+ trainLaunchedRef.current = true
+ setSessionId(fam.base_session_id)
+ setBusy(true)
+ setStep(3)
+ void pollFamily(fam.base_job_id, {
+ family_id: fam.family_id,
+ base_job_id: fam.base_job_id,
+ sessions: fam.members.map(m => ({
+ session_id: m.session_id, granularity: m.granularity ?? '', job_id: m.job_id,
+ })),
+ })
+ })
+ .catch(() => { /* nothing to resume: the normal upload step stays */ })
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [])
 
  // Ask the gate as soon as the mapping screen opens, not only when the user
  // presses confirm.
@@ -1086,6 +1120,8 @@ function QuickStartPageContent() {
  // destination resolves the active session itself (planning resolver), matching
  // every other screen — no session id needs to be threaded through the URL.
  const pollFamily = async (baseJobId: string, family?: TrainingFamily) => {
+ // Tell the top-bar pill right away instead of at its next idle beat.
+ trainingCtx?.refresh()
  // Member job ids to poll for progress. Fall back to the base job alone when
  // no family came back (family-less/legacy response, or an empty sessions list).
  const memberJobIds = family?.sessions?.length

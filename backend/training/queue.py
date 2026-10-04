@@ -75,7 +75,7 @@ def claim(worker_id: str, is_tenant_blocked: Optional[Callable[[str], bool]] = N
                 excluded.append(tid)
 
     progress = json.dumps(
-        {"percent": 5, "step": "starting", "message": "Worker picked up job"})
+        {"percent": 0, "step": "starting", "message": "Worker picked up job"})
     return query_one(
         """UPDATE jobs SET status = 'RUNNING', started_at = NOW(),
                           worker_id = %s, progress = %s

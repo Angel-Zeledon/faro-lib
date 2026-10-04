@@ -31,7 +31,7 @@ def list_jobs_for_session(tenant_id: str, session_id: str) -> list[dict]:
 
 
 def mark_running(tenant_id: str, job_id: str, worker_id: str) -> dict:
-    progress = {"percent": 5, "step": "starting", "message": "Worker picked up job"}
+    progress = {"percent": 0, "step": "starting", "message": "Worker picked up job"}
     execute(
         """UPDATE jobs SET status = 'RUNNING', started_at = NOW(),
            worker_id = %s, progress = %s
@@ -107,3 +107,74 @@ def has_in_flight_job(tenant_id: str, session_id: str) -> bool:
         (tenant_id, session_id),
     )
     return row is not None
+
+
+# A job that has said nothing for this long is an orphan of a dead worker, not
+# a training in progress; the indicator must not show it forever.
+_ACTIVE_JOB_MAX_AGE_HOURS = 12
+
+
+def list_active_training(tenant_id: str) -> list[dict]:
+    """The tenant's training runs that are queued or running right now.
+
+    One entry per *family* (a launch fans out into daily/weekly/... sessions,
+    each with its own job). ``percent`` averages every member, a finished member
+    counting as 100, so it matches what the wizard shows. The base member's
+    stage and message are the ones reported because that is the session the
+    user lands on.
+    """
+    active = query(
+        """SELECT j.id AS job_id, j.session_id, s.family_id
+           FROM jobs j JOIN sessions s ON s.id = j.session_id AND s.tenant_id = j.tenant_id
+           WHERE j.tenant_id = %s AND j.status IN ('QUEUED', 'RUNNING')
+             AND j.created_at > NOW() - (%s * INTERVAL '1 hour')""",
+        (tenant_id, _ACTIVE_JOB_MAX_AGE_HOURS),
+    )
+    if not active:
+        return []
+    family_ids = sorted({r["family_id"] or r["session_id"] for r in active})
+    members = query(
+        """SELECT DISTINCT ON (s.id)
+                  s.id AS session_id, s.name, s.granularity,
+                  COALESCE(s.family_id, s.id) AS family_id,
+                  j.id AS job_id, j.status, j.progress, j.created_at
+           FROM sessions s JOIN jobs j ON j.session_id = s.id AND j.tenant_id = s.tenant_id
+           WHERE s.tenant_id = %s AND COALESCE(s.family_id, s.id) = ANY(%s)
+           ORDER BY s.id, j.created_at DESC""",
+        (tenant_id, family_ids),
+    )
+    families: dict[str, list[dict]] = {}
+    for m in members:
+        families.setdefault(m["family_id"], []).append(m)
+
+    out = []
+    for fam_id in family_ids:
+        rows = families.get(fam_id) or []
+        if not any(r["status"] in ("QUEUED", "RUNNING") for r in rows):
+            continue
+        # The base session is the one whose id is the family id.
+        base = next((r for r in rows if r["session_id"] == fam_id), rows[0])
+        pcts = []
+        for r in rows:
+            if r["status"] in ("COMPLETED", "FAILED", "CANCELLED"):
+                pcts.append(100)
+            else:
+                p = (r.get("progress") or {}).get("percent")
+                pcts.append(p if isinstance(p, (int, float)) else 0)
+        progress = base.get("progress") or {}
+        out.append({
+            "family_id": fam_id,
+            "base_session_id": base["session_id"],
+            "base_job_id": base["job_id"],
+            "name": base["name"],
+            "status": "RUNNING" if any(r["status"] == "RUNNING" for r in rows) else "QUEUED",
+            "percent": round(sum(pcts) / len(pcts)),
+            "step": progress.get("step"),
+            "message": progress.get("message"),
+            "members": [
+                {"job_id": r["job_id"], "session_id": r["session_id"],
+                 "granularity": r["granularity"], "status": r["status"]}
+                for r in rows
+            ],
+        })
+    return out

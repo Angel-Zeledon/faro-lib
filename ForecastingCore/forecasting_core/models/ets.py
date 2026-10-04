@@ -2,15 +2,17 @@
 import logging
 from forecasting_core.evaluation.metrics import evaluate_all
 
+from forecasting_core.pipelines.progress import ticking
+
 log = logging.getLogger(__name__)
 
 
 def run_ets_core(df, dt, target, group, train_ratio, min_rows, seasonal_period,
-                 horizon: int = 0):
+                 horizon: int = 0, on_unit=None):
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
     results = {}
     src = df.groupby(group) if group else [(None, df)]
-    for sku, g in src:
+    for sku, g in ticking(src, on_unit):
         g = g.sort_values(dt).reset_index(drop=True)
         series = g[target].astype(float).values
         if len(series) < min_rows: continue

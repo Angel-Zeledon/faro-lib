@@ -175,10 +175,26 @@ class Pipeline:
                 Pipeline(config).run(on_progress=update)
         """
 
-        def _progress(pct: int, message: str, status: PipelineStatus = PipelineStatus.TRAINING):
+        from forecasting_core.pipelines.progress import (
+            ENGINE_STAGES, ProgressTracker, stat_unit_cost,
+        )
+        tracker = ProgressTracker(ENGINE_STAGES)
+
+        def _stage(stage: str, message: str = "",
+                   status: PipelineStatus = PipelineStatus.TRAINING, *,
+                   done=None, total=None, finished: bool = False, skipped: bool = False):
+            """Report a stage boundary or a unit of work finished inside one.
+            ``pct`` is cost-weighted and monotonic (see progress.py); the
+            ``stage``/``done``/``total`` keys let a caller with a larger plan
+            (the worker) fold the events into its own."""
+            evt = {"stage": stage, "message": message, "status": status.value,
+                   "done": done, "total": total,
+                   "finished": finished, "skipped": skipped}
+            tracker.apply(evt)
+            evt["pct"] = int(tracker.percent)
             if on_progress:
                 try:
-                    on_progress({"pct": pct, "message": message, "status": status.value})
+                    on_progress(evt)
                 except Exception:
                     pass
 
@@ -207,7 +223,7 @@ class Pipeline:
         h   = cfg.forecast.horizon
         val_cfg = _config_as_validation_dict(cfg)
 
-        _progress(0, "Loading data", PipelineStatus.LOADING)
+        _stage("pipeline_load", "Loading data", PipelineStatus.LOADING)
 
         # 1. Load — use injected DataFrame if available, otherwise read from disk
         if self._df is not None:
@@ -229,7 +245,7 @@ class Pipeline:
         # ["sku", "store"]) degrade gracefully on single-key datasets.
         group_cols: List[str] = [k for k in c.group_keys if k in df.columns]
 
-        _progress(10, "Validating data", PipelineStatus.VALIDATING)
+        _stage("validate", "Validating data", PipelineStatus.VALIDATING)
 
         # 2. Validation layers (WARNING mode — never abort, but the findings
         # travel with the results so the UI can show them.)
@@ -257,7 +273,7 @@ class Pipeline:
                 f"buckets (+{censoring_report.units_recovered:.0f} units)"
             )
 
-        _progress(20, "Checking data quality", PipelineStatus.QUALITY)
+        _stage("quality", "Checking data quality", PipelineStatus.QUALITY)
 
         # 3. Data Quality
         log.info("Pipeline: data quality check...")
@@ -276,7 +292,7 @@ class Pipeline:
         n_valid = df[_primary_group(c)].nunique() if _primary_group(c) else 1
         log.info(f"  Valid SKUs: {n_valid}")
 
-        _progress(30, f"Routing models for {n_valid} SKUs", PipelineStatus.ROUTING)
+        _stage("assign_models", f"Routing models for {n_valid} SKUs", PipelineStatus.ROUTING)
 
         # 4. Model Routing
         log.info("Pipeline: routing models...")
@@ -284,7 +300,7 @@ class Pipeline:
         routing = router.route(dq_reports)
         log.info(router.summary(routing))
 
-        _progress(40, "Engineering features", PipelineStatus.TRAINING)
+        _stage("features", "Engineering features", PipelineStatus.TRAINING)
 
         # 5. Feature Engineering
         log.info("Pipeline: feature engineering...")
@@ -310,7 +326,7 @@ class Pipeline:
         # 6. Baselines
         baselines = self._compute_baselines(df, c, t)
 
-        _progress(50, "Training ML models", PipelineStatus.TRAINING)
+        _stage("ml_training", "Training ML models", PipelineStatus.TRAINING)
         
         def sanitize_ml_dataframe(df):
             df = df.copy()
@@ -359,7 +375,13 @@ class Pipeline:
             df_ml_f, ml_models,
             group_cols=group_cols,
             target=c.target, dt=c.date,
+            on_unit=lambda d, n: _stage(
+                "ml_training", "Training ML models", done=d, total=n),
         ) if ml_models else {}
+        if ml_models:
+            _stage("ml_training", "Training ML models", finished=True)
+        else:
+            _stage("ml_training", skipped=True)
 
         # 7b. There is no separate p10/p50/p90 pass, and that is deliberate.
         #
@@ -387,9 +409,11 @@ class Pipeline:
         # Trained on the full feature frame (not `df_ml_f`, which is narrowed to
         # the SKUs routed to the per-SKU ML models): a global model's whole
         # value is the series the routing table would have excluded.
+        if not factory.global_names():
+            _stage("global_model", skipped=True)
         if factory.global_names():
-            _progress(58, "Training the global cross-learning model",
-                      PipelineStatus.TRAINING)
+            _stage("global_model", "Training the global cross-learning model",
+                   PipelineStatus.TRAINING)
             log.info("Pipeline: training global model over all series...")
             try:
                 from forecasting_core.training.global_trainer import GlobalTrainer
@@ -427,19 +451,44 @@ class Pipeline:
                 # per-SKU model has already trained and is still usable.
                 log.warning(f"Pipeline: global model failed: {e}", exc_info=True)
 
-        _progress(60, "Training statistical models", PipelineStatus.TRAINING)
+        _stage("global_model", finished=True)
+        _stage("stat_training", "Training statistical models", PipelineStatus.TRAINING)
 
         # 8. Statistical models — tracked via PartialResultCollector
         results_stat: dict = {}
         collector = PartialResultCollector(fail_fast_threshold=1.0)
 
-        for model_name, run_fn in [
+        stat_runners = [
             ("arima",   run_arima_core),
             ("prophet", run_prophet_core),
             ("ets",     run_ets_core),
             ("croston", run_croston_core),
             ("lstm",    run_lstm_core),
-        ]:
+        ]
+        # One SKU fitted by Prophet or an LSTM costs far more than one fitted by
+        # Croston, so the stage's units are cost-weighted rather than counted.
+        sarimax_planned = ("sarimax" in cfg.models
+                           and router.skus_for_model(routing, "sarimax"))
+        stat_total = sum(
+            stat_unit_cost(n) * len(router.skus_for_model(routing, n))
+            for n, _ in stat_runners
+        ) + (stat_unit_cost("sarimax") * len(router.skus_for_model(routing, "sarimax"))
+             if sarimax_planned else 0.0)
+        stat_done = [0.0]
+
+        def _stat_unit_cb(model_name: str):
+            cost = stat_unit_cost(model_name)
+
+            def _tick():
+                stat_done[0] += cost
+                _stage("stat_training", f"Training {model_name} models",
+                       done=stat_done[0], total=stat_total)
+            return _tick
+
+        if stat_total <= 0:
+            _stage("stat_training", skipped=True)
+
+        for model_name, run_fn in stat_runners:
             skus = router.skus_for_model(routing, model_name)
             if not skus:
                 continue
@@ -454,7 +503,7 @@ class Pipeline:
                 result = run_fn(
                     sub, c.date, c.target, _primary_group(c),
                     t.train_ratio, t.min_history, t.seasonal_period,
-                    horizon=h, **extra,
+                    horizon=h, on_unit=_stat_unit_cb(model_name), **extra,
                 )
                 results_stat[model_name] = result
                 for sku in skus:
@@ -485,7 +534,7 @@ class Pipeline:
                     exog_cols=exog_cols,
                     order=sarimax_hp.get("order", (1, 1, 1)),
                     seasonal_order=sarimax_hp.get("seasonal_order", None),
-                    horizon=h,
+                    horizon=h, on_unit=_stat_unit_cb("sarimax"),
                 )
             except Exception as e:
                 log.warning(f"Pipeline: sarimax failed entirely: {e}")
@@ -498,7 +547,8 @@ class Pipeline:
         if stat_summary["failed_skus"]:
             log.warning(f"  Failed SKUs: {stat_summary['failed_skus'][:10]}")
 
-        _progress(75, "Building ensemble", PipelineStatus.TRAINING)
+        _stage("stat_training", finished=True)
+        _stage("ensemble", "Building ensemble", PipelineStatus.TRAINING)
 
         # 9. Flatten evaluation metrics
         metrics_df = self._flatten(results_ml, results_stat, baselines)
@@ -513,16 +563,20 @@ class Pipeline:
         if ensemble_scores:
             ensemble.fit(ensemble_scores)
 
-        _progress(85, "Generating forecasts", PipelineStatus.FORECASTING)
+        _stage("ensemble", finished=True)
+        _stage("future_forecast", "Generating forecasts", PipelineStatus.FORECASTING)
 
         # 11. Generate future forecasts via inference module (+ ensemble row per SKU)
         forecast_df = self._generate_forecast_df(results_ml, results_stat, df, ensemble=ensemble)
 
-        _progress(92, "Computing inventory recommendations", PipelineStatus.INVENTORY)
+        _stage("future_forecast", finished=True)
+        _stage("inventory", "Computing inventory recommendations", PipelineStatus.INVENTORY)
 
         # 12. Inventory recommendations — use real forecast arrays, not historical mean
         inventory_df = self._inventory(df, c, b, h, forecast_df=forecast_df, metrics_df=metrics_df)
 
+        _stage("inventory", finished=True)
+        _stage("registry", "Logging the run", PipelineStatus.INVENTORY)
         # 12b. Two outcomes of step 12 that the user has to be told about. They
         # are emitted as ordinary validation findings so they travel the channel
         # that already exists and already has a panel — inventing a second
@@ -539,7 +593,15 @@ class Pipeline:
             metadata={"n_skus": df[_primary_group(c)].nunique() if _primary_group(c) else 1, "n_rows": len(df)},
         )
         log.info(f"Pipeline: run logged → {run_id}")
-        _progress(100, f"Done — run {run_id}", PipelineStatus.DONE)
+        _stage("registry", finished=True)
+        if on_progress:
+            try:
+                on_progress({"stage": "done", "message": f"Done — run {run_id}",
+                             "status": PipelineStatus.DONE.value, "pct": 100,
+                             "done": None, "total": None,
+                             "finished": True, "skipped": False})
+            except Exception:
+                pass
 
         results = PipelineResults(
             metrics_df=metrics_df,

@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   getSessions, getMetrics, getTrainingResults, getQuality,
@@ -455,6 +456,9 @@ export default function SkusPage() {
           <div style={{ marginLeft: 8 }}>
             <ViewToggle value={view} onChange={setView} />
           </div>
+          <Link href="/precision" style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>
+            {t('precision.link_from_forecasts')}
+          </Link>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Bulk export — technical view. Kept on screen while a run is in
