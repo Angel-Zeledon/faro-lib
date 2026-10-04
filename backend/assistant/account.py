@@ -129,7 +129,8 @@ class AccountData:
             "status",
             lambda: _data(inventory_router.inventory_status(
                 session_id=None, service_level=0.95, signal=None, supplier=None,
-                by_warehouse=False, user=self.user)),
+                by_warehouse=False, limit=None, offset=0, sort="urgency", q=None,
+                user=self.user)),
             {},
         ) or {}
 

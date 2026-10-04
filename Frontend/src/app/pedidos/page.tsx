@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
-import { getPOHistory, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { getPOHistoryPage, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
 import type { POLogEntry, SupplierContactHealthRow, SupplierLeadTimeAlert } from '@/lib/types'
 import { POHistoryTable, ReceptionModal } from '@/components/po/POHistory'
 import { ManualPOModal } from '@/components/po/ManualPOModal'
@@ -19,7 +19,7 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 // Which orders are still waiting for goods, and which suppliers are worth
 // warning about, live in ./shared so the phone card list below cannot answer
 // either question differently from this table.
-import { countAwaitingReception, suppliersOnOpenOrders } from './shared'
+import { suppliersOnOpenOrders } from './shared'
 import PedidosMobile from './PedidosMobile'
 
 const C = {
@@ -30,6 +30,12 @@ const C = {
 export default function OrdersPage() {
   const { t } = useLanguage()
   const [history,     setHistory]     = useState<POLogEntry[]>([])
+  // The history is filtered and paged by the server (`/inventory/po-history/page`):
+  // it used to be the newest 50 filtered in the browser, so the 51st order was
+  // unreachable and "unpaid" only searched what happened to be loaded.
+  const [total,       setTotal]       = useState(0)
+  const [awaiting,    setAwaiting]    = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [loading,     setLoading]     = useState(true)
   // Holds the raw error so ErrorState can classify it by kind rather than
   // rendering a pre-flattened string.
@@ -52,15 +58,31 @@ export default function OrdersPage() {
 
   // `silent: true` — this screen renders the failure itself as a full ErrorState,
   // so the interceptor's toast would say the same thing twice.
-  const load = useCallback(async (initial = false) => {
+  const loadedRef = useRef(0)
+  const load = useCallback(async (initial = false, append = false) => {
     if (initial) setLoading(true)
+    if (append) setLoadingMore(true)
     setError(null)
-    try { setHistory(await getPOHistory(50, { silent: true })) }
-    catch (e: unknown) { setError(e) }
-    finally { if (initial) setLoading(false) }
-  }, [])
+    try {
+      const page = await getPOHistoryPage(
+        { limit: PAGE, offset: append ? loadedRef.current : 0, status: paidFilter },
+        { silent: true })
+      setTotal(page.total)
+      setAwaiting(page.awaiting_reception)
+      setHistory(prev => {
+        const next = append ? [...prev, ...page.items] : page.items
+        loadedRef.current = next.length
+        return next
+      })
+    }
+    catch (e: unknown) { if (!append) setError(e) }
+    finally { if (initial) setLoading(false); setLoadingMore(false) }
+  }, [paidFilter])
 
-  useEffect(() => { load(true) }, [load])
+  // Only the very first load shows the skeleton; changing the filter keeps the
+  // bar (and the rows) on screen while the server answers.
+  const firstLoad = useRef(true)
+  useEffect(() => { load(firstLoad.current); firstLoad.current = false }, [load])
 
   // Opened from the command palette (Ctrl-K → "Nueva orden"): the modal is
   // local state here, so the intent can only travel in the URL. Read once and
@@ -78,13 +100,13 @@ export default function OrdersPage() {
     getSupplierLeadTimeAlerts().then(setLeadTimeAlerts).catch(() => {})
   }, [])
 
-  const pendingCount = countAwaitingReception(history)
+  // Counted by the server over every open order, not over the loaded page: the
+  // header badge answers a different question than the table's filter.
+  const pendingCount = awaiting
   // "Unpaid" means an order that is owed: sent, not marked paid and not
-  // cancelled. A draft was never invoiced, so it is neither.
-  const visibleHistory = paidFilter === 'all' ? history
-    : paidFilter === 'paid' ? history.filter(e => Boolean(e.paid_at))
-    : paidFilter === 'cancelled' ? history.filter(e => Boolean(e.cancelled_at))
-    : history.filter(e => Boolean(e.sent_at) && !e.paid_at && !e.cancelled_at)
+  // cancelled. A draft was never invoiced, so it is neither. The filter itself
+  // is applied by the server; what is loaded is already what the table shows.
+  const visibleHistory = history
 
   // On this screen there is no cart, so relevance is exactly "named on an
   // order that is still open" — those are the orders that still need to
@@ -212,7 +234,7 @@ export default function OrdersPage() {
         </Card>
       ) : error ? (
         <ErrorState error={error} onRetry={() => load(true)} />
-      ) : history.length === 0 ? (
+      ) : history.length === 0 && paidFilter === 'all' ? (
         <EmptyState
           icon={<ClipboardList size={22} />}
           title={t('orders.empty_title')}
@@ -255,6 +277,19 @@ export default function OrdersPage() {
           />
         </Card>
         )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: C.dim }}>
+            {t('list.showing', { shown: history.length, total })}
+          </span>
+          {history.length < total && (
+            <button type="button" disabled={loadingMore} onClick={() => load(false, true)}
+                    style={{ all: 'unset', cursor: loadingMore ? 'default' : 'pointer', fontSize: 12,
+                             color: 'var(--accent)', opacity: loadingMore ? 0.5 : 1 }}>
+              {loadingMore ? t('common.loading') : t('list.load_more')}
+            </button>
+          )}
+        </div>
         </>
       )}
 
@@ -277,6 +312,8 @@ export default function OrdersPage() {
     </div>
   )
 }
+
+const PAGE = 50
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
   all: 'unset', cursor: 'pointer', padding: '5px 12px', borderRadius: 7,

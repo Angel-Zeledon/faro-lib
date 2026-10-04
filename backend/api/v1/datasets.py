@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+
+from backend import audit
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.datasets import service as ds_svc
@@ -10,11 +12,14 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 @router.post("", status_code=201)
 async def upload_dataset(
+    request: Request,
     file: UploadFile = File(...),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     try:
         meta = await ds_svc.upload_dataset(user.tenant_id, user.user_id, file)
+        audit.note(request, target_id=meta.get("id"), label=meta.get("name"),
+                   after={"rows": meta.get("row_count"), "size_bytes": meta.get("size_bytes")})
     except AppError:
         # Already carries its own code/params — wrapping it would strip them.
         raise

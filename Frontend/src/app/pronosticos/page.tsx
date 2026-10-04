@@ -14,6 +14,7 @@ import { downloadWorkbook } from '@/lib/excel'
 import SignalBadge from '@/components/ui/SignalBadge'
 import Spinner from '@/components/ui/Spinner'
 import RunWarningsPanel from '@/components/ui/RunWarningsPanel'
+import RunLineagePanel from '@/components/ui/RunLineagePanel'
 import {
   EmptyState, InlineError, LoadingState, SkeletonTable,
 } from '@/components/ui/States'
@@ -584,6 +585,7 @@ export default function SkusPage() {
           is why a page called "Predicciones" opened with no prediction in
           view. The finding keeps its colour and its click; it gives up the room. */}
       <RunWarningsPanel sessionId={sessionId} collapsible />
+      <RunLineagePanel sessionId={sessionId} />
 
 
       {/* Body */}

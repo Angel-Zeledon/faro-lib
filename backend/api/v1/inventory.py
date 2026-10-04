@@ -17,7 +17,9 @@ import re
 from datetime import date
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Response, UploadFile, File
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Request, Response, UploadFile, File
+
+from backend import audit
 from fastapi.responses import StreamingResponse, FileResponse
 from psycopg2.pool import PoolError
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
@@ -108,6 +110,21 @@ class StockPatch(BaseModel):
 @router.get("/stock")
 def list_stock(user: CurrentUser = Depends(get_current_user)):
     return ok(svc.list_stock(user.tenant_id))
+
+
+@router.get("/stock/page")
+def list_stock_page(
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    q: Optional[str] = Query(default=None, max_length=100,
+                             description="Matches SKU, category or supplier"),
+    warehouse: Optional[str] = Query(default=None, max_length=100),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Stock rows searched, filtered by warehouse and paged on the server. The
+    plain `/stock` list stays whole for the screens that need every row."""
+    return ok(svc.list_stock_page(user.tenant_id, limit=limit, offset=offset,
+                                  q=q, warehouse=warehouse))
 
 
 @router.get("/stock/{sku}")
@@ -878,6 +895,13 @@ def inventory_status(
     signal: Optional[str] = Query(default=None, description="Filter by signal: PEDIR_YA, PEDIR_PRONTO, OK, SOBRESTOCK, SIN_DATOS"),
     supplier: Optional[str] = Query(default=None),
     by_warehouse: bool = Query(default=False, description="Per-(sku, warehouse) rows with network transfer suggestions"),
+    limit: Optional[int] = Query(
+        default=None, ge=1, le=500,
+        description="Page size. Omitted = every row (the original contract)."),
+    offset: int = Query(default=0, ge=0),
+    sort: str = Query(default="urgency", pattern="^(urgency|sku|coverage|value|recommended)$"),
+    q: Optional[str] = Query(default=None, max_length=100,
+                             description="Matches SKU, category or supplier"),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -912,11 +936,32 @@ def inventory_status(
     if supplier:
         items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
 
+    if q and q.strip():
+        needle = q.strip().lower()
+        items = [i for i in items if needle in " ".join(
+            str(i.get(k) or "") for k in ("sku", "category", "supplier")).lower()]
+
+    # The summary describes the whole filtered set; paging only narrows what
+    # is sent. Both responses below read `items` for the summary and `shown`
+    # for the rows, so a page can never change a total.
+    shown, page = items, None
+    if limit is not None:
+        keyed = {
+            "sku":         lambda i: str(i.get("sku") or ""),
+            "coverage":    lambda i: (i.get("coverage_days") is None, i.get("coverage_days") or 0),
+            "value":       lambda i: -(i.get("inventory_value") or 0),
+            "recommended": lambda i: -(i.get("recommended_qty") or 0),
+        }.get(sort)
+        ordered = sorted(items, key=keyed) if keyed else items   # "urgency" is the service's own order
+        shown = ordered[offset:offset + limit]
+        page = {"limit": limit, "offset": offset, "total": len(items), "sort": sort}
+
     if by_warehouse:
         return ok({
             "period": period,
             "coverage_unit": _COVERAGE_UNIT.get(period, "day"),
-            "items": items,
+            "items": shown,
+            "page": page,
             "summary": {
                 "total_rows": len(items),
                 "order_now": sum(1 for i in items if i["signal"] == "PEDIR_YA"),
@@ -933,7 +978,8 @@ def inventory_status(
     return ok({
         "period": period,
         "coverage_unit": _COVERAGE_UNIT.get(period, "day"),
-        "items": items,
+        "items": shown,
+        "page": page,
         "excluded_skus": svc.get_excluded_skus(user.tenant_id, session_id),
         "summary": {
             "total_skus":    len(items),
@@ -1638,6 +1684,22 @@ def po_history(
     """Returns recent PO generation events for the history panel."""
     from backend.inventory.roi_service import get_po_history
     return ok(get_po_history(user.tenant_id, limit))
+
+
+@router.get("/po-history/page")
+def po_history_page(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    status: str = Query(default="all", pattern="^(all|unpaid|paid|cancelled)$"),
+    q: Optional[str] = Query(default=None, max_length=100,
+                             description="Matches the PO number"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """The PO history, filtered and paged on the server. `total` counts the
+    filtered set; `awaiting_reception` counts every open order of the tenant."""
+    from backend.inventory.roi_service import get_po_history_page
+    return ok(get_po_history_page(user.tenant_id, limit=limit, offset=offset,
+                                  status=status, q=q))
 
 
 # ── PO reception (cerrar el loop de purchase) ──────────────────────────────────
@@ -2383,6 +2445,21 @@ def list_suppliers(user: CurrentUser = Depends(get_current_user)):
     return ok(sup_svc.list_suppliers(user.tenant_id))
 
 
+@router.get("/suppliers/page")
+def list_suppliers_page(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    q: Optional[str] = Query(default=None, max_length=100,
+                             description="Matches name, phone or email"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Active suppliers, searched and paged on the server (the plain list stays
+    whole for the dropdowns that need every supplier)."""
+    items = sup_svc.list_suppliers(user.tenant_id, q=q, limit=limit, offset=offset)
+    return ok({"items": items, "total": sup_svc.count_suppliers(user.tenant_id, q),
+               "limit": limit, "offset": offset})
+
+
 def _with_derived_credit_days(data: dict) -> dict:
     """
     Fills `payment_terms_days` from the free-text `payment_terms` when the
@@ -2457,7 +2534,8 @@ def list_warehouses(user: CurrentUser = Depends(get_current_user)):
 @router.post(
     "/warehouses", status_code=201,
 )
-def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_analyst_or_above)):
+def create_warehouse(body: WarehouseCreate, request: Request,
+                     user: CurrentUser = Depends(require_analyst_or_above)):
     if not (body.name or "").strip():
         raise AppError(
             "warehouse_name_required", "Warehouse name is required", status_code=422,
@@ -2483,6 +2561,8 @@ def create_warehouse(body: WarehouseCreate, user: CurrentUser = Depends(require_
         warehouse = wh_svc.create_warehouse(
             user.tenant_id, name, is_default=body.is_default,
         )
+    audit.note(request, target_id=name, label=name,
+               after={"name": name, "is_default": bool(body.is_default)})
     return ok(warehouse)
 
 
@@ -2496,13 +2576,18 @@ class WarehousePatch(BaseModel):
 def patch_warehouse(
     name: str,
     body: WarehousePatch,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """Set or clear the manual demand share for one warehouse (feature 5.4)."""
+    previous = wh_svc.get_warehouse_by_name(user.tenant_id, name) or {}
     try:
         row = wh_svc.set_demand_share(user.tenant_id, name, body.demand_share)
     except ValueError as e:
         raise _svc_error(e)
+    audit.note(request, label=name,
+               before={"demand_share": previous.get("demand_share")},
+               after={"demand_share": body.demand_share})
     return ok(row)
 
 

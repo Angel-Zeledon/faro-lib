@@ -16,7 +16,9 @@ admin-only write, so there is one way to hold a tenant preference rather than tw
 import logging
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+
+from backend import audit
 from pydantic import BaseModel
 
 from backend.auth.guards import CurrentUser, get_current_user, require_role
@@ -102,6 +104,7 @@ def get_timezone(user: CurrentUser = Depends(get_current_user)):
 @router.patch("")
 def set_timezone(
     body: TimezoneUpdate,
+    request: Request,
     # Admin only: it moves when every scheduled retrain in the company fires.
     user: CurrentUser = Depends(require_role("admin")),
 ):
@@ -113,7 +116,10 @@ def set_timezone(
             status_code=400,
             params={"timezone": tz, "supported": sorted(SUPPORTED)},
         )
+    previous = timezone_of(user.tenant_id)
     update_settings(user.tenant_id, {"timezone": tz})
+    audit.note(request, target_id="timezone", label="timezone",
+               before={"timezone": previous}, after={"timezone": tz})
     log.info("[timezone] tenant %s -> %s (by %s)", user.tenant_id, tz, user.user_id)
     return ok({
         "current": {"timezone": tz, **SUPPORTED[tz]},

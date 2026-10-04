@@ -21,6 +21,8 @@ import { ScrollText } from 'lucide-react'
 import { getActivity, getActivityKinds } from '@/lib/api'
 import type { AlertEntry, AlertSeverity } from '@/components/alerts/types'
 import { AlertRow } from '@/components/alerts/AlertBell'
+import AuditTrail from '@/components/alerts/AuditTrail'
+import { getUser } from '@/lib/auth'
 import Card from '@/components/ui/Card'
 import { EmptyState, ErrorState, LoadingState, SkeletonTable } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -57,6 +59,9 @@ export default function ActivityPage() {
   const [loading,  setLoading]  = useState(true)
   const [more,     setMore]     = useState(false)
   const [error,    setError]    = useState<unknown>(null)
+  // The audit trail names people, so only an administrator gets its tab.
+  const isAdmin = getUser()?.role === 'admin'
+  const [tab, setTab] = useState<'feed' | 'audit'>('feed')
 
   // The filter vocabulary is served, not hardcoded. A failure here is not
   // worth a red screen: the feed is still readable with the filters missing.
@@ -116,10 +121,11 @@ export default function ActivityPage() {
             }}>
               {t('activity.title')}
             </h1>
-            <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t('activity.subtitle')}</p>
+            <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t(tab === 'audit' ? 'audit.subtitle' : 'activity.subtitle')}</p>
           </div>
         </div>
 
+        {tab === 'feed' && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', ...(narrow ? { width: '100%' } : {}) }}>
           <select
             value={kind}
@@ -144,9 +150,26 @@ export default function ActivityPage() {
             ))}
           </select>
         </div>
+        )}
       </div>
 
-      {loading ? (
+      {isAdmin && (
+        <div role="tablist" style={{ display: 'flex', gap: 4 }}>
+          {(['feed', 'audit'] as const).map(id => (
+            <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+                    style={{
+                      all: 'unset', cursor: 'pointer', padding: '5px 12px', borderRadius: 7,
+                      fontSize: 11.5, fontWeight: 600,
+                      background: tab === id ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+                      color: tab === id ? 'var(--accent)' : C.dim,
+                    }}>
+              {t(id === 'feed' ? 'audit.tab_activity' : 'audit.tab_audit')}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'audit' && isAdmin ? <AuditTrail /> : loading ? (
         <Card padding={8}>
           <LoadingState label={t('common.loading')}>
             <SkeletonTable rows={6} columns={3} />

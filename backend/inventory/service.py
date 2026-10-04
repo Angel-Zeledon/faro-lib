@@ -377,6 +377,29 @@ def list_stock(tenant_id: str) -> list[dict]:
     )
 
 
+def list_stock_page(
+    tenant_id: str, limit: int = 50, offset: int = 0,
+    q: Optional[str] = None, warehouse: Optional[str] = None,
+) -> dict:
+    """One page of stock rows. `total` counts the filtered set, so a screen can
+    say "51-100 of 4,812" without having loaded the other 4,700."""
+    where, params = "tenant_id = %s", [tenant_id]
+    if q and q.strip():
+        where += " AND (sku ILIKE %s OR category ILIKE %s OR supplier ILIKE %s)"
+        like = f"%{q.strip()}%"
+        params += [like, like, like]
+    if warehouse:
+        where += " AND warehouse = %s"
+        params.append(warehouse)
+    rows = query(
+        f"SELECT * FROM inventory_stock WHERE {where} ORDER BY sku, warehouse LIMIT %s OFFSET %s",
+        (*params, limit, offset),
+    )
+    total = query_one(f"SELECT COUNT(*) AS n FROM inventory_stock WHERE {where}", tuple(params))
+    return {"items": rows, "total": int(total["n"]) if total else 0,
+            "limit": limit, "offset": offset}
+
+
 def delete_stock(tenant_id: str, sku: str) -> None:
     execute(
         "DELETE FROM inventory_stock WHERE tenant_id = %s AND sku = %s",

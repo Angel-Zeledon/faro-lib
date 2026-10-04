@@ -1,9 +1,10 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
+from backend import audit
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.datasources import service as svc
 from backend.datasources.service import SQL_ENGINES
@@ -152,6 +153,7 @@ def get_source(
 
 @router.post("/file")
 async def create_file_source(
+    request: Request,
     file: UploadFile = File(...),
     name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
@@ -161,6 +163,8 @@ async def create_file_source(
         src = await svc.create_file_source(
             user.tenant_id, user.user_id, file, name=name, description=description
         )
+        audit.note(request, target_id=src.get("id"), label=src.get("name"),
+                   after={"rows": src.get("row_count"), "size_bytes": src.get("size_bytes")})
         return ok(src)
     except ValueError as e:
         raise _service_error(e)
@@ -171,6 +175,7 @@ async def create_file_source(
 @router.post("/sql")
 def create_sql_source(
     body: CreateSqlSourceRequest,
+    request: Request,
     # A viewer must not be able to point the company at a database of their
     # choosing, or store credentials under the tenant's name.
     user: CurrentUser = Depends(require_analyst_or_above),
@@ -188,6 +193,10 @@ def create_sql_source(
             engine=body.engine,
             description=body.description,
         )
+        # Host and database name only: the password never leaves the service.
+        audit.note(request, target_id=src.get("id"), label=body.name,
+                   after={"engine": body.engine, "host": body.host,
+                          "database": body.database})
         return ok(src)
     except ValueError as e:
         raise _service_error(e)
@@ -369,10 +378,14 @@ def save_as_new(
 def rename_source(
     source_id: str,
     body: RenameSourceRequest,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    _ds_or_404(user.tenant_id, source_id)
+    before = _ds_or_404(user.tenant_id, source_id)
     src = svc.rename_source(user.tenant_id, source_id, body.name, description=body.description)
+    audit.note(request, label=src.get("name"),
+               before={"name": before.get("name"), "description": before.get("description")},
+               after={"name": src.get("name"), "description": src.get("description")})
     return ok(src)
 
 
@@ -381,10 +394,14 @@ def rename_source(
 @router.delete("/{source_id}")
 def delete_source(
     source_id: str,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     import psycopg2
     src = _ds_or_404(user.tenant_id, source_id)
+    audit.note(request, label=src.get("name"),
+               before={"name": src.get("name"), "rows": src.get("row_count"),
+                       "size_bytes": src.get("size_bytes")})
     try:
         svc.delete_source(user.tenant_id, source_id)
     except psycopg2.errors.ForeignKeyViolation:
