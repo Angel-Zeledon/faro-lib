@@ -15,6 +15,7 @@ import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import { WarehousesProvider } from '@/components/inventory/WarehouseControls'
 import { PlanningProvider } from '@/contexts/PlanningContext'
 import { TourProvider } from '@/contexts/TourContext'
+import { TrainingProvider } from '@/contexts/TrainingContext'
 import TourOverlay from '@/components/tour/TourOverlay'
 import ToastContainer from '@/components/ui/Toast'
 import ApiErrorBridge from './ApiErrorBridge'
@@ -38,6 +39,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <CapabilitiesProvider>
       <WarehousesProvider>
       <PlanningProvider>
+        <TrainingProvider>
         <ToastProvider>
           {/* Above ApiErrorBridge, which opens it when the backend answers
               PLAN_LIMIT_REACHED, and above the screens that open it by hand. */}
@@ -62,6 +64,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </ConfirmProvider>
           </UpgradeProvider>
         </ToastProvider>
+        </TrainingProvider>
       </PlanningProvider>
       </WarehousesProvider>
       </CapabilitiesProvider>

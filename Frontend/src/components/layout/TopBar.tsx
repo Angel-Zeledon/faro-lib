@@ -7,6 +7,7 @@ import { getSessions } from '@/lib/api'
 import type { SessionInfo } from '@/lib/types'
 import AlertBell from '@/components/alerts/AlertBell'
 import MessagesBadge from '@/components/messages/MessagesBadge'
+import TrainingPill from './TrainingPill'
 import TourLauncher from '@/components/tour/TourLauncher'
 import TopBarOverflowMenu from './TopBarOverflowMenu'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -306,6 +307,9 @@ export default function TopBar() {
         <span style={{ fontSize: 12, color: 'var(--dim)', fontVariantNumeric: 'tabular-nums' }}>
           {time}
         </span>
+
+        {/* Training in progress / just finished — server-driven, see TrainingContext */}
+        <TrainingPill />
 
         {/* Unread direct messages — renders nothing on plans without messaging */}
         <MessagesBadge />

@@ -590,6 +590,23 @@ export const startDemoQuickstart = (opts?: TrainLaunchOptions & { name?: string 
 export const getJob = (job_id: string) =>
   request<JobResponse>('GET', `/jobs/${job_id}`)
 
+// One training launch that is queued or running right now (a family of
+// planning-period sessions). `percent` already averages every member.
+export interface ActiveTrainingFamily {
+  family_id:       string
+  base_session_id: string
+  base_job_id:     string
+  name:            string
+  status:          'QUEUED' | 'RUNNING'
+  percent:         number
+  step:            string | null
+  message:         string | null
+  members:         { job_id: string; session_id: string; granularity: string | null; status: string }[]
+}
+
+export const getActiveTraining = () =>
+  request<{ families: ActiveTrainingFamily[] }>('GET', '/jobs/active')
+
 export const getJobLogs = (job_id: string) =>
   request<{ job_id: string; lines: string[]; total: number }>('GET', `/jobs/${job_id}/logs`)
 
