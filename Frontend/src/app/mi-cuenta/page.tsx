@@ -301,7 +301,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
               <div style={{
                 marginTop: 5, display: 'inline-block',
                 padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                background: 'rgba(34,197,94,0.12)', color: 'var(--success)',
+                background: 'rgba(46,139,98,0.12)', color: 'var(--success)',
               }}>
                 {t('active')}
               </div>
@@ -335,7 +335,7 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
 
   return (
     <Card>
-      <SectionTitle icon={Settings2} color="#22c55e" title={t('app_settings')} subtitle={`${t('language')} · ${t('theme')}`} />
+      <SectionTitle icon={Settings2} color="#2E8B62" title={t('app_settings')} subtitle={`${t('language')} · ${t('theme')}`} />
 
       <div data-tour="config.appearance" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
@@ -348,10 +348,10 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 32, height: 32, borderRadius: 8,
-              background: 'rgba(34,197,94,0.1)',
+              background: 'rgba(46,139,98,0.1)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <Globe size={14} color="#22c55e" />
+              <Globe size={14} color="#2E8B62" />
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('language')}</div>
@@ -651,7 +651,7 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <SectionTitle
           icon={Activity}
-          color="#0ea5e9"
+          color="#3F86AB"
           title={t('activity_logs')}
           subtitle={`${total} ${t('records_count')}`}
         />
@@ -750,13 +750,13 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
               }}>
                 {activityActionLabel(t, log.action)}
               </span>
-              <span style={{ color: 'var(--muted)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ color: 'var(--muted)', fontSize: 11, overflow: 'hidden', overflowWrap: 'anywhere', }}>
                 {log.resource || '—'}
               </span>
               <span>
                 <span style={{
                   fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-                  background: log.status === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                  background: log.status === 'success' ? 'rgba(46,139,98,0.12)' : 'rgba(192,80,77,0.12)',
                   color: log.status === 'success' ? 'var(--success)' : 'var(--danger)',
                 }}>
                   {log.status === 'success' ? t('success') : t('error')}
@@ -847,7 +847,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
 
   return (
     <Card>
-      <SectionTitle icon={Lock} color="#f59e0b" title={t('security')} subtitle={t('change_password')} />
+      <SectionTitle icon={Lock} color="#B7791F" title={t('security')} subtitle={t('change_password')} />
 
       {step === 'idle' && (
         <div data-tour="config.security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -940,8 +940,8 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
         <div data-tour="config.security" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
-            borderRadius: 8, fontSize: 12, color: '#22c55e',
+            background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.2)',
+            borderRadius: 8, fontSize: 12, color: '#2E8B62',
           }}>
             <Mail size={13} />
             {t('code_sent_to')} <strong style={{ marginLeft: 4 }}>{me?.email}</strong>
@@ -1000,8 +1000,8 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
           padding: '12px 16px',
-          background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
-          borderRadius: 8, fontSize: 13, color: '#22c55e', fontWeight: 500,
+          background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.2)',
+          borderRadius: 8, fontSize: 13, color: '#2E8B62', fontWeight: 500,
         }}>
           <CheckCircle2 size={16} />
           {t('pw_updated')}
@@ -1072,8 +1072,8 @@ function LinkedAccounts() {
       </div>
       {!data.has_password && (
         <div style={{
-          fontSize: 12, color: '#b45309', background: 'rgba(245,158,11,0.08)',
-          border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8,
+          fontSize: 12, color: '#b45309', background: 'rgba(183,121,31,0.08)',
+          border: '1px solid rgba(183,121,31,0.25)', borderRadius: 8,
           padding: '8px 12px', marginBottom: 10, lineHeight: 1.5,
         }}>
           {t('security.no_password_note')}
@@ -1215,7 +1215,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
 
   return (
     <Card>
-      <SectionTitle icon={MessageCircle} color="#22c55e" title={t('config.wa_title')} subtitle={t('config.wa_subtitle')} />
+      <SectionTitle icon={MessageCircle} color="#2E8B62" title={t('config.wa_title')} subtitle={t('config.wa_subtitle')} />
 
       {step === 'loading' && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Spinner size={18} /></div>
@@ -1267,8 +1267,8 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
         <div data-tour="config.whatsapp" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{
             display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '10px 14px',
-            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
-            borderRadius: 8, fontSize: 12, color: '#22c55e',
+            background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.2)',
+            borderRadius: 8, fontSize: 12, color: '#2E8B62',
           }}>
             <MessageCircle size={13} />
             {t('config.wa_code_sent_to')} <strong>{pendingNumber}</strong>
@@ -1350,12 +1350,12 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '12px 16px',
-            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
+            background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.2)',
             borderRadius: 8,
           }}>
-            <CheckCircle2 size={16} color="#22c55e" />
+            <CheckCircle2 size={16} color="#2E8B62" />
             <div>
-              <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 600 }}>
+              <div style={{ fontSize: 13, color: '#2E8B62', fontWeight: 600 }}>
                 {t('config.wa_verified_title')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
@@ -1365,7 +1365,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             <span style={{
               marginLeft: 'auto', fontSize: 10, fontWeight: 700,
               padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em',
-              background: 'rgba(34,197,94,0.14)', color: '#22c55e',
+              background: 'rgba(46,139,98,0.14)', color: '#2E8B62',
             }}>
               {t('config.wa_verified_badge')}
             </span>
@@ -1818,9 +1818,9 @@ function MobileSettings() {
 
       <MobileSection title={t('config.m_group_account')}>
         <MobileList>
-          <MobileCard leading={<Tile Icon={Lock} color="#f59e0b" />} title={t('security')}
+          <MobileCard leading={<Tile Icon={Lock} color="#B7791F" />} title={t('security')}
                       subtitle={t('change_password')} onClick={() => open('security')} />
-          <MobileCard leading={<Tile Icon={MessageCircle} color="#22c55e" />} title={t('config.wa_title')}
+          <MobileCard leading={<Tile Icon={MessageCircle} color="#2E8B62" />} title={t('config.wa_title')}
                       subtitle={waNumber ? waNumber : waNumber === '' ? t('config.m_wa_not_linked') : t('config.wa_subtitle')}
                       onClick={() => open('whatsapp')} />
           <MobileCard leading={<Tile Icon={MessageSquare} color="var(--accent)" />} title={t('config.dm_sms_title')}
@@ -1845,10 +1845,10 @@ function MobileSettings() {
 
       <MobileSection title={t('config.m_group_app')}>
         <MobileList>
-          <MobileCard leading={<Tile Icon={Settings2} color="#22c55e" />} title={t('app_settings')}
+          <MobileCard leading={<Tile Icon={Settings2} color="#2E8B62" />} title={t('app_settings')}
                       subtitle={`${lang === 'es' ? t('spanish') : t('english')} · ${theme === 'dark' ? t('dark') : t('light')}`}
                       onClick={() => open('appearance')} />
-          <MobileCard leading={<Tile Icon={Activity} color="#0ea5e9" />} title={t('activity_logs')}
+          <MobileCard leading={<Tile Icon={Activity} color="#3F86AB" />} title={t('activity_logs')}
                       onClick={() => open('activity')} />
         </MobileList>
       </MobileSection>

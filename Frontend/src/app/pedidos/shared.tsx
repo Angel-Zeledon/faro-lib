@@ -18,7 +18,7 @@ import type { POLogEntry, SupplierContactHealthRow } from '@/lib/types'
 export const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
+  red: '#C0504D', amber: '#B7791F', green: '#2E8B62', indigo: 'var(--accent)',
 }
 
 // ── Is this order still waiting for goods? ───────────────────────────────────

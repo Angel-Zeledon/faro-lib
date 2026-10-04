@@ -65,8 +65,8 @@ export function QualityPanel({ q }: { q: QualityReport[string] }) {
         ))}
       </div>
       {[
-        { label: t('skus.quality_score_label'), value: q.quality_score, color: '#22c55e' },
-        { label: t('skus.quality_missing_data'),       value: q.missing_pct,   color: '#ef4444' },
+        { label: t('skus.quality_score_label'), value: q.quality_score, color: '#2E8B62' },
+        { label: t('skus.quality_missing_data'),       value: q.missing_pct,   color: '#C0504D' },
       ].map(({ label, value, color }) => (
         <div key={label}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -81,14 +81,14 @@ export function QualityPanel({ q }: { q: QualityReport[string] }) {
       {warningLines.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {warningLines.map((w, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 11, color: '#f59e0b' }}>
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 11, color: '#B7791F' }}>
               <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />{w}
             </div>
           ))}
         </div>
       )}
       {q.is_valid && warningLines.length === 0 && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#22c55e' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#2E8B62' }}>
           <CheckCircle2 size={12} /> {t('skus.series_clean_no_warnings')}
         </div>
       )}
@@ -124,7 +124,7 @@ export function QualityTab({ q, showStats, onToggleStats }: {
           ))}
         </div>
         {q.is_valid && warnings.length === 0 && (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#22c55e', marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#2E8B62', marginBottom: 12 }}>
             <CheckCircle2 size={12} /> {t('skus.series_clean_no_warnings')}
           </div>
         )}
@@ -165,7 +165,7 @@ export function QualityWarningList({ lines, style }: { lines: string[]; style?: 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, ...style }}>
       {lines.map((w, i) => (
-        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 11, color: '#f59e0b' }}>
+        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 11, color: '#B7791F' }}>
           <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />{w}
         </div>
       ))}

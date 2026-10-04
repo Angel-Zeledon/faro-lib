@@ -46,13 +46,13 @@ export function InventoryPanel({ inv, live, coverageUnit, policy, risk }: {
     })
   }
   cards.push({ label: t('skus.inv_reorder_point'), value: fmtNum(inv.reorder_point), color: 'var(--accent)' })
-  cards.push({ label: t('skus.inv_safety_stock'),  value: fmtNum(inv.safety_stock),  color: '#06b6d4' })
-  cards.push({ label: t('skus.inv_stockout_risk'), value: pct(inv.stockout_risk),    color: (inv.stockout_risk ?? 0) > 0.2 ? '#ef4444' : '#22c55e' })
+  cards.push({ label: t('skus.inv_safety_stock'),  value: fmtNum(inv.safety_stock),  color: '#3E8E9B' })
+  cards.push({ label: t('skus.inv_stockout_risk'), value: pct(inv.stockout_risk),    color: (inv.stockout_risk ?? 0) > 0.2 ? '#C0504D' : '#2E8B62' })
   if (inv.holding_cost != null) {
-    cards.push({ label: t('skus.inv_holding_cost'), value: formatMoney(inv.holding_cost), color: '#f59e0b' })
+    cards.push({ label: t('skus.inv_holding_cost'), value: formatMoney(inv.holding_cost), color: '#B7791F' })
   } else if (!live) {
     // No live stock row — keep the training-time coverage as the last resort.
-    cards.push({ label: t('skus.inv_days_coverage'), value: fmtNum(inv.days_coverage), color: '#f59e0b' })
+    cards.push({ label: t('skus.inv_days_coverage'), value: fmtNum(inv.days_coverage), color: '#B7791F' })
   }
 
   const variant: 'danger' | 'warning' | 'success' | 'neutral' =
@@ -60,13 +60,13 @@ export function InventoryPanel({ inv, live, coverageUnit, policy, risk }: {
     : signal === 'PEDIR_PRONTO' || signal === 'SOBRESTOCK' ? 'warning'
     : signal === 'OK'                                       ? 'success'
     :                                                         'neutral'
-  const bannerBg = variant === 'danger'  ? 'rgba(239,68,68,0.08)'
-                 : variant === 'warning' ? 'rgba(245,158,11,0.08)'
-                 : variant === 'success' ? 'rgba(34,197,94,0.08)'
+  const bannerBg = variant === 'danger'  ? 'rgba(192,80,77,0.08)'
+                 : variant === 'warning' ? 'rgba(183,121,31,0.08)'
+                 : variant === 'success' ? 'rgba(46,139,98,0.08)'
                  :                         'rgba(100,116,139,0.08)'
-  const bannerBorder = variant === 'danger'  ? 'rgba(239,68,68,0.2)'
-                     : variant === 'warning' ? 'rgba(245,158,11,0.2)'
-                     : variant === 'success' ? 'rgba(34,197,94,0.2)'
+  const bannerBorder = variant === 'danger'  ? 'rgba(192,80,77,0.2)'
+                     : variant === 'warning' ? 'rgba(183,121,31,0.2)'
+                     : variant === 'success' ? 'rgba(46,139,98,0.2)'
                      :                         'rgba(100,116,139,0.2)'
   const message = signal === 'PEDIR_YA'     ? t('skus.action_reorder_msg')
                 : signal === 'PEDIR_PRONTO' ? t('skus.action_order_soon_msg')

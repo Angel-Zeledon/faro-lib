@@ -156,7 +156,7 @@ function notYetLabel(
 const C = {
  surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
  text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
- red: '#ef4444', amber: '#f59e0b', green: '#22c55e', blue: '#3b82f6', indigo: 'var(--accent)',
+ red: '#C0504D', amber: '#B7791F', green: '#2E8B62', blue: '#4F7FB5', indigo: 'var(--accent)',
 }
 
 // ── Signal config ─────────────────────────────────────────────────────────────
@@ -262,8 +262,8 @@ function ThTip({ label, tip, sortKey, sort, onSort, dataTour }: {
 }
 
 // ── ABC-XYZ badge ─────────────────────────────────────────────────────────────
-const ABC_COLOR: Record<string, string> = { A: '#22c55e', B: '#f59e0b', C: '#64748b', '?': '#334155' }
-const XYZ_COLOR: Record<string, string> = { X: 'var(--accent)', Y: '#f59e0b', Z: '#ef4444', '?': '#334155' }
+const ABC_COLOR: Record<string, string> = { A: '#2E8B62', B: '#B7791F', C: '#64748b', '?': '#334155' }
+const XYZ_COLOR: Record<string, string> = { X: 'var(--accent)', Y: '#B7791F', Z: '#C0504D', '?': '#334155' }
 function AbcXyzBadge({ value }: { value: string }) {
  if (!value || value === '?') return <span style={{ color: C.dim }}>—</span>
  const abc = value[0], xyz = value[1] || ''
@@ -611,12 +611,12 @@ function ContextMessage({ summary }: { summary: Record<string, number> }) {
    text: unknown > 0
      ? `${summary.ok} ${t('inventory.ctx_covered_partial_suffix')} ${unknown} ${t('inventory.ctx_no_signal_suffix')}`
      : t('inventory.ctx_all_covered'),
-   color: unknown > 0 ? '#f59e0b' : '#22c55e',
+   color: unknown > 0 ? '#B7791F' : '#2E8B62',
  })
  // Nothing actionable, nothing OK, and SKUs we cannot judge: the panel used to
  // render nothing at all, which reads as "no news is good news".
  if (actionable === 0 && !lines.length && unknown > 0)
- lines.push({ text: `${unknown} ${t('inventory.ctx_only_no_signal_suffix')}`, color: '#f59e0b' })
+ lines.push({ text: `${unknown} ${t('inventory.ctx_only_no_signal_suffix')}`, color: '#B7791F' })
  if (!lines.length) return null
  return (
  <div style={{ padding: '10px 16px', borderRadius: 9, background: C.surface, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -934,15 +934,15 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  </p>
 
  {!result && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
- {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 13, color: C.red }}>{error}</div>}
+ {error && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(192,80,77,0.08)', fontSize: 13, color: C.red }}>{error}</div>}
 
  {result && (
  <>
  {/* Headline — the actionable sentence */}
  <div style={{
  padding: '14px 18px', borderRadius: 10, marginBottom: 16,
- background: result.summary.skus_at_risk > 0 ? 'rgba(245,158,11,0.07)' : 'rgba(34,197,94,0.07)',
- border: `1px solid ${result.summary.skus_at_risk > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.3)'}`,
+ background: result.summary.skus_at_risk > 0 ? 'rgba(183,121,31,0.07)' : 'rgba(46,139,98,0.07)',
+ border: `1px solid ${result.summary.skus_at_risk > 0 ? 'rgba(183,121,31,0.3)' : 'rgba(46,139,98,0.3)'}`,
  fontSize: 13, color: C.text, lineHeight: 1.6,
  }}>
  {result.summary.skus_at_risk > 0 ? (
@@ -1028,7 +1028,7 @@ function EventSimModal({ ev, sessionId, onClose, onReload }: {
  </thead>
  <tbody>
  {result.items.map(r => (
- <tr key={r.sku} style={{ borderBottom: `1px solid ${C.border}`, background: r.en_risk ? 'rgba(245,158,11,0.04)' : undefined }}>
+ <tr key={r.sku} style={{ borderBottom: `1px solid ${C.border}`, background: r.en_risk ? 'rgba(183,121,31,0.04)' : undefined }}>
  <th scope="row" style={{ padding: '8px', textAlign: 'left', fontWeight: 400 }}>
  <div style={{ fontWeight: 600, color: C.text }}>{r.display_name || r.sku}</div>
  <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace' }}>{r.sku}</div>
@@ -1183,7 +1183,7 @@ function ShrinkageModal({ items, warehouses, defaultWarehouse, onClose, onSaved 
       {t('inventory.shrinkage_estimated_cost_prefix')} <strong style={{ color: C.red }}>{fmtCurrency(estCost)}</strong>
      </div>
     )}
-    {error && <div role="alert" style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.08)', fontSize: 13, color: C.red }}>{error}</div>}
+    {error && <div role="alert" style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(192,80,77,0.08)', fontSize: 13, color: C.red }}>{error}</div>}
     <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
    </form>
   </BottomSheet>
@@ -1273,7 +1273,7 @@ function ShrinkageModal({ items, warehouses, defaultWarehouse, onClose, onSaved 
      )}
 
      {error && (
-      <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 12, color: C.red }}>{error}</div>
+      <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(192,80,77,0.08)', fontSize: 12, color: C.red }}>{error}</div>
      )}
 
      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
@@ -1495,7 +1495,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  const until = daysUntil(ev.start_date)
  const isClose = until && ![TODAY_LABEL, TOMORROW_LABEL].includes(until) ? parseInt(until) <= 14 : !!until
  return (
- <div key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, background: isClose ? 'rgba(245,158,11,0.06)' : C.card, border: `1px solid ${isClose ? 'rgba(245,158,11,0.25)' : C.border}`, ...(narrow ? { flexWrap: 'wrap', gap: 8, padding: '12px', borderRadius: 12 } : {}) }}>
+ <div key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, background: isClose ? 'rgba(183,121,31,0.06)' : C.card, border: `1px solid ${isClose ? 'rgba(183,121,31,0.25)' : C.border}`, ...(narrow ? { flexWrap: 'wrap', gap: 8, padding: '12px', borderRadius: 12 } : {}) }}>
  <Calendar size={14} color={isClose ? C.amber : C.dim} style={{ flexShrink: 0 }} />
  <div style={{ flex: 1, minWidth: narrow ? 'calc(100% - 90px)' : 0 }}>
  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{ev.name}</div>
@@ -1512,7 +1512,7 @@ function EventsPanel({ events, onAdd, onDelete, onSimulate, onCatalogChange }: {
  onClick={() => onSimulate(ev)}
  title={t('inventory.events_simulate_tooltip')}
  aria-label={`${t('inventory.events_btn_simulate')}: ${ev.name}`}
- style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(245,158,11,0.4)`, color: 'var(--signal-order-soon-fg)', fontSize: 11, fontWeight: 600, flexShrink: 0,
+ style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 7, border: `1px solid rgba(183,121,31,0.4)`, color: 'var(--signal-order-soon-fg)', fontSize: 11, fontWeight: 600, flexShrink: 0,
   ...(narrow ? { ...tapS, flex: 1, fontSize: 14, borderRadius: 10, gap: 6 } : {}) }}
  >
  <Zap size={11} aria-hidden="true" /> {t('inventory.events_btn_simulate')}
@@ -1610,8 +1610,8 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: C.card, cursor: 'pointer', borderBottom: open ? `1px solid ${C.border}` : 'none' }}>
  <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{name || t('inventory.no_provider')}</span>
  <span style={{ fontSize: 11, color: C.dim }}>{items.length} SKUs</span>
- {critical > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(239,68,68,0.1)', color: C.red }}>{critical} {critical !== 1 ? t('inventory.urgent_plural') : t('inventory.urgent_singular')}</span>}
- {warning > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(245,158,11,0.1)', color: C.amber }}>{warning} {t('inventory.soon_suffix')}</span>}
+ {critical > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(192,80,77,0.1)', color: C.red }}>{critical} {critical !== 1 ? t('inventory.urgent_plural') : t('inventory.urgent_singular')}</span>}
+ {warning > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(183,121,31,0.1)', color: C.amber }}>{warning} {t('inventory.soon_suffix')}</span>}
  <ChevronDown size={13} color={C.dim} style={{ transform: open ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }} />
  </div>
  {open && items.map((item, idx) => (
@@ -1722,7 +1722,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
  const originalRec    = item.recommended_qty ?? 0
  const simRecommended = Math.max(0, originalRec + changed - baseline)
  const delta          = simRecommended - originalRec
- const deltaColor     = delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.muted
+ const deltaColor     = delta > 0 ? '#C0504D' : delta < 0 ? '#2E8B62' : C.muted
 
  const sliderS: React.CSSProperties = { width: '100%', cursor: 'pointer', accentColor: 'var(--accent)', ...(narrow ? { height: 36, margin: 0 } : {}) }
 
@@ -1741,7 +1741,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
     <div>
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.muted, marginBottom: 6 }}>
       <span>{t('inventory.sim_lead_time')}</span>
-      <span style={{ fontWeight: 700, color: ltDelta !== 0 ? '#f59e0b' : C.text }}>
+      <span style={{ fontWeight: 700, color: ltDelta !== 0 ? '#B7791F' : C.text }}>
        {simLeadTime}d {ltDelta > 0 ? `(+${ltDelta})` : ltDelta < 0 ? `(${ltDelta})` : ''}
       </span>
      </div>
@@ -1757,7 +1757,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
     <div>
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.muted, marginBottom: 6 }}>
       <span>{t('inventory.sim_demand_variation')}</span>
-      <span style={{ fontWeight: 700, color: demandMult !== 100 ? '#f59e0b' : C.text }}>
+      <span style={{ fontWeight: 700, color: demandMult !== 100 ? '#B7791F' : C.text }}>
        {demandMult}% {demandMult !== 100 ? `(${simDemand.toFixed(1)} ${t('inventory.calc_unit_per_day')})` : ''}
       </span>
      </div>
@@ -1773,7 +1773,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
     <div>
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.muted, marginBottom: 6 }}>
       <span>{t('inventory.sim_extra_stock')}</span>
-      <span style={{ fontWeight: 700, color: stockDelta !== 0 ? '#f59e0b' : C.text }}>
+      <span style={{ fontWeight: 700, color: stockDelta !== 0 ? '#B7791F' : C.text }}>
        {stockDelta > 0 ? `+${stockDelta}` : stockDelta} {t('inventory.unit_und')}
       </span>
      </div>
@@ -1801,7 +1801,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
     <div style={{ fontSize: 20, color: C.dim, display: narrow ? 'none' : undefined }}>→</div>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_with_changes')}</div>
-     <div style={{ fontSize: 24, fontWeight: 900, color: delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.text }}>
+     <div style={{ fontSize: 24, fontWeight: 900, color: delta > 0 ? '#C0504D' : delta < 0 ? '#2E8B62' : C.text }}>
       {fmtNum(simRecommended)} {t('inventory.unit_und')}
      </div>
     </div>
@@ -1911,7 +1911,7 @@ function WhyChangedPanel({ sku }: { sku: string }) {
        <span style={{
         fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
         padding: '2px 6px', borderRadius: 4, color: f.origin === 'operational' ? C.amber : f.origin === 'session' ? C.indigo : C.dim,
-        background: f.origin === 'operational' ? 'color-mix(in srgb, var(--warning, #f59e0b) 14%, transparent)'
+        background: f.origin === 'operational' ? 'color-mix(in srgb, var(--warning, #B7791F) 14%, transparent)'
          : f.origin === 'session' ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
        }}>
         {t(whyChangedOriginKey(f.origin))}
@@ -2554,7 +2554,7 @@ export default function InventoryPage() {
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
  {/* On a phone the compact header already names the screen. */}
  <div style={{ display: narrow ? 'none' : 'flex', alignItems: 'center', gap: 10 }}>
- <div style={{ width: 36, height: 36, borderRadius: 9, background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+ <div style={{ width: 36, height: 36, borderRadius: 9, background: '#2E8B62', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
  <ShoppingCart size={17} color="#fff" strokeWidth={2.5} />
  </div>
  <div>
@@ -2665,7 +2665,7 @@ export default function InventoryPage() {
 
  {/* Excluded SKUs notice — products uploaded but left out of the forecast */}
  {(data?.excluded_skus?.length ?? 0) > 0 && (
- <div style={{ padding: '12px 16px', borderRadius: 8, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+ <div style={{ padding: '12px 16px', borderRadius: 8, background: 'rgba(183,121,31,0.07)', border: '1px solid rgba(183,121,31,0.25)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
  <Info size={14} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
  <div style={{ flex: 1, fontSize: 12.5, color: C.text }}>
  <span style={{ fontWeight: 700, color: C.amber }}>
@@ -2688,7 +2688,7 @@ export default function InventoryPage() {
 
  {/* Upcoming events alert */}
  {upcomingAlerts.length > 0 && (
- <div style={{ padding: '10px 16px', borderRadius: 8, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+ <div style={{ padding: '10px 16px', borderRadius: 8, background: 'rgba(183,121,31,0.07)', border: '1px solid rgba(183,121,31,0.25)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
  <Calendar size={14} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
  <div style={{ flex: 1, fontSize: 12 }}>
  <span style={{ fontWeight: 600, color: C.amber }}>{t('inventory.upcoming_events_prefix')}</span>
@@ -2982,7 +2982,7 @@ export default function InventoryPage() {
  data-tour="inv.save"
  onClick={handleSaveAll}
  disabled={updatedSkus.size === 0 || updateSaving}
- style={{ all: 'unset', cursor: updatedSkus.size === 0 || updateSaving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, background: updatedSkus.size > 0 ? C.green : 'rgba(34,197,94,0.2)', color: '#fff', opacity: updatedSkus.size === 0 || updateSaving ? 0.5 : 1, ...(narrow ? { minHeight: 44, boxSizing: 'border-box', fontSize: 14 } : {}) }}
+ style={{ all: 'unset', cursor: updatedSkus.size === 0 || updateSaving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, background: updatedSkus.size > 0 ? C.green : 'rgba(46,139,98,0.2)', color: '#fff', opacity: updatedSkus.size === 0 || updateSaving ? 0.5 : 1, ...(narrow ? { minHeight: 44, boxSizing: 'border-box', fontSize: 14 } : {}) }}
  >
  {updateSaving ? <Spinner size={11} /> : <Save size={11} />}
  {updateSaving ? t('inventory.saving_ellipsis') : `${t('inventory.btn_save_prefix')} ${updatedSkus.size > 0 ? updatedSkus.size : ''} ${updatedSkus.size !== 1 ? t('inventory.changes_plural') : t('inventory.changes_singular')}`}
@@ -3054,7 +3054,7 @@ export default function InventoryPage() {
  return (
  <tr
  key={item.sku}
- style={{ background: isModified ? 'rgba(245,158,11,0.04)' : rowBg }}
+ style={{ background: isModified ? 'rgba(183,121,31,0.04)' : rowBg }}
  >
  {/* Modified indicator */}
  <td style={{ padding: '0 0 0 8px', borderBottom: `1px solid ${C.border}`, width: 8 }}>
@@ -4315,9 +4315,9 @@ export default function InventoryPage() {
  // unkeyed list item and re-creates both on every reorder.
  <Fragment key={item.sku}>
  <tr
- style={{ background: crit ? 'rgba(239,68,68,0.02)' : rowBg, borderLeft: `3px solid ${crit ? C.red : 'transparent'}`, transition: 'background 0.1s' }}
+ style={{ background: crit ? 'rgba(192,80,77,0.02)' : rowBg, borderLeft: `3px solid ${crit ? C.red : 'transparent'}`, transition: 'background 0.1s' }}
  onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 4%, transparent)')}
- onMouseLeave={e => (e.currentTarget.style.background = crit ? 'rgba(239,68,68,0.02)' : rowBg)}
+ onMouseLeave={e => (e.currentTarget.style.background = crit ? 'rgba(192,80,77,0.02)' : rowBg)}
  >
  {/* Expand button */}
  <td style={{ padding: '10px 6px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
@@ -4412,7 +4412,7 @@ export default function InventoryPage() {
      Only the arrival is animated; collapsing is immediate, because the user
      already decided to close it. */}
  {isExpanded && item.calc_explanation && (
- <ExpandedCalcRow item={item} background={crit ? 'rgba(239,68,68,0.01)' : rowBg} />
+ <ExpandedCalcRow item={item} background={crit ? 'rgba(192,80,77,0.01)' : rowBg} />
  )}
  </Fragment>
  )
@@ -4435,7 +4435,7 @@ export default function InventoryPage() {
  >
  <Calendar size={14} color={C.indigo} />
  <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{t('inventory.events_section_title')}</span>
- {upcomingAlerts.length > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(245,158,11,0.1)', color: C.amber }}>{upcomingAlerts.length} {upcomingAlerts.length > 1 ? t('inventory.upcoming_plural') : t('inventory.upcoming_singular')}</span>}
+ {upcomingAlerts.length > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(183,121,31,0.1)', color: C.amber }}>{upcomingAlerts.length} {upcomingAlerts.length > 1 ? t('inventory.upcoming_plural') : t('inventory.upcoming_singular')}</span>}
  <ChevronDown size={13} color={C.dim} style={{ transform: showEvents ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }} />
  </button>
  {showEvents && (

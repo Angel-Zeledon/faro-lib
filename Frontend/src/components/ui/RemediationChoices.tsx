@@ -62,11 +62,11 @@ export default function RemediationChoices({
         <section
           style={{
             marginTop: 16, border: '1px solid var(--border)',
-            borderLeft: '4px solid #f59e0b', borderRadius: 10, padding: '14px 16px',
+            borderLeft: '4px solid #B7791F', borderRadius: 10, padding: '14px 16px',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertTriangle size={16} color="#f59e0b" />
+            <AlertTriangle size={16} color="#B7791F" />
             <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text)' }}>
               {t('gate.decide_title')}
             </span>

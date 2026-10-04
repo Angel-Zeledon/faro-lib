@@ -20,7 +20,7 @@ import BottomSheet from '@/components/mobile/BottomSheet'
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
+  red: '#C0504D', amber: '#B7791F', green: '#2E8B62', indigo: 'var(--accent)',
 }
 
 // The locale has to follow the interface language: hardcoding 'es' printed
@@ -194,7 +194,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
           </div>
         )}
         {error && (
-          <div role="alert" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.08)', fontSize: 13, color: C.red }}>
+          <div role="alert" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'rgba(192,80,77,0.08)', fontSize: 13, color: C.red }}>
             {error}
           </div>
         )}
@@ -293,7 +293,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
         {items && (
           <>
             {error && (
-              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 12, color: C.red }}>
+              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(192,80,77,0.08)', fontSize: 12, color: C.red }}>
                 {error}
               </div>
             )}
@@ -325,7 +325,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
           </>
         )}
         {error && !items && (
-          <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 12, color: C.red }}>
+          <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(192,80,77,0.08)', fontSize: 12, color: C.red }}>
             {error}
           </div>
         )}
@@ -496,7 +496,7 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
               </td>
               <td style={{ padding: '11px 14px' }}>
                 {entry.skus_order_now > 0
-                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(239,68,68,0.1)', color: C.red, fontWeight: 700, fontSize: 11 }}>
+                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(192,80,77,0.1)', color: C.red, fontWeight: 700, fontSize: 11 }}>
                       {entry.skus_order_now}
                     </span>
                   : <span style={{ color: C.dim }}>—</span>
@@ -504,7 +504,7 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
               </td>
               <td style={{ padding: '11px 14px' }}>
                 {entry.skus_order_soon > 0
-                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(245,158,11,0.1)', color: C.amber, fontWeight: 700, fontSize: 11 }}>
+                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(183,121,31,0.1)', color: C.amber, fontWeight: 700, fontSize: 11 }}>
                       {entry.skus_order_soon}
                     </span>
                   : <span style={{ color: C.dim }}>—</span>

@@ -191,7 +191,7 @@ function PersonRow({ name, time, preview, unread = 0, muted, onClick }: {
           <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <span style={{
               flex: 1, minWidth: 0, fontSize: 15.5, fontWeight: unread ? 700 : 600, color: 'var(--text)',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              overflow: 'hidden', overflowWrap: 'anywhere',
             }}>{name}</span>
             {time && <span style={{ fontSize: 12, color: unread ? 'var(--accent)' : 'var(--dim)', flexShrink: 0 }}>{time}</span>}
           </span>
@@ -199,7 +199,7 @@ function PersonRow({ name, time, preview, unread = 0, muted, onClick }: {
             <span style={{
               flex: 1, minWidth: 0, fontSize: 13.5,
               color: unread ? 'var(--text)' : 'var(--dim)', fontWeight: unread ? 600 : 400,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              overflow: 'hidden', overflowWrap: 'anywhere',
             }}>{preview}</span>
             {unread > 0 && (
               <span aria-hidden="true" style={{

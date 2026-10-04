@@ -117,8 +117,8 @@ function LoginPageContent() {
             <div role="alert" style={{
               display: 'flex', flexDirection: 'column', gap: 8,
               padding: '10px 12px', borderRadius: 10, marginBottom: 20,
-              background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)',
-              fontSize: 13, color: '#dc2626',
+              background: 'rgba(185,74,74,0.04)', border: '1px solid rgba(185,74,74,0.15)',
+              fontSize: 13, color: '#B94A4A',
               animation: 'auth-fade-up 0.35s ease-out both',
             }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

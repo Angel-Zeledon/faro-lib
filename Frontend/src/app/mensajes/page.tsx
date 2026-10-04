@@ -250,7 +250,7 @@ export default function MessagesPage() {
                       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                         <span style={{
                           fontSize: 12.5, fontWeight: c.unread_count ? 700 : 500,
-                          color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere',
                         }}>
                           {displayName(c)}
                         </span>
@@ -262,7 +262,7 @@ export default function MessagesPage() {
                         <span style={{
                           fontSize: 11.5, color: c.unread_count ? 'var(--text)' : 'var(--dim)',
                           fontWeight: c.unread_count ? 600 : 400, flex: 1, minWidth: 0,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          overflow: 'hidden', overflowWrap: 'anywhere',
                         }}>
                           {c.last_is_mine ? `${t('messages.you')}: ` : ''}{c.last_body}
                         </span>
@@ -313,10 +313,10 @@ export default function MessagesPage() {
                         {initial(c)}
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
                           {displayName(c)}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 11, color: 'var(--dim)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
                           {c.email}
                         </div>
                       </div>

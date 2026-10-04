@@ -71,13 +71,13 @@ export const FAN_LIKELY = FAN_BANDS.find(b => b.legend)!
 // Primary (first selected) model keeps the classic forecast green; additional
 // overlaid models get a stable color from this palette, indexed by the model's
 // position in available_models so colors don't shift as selection changes.
-export const PRIMARY_FORECAST_COLOR = '#22c55e'
+export const PRIMARY_FORECAST_COLOR = '#2E8B62'
 
 // The fan is the forecast's own shadow, so it takes the forecast's colour.
 // (A `var(--accent)` here would not survive: ECharts paints onto a canvas,
 // where a CSS custom property is not a colour the 2D context can resolve.)
 export const FAN_COLOR = PRIMARY_FORECAST_COLOR
-export const OVERLAY_COLORS = ['#f59e0b', '#06b6d4', '#f472b6', '#a78bfa', '#f97316', '#84cc16', '#e879f9', '#fbbf24']
+export const OVERLAY_COLORS = ['#B7791F', '#3E8E9B', '#B77AA0', '#8C80C0', '#BF7440', '#7A9A4A', '#AD7AA8', '#C99A3E']
 
 export function detectGaps(
   historical: { date: string; value: number }[],
@@ -441,12 +441,12 @@ export function buildChartOption(
       symbolSize: 8,
       data: outlierIndices.map(i => ({
         coord:     [historical[i].date, historical[i].value],
-        itemStyle: { color: '#f59e0b', borderColor: '#fff', borderWidth: 1.5 },
+        itemStyle: { color: '#B7791F', borderColor: '#fff', borderWidth: 1.5 },
         label:     { show: false },
       })),
       tooltip: {
         formatter: (p: { data: { coord: [string, number] } }) =>
-          `<div style="font-size:11px"><b style="color:#f59e0b">${t('skus.outlier_label')}</b><br/>${p.data.coord[0]}: ${p.data.coord[1].toFixed(2)}</div>`,
+          `<div style="font-size:11px"><b style="color:#B7791F">${t('skus.outlier_label')}</b><br/>${p.data.coord[0]}: ${p.data.coord[1].toFixed(2)}</div>`,
       },
     }
   }
@@ -1274,14 +1274,14 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
           </>
         )}
         {gaps.length > 0 && (
-          <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: '#B7791F', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ display: 'inline-block', width: 8, height: 8, background: 'rgba(251,191,36,0.4)', border: '1px dashed rgba(251,191,36,0.7)', borderRadius: 2 }} />
             {gaps.length} {gaps.length > 1 ? t('skus.footer_gaps_detected_plural') : t('skus.footer_gaps_detected_singular')}
           </span>
         )}
         {outliers.length > 0 && (
-          <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} />
+          <span style={{ color: '#B7791F', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#B7791F' }} />
             {outliers.length} {outliers.length > 1 ? t('skus.footer_outliers_detected_plural') : t('skus.footer_outliers_detected_singular')}
           </span>
         )}

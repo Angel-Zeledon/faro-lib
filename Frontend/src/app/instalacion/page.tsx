@@ -55,11 +55,11 @@ type Tab = 'instance' | 'tenant'
 // asks.
 
 const STATE_STYLE: Record<string, { color: string; bg: string; Icon: React.ElementType }> = {
-  ready:           { color: '#22c55e', bg: 'rgba(34,197,94,0.10)',  Icon: CheckCircle2 },
-  on:              { color: '#22c55e', bg: 'rgba(34,197,94,0.10)',  Icon: CheckCircle2 },
+  ready:           { color: '#2E8B62', bg: 'rgba(46,139,98,0.10)',  Icon: CheckCircle2 },
+  on:              { color: '#2E8B62', bg: 'rgba(46,139,98,0.10)',  Icon: CheckCircle2 },
   not_configured:  { color: 'var(--dim)', bg: 'var(--surface-2)',   Icon: CircleSlash },
   off:             { color: 'var(--dim)', bg: 'var(--surface-2)',   Icon: CircleSlash },
-  degraded:        { color: '#ef4444', bg: 'rgba(239,68,68,0.10)',  Icon: XCircle },
+  degraded:        { color: '#C0504D', bg: 'rgba(192,80,77,0.10)',  Icon: XCircle },
 }
 
 function StatePill({ state }: { state: string }) {
@@ -141,7 +141,7 @@ function FieldRow({
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
           {field.required && (
-            <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600 }}>
+            <span style={{ fontSize: 10, color: '#B7791F', fontWeight: 600 }}>
               {ui.required}
             </span>
           )}
@@ -308,7 +308,7 @@ function ServiceCard({
           background: 'var(--surface-2)', border: '1px solid var(--border)',
           fontSize: 12, color: 'var(--text)', lineHeight: 1.55,
         }}>
-          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: '#f59e0b' }} aria-hidden="true" />
+          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: '#B7791F' }} aria-hidden="true" />
           <div>
             <div>{text?.whatBreaks ?? service.what_breaks}</div>
             {service.missing.length > 0 && (
@@ -332,7 +332,7 @@ function ServiceCard({
 
       {probe && (
         <div style={{
-          fontSize: 11, color: probe.ok ? '#22c55e' : '#ef4444',
+          fontSize: 11, color: probe.ok ? '#2E8B62' : '#C0504D',
           display: 'flex', gap: 6, alignItems: 'flex-start',
         }}>
           {probe.ok ? <CheckCircle2 size={12} style={{ marginTop: 1 }} /> : <XCircle size={12} style={{ marginTop: 1 }} />}
@@ -670,10 +670,10 @@ function Banner({ tone, text }: { tone: 'warn'; text: string }) {
     <div role="status" style={{
       display: 'flex', gap: 8, alignItems: 'flex-start',
       padding: '12px 16px', borderRadius: 8,
-      background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+      background: 'rgba(183,121,31,0.08)', border: '1px solid rgba(183,121,31,0.25)',
       fontSize: 12, color: 'var(--text)', lineHeight: 1.55,
     }}>
-      <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1, color: '#f59e0b' }} aria-hidden="true" />
+      <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1, color: '#B7791F' }} aria-hidden="true" />
       <span>{text}</span>
     </div>
   )

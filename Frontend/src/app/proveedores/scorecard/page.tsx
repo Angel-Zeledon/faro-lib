@@ -19,7 +19,7 @@ import { StatusBadge, useMobileHeader } from '@/components/mobile'
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
+  red: '#C0504D', amber: '#B7791F', green: '#2E8B62', indigo: 'var(--accent)',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ function ScorecardCards({ rows, alerts }: {
         return (
           <li key={row.supplier} style={{ padding: '14px', borderRadius: 14, background: C.surface, border: `1px solid ${C.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, marginBottom: 12 }}>
-              <span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.supplier}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>{row.supplier}</span>
               {alert ? (
                 <StatusBadge tone={alert.severity === 'high' ? 'danger' : 'warning'} label={<><TrendingUp size={11} aria-hidden="true" /> +{alert.deviation_days}d</>} />
               ) : (
@@ -335,7 +335,7 @@ export default function SupplierScorecardPage() {
         <div role="alert" style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 14px', borderRadius: 8,
-          background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)',
+          background: 'rgba(192,80,77,0.07)', border: '1px solid rgba(192,80,77,0.2)',
           fontSize: 13, color: C.red,
         }}>
           <AlertTriangle size={13} style={{ flexShrink: 0 }} aria-hidden="true" /> {error}
@@ -353,7 +353,7 @@ export default function SupplierScorecardPage() {
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: 10,
               padding: '12px 16px', borderRadius: 10,
-              background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
+              background: 'rgba(183,121,31,0.08)', border: '1px solid rgba(183,121,31,0.3)',
             }}>
               <TrendingUp size={15} color={C.amber} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
               <div style={{ fontSize: 12, color: C.text, display: 'flex', flexDirection: 'column', gap: 4 }}>

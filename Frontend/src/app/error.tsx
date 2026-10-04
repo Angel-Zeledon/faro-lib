@@ -23,10 +23,10 @@ export default function GlobalError({
     }}>
       <div style={{
         width: 48, height: 48, borderRadius: 12,
-        background: 'rgba(239,68,68,0.1)',
+        background: 'rgba(192,80,77,0.1)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <AlertTriangle size={22} color="#ef4444" />
+        <AlertTriangle size={22} color="#C0504D" />
       </div>
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('states.err_unknown_title')}</div>

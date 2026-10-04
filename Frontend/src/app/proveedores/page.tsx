@@ -28,7 +28,7 @@ import {
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  green: '#22c55e', amber: '#f59e0b', red: '#ef4444', indigo: 'var(--accent)',
+  green: '#2E8B62', amber: '#B7791F', red: '#C0504D', indigo: 'var(--accent)',
 }
 
 // ── Lead-time learning ────────────────────────────────────────────────────────

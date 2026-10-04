@@ -14,12 +14,12 @@ export const DOCS_CSS = `
  --dc-code-bg: #F1F5F4;
 }
 [data-theme="dark"] {
- --dc-now: #f87171; --dc-now-bg: rgba(248,113,113,0.10); --dc-now-bd: rgba(248,113,113,0.30);
- --dc-soon: #fbbf24; --dc-soon-bg: rgba(251,191,36,0.10); --dc-soon-bd: rgba(251,191,36,0.30);
+ --dc-now: #D07878; --dc-now-bg: rgba(248,113,113,0.10); --dc-now-bd: rgba(248,113,113,0.30);
+ --dc-soon: #C99A3E; --dc-soon-bg: rgba(251,191,36,0.10); --dc-soon-bd: rgba(251,191,36,0.30);
  --dc-ok: #4ade80; --dc-ok-bg: rgba(74,222,128,0.10); --dc-ok-bd: rgba(74,222,128,0.28);
  --dc-over: #93b4ff; --dc-over-bg: rgba(147,180,255,0.10); --dc-over-bd: rgba(147,180,255,0.30);
  --dc-none: #93A8A6; --dc-none-bg: rgba(147,168,166,0.10); --dc-none-bd: rgba(147,168,166,0.28);
- --dc-warn-bg: rgba(245,158,11,0.08); --dc-warn-bd: rgba(245,158,11,0.30);
+ --dc-warn-bg: rgba(183,121,31,0.08); --dc-warn-bd: rgba(183,121,31,0.30);
  --dc-code-bg: #10201F;
 }
 

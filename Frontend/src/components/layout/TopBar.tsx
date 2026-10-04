@@ -221,7 +221,7 @@ export default function TopBar() {
         <h1 key={mobileTitle} className="mobile-title-enter" style={{
           flex: 1, minWidth: 0, margin: 0,
           fontSize: 17, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          overflow: 'hidden', overflowWrap: 'anywhere',
         }}>
           {mobileTitle}
         </h1>
@@ -274,7 +274,7 @@ export default function TopBar() {
                 textDecoration: 'none', color: 'inherit',
               }}
             >
-              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500, maxWidth: 180, overflow: 'hidden', overflowWrap: 'anywhere', }}>
                 {sessionLabel}
               </span>
               {grainLabel && (

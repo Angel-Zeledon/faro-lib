@@ -9,7 +9,7 @@ import { AlertTriangle } from 'lucide-react'
 import { useEntitlements } from '@/lib/entitlements'
 import { useLanguage } from '@/contexts/LanguageContext'
 
-const AMBER = '#f59e0b'
+const AMBER = '#B7791F'
 
 export default function ReadOnlyBanner() {
   const { readOnly } = useEntitlements()

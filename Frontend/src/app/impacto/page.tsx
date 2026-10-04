@@ -16,7 +16,7 @@ import { BottomSheet, MobileList, MobileCard } from '@/components/mobile'
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
+  red: '#C0504D', amber: '#B7791F', green: '#2E8B62', indigo: 'var(--accent)',
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -542,7 +542,7 @@ export default function ROIPage() {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 14px', borderRadius: 8,
-          background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)',
+          background: 'rgba(192,80,77,0.07)', border: '1px solid rgba(192,80,77,0.2)',
           fontSize: 13, color: C.red,
         }}>
           <AlertTriangle size={13} style={{ flexShrink: 0 }} /> {error}

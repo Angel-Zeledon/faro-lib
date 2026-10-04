@@ -14,8 +14,8 @@ import { Wordmark } from '@/components/brand/Wordmark'
 type Signal = 'now' | 'soon' | 'ok' | 'over'
 
 const SIGNAL_COLOR: Record<Signal, string> = {
-  now:  '#f87171',
-  soon: '#fbbf24',
+  now:  '#D07878',
+  soon: '#C99A3E',
   ok:   '#4ade80',
   over: '#93c5fd',
 }

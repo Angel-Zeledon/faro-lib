@@ -116,7 +116,7 @@ export default function ForgotPasswordPage() {
         width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 11, fontWeight: 700,
-        background: done ? '#22c55e' : active ? 'var(--accent)' : 'var(--surface)',
+        background: done ? '#2E8B62' : active ? 'var(--accent)' : 'var(--surface)',
         color: done || active ? '#fff' : 'var(--dim)',
         transition: 'all 0.2s',
       }}>
@@ -146,9 +146,9 @@ export default function ForgotPasswordPage() {
       {step !== 'done' && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
           <StepDot n={1} active={stepIdx === 0} done={stepIdx > 0} />
-          <div style={{ width: 24, height: 1, background: stepIdx > 0 ? '#22c55e' : 'var(--surface)', transition: 'background 0.2s' }} />
+          <div style={{ width: 24, height: 1, background: stepIdx > 0 ? '#2E8B62' : 'var(--surface)', transition: 'background 0.2s' }} />
           <StepDot n={2} active={stepIdx === 1} done={stepIdx > 1} />
-          <div style={{ width: 24, height: 1, background: stepIdx > 1 ? '#22c55e' : 'var(--surface)', transition: 'background 0.2s' }} />
+          <div style={{ width: 24, height: 1, background: stepIdx > 1 ? '#2E8B62' : 'var(--surface)', transition: 'background 0.2s' }} />
           <StepDot n={3} active={stepIdx === 2} done={stepIdx > 2} />
         </div>
       )}
@@ -158,7 +158,7 @@ export default function ForgotPasswordPage() {
         {/* ── Done ── */}
         {step === 'done' && (
           <div style={{ textAlign: 'center' }}>
-            <CheckCircle2 size={36} color="#22c55e" style={{ margin: '0 auto 12px' }} />
+            <CheckCircle2 size={36} color="#2E8B62" style={{ margin: '0 auto 12px' }} />
             <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px' }}>{t('auth.pw_updated')}</p>
             <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>{t('auth.redirecting_login')}</p>
           </div>
@@ -268,9 +268,9 @@ export default function ForgotPasswordPage() {
                   id="forgot-confirm-password" name="confirm_password"
                   type="password" required value={pw2} onChange={e => setPw2(e.target.value)}
                   placeholder={t('auth.confirm_password_placeholder')}
-                  style={{ ..._input, borderColor: pw2 && pw !== pw2 ? '#ef4444' : 'var(--surface)' }}
-                  onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : 'var(--accent)')}
-                  onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : 'var(--surface)')}
+                  style={{ ..._input, borderColor: pw2 && pw !== pw2 ? '#C0504D' : 'var(--surface)' }}
+                  onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#C0504D' : 'var(--accent)')}
+                  onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#C0504D' : 'var(--surface)')}
                 />
               </div>
               <PrimaryBtn loading={loading} label={t('auth.reset_password_btn')} loadingLabel={t('auth.saving')} />
@@ -287,8 +287,8 @@ function ErrorBox({ msg }: { msg: string }) {
     <div style={{
       display: 'flex', gap: 8, alignItems: 'center',
       padding: '10px 14px', borderRadius: 8, marginBottom: 14,
-      background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-      fontSize: 13, color: '#ef4444',
+      background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+      fontSize: 13, color: '#C0504D',
     }}>
       <AlertTriangle size={14} /> {msg}
     </div>

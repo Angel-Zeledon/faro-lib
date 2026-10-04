@@ -178,8 +178,8 @@ function ApiKeysTab() {
       )}
 
       {newKey && (
-        <div style={{ padding: '14px 16px', borderRadius: 8, background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.25)' }}>
-          <div style={{ fontSize: 12, color: '#22c55e', fontWeight: 600, marginBottom: 8 }}>
+        <div style={{ padding: '14px 16px', borderRadius: 8, background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.25)' }}>
+          <div style={{ fontSize: 12, color: '#2E8B62', fontWeight: 600, marginBottom: 8 }}>
             {t('settings.key_generated')}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -198,7 +198,7 @@ function ApiKeysTab() {
       )}
 
       {error && (
-        <div style={{ fontSize: 12, color: '#ef4444', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ fontSize: 12, color: '#C0504D', display: 'flex', gap: 6, alignItems: 'center' }}>
           <AlertTriangle size={13} />{error}
         </div>
       )}
@@ -325,7 +325,7 @@ function WebhooksTab() {
               style={{ width: '100%', fontSize: 12 }}
             />
             {url && !url.startsWith('https://') && (
-              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{t('settings.must_start_https')}</div>
+              <div style={{ fontSize: 11, color: '#C0504D', marginTop: 3 }}>{t('settings.must_start_https')}</div>
             )}
           </div>
           <div>
@@ -353,7 +353,7 @@ function WebhooksTab() {
       )}
 
       {error && (
-        <div style={{ fontSize: 12, color: '#ef4444', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ fontSize: 12, color: '#C0504D', display: 'flex', gap: 6, alignItems: 'center' }}>
           <AlertTriangle size={13} />{error}
         </div>
       )}
@@ -370,7 +370,7 @@ function WebhooksTab() {
           <tbody>
             {hooks.map(h => (
               <tr key={h.id}>
-                <td style={{ fontFamily: 'monospace', fontSize: 11, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.url}</td>
+                <td style={{ fontFamily: 'monospace', fontSize: 11, maxWidth: 220, overflow: 'hidden', overflowWrap: 'anywhere' }}>{h.url}</td>
                 <td style={{ fontSize: 11 }}>{h.events.map(e => webhookEventLabel(t, e)).join(', ')}</td>
                 <td style={{ fontSize: 11, color: 'var(--dim)' }}>{h.created_at.slice(0, 10)}</td>
                 <td>
@@ -552,7 +552,7 @@ function SchedulesTab() {
               </div>
             )}
             {error && (
-              <div role="alert" style={{ fontSize: 13, color: '#ef4444', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <div role="alert" style={{ fontSize: 13, color: '#C0504D', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                 <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />{error}
               </div>
             )}
@@ -737,7 +737,7 @@ function SchedulesTab() {
           )}
 
           {error && (
-            <div style={{ fontSize: 12, color: '#ef4444', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: '#C0504D', display: 'flex', gap: 6, alignItems: 'center' }}>
               <AlertTriangle size={13} />{error}
             </div>
           )}
@@ -751,7 +751,7 @@ function SchedulesTab() {
                 {t('settings.remove')}
               </Button>
             )}
-            {saved && <span style={{ fontSize: 12, color: '#22c55e', alignSelf: 'center' }}>{t('settings.saved')}</span>}
+            {saved && <span style={{ fontSize: 12, color: '#2E8B62', alignSelf: 'center' }}>{t('settings.saved')}</span>}
           </div>
         </Card>
       ) : (

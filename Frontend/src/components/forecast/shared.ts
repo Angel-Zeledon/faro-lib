@@ -6,11 +6,11 @@ import type { MetricRow, InventorySignal } from '@/lib/types'
 import type { Translate as TranslateFn } from '@/lib/modelLabel'
 
 export const SERIES_COLOR: Record<string, string> = {
-  stable:       '#22c55e',
+  stable:       '#2E8B62',
   seasonal:     'var(--accent)',
-  volatile:     '#f59e0b',
-  intermittent: '#f97316',
-  short:        '#06b6d4',
+  volatile:     '#B7791F',
+  intermittent: '#BF7440',
+  short:        '#3E8E9B',
   unknown:      '#64748b',
 }
 
@@ -91,10 +91,10 @@ export function fmtK(n: number | null | undefined) {
  *  never drift into disagreeing about the same SKU. */
 export function reliabilityInfo(qs: number, t: Translate): { label: string; color: string } {
   return qs >= 0.7
-    ? { label: t('skus.reliability_high'),   color: '#22c55e' }
+    ? { label: t('skus.reliability_high'),   color: '#2E8B62' }
     : qs >= 0.45
-    ? { label: t('skus.reliability_medium'), color: '#f59e0b' }
-    : { label: t('skus.reliability_low'),    color: '#ef4444' }
+    ? { label: t('skus.reliability_medium'), color: '#B7791F' }
+    : { label: t('skus.reliability_low'),    color: '#C0504D' }
 }
 
 // ── CSV Export ────────────────────────────────────────────────────────────────

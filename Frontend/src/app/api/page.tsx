@@ -405,7 +405,7 @@ function UsagePanel({ narrow }: { narrow: boolean }) {
               <ul style={{ listStyle: 'none', margin: '8px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {usage.by_key.map(k => (
                   <li key={k.api_key_id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 13 }}>
-                    <span style={{ color: 'var(--text)', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ color: 'var(--text)', fontWeight: 500, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', }}>
                       {k.name}
                     </span>
                     <span style={{ fontSize: 11, color: 'var(--dim)' }}>
@@ -970,7 +970,7 @@ export default function ApiDocsPage() {
                     </span>
                     <span style={{
                       fontFamily: MONO, fontSize: 11.5, overflow: 'hidden',
-                      textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      overflowWrap: 'anywhere',
                     }}>
                       {ep.path}
                     </span>
@@ -996,7 +996,7 @@ export default function ApiDocsPage() {
                   </span>
                   <span style={{
                     fontFamily: MONO, fontSize: 11.5, overflow: 'hidden',
-                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    overflowWrap: 'anywhere',
                   }}>
                     /mcp
                   </span>

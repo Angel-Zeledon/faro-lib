@@ -17,8 +17,8 @@ import { useLanguage } from '@/contexts/LanguageContext'
 const SEVERITY_RANK: Record<string, number> = { error: 0, warning: 1, info: 2 }
 
 function tone(severity: string) {
-  if (severity === 'error')   return { color: '#dc2626', bg: 'rgba(220,38,38,0.06)' }
-  if (severity === 'warning') return { color: '#d97706', bg: 'rgba(217,119,6,0.07)' }
+  if (severity === 'error')   return { color: '#B94A4A', bg: 'rgba(185,74,74,0.06)' }
+  if (severity === 'warning') return { color: '#A8701C', bg: 'rgba(217,119,6,0.07)' }
   return { color: '#0284c7', bg: 'rgba(2,132,199,0.06)' }
 }
 

@@ -299,11 +299,11 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
  return (
   <div style={{
    border:       `1px solid ${isApproved ? '#22c55e40' : isRejected ? 'var(--border)' : accent + '30'}`,
-   borderLeft:   `4px solid ${isApproved ? '#22c55e'  : isRejected ? 'var(--border)' : accent}`,
+   borderLeft:   `4px solid ${isApproved ? '#2E8B62'  : isRejected ? 'var(--border)' : accent}`,
    borderRadius: 10,
    padding:      '16px 18px',
    marginBottom: 10,
-   background:   isApproved ? 'rgba(34,197,94,0.03)' : isRejected ? 'var(--surface-2)' : 'var(--surface)',
+   background:   isApproved ? 'rgba(46,139,98,0.03)' : isRejected ? 'var(--surface-2)' : 'var(--surface)',
    opacity:      isRejected ? 0.5 : 1,
    // Explicit list, never `all`: `all` also animates padding and border-width,
    // so the card juddered while the "why" panel expanded underneath it. These
@@ -331,8 +331,8 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
       )}
       {isApproved && (
        <span style={{
-        fontSize: 10, fontWeight: 700, color: '#22c55e',
-        background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: 20,
+        fontSize: 10, fontWeight: 700, color: '#2E8B62',
+        background: 'rgba(46,139,98,0.1)', padding: '2px 8px', borderRadius: 20,
        }}>{t('hoy.badge_approved')}</span>
       )}
      </div>
@@ -575,7 +575,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
         <>
          <button onClick={onApprove} style={{
           all: 'unset', cursor: 'pointer', padding: '7px 16px', borderRadius: 8,
-          background: '#22c55e', color: '#fff', fontSize: 13, fontWeight: 700,
+          background: '#2E8B62', color: '#fff', fontSize: 13, fontWeight: 700,
           display: 'flex', alignItems: 'center', gap: 5,
          }}>
           {t('hoy.btn_approve')}
@@ -639,7 +639,7 @@ function SpikeCard({ s }: { s: DemandSpike }) {
       <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{s.display_name}</span>
       <span style={{
        fontSize: 11, fontWeight: 700, color: C.green,
-       background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: 20,
+       background: 'rgba(46,139,98,0.1)', padding: '2px 8px', borderRadius: 20,
       }}>+{s.uplift_pct}% {t('hoy.spike_projected')}</span>
      </div>
      <div style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
@@ -1713,7 +1713,7 @@ export default function HoyPage() {
           <div key={`${o.po_log_id}-${o.supplier}`} style={{
            display: 'flex', alignItems: 'center', gap: 10,
            padding: '12px 16px', borderRadius: 10,
-           background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)',
+           background: 'rgba(192,80,77,0.06)', border: '1px solid rgba(192,80,77,0.25)',
           }}>
            <AlertTriangle size={15} color={C.red} style={{ flexShrink: 0 }} />
            <span style={{ fontSize: 13, color: C.text, flex: 1 }}>
@@ -1932,14 +1932,14 @@ export default function HoyPage() {
         {approved.length > 0 && (
          <div className="cart-bar-enter" data-tour="hoy.cart" style={{
           position: 'sticky', bottom: 16,
-          background: 'var(--surface)', border: '1px solid rgba(34,197,94,0.4)',
+          background: 'var(--surface)', border: '1px solid rgba(46,139,98,0.4)',
           borderRadius: 12, padding: '14px 20px',
           boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', gap: 16,
           marginTop: 8,
          }}>
           <div style={{ flex: 1 }}>
-           <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>
+           <div style={{ fontSize: 13, fontWeight: 700, color: '#2E8B62' }}>
             {approved.length} {t('hoy.cart_products_approved')}
            </div>
            <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>
@@ -2019,7 +2019,7 @@ export default function HoyPage() {
           <button data-tour="hoy.download" onClick={downloadOC} disabled={submitting}
            aria-busy={submitting} style={{
            all: 'unset', cursor: submitting ? 'wait' : 'pointer', padding: '10px 20px', borderRadius: 8,
-           background: '#22c55e', color: '#fff', fontSize: 14, fontWeight: 700,
+           background: '#2E8B62', color: '#fff', fontSize: 14, fontWeight: 700,
            display: 'flex', alignItems: 'center', gap: 8, opacity: submitting ? 0.6 : 1,
           }}>
            {submitting ? t('hoy.btn_download_po_busy') : t('hoy.btn_download_po')}
@@ -2145,7 +2145,7 @@ export default function HoyPage() {
         && optimization.needs_stock!.length !== uncounted && (
        <section style={{
         marginTop: 32, padding: '12px 14px', borderRadius: 10,
-        border: '1px solid var(--border)', borderLeft: '4px solid #f59e0b',
+        border: '1px solid var(--border)', borderLeft: '4px solid #B7791F',
        }}>
         <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
          {t('hoy.needs_stock_title').replace('{count}', String(optimization.needs_stock!.length))}
@@ -2377,7 +2377,7 @@ export default function HoyPage() {
           {t('hoy.section_capital_opportunities')}
          </h2>
          <div style={{
-          background: 'rgba(59,130,246,0.05)', border: `1px solid ${C.blue}33`,
+          background: 'rgba(79,127,181,0.05)', border: `1px solid ${C.blue}33`,
           borderRadius: 10, padding: '16px 20px',
          }}>
           <p style={{ fontSize: 14, color: C.text, margin: '0 0 16px' }}>
@@ -2507,7 +2507,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
        carries the link, so the card only appears when its number differs. */}
    {optimization && (optimization.needs_stock?.length ?? 0) > 0
      && optimization.needs_stock!.length !== (briefing.kpis?.sin_datos ?? 0) && (
-    <section style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${C.border}`, borderLeft: '4px solid #f59e0b', background: C.surface }}>
+    <section style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${C.border}`, borderLeft: '4px solid #B7791F', background: C.surface }}>
      <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: C.text }}>
       {t('hoy.needs_stock_title').replace('{count}', String(optimization.needs_stock!.length))}
      </h3>
@@ -2600,7 +2600,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
         <li key={item.sku} style={first(idx)}>
          {up ? <TrendingUp size={17} color={C.green} aria-hidden="true" /> : <TrendingDown size={17} color={C.red} aria-hidden="true" />}
          <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>
            {item.display_name || item.sku}
           </span>
           <span style={{ display: 'block', fontSize: 12, color: C.dim }}>
@@ -2644,7 +2644,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
       {briefing.overstocked.slice(0, 3).map((item, idx) => (
        <li key={item.sku} style={first(idx)}>
         <span style={{ flex: 1, minWidth: 0 }}>
-         <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+         <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>
           {item.display_name || item.sku}
          </span>
          {item.coverage_days != null && (

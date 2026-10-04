@@ -44,10 +44,10 @@ const PERM_LABEL_KEY: Record<string, string> = {
 }
 
 const STATUS_META: Record<string, { labelKey: string; color: string; bg: string }> = {
-  active:               { labelKey: 'users.status_active',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
-  pending_confirmation: { labelKey: 'users.status_pending',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+  active:               { labelKey: 'users.status_active',    color: '#2E8B62', bg: 'rgba(46,139,98,0.1)'  },
+  pending_confirmation: { labelKey: 'users.status_pending',   color: '#B7791F', bg: 'rgba(183,121,31,0.1)' },
   inactive:             { labelKey: 'users.status_inactive',  color: 'var(--dim)', bg: 'rgba(100,116,139,0.1)'},
-  suspended:            { labelKey: 'users.status_suspended', color: '#ef4444', bg: 'rgba(239,68,68,0.1)'  },
+  suspended:            { labelKey: 'users.status_suspended', color: '#C0504D', bg: 'rgba(192,80,77,0.1)'  },
 }
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function RoleBadge({ role }: { role: string }) {
   const { t } = useLanguage()
-  const color = role === 'admin' ? 'var(--accent)' : role === 'analyst' ? '#06b6d4' : 'var(--muted)'
+  const color = role === 'admin' ? 'var(--accent)' : role === 'analyst' ? '#3E8E9B' : 'var(--muted)'
   return (
     <span style={{
       display: 'inline-block', padding: '2px 8px', borderRadius: 99,
@@ -189,8 +189,8 @@ function UserFormModal({
         <div style={{
           display: 'flex', gap: 8, alignItems: 'center',
           padding: '9px 12px', borderRadius: 8, marginBottom: 16,
-          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-          fontSize: 12, color: '#ef4444',
+          background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+          fontSize: 12, color: '#C0504D',
         }}>
           <AlertTriangle size={12} /> {error}
         </div>
@@ -210,7 +210,7 @@ function UserFormModal({
           />
         </Field>
         <Field
-          label={<>{t('users.email_address')} {isCreate && <span style={{ color: '#ef4444' }}>*</span>}</>}
+          label={<>{t('users.email_address')} {isCreate && <span style={{ color: '#C0504D' }}>*</span>}</>}
           htmlFor="user-email"
           labelStyle={MODAL_LABEL_STYLE}
         >
@@ -221,7 +221,7 @@ function UserFormModal({
             placeholder={t('users.email_placeholder')}
           />
           {!isCreate && email !== target?.email && (
-            <p style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+            <p style={{ fontSize: 11, color: '#B7791F', marginTop: 4 }}>
               {t('users.email_reverify')}
             </p>
           )}
@@ -303,10 +303,10 @@ function DeleteModal({
       <div style={{ textAlign: 'center' }}>
         <div style={{
           width: 48, height: 48, borderRadius: 12, margin: '0 auto 16px',
-          background: 'rgba(239,68,68,0.1)',
+          background: 'rgba(192,80,77,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Trash2 size={20} color="#ef4444" />
+          <Trash2 size={20} color="#C0504D" />
         </div>
         <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>
           {t('users.delete_user_q')}
@@ -321,8 +321,8 @@ function DeleteModal({
         {error && (
           <div style={{
             padding: '9px 12px', borderRadius: 8, marginBottom: 14,
-            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-            fontSize: 12, color: '#ef4444',
+            background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+            fontSize: 12, color: '#C0504D',
           }}>
             {error}
           </div>
@@ -336,7 +336,7 @@ function DeleteModal({
           </button>
           <button onClick={handleDelete} disabled={loading} style={{
             padding: '8px 20px', borderRadius: 7, border: 'none',
-            background: loading ? '#7f1d1d' : '#ef4444', color: '#fff',
+            background: loading ? '#7f1d1d' : '#C0504D', color: '#fff',
             fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
@@ -368,7 +368,7 @@ function ResendButton({ userId, email }: { userId: string; email: string }) {
     }
   }
 
-  const color = state === 'sent' ? '#22c55e' : state === 'error' ? '#ef4444' : '#f59e0b'
+  const color = state === 'sent' ? '#2E8B62' : state === 'error' ? '#C0504D' : '#B7791F'
   const title = state === 'sent' ? `${t('users.resend_sent_prefix')} ${email}` : state === 'error' ? t('users.resend_failed') : t('users.resend_title')
 
   return (
@@ -441,8 +441,8 @@ function StatusDropdown({
       {error && (
         <div style={{
           position: 'absolute', top: '100%', right: 0, marginTop: 4,
-          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-          borderRadius: 6, padding: '4px 8px', fontSize: 11, color: '#ef4444',
+          background: 'rgba(192,80,77,0.1)', border: '1px solid rgba(192,80,77,0.3)',
+          borderRadius: 6, padding: '4px 8px', fontSize: 11, color: '#C0504D',
           whiteSpace: 'nowrap', zIndex: 10,
         }}>
           {error}
@@ -518,7 +518,7 @@ export default function UsersPage() {
   if (currentUser?.role !== 'admin') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12 }}>
-        <XCircle size={32} color="#ef4444" />
+        <XCircle size={32} color="#C0504D" />
         <p style={{ fontSize: 14, color: 'var(--dim)' }}>{t('users.no_permission')}</p>
       </div>
     )
@@ -635,8 +635,8 @@ export default function UsersPage() {
       {loadError && (
         <div style={{
           marginBottom: 12, padding: '10px 16px', borderRadius: 8,
-          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-          color: '#ef4444', fontSize: 13,
+          background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+          color: '#C0504D', fontSize: 13,
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <AlertTriangle size={14} />

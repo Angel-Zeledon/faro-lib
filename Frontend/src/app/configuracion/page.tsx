@@ -128,7 +128,7 @@ export default function SettingsHubPage() {
         <Avatar size={46} onPetrol />
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 16, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 16, fontWeight: 650, overflow: 'hidden', overflowWrap: 'anywhere', }}>
               {name || t('nav.account')}
             </span>
             {user && (

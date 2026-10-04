@@ -162,8 +162,8 @@ export default function TrialPage() {
             <div role="alert" style={{
               display: 'flex', flexDirection: 'column', gap: 10,
               padding: '10px 12px', borderRadius: 10, marginBottom: 20,
-              background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)',
-              fontSize: 13, color: '#dc2626',
+              background: 'rgba(185,74,74,0.04)', border: '1px solid rgba(185,74,74,0.15)',
+              fontSize: 13, color: '#B94A4A',
             }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <AlertTriangle size={13} style={{ flexShrink: 0 }} />
@@ -209,10 +209,10 @@ export default function TrialPage() {
 
               <div role="note" style={{
                 display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', borderRadius: 11,
-                background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
+                background: 'rgba(183,121,31,0.08)', border: '1px solid rgba(183,121,31,0.35)',
               }}>
                 <div style={{ display: 'flex', gap: 9 }}>
-                  <ShieldAlert size={16} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <ShieldAlert size={16} color="#A8701C" style={{ flexShrink: 0, marginTop: 1 }} />
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--a-ink)', marginBottom: 3 }}>
                       {t('trial.save_warning_title')}

@@ -14,7 +14,7 @@ import { Check, Copy, MessageCircle, Smartphone } from 'lucide-react'
 
 const C = {
   border: 'var(--border)', text: 'var(--text)', dim: 'var(--dim)',
-  green: '#22c55e', red: '#ef4444',
+  green: '#2E8B62', red: '#C0504D',
 }
 
 const btn: React.CSSProperties = {

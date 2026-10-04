@@ -783,7 +783,7 @@ const DEV_CSS = `
 }
 [data-theme="dark"] .dv {
  --dv-indigo: #8B87FF; --dv-coral: #FF7A70; --dv-gold: #F2B84B; --dv-violet: #C084FC; --dv-teal: #3CC7B8;
- --dv-get: #4ADE80; --dv-post: #FBBF24; --dv-put: #60A5FA; --dv-patch: #C084FC; --dv-delete: #F87171;
+ --dv-get: #4ADE80; --dv-post: #C99A3E; --dv-put: #60A5FA; --dv-patch: #C084FC; --dv-delete: #D07878;
  --dv-mesh-a: rgba(60,199,184,0.14); --dv-mesh-b: rgba(139,135,255,0.12); --dv-mesh-c: rgba(255,122,112,0.07);
 }
 .dv code, .dv pre, .dv kbd { font-family: var(--font-mono); }
@@ -796,7 +796,7 @@ const DEV_CSS = `
 .dv-mp.is-sm { font-size: 10.5px; min-width: 42px; padding: 4px 5px; border-radius: 5px; }
 .dv-mp.m-POST { --m: var(--dv-post); } .dv-mp.m-PUT { --m: var(--dv-put); } .dv-mp.m-PATCH { --m: var(--dv-patch); } .dv-mp.m-DELETE { --m: var(--dv-delete); }
 /* On the always-dark surfaces the bright set reads; the light set would not. */
-.dv-hero-req .dv-mp, .dv-reqbar .dv-mp { --dv-get: #4ADE80; --dv-post: #FBBF24; --dv-put: #60A5FA; --dv-patch: #C084FC; --dv-delete: #F87171; }
+.dv-hero-req .dv-mp, .dv-reqbar .dv-mp { --dv-get: #4ADE80; --dv-post: #C99A3E; --dv-put: #60A5FA; --dv-patch: #C084FC; --dv-delete: #D07878; }
 
 /* ── Hero ── */
 .dv-hero { position: relative; padding: 120px 0 72px; overflow: hidden; isolation: isolate; border-bottom: 1px solid var(--lp-border); background: var(--lp-bg); }

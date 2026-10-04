@@ -82,7 +82,7 @@ function LimitRow({ name, used, max, unlimitedLabel, usageLabel }: {
   // down a tier, or a limit lowered by hand, keeps the rows it already had. A
   // bar past 100% would render outside its track and read as a rendering bug.
   const pct = unlimited || max === 0 ? 0 : Math.min(100, Math.round((used / max) * 100))
-  const tone = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f59e0b' : 'var(--accent)'
+  const tone = pct >= 100 ? '#C0504D' : pct >= 80 ? '#B7791F' : 'var(--accent)'
 
   return (
     <div>

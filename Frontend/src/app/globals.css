@@ -46,10 +46,10 @@
     --text:          #16262A;
     --muted:         #465A5D;
     --dim:           #7A8D8F;
-    --success:       #16a34a;
-    --warning:       #d97706;
-    --danger:        #dc2626;
-    --info:          #0284c7;
+    --success:       #2F855A;
+    --warning:       #A8701C;
+    --danger:        #B94A4A;
+    --info:          #3B7EA1;
 
     /* Semáforo — unchanged values (see the dark-theme block for the rationale);
        these are data colors, already tuned to >=4.5:1 on their tinted badges. */
@@ -59,8 +59,8 @@
     --signal-order-soon-bg:  rgba(161,98,7,0.10);
     --signal-ok-fg:            #15803d;   /* 4.9:1 on white */
     --signal-ok-bg:            rgba(21,128,61,0.10);
-    --signal-overstock-fg:    #1d4ed8;   /* 7.0:1 on white */
-    --signal-overstock-bg:    rgba(29,78,216,0.10);
+    --signal-overstock-fg:    #2F5FA8;   /* 7.0:1 on white */
+    --signal-overstock-bg:    rgba(47,95,168,0.10);
     --signal-sin-datos-fg:     #475569;   /* 7.4:1 on white */
     --signal-sin-datos-bg:     rgba(71,85,105,0.10);
   }
@@ -80,23 +80,23 @@
     --text:          #E3EBEA;
     --muted:         #93A8A6;
     --dim:           #62797B;
-    --success:       #22c55e;
-    --warning:       #f59e0b;
-    --danger:        #ef4444;
-    --info:          #0ea5e9;
+    --success:       #4FB286;
+    --warning:       #D4A24A;
+    --danger:        #D87474;
+    --info:          #6AA9C9;
 
     /* Semáforo (feature 2.8) — foreground tones tuned for >=4.5:1 contrast
        against their own tinted badge background on this theme's surface.
        Never use the raw --danger/--warning tokens for badge *text*: they are
        accent colours, not text colours, and fail WCAG AA on light surfaces. */
-    --signal-order-now-fg:      #ef4444;
-    --signal-order-now-bg:      rgba(239,68,68,0.14);
-    --signal-order-soon-fg:  #f59e0b;
-    --signal-order-soon-bg:  rgba(245,158,11,0.14);
-    --signal-ok-fg:            #22c55e;
-    --signal-ok-bg:            rgba(34,197,94,0.14);
-    --signal-overstock-fg:    #60a5fa;
-    --signal-overstock-bg:    rgba(96,165,250,0.14);
+    --signal-order-now-fg:      #E08A8A;
+    --signal-order-now-bg:      rgba(224,138,138,0.14);
+    --signal-order-soon-fg:  #D9AE5E;
+    --signal-order-soon-bg:  rgba(217,174,94,0.14);
+    --signal-ok-fg:            #6CC49B;
+    --signal-ok-bg:            rgba(108,196,155,0.14);
+    --signal-overstock-fg:    #86B0E0;
+    --signal-overstock-bg:    rgba(134,176,224,0.14);
     --signal-sin-datos-fg:     #94a3b8;
     --signal-sin-datos-bg:     rgba(148,163,184,0.14);
   }

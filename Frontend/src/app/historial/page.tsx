@@ -28,11 +28,11 @@ const C = {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  COMPLETED: { bg: 'rgba(16,185,129,0.12)', fg: '#10b981' },
-  FAILED:    { bg: 'rgba(239,68,68,0.12)',  fg: '#ef4444' },
-  CANCELLED: { bg: 'rgba(239,68,68,0.08)',  fg: '#f87171' },
-  RUNNING:   { bg: 'rgba(245,158,11,0.12)', fg: '#f59e0b' },
-  QUEUED:    { bg: 'rgba(245,158,11,0.08)', fg: '#f59e0b' },
+  COMPLETED: { bg: 'rgba(16,185,129,0.12)', fg: '#2E8B62' },
+  FAILED:    { bg: 'rgba(192,80,77,0.12)',  fg: '#C0504D' },
+  CANCELLED: { bg: 'rgba(192,80,77,0.08)',  fg: '#D07878' },
+  RUNNING:   { bg: 'rgba(183,121,31,0.12)', fg: '#B7791F' },
+  QUEUED:    { bg: 'rgba(183,121,31,0.08)', fg: '#B7791F' },
 }
 const DEFAULT_STATUS_COLOR = { bg: 'rgba(148,163,184,0.12)', fg: 'var(--dim)' }
 
@@ -247,7 +247,7 @@ export default function SessionsHistoryPage() {
                             }}
                           />
                           <button onClick={saveRename} disabled={saving}
-                                  title={t('sessions.rename_save')} style={{ ...iconBtnStyle, color: '#10b981' }}>
+                                  title={t('sessions.rename_save')} style={{ ...iconBtnStyle, color: '#2E8B62' }}>
                             <Check size={14} />
                           </button>
                           <button onClick={cancelRename} disabled={saving}
@@ -311,7 +311,7 @@ export default function SessionsHistoryPage() {
                               : t('sessions.delete_action')}
                             style={{
                               ...iconBtnStyle,
-                              color: s.status === 'RUNNING' ? 'var(--dim)' : '#ef4444',
+                              color: s.status === 'RUNNING' ? 'var(--dim)' : '#C0504D',
                               opacity: s.status === 'RUNNING' ? 0.4 : 1,
                               cursor: s.status === 'RUNNING' ? 'not-allowed' : 'pointer',
                             }}

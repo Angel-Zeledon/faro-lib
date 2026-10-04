@@ -128,14 +128,14 @@ export function MobileCard({
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           <span style={{
             fontSize: 15, fontWeight: 600, color: 'var(--text)', minWidth: 0,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            overflow: 'hidden', overflowWrap: 'anywhere',
           }}>{title}</span>
           {status && <StatusBadge label={status.label} tone={status.tone} />}
         </span>
         {subtitle && (
           <span style={{
             fontSize: 13, color: 'var(--muted)', lineHeight: 1.35,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            overflow: 'hidden', overflowWrap: 'anywhere',
           }}>{subtitle}</span>
         )}
         {children && <span style={{ display: 'block', marginTop: 4 }}>{children}</span>}

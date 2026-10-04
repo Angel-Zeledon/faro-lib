@@ -17,7 +17,7 @@ import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', green: '#22c55e',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', green: '#2E8B62',
 }
 
 export function TransferSuggestions({ suggestions, canApprove }: {

@@ -23,9 +23,9 @@ import type {
 } from '@/lib/stockSetupTypes'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
-const RED   = '#ef4444'
-const AMBER = '#f59e0b'
-const GREEN = '#22c55e'
+const RED   = '#C0504D'
+const AMBER = '#B7791F'
+const GREEN = '#2E8B62'
 
 const EXCEL_RE = /\.(xlsx|xlsm|xls)$/i
 

@@ -73,7 +73,7 @@ function ChatItem({
         <span style={{
           fontSize: 12, fontWeight: active ? 600 : 400,
           color: active ? 'var(--text)' : 'var(--muted)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          overflow: 'hidden', overflowWrap: 'anywhere',
           flex: 1,
         }}>
           {chat.title}
@@ -83,7 +83,7 @@ function ChatItem({
       {chat.last_message_preview && (
         <div style={{
           fontSize: 11, color: 'var(--dim)', overflow: 'hidden',
-          textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          overflowWrap: 'anywhere',
           paddingLeft: 17,
         }}>
           {chat.last_message_preview}
@@ -109,11 +109,11 @@ function ChatItem({
             style={{
               all: 'unset', width: 22, height: 22, borderRadius: 4, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: chat.is_favorite ? '#f59e0b' : 'var(--dim)',
+              color: chat.is_favorite ? '#B7791F' : 'var(--dim)',
               background: 'var(--surface)',
             }}
           >
-            <Star size={11} fill={chat.is_favorite ? '#f59e0b' : 'none'} />
+            <Star size={11} fill={chat.is_favorite ? '#B7791F' : 'none'} />
           </button>
           {confirmDel ? (
             <button
@@ -122,7 +122,7 @@ function ChatItem({
               style={{
                 all: 'unset', width: 22, height: 22, borderRadius: 4, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: '#ef444420', color: '#ef4444',
+                background: '#ef444420', color: '#C0504D',
               }}
             >
               <Trash2 size={11} />
@@ -569,7 +569,7 @@ export default function AnalystPage() {
           {/* Chat list */}
           <div data-tour="an.chats" style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
             {chatsError ? (
-              <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: '#ef4444' }}>
+              <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: '#C0504D' }}>
                 {chatsError}
               </div>
             ) : chats.length === 0 ? (
@@ -644,7 +644,7 @@ export default function AnalystPage() {
               background: 'var(--surface-2)', border: '1px solid var(--border)',
               fontSize: 12, color: 'var(--text)', lineHeight: 1.55, flexShrink: 0,
             }}>
-              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: '#f59e0b' }} aria-hidden="true" />
+              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: '#B7791F' }} aria-hidden="true" />
               <span>{t('analyst.unavailable_banner')}</span>
             </div>
           )}
@@ -664,7 +664,7 @@ export default function AnalystPage() {
                 background: 'var(--surface)', flexShrink: 0,
               }}>
                 <MessageSquare size={14} color="var(--accent)" />
-                <span style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: 'hidden', overflowWrap: 'anywhere', }}>
                   {activeChat?.title ?? t('analyst.chat_fallback_title')}
                 </span>
 
@@ -703,7 +703,7 @@ export default function AnalystPage() {
                     flex: 1, display: 'flex', flexDirection: 'column',
                     alignItems: 'center', justifyContent: 'center', gap: 12, textAlign: 'center',
                   }}>
-                    <AlertTriangle size={28} color="#ef4444" style={{ opacity: 0.8 }} />
+                    <AlertTriangle size={28} color="#C0504D" style={{ opacity: 0.8 }} />
                     <div style={{ fontSize: 13, color: 'var(--text)', maxWidth: 360 }}>{msgsError}</div>
                     <button
                       onClick={() => activeChatId && loadMessages(activeChatId)}

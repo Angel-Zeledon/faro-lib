@@ -65,7 +65,7 @@ export default function SocialCallbackPage() {
         </div>
         {error ? (
           <>
-            <XCircle size={30} color="#dc2626" style={{ marginBottom: 12 }} aria-hidden="true" />
+            <XCircle size={30} color="#B94A4A" style={{ marginBottom: 12 }} aria-hidden="true" />
             <h1 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>
               {t('auth.social_callback_failed_title')}
             </h1>

@@ -26,8 +26,8 @@ import type { InventoryStock } from '@/lib/types'
 import { fmtNum } from '@/lib/numberLocale'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
-const GREEN = '#22c55e'
-const AMBER = '#f59e0b'
+const GREEN = '#2E8B62'
+const AMBER = '#B7791F'
 
 type RowState = {
   stock: string; cost: string; lead: string
@@ -235,11 +235,11 @@ export default function SetupGapsPanel({
             return (
               <li key={item.sku} style={{
                 borderTop: '1px solid var(--border)', padding: '14px',
-                background: withinTarget ? 'rgba(34,197,94,0.05)' : 'transparent',
+                background: withinTarget ? 'rgba(46,139,98,0.05)' : 'transparent',
               }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
                   <span style={{ fontSize: 13, color: 'var(--dim)', flexShrink: 0 }}>{item.rank}.</span>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
                     {item.display_name || item.sku}
                   </span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: withinTarget ? GREEN : 'var(--dim)', flexShrink: 0 }}
@@ -290,7 +290,7 @@ export default function SetupGapsPanel({
                   </div>
                 )}
                 {state.failed && (
-                  <div role="alert" style={{ color: '#ef4444', fontSize: 12.5, marginTop: 6 }}>
+                  <div role="alert" style={{ color: '#C0504D', fontSize: 12.5, marginTop: 6 }}>
                     {c('setupStock.gaps.save_error')}
                   </div>
                 )}
@@ -350,7 +350,7 @@ export default function SetupGapsPanel({
                 return (
                   <tr key={item.sku} style={{
                     borderTop: '1px solid var(--border)',
-                    background: withinTarget ? 'rgba(34,197,94,0.05)' : 'transparent',
+                    background: withinTarget ? 'rgba(46,139,98,0.05)' : 'transparent',
                   }}>
                     <td style={{ padding: '7px 8px', color: 'var(--dim)' }}>{item.rank}</td>
                     <td style={{ padding: '7px 8px' }}>
@@ -431,7 +431,7 @@ export default function SetupGapsPanel({
                         </div>
                       )}
                       {state.failed && (
-                        <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>
+                        <div style={{ color: '#C0504D', fontSize: 11, marginTop: 3 }}>
                           {c('setupStock.gaps.save_error')}
                         </div>
                       )}

@@ -59,7 +59,7 @@ export default function MobileTabBar() {
   })
 
   const label = (key: string) => (
-    <span style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>{t(key)}</span>
+    <span style={{ maxWidth: '100%', overflow: 'hidden', overflowWrap: 'anywhere', padding: '0 2px' }}>{t(key)}</span>
   )
 
   return (

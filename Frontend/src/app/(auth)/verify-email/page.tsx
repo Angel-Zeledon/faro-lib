@@ -66,7 +66,7 @@ function VerifyEmailContent() {
         )}
         {status === 'ok' && (
           <>
-            <CheckCircle2 size={36} color="#22c55e" style={{ margin: '0 auto 12px' }} />
+            <CheckCircle2 size={36} color="#2E8B62" style={{ margin: '0 auto 12px' }} />
             <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>{t('auth.verify_ok_title')}</h2>
             <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 24px' }}>{message}</p>
             <Link href="/login" style={{
@@ -78,12 +78,12 @@ function VerifyEmailContent() {
         )}
         {status === 'error' && (
           <>
-            <XCircle size={36} color="#ef4444" style={{ margin: '0 auto 12px' }} />
+            <XCircle size={36} color="#C0504D" style={{ margin: '0 auto 12px' }} />
             <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>{t('auth.verify_failed_title')}</h2>
             <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 20px' }}>{message}</p>
 
             {resentNote ? (
-              <p style={{ fontSize: 13, color: '#22c55e', margin: '0 0 22px' }}>{resentNote}</p>
+              <p style={{ fontSize: 13, color: '#2E8B62', margin: '0 0 22px' }}>{resentNote}</p>
             ) : (
               <form onSubmit={handleResend} style={{ margin: '0 0 22px', textAlign: 'left' }}>
                 <label htmlFor="resend-email" style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 7 }}>
