@@ -24,6 +24,7 @@
  * views cannot record different things.
  */
 import { useEffect, useState } from 'react'
+import BulkImportButton from '@/components/inventory/BulkImportButton'
 import { ClipboardList, Truck, ShoppingCart, Plus, Package, RefreshCw } from 'lucide-react'
 import type {
   POLogEntry, POItemLine, SupplierContactHealthRow, SupplierLeadTimeAlert,
@@ -175,6 +176,12 @@ export default function PedidosMobile(props: PedidosMobileProps) {
             </p>
           )}
         </>
+      )}
+
+      {canEdit && view !== 'transfers' && (
+        <div style={{ marginTop: 12 }}>
+          <BulkImportButton kind="orders" onImported={onChanged} />
+        </div>
       )}
 
       {canEdit && view !== 'transfers' && (
