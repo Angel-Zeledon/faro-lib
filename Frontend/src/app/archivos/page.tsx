@@ -53,7 +53,7 @@ function MobileRecordCards({ columns, rows, label }: { columns: string[]; rows: 
    display: 'grid', gridTemplateColumns: 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: '3px 10px', fontSize: 13 }}>
   {columns.map(c => (
    <div key={c} style={{ display: 'contents' }}>
-   <span style={{ color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c}</span>
+   <span style={{ color: C.muted, overflow: 'hidden', overflowWrap: 'anywhere', }}>{c}</span>
    <span style={{ color: C.text, fontFamily: MONO, fontSize: 12.5, overflowWrap: 'anywhere' }}>
     {row[c] == null ? <span style={{ color: C.muted, fontStyle: 'italic' }}>null</span> : String(row[c])}
    </span>
@@ -83,10 +83,10 @@ const alpha = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, tran
 /**
  * Tokens only.
  *
- * This screen used to carry its own hex set — #10b981 green, #3b82f6 blue,
- * #ef4444 red, #f59e0b amber — which did two bad things at once: it read as a
+ * This screen used to carry its own hex set — #2E8B62 green, #4F7FB5 blue,
+ * #C0504D red, #B7791F amber — which did two bad things at once: it read as a
  * different product from the rest of StockAI (the app's accent is the petrol teal
- * `--accent`, not an emerald), and it failed WCAG AA as text. #10b981 on the
+ * `--accent`, not an emerald), and it failed WCAG AA as text. #2E8B62 on the
  * white surface is 2.5:1, and it was the colour of the active tab label, the
  * "connected" badge and the SKU column. Everything now points at globals.css,
  * so the screen follows the theme instead of fighting it.
@@ -274,10 +274,10 @@ function DataGrid({ columns, rows }: { columns: string[]; rows: Record<string, u
  onMouseEnter={e => (e.currentTarget.style.background = C.inset)}
  onMouseLeave={e => (e.currentTarget.style.background = gridRowBg(i))}>
  {columns.map(c => (
- <td key={c} style={{ padding: '5px 12px', color: C.text, whiteSpace: 'nowrap',
+ <td key={c} style={{ padding: '5px 12px', color: C.text,
  fontFamily: MONO, fontSize: 11.5, lineHeight: 1.7,
  textAlign: alignOf.get(c), borderBottom: `1px solid ${C.border}`, maxWidth: 260,
- overflow: 'hidden', textOverflow: 'ellipsis' }}>
+ overflow: 'hidden', overflowWrap: 'anywhere' }}>
  {/* NULL is a value, not missing text — italic dim is the convention every
      database client uses, and it keeps it from reading as the literal string
      "null". Italic carries the distinction; the colour stays `--muted` rather
@@ -712,7 +712,7 @@ const TD_NUM: React.CSSProperties = { ...TD, fontFamily: MONO, fontSize: 11.5, t
  * A classification's colour, carried by a dot instead of by the word itself.
  *
  * The words used to be tinted directly, which is where the contrast went: amber
- * on the light surface is 3.2:1 and the old #f59e0b was 2.2:1. A 6px dot is a
+ * on the light surface is 3.2:1 and the old #B7791F was 2.2:1. A 6px dot is a
  * non-text UI component (3:1), the label rides `--text`, and the signal is
  * identical — this is the same move the status badge makes.
  */
@@ -1068,7 +1068,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
 
  {/* Stat panels */}
  <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'minmax(0, 1fr)' : 'repeat(4, 1fr)', gap: 10 }}>
-                 {/* Four panels, four different title colours — one of which (#f59e0b) was
+                 {/* Four panels, four different title colours — one of which (#B7791F) was
      2.2:1 on white. The colour moves to a 2px rule under the caption, where
      it still tells the panels apart but no longer has to be legible type. */}
  {panels.map(p => (
@@ -1082,7 +1082,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  alignItems: 'baseline', marginBottom: 5, gap: 8 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{label}</span>
  <span style={{ color: C.text, fontSize: narrow ? 13 : 11, fontWeight: 600, fontFamily: MONO,
- maxWidth: narrow ? '60%' : 96, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
+ maxWidth: narrow ? '60%' : 96, overflow: 'hidden', overflowWrap: 'anywhere', textAlign: 'right' }}>
  {String(val)}
  </span>
  </div>
@@ -1466,7 +1466,7 @@ function DatasetEditorPanel({ source, onCreated }: {
       {columns.map(c => (
        <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, borderRadius: 999,
         border: `1px solid ${C.border2}`, background: C.surface, paddingLeft: 12, maxWidth: '100%' }}>
-        <span style={{ fontFamily: MONO, fontSize: 13, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c}</span>
+        <span style={{ fontFamily: MONO, fontSize: 13, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>{c}</span>
         <button onClick={() => renameColumn(c)} aria-label={`${t('data.editor_rename_column')}: ${c}`}
          style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
          <Edit2 size={14} aria-hidden="true" />
@@ -1492,7 +1492,7 @@ function DatasetEditorPanel({ source, onCreated }: {
        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8 }}>
         {columns.map(c => (
          <label key={c} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-          <span style={{ fontSize: 12, color: C.muted, fontFamily: MONO, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c}</span>
+          <span style={{ fontSize: 12, color: C.muted, fontFamily: MONO, overflow: 'hidden', overflowWrap: 'anywhere', }}>{c}</span>
           <input value={row[c] == null ? '' : String(row[c])} name={`m-cell-${ri}-${c}`}
            onChange={e => setCell(ri, c, e.target.value)} style={{ ...M_FIELD, fontFamily: MONO }} />
          </label>
@@ -1714,7 +1714,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
  <h2 style={{ margin: 0, color: C.text, fontSize: 18, fontWeight: 700,
  letterSpacing: '-0.015em',
- overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+ overflow: 'hidden', overflowWrap: 'anywhere', }}>
  {source.name}
  </h2>
  <button onClick={() => setEditName(true)} aria-label={t('data.field_source_name')}
@@ -1730,13 +1730,13 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  <StatusBadge status={source.connection_status} />
  {source.original_filename && (
  <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO,
- overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+ overflow: 'hidden', overflowWrap: 'anywhere', }}>
  {source.original_filename}
  </span>
  )}
  {source.sql_config && (
  <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO,
- overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+ overflow: 'hidden', overflowWrap: 'anywhere', }}>
  {source.sql_config.host}:{source.sql_config.port}/{source.sql_config.database}
  </span>
  )}
@@ -2064,7 +2064,7 @@ function NewSourcePanel({ onCreated, onCancel }:
  background: C.greenDim, border: `1px solid ${alpha(C.green, 35)}`, borderRadius: 9, marginBottom: 14 }}>
  <FileSpreadsheet size={15} color={C.green} aria-hidden="true" style={{ flexShrink: 0 }} />
  <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600, fontFamily: MONO,
- overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+ overflow: 'hidden', overflowWrap: 'anywhere', }}>{file.name}</span>
  {/* The filename above keeps the code voice; its size does not — "28.9 KB"
      is a number and a unit, and the unit is a word. */}
  <span style={{ color: C.muted, fontSize: 11.5, flexShrink: 0,
@@ -2402,14 +2402,14 @@ export default function DataPage() {
  <SourceIcon type={src.source_type} size={15} />
  <span style={{ flex: 1, minWidth: 0, color: isActive ? C.green : C.text,
  fontSize: 12.5, fontWeight: 600, overflow: 'hidden',
- textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+ overflowWrap: 'anywhere', }}>
  {src.name}
  </span>
  <StatusBadge status={src.connection_status} />
  </div>
  {src.description && (
  <p style={{ margin: '5px 0 0 24px', color: C.muted, fontSize: 11, lineHeight: 1.45,
- overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+ overflow: 'hidden', overflowWrap: 'anywhere', }}>
  {src.description}
  </p>
  )}
@@ -2423,7 +2423,7 @@ export default function DataPage() {
  <div style={{ margin: '5px 0 0 24px', display: 'flex', gap: 9, alignItems: 'baseline',
  fontSize: 11, color: C.muted, minWidth: 0, fontVariantNumeric: 'tabular-nums' }}>
  <span style={{
- overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+ overflow: 'hidden', overflowWrap: 'anywhere',
  ...(src.source_type === 'sql' ? { fontFamily: MONO, fontSize: 10.5 } : null),
  }}>
  {src.source_type === 'sql'

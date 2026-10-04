@@ -61,7 +61,7 @@ export default function DataFreshness({ currentSession, loading }: {
   const stockState = freshness?.stock.state ?? 'unknown'
   const stockLate  = stockState === 'stale' || stockState === 'blind'
 
-  const amber = '#f59e0b'
+  const amber = '#B7791F'
   const accent = salesLate ? amber : 'var(--dim)'
 
   return (
@@ -71,8 +71,8 @@ export default function DataFreshness({ currentSession, loading }: {
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '5px 10px', borderRadius: 8, fontSize: 12,
-          background: salesLate ? 'rgba(245,158,11,0.07)' : 'var(--surface-2)',
-          border: `1px solid ${salesLate ? 'rgba(245,158,11,0.35)' : 'var(--border)'}`,
+          background: salesLate ? 'rgba(183,121,31,0.07)' : 'var(--surface-2)',
+          border: `1px solid ${salesLate ? 'rgba(183,121,31,0.35)' : 'var(--border)'}`,
         }}
       >
         <Clock size={12} color={accent} />
@@ -103,8 +103,8 @@ export default function DataFreshness({ currentSession, loading }: {
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '5px 10px', borderRadius: 8, fontSize: 12,
             textDecoration: 'none',
-            background: 'rgba(245,158,11,0.07)',
-            border: `1px solid rgba(245,158,11,${stockState === 'blind' ? '0.5' : '0.35'})`,
+            background: 'rgba(183,121,31,0.07)',
+            border: `1px solid rgba(183,121,31,${stockState === 'blind' ? '0.5' : '0.35'})`,
             color: amber, fontWeight: 600,
           }}
         >

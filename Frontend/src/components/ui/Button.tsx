@@ -8,7 +8,7 @@ const VARIANT_STYLES: Record<Variant, React.CSSProperties> = {
   primary:   { background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)' },
   secondary: { background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' },
   ghost:     { background: 'transparent', color: 'var(--muted)', border: '1px solid transparent' },
-  danger:    { background: 'transparent', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' },
+  danger:    { background: 'transparent', color: '#C0504D', border: '1px solid rgba(192,80,77,0.3)' },
 }
 const SIZE_STYLES: Record<Size, React.CSSProperties> = {
   sm: { padding: '5px 12px', fontSize: 12, borderRadius: 6 },

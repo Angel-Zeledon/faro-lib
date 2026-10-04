@@ -169,7 +169,7 @@ export default function MoreSheet({ open, onClose, unread }: {
             <User size={16} color="var(--accent)" aria-hidden="true" />
           </span>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: 'block', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ display: 'block', fontSize: 14, fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', }}>
               {user.full_name || user.email.split('@')[0]}
             </span>
             <span style={{ display: 'block', fontSize: 12, color: 'var(--dim)' }}>{roleLabel(t, user.role)}</span>

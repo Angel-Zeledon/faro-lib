@@ -14,9 +14,9 @@ import { Wallet, AlertTriangle, Check } from 'lucide-react'
 import type { CashCalendar, CashFitResult } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 
-const GREEN = '#22c55e'
-const AMBER = '#f59e0b'
-const RED   = '#ef4444'
+const GREEN = '#2E8B62'
+const AMBER = '#B7791F'
+const RED   = '#C0504D'
 
 export function CashFitPanel({
   calendar, fit, currency, onBudgetChange, busy,

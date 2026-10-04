@@ -24,7 +24,7 @@ function PasswordStrength({ password }: { password: string }) {
     { label: t('auth.pw_check_special'),   ok: /[^A-Za-z0-9]/.test(password) },
   ]
   const score = checks.filter(c => c.ok).length
-  const color = score < 2 ? '#dc2626' : score < 4 ? '#d97706' : '#16a34a'
+  const color = score < 2 ? '#B94A4A' : score < 4 ? '#A8701C' : '#2F855A'
 
   if (!password) return null
   return (
@@ -42,7 +42,7 @@ function PasswordStrength({ password }: { password: string }) {
         {checks.map(({ label, ok }) => (
           <div key={label} style={{
             display: 'flex', gap: 5, alignItems: 'center', fontSize: 11,
-            color: ok ? '#16a34a' : 'var(--a-dim)', transition: 'color 0.25s ease',
+            color: ok ? '#2F855A' : 'var(--a-dim)', transition: 'color 0.25s ease',
           }}>
             <CheckCircle2 size={10} />
             {label}
@@ -209,8 +209,8 @@ function SignupPageContent() {
                 <div style={{
                   display: 'flex', gap: 8, alignItems: 'center',
                   padding: '10px 12px', borderRadius: 10, marginBottom: 20,
-                  background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)',
-                  fontSize: 13, color: '#dc2626',
+                  background: 'rgba(185,74,74,0.04)', border: '1px solid rgba(185,74,74,0.15)',
+                  fontSize: 13, color: '#B94A4A',
                   animation: 'auth-fade-up 0.35s ease-out both',
                 }}>
                   <AlertTriangle size={13} style={{ flexShrink: 0 }} />
@@ -237,7 +237,7 @@ function SignupPageContent() {
                   </div>
                   <div className="auth-field">
                     <label htmlFor="signup-company" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
-                      {t('auth.company_label')} <span style={{ color: '#dc2626' }}>*</span>
+                      {t('auth.company_label')} <span style={{ color: '#B94A4A' }}>*</span>
                     </label>
                     <input
                       id="signup-company" name="tenant_name"
@@ -251,7 +251,7 @@ function SignupPageContent() {
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.19s both' }}>
                   <label htmlFor="signup-email" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
-                    {t('auth.email_label')} <span style={{ color: '#dc2626' }}>*</span>
+                    {t('auth.email_label')} <span style={{ color: '#B94A4A' }}>*</span>
                   </label>
                   <input
                     id="signup-email" name="email"
@@ -264,7 +264,7 @@ function SignupPageContent() {
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.215s both' }}>
                   <label htmlFor="signup-whatsapp" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
-                    {t('auth.whatsapp_label')} <span style={{ color: '#dc2626' }}>*</span>
+                    {t('auth.whatsapp_label')} <span style={{ color: '#B94A4A' }}>*</span>
                   </label>
                   <input
                     id="signup-whatsapp" name="whatsapp_number"
@@ -280,7 +280,7 @@ function SignupPageContent() {
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.24s both' }}>
                   <label htmlFor="signup-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
-                    {t('auth.password_label')} <span style={{ color: '#dc2626' }}>*</span>
+                    {t('auth.password_label')} <span style={{ color: '#B94A4A' }}>*</span>
                   </label>
                   <div style={{ position: 'relative' }}>
                     <input
@@ -328,7 +328,7 @@ function SignupPageContent() {
                 {termsMissing && (
                   <p id="signup-terms-error" role="alert" style={{
                     display: 'flex', gap: 6, alignItems: 'flex-start', margin: '-8px 0 0',
-                    fontSize: 12.5, color: '#dc2626', lineHeight: 1.45,
+                    fontSize: 12.5, color: '#B94A4A', lineHeight: 1.45,
                   }}>
                     <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
                     {t('errors.terms_not_accepted')}

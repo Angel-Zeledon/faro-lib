@@ -75,7 +75,7 @@ export function MobileMetricGrid({ metrics, ariaLabel }: { metrics: MobileMetric
         const inner = (
           <>
             <span style={{ display: 'block', fontSize: 20, fontWeight: 800, color: m.color, lineHeight: 1.15,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+              overflow: 'hidden', overflowWrap: 'anywhere', fontVariantNumeric: 'tabular-nums' }}>
               {m.value}
             </span>
             <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.3 }}>{m.label}</span>
@@ -182,7 +182,7 @@ export function MobileProviderGroups({ groups, render }: {
               style={{ all: 'unset', boxSizing: 'border-box', width: '100%', minHeight: 44, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px 8px' }}>
               <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, color: 'var(--text)',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                overflow: 'hidden', overflowWrap: 'anywhere', }}>
                 {name || t('inventory.no_provider')}
               </span>
               {urgent > 0 && <StatusBadge tone="danger" label={`${urgent} ${urgent !== 1 ? t('inventory.urgent_plural') : t('inventory.urgent_singular')}`} />}
@@ -484,7 +484,7 @@ export function MobileStockEntry({ items, draft, modified, readOnly, savingRow, 
                   <span className="sr-only">{t('inventory.bulk_row_unsaved')}</span>
                 </span>
               )}
-              <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere', }}>{name}</span>
               {item.display_name && <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--dim)', flexShrink: 0 }}>{item.sku}</span>}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)', gap: 10 }}>

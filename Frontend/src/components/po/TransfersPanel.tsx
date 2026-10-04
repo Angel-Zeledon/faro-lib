@@ -12,7 +12,7 @@ import { ArrowLeftRight, PackageCheck, XCircle } from 'lucide-react'
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
   text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)',
-  green: '#22c55e', amber: '#f59e0b',
+  green: '#2E8B62', amber: '#B7791F',
 }
 
 const STATUS_STYLE: Record<Transfer['status'], { color: string; key: string }> = {

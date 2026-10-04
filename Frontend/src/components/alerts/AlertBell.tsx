@@ -54,8 +54,8 @@ const KIND_ICON: Record<AlertKind, typeof PackageX> = {
 /** A system event was sent to nobody, so the delivery colours do not apply:
  *  what it costs the user is its severity. */
 const SEVERITY_COLOR: Record<AlertSeverity, string> = {
-  critical: '#ef4444',
-  warning:  '#f59e0b',
+  critical: '#C0504D',
+  warning:  '#B7791F',
   info:     'var(--accent)',
 }
 
@@ -73,8 +73,8 @@ const MONEY_DETAILS = new Set(['value'])
  *  received is a different event from one that arrived. */
 const STATUS_COLOR: Record<AlertStatus, string> = {
   delivered: 'var(--muted)',
-  partial:   '#f59e0b',
-  failed:    '#ef4444',
+  partial:   '#B7791F',
+  failed:    '#C0504D',
   // A system event was sent to nobody, so it has no delivery colour — its
   // severity decides. Present so the map stays total: an entry the table
   // cannot answer for used to render `undefined` as a colour.
@@ -224,7 +224,7 @@ export function AlertRow({ alert, dense = false }: { alert: AlertEntry; dense?: 
       borderBottom: '1px solid var(--border)',
       display: 'flex', gap: 10, alignItems: 'flex-start',
       background: bad ? (alert.severity === 'warning' && system
-        ? 'rgba(245,158,11,0.04)' : 'rgba(239,68,68,0.04)')
+        ? 'rgba(183,121,31,0.04)' : 'rgba(192,80,77,0.04)')
         : alert.unread && !dense ? 'color-mix(in srgb, var(--accent) 5%, transparent)' : 'transparent',
     }}>
       <Icon size={14} color={color} style={{ marginTop: 2, flexShrink: 0 }} />
@@ -267,19 +267,19 @@ function LocalRow({ notice }: { notice: LocalNotice }) {
     <div style={{
       padding: '10px 16px', borderBottom: '1px solid var(--border)',
       display: 'flex', gap: 10, alignItems: 'flex-start',
-      background: notice.type === 'success' ? 'rgba(34,197,94,0.04)'
-        : notice.type === 'error' ? 'rgba(239,68,68,0.04)' : 'transparent',
+      background: notice.type === 'success' ? 'rgba(46,139,98,0.04)'
+        : notice.type === 'error' ? 'rgba(192,80,77,0.04)' : 'transparent',
     }}>
       {notice.type === 'success'
-        ? <CheckCircle2 size={14} color="#22c55e" style={{ marginTop: 1, flexShrink: 0 }} />
+        ? <CheckCircle2 size={14} color="#2E8B62" style={{ marginTop: 1, flexShrink: 0 }} />
         : notice.type === 'error'
-          ? <AlertTriangle size={14} color="#ef4444" style={{ marginTop: 1, flexShrink: 0 }} />
-          : <Clock size={14} color="#f59e0b" style={{ marginTop: 1, flexShrink: 0 }} />}
+          ? <AlertTriangle size={14} color="#C0504D" style={{ marginTop: 1, flexShrink: 0 }} />
+          : <Clock size={14} color="#B7791F" style={{ marginTop: 1, flexShrink: 0 }} />}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 600 }}>{notice.title}</div>
         <div style={{
           fontSize: 11, color: 'var(--dim)', marginTop: 1,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          overflow: 'hidden', overflowWrap: 'anywhere',
         }}>
           {notice.body}
         </div>
@@ -387,7 +387,7 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
           <span style={{
             position: 'absolute', top: narrow ? 5 : -5, right: narrow ? 4 : -5,
             minWidth: 16, height: 16, borderRadius: 8,
-            background: '#ef4444', color: '#fff',
+            background: '#C0504D', color: '#fff',
             fontSize: 9, fontWeight: 700,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             border: '2px solid var(--surface)', padding: '0 3px',
@@ -432,7 +432,7 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
             <div style={{ maxHeight: 420, overflowY: 'auto' }}>
               {failedToLoad && (
                 <div style={{
-                  padding: '8px 16px', fontSize: 11, color: '#f59e0b',
+                  padding: '8px 16px', fontSize: 11, color: '#B7791F',
                   borderBottom: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', gap: 6,
                 }}>

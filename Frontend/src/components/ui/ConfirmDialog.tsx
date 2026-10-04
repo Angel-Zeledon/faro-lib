@@ -141,6 +141,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             style={{
               background: 'var(--surface)', border: '1px solid var(--border)',
               borderRadius: 14, padding: 24, width: '100%', maxWidth: 420,
+              maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', overflowWrap: 'anywhere',
               boxShadow: '0 24px 60px -20px rgba(0,0,0,0.5)',
             }}
           >
@@ -152,7 +153,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 {opts.message}
               </p>
             )}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button
                 onClick={() => close(false)}
                 className="confirm-btn"
@@ -170,7 +171,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 onClick={() => close(true)}
                 style={{
                   padding: '9px 16px', borderRadius: 9, cursor: 'pointer', border: 'none',
-                  background: opts.danger ? '#dc2626' : 'var(--accent)',
+                  background: opts.danger ? '#B94A4A' : 'var(--accent)',
                   color: '#fff', fontSize: 13, fontWeight: 600,
                 }}
               >

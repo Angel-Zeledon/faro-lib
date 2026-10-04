@@ -11,7 +11,7 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const C = {
   card: 'var(--surface-2)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', red: '#ef4444',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', red: '#C0504D',
 }
 
 const inputS: React.CSSProperties = {
@@ -135,7 +135,7 @@ export default function PriceBreakManager({ supplier }: { supplier: Supplier }) 
       {error && <InlineError error={new Error(error)} onDismiss={() => setError(null)} />}
 
       {blockedReason && (
-        <p style={{ margin: 0, fontSize: 11, color: '#f59e0b' }}>{blockedReason}</p>
+        <p style={{ margin: 0, fontSize: 11, color: '#B7791F' }}>{blockedReason}</p>
       )}
 
       {loading ? (

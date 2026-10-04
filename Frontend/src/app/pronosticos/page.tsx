@@ -480,7 +480,7 @@ export default function SkusPage() {
             </button>
           )}
           {bulkFailed.length > 0 && !bulkExporting && (
-            <span style={{ fontSize: 10, color: '#f87171' }} title={bulkFailed.join(', ')}>
+            <span style={{ fontSize: 10, color: '#D07878' }} title={bulkFailed.join(', ')}>
               {bulkFailed.length} {bulkFailed.length !== 1 ? t('skus.skus_failed_plural') : t('skus.skus_failed_singular')}
             </span>
           )}
@@ -555,7 +555,7 @@ export default function SkusPage() {
           )}
           {cmpLoading && <Spinner size={12} />}
           {cmpError && (
-            <span style={{ fontSize: 11, color: '#f87171' }}>{cmpError}</span>
+            <span style={{ fontSize: 11, color: '#D07878' }}>{cmpError}</span>
           )}
         </div>
       )}
@@ -768,8 +768,8 @@ export default function SkusPage() {
                       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                         <div style={{
                           position: 'absolute', top: 6, left: 12, zIndex: 5,
-                          fontSize: 10, fontWeight: 600, color: '#22c55e',
-                          background: 'rgba(34,197,94,0.12)', padding: '2px 7px', borderRadius: 4,
+                          fontSize: 10, fontWeight: 600, color: '#2E8B62',
+                          background: 'rgba(46,139,98,0.12)', padding: '2px 7px', borderRadius: 4,
                         }}>
                           B · {sessions.find(s => s.session_id === cmpSessionId)?.name ?? cmpSessionId}
                         </div>

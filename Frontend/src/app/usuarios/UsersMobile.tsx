@@ -48,8 +48,8 @@ function ErrorLine({ text }: { text: string }) {
     <div role="alert" style={{
       display: 'flex', gap: 8, alignItems: 'flex-start',
       padding: '10px 12px', borderRadius: 10, marginBottom: 14,
-      background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-      fontSize: 13, color: '#ef4444', lineHeight: 1.45,
+      background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+      fontSize: 13, color: '#C0504D', lineHeight: 1.45,
     }}>
       <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" /> {text}
     </div>
@@ -160,8 +160,8 @@ export default function UsersMobile(p: UsersMobileProps) {
         {p.loadError && (
           <div role="alert" style={{
             padding: '12px 14px', borderRadius: 12,
-            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-            color: '#ef4444', fontSize: 14, display: 'flex', flexDirection: 'column', gap: 10,
+            background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+            color: '#C0504D', fontSize: 14, display: 'flex', flexDirection: 'column', gap: 10,
           }}>
             <span style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />{p.loadError}
@@ -473,7 +473,7 @@ function FormSheet({ open, user: target, onClose, onSaved }: {
             />
           </Field>
           <Field
-            label={<>{t('users.email_address')} {isCreate && <span style={{ color: '#ef4444' }}>*</span>}</>}
+            label={<>{t('users.email_address')} {isCreate && <span style={{ color: '#C0504D' }}>*</span>}</>}
             htmlFor="m-user-email"
           >
             <Input
@@ -484,7 +484,7 @@ function FormSheet({ open, user: target, onClose, onSaved }: {
               style={{ width: '100%' }}
             />
             {!isCreate && email !== target?.email && (
-              <p style={{ fontSize: 12, color: '#f59e0b', margin: '6px 0 0' }}>{t('users.email_reverify')}</p>
+              <p style={{ fontSize: 12, color: '#B7791F', margin: '6px 0 0' }}>{t('users.email_reverify')}</p>
             )}
           </Field>
           <Field label={t('users.role')} htmlFor="m-user-role">

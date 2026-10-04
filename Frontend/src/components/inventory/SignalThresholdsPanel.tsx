@@ -360,7 +360,7 @@ export default function SignalThresholdsPanel() {
           <span>{t('inventory.thresholds_example_days_unit')}:</span>
         </div>
         {localProblem ? (
-          <div style={{ marginTop: 8, fontSize: 12.5, color: '#f59e0b' }}>{localProblem}</div>
+          <div style={{ marginTop: 8, fontSize: 12.5, color: '#B7791F' }}>{localProblem}</div>
         ) : (
           <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.75 }}>
             <li><strong style={{ color: SIGNAL_COLOR.PEDIR_YA }}>{t('inventory.signal_order_now')}</strong>{' '}
@@ -384,7 +384,7 @@ export default function SignalThresholdsPanel() {
             <Spinner size={11} /> {t('inventory.thresholds_preview_loading')}
           </span>
         ) : previewError ? (
-          <span style={{ fontSize: 12, color: '#f59e0b' }}>{previewError}</span>
+          <span style={{ fontSize: 12, color: '#B7791F' }}>{previewError}</span>
         ) : preview && !preview.available ? (
           <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('inventory.thresholds_preview_no_session')}</span>
         ) : preview ? (
@@ -393,7 +393,7 @@ export default function SignalThresholdsPanel() {
       </div>
 
       {saveError && (
-        <div role="alert" style={{ marginTop: 10, display: 'flex', gap: 6, fontSize: 12.5, color: '#ef4444' }}>
+        <div role="alert" style={{ marginTop: 10, display: 'flex', gap: 6, fontSize: 12.5, color: '#C0504D' }}>
           <AlertTriangle size={13} style={{ marginTop: 2 }} /> {saveError}
         </div>
       )}

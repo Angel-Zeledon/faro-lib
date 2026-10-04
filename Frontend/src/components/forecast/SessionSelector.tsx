@@ -84,14 +84,14 @@ export function SessionSelector({ sessions, selected, onSelect, selectId = 'skus
           <div style={{
             fontSize: 12, fontWeight: 600, lineHeight: 1.35,
             color: current ? 'var(--text)' : 'var(--dim)',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            overflow: 'hidden', overflowWrap: 'anywhere',
           }}>
             {current?.name ?? t('skus.select_trained_session')}
           </div>
           {context && (
             <div style={{
               fontSize: 10, color: 'var(--dim)', lineHeight: 1.35,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              overflow: 'hidden', overflowWrap: 'anywhere',
             }}>
               {context}
             </div>

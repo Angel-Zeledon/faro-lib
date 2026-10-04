@@ -132,7 +132,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         <SectionTabs />
         <div
           className="page-content"
-          style={narrow ? { overflowX: 'hidden', padding: '12px 12px calc(var(--mobile-nav-h, 0px) + 16px)' } : undefined}
+          style={narrow ? { overflowX: 'auto', padding: '12px 12px calc(var(--mobile-nav-h, 0px) + 16px)' } : undefined}
         >
           <TrialBanner />
           <ReadOnlyBanner />

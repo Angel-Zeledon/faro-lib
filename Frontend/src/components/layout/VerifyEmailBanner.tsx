@@ -22,7 +22,7 @@ import { getUser } from '@/lib/auth'
 import { useEntitlements } from '@/lib/entitlements'
 import { useLanguage } from '@/contexts/LanguageContext'
 
-const AMBER = '#f59e0b'
+const AMBER = '#B7791F'
 const DISMISS_KEY = 'faro_verify_banner_dismissed'
 
 export default function VerifyEmailBanner() {

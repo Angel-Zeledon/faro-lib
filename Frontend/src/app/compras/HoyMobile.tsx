@@ -251,7 +251,7 @@ export default function HoyMobile(props: HoyMobileProps) {
                   <li key={`${o.po_log_id}-${o.supplier}`} style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
                     borderRadius: 12, marginBottom: 8, minHeight: 56, boxSizing: 'border-box',
-                    background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)',
+                    background: 'rgba(192,80,77,0.06)', border: '1px solid rgba(192,80,77,0.25)',
                   }}>
                     <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.text, lineHeight: 1.45 }}>
                       {t('hoy.overdue_line_prefix')} <strong>{o.supplier}</strong>{' '}
@@ -390,7 +390,7 @@ export default function HoyMobile(props: HoyMobileProps) {
             onClick={() => { onGenerate(); setCartOpen(false) }}
             disabled={generating}
             aria-busy={generating}
-            style={{ background: '#22c55e', color: '#fff', flex: 2 }}
+            style={{ background: '#2E8B62', color: '#fff', flex: 2 }}
           >
             {generating ? t('hoy.btn_download_po_busy') : t('hoy.btn_download_po')}
           </button>
@@ -404,8 +404,8 @@ export default function HoyMobile(props: HoyMobileProps) {
               borderTop: idx === 0 ? 'none' : `1px solid ${C.border}`,
             }}>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
-                <span style={{ display: 'block', fontSize: 12, color: C.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>{i.name}</span>
+                <span style={{ display: 'block', fontSize: 12, color: C.dim, overflow: 'hidden', overflowWrap: 'anywhere', }}>
                   {i.supplier || t('hoy.cart_supplier_none')}
                 </span>
               </span>
@@ -509,7 +509,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
         border: `1px dashed ${C.border}`, background: 'var(--surface-2)',
       }}>
         <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'block', fontSize: 14, color: C.muted, textDecoration: 'line-through', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ display: 'block', fontSize: 14, color: C.muted, textDecoration: 'line-through', overflow: 'hidden', overflowWrap: 'anywhere', }}>
             {item.name}
           </span>
           <span style={{ display: 'block', fontSize: 12, color: C.dim }}>{tOr(t, 'mobile.hoy_rejected', 'Not ordering')}</span>
@@ -530,9 +530,9 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
   return (
     <div style={{
       border: `1px solid ${inCart ? '#22c55e55' : C.border}`,
-      borderLeft: `4px solid ${inCart ? '#22c55e' : accent}`,
+      borderLeft: `4px solid ${inCart ? '#2E8B62' : accent}`,
       borderRadius: 14, marginBottom: 10, overflow: 'hidden',
-      background: inCart ? 'rgba(34,197,94,0.04)' : 'var(--surface)',
+      background: inCart ? 'rgba(46,139,98,0.04)' : 'var(--surface)',
       transition: 'background var(--dur-3) var(--ease-out), border-color var(--dur-3) var(--ease-out)',
     }}>
       {/* The head of the card opens the line in full: why, supplier, "no pedir". */}
@@ -645,9 +645,9 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
               minHeight: 48, borderRadius: 12, cursor: canOrder || inCart ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
               fontSize: 15, fontWeight: 700,
-              background: inCart ? 'transparent' : canOrder ? '#22c55e' : 'var(--surface-2)',
-              color: inCart ? '#16a34a' : canOrder ? '#fff' : C.dim,
-              border: inCart ? '1px solid #22c55e' : '1px solid transparent',
+              background: inCart ? 'transparent' : canOrder ? '#2E8B62' : 'var(--surface-2)',
+              color: inCart ? '#2F855A' : canOrder ? '#fff' : C.dim,
+              border: inCart ? '1px solid #2E8B62' : '1px solid transparent',
               transition: 'background var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out)',
             }}
           >
@@ -832,7 +832,7 @@ function MiniKpi({ label, value, color }: { label: string; value: string; color:
       borderRadius: 12, padding: '10px 12px', minWidth: 0,
     }}>
       <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 3, overflowWrap: 'anywhere' }}>{label}</div>
-      <div style={{ fontSize: 21, fontWeight: 700, color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 21, fontWeight: 700, color, overflow: 'hidden', overflowWrap: 'anywhere', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   )
 }
@@ -871,7 +871,7 @@ function CartSummary({ approved }: { approved: ActionItem[] }) {
   const marginProtected = priced.reduce((s, i) => s + i.qty * (i.unit_margin ?? 0), 0)
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#2F855A' }}>
         {approved.length} {t('hoy.cart_products_approved')}
       </div>
       {total > 0 && (
@@ -915,7 +915,7 @@ function MobileCartBar({ approved, onOpen, onGenerate, generating }: {
   return (
     <div className="cart-bar-enter" style={{
       position: 'fixed', left: 0, right: 0, bottom: 'var(--mobile-nav-h, 0px)', zIndex: 40,
-      background: 'var(--surface)', borderTop: '1px solid rgba(34,197,94,0.45)',
+      background: 'var(--surface)', borderTop: '1px solid rgba(46,139,98,0.45)',
       boxShadow: '0 -6px 24px rgba(0,0,0,0.18)', padding: '10px 12px',
       display: 'flex', alignItems: 'center', gap: 10,
     }}>
@@ -929,10 +929,10 @@ function MobileCartBar({ approved, onOpen, onGenerate, generating }: {
         }}
       >
         <span style={{ minWidth: 0, flex: 1 }}>
-          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: '#16a34a' }}>
+          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: '#2F855A' }}>
             {approved.length} {t('hoy.cart_products_approved')}
           </span>
-          <span key={total} className="value-changed" style={{ display: 'block', fontSize: 12.5, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderRadius: 4 }}>
+          <span key={total} className="value-changed" style={{ display: 'block', fontSize: 12.5, color: C.muted, overflow: 'hidden', overflowWrap: 'anywhere', borderRadius: 4 }}>
             {total > 0 ? `${formatMoney(total)}${uncosted ? ' *' : ''}` : tOr(t, 'mobile.hoy_cart_review', 'Review the order')}
           </span>
         </span>
@@ -943,7 +943,7 @@ function MobileCartBar({ approved, onOpen, onGenerate, generating }: {
         disabled={generating}
         aria-busy={generating}
         className="mobile-btn"
-        style={{ flex: 'none', background: '#22c55e', color: '#fff', padding: '0 18px' }}
+        style={{ flex: 'none', background: '#2E8B62', color: '#fff', padding: '0 18px' }}
       >
         {generating ? t('hoy.btn_download_po_busy') : tOr(t, 'mobile.hoy_cart_generate', 'Generate')}
       </button>
@@ -982,7 +982,7 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
       onClose={onClose}
       maxHeight="92dvh"
       title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-        <Check size={18} color="#16a34a" aria-hidden="true" /> {t('hoy.generate_send_title')}
+        <Check size={18} color="#2F855A" aria-hidden="true" /> {t('hoy.generate_send_title')}
       </span>}
       footer={<>
         <Link href="/pedidos" className="mobile-btn mobile-btn-secondary" style={{ textDecoration: 'none' }}>

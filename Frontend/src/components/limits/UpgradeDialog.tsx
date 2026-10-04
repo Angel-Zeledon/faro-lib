@@ -177,7 +177,7 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
               style={FIELD}
             />
             {state === 'error' && (
-              <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#ef4444' }}>
+              <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#C0504D' }}>
                 {t('limits.form.error')}
               </p>
             )}

@@ -496,9 +496,9 @@ function CompareLabel({ tone, children }: { tone: 'a' | 'b'; children: React.Rea
     <div style={{
       margin: '10px 12px 0', alignSelf: 'flex-start', maxWidth: 'calc(100% - 24px)',
       fontSize: 12, fontWeight: 600, padding: '3px 8px', borderRadius: 6,
-      color: a ? 'var(--accent)' : '#22c55e',
-      background: a ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'rgba(34,197,94,0.12)',
-      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      color: a ? 'var(--accent)' : '#2E8B62',
+      background: a ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'rgba(46,139,98,0.12)',
+      overflow: 'hidden', overflowWrap: 'anywhere',
     }}>
       {children}
     </div>

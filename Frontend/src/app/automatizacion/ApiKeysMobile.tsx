@@ -99,11 +99,11 @@ export default function ApiKeysMobile(p: ApiKeysMobileProps) {
         {p.newKey && sheet !== 'created' && (
           <div style={{
             padding: '12px 14px', borderRadius: 12,
-            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.25)',
+            background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.25)',
             display: 'flex', flexDirection: 'column', gap: 10,
           }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ flex: 1, fontSize: 13, color: '#16a34a', fontWeight: 600, lineHeight: 1.45 }}>
+              <div style={{ flex: 1, fontSize: 13, color: '#2F855A', fontWeight: 600, lineHeight: 1.45 }}>
                 {t('settings.key_generated')}
               </div>
               <button type="button" onClick={p.clearNewKey} aria-label={t('common.close')}
@@ -117,7 +117,7 @@ export default function ApiKeysMobile(p: ApiKeysMobileProps) {
         )}
 
         {p.error && (
-          <div role="alert" style={{ fontSize: 13, color: '#ef4444', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <div role="alert" style={{ fontSize: 13, color: '#C0504D', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />{p.error}
           </div>
         )}
@@ -184,7 +184,7 @@ export default function ApiKeysMobile(p: ApiKeysMobileProps) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {p.error && (
-                <div role="alert" style={{ fontSize: 13, color: '#ef4444', display: 'flex', gap: 8 }}>
+                <div role="alert" style={{ fontSize: 13, color: '#C0504D', display: 'flex', gap: 8 }}>
                   <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />{p.error}
                 </div>
               )}
@@ -264,9 +264,9 @@ export default function ApiKeysMobile(p: ApiKeysMobileProps) {
             {confirming && (
               <div role="alert" style={{
                 display: 'flex', gap: 8, padding: '10px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.5,
-                background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: 'var(--text)',
+                background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.25)', color: 'var(--text)',
               }}>
-                <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2, color: '#ef4444' }} aria-hidden="true" />
+                <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2, color: '#C0504D' }} aria-hidden="true" />
                 {t('settings.revoke_confirm')}
               </div>
             )}

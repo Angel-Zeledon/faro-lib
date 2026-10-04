@@ -100,7 +100,7 @@ export function PaidPOActions({ poLogId, sent, paidAt, onChanged, showBadge = tr
         </button>
       )}
       {error && (
-        <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>{error}</span>
+        <span style={{ fontSize: 11, color: '#C0504D', fontWeight: 600 }}>{error}</span>
       )}
     </>
   )

@@ -20,7 +20,7 @@ import BottomSheet from '@/components/mobile/BottomSheet'
 
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', red: '#ef4444',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', red: '#C0504D',
 }
 
 interface LineDraft {

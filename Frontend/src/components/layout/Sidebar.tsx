@@ -275,7 +275,7 @@ export default function Sidebar() {
                 {/* The name opens your own account: profile and security
                     are one click away without a sidebar entry of their own. */}
                 <Link href="/mi-cuenta" title={t('nav.account')} style={{ flex: 1, minWidth: 0, textDecoration: 'none' }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--sidebar-text-active)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--sidebar-text-active)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
                     {user.full_name || user.email.split('@')[0]}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--sidebar-dim)' }}>{roleLabel(t, user.role)}</div>

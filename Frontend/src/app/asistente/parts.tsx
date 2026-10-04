@@ -19,17 +19,17 @@ export const SOURCE_COLOR: Record<string, string> = {
   // The assistant core (backend/assistant/): a model answer whose figures were
   // all verified, one that carries the guard's warning, and the rule-based
   // summary written when no model answered.
-  assistant:            '#22c55e',
-  assistant_unverified: '#f59e0b',
+  assistant:            '#2E8B62',
+  assistant_unverified: '#B7791F',
   rules:                '#94a3b8',
   // Messages stored before the assistant core existed.
   rag:           'var(--accent)',
   rag_retrieved: 'var(--accent)',
-  fallback:      '#f59e0b',
-  general:       '#22c55e',
-  off_topic:     '#f59e0b',
-  no_access:     '#ef4444',
-  error:         '#ef4444',
+  fallback:      '#B7791F',
+  general:       '#2E8B62',
+  off_topic:     '#B7791F',
+  no_access:     '#C0504D',
+  error:         '#C0504D',
 }
 
 export function fmtTime(iso: string) {
@@ -81,7 +81,7 @@ export function TypingBubble() {
     <div data-testid="typing-indicator" style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 4 }}>
       <div style={{
         width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-        background: 'rgba(34,197,94,0.12)',
+        background: 'rgba(46,139,98,0.12)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <AssistantMark size={14} />
@@ -124,7 +124,7 @@ export function MessageBubble({ msg, large = false }: { msg: ChatMessage; large?
       {/* Avatar */}
       <div style={{
         width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-        background: isUser ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'rgba(34,197,94,0.12)',
+        background: isUser ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'rgba(46,139,98,0.12)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         {isUser ? <User size={13} color="var(--accent)" /> : <AssistantMark size={13} />}

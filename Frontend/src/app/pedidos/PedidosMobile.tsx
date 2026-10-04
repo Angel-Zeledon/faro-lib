@@ -234,7 +234,7 @@ function OrderCard({ entry, onOpen, onReceive }: {
             </span>
             <StatusBadge label={t(STATUS_KEY[status] ?? STATUS_KEY.pending)} tone={STATUS_TONE[status] ?? 'warning'} />
           </span>
-          <span style={{ fontSize: 13, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 13, color: C.muted, overflow: 'hidden', overflowWrap: 'anywhere', }}>
             {fmtShortDateTime(entry.generated_at, lang)} · {skuCountText(t, entry.sku_count)} · {unitCountText(t, entry.total_units)}
           </span>
           {(entry.skus_order_now > 0 || entry.skus_order_soon > 0 || entry.source === 'manual') && (
@@ -363,7 +363,7 @@ function OrderDetailSheet({ entry, onClose, canEdit, suppliersWithoutContact, on
         <div style={{ padding: 18, display: 'flex', justifyContent: 'center' }}><Spinner size={18} /></div>
       )}
       {linesError && (
-        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.08)', fontSize: 13, color: C.red }}>
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: 'rgba(192,80,77,0.08)', fontSize: 13, color: C.red }}>
           <span style={{ flex: 1 }}>{linesError}</span>
           <button
             onClick={() => { setLinesError(null); getPOItems(e.id).then(res => setLines(res.items.filter(i => i.status === 'approved' || i.status === 'modified'))).catch(err => setLinesError(errorDetail(err) || t('common.error'))) }}
@@ -387,10 +387,10 @@ function OrderDetailSheet({ entry, onClose, canEdit, suppliersWithoutContact, on
                 borderTop: idx === 0 ? 'none' : `1px solid ${C.border}`,
               }}>
                 <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>
                     {l.display_name || l.sku}
                   </span>
-                  <span style={{ display: 'block', fontSize: 12, color: C.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ display: 'block', fontSize: 12, color: C.dim, overflow: 'hidden', overflowWrap: 'anywhere', }}>
                     <span style={{ fontFamily: 'monospace' }}>{l.sku}</span>{l.supplier ? ` · ${l.supplier}` : ''}
                   </span>
                 </span>

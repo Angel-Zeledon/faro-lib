@@ -28,10 +28,10 @@ export const C = {
  text: 'var(--text)',
  muted: 'var(--muted)',
  dim: 'var(--dim)',
- red: '#ef4444',
- amber: '#f59e0b',
- green: '#22c55e',
- blue: '#3b82f6',
+ red: '#C0504D',
+ amber: '#B7791F',
+ green: '#2E8B62',
+ blue: '#4F7FB5',
  indigo: 'var(--accent)',
 }
 
@@ -369,8 +369,8 @@ export function OrderedNote({ item }: { item: ActionItem }) {
    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
     <span style={{
      display: 'inline-flex', alignItems: 'center', gap: 5,
-     fontSize: 12, fontWeight: 700, color: '#22c55e',
-     background: 'rgba(34,197,94,0.1)', padding: '3px 10px', borderRadius: 20,
+     fontSize: 12, fontWeight: 700, color: '#2E8B62',
+     background: 'rgba(46,139,98,0.1)', padding: '3px 10px', borderRadius: 20,
     }}>
      <Check size={12} aria-hidden="true" />
      {tOr(t, 'hoy.line_ordered_badge', `Ordered on ${ref}`, { ref })}

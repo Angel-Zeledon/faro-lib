@@ -25,7 +25,7 @@ import { translations, type TranslationKey } from '@/i18n/translations'
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', indigo: 'var(--accent)',
+  red: '#C0504D', indigo: 'var(--accent)',
 }
 
 /* ── Error copy ────────────────────────────────────────────────────────────── */
@@ -297,14 +297,14 @@ export function ErrorState({ error, onRetry, compact }: {
 
   return (
     <div role="alert" style={{
-      background: C.surface, border: '1px solid rgba(239,68,68,0.28)', borderRadius: 12,
+      background: C.surface, border: '1px solid rgba(192,80,77,0.28)', borderRadius: 12,
       padding: compact ? '20px 22px' : '36px 32px',
       maxWidth: 520, margin: '0 auto', width: '100%', textAlign: 'center',
     }}>
       <div style={{
         width: 44, height: 44, borderRadius: 12, margin: '0 auto 14px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(239,68,68,0.1)', color: C.red,
+        background: 'rgba(192,80,77,0.1)', color: C.red,
       }}>
         {copy.icon}
       </div>
@@ -373,7 +373,7 @@ export function InlineError({ error, onRetry, onDismiss }: {
   return (
     <div role="alert" style={{
       display: 'flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 8,
-      background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)',
+      background: 'rgba(192,80,77,0.07)', border: '1px solid rgba(192,80,77,0.2)',
       fontSize: 13, color: C.text,
     }}>
       <AlertTriangle size={14} color={C.red} style={{ flexShrink: 0 }} />

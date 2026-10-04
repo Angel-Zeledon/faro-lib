@@ -71,7 +71,7 @@ export default function AssistantMobile(p: AssistantMobileProps) {
           borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border)',
           fontSize: 13.5, color: 'var(--text)', lineHeight: 1.5,
         }}>
-          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2, color: '#f59e0b' }} aria-hidden="true" />
+          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2, color: '#B7791F' }} aria-hidden="true" />
           <span>{t('analyst.unavailable_banner')}</span>
         </div>
       )}
@@ -207,7 +207,7 @@ function Home(p: AssistantMobileProps) {
           </div>
         )}
         {p.chatsError ? (
-          <div role="alert" style={{ padding: 16, textAlign: 'center', fontSize: 14, color: '#ef4444' }}>{p.chatsError}</div>
+          <div role="alert" style={{ padding: 16, textAlign: 'center', fontSize: 14, color: '#C0504D' }}>{p.chatsError}</div>
         ) : p.chats.length === 0 ? (
           <div style={{ padding: '22px 16px', textAlign: 'center', fontSize: 14, color: 'var(--dim)', lineHeight: 1.5,
                         border: '1px dashed var(--border)', borderRadius: 14 }}>
@@ -240,10 +240,10 @@ function Home(p: AssistantMobileProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 4 }}>
             <button className="mobile-btn mobile-btn-secondary" style={{ width: '100%', flex: 'none' }}
               onClick={() => { p.onToggleFavorite(actionsFor.id); setActionsFor(null) }}>
-              <Star size={17} aria-hidden="true" fill={actionsFor.is_favorite ? '#f59e0b' : 'none'} color={actionsFor.is_favorite ? '#f59e0b' : 'currentColor'} />
+              <Star size={17} aria-hidden="true" fill={actionsFor.is_favorite ? '#B7791F' : 'none'} color={actionsFor.is_favorite ? '#B7791F' : 'currentColor'} />
               {actionsFor.is_favorite ? t('analyst.remove_from_favorites') : t('analyst.add_to_favorites')}
             </button>
-            <button className="mobile-btn mobile-btn-secondary" style={{ width: '100%', flex: 'none', color: '#ef4444' }}
+            <button className="mobile-btn mobile-btn-secondary" style={{ width: '100%', flex: 'none', color: '#C0504D' }}
               onClick={() => { p.onDelete(actionsFor.id); setActionsFor(null) }}>
               <Trash2 size={17} aria-hidden="true" /> {t('analyst.delete_chat_title')}
             </button>
@@ -279,14 +279,14 @@ function ChatRow({ chat, p, onActions }: { chat: Chat; p: AssistantMobileProps; 
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          {chat.is_favorite && <Star size={13} fill="#f59e0b" color="#f59e0b" aria-label={t('analyst.favorites_header')} style={{ flexShrink: 0 }} />}
-          <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {chat.is_favorite && <Star size={13} fill="#B7791F" color="#B7791F" aria-label={t('analyst.favorites_header')} style={{ flexShrink: 0 }} />}
+          <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
             {chat.title}
           </span>
           <span style={{ fontSize: 12, color: 'var(--dim)', flexShrink: 0 }}>{p.relTime(chat.last_message_at)}</span>
         </span>
         {chat.last_message_preview && (
-          <span style={{ fontSize: 13.5, color: 'var(--dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 13.5, color: 'var(--dim)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
             {chat.last_message_preview}
           </span>
         )}
@@ -367,7 +367,7 @@ function Thread(p: AssistantMobileProps) {
         </div>
       ) : p.msgsError ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '40px 16px', textAlign: 'center' }}>
-          <AlertTriangle size={28} color="#ef4444" style={{ opacity: 0.8 }} aria-hidden="true" />
+          <AlertTriangle size={28} color="#C0504D" style={{ opacity: 0.8 }} aria-hidden="true" />
           <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5 }}>{p.msgsError}</div>
           <button className="mobile-btn mobile-btn-primary" style={{ flex: 'none' }} onClick={p.onRetryMessages}>
             {t('analyst.retry')}
@@ -430,7 +430,7 @@ function Composer({ input, onInput, onSend, busy, disabled, placeholder, chips, 
                 maxWidth: 260, minHeight: 40, padding: '0 14px', borderRadius: 20, scrollSnapAlign: 'start',
                 display: 'flex', alignItems: 'center', fontSize: 13.5, color: 'var(--text)',
                 background: 'var(--surface-2)', border: '1px solid var(--border)', opacity: chipsDisabled ? 0.5 : 1,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                overflow: 'hidden', overflowWrap: 'anywhere',
               }}
             >
               {c}

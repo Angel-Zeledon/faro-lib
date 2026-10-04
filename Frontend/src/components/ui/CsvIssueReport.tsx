@@ -44,8 +44,8 @@ export default function CsvIssueReport({ groups, fileName }: {
   if (groups.length === 0) return null
 
   const hasFatal = groups.some(g => g.fatal)
-  const accent   = hasFatal ? '#dc2626' : '#d97706'
-  const bg       = hasFatal ? 'rgba(220,38,38,0.06)' : 'rgba(217,119,6,0.07)'
+  const accent   = hasFatal ? '#B94A4A' : '#A8701C'
+  const bg       = hasFatal ? 'rgba(185,74,74,0.06)' : 'rgba(217,119,6,0.07)'
 
   return (
     <div
@@ -83,8 +83,8 @@ export default function CsvIssueReport({ groups, fileName }: {
             }}>
               <span>{csvText(t, g.titleKey)}</span>
               <span style={{
-                fontSize: 11, fontWeight: 700, color: g.fatal ? '#dc2626' : '#d97706',
-                background: g.fatal ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.14)',
+                fontSize: 11, fontWeight: 700, color: g.fatal ? '#B94A4A' : '#A8701C',
+                background: g.fatal ? 'rgba(185,74,74,0.12)' : 'rgba(217,119,6,0.14)',
                 padding: '1px 8px', borderRadius: 20,
               }}>
                 {g.count} {t('csv.rows_affected')}

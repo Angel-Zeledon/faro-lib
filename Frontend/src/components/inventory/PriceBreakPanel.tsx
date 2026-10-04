@@ -13,7 +13,7 @@ import type { PriceBreakOpportunity, PriceBreakReason } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { fmtNum } from '@/lib/numberLocale'
 
-const GREEN = '#22c55e'
+const GREEN = '#2E8B62'
 const DIM   = 'var(--dim)'
 
 const REASON_KEY: Record<PriceBreakReason, string> = {

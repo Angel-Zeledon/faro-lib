@@ -73,7 +73,7 @@ function Group({ group }: { group: RunWarningGroup }) {
   const [open, setOpen] = useState(false)
 
   const isError = group.severity === 'error'
-  const accent  = isError ? '#dc2626' : '#d97706'
+  const accent  = isError ? '#B94A4A' : '#A8701C'
   const title   = codeText(group.code, 'title', group.samples[0]?.message || group.code)
   const what    = codeText(group.code, 'what')
   const fix     = codeText(group.code, 'fix')
@@ -85,7 +85,7 @@ function Group({ group }: { group: RunWarningGroup }) {
         {group.count > 1 && (
           <span style={{
             fontSize: 11, fontWeight: 700, color: accent,
-            background: isError ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.14)',
+            background: isError ? 'rgba(185,74,74,0.12)' : 'rgba(217,119,6,0.14)',
             padding: '1px 8px', borderRadius: 20,
           }}>
             {group.count}
@@ -170,7 +170,7 @@ export default function RunWarningsPanel(
 
   const hasError = groups.some(g => g.severity === 'error')
   const findings = groups.length + (corrections.length > 0 ? 1 : 0)
-  const accent   = hasError ? '#dc2626' : '#d97706'
+  const accent   = hasError ? '#B94A4A' : '#A8701C'
 
   return (
     <div
@@ -179,7 +179,7 @@ export default function RunWarningsPanel(
         border: `1px solid ${accent}44`,
         borderLeft: `4px solid ${accent}`,
         borderRadius: 10,
-        background: hasError ? 'rgba(220,38,38,0.06)' : 'rgba(217,119,6,0.07)',
+        background: hasError ? 'rgba(185,74,74,0.06)' : 'rgba(217,119,6,0.07)',
         padding: '16px 18px',
         marginBottom: 18,
       }}

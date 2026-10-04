@@ -14,9 +14,9 @@ const URGENCY_CFG: Record<Urgency, {
   border: string; bg: string; icon: React.ElementType; iconColor: string
   labelKey: string; labelFallback: string
 }> = {
-  critical: { border: 'rgba(239,68,68,0.3)',  bg: 'rgba(239,68,68,0.04)',  icon: AlertTriangle, iconColor: '#ef4444', labelKey: 'narrative.urgency_critical', labelFallback: 'Needs attention' },
-  warning:  { border: 'rgba(245,158,11,0.3)', bg: 'rgba(245,158,11,0.04)', icon: Clock,         iconColor: '#f59e0b', labelKey: 'narrative.urgency_warning',  labelFallback: 'Review this week' },
-  ok:       { border: 'rgba(34,197,94,0.3)',  bg: 'rgba(34,197,94,0.04)',  icon: CheckCircle2,  iconColor: '#22c55e', labelKey: 'narrative.urgency_ok',       labelFallback: 'Under control' },
+  critical: { border: 'rgba(192,80,77,0.3)',  bg: 'rgba(192,80,77,0.04)',  icon: AlertTriangle, iconColor: '#C0504D', labelKey: 'narrative.urgency_critical', labelFallback: 'Needs attention' },
+  warning:  { border: 'rgba(183,121,31,0.3)', bg: 'rgba(183,121,31,0.04)', icon: Clock,         iconColor: '#B7791F', labelKey: 'narrative.urgency_warning',  labelFallback: 'Review this week' },
+  ok:       { border: 'rgba(46,139,98,0.3)',  bg: 'rgba(46,139,98,0.04)',  icon: CheckCircle2,  iconColor: '#2E8B62', labelKey: 'narrative.urgency_ok',       labelFallback: 'Under control' },
 }
 
 // Simple markdown: bold (**text**), bullets (- text), headers (**Title**)
@@ -144,7 +144,7 @@ export default function NarrativeCard({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{cardTitle}</div>
           {!loading && !expanded && keyPoints.length > 0 && (
-            <div style={{ fontSize: 11, color: cfg.iconColor, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+            <div style={{ fontSize: 11, color: cfg.iconColor, marginTop: 1, overflow: 'hidden', overflowWrap: 'anywhere', }}>
               {keyPoints[0]}
             </div>
           )}

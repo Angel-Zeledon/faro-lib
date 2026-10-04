@@ -70,7 +70,7 @@ export function SkuCard({ sku, quality, metrics, signal, selected, onClick, tour
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flex: 1 }}>
           <Package size={11} color={color} style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', }}>
             {sku}
           </span>
         </div>

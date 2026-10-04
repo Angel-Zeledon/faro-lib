@@ -46,8 +46,8 @@ function StepBubble({ n, label, active, done, narrow }: { n: number; label: stri
  <div style={{
  width: 36, height: 36, borderRadius: '50%',
  display: 'flex', alignItems: 'center', justifyContent: 'center',
- background: done ? '#22c55e' : active ? 'var(--accent)' : 'var(--surface-2, #f1f5f9)',
- border: `2px solid ${done ? '#22c55e' : active ? 'var(--accent)' : 'var(--border)'}`,
+ background: done ? '#2E8B62' : active ? 'var(--accent)' : 'var(--surface-2, #f1f5f9)',
+ border: `2px solid ${done ? '#2E8B62' : active ? 'var(--accent)' : 'var(--border)'}`,
  color: done || active ? '#fff' : 'var(--dim)',
  fontWeight: 700, fontSize: 15,
  transition: 'all 0.25s',
@@ -56,7 +56,7 @@ function StepBubble({ n, label, active, done, narrow }: { n: number; label: stri
  </div>
  <span style={{
  fontSize: 12, fontWeight: active ? 600 : 400,
- color: active ? 'var(--accent)' : done ? '#22c55e' : 'var(--dim)',
+ color: active ? 'var(--accent)' : done ? '#2E8B62' : 'var(--dim)',
  whiteSpace: narrow ? 'normal' : 'nowrap',
  ...(narrow ? { textAlign: 'center', lineHeight: 1.25 } : {}),
  }}>
@@ -229,7 +229,7 @@ function SessionClonePicker({ sessions, onPick, busy }: {
  <div style={{ minWidth: 0 }}>
  <div style={{
   fontSize: 13, fontWeight: 600, color: 'var(--text)',
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  overflow: 'hidden', overflowWrap: 'anywhere',
  }}>
   {s.name}
  </div>
@@ -285,7 +285,7 @@ function DatasetPicker({ datasets, onPick, busy }: {
  <div style={{ minWidth: 0 }}>
  <div style={{
   fontSize: 13, fontWeight: 600, color: 'var(--text)',
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  overflow: 'hidden', overflowWrap: 'anywhere',
  }}>
   {d.original_filename}
  </div>
@@ -1433,7 +1433,7 @@ function QuickStartPageContent() {
  <div style={{
  marginTop: 12, padding: '10px 14px',
  background: '#fee2e2', borderRadius: 8,
- fontSize: 13, color: '#dc2626',
+ fontSize: 13, color: '#B94A4A',
  whiteSpace: 'pre-line',
  }}>
  {error}
@@ -1555,7 +1555,7 @@ function QuickStartPageContent() {
   }}>
    <div>
    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-    {field.required && <span style={{ color: '#ef4444', marginRight: 4 }}>★</span>}
+    {field.required && <span style={{ color: '#C0504D', marginRight: 4 }}>★</span>}
     {t(field.labelKey)}
    </span>
    {!field.required && isNone && (
@@ -1575,7 +1575,7 @@ function QuickStartPageContent() {
    }}
    style={{
     padding: '8px 10px', borderRadius: 8,
-    border: `1px solid ${field.required && !val ? '#ef4444' : 'var(--border)'}`,
+    border: `1px solid ${field.required && !val ? '#C0504D' : 'var(--border)'}`,
     background: 'var(--surface)', color: 'var(--text)', fontSize: 13,
     cursor: 'pointer',
     ...(narrow ? { fontSize: 16, minHeight: 44, width: '100%', minWidth: 0, boxSizing: 'border-box', borderRadius: 10 } : {}),
@@ -1623,7 +1623,7 @@ function QuickStartPageContent() {
 
  {error && (
  <div style={{ marginTop: 16, padding: '10px 14px', background: '#fee2e2',
-  borderRadius: 8, fontSize: 13, color: '#dc2626' }}>
+  borderRadius: 8, fontSize: 13, color: '#B94A4A' }}>
   {error}
  </div>
  )}
@@ -1728,7 +1728,7 @@ function QuickStartPageContent() {
  <div style={{
  padding: '14px 18px',
  background: '#fee2e2', borderRadius: 10,
- fontSize: 14, color: '#dc2626',
+ fontSize: 14, color: '#B94A4A',
  marginBottom: 20,
  }}>
  {error}

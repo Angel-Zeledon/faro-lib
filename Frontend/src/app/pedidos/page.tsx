@@ -23,7 +23,7 @@ import PedidosMobile from './PedidosMobile'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', amber: '#f59e0b',
+  text: 'var(--text)', dim: 'var(--dim)', amber: '#B7791F',
 }
 
 export default function OrdersPage() {
@@ -163,7 +163,7 @@ export default function OrdersPage() {
           {pendingCount > 0 && (
             <span data-tour="pedidos.pending" style={{
               fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
-              background: 'rgba(245,158,11,0.1)', color: C.amber,
+              background: 'rgba(183,121,31,0.1)', color: C.amber,
             }}>
               {pendingCount} {t('orders.pending_suffix')}
             </span>

@@ -604,7 +604,7 @@ export default function ScenariosPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
                     fontSize: 13, fontWeight: 600, color: C.text,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    overflow: 'hidden', overflowWrap: 'anywhere',
                   }}>
                     {scenario.name}
                   </div>
