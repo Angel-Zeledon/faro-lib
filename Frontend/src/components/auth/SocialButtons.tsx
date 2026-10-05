@@ -1,6 +1,6 @@
 'use client'
 /**
- * "Continue with Google / Apple / Facebook" — only for the providers this
+ * "Continue with Google / Microsoft / Apple / Facebook" — only for the providers this
  * installation enabled.
  *
  * Renders NOTHING until `/auth/providers` answers, and nothing at all when it
@@ -9,7 +9,7 @@
  * login and signup screens look exactly as they did before this existed.
  *
  * Each button follows its brand's published guidelines: Google's four-colour
- * "G" on white (or #131314 in dark), Apple's logo in black/white, Facebook's
+ * "G" on white (or #131314 in dark), Microsoft's four-square mark on white (or #2F2F2F in dark), Apple's logo in black/white, Facebook's
  * "f" on #1877F2. The label is the provider's own wording, "Continue with …".
  *
  * Clicking navigates the whole window to the backend's /start route — the
@@ -30,6 +30,17 @@ function GoogleLogo() {
       <path fill="#4285F4" d="M17.64 9.2c0-.74-.06-1.28-.19-1.84H9v3.34h4.96c-.1.83-.64 2.08-1.84 2.92l2.84 2.2c1.7-1.57 2.68-3.88 2.68-6.62z" />
       <path fill="#FBBC05" d="M3.88 10.78A5.54 5.54 0 0 1 3.58 9c0-.62.11-1.22.29-1.78L.96 4.96A9.008 9.008 0 0 0 0 9c0 1.45.35 2.82.96 4.04l2.92-2.26z" />
       <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.84-2.2c-.76.53-1.78.9-3.12.9-2.38 0-4.4-1.57-5.12-3.74L.97 13.04C2.45 15.98 5.48 18 9 18z" />
+    </svg>
+  )
+}
+
+function MicrosoftLogo() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
     </svg>
   )
 }
@@ -57,6 +68,11 @@ function brand(provider: SocialProvider, dark: boolean): BrandStyle {
     return dark
       ? { bg: '#131314', fg: '#E3E3E3', border: '#8E918F', logo: <GoogleLogo /> }
       : { bg: '#FFFFFF', fg: '#1F1F1F', border: '#747775', logo: <GoogleLogo /> }
+  }
+  if (provider === 'microsoft') {
+    return dark
+      ? { bg: '#2F2F2F', fg: '#FFFFFF', border: '#8C8C8C', logo: <MicrosoftLogo /> }
+      : { bg: '#FFFFFF', fg: '#5E5E5E', border: '#8C8C8C', logo: <MicrosoftLogo /> }
   }
   if (provider === 'apple') {
     return dark

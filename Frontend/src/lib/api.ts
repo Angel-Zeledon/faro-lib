@@ -386,9 +386,9 @@ export const authLogin = (email: string, password: string) =>
     }
   }>('POST', '/auth/login', { email, password })
 
-// ── Social sign-in (Google / Apple / Facebook) ───────────────────────────────
+// ── Social sign-in (Google / Microsoft / Apple / Facebook) ───────────────────────────────
 // Off unless the instance operator enabled a provider; `providers` is then [].
-export type SocialProvider = 'google' | 'apple' | 'facebook'
+export type SocialProvider = 'google' | 'microsoft' | 'apple' | 'facebook'
 
 export const getAuthProviders = () =>
   request<{ providers: SocialProvider[] }>('GET', '/auth/providers', undefined, { silent: true })

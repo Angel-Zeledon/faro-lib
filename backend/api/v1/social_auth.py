@@ -1,4 +1,4 @@
-"""Social sign-in routes: Google, Apple, Facebook.
+"""Social sign-in routes: Google, Microsoft, Apple, Facebook.
 
 All of them sit under `/auth` (tag `auth`, which an API key can never reach)
 and every one of them answers "off" until the instance operator enables a

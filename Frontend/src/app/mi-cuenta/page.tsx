@@ -1014,7 +1014,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
   )
 }
 
-// ── Linked sign-in providers (Google / Apple / Facebook) ─────────────────────
+// ── Linked sign-in providers (Google / Microsoft / Apple / Facebook) ─────────────────────
 //
 // Shown only when this installation offers social sign-in, or when the person
 // already has a linked provider (so they can still remove it after the
@@ -1022,7 +1022,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
 // Security looks as it always did.
 
 const PROVIDER_NAME: Record<SocialProvider, string> = {
-  google: 'Google', apple: 'Apple', facebook: 'Facebook',
+  google: 'Google', microsoft: 'Microsoft', apple: 'Apple', facebook: 'Facebook',
 }
 
 function LinkedAccounts() {
