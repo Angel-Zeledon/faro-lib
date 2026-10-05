@@ -3,5 +3,6 @@
 # in-network — the API container is never exposed publicly.
 {$DOMAIN} {
 	encode gzip
+	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy frontend:5000
 }

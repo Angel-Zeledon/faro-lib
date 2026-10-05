@@ -10,6 +10,7 @@
 
 {$LANDING_DOMAIN}, www.{$LANDING_DOMAIN} {
 	encode gzip
+	header Strict-Transport-Security "max-age=31536000"
 
 	@www host www.{$LANDING_DOMAIN}
 	redir @www https://{$LANDING_DOMAIN}{uri} 308
@@ -27,6 +28,7 @@
 
 {$DOMAIN} {
 	encode gzip
+	header Strict-Transport-Security "max-age=31536000"
 	redir / /login 302
 	reverse_proxy frontend:5000
 }
