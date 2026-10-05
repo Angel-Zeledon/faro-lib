@@ -141,6 +141,20 @@ def _check_columns(cfg, df: pd.DataFrame) -> None:
 
 def _check_schema(ctx: dict, cfg, df: pd.DataFrame) -> None:
     changed = diff_schema(ctx.get("input_schema") or {}, input_schema(cfg))
+    if set(changed) == {"group_keys"}:
+        trained_keys = list(changed["group_keys"]["trained"] or [])
+        current_keys = list(changed["group_keys"]["current"] or [])
+        if len(trained_keys) >= 2 and current_keys == trained_keys[:1]:
+            # Models fitted per (SKU, store) before stores were summed into one
+            # series per SKU (data/store_rollup.py). Those models forecast one
+            # store's demand as the SKU's, so they must not be reused; the user
+            # changed nothing, so "your columns changed" would be a false reason.
+            raise ReforecastRefused(
+                "stores_summed_since_training",
+                "The models were trained per (SKU, store); the session now "
+                "forecasts each SKU on the sum of its stores, so a full refit is "
+                "required.",
+                {"trained_group_keys": ", ".join(map(str, trained_keys))})
     if changed:
         raise ReforecastRefused(
             "schema_incompatible",

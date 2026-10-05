@@ -227,6 +227,11 @@ def build_manifest(
             "series_count": len(forecasts),
         },
     }
+    if result.get("store_rollup"):
+        # The file had several stores per SKU and they were summed to one
+        # series per SKU before training: no per-store forecast exists, and
+        # `columns_cfg` naming a store column must not suggest otherwise.
+        manifest["store_rollup"] = result["store_rollup"]
     if artifacts:
         manifest["model_artifacts"] = artifacts
     if reforecast is not None:

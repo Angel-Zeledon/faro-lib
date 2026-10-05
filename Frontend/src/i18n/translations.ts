@@ -2289,6 +2289,16 @@ export const translations = {
     'runwarn.PREP_DUPLICATES_COLLAPSED.what':  'Sumamos las ventas del mismo producto en el mismo día para que la demanda quede por período. Si no lo hiciéramos, tres ventas de 4+3+3 se leerían como tres días de ~3 unidades y comprarías un tercio de lo necesario.',
     'runwarn.PREP_DUPLICATES_COLLAPSED.fix':   'No tienes que hacer nada. Si prefieres controlarlo tú, exporta el archivo ya totalizado por día.',
 
+    'runwarn.PREP_STORES_SUMMED.title':  'Tu archivo trae varias tiendas: pronosticamos el total de cada producto',
+    'runwarn.PREP_STORES_SUMMED.what':   'Sumamos las ventas de todas las tiendas en una sola serie por producto antes de entrenar. El pronóstico es por producto, no por tienda: cada bodega recibe la parte del total que tengas configurada en Bodegas.',
+    'runwarn.PREP_STORES_SUMMED.fix':    'Revisa en Bodegas qué porcentaje de la demanda corresponde a cada una; sin configurarlo, todo el total va a la bodega principal.',
+    'runwarn.PREP_STORES_SUMMED.sample': '{n_stores} tiendas sumadas en {n_skus} productos ({n_skus_multi_store} se venden en más de una tienda).',
+
+    'runwarn.PREP_STOCK_SUMMED_ACROSS_STORES.title':  'El stock de cada producto es la suma de sus tiendas',
+    'runwarn.PREP_STOCK_SUMMED_ACROSS_STORES.what':   'Para los productos que se venden en varias tiendas tomamos la lectura de stock más reciente de cada tienda y las sumamos. Una tienda sin lectura de stock no suma nada, así que el stock de ese producto puede estar por debajo del real.',
+    'runwarn.PREP_STOCK_SUMMED_ACROSS_STORES.fix':    'Si alguna tienda quedó sin lectura, agrega su stock en el archivo o corrígelo en la ficha del producto antes de pedir.',
+    'runwarn.PREP_STOCK_SUMMED_ACROSS_STORES.sample': '{n_skus} productos en {n_stores} tiendas; {missing_pairs} combinaciones producto-tienda sin lectura de stock ({n_skus_with_missing} productos afectados).',
+
     'runwarn.PREP_INFINITE_NEUTRALIZED.title': 'Había cantidades imposibles y las ignoramos',
     'runwarn.PREP_INFINITE_NEUTRALIZED.what':  'Algunas celdas traían un número fuera de todo rango real (suele venir de una fórmula rota o una división por cero). Las tratamos como si estuvieran vacías.',
     'runwarn.PREP_INFINITE_NEUTRALIZED.fix':   'Corrige esas celdas en el archivo original para no perder esas ventas.',
@@ -5315,6 +5325,7 @@ export const translations = {
     'errors.training.reforecast_artifacts_not_found': 'esta sesión no tiene modelos guardados para actualizar. Entrénala de nuevo una vez.',
     'errors.training.reforecast_artifact_integrity_failed': 'un modelo guardado ya no coincide con su huella registrada, así que no se usó. Entrena la sesión de nuevo.',
     'errors.training.reforecast_schema_incompatible': 'las columnas o la configuración de las variables cambiaron respecto a cuando se entrenaron los modelos. Hace falta un entrenamiento completo.',
+    'errors.training.reforecast_stores_summed_since_training': 'los modelos de esta sesión se entrenaron por tienda, y ahora cada producto se pronostica sobre la suma de sus tiendas. Hace falta un entrenamiento completo para que el pronóstico use el total.',
     'errors.training.reforecast_window_shifted_too_far': 'las ventas nuevas llegan demasiado lejos de donde terminó el entrenamiento para actualizar los modelos con confianza. Entrena de nuevo.',
     'errors.training.reforecast_history_older_than_models': 'el historial nuevo termina antes que los datos con que se entrenaron los modelos.',
     'errors.training.reforecast_cadence_changed': 'el ritmo de las fechas (diario, semanal…) cambió respecto al entrenamiento. Hace falta un entrenamiento completo.',
@@ -7922,6 +7933,16 @@ export const translations = {
     'runwarn.PREP_DUPLICATES_COLLAPSED.title': 'Your file carries one row per sale, not per day',
     'runwarn.PREP_DUPLICATES_COLLAPSED.what':  'We added up sales of the same product on the same day so demand is per period. Without that, three sales of 4+3+3 would read as three days of ~3 units and you would order a third of what you need.',
     'runwarn.PREP_DUPLICATES_COLLAPSED.fix':   'Nothing to do. If you prefer to control it yourself, export the file already totalled per day.',
+
+    'runwarn.PREP_STORES_SUMMED.title':  'Your file has several stores: we forecast each product\'s total',
+    'runwarn.PREP_STORES_SUMMED.what':   'We added up every store\'s sales into one series per product before training. The forecast is per product, not per store: each warehouse gets the share of the total you set in Warehouses.',
+    'runwarn.PREP_STORES_SUMMED.fix':    'Check in Warehouses what share of demand belongs to each one; with nothing set, the whole total goes to the main warehouse.',
+    'runwarn.PREP_STORES_SUMMED.sample': '{n_stores} stores summed across {n_skus} products ({n_skus_multi_store} sell in more than one store).',
+
+    'runwarn.PREP_STOCK_SUMMED_ACROSS_STORES.title':  'Each product\'s stock is the sum of its stores',
+    'runwarn.PREP_STOCK_SUMMED_ACROSS_STORES.what':   'For products sold in several stores we took each store\'s most recent stock reading and added them up. A store with no stock reading adds nothing, so that product\'s stock may be lower than the real one.',
+    'runwarn.PREP_STOCK_SUMMED_ACROSS_STORES.fix':    'If a store had no reading, add its stock to the file or correct it on the product card before ordering.',
+    'runwarn.PREP_STOCK_SUMMED_ACROSS_STORES.sample': '{n_skus} products across {n_stores} stores; {missing_pairs} product-store pairs with no stock reading ({n_skus_with_missing} products affected).',
 
     'runwarn.PREP_INFINITE_NEUTRALIZED.title': 'There were impossible quantities and we ignored them',
     'runwarn.PREP_INFINITE_NEUTRALIZED.what':  'Some cells carried a number outside any real range — usually a broken formula or a division by zero. We treated them as empty.',
@@ -10898,6 +10919,7 @@ export const translations = {
     'errors.training.reforecast_artifacts_not_found': 'this session has no stored models to update. Train it again once.',
     'errors.training.reforecast_artifact_integrity_failed': 'a stored model no longer matches its recorded fingerprint, so it was not used. Train the session again.',
     'errors.training.reforecast_schema_incompatible': 'the columns or the feature settings differ from when the models were trained. A full training is needed.',
+    'errors.training.reforecast_stores_summed_since_training': 'this session\'s models were trained per store, and each product is now forecast on the sum of its stores. A full training is needed so the forecast uses the total.',
     'errors.training.reforecast_window_shifted_too_far': 'the new sales run too far past where training ended to update the models reliably. Train again.',
     'errors.training.reforecast_history_older_than_models': 'the new history ends before the data the models were trained on.',
     'errors.training.reforecast_cadence_changed': 'the date cadence (daily, weekly...) differs from training. A full training is needed.',
