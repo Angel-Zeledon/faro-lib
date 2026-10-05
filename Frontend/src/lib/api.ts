@@ -536,6 +536,28 @@ export const attachDataset = (sessionId: string, dataset_id: string) =>
 export const inspectSession = (id: string) =>
   request<InspectionResult>('GET', `/sessions/${id}/inspect`)
 
+// ── Guided upload ─────────────────────────────────────────────────────────────
+// What the guide makes of the ORIGINAL file given the answers so far. Read-only,
+// so the wizard can call it after every answer. `mapping` is only sent once the
+// person has chosen columns themselves: then it is judged, never replaced.
+export const previewGuidedReading = (
+  id: string, decisions: Record<string, unknown>, mapping?: Record<string, string | null> | null,
+) => {
+  const q = new URLSearchParams({ decisions: JSON.stringify(decisions) })
+  if (mapping) q.set('mapping', JSON.stringify(mapping))
+  return request<{ report: import('./types').GuidanceReport; applied: import('./types').GuidedRecord | null }>(
+    'GET', `/sessions/${id}/guided-reading?${q.toString()}`)
+}
+
+// Applies the fixes into a NEW dataset (the original is never modified) and
+// re-attaches the session to it. `revert` goes back to the original file.
+export const applyGuidedReading = (
+  id: string,
+  body: { decisions: Record<string, unknown>; mapping?: Record<string, string | null> | null; revert?: boolean },
+) =>
+  request<{ report: import('./types').GuidanceReport; applied: import('./types').GuidedRecord | null; dataset_id: string }>(
+    'POST', `/sessions/${id}/configure/guided-reading`, body)
+
 export const getQuality     = (id: string) => request<QualityReport>('GET', `/sessions/${id}/quality`)
 export const getRunWarnings = (id: string) => request<RunWarnings>('GET', `/sessions/${id}/warnings`)
 export const getDataHealth  = (id: string, refresh = false) =>

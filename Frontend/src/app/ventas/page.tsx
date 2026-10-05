@@ -7,6 +7,7 @@ import {
  setBusinessConfig, startTraining, getJob,
  startDemoQuickstart, listDatasets, getSessionSummaries, getColumnsConfig,
  getDataGate, setRemediations, getActiveTraining, getTenantTimezone,
+ previewGuidedReading, applyGuidedReading,
 } from '@/lib/api'
 import type { TrainingFamily } from '@/lib/api'
 import {
@@ -15,11 +16,13 @@ import {
 import { validateSalesCsv } from '@/lib/csvCheck'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import UploadGuide from '@/components/upload/UploadGuide'
+import GuidedReading from '@/components/upload/GuidedReading'
 import CsvIssueReport, { CsvTemplateButton } from '@/components/ui/CsvIssueReport'
 import DataIssuesPanel from '@/components/ui/DataIssuesPanel'
 import RemediationChoices from '@/components/ui/RemediationChoices'
 import type {
  InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary, DataGate,
+ GuidanceReport, GuidedRecord,
 } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
 import { useErrorDetail } from '@/components/ui/States'
@@ -795,6 +798,23 @@ function QuickStartPageContent() {
    Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null]))
  )
 
+ // ── Guided upload ───────────────────────────────────────────────────────────
+ // What the guide makes of the file (read in ForecastingCore), the answers the
+ // person has given, and what was already done to the file for them. The report
+ // is the single source for the conversation on the mapping step.
+ const [guided, setGuided] = useState<GuidanceReport | null>(null)
+ const [guidedApplied, setGuidedApplied] = useState<GuidedRecord | null>(null)
+ const [guidedDecisions, setGuidedDecisions] = useState<Record<string, unknown>>({})
+ const [guidedBusy, setGuidedBusy] = useState(false)
+ const [showAdvanced, setShowAdvanced] = useState(false)
+ // The person chose to use their file as it is: never re-apply fixes on their behalf.
+ const guidedOffRef = useRef(false)
+ // Set once the person picks a column themselves: from then on the guide JUDGES
+ // that mapping instead of proposing its own.
+ const mappingTouchedRef = useRef(false)
+ // Which fixes are already applied to the file under the session.
+ const appliedKeyRef = useRef('')
+
  // Training progress
  const [trainMsg, setTrainMsg] = useState('')
  const [trainPct, setTrainPct] = useState<number | null>(null)
@@ -959,6 +979,105 @@ function QuickStartPageContent() {
   return null
  }
 
+ // ── Guided upload: conversation helpers ─────────────────────────────────────
+ // The guide's own reading of which column is which. Only the three required
+ // fields (and the store) are taken from it, and only once it is complete: a
+ // half-proposed mapping would look like a decision.
+ const guidedMapping = (g: GuidanceReport | null): Record<string, string> | null => {
+  if (!g || g.verdict !== 'ready') return null
+  const m = g.mapping
+  return m.sku && m.date && m.demand ? (m as Record<string, string>) : null
+ }
+ const adoptGuidedMapping = (g: GuidanceReport | null) => {
+  if (!g || mappingTouchedRef.current) return
+  const m = guidedMapping(g)
+  if (!m) return
+  setMapping(prev => ({
+   ...prev,
+   sku: m.sku, date: m.date, demand: m.demand, ...(m.store ? { store: m.store } : {}),
+  }))
+ }
+
+ // Applies the fixes of a READY report into a cleaned copy (the original is
+ // never touched) and re-reads the file. Returns the new inspection, or null
+ // when there was nothing to do or the same fixes are already in place.
+ const settleGuided = async (
+  sid: string, rep: GuidanceReport, decisions: Record<string, unknown>,
+  userMapping: Record<string, string | null> | null,
+ ): Promise<InspectionResult | null> => {
+  if (guidedOffRef.current || rep.verdict !== 'ready' || rep.fixes.length === 0) return null
+  const key = JSON.stringify([rep.fixes, rep.mapping])
+  if (key === appliedKeyRef.current) return null
+  const res = await applyGuidedReading(sid, { decisions, mapping: userMapping })
+  appliedKeyRef.current = key
+  setGuidedApplied(res.applied)
+  const fresh = await inspectSession(sid)
+  setInspection(fresh)
+  return fresh
+ }
+
+ // One answer: merge it, ask the guide again, apply the fixes once nothing is
+ // left to ask. Exactly one question is ever on screen.
+ const handleGuidedAnswer = async (decision: Record<string, unknown>) => {
+  if (!sessionId) return
+  const merged: Record<string, unknown> = { ...guidedDecisions }
+  for (const [k, v] of Object.entries(decision)) {
+   merged[k] = (v && typeof v === 'object' && !Array.isArray(v))
+    ? { ...((merged[k] as Record<string, unknown>) ?? {}), ...(v as Record<string, unknown>) }
+    : v
+  }
+  setError(null)
+  setGuidedBusy(true)
+  try {
+   const touched = mappingTouchedRef.current ? mapping : null
+   const { report } = await previewGuidedReading(sessionId, merged, touched)
+   setGuidedDecisions(merged)
+   setGuided(report)
+   adoptGuidedMapping(report)
+   await settleGuided(sessionId, report, merged, touched)
+  } catch (e: unknown) {
+   setError(errorDetail(e) || t('guide.err_apply'))
+  } finally {
+   setGuidedBusy(false)
+  }
+ }
+
+ // "Use my file exactly as it is": back to the original, and no more fixes on
+ // the person's behalf for this session.
+ const handleGuidedUndo = async () => {
+  if (!sessionId) return
+  setError(null)
+  setGuidedBusy(true)
+  try {
+   guidedOffRef.current = true
+   await applyGuidedReading(sessionId, { decisions: guidedDecisions, revert: true })
+   appliedKeyRef.current = ''
+   setGuidedApplied(null)
+   setInspection(await inspectSession(sessionId))
+  } catch (e: unknown) {
+   guidedOffRef.current = false
+   setError(errorDetail(e) || t('guide.err_apply'))
+  } finally {
+   setGuidedBusy(false)
+  }
+ }
+
+ // The person picked a column in the advanced view: judge THEIR mapping.
+ useEffect(() => {
+  if (step !== 2 || !sessionId || !mappingTouchedRef.current) return
+  let cancelled = false
+  const timer = setTimeout(async () => {
+   try {
+    const { report } = await previewGuidedReading(sessionId, guidedDecisions, mapping)
+    if (cancelled) return
+    setGuided(report)
+    await settleGuided(sessionId, report, guidedDecisions, mapping)
+   } catch { /* the previous verdict stays on screen; confirm re-checks server-side */ }
+  }, 350)
+  return () => { cancelled = true; clearTimeout(timer) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [mapping, step, sessionId])
+
  // ── Step 1: session over an already-stored dataset ──────────────────────────
  // Create a fresh session, attach the dataset, inspect it and enter the
  // column-mapping step. Shared by the upload path (right after the file
@@ -980,7 +1099,39 @@ function QuickStartPageContent() {
 
  await attachDataset(session.session_id, dsId)
 
- const insp = await inspectSession(session.session_id)
+ let insp = await inspectSession(session.session_id)
+
+ // Guided upload: the guide has already read the file. A file that needs only
+ // lossless fixes is fixed here and the wizard goes on; one with a real
+ // question or an unusable one stops on the mapping step, where the question is.
+ guidedOffRef.current = false
+ mappingTouchedRef.current = false
+ appliedKeyRef.current = ''
+ setGuidedDecisions({})
+ setShowAdvanced(false)
+ setGuidedApplied(insp.guided_reading ?? null)
+ let g: GuidanceReport | null = insp.guidance ?? null
+ setGuided(g)
+ if (g && (g.verdict === 'ask' || g.verdict === 'unusable')) {
+  setInspection(insp)
+  setDatasetId(dsId)
+  setHistoryDays(historyDaysOf(insp))
+  adoptGuidedMapping(g)
+  setStep(2)
+  return
+ }
+ if (g && g.verdict === 'ready' && g.fixes.length > 0) {
+  try {
+   const next = await settleGuided(session.session_id, g, {}, null)
+   if (next) { insp = next; g = next.guidance ?? null; setGuided(g) }
+  } catch (e: unknown) {
+   setError(errorDetail(e) || t('guide.err_apply'))
+   setInspection(insp)
+   setDatasetId(dsId)
+   setStep(2)
+   return
+  }
+ }
  setInspection(insp)
  setDatasetId(dsId)
  const hist = historyDaysOf(insp)
@@ -1026,11 +1177,19 @@ function QuickStartPageContent() {
     const sug = suggestions[field.name]
     if (sug?.top && sug.confidence >= 0.7) next[field.name] = sug.top
    }
+   // What the guide read from the CONTENT of the columns beats what their
+   // names suggest: a file whose "fecha" holds quantities must not train.
+   const gm = guidedMapping(g)
+   if (gm) {
+    for (const f of ['sku', 'date', 'demand', 'store'] as const) if (gm[f]) next[f] = gm[f]
+   }
    setMapping(next)
    setReusedMapping(
     previous && missing.length > 0 ? { from: previous.name, missing } : null,
    )
-   const certain = !horizonTooLong && (!previous || missing.length === 0) ? detectedWithCertainty(suggestions) : null
+   let certain = !horizonTooLong && (!previous || missing.length === 0) ? detectedWithCertainty(suggestions) : null
+   // Names are certain but the content disagrees: ask, do not skip the step.
+   if (certain && gm && REQUIRED_FIELDS.some(f => certain![f] !== gm[f])) certain = null
    if (certain) {
     handedOff = await autoConfirm(session.session_id, certain)
     if (handedOff) return
@@ -1491,6 +1650,12 @@ function QuickStartPageContent() {
  setReusedMapping(null)
  setCsvWarnings([])
  setCsvIssues([])
+ setGuided(null)
+ setGuidedApplied(null)
+ setGuidedDecisions({})
+ setShowAdvanced(false)
+ mappingTouchedRef.current = false
+ appliedKeyRef.current = ''
  setMapping(Object.fromEntries(CANONICAL_FIELDS.map(f => [f.name, null])))
  }
 
@@ -1583,6 +1748,11 @@ function QuickStartPageContent() {
  .length
 
  const missingRequired = CANONICAL_FIELDS.filter(f => f.required).some(f => !mapping[f.name])
+
+ // The guide still has a question open, or says the file cannot be used with
+ // this mapping: confirming would train on a reading nobody settled.
+ const guidedStops = guided !== null && guided.verdict !== 'ready'
+ const confirmBlocked = busy || guidedBusy || missingRequired || unansweredFixable > 0 || guidedStops
 
  return (
  <>
@@ -1801,12 +1971,45 @@ function QuickStartPageContent() {
  {/* ── Step 2 ──────────────────────────────────────────────────────── */}
  {step === 2 && inspection && (
  <div>
+ {!guided && (
+ <>
  <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
  {t('qs.confirm_title')}
  </h2>
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
  {t('qs.confirm_desc')}
  </p>
+ </>
+ )}
+ {inspection.guidance_error && !guided && (
+ <div style={{ marginBottom: 16, padding: '8px 14px', background: 'rgba(217,119,6,0.07)',
+  border: '1px solid #d9770655', borderRadius: 8, fontSize: 13, color: 'var(--text)', lineHeight: 1.55 }}>
+  {t('guide.error_unavailable')}
+ </div>
+ )}
+ {guided && (
+ <div style={{ marginBottom: 20 }}>
+  <GuidedReading
+   report={guided}
+   applied={guidedApplied}
+   busy={busy || guidedBusy}
+   onAnswer={handleGuidedAnswer}
+   onUndo={handleGuidedUndo}
+   onPickAnother={handleStartOver}
+   horizonMax={guided.summary
+    ? spanText(Math.max(1, Math.floor(guided.summary.history_days / HISTORY_FRACTION)), t)
+    : null}
+  />
+  <button type="button" onClick={() => setShowAdvanced(v => !v)} aria-expanded={showAdvanced}
+   style={{ marginTop: 14, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+    fontSize: 13, color: 'var(--accent)', textDecoration: 'underline' }}>
+   {t(showAdvanced ? 'guide.advanced_hide' : 'guide.advanced_show')}
+  </button>
+  {showAdvanced && (
+   <p style={{ fontSize: 12.5, color: 'var(--dim)', margin: '6px 0 0', lineHeight: 1.5 }}>{t('guide.advanced_note')}</p>
+  )}
+ </div>
+ )}
 
  {/* Calm warning, never a block: the engine can forecast this horizon, the
  numbers just get less reliable the further past the history they reach. */}
@@ -1856,6 +2059,7 @@ function QuickStartPageContent() {
  </div>
  )}
 
+ {(!guided || showAdvanced || missingRequired) && (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
  {CANONICAL_FIELDS.map(field => {
   const allCols = inspection.profile.columns.map(c => c.name)
@@ -1887,6 +2091,7 @@ function QuickStartPageContent() {
    value={val ?? '__none__'}
    onChange={e => {
     const v = e.target.value
+    mappingTouchedRef.current = true
     setMapping(prev => ({ ...prev, [field.name]: v === '__none__' ? null : v }))
    }}
    style={{
@@ -1911,8 +2116,11 @@ function QuickStartPageContent() {
   )
  })}
  </div>
+ )}
 
- <PreviewTable />
+ {!guided && <PreviewTable />}
+
+ {guidedStops && !showAdvanced ? null : (<>
 
  {/* The profiler has always found these; nothing used to show them. This is
      the last screen where the user can still go fix the file. */}
@@ -1988,7 +2196,7 @@ function QuickStartPageContent() {
  )}
  <StickyActionBar>
  <button type="button" className="mobile-btn mobile-btn-primary" onClick={handleConfirm}
-  disabled={busy || missingRequired || unansweredFixable > 0}>
+  disabled={confirmBlocked}>
   {busy ? t('qs.processing') : t('qs.looks_good')}
  </button>
  </StickyActionBar>
@@ -1997,14 +2205,13 @@ function QuickStartPageContent() {
  <>
  <button
  onClick={handleConfirm}
- disabled={busy || missingRequired || unansweredFixable > 0}
+ disabled={confirmBlocked}
  style={{
   marginTop: 28, width: '100%', padding: '14px 0',
   background: 'var(--accent)', color: '#fff',
   border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700,
-  cursor: (busy || missingRequired || unansweredFixable > 0)
-   ? 'not-allowed' : 'pointer',
-  opacity: (busy || unansweredFixable > 0) ? 0.7 : 1,
+  cursor: confirmBlocked ? 'not-allowed' : 'pointer',
+  opacity: (busy || unansweredFixable > 0 || guidedStops) ? 0.7 : 1,
   transition: 'opacity 0.15s',
  }}
  >
@@ -2022,6 +2229,7 @@ function QuickStartPageContent() {
  )}
  </>
  )}
+ </>)}
  </div>
  )}
 
@@ -2036,6 +2244,11 @@ function QuickStartPageContent() {
  <br />
  {t('qs.learning_desc2')}
  </p>
+ {guidedApplied && (
+ <p style={{ fontSize: 12.5, color: 'var(--dim)', margin: '-20px 0 24px', lineHeight: 1.5 }}>
+ {t('guide.applied_note', { n: guidedApplied.fixes.length })}
+ </p>
+ )}
 
  {!error && <TrainingLoader message={trainMsg} pct={trainPct} multiPeriod={multiPeriod} />}
 

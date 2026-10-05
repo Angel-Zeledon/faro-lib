@@ -126,6 +126,16 @@ def _public_effective_config(config: dict) -> dict:
     return cleaned
 
 
+def _guided_reading(tenant_id: str, session_id: str) -> Optional[dict]:
+    record = (session_store.get_field(tenant_id, session_id, "dataset_ref") or {}).get(
+        "guided_reading")
+    if not record:
+        return None
+    return {k: record.get(k) for k in (
+        "source_dataset_id", "derived_dataset_id", "fixes", "mapping",
+        "rows_in", "rows_out", "applied_at", "applied_by")}
+
+
 def build_manifest(
     tenant_id: str, session_id: str, job_id: Optional[str], *,
     outcome: str, error: Optional[str] = None,
@@ -185,6 +195,11 @@ def build_manifest(
             "size_bytes": (dataset or {}).get("size_bytes"),
             "source_type": (dataset or {}).get("source_type"),
             "parent_id": (dataset or {}).get("parent_id"),
+            # What the guided upload did to the file before this run (None when
+            # the file was used as uploaded). The fix list is the whole
+            # transformation: replaying it over the parent dataset reproduces
+            # this one.
+            "guided_reading": _guided_reading(tenant_id, session_id),
         },
         "counts": {
             "rows": (dataset or {}).get("row_count"),

@@ -249,7 +249,73 @@ export interface GranularityDetection {
   suggested_target:  string | null
 }
 
+// ── Guided upload ─────────────────────────────────────────────────────────────
+export interface GuidanceOption {
+  id:       string
+  decision: Record<string, unknown>
+  params:   Record<string, unknown>
+}
+
+export interface GuidanceFinding {
+  code:       string
+  severity:   'info' | 'auto' | 'ask' | 'block'
+  check:      string
+  column:     string | null
+  confidence: number
+  params:     Record<string, unknown>
+  options?:   GuidanceOption[]
+  examples?:  Array<Record<string, unknown> | string | string[]>
+  handled_by?: string
+}
+
+export interface GuidanceSummary {
+  rows: number; products: number; periods: number
+  date_min: string; date_max: string; history_days: number
+  granularity: 'daily' | 'weekly' | 'monthly' | 'irregular' | null
+  step_days: number; short_products: number; short_threshold: number; history_ok: boolean
+}
+
+export interface GuidanceReport {
+  version:       number
+  verdict:       'ready' | 'ask' | 'unusable'
+  findings:      GuidanceFinding[]
+  fixes:         { code: string; params: Record<string, unknown> }[]
+  questions:     GuidanceFinding[]
+  next_question: GuidanceFinding | null
+  needs_apply:   boolean
+  shape:         'long' | 'wide'
+  mapping:       Partial<Record<'sku' | 'date' | 'demand' | 'store', string>>
+  columns:       { slot: 'sku' | 'date' | 'demand'; column: string | null;
+                   status: 'ok' | 'check' | 'bad'; reason: string | null; samples?: unknown[] }[]
+  checks:        { id: string; status: 'ok' | 'check' | 'ask' | 'block' | 'pending' }[]
+  checks_done:   number
+  checks_total:  number
+  summary:       GuidanceSummary | null
+  preview:       {
+    columns: string[]
+    rows: { cells: unknown[]; read: { sku?: string | null; date?: string | null; demand?: number | null } }[]
+    slots: Record<string, string>
+    total_rows: number
+  } | null
+  sheet:         { selected: string; ranked: { name: string; score: number; rows: number }[] } | null
+}
+
+export interface GuidedRecord {
+  source_dataset_id: string
+  derived_dataset_id: string
+  fixes: { code: string; params: Record<string, unknown> }[]
+  decisions: Record<string, unknown>
+  mapping: Record<string, string>
+  findings: Pick<GuidanceFinding, 'code' | 'severity' | 'check' | 'column' | 'params'>[]
+  rows_in: number
+  rows_out: number
+  applied_at: string
+}
+
 export interface InspectionResult {
+  guidance?:              GuidanceReport | null
+  guidance_error?:        string | null
+  guided_reading?:        GuidedRecord | null
   profile:                DataProfile
   column_options:         ColumnOptions
   canonical_suggestions?: CanonicalMapping   // NEW (also nested in column_options)
