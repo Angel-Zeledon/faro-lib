@@ -127,6 +127,19 @@ def list_stock_page(
                                   q=q, warehouse=warehouse))
 
 
+@router.get("/stock/lookup")
+def lookup_stock(
+    code: str = Query(min_length=1, max_length=200,
+                      description="A scanned barcode or a SKU"),
+    warehouse: Optional[str] = Query(default=None, max_length=100),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Resolve a scanned code to a SKU (barcode first, then SKU). Declared before
+    `/stock/{sku}`, which would otherwise take 'lookup' for a SKU."""
+    from backend.inventory import stock_count_service as count_svc
+    return ok(count_svc.lookup(user.tenant_id, code, warehouse))
+
+
 @router.get("/stock/{sku}")
 def get_stock(sku: str, user: CurrentUser = Depends(get_current_user)):
     row = svc.get_stock(user.tenant_id, sku)
@@ -917,6 +930,16 @@ def inventory_status(
     - recommended order quantity
     - inventory value
     """
+    # Called directly (MCP tool, assistant) the parameters it is not given keep
+    # their FastAPI `Query(...)` default OBJECT. Treat those as 'not provided' so
+    # the optional paging/sort/search parameters never break a direct caller.
+    from fastapi.params import Query as _QueryDefault
+    if isinstance(limit, _QueryDefault): limit = None
+    if isinstance(offset, _QueryDefault): offset = 0
+    if isinstance(sort, _QueryDefault): sort = "urgency"
+    if isinstance(order, _QueryDefault): order = None
+    if isinstance(q, _QueryDefault): q = None
+    if isinstance(skus, _QueryDefault): skus = None
     if not session_id:
         session_id = planning_service.resolve_active_session(user.tenant_id)
         if not session_id:

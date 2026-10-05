@@ -360,6 +360,8 @@ app.include_router(api_keys.router,        prefix=_PREFIX)
 app.include_router(webhooks.router,        prefix=_PREFIX)
 app.include_router(schedule.router,        prefix=_PREFIX)
 app.include_router(inventory_router.router, prefix=_PREFIX)
+from backend.api.v1 import stock_counts as stock_counts_router  # noqa: E402
+app.include_router(stock_counts_router.router, prefix=_PREFIX)
 from backend.api.v1 import inventory_import as inventory_import_router  # noqa: E402
 app.include_router(inventory_import_router.router, prefix=_PREFIX)
 from backend.api.v1 import inventory_recommendation_log as recommendation_log_router  # noqa: E402

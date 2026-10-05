@@ -58,7 +58,7 @@ import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, MoreHorizontal, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
- PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft,
+ PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft, ScanLine,
 } from 'lucide-react'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -2772,6 +2772,8 @@ export default function InventoryPage() {
    // Configurar inventario is not a sidebar entry; it lives under this screen
    // (the sidebar keeps Inventario lit while it is open).
    { label: t('nav.inventory_setup'), icon: <Sliders size={12} />, onSelect: () => router.push('/configurar-inventario') },
+   // Counting is writing (it ends in an adjustment), so a viewer is not offered it.
+   ...(canEdit ? [{ label: t('count.page_title'), icon: <ScanLine size={12} />, onSelect: () => router.push('/conteo-fisico') }] : []),
   ]}
  />
  </div>

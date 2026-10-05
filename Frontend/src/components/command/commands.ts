@@ -2,7 +2,7 @@ import {
   ShoppingCart, ClipboardList, Package, Boxes, Truck, TrendingUp, Database,
   History, MessagesSquare, FlaskConical, Plug, Settings, Users, KeyRound,
   Upload, Plus, SunMoon, Languages, LifeBuoy, MessageSquare, ListChecks, ScrollText,
-  Clock, Code2, ServerCog, User, type LucideIcon,
+  Clock, Code2, ServerCog, User, ScanLine, type LucideIcon,
 } from 'lucide-react'
 import { siteHref } from '@/lib/siteUrls'
 import type { InventoryStatusItem } from '@/lib/types'
@@ -64,7 +64,8 @@ export const COMMANDS: Command[] = [
   // to a screen the nav withholds is a back door, not a shortcut.
   { id: 'go.messages',     group: 'navigate', href: '/mensajes',             labelKey: 'nav.messages',      aliasKey: 'cmd.alias.messages',   Icon: MessageSquare },
   { id: 'go.inventory_setup', group: 'navigate', href: '/configurar-inventario', labelKey: 'nav.inventory_setup', aliasKey: 'cmd.alias.inventory_setup', Icon: ListChecks },
-  { id: 'go.activity',     group: 'navigate', href: '/actividad',            labelKey: 'nav.activity',      aliasKey: 'cmd.alias.activity',   Icon: ScrollText },
+  { id: 'go.stock_count', group: 'navigate', href: '/conteo-fisico', labelKey: 'count.page_title', aliasKey: 'cmd.alias.stock_count', Icon: ScanLine, writerOnly: true },
+  { id: 'go.activity',    group: 'navigate', href: '/actividad',            labelKey: 'nav.activity',      aliasKey: 'cmd.alias.activity',   Icon: ScrollText },
   { id: 'go.config',       group: 'navigate', href: '/configuracion',        labelKey: 'nav.config',        aliasKey: 'cmd.alias.config',     Icon: Settings },
   { id: 'go.account',      group: 'navigate', href: '/mi-cuenta',            labelKey: 'nav.account',       aliasKey: 'cmd.alias.account',    Icon: User },
   { id: 'go.users',        group: 'navigate', href: '/usuarios',             labelKey: 'nav.users',                                           Icon: Users,        adminOnly: true },
