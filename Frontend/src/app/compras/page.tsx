@@ -53,7 +53,7 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 // narrow-screen card list below makes exactly the same promises as this table.
 import {
   C, AllClear, StatusMark, SourceBadge, provenanceText, summarizeAssumptions,
-  tOr, type ActionItem, type ActionStatus, IncomingNote, OrderedNote,
+  tOr, type ActionItem, type ActionStatus, IncomingNote, MoneyAtRiskNote, OrderedNote,
 } from './shared'
 import HoyMobile from './HoyMobile'
 import { MoreAnalysis, StaleLine, analysisSections, useTabFold } from './folds'
@@ -328,6 +328,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
       )}
      </div>
      <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>{item.reason}</div>
+     <MoneyAtRiskNote item={item} />
      <IncomingNote item={item} />
      {/* Supplier is a decision, not a label: the buyer can send this line to
          whoever they want before the order is generated. Which is exactly why
@@ -666,6 +667,8 @@ function SpikeCard({ s }: { s: DemandSpike }) {
 type BriefingItem = InventoryStatusItem & {
  lead_time_observations?:        number
  lead_time_observations_needed?: number
+ money_at_risk?:                 number | null
+ money_at_risk_basis?:           'price' | 'cost' | 'unknown'
 }
 
 function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionItem[] {
@@ -718,6 +721,8 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    unit_margin:  risk.unit_margin ?? null,
    incoming_qty:     risk.incoming_qty ?? 0,
    incoming_sources: risk.incoming_sources ?? [],
+   money_at_risk:       risk.money_at_risk ?? null,
+   money_at_risk_basis: risk.money_at_risk_basis,
    reason,
    status:      'pending',
   })
@@ -760,10 +765,20 @@ function buildActionItems(b: MorningBriefing, t: (k: string) => string): ActionI
    unit_margin:  w.unit_margin ?? null,
    incoming_qty:     w.incoming_qty ?? 0,
    incoming_sources: w.incoming_sources ?? [],
-   reason:      `${d != null ? d + ' ' + coverageUnitLabel(cu, d, t) + ' ' + t('hoy.reason_coverage_suffix') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
+   money_at_risk:       w.money_at_risk ?? null,
+   money_at_risk_basis: w.money_at_risk_basis,
+   reason:     `${d != null ? d + ' ' + coverageUnitLabel(cu, d, t) + ' ' + t('hoy.reason_coverage_suffix') : t('hoy.reason_next_order_recommended')} — ${t('hoy.reason_order_this_week')}`,
    status:      'pending',
   })
  }
+
+ // "Order first": the line with the most money at risk, only when at least one
+ // line has an amount (a tenant with no prices or costs sees no ranking).
+ let top: ActionItem | null = null
+ for (const it of items) {
+  if ((it.money_at_risk ?? 0) > (top?.money_at_risk ?? 0)) top = it
+ }
+ if (top) top.order_first = true
 
  return items
 }
