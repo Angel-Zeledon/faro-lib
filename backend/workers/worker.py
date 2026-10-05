@@ -562,6 +562,26 @@ def _trial_reaper_loop() -> None:
         time.sleep(_TRIAL_REAPER_SECONDS)
 
 
+# Billing (backend/billing/service.py). No payment provider sends an event when
+# a grace window or a cancelled-but-paid period simply runs out, so the tier
+# that state implies is applied here. Hourly: at most an hour late, in the
+# customer's favour. A no-op on an installation with no billing rows.
+_BILLING_SWEEP_SECONDS = 3600
+
+
+def _billing_sweep_loop() -> None:
+    log.info("Billing sweep loop started")
+    while True:
+        try:
+            from backend.billing.service import reconcile_all
+            changed = reconcile_all()
+            if changed:
+                log.info("Billing sweep: %d tenant(s) changed tier", changed)
+        except Exception as e:
+            log.error("Billing sweep error: %s", e, exc_info=True)
+        time.sleep(_BILLING_SWEEP_SECONDS)
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -575,7 +595,7 @@ def enabled_components() -> list[str]:
     if settings.scheduler_enabled:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
-            "operator-digest", "trial-reaper",
+            "operator-digest", "trial-reaper", "billing-sweep",
         ]
     return components
 
@@ -586,6 +606,7 @@ _COMPONENT_TARGETS = {
     "overstock-snapshot": _monthly_overstock_snapshot_loop,
     "operator-digest":    _operator_digest_loop,
     "trial-reaper":       _trial_reaper_loop,
+    "billing-sweep":      _billing_sweep_loop,
 }
 
 

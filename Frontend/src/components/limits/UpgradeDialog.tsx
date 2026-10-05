@@ -6,11 +6,17 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useEntitlements } from '@/lib/entitlements'
 import { requestUpgrade } from '@/lib/api'
 import Button from '@/components/ui/Button'
+import UpgradeToFull, {
+  canBuyOnline, showPaymentPlaceholder, useBillingStatus,
+} from '@/components/billing/UpgradeToFull'
 
 /**
  * The one commercial surface in StockAI.
  *
- * There is no checkout. Every screen ships on every plan; what a plan decides is
+ * When the installation has online payments configured (backend/billing/) and
+ * this tenant can buy, "Upgrade to Full" (a hosted Stripe / PayPal checkout)
+ * comes first and the contact options become the secondary path; otherwise
+ * this is the "write to us" dialog it always was. Every screen ships on every plan; what a plan decides is
  * how much fits and whether the API, MCP and WhatsApp bot are included. When a
  * tenant hits a ceiling or one of those three, this is what they get — what
  * they hit and three ways to reach us. It is opened from
@@ -93,6 +99,19 @@ function UpgradePanel({ limitKey, feature, onClose }: {
   // press the button, not after.
   const trial = ent?.tier === 'demo'
   const needsContact = trial && !contact.trim()
+  // Read when the dialog opens, so a plan bought five minutes ago is not
+  // offered again. Null (unread, failed, or billing off) = the dialog is
+  // exactly the "write to us" dialog it always was.
+  const { status: billing, loaded: billingLoaded } = useBillingStatus()
+  const canBuy = canBuyOnline(billing)
+  // Payments not configured here: the inert payment choice is drawn below the
+  // contact options, which stay the action that works (owner, 2026-10-05).
+  const placeholder = billingLoaded && !trial && !canBuy && showPaymentPlaceholder(billing)
+  const explainKey = trial
+    ? 'trial.dialog.explain'
+    : feature
+      ? (canBuy ? 'limits.feature.explain_buy' : 'limits.feature.explain')
+      : (canBuy ? 'limits.dialog.explain_buy' : 'limits.dialog.explain')
 
   async function submit() {
     setState('sending')
@@ -156,10 +175,29 @@ function UpgradePanel({ limitKey, feature, onClose }: {
         )}
 
         <p style={{ margin: '0 0 18px', fontSize: 13, lineHeight: 1.6, color: 'var(--dim)' }}>
-          {t(trial ? 'trial.dialog.explain' : feature ? 'limits.feature.explain' : 'limits.dialog.explain')}
+          {t(explainKey)}
         </p>
 
-        <ContactButtons whatsapp={whatsapp} email={email} t={t} />
+        {/* Buying online first when it is possible; the conversation stays
+            right below it as the secondary way in. */}
+        {canBuy && (
+          <div style={{ marginBottom: 16 }}>
+            <UpgradeToFull status={billing} />
+            {(whatsapp || email) && (
+              <p style={{ margin: '14px 0 8px', fontSize: 12, color: 'var(--muted)' }}>
+                {t('billing.upgrade.or_talk')}
+              </p>
+            )}
+          </div>
+        )}
+
+        <ContactButtons whatsapp={whatsapp} email={email} t={t} secondary={canBuy} />
+
+        {placeholder && (
+          <div style={{ marginTop: 16 }}>
+            <UpgradeToFull status={billing} />
+          </div>
+        )}
 
         {state === 'sent' ? (
           <p style={{
@@ -199,7 +237,7 @@ function UpgradePanel({ limitKey, feature, onClose }: {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
               <Button variant="ghost" onClick={onClose}>{t('limits.dialog.close')}</Button>
               <Button
-                variant="primary"
+                variant={canBuy ? 'secondary' : 'primary'}
                 loading={state === 'sending'}
                 disabled={needsContact}
                 onClick={submit}
@@ -225,8 +263,10 @@ function UpgradePanel({ limitKey, feature, onClose }: {
  * no address configured is not rendered at all — a WhatsApp button that opens
  * `wa.me/` with no number is worse than no button.
  */
-export function ContactButtons({ whatsapp, email, t }: {
+export function ContactButtons({ whatsapp, email, t, secondary = false }: {
   whatsapp: string; email: string; t: (k: string, p?: Record<string, unknown>) => string
+  /** Drawn quiet when an online purchase is the primary action above them. */
+  secondary?: boolean
 }) {
   const prefill = t('limits.contact.prefill')
   const subject = t('limits.contact.subject')
@@ -238,7 +278,7 @@ export function ContactButtons({ whatsapp, email, t }: {
           href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(prefill)}`}
           target="_blank"
           rel="noopener noreferrer"
-          style={LINK_BUTTON}
+          style={secondary ? { ...LINK_BUTTON, background: 'var(--surface-2)', color: 'var(--text)' } : LINK_BUTTON}
         >
           {t('limits.contact.whatsapp')}
         </a>

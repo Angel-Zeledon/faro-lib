@@ -22,7 +22,7 @@ import type { Lang } from './translations'
 /** Service keys, exactly as `backend/service_config/registry.py` declares them. */
 export type ServiceKey =
   | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
-  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'api_surface' | 'operations'
+  | 'secret_storage' | 'contact' | 'billing' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'api_surface' | 'operations'
 
 /** Field keys, exactly as the registry declares them (= `Settings` attributes). */
 export type FieldKey =
@@ -38,6 +38,9 @@ export type FieldKey =
   | 'voyageai_api_key' | 'pinecone_api_key' | 'pinecone_index' | 'pinecone_environment'
   | 'integrations_secret_key'
   | 'contact_whatsapp' | 'contact_email' | 'upgrade_notify_email'
+  | 'stripe_secret_key' | 'stripe_webhook_secret' | 'stripe_price_id_full'
+  | 'paypal_client_id' | 'paypal_client_secret' | 'paypal_webhook_id'
+  | 'paypal_plan_id_full' | 'paypal_mode' | 'billing_price_usd_full'
   | 'social_login_enabled' | 'google_oauth_client_id' | 'google_oauth_client_secret'
   | 'microsoft_oauth_client_id' | 'microsoft_oauth_client_secret'
   | 'apple_oauth_service_id' | 'apple_oauth_team_id' | 'apple_oauth_key_id'
@@ -200,8 +203,14 @@ const es: ServiceConfigCopy = {
     contact: {
       name: 'Contacto comercial',
       summary: 'Cómo te contacta un cliente para levantar los techos del plan gratis.',
-      whatBreaks: 'Desaparecen los botones de «escríbenos». Un tenant gratis que llega a un techo se queda sin forma de pedir más espacio — que es toda la superficie comercial del producto, porque no hay checkout.',
+      whatBreaks: 'Desaparecen los botones de «escríbenos». Un tenant gratis que llega a un techo se queda sin forma de pedir más espacio. Si el pago en línea no está configurado, esa es toda la superficie comercial del producto — y el plan corporativo solo se vende así.',
       note: 'Un canal vacío se OCULTA en vez de mostrarse roto: un botón que abre un enlace de WhatsApp en blanco es peor que ningún botón. Configura al menos uno.',
+    },
+    billing: {
+      name: 'Pago en línea (Stripe y PayPal)',
+      summary: 'Contratar el plan completo en línea, con tarjeta (Stripe) o PayPal, en sus propias páginas.',
+      whatBreaks: 'Desaparecen «Pasar al plan completo» y el pago de la sección Plan y pago; el estado dice que el pago en línea está apagado y qué variables faltan. Todo lo demás sigue igual: los clientes te escriben y tú cambias el plan a mano, como antes. Las suscripciones ya vendidas conservan su plan, pero si borras el secreto del webhook sus renovaciones y cancelaciones dejan de aplicarse: nunca vacíes un proveedor que tiene clientes.',
+      note: 'Solo páginas alojadas: ningún número de tarjeta, CVC ni contraseña de PayPal pasa por este servidor ni por el JavaScript de la app. Lo ÚNICO que cambia el plan de una empresa es un webhook con firma verificada (Stripe: HMAC-SHA256 de Stripe-Signature, 5 minutos de tolerancia; PayPal: la API verify-webhook-signature). URLs de webhook para registrar: <FRONTEND_URL>/api/v1/billing/stripe/webhook y <FRONTEND_URL>/api/v1/billing/paypal/webhook. Solo se vende el plan completo, mensual; el corporativo nunca se compra en línea. Con un pago vencido se conserva el plan 7 días; cuando la suscripción termina la empresa pasa al plan gratis y no se borra nada. Un plan completo puesto a mano nunca lo toca el pago en línea.',
     },
     social_login: {
       name: 'Inicio de sesión con Google, Microsoft y Apple',
@@ -283,6 +292,15 @@ const es: ServiceConfigCopy = {
     contact_whatsapp: 'E.164 sin el «+», como lo quiere wa.me.',
     contact_email: 'Dirección que abre el botón de «escríbenos».',
     upgrade_notify_email: 'A dónde se envían por correo las solicitudes de más espacio. Si está vacío usa CONTACT_EMAIL. La solicitud también queda guardada en la base, así que un correo fallido nunca pierde el pedido.',
+    stripe_secret_key: 'Llave secreta de la API de Stripe (sk_live_… o sk_test_… en modo de prueba). Crea las sesiones de pago y del portal de clientes, y lee las suscripciones cuando llegan sus webhooks.',
+    stripe_webhook_secret: 'Secreto de firma del webhook de Stripe registrado en <FRONTEND_URL>/api/v1/billing/stripe/webhook. Sin él no se puede verificar ningún evento de Stripe, así que no se aplica ninguno.',
+    stripe_price_id_full: 'ID del precio recurrente MENSUAL del plan completo en Stripe. Su monto debe ser igual a BILLING_PRICE_USD_FULL.',
+    paypal_client_id: 'Client ID de la app REST de PayPal (Developer Dashboard > Apps & Credentials), del modo que diga PAYPAL_MODE.',
+    paypal_client_secret: 'Secreto de esa app REST de PayPal.',
+    paypal_webhook_id: 'ID que PayPal le da al webhook registrado en <FRONTEND_URL>/api/v1/billing/paypal/webhook. Cada evento se verifica contra él con la API verify-webhook-signature de PayPal.',
+    paypal_plan_id_full: 'ID del plan de facturación (mensual) del plan completo en PayPal. Su precio debe ser igual a BILLING_PRICE_USD_FULL.',
+    paypal_mode: '«sandbox» o «live». Decide a qué API de PayPal pertenecen las credenciales de arriba; cualquier otro valor apaga PayPal.',
+    billing_price_usd_full: 'Precio mensual del plan completo en USD, tal como lo MUESTRA la app. Lo que se cobra es el precio de Stripe o el plan de PayPal: mantenlos iguales. La página de precios solo ofrece la compra en línea mientras coincida con su propia cifra.',
     enterprise_sso_enabled: 'Interruptor general del inicio de sesión de empresa. En false oculta la opción y suspende el proveedor y el «exigir» de cada empresa sin borrarlos.',
     social_login_enabled: 'Interruptor general. En false oculta todos los botones sin borrar las credenciales de abajo, para pausar y reanudar la función.',
     google_oauth_client_id: 'ID de cliente OAuth de tipo «Aplicación web» en Google Cloud Console. URI de redirección autorizado: <FRONTEND_URL>/api/v1/auth/oauth/google/callback.',
@@ -446,8 +464,14 @@ const en: ServiceConfigCopy = {
     contact: {
       name: 'Commercial contact',
       summary: 'How a customer reaches you to lift the free tier’s ceilings.',
-      whatBreaks: 'The "write to us" buttons disappear. A free tenant that hits a ceiling then has no way to ask for more room — which is the entire commercial surface of the product, since there is no checkout.',
+      whatBreaks: 'The "write to us" buttons disappear. A free tenant that hits a ceiling then has no way to ask for more room. Unless online payment is configured, that is the entire commercial surface of the product — and the corporate plan is only ever sold this way.',
       note: 'An empty channel is HIDDEN rather than shown broken: a button opening a blank WhatsApp link is worse than no button. Configure at least one.',
+    },
+    billing: {
+      name: 'Online payment (Stripe and PayPal)',
+      summary: 'Buy the full plan online, by card (Stripe) or PayPal, on their own pages.',
+      whatBreaks: 'The "Move to the full plan" button and the checkout in Plan and payment disappear; the status says online payment is off and which variables are missing. Everything else is unchanged: customers write to you and you set the plan by hand, as before. Subscriptions already sold keep their plan, but if you remove the webhook secret their renewals and cancellations stop being applied: never empty a provider that has customers.',
+      note: 'Hosted pages only: no card number, CVC or PayPal password ever passes through this server or the app\'s JavaScript. The ONLY thing that changes a company\'s plan is a webhook with a verified signature (Stripe: HMAC-SHA256 of Stripe-Signature, 5-minute tolerance; PayPal: the verify-webhook-signature API). Webhook URLs to register: <FRONTEND_URL>/api/v1/billing/stripe/webhook and <FRONTEND_URL>/api/v1/billing/paypal/webhook. Only the full plan is sold, monthly; corporate is never bought online. A past-due payment keeps the plan for 7 days; when the subscription ends the company moves to the free plan and nothing is deleted. A full plan set by hand is never touched by online payment.',
     },
     social_login: {
       name: 'Sign in with Google, Microsoft and Apple',
@@ -529,6 +553,15 @@ const en: ServiceConfigCopy = {
     contact_whatsapp: 'E.164 without the "+", the way wa.me wants it.',
     contact_email: 'Address the "write to us" button opens.',
     upgrade_notify_email: 'Where in-app requests for more room are emailed. Falls back to CONTACT_EMAIL when empty. The request is also stored, so a failed email never loses the ask.',
+    stripe_secret_key: 'Stripe secret API key (sk_live_... or sk_test_... in test mode). Creates the checkout and customer-portal sessions and reads subscriptions when their webhooks arrive.',
+    stripe_webhook_secret: 'Signing secret of the Stripe webhook registered at <FRONTEND_URL>/api/v1/billing/stripe/webhook. Without it no Stripe event can be verified, so none is applied.',
+    stripe_price_id_full: 'ID of the full plan\'s recurring MONTHLY Stripe price. Its amount must equal BILLING_PRICE_USD_FULL.',
+    paypal_client_id: 'Client ID of the PayPal REST app (Developer Dashboard > Apps & Credentials), for the mode set in PAYPAL_MODE.',
+    paypal_client_secret: 'Secret of that PayPal REST app.',
+    paypal_webhook_id: 'ID PayPal gives the webhook registered at <FRONTEND_URL>/api/v1/billing/paypal/webhook. Every event is verified against it with PayPal\'s verify-webhook-signature API.',
+    paypal_plan_id_full: 'ID of the full plan\'s (monthly) PayPal billing plan. Its price must equal BILLING_PRICE_USD_FULL.',
+    paypal_mode: '"sandbox" or "live". Decides which PayPal API the credentials above belong to; any other value turns PayPal off.',
+    billing_price_usd_full: 'Monthly price of the full plan in USD, as the app SHOWS it. What is charged is the Stripe price or PayPal plan: keep them equal. The pricing page offers online purchase only while this matches its own figure.',
     enterprise_sso_enabled: 'Master switch for company sign-in. False hides the option and suspends every company\'s provider and "require" setting without deleting them.',
     social_login_enabled: 'Master switch. False hides every social button without deleting the credentials below, so the feature can be paused and resumed.',
     google_oauth_client_id: 'OAuth client ID of a "Web application" client in Google Cloud Console. Authorized redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/google/callback.',

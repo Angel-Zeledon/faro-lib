@@ -243,6 +243,21 @@ class Settings(BaseSettings):
     # settings live in `sso_providers`, not here — see backend/auth/sso/.
     enterprise_sso_enabled: bool = False
 
+    # Online payments for the Full plan (backend/billing/). OFF until a
+    # provider's every field is set; read only through
+    # `service_config.resolver.effective()`. Hosted pages only: no card data
+    # ever reaches this server. The price is what the app SHOWS; what is
+    # charged is the Stripe Price / PayPal plan, and the two must agree.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id_full: str = ""
+    paypal_client_id: str = ""
+    paypal_client_secret: str = ""
+    paypal_webhook_id: str = ""
+    paypal_plan_id_full: str = ""
+    paypal_mode: str = "sandbox"
+    billing_price_usd_full: float = 59.0
+
     # Fernet key for every secret `/instalacion` stores. The name is
     # historical — renaming it would orphan every deployment's stored secrets.
     integrations_secret_key: str = ""

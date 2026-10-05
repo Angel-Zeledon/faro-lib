@@ -2091,7 +2091,57 @@ export interface Entitlements {
 export const getEntitlements = () =>
   request<Entitlements>('GET', '/entitlements')
 
-/** Tell us this tenant wants more room. There is no checkout — this IS it. */
+// ── Buying the Full plan online (backend/api/v1/billing.py) ──────────────────
+// Hosted pages only: `startCheckout` answers a Stripe / PayPal URL the browser
+// is sent to. No card data ever passes through this app.
+export type BillingProvider = 'stripe' | 'paypal'
+
+export type BillingPurchaseBlock =
+  | 'billing_not_configured' | 'billing_trial_account' | 'billing_corporate_plan'
+  | 'billing_plan_managed_manually' | 'billing_subscription_active'
+
+export interface BillingSubscription {
+  provider: BillingProvider
+  /** Normalized: active | trialing | past_due | canceled | unpaid | expired |
+   *  incomplete | approval_pending | … */
+  status: string
+  current_period_end: string | null
+  cancel_at_period_end: boolean
+  past_due_since: string | null
+  grace_until: string | null
+  access_until: string | null
+}
+
+export interface BillingStatus {
+  tier: Entitlements['tier']
+  tier_source: 'manual' | 'billing'
+  payments: {
+    enabled: boolean
+    providers: BillingProvider[]
+    /** Variable names still to configure, per provider. Admins only; null otherwise. */
+    missing: Record<BillingProvider, string[]> | null
+    price_usd_monthly: number | null
+    currency: string
+  }
+  can_purchase: boolean
+  purchase_block: BillingPurchaseBlock | null
+  subscription: BillingSubscription | null
+  can_manage: boolean
+}
+
+export const getBillingStatus = (opts: RequestOpts = {}) =>
+  request<BillingStatus>('GET', '/billing/status', undefined, opts)
+
+export const startCheckout = (provider: BillingProvider) =>
+  request<{ provider: BillingProvider; url: string }>('POST', '/billing/checkout', { provider })
+
+export const openBillingPortal = (provider?: BillingProvider) =>
+  request<{ provider: BillingProvider; url: string }>(
+    'POST', '/billing/portal', provider ? { provider } : {},
+  )
+
+/** Tell us this tenant wants more room. The conversation path; the Full plan
+ *  can also be bought online when billing is configured (startCheckout). */
 export const requestUpgrade = (body: { limit_key?: string | null; message?: string; contact?: string }) =>
   request<{ id: string; created: boolean; notified: boolean }>(
     'POST', '/entitlements/upgrade-request', body,

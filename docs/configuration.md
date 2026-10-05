@@ -177,11 +177,11 @@ Losing it means every stored secret must be re-entered. It belongs in your secre
 |---|---|---|---|
 | `INTEGRATIONS_SECRET_KEY` | - | required, secret, environment only | Fernet key encrypting every secret written from the configuration panel. Environment only. The name is historical and kept on purpose: renaming it would silently orphan every existing deployment's stored secrets. |
 
-## `contact` - How a customer reaches you to lift a plan's ceilings or to turn on the API, MCP and the WhatsApp bot.
+## `contact` - How a customer reaches you to lift a plan's ceilings, to turn on the API, MCP and the WhatsApp bot, or to ask for a corporate quote.
 
 *Kind:* external service. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* no.
 
-**What is lost without it:** The 'write to us' buttons disappear. A tenant that hits a ceiling, or on the free plan wants the API, MCP or the bot, then has no way to ask for it — which is the entire commercial surface of the product, since there is no checkout.
+**What is lost without it:** The 'write to us' buttons disappear. A tenant that hits a ceiling, or on the free plan wants the API, MCP or the bot, then has no way to ask for it. Unless online payments (the billing service) are configured, that is the entire commercial surface of the product — and corporate plans are only ever sold this way.
 
 **Any one of these is enough:** `CONTACT_WHATSAPP` **or** `CONTACT_EMAIL`
 
@@ -194,6 +194,37 @@ Empty channels are HIDDEN rather than shown broken: a button opening an empty wa
 | `UPGRADE_NOTIFY_EMAIL` | - | - | Where in-app upgrade requests are emailed. Falls back to CONTACT_EMAIL when empty. The request is also stored in `upgrade_requests`, so a failed email never loses the ask. |
 
 Writable from the panel: `CONTACT_WHATSAPP`, `CONTACT_EMAIL`, `UPGRADE_NOTIFY_EMAIL`.
+
+## `billing` - Buy the Full plan online — Stripe (card) and PayPal, hosted pages only.
+
+*Kind:* external service. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* no.
+
+**What is lost without it:** The 'Upgrade to Full' button and the billing section's checkout disappear; GET /billing/status says payments are off and names the variables to set. Everything else is unchanged: tenants reach you through the 'write to us' dialog and you set the tier by hand, as before. Subscriptions already sold keep their tier until their webhook secret is removed — then their renewals and cancellations stop being applied, which is why a configured provider should never be emptied while it has customers.
+
+**Any one of these is enough:** `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` + `STRIPE_PRICE_ID_FULL` **or** `PAYPAL_CLIENT_ID` + `PAYPAL_CLIENT_SECRET` + `PAYPAL_WEBHOOK_ID` + `PAYPAL_PLAN_ID_FULL`
+
+Hosted checkout only: no card number, CVC or PayPal password ever reaches this server or the app's JavaScript. The ONLY thing that changes a tenant's tier is a webhook whose signature was verified (Stripe: HMAC-SHA256 of the Stripe-Signature header, 5-minute tolerance; PayPal: the verify-webhook-signature API). Webhook URLs to register at each provider:
+
+    <FRONTEND_URL>/api/v1/billing/stripe/webhook
+    <FRONTEND_URL>/api/v1/billing/paypal/webhook
+
+Stripe events: checkout.session.completed, customer.subscription.created / updated / deleted, invoice.paid, invoice.payment_failed. PayPal events: BILLING.SUBSCRIPTION.ACTIVATED / CANCELLED / SUSPENDED / EXPIRED / PAYMENT.FAILED and PAYMENT.SALE.COMPLETED.
+
+Only the Full plan (`paid`) is sold, monthly; corporate is never purchasable. A past-due subscription keeps the plan for 7 days; a lapsed one moves the tenant to `free` and deletes nothing. A tenant whose `paid` tier was set by hand is never touched by billing.
+
+| Variable | Default | Notes | What it does |
+|---|---|---|---|
+| `STRIPE_SECRET_KEY` | - | secret | Stripe secret API key (sk_live_... or sk_test_... for test mode). Creates Checkout and Customer Portal sessions and reads subscriptions when their webhooks arrive. |
+| `STRIPE_WEBHOOK_SECRET` | - | secret | Signing secret of the Stripe webhook endpoint <FRONTEND_URL>/api/v1/billing/stripe/webhook. Without it no Stripe event can be verified, so none is applied. |
+| `STRIPE_PRICE_ID_FULL` | - | - | ID of the recurring MONTHLY Stripe Price of the Full plan. Its amount must equal BILLING_PRICE_USD_FULL. |
+| `PAYPAL_CLIENT_ID` | - | - | Client ID of the PayPal REST app (Developer Dashboard > Apps & Credentials), for the mode set in PAYPAL_MODE. |
+| `PAYPAL_CLIENT_SECRET` | - | secret | Secret of that PayPal REST app. |
+| `PAYPAL_WEBHOOK_ID` | - | - | ID PayPal gives the webhook registered at <FRONTEND_URL>/api/v1/billing/paypal/webhook. Every event is verified against it with PayPal's verify-webhook-signature API. |
+| `PAYPAL_PLAN_ID_FULL` | - | - | ID of the PayPal billing plan (monthly) of the Full plan. Its price must equal BILLING_PRICE_USD_FULL. |
+| `PAYPAL_MODE` | `sandbox` | - | 'sandbox' or 'live'. Decides which PayPal API the credentials above belong to; any other value turns PayPal off. |
+| `BILLING_PRICE_USD_FULL` | `59.0` | - | Monthly price of the Full plan in USD, as the app SHOWS it. What is charged is the Stripe Price / PayPal plan; keep them equal. The pricing page offers online purchase only while this matches its own figure. |
+
+Writable from the panel: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_FULL`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_PLAN_ID_FULL`, `PAYPAL_MODE`, `BILLING_PRICE_USD_FULL`.
 
 ## `social_login` - Sign in with Google, Microsoft or Apple, next to email + password.
 

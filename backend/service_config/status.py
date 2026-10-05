@@ -264,6 +264,14 @@ def _service_is_ready(service_key: str, tenant_id: str | None) -> bool:
     return not _missing_required(service, tenant_id)
 
 
+def _online_payments() -> bool:
+    try:
+        from backend.billing.providers import load
+        return bool(load().enabled_providers())
+    except Exception:  # noqa: BLE001 - a capability flag must never 500 the screen
+        return False
+
+
 def capabilities(tenant_id: str | None = None) -> dict:
     """Which user-visible features can answer right now.
 
@@ -300,6 +308,13 @@ def capabilities(tenant_id: str | None = None) -> dict:
             "whatsapp": bool(resolve("contact_whatsapp", tenant_id).value),
             "email": bool(resolve("contact_email", tenant_id).value),
         },
+        # Buying the Full plan online (backend/billing/): at least one payment
+        # provider fully configured. Which one, and what is missing, is only
+        # told to a tenant admin (GET /billing/status).
+        # Asked of billing itself, not of the generic readiness rule: billing
+        # also refuses an invalid PAYPAL_MODE or a non-positive price, and
+        # two answers to "can people pay?" would eventually disagree.
+        "online_payments": _online_payments(),
         # Background work. A queued training that will never run is the most
         # expensive "nothing happened" in the product.
         "background_worker": bool(resolve("worker_enabled", tenant_id).value),

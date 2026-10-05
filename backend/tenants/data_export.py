@@ -108,6 +108,12 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     # Microsoft / Apple is the person's data, so it travels with the export.
     ("user_identities", "user_identities",
      "id, user_id, tenant_id, provider, subject, email, created_at, last_used_at"),
+    # Paying for the plan. No secret lives in these tables (keys and webhook
+    # secrets are instance configuration, never per tenant); the provider ids
+    # are the tenant's own records at Stripe / PayPal, so they travel.
+    ("billing_customers", "billing_customers", "*"),
+    ("billing_subscriptions", "billing_subscriptions", "*"),
+    ("billing_events", "billing_events", "*"),
 ]
 
 # Deliberately NOT exported: pure security/credential artifacts, not "the
@@ -198,6 +204,13 @@ _DELETE_ORDER: list[str] = [
     "sso_domains",
     "sso_providers",
     "model_artifacts",
+    # Billing (2026-10-05). The first two cascade from tenants; the event log
+    # has no FK (an event may name no known tenant) and is only removed here.
+    # Erasing the tenant does NOT cancel a live subscription at the provider:
+    # whoever erases a paying account cancels it there first.
+    "billing_events",
+    "billing_subscriptions",
+    "billing_customers",
     "upgrade_requests",
     "whatsapp_conversations",
     "chat_messages",

@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
-  AlertTriangle, Bell, CalendarClock, CheckCircle2, ClipboardCheck, Clock, Database, Gauge,
+  AlertTriangle, Bell, CalendarClock, CheckCircle2, ClipboardCheck, Clock, CreditCard, Database, Gauge,
   KeyRound, LineChart, PackageX, RefreshCw, ShoppingCart, TrendingUp, Truck, X,
 } from 'lucide-react'
 
@@ -50,6 +50,7 @@ const KIND_ICON: Record<AlertKind, typeof PackageX> = {
   data:               Database,
   limit:              Gauge,
   account:            KeyRound,
+  billing:            CreditCard,
 }
 
 /** A system event was sent to nobody, so the delivery colours do not apply:

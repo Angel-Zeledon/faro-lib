@@ -14,6 +14,7 @@ import MobileFormScope from '@/components/mobile/MobileFormScope'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import CurrencySection from '@/components/billing/CurrencySection'
 import LimitsSection from '@/components/limits/LimitsSection'
+import { BillingPanel } from '@/components/billing/BillingSection'
 import FeatureLocked from '@/components/limits/FeatureLocked'
 import { useFeature } from '@/lib/entitlements'
 import TimezoneSection from '@/components/billing/TimezoneSection'
@@ -1626,6 +1627,7 @@ export default function ConfigPage() {
               subtitle={t('limits.section.header_subtitle')}
             />
             <LimitsSection />
+            <BillingPanel />
           </Card>
           <PlanningSection t={t} />
           {/* What the customer's own figures are worth — their choice, and
@@ -1772,7 +1774,7 @@ function MobileSettings() {
         body = (
           <Card>
             <SectionTitle icon={Gauge} color="var(--accent)" title={t('limits.section.title')} subtitle={t('limits.section.header_subtitle')} />
-            <div className="m-tap44"><LimitsSection /></div>
+            <div className="m-tap44"><LimitsSection /><BillingPanel /></div>
           </Card>
         )
         break

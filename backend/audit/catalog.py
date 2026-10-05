@@ -107,6 +107,11 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("GET", "/inventory/report/pdf"):               _r("export.inventory_pdf", "session"),
     ("GET", "/sessions/{session_id}/reports/{format}"): _r("export.session_report", "session", "session_id"),
     ("GET", "/audit/export"):                       _r("export.audit_log", "audit_log"),
+    # Paying for the plan. Who opened a checkout or the subscription page is
+    # audited here; what the provider then confirmed is recorded by the
+    # webhook as a `billing.*` event (LEGACY below), with "system" as actor.
+    ("POST", "/billing/checkout"):                  _r("billing.checkout_started", "billing"),
+    ("POST", "/billing/portal"):                    _r("billing.portal_opened", "billing"),
 }
 
 # Rows that already carry who/what, mapped onto the audit shape for reading.
@@ -165,6 +170,10 @@ LEGACY: dict[str, tuple[str, str]] = {
     "data.shrinkage_recorded":         ("shrinkage", "shrinkage.recorded"),
     "data.stock_count_applied":        ("stock_count", "stock_count.applied"),
     "api_write":                       ("api_call", "api_call.write"),
+    "billing.plan_activated":          ("billing", "billing.plan_activated"),
+    "billing.plan_downgraded":         ("billing", "billing.plan_downgraded"),
+    "billing.payment_failed":          ("billing", "billing.payment_failed"),
+    "billing.subscription_changed":    ("billing", "billing.subscription_changed"),
 }
 
 # The target types the trail can be filtered by.

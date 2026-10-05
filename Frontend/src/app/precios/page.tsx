@@ -8,7 +8,7 @@ export const metadata = subpageMetadata(
   '/precios',
   'StockAI precios: plan gratis para siempre, sin tarjeta',
   'StockAI es gratis para siempre, con el motor completo: 100 productos, 2 usuarios y 1 bodega. ' +
-  'La API, el MCP y el bot de WhatsApp empiezan en el plan completo. Escríbenos y lo ampliamos, sin tarjeta ni checkout.',
+  'La API, el MCP y el bot de WhatsApp empiezan en el plan completo. El plan gratis no pide tarjeta.',
 )
 
 export default function Page() {
