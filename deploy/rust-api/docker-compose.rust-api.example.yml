@@ -1,0 +1,66 @@
+# DISABLED EXAMPLE - an override file for deploy/docker-compose.prod.yml that
+# adds the Rust API and the internal gateway. Nothing deploys it; nothing in
+# deploy.sh references it. To try it on a staging box:
+#
+#   cp rust-api/docker-compose.rust-api.example.yml docker-compose.rust-api.yml
+#   mkdir -p rust-api/routes.d/off            # start with EVERY route on Python
+#   docker compose -f docker-compose.prod.yml -f docker-compose.rust-api.yml \
+#       --profile bundled-db up -d --build --wait
+#
+# With routes.d/ empty the gateway forwards everything to Python, so turning
+# this on changes nothing a user can see. Routes then move one file at a time
+# (see Caddyfile.gateway.example for the kill switch).
+
+services:
+  # The frontend's BACKEND_URL is baked at build time; it now points at the
+  # gateway instead of straight at the Python API. One rebuild, once.
+  frontend:
+    build:
+      args:
+        BACKEND_URL: http://api-gateway:8010
+
+  api-gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    volumes:
+      - ./rust-api/Caddyfile.gateway.example:/etc/caddy/Caddyfile:ro
+      # Writable on purpose: the kill switch is moving a file to off/.
+      - ./rust-api/routes.d:/etc/caddy/routes.d
+    depends_on:
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+
+  api-rs:
+    build:
+      context: ..
+      dockerfile: backend-rs/Dockerfile
+    image: stockai-api-rs
+    restart: unless-stopped
+    # The SAME env file as the Python API: one SECRET_KEY, one DATABASE_URL,
+    # one TESTING_MODE. A route can only move back and forth safely if both
+    # sides read identical configuration.
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      RUST_API_BIND: 0.0.0.0:8021
+      # Python's pool is 20; Postgres default max_connections is 100 and the
+      # workers hold their own. Ten is plenty for the routes migrated so far.
+      RUST_API_DB_MAX_CONNECTIONS: "10"
+      # Read-only: only to find instance_secret.key when INTEGRATIONS_SECRET_KEY
+      # is not set (stored panel secrets are decrypted with it).
+      STORAGE_PATH: /app/storage
+    volumes:
+      - storage:/app/storage:ro
+    depends_on:
+      api:
+        condition: service_healthy   # the Python API owns schema migrations
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M

@@ -1,0 +1,44 @@
+# DISABLED EXAMPLE - nothing in the running stack reads this file.
+#
+# The internal API gateway of the Rust migration (docs/rust-migration.md).
+#
+# Why a gateway and not the public Caddy: the public Caddy only talks to the
+# Next.js server, and Next.js proxies /api/* to BACKEND_URL, which is baked
+# into the frontend image at BUILD time. The browser calls /api/<route> and
+# integrations call /api/v1/<route>; both arrive here as /api/v1/<route>.
+# Pointing BACKEND_URL at this gateway ONCE (one frontend rebuild) makes every
+# later routing change a gateway-only change: no frontend rebuild, no
+# Python restart.
+#
+# Routing rule: every migrated route group is ONE file in routes.d/. The
+# gateway imports them all, in file-name order, before the catch-all to
+# Python.
+#
+# KILL SWITCH (send a route group back to Python, instantly, zero downtime):
+#   docker compose exec api-gateway sh -c \
+#     'mv /etc/caddy/routes.d/20-committed-demand-writes.caddy /etc/caddy/routes.d/off/'
+#   docker compose exec api-gateway caddy reload --config /etc/caddy/Caddyfile
+# Everything back to Python: move every file to off/ and reload.
+# `caddy reload` swaps the config gracefully; in-flight requests finish.
+#
+# Automatic failover: each migrated group lists the Rust service FIRST and the
+# Python API second with `lb_policy first` and an active health check. If the
+# Rust container is down or unhealthy, the same request goes to Python, which
+# still implements every route (the Python code is never deleted while a route
+# is in this file). Only connection failures are retried (`lb_try_duration`),
+# so a write is never sent twice.
+
+{
+	admin localhost:2019
+	auto_https off
+}
+
+:8010 {
+	# Migrated groups (routes.d/*.caddy, see the examples next to this file).
+	import /etc/caddy/routes.d/*.caddy
+
+	# Everything else: the Python FastAPI app.
+	handle {
+		reverse_proxy api:8010
+	}
+}

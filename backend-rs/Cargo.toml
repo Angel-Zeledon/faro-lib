@@ -1,0 +1,37 @@
+[package]
+name = "stockai-api"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "StockAI HTTP API, the Rust half of the strangler-fig migration (see docs/rust-migration.md)"
+
+[[bin]]
+name = "stockai-api"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "matched-path", "query", "tokio", "original-uri"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+tower-http = { version = "0.6", features = ["cors"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "chrono", "json", "tls-rustls-ring-webpki"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+fernet = { version = "0.2", default-features = false, features = ["rustcrypto"] }
+dotenvy = "0.15"
+percent-encoding = "2"
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "std", "ansi"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+panic = "abort"
