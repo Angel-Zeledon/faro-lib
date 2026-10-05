@@ -1018,6 +1018,8 @@ export interface InventoryCalcExplanation {
   // Customer orders placed ahead of time that were added on top of the
   // forecast for this product. Empty when none applies.
   committed_applied?: CommittedApplied[]
+  // Set when a person's analogy stood in for a trained model on this product.
+  analogy_applied?: AnalogyApplied[]
 }
 
 /** One entry of `committed_applied` on a recommendation row. */
@@ -1312,6 +1314,16 @@ export interface InventoryStatusItem extends InventoryStock {
   /** Customer orders placed ahead of time that count for this row. Set even when
    *  the row has no forecast or no stock row. */
   committed_applied?:   CommittedApplied[]
+  /** Where the demand came from: a model fitted on this product, a person's
+   *  analogy (never a trained forecast), or none. */
+  forecast_source?:     'trained' | 'analogy' | null
+  /** True for an analogy row: show it as a soft estimate. */
+  low_confidence?:      boolean
+  analogy_applied?:     AnalogyApplied[]
+  /** A trained model has since taken over from an analogy. */
+  analogy_retired?:     { analogy_id: string; retired_at: string } | null
+  /** An analogy exists but did not apply (no reference forecast, or no stock). */
+  analogy_unavailable?: { analogy_id: string; references_missing: string[]; reason?: string } | null
   /** True when this row's signal came from its commitments alone (no forecast
    *  or no stock row). `committed_shortfall` = units no stock plus incoming
    *  covers; `committed_stock_unknown` = no stock figure, counted as zero and
@@ -1758,6 +1770,38 @@ export interface SpikeEdit {
     replacement_total: number
     applied_at: string
   } | null
+}
+/** A person's "this new product sells like these" (forecast by analogy). */
+export interface SkuAnalogy {
+  id: string
+  new_sku: string
+  reference_skus: string[]
+  scale_factor: number
+  start_date: string | null
+  note: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  reverted_at: string | null
+  /** Set once, when a trained model took over and the analogy stopped applying. */
+  superseded_at: string | null
+}
+export interface AnalogyLimits {
+  min_references: number; max_references: number; min_scale: number; max_scale: number
+}
+/** `analogy_applied` on a status row: what stood in for a trained model. */
+export interface AnalogyApplied {
+  analogy_id: string
+  references: string[]
+  references_missing: string[]
+  scale_factor: number
+  start_date: string | null
+  alignment: 'calendar' | 'since_start'
+  band_widen_factor: number
+  min_relative_sigma: number
+  note: string | null
+  created_by_name: string | null
+  created_at: string | null
 }
 export interface ForecastAdjustment {
   id: string

@@ -61,6 +61,7 @@ import {
  PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft, ScanLine, SlidersHorizontal,
 } from 'lucide-react'
 import CommittedDemandPanel from '@/components/inventory/CommittedDemandPanel'
+import AnalogyPanel from '@/components/inventory/AnalogyPanel'
 import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -562,6 +563,20 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  <div key={a.adjustment_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text }}>
  <SlidersHorizontal size={12} color={C.indigo} aria-hidden="true" />
  <span>{adjustmentLine(t, a)}</span>
+ </div>
+ ))}
+ </div>
+ )}
+ {exp.analogy_applied && exp.analogy_applied.length > 0 && (
+ <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+ {exp.analogy_applied.map(a => (
+ <div key={a.analogy_id} style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+ <span style={{ fontWeight: 700, color: C.indigo }}>{t('analogy.badge')}. </span>
+ {t('analogy.why', {
+  refs: a.references.join(', '), factor: String(a.scale_factor),
+  name: a.created_by_name || '—', widen: String(a.band_widen_factor),
+ })}
+ {a.references_missing.length > 0 && <> {t('analogy.why_missing', { refs: a.references_missing.join(', ') })}</>}
  </div>
  ))}
  </div>
@@ -4166,8 +4181,10 @@ export default function InventoryPage() {
 
  ) : viewMode === 'committed' ? (
  /* ── Committed demand: one component for desktop and phone ── */
- <div style={{ padding: narrow ? 0 : undefined }}>
+ <div style={{ padding: narrow ? 0 : undefined, display: 'flex', flexDirection: 'column', gap: 16 }}>
   <CommittedDemandPanel />
+  {/* Forecast by analogy: a new product with no history plans from products it sells like. */}
+  <AnalogyPanel onChanged={() => { if (sessionId) load(sessionId) }} />
  </div>
 
  ) : viewMode === 'ignored' && narrow ? (
@@ -4566,6 +4583,23 @@ export default function InventoryPage() {
  <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{item.sku}</div>
  {item.display_name && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{item.display_name}</div>}
  {item.supplier && <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>{item.supplier}</div>}
+ {item.forecast_source === 'analogy' && (
+ <div style={{ fontSize: 10.5, fontWeight: 600, color: C.indigo, marginTop: 2 }} title={t('analogy.badge_tip')}>
+ {t('analogy.badge')} · {t('analogy.badge_tip')}
+ </div>
+ )}
+ {item.analogy_unavailable && (
+ <div style={{ fontSize: 10.5, color: C.dim, marginTop: 2 }}>
+ {item.analogy_unavailable.reason === 'no_stock'
+  ? t('analogy.unavailable_no_stock')
+  : t('analogy.unavailable_refs', { refs: item.analogy_unavailable.references_missing.join(', ') })}
+ </div>
+ )}
+ {item.analogy_retired && (
+ <div style={{ fontSize: 10.5, color: C.dim, marginTop: 2 }}>
+ {t('analogy.retired', { date: item.analogy_retired.retired_at.slice(0, 10) })}
+ </div>
+ )}
  {item.committed_only && (
  <div style={{ fontSize: 10.5, color: C.indigo, marginTop: 2 }}>
  {t('inventory.committed_only_line', {
