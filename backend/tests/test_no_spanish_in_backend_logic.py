@@ -93,6 +93,8 @@ _ALLOWED = {
     # ("proveedor", "orden de compra") read from uploaded files, plus the
     # example rows of the downloadable templates (a LatAm distributor's data).
     "inventory/bulk_import.py",
+    # Dev script that fills docs examples: its CSV headers are user-data aliases.
+    "scripts/capture_api_examples.py",
     "datasources/service.py",
     # Same category: the words people type when asking the assistant about
     # suppliers, orders or overstock, matched against the user's message to

@@ -448,20 +448,24 @@ class TestSessionsCRUD:
         assert row["name"] == new_name, "the response echoed the new name but the row kept the old one"
         assert row["updated_at"] >= row["created_at"]
 
-    def test_delete_session_removes_the_row_and_its_config(self, client, auth_headers):
+    def test_delete_session_archives_it_and_keeps_its_config(self, client, auth_headers):
+        """Sessions are permanent: DELETE answers 204 but only archives. The row
+        and its configuration stay (restorable), and the active list drops it."""
         create = client.post("/api/v1/sessions", json={"name": "to-delete"}, headers=auth_headers)
         sid = create.json()["data"]["id"]
-        # create_session also inserts the session_configs row; both must go.
         assert query_one("SELECT session_id FROM session_configs WHERE session_id = %s", (sid,)) is not None
 
         resp = client.delete(f"/api/v1/sessions/{sid}", headers=auth_headers)
         assert resp.status_code == 204
-        assert query_one("SELECT id FROM sessions WHERE id = %s", (sid,)) is None, (
-            "204 returned but the session row is still there"
+        row = query_one("SELECT archived_at FROM sessions WHERE id = %s", (sid,))
+        assert row is not None and row["archived_at"] is not None, (
+            "204 returned but the session was not archived"
         )
         assert query_one(
             "SELECT session_id FROM session_configs WHERE session_id = %s", (sid,),
-        ) is None, "the session was deleted but its config blob was orphaned"
+        ) is not None, "archiving must not drop the configuration"
+        ids = [s["id"] for s in client.get("/api/v1/sessions", headers=auth_headers).json()["data"]["items"]]
+        assert sid not in ids, "an archived session must leave the active list"
 
     def test_pagination_pages_are_disjoint_and_complete(self, client, auth_headers, test_tenant):
         created = []

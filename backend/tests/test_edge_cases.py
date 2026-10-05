@@ -963,10 +963,11 @@ class TestSessionStateEdgeCases:
             "SELECT status FROM jobs WHERE id = %s", (job["id"],)
         ) is not None, "the delete cascaded the in-flight job away"
 
-    def test_can_delete_a_session_whose_job_is_finished(
+    def test_can_archive_a_session_whose_job_is_finished(
         self, client, auth_headers, test_tenant,
     ):
-        """The guard must not become a door that never opens."""
+        """The guard must not become a door that never opens. (DELETE archives:
+        sessions are permanent, so the row stays and is flagged.)"""
         from backend.sessions.service import create_session
         from backend.training import job_service
 
@@ -976,7 +977,8 @@ class TestSessionStateEdgeCases:
 
         resp = client.delete(f"/api/v1/sessions/{s['id']}", headers=auth_headers)
         assert resp.status_code == 204
-        assert query_one("SELECT id FROM sessions WHERE id = %s", (s["id"],)) is None
+        row = query_one("SELECT archived_at FROM sessions WHERE id = %s", (s["id"],))
+        assert row is not None and row["archived_at"] is not None
 
     def test_cannot_start_training_on_running_session(self, client, auth_headers, test_tenant):
         from backend.sessions.service import create_session, force_status
