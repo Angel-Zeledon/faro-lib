@@ -6,6 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import ExplainerVisual from '@/components/ui/ExplainerVisual'
 import type { TourDefinition, TourStep } from './types'
+import { stepShown } from './anchors'
 
 /** Copy for a tour comes from the tour's own module — see types.ts on why.
  *  Falls back to Spanish, then to the key itself, so a missing translation
@@ -135,8 +136,14 @@ export default function TourOverlay() {
 
   if (!active || !step) return null
 
-  const total = active.steps.length
-  const isLast = stepIndex === total - 1
+  // Only the steps that can be shown count: the others are skipped by the
+  // context (see anchors.ts), so "3 / 4" must not include them.
+  const shown = active.steps
+    .map((s, i) => (i === stepIndex || stepShown(s) ? i : -1))
+    .filter(i => i >= 0)
+  const total = shown.length
+  const position = shown.indexOf(stepIndex)
+  const isLast = position === total - 1
 
   // Card position. On a phone it is a bottom sheet: there is no room to place
   // a 320px card beside anything, and a sheet keeps the highlighted element
@@ -252,10 +259,10 @@ export default function TourOverlay() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, color: 'var(--dim)', fontVariantNumeric: 'tabular-nums' }}>
-            {stepIndex + 1} / {total}
+            {position + 1} / {total}
           </span>
           <div style={{ flex: 1 }} />
-          {stepIndex > 0 && (
+          {position > 0 && (
             <button
               onClick={back}
               className="btn"

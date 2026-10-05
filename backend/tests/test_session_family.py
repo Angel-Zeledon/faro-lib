@@ -317,3 +317,51 @@ class TestDemoQuickstartPlanSettings:
         sid = r.json()["data"]["session_id"]
         row = query("SELECT name FROM sessions WHERE id=%s AND tenant_id=%s", (sid, tid))[0]
         assert row["name"] == "Demo StockAI"
+
+
+class TestCustomHorizonValues:
+    """The wizard's custom horizon: any value the engine can honour, not only
+    the 4-week / 8-week / 6-month presets."""
+
+    def test_twelve_weeks_weekly_gives_twelve_steps(self):
+        specs = fam.plan_family(
+            _daily_dates(900), user_granularity="weekly", user_horizon_days=84)
+        assert specs[0]["horizon"] == 12
+
+    def test_forty_five_days_daily_is_forty_five_steps(self):
+        specs = fam.plan_family(
+            _daily_dates(900), user_granularity="daily", user_horizon_days=45)
+        assert specs[0]["horizon"] == 45
+
+    def test_nine_months_monthly_gives_nine_steps(self):
+        specs = fam.plan_family(
+            _daily_dates(900), user_granularity="monthly", user_horizon_days=270)
+        assert specs[0]["horizon"] == 9
+
+    def test_longest_accepted_value_is_clamped_to_each_grains_reach(self):
+        specs = fam.plan_family(_daily_dates(900), user_horizon_days=365)
+        by = {s["granularity"]: s["horizon"] for s in specs}
+        assert by == {"daily": 90, "weekly": 26, "monthly": 12}
+
+
+class TestTrainEndpointCustomHorizon:
+    def test_custom_horizon_persists_and_out_of_range_is_rejected(
+            self, client, test_tenant, registered_user, auth_headers):
+        tid, uid = test_tenant["id"], registered_user["user"]["id"]
+        sid = _make_ready_session(tid, uid, _daily_dates(900))
+
+        too_long = client.post(
+            f"/api/v1/sessions/{sid}/train",
+            json={"user_horizon_days": 366, "user_granularity": "weekly"},
+            headers=auth_headers)
+        assert too_long.status_code == 422
+        row = query("SELECT status, family_id FROM sessions WHERE id=%s", (sid,))[0]
+        assert row["status"] == "MODELS_CONFIGURED" and row["family_id"] is None
+
+        ok = client.post(
+            f"/api/v1/sessions/{sid}/train",
+            json={"user_horizon_days": 84, "user_granularity": "weekly"},
+            headers=auth_headers)
+        assert ok.status_code == 202, ok.text
+        fcfg = session_store.get_field(tid, sid, "forecast_cfg")
+        assert fcfg["horizon"] == 12 and fcfg["user_horizon_days"] == 84
