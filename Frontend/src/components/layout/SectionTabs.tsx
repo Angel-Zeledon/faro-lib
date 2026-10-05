@@ -19,7 +19,9 @@ import { usePathname } from 'next/navigation'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useMobileHeaderOverride } from '@/components/mobile/MobileHeaderContext'
-import { ANALYSIS_TABS } from './navItems'
+import { ANALYSIS_TABS, drawn, type Screen } from './navItems'
+import { useTenantFacts } from '@/hooks/useTenantFacts'
+import { getUser } from '@/lib/auth'
 
 /** Height the strip takes, exported so a screen sized to the viewport
  *  (/pronosticos on desktop) can subtract it. */
@@ -27,8 +29,16 @@ export const SECTION_TABS_HEIGHT = 41
 
 const onRoute = (href: string, path: string) => path === href || path.startsWith(`${href}/`)
 
-export function hasSectionTabs(path: string): boolean {
-  return ANALYSIS_TABS.some(tab => onRoute(tab.href, path))
+/** The strip's tabs for this path: the analysis screens the tenant has data
+ *  for (plus the one open). Fewer than two is not a strip — a lone
+ *  "Pronósticos" tab is chrome without a choice, so nothing is drawn. */
+export function useSectionTabs(): Screen[] {
+  const path  = usePathname()
+  const facts = useTenantFacts()
+  if (!ANALYSIS_TABS.some(tab => onRoute(tab.href, path))) return []
+  const role = getUser()?.role
+  const tabs = ANALYSIS_TABS.filter(tab => drawn(tab, role, facts, path))
+  return tabs.length >= 2 ? tabs : []
 }
 
 export default function SectionTabs() {
@@ -36,8 +46,9 @@ export default function SectionTabs() {
   const { t }  = useLanguage()
   const narrow = useIsNarrow()
   const header = useMobileHeaderOverride()
+  const tabs   = useSectionTabs()
 
-  if (!hasSectionTabs(path)) return null
+  if (tabs.length === 0) return null
   if (narrow && (header?.onBack || header?.backHref)) return null
 
   return (
@@ -52,7 +63,7 @@ export default function SectionTabs() {
         overflowX: 'auto', scrollbarWidth: 'none',
       }}
     >
-      {ANALYSIS_TABS.map(({ href, labelKey, Icon }) => {
+      {tabs.map(({ href, labelKey, Icon }) => {
         const active = onRoute(href, path)
         return (
           <Link

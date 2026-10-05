@@ -38,6 +38,7 @@ import {
   BottomSheet, MobileCard, MobileList, MobileTabs, StatusBadge, signalTone, useMobileHeader,
 } from '@/components/mobile'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useTenantFacts, has } from '@/hooks/useTenantFacts'
 import { seriesTypeLabel } from '@/lib/enumLabels'
 import { SERIES_COLOR, pct, reliabilityInfo } from '@/components/forecast/shared'
 import { SessionSelector } from '@/components/forecast/SessionSelector'
@@ -118,6 +119,7 @@ export interface PronosticosMobileProps {
 
 export default function PronosticosMobile(p: PronosticosMobileProps) {
   const { t } = useLanguage()
+  const { completedSessions } = useTenantFacts()
   const [optionsOpen, setOptionsOpen] = useState(false)
   const showDetail = p.detailOpen && !!p.selectedSku
 
@@ -189,7 +191,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
           </div>
         )}
 
-        {p.sessionId && p.showTechnical && (
+        {p.sessionId && p.showTechnical && has(completedSessions, 2) && (
           <>
             <button
               className={`mobile-btn ${p.compareMode ? 'mobile-btn-primary' : 'mobile-btn-secondary'}`}
@@ -371,7 +373,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
       {errors}
 
       <RunWarningsPanel sessionId={p.sessionId} collapsible />
-      <RunLineagePanel sessionId={p.sessionId} />
+      {p.showTechnical && <RunLineagePanel sessionId={p.sessionId} />}
 
       <div style={{ position: 'relative' }}>
         <Search size={16} aria-hidden="true" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--dim)' }} />
@@ -459,7 +461,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
         </>
       )}
 
-      <PolicyBacktestPanel backtest={p.policyBacktest} catalogueSize={p.catalogueSize} />
+      {p.showTechnical && <PolicyBacktestPanel backtest={p.policyBacktest} catalogueSize={p.catalogueSize} />}
       {options}
     </div>
   )

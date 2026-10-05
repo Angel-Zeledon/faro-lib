@@ -467,13 +467,14 @@ export const getSessions   = () =>
 export const getSessionSummaries = (
   skip = 0, limit = 100,
   f: { q?: string; status?: string; sort?: string } = {},
+  opts?: RequestOpts,
 ) => {
   const p = new URLSearchParams({ skip: String(skip), limit: String(limit) })
   if (f.q) p.set('q', f.q)
   if (f.status) p.set('status', f.status)
   if (f.sort) p.set('sort', f.sort)
   return request<{ items: import('./types').SessionSummary[]; total: number }>(
-    'GET', `/sessions/summary?${p.toString()}`,
+    'GET', `/sessions/summary?${p.toString()}`, undefined, opts,
   )
 }
 
@@ -944,8 +945,8 @@ export const createApiKey = (name: string, scope: import('./types').ApiKeyScope 
   request<{ key: string; name: string; role: string; scope: import('./types').ApiKeyScope }>(
     'POST', '/api-keys', { name, scope })
 
-export const listApiKeys = () =>
-  request<import('./types').ApiKey[]>('GET', '/api-keys')
+export const listApiKeys = (opts?: RequestOpts) =>
+  request<import('./types').ApiKey[]>('GET', '/api-keys', undefined, opts)
 
 export const revokeApiKey = (id: string) =>
   request<{ revoked: string }>('DELETE', `/api-keys/${id}`)
@@ -959,8 +960,8 @@ export const getApiKeyUsage = (month?: string) =>
 export const createWebhook = (url: string, events: string[]) =>
   request<import('./types').Webhook>('POST', '/webhooks', { url, events })
 
-export const listWebhooks = () =>
-  request<import('./types').Webhook[]>('GET', '/webhooks')
+export const listWebhooks = (opts?: RequestOpts) =>
+  request<import('./types').Webhook[]>('GET', '/webhooks', undefined, opts)
 
 export const deleteWebhook = (id: string) =>
   request<{ deleted: string }>('DELETE', `/webhooks/${id}`)
@@ -1004,9 +1005,9 @@ export interface ScheduleRun {
 export const listScheduleHistory = (limit = 20) =>
   request<ScheduleRun[]>('GET', `/schedules/history?limit=${limit}`)
 
-export const listSchedules = () =>
+export const listSchedules = (opts?: RequestOpts) =>
   request<Array<import('./types').JobSchedule & { session_name: string }>>(
-    'GET', '/schedules',
+    'GET', '/schedules', undefined, opts,
   )
 
 export const saveSchedule = (sessionId: string, cronExpr: string, enabled: boolean) =>
@@ -1463,8 +1464,8 @@ export const updatePreferences = (body: Partial<import('./types').UserPreference
   request<import('./types').UserPreferences>('PATCH', '/me/preferences', body)
 
 // ── Team messaging (direct messages between users of the tenant) ──────────────
-export const getDmContacts = () =>
-  request<import('./types').DmContact[]>('GET', '/messages/contacts')
+export const getDmContacts = (opts?: RequestOpts) =>
+  request<import('./types').DmContact[]>('GET', '/messages/contacts', undefined, opts)
 
 export const getDmConversations = () =>
   request<import('./types').DmConversation[]>('GET', '/messages/conversations')

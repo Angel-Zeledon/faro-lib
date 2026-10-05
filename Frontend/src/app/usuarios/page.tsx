@@ -19,6 +19,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import UsersMobile from './UsersMobile'
+import { EmptyState } from '@/components/ui/States'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -588,6 +589,20 @@ export default function UsersPage() {
           </button>
         </div>
       </div>
+
+      {/* Alone in the workspace: one step, not a table with one row. */}
+      {!loading && total === 1 && users.length === 1 && users[0].id === currentUser?.id
+        && !search && !filterStatus && !filterRole && (
+        <div style={{ marginBottom: 16 }}>
+          <EmptyState
+            compact
+            icon={<Users size={22} />}
+            title={t('users.alone_title')}
+            body={t('users.alone_body')}
+            actions={[{ label: t('users.create_user'), icon: <Plus size={14} />, onClick: () => setShowCreate(true) }]}
+          />
+        </div>
+      )}
 
       {/* Filters */}
       <div data-tour="users.filters" style={{

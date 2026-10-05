@@ -439,6 +439,7 @@ export default function ScenariosPage() {
         icon={<FlaskConical size={22} />}
         title={t('scenarios.title')}
         body={t('scenarios.no_sessions')}
+        actions={[{ label: t('hoy.empty_cta_primary'), href: '/ventas' }]}
       />
     )
   }

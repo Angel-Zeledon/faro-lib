@@ -13,6 +13,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { fmtNum, localeFor } from '@/lib/numberLocale'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import { useTenantFacts, has } from '@/hooks/useTenantFacts'
 import {
   BottomSheet, MobileList, MobileCard, type StatusTone,
 } from '@/components/mobile'
@@ -97,6 +98,9 @@ const SORTS: Record<SortKey, Pick<SessionLibraryQuery, 'sort' | 'order'>> = {
 
 export default function SessionsHistoryPage() {
   const { t, lang } = useLanguage()
+  // Comparing a forecast with reality only means something once there are two
+  // finished runs to tell apart (docs/simplicity-audit.md R3).
+  const canCompareReality = has(useTenantFacts().completedSessions, 2)
   const router   = useRouter()
   const confirm  = useConfirm()
   const user     = getUser()
@@ -341,6 +345,7 @@ export default function SessionsHistoryPage() {
             icon={<History size={22} />}
             title={t('sessions.empty_title')}
             body={t('sessions.empty_hint')}
+            actions={[{ label: t('hoy.empty_cta_primary'), href: '/ventas' }]}
           />
         )
       ) : narrow ? (
@@ -484,7 +489,7 @@ export default function SessionsHistoryPage() {
                       <Td divider={false} nowrap align="right"
                           data-tour={idx === 0 ? 'ses.actions' : undefined}
                           onClick={e => e.stopPropagation()}>
-                        {s.status === 'COMPLETED' && (
+                        {s.status === 'COMPLETED' && canCompareReality && (
                           <button onClick={() => openAccuracy(s)} title={t('sessions.compare_reality')}
                                   aria-label={t('sessions.compare_reality')} style={iconBtnStyle}>
                             <Target size={14} />
@@ -572,6 +577,7 @@ function HistoryCards({
   onRestore: (s: SessionSummary) => void
 }) {
   const { t } = useLanguage()
+  const canCompareReality = has(useTenantFacts().completedSessions, 2)
   const detail = items.find(i => i.session_id === detailId) ?? null
   const renaming = !!detail && editingId === detail.session_id
   const inFlight = !!detail && (detail.status === 'RUNNING' || detail.status === 'QUEUED')
@@ -614,7 +620,7 @@ function HistoryCards({
                 {t('sessions.view_results')}
               </button>
             )}
-            {detail.status === 'COMPLETED' && (
+            {detail.status === 'COMPLETED' && canCompareReality && (
               <button className="mobile-btn mobile-btn-secondary" style={{ flex: 'none', width: '100%' }}
                       onClick={() => onOpenAccuracy(detail)}>
                 <Target size={16} aria-hidden="true" /> {t('sessions.compare_reality')}

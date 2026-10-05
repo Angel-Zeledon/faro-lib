@@ -12,6 +12,7 @@ import Button from '@/components/ui/Button'
 import Input, { Select } from '@/components/ui/Input'
 import Card from '@/components/ui/Card'
 import Spinner from '@/components/ui/Spinner'
+import { EmptyState } from '@/components/ui/States'
 import { Key, Webhook as WebhookIcon, Clock, Copy, Check, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { webhookEventLabel, timezoneLabel } from '@/lib/enumLabels'
@@ -393,6 +394,7 @@ function SchedulesTab() {
   const confirm = useConfirm()
   const narrow = useIsNarrow()
   const [sessions,   setSessions]  = useState<SessionInfo[]>([])
+  const [sessionsLoaded, setSessionsLoaded] = useState(false)
   const [sessionId,  setSessionId] = useState<string>('')
   const [schedule,   setSchedule]  = useState<JobSchedule | null>(null)
   const [loading,    setLoading]   = useState(false)
@@ -443,6 +445,7 @@ function SchedulesTab() {
         const completed = ss.filter(s => s.status === 'COMPLETED')
         setSessions(completed)
         if (completed.length) setSessionId(completed[0].session_id)
+        setSessionsLoaded(true)
       })
       .catch(e => setError(e.message))
     reloadAll()
@@ -480,6 +483,18 @@ function SchedulesTab() {
     try { await deleteSchedule(sessionId); setSchedule(null); reloadAll() }
     catch (e: any) { setError(e.message) }
     finally { setDeleting(false) }
+  }
+
+  // Nothing to schedule yet: one step, not a form with an empty picker.
+  if (sessionsLoaded && sessions.length === 0) {
+    return (
+      <EmptyState
+        icon={<Clock size={22} />}
+        title={t('settings.schedules_empty_title')}
+        body={t('settings.schedules_empty_body')}
+        actions={[{ label: t('hoy.empty_cta_primary'), href: '/ventas' }]}
+      />
+    )
   }
 
   // Phone: what is armed and what ran as card lists, the form as full-width
