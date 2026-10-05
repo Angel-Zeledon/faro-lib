@@ -617,7 +617,10 @@ export default function AnalystPage() {
 
       <div style={{
         display: 'flex',
-        height: '100%',
+        // The negative margin pulls the box out over the padding on all four
+        // sides, so the height has to grow by the padding too or the panel stops
+        // 2 x PAGE_PAD short of the bottom edge and leaves a strip of bare page.
+        height: `calc(100% + ${PAGE_PAD * 2}px)`,
         margin: -PAGE_PAD,
         overflow: 'hidden',
       }}>

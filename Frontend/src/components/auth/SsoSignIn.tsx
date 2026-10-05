@@ -96,7 +96,7 @@ export function SsoSignIn({ initialEmail = '', forceOpen = false }: {
               id="sso-email" name="sso_email" className="auth-input" type="email"
               value={email} required autoComplete="email" autoFocus
               onChange={e => setEmail(e.target.value)}
-              placeholder="you@company.com"
+              placeholder={t('auth.ph_email')}
             />
           </div>
           {note && (

@@ -82,6 +82,13 @@ function buildOption(args: {
     }).format(value)
   }
 
+  // Every text marker is a small pill with its own background, so it stays
+  // readable wherever it lands and never looks like it is printed under a line.
+  const pill = {
+    backgroundColor: tipBg, borderColor: tipBorder, borderWidth: 1,
+    borderRadius: 9, padding: [2, 7, 2, 7],
+  }
+
   // ── Markers: today, and where stock runs out against the supplier's lead time.
   const horizon = stockHorizon(status, coverageUnit, now)
   const markLines: object[] = []
@@ -89,10 +96,30 @@ function buildOption(args: {
     markLines.push({
       xAxis: now,
       lineStyle: { color: dim, type: 'dashed', width: 1, opacity: 0.7 },
-      label: { show: true, formatter: t('skus.chart_today'), color: dim, fontSize: 11, position: 'insideStartTop' },
+      // 'end' puts the label just past the top of the line, i.e. in the margin
+      // above the plot, not on the gridlines and series.
+      label: { show: true, formatter: t('skus.chart_today'), color: dim, fontSize: 11, position: 'end', ...pill },
     })
   }
   const markAreas: object[][] = []
+  // "Actual sales" names the history span: a pill above the plot, at its left
+  // edge. Skipped when today sits so close to that edge that it would collide
+  // with the "Today" pill.
+  const plotWidthEstimate = narrow ? 290 : 700
+  const historyShare = maxTs > minTs ? (Math.min(now, lastHist ? lastHist[0] : now) - minTs) / (maxTs - minTs) : 0
+  if (lastHist && hist.length > 1 && historyShare * plotWidthEstimate > 150) {
+    markAreas.push([
+      {
+        xAxis: minTs,
+        itemStyle: { color: 'transparent' },
+        label: {
+          show: true, formatter: t('skus.chart_sold'), color: dim, fontSize: 11,
+          position: 'insideTopLeft', offset: [0, -26], ...pill,
+        },
+      },
+      { xAxis: lastHist[0] },
+    ])
+  }
   if (horizon) {
     const risky = horizon.gapDays > 0
     if (horizon.runoutTs <= maxTs) {
@@ -101,7 +128,9 @@ function buildOption(args: {
         lineStyle: { color: risky ? DANGER : WARN, type: 'solid', width: 1.5 },
         label: {
           show: true, color: risky ? DANGER : WARN, fontSize: 11, fontWeight: 600,
-          position: 'insideEndTop', align: 'right', padding: [0, 6, 0, 0],
+          // rotate 0: a vertical markLine turns its label sideways by default.
+          position: 'middle', align: 'left', verticalAlign: 'middle', rotate: 0, offset: [6, 0],
+          backgroundColor: tipBg, borderRadius: 9, padding: [2, 7, 2, 7],
           formatter: t('skus.chart_runs_out', { date: fmtDate(horizon.runoutTs) }),
         },
       })
@@ -113,6 +142,7 @@ function buildOption(args: {
         itemStyle: { color: isDark ? 'rgba(148,163,184,0.10)' : 'rgba(100,116,139,0.08)' },
         label: {
           show: true, position: 'insideBottomLeft', color: dim, fontSize: 11,
+          backgroundColor: tipBg, borderRadius: 9, padding: [2, 7, 2, 7],
           formatter: t('skus.chart_lead_time', { n: Math.round(horizon.leadDays) }),
         },
       },
@@ -152,21 +182,14 @@ function buildOption(args: {
   series.push({
     name: 'history', type: 'line', data: hist, symbol: 'none', smooth: false,
     lineStyle: { color: histColor, width: 1.75 }, itemStyle: { color: histColor }, z: 5,
-    markPoint: hist.length > 1 ? {
-      silent: true, symbolSize: 0,
-      data: [{
-        coord: hist[Math.min(hist.length - 1, Math.floor(hist.length * 0.12))],
-        label: { show: true, formatter: t('skus.chart_sold'), position: 'top', color: dim, fontSize: 11, distance: 8 },
-      }],
-    } : undefined,
   })
   series.push({
     name: 'forecast', type: 'line', data: fcLine, symbol: 'none', smooth: false,
     lineStyle: { color: accent, width: 2.75 }, itemStyle: { color: accent }, z: 10,
     endLabel: endLabel(t('skus.chart_likely'), accent, true),
     labelLayout: { hideOverlap: false },
-    markLine: markLines.length ? { silent: true, symbol: 'none', animation: false, data: markLines } : undefined,
-    markArea: markAreas.length ? { silent: true, animation: false, data: markAreas } : undefined,
+    markLine: markLines.length ? { silent: true, symbol: 'none', animation: false, z: 30, data: markLines } : undefined,
+    markArea: markAreas.length ? { silent: true, animation: false, z: 31, data: markAreas } : undefined,
   })
 
   const histByTs = new Map(hist)
@@ -176,7 +199,7 @@ function buildOption(args: {
     backgroundColor: 'transparent',
     animationDuration: 250,
     textStyle: { fontFamily: 'inherit' },
-    grid: { top: 28, bottom: 28, left: 8, right: narrow ? 54 : 84, containLabel: true },
+    grid: { top: 40, bottom: 28, left: 8, right: narrow ? 54 : 84, containLabel: true },
     tooltip: {
       trigger: 'axis',
       backgroundColor: tipBg, borderColor: tipBorder, borderWidth: 1,

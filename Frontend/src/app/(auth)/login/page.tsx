@@ -164,7 +164,7 @@ function LoginPageContent() {
                 id="login-email" name="email" className="auth-input"
                 type="email" value={email} required autoComplete="email"
                 onChange={e => setEmail(e.target.value)}
-                placeholder="you@company.com"
+                placeholder={t('auth.ph_email')}
               />
             </div>
 
