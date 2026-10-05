@@ -818,6 +818,102 @@ API_SURFACE = Service(
 )
 
 
+OPERATIONS = Service(
+    key="operations",
+    kind="deployment",
+    editable=False,
+    summary="Thresholds behind the installation status panel (queue, worker, disk, backup, latency).",
+    what_breaks=(
+        "Nothing turns off. These decide when `GET /service-config/ops` and the "
+        "'Installation status' panel call a reading degraded; they never block "
+        "a request or a job."
+    ),
+    docs_note=(
+        "These are the service-level objectives of the installation, in one "
+        "place. Request latency is measured in the API process that answers "
+        "`/service-config/ops` (an in-memory rolling window, lost on restart); "
+        "queue, worker heartbeat and failed jobs are read from the database and "
+        "therefore cover every process. The backup readings need the backup "
+        "script's success marker to be visible to the API container: see "
+        "`deploy/RESTORE.md`."
+    ),
+    fields=(
+        ConfigField(
+            key="ops_queue_wait_degraded_minutes",
+            env="OPS_QUEUE_WAIT_DEGRADED_MINUTES", kind="float", editable=False,
+            doc="A job that has been QUEUED longer than this many minutes makes "
+                "the queue degraded.",
+            default="10.0", example="10",
+        ),
+        ConfigField(
+            key="ops_running_job_degraded_minutes",
+            env="OPS_RUNNING_JOB_DEGRADED_MINUTES", kind="float", editable=False,
+            doc="A job RUNNING longer than this many minutes is reported as "
+                "possibly stuck.",
+            default="180.0", example="180",
+        ),
+        ConfigField(
+            key="ops_worker_heartbeat_stale_seconds",
+            env="OPS_WORKER_HEARTBEAT_STALE_SECONDS", kind="float", editable=False,
+            doc="The worker's last heartbeat older than this many seconds means "
+                "nobody is claiming jobs.",
+            default="120.0", example="120",
+        ),
+        ConfigField(
+            key="ops_disk_free_min_percent",
+            env="OPS_DISK_FREE_MIN_PERCENT", kind="float", editable=False,
+            doc="Free space below this percentage on the storage or backup "
+                "volume is degraded.",
+            default="10.0", example="10",
+        ),
+        ConfigField(
+            key="ops_backup_max_age_hours",
+            env="OPS_BACKUP_MAX_AGE_HOURS", kind="float", editable=False,
+            doc="The last successful backup older than this many hours is "
+                "degraded. 36 tolerates one missed night.",
+            default="36.0", example="36",
+        ),
+        ConfigField(
+            key="ops_pool_saturation_percent",
+            env="OPS_POOL_SATURATION_PERCENT", kind="float", editable=False,
+            doc="Database connections in use, as a percentage of the pool, at "
+                "or above which the pool is degraded.",
+            default="85.0", example="85",
+        ),
+        ConfigField(
+            key="ops_latency_slo_ms",
+            env="OPS_LATENCY_SLO_MS", kind="float", editable=False,
+            doc="A route family whose p95 latency (recent window) exceeds this "
+                "many milliseconds is degraded.",
+            default="3000.0", example="3000",
+        ),
+        ConfigField(
+            key="ops_slow_query_ms",
+            env="OPS_SLOW_QUERY_MS", kind="float", editable=False,
+            doc="Statements slower than this many milliseconds are counted as "
+                "slow queries (count and worst only; parameters are never kept).",
+            default="1000.0", example="1000",
+        ),
+        ConfigField(
+            key="backup_status_path",
+            env="BACKUP_STATUS_PATH", editable=False,
+            doc="Path, as the API container sees it, of the JSON success marker "
+                "the nightly backup script writes. Empty means the backup "
+                "readings report 'unknown'.",
+            example="/backups/last_success.json",
+        ),
+        ConfigField(
+            key="backup_dir",
+            env="BACKUP_DIR", editable=False,
+            doc="Folder the backups are written to, as the API container sees "
+                "it; used to report its free disk space. Empty skips that "
+                "reading.",
+            example="/backups",
+        ),
+    ),
+)
+
+
 SERVICES: tuple[Service, ...] = (
     CORE,
     LLM,
@@ -831,6 +927,7 @@ SERVICES: tuple[Service, ...] = (
     WORKER,
     LIMITS,
     API_SURFACE,
+    OPERATIONS,
 )
 
 BY_KEY: dict[str, Service] = {s.key: s for s in SERVICES}

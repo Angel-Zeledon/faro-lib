@@ -38,6 +38,7 @@ import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Spinner from '@/components/ui/Spinner'
+import InstallationStatus from '@/components/ops/InstallationStatus'
 import {
   MobileTabs, MobileList, MobileCard, StickyActionBar, useMobileHeader, type StatusTone,
 } from '@/components/mobile'
@@ -554,6 +555,7 @@ export default function InstallationPage() {
           </Card>
         ) : instance && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <InstallationStatus />
             {!instance.overrides.store_available && (
               <Banner tone="warn" text={ui.storeUnavailable} />
             )}

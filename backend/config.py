@@ -108,6 +108,21 @@ class Settings(BaseSettings):
     # recognized after the container is recreated.
     worker_id: str = ""
 
+    # Operations surface (`GET /service-config/ops`) — the thresholds at which a
+    # reading turns "degraded". Declared in the registry's `operations` service.
+    ops_queue_wait_degraded_minutes: float = 10.0
+    ops_running_job_degraded_minutes: float = 180.0
+    ops_worker_heartbeat_stale_seconds: float = 120.0
+    ops_disk_free_min_percent: float = 10.0
+    ops_backup_max_age_hours: float = 36.0
+    ops_pool_saturation_percent: float = 85.0
+    ops_latency_slo_ms: float = 3000.0
+    ops_slow_query_ms: float = 1000.0
+    # Where the nightly backup script drops its success marker, and the folder
+    # it writes into. Empty = not wired: the surface says "unknown", not "ok".
+    backup_status_path: str = ""
+    backup_dir: str = ""
+
     # Upload
     max_upload_size_mb: int = 200
 

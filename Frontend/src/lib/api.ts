@@ -2242,6 +2242,31 @@ export const getCapabilities = (opts?: RequestOpts) =>
 export const getServices = (opts?: RequestOpts) =>
   request<ServicesReport>('GET', '/service-config/services', undefined, opts)
 
+export interface OpsCheck {
+  key: string
+  state: 'ok' | 'degraded' | 'unknown'
+  detail: Record<string, unknown>
+}
+
+export interface OpsSnapshot {
+  generated_at: string
+  overall: 'ok' | 'degraded' | 'unknown'
+  checks: OpsCheck[]
+  queue: { queued: number; oldest_queued_age_seconds: number | null }
+  running_jobs: { job_id: string; tenant_id: string; worker_id: string | null; elapsed_seconds: number }[]
+  failed_jobs_24h: { total: number; by_error_class: { error_class: string; count: number }[] }
+  worker: { id: string | null; last_heartbeat: string | null }
+  slow_queries: { count: number; worst_ms: number | null; threshold_ms: number }
+  latency: {
+    scope: string
+    families: { family: string; count: number; errors_5xx: number; p50_ms: number; p95_ms: number; p99_ms: number }[]
+  }
+}
+
+/** Operator only (`INSTANCE_ADMIN_EMAILS`): queue, worker, pool, disk, backup, latency. */
+export const getOpsSnapshot = (opts?: RequestOpts) =>
+  request<OpsSnapshot>('GET', '/service-config/ops', undefined, opts)
+
 /** Values are strings on the wire even for numbers and booleans — the backend
  *  registry owns what each field's shape is, so there is exactly one place that
  *  decides what "true" means. An empty string CLEARS the override. */

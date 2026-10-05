@@ -76,6 +76,9 @@ docker volume ls | grep storage
 ```
 
 Restoring is its own runbook, written by doing it: **[`RESTORE.md`](RESTORE.md)**.
+The repository copy of the nightly script (with a success marker the status
+panel reads) is `ops/backup.sh`, and `scripts/restore_drill.py` rehearses the
+restore monthly; both are described at the end of `RESTORE.md`.
 
 Or take the key out of the equation: put a Fernet key in
 `INTEGRATIONS_SECRET_KEY` in `deploy/.env` and it never touches the volume.

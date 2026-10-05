@@ -145,3 +145,49 @@ def status() -> list[dict]:
         "last_status":   by_loop[name]["last_status"] if by_loop.get(name) else None,
         "last_error":    by_loop[name]["last_error"] if by_loop.get(name) else None,
     } for name in LOOPS]
+
+
+# ── Worker heartbeat ────────────────────────────────────────────────────────
+# One row, `worker_heartbeat`, refreshed by the job-claim loop. It lives in this
+# table (not in LOOPS: it is not a boundary-based loop) so a worker in ANOTHER
+# container is visible to the API's operations surface, which a process-local
+# variable could never be. Throttled: the claim loop polls every couple of
+# seconds and a write per poll would be noise.
+WORKER_HEARTBEAT = "worker_heartbeat"
+HEARTBEAT_EVERY_SECONDS = 30.0
+_last_beat_monotonic = -HEARTBEAT_EVERY_SECONDS
+
+
+def beat(worker: str) -> None:
+    """Record that the claim loop is alive. Never raises."""
+    import time
+
+    global _last_beat_monotonic
+    now = time.monotonic()
+    if now - _last_beat_monotonic < HEARTBEAT_EVERY_SECONDS:
+        return
+    _last_beat_monotonic = now
+    try:
+        execute(
+            """INSERT INTO system_loop_runs (loop, last_boundary, last_run_at,
+                                             last_status, last_error)
+               VALUES (%s, NOW(), NOW(), %s, NULL)
+               ON CONFLICT (loop) DO UPDATE
+                   SET last_boundary = NOW(), last_run_at = NOW(),
+                       last_status = EXCLUDED.last_status""",
+            (WORKER_HEARTBEAT, worker[:200]),
+        )
+    except Exception:  # noqa: BLE001 - bookkeeping must not stop the worker
+        log.exception("loop_state: could not record the worker heartbeat")
+
+
+def heartbeat() -> Optional[dict]:
+    """`{"worker": id, "at": datetime}` of the last heartbeat, or None."""
+    row = query_one(
+        "SELECT last_run_at, last_status FROM system_loop_runs WHERE loop = %s",
+        (WORKER_HEARTBEAT,))
+    if not row or not row.get("last_run_at"):
+        return None
+    at = row["last_run_at"]
+    return {"worker": row.get("last_status"),
+            "at": at if at.tzinfo else at.replace(tzinfo=timezone.utc)}

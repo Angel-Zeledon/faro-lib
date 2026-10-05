@@ -22,7 +22,7 @@ import type { Lang } from './translations'
 /** Service keys, exactly as `backend/service_config/registry.py` declares them. */
 export type ServiceKey =
   | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
-  | 'secret_storage' | 'contact' | 'social_login' | 'worker' | 'limits' | 'api_surface'
+  | 'secret_storage' | 'contact' | 'social_login' | 'worker' | 'limits' | 'api_surface' | 'operations'
 
 /** Field keys, exactly as the registry declares them (= `Settings` attributes). */
 export type FieldKey =
@@ -47,6 +47,12 @@ export type FieldKey =
   | 'max_upload_size_mb' | 'dataset_editor_max_rows' | 'dataset_editor_max_mb'
   | 'sql_materialize_max_rows' | 'accuracy_degradation_threshold_pct'
   | 'public_api_only'
+  // Operations thresholds (installation status panel)
+  | 'ops_queue_wait_degraded_minutes' | 'ops_running_job_degraded_minutes'
+  | 'ops_worker_heartbeat_stale_seconds' | 'ops_disk_free_min_percent'
+  | 'ops_backup_max_age_hours' | 'ops_pool_saturation_percent'
+  | 'ops_latency_slo_ms' | 'ops_slow_query_ms'
+  | 'backup_status_path' | 'backup_dir'
 
 export interface ServiceCopy {
   /** Short name for the card header. */
@@ -122,6 +128,25 @@ export interface ServiceConfigCopy {
     tenantLead: string
     tenantEmpty: string
     noneEditable: string
+  }
+  /** Installation status panel (operators). */
+  ops: {
+    title: string
+    refresh: string
+    overall: Record<'ok' | 'degraded' | 'unknown', string>
+    checks: Record<string, string>
+    queueLine: string
+    oldestQueued: string
+    running: string
+    failed24h: string
+    noFailures: string
+    heartbeatLine: string
+    never: string
+    latencyTitle: string
+    latencyScope: string
+    noTraffic: string
+    slowQueries: string
+    loadError: string
   }
 }
 
@@ -199,6 +224,13 @@ const es: ServiceConfigCopy = {
       whatBreaks: 'Encendido, esta instancia sirve ÚNICAMENTE los endpoints que el sistema de un cliente está invitado a llamar, más /health. La aplicación web servida desde este host deja de funcionar por completo — que es justamente el punto: está pensado para correr como una segunda instancia de la misma imagen.',
       note: 'Lo que NO compra: aislamiento de la base de datos. Las dos instancias siguen compartiendo un Postgres, así que un problema de base tumba la integración del cliente y la app juntas.',
     },
+    // Operations
+    operations: {
+      name: 'Operación',
+      summary: 'Umbrales del panel de estado de la instalación (cola, worker, disco, respaldo, latencia).',
+      whatBreaks: 'No se apaga nada. Deciden cuándo el panel llama «con problemas» a una lectura; nunca bloquean una petición ni un trabajo.',
+      note: 'La latencia se mide en el proceso de la API que responde (ventana en memoria, se pierde al reiniciar). Cola, latido del worker y fallidos salen de la base. Las lecturas de respaldo necesitan que el marcador del script sea visible para el contenedor de la API: ver deploy/RESTORE.md.',
+    },
   },
   fields: {
     secret_key: 'Firma cada token de acceso y de refresco. Cambiarla cierra la sesión de todo el mundo al instante. Usa una cadena larga y aleatoria.',
@@ -256,6 +288,17 @@ const es: ServiceConfigCopy = {
     sql_materialize_max_rows: 'Tope de filas al convertir una consulta SQL en un archivo. Pasarse es un rechazo, nunca un recorte.',
     accuracy_degradation_threshold_pct: 'Cuánto peor (en porcentaje relativo) debe rendir un pronóstico contra las ventas reales, comparado con su precisión al entrenarse, para que la app avise una sola vez. Es solo un aviso: nada se reentrena solo.',
     public_api_only: 'Servir en esta instancia únicamente la superficie pública de integración.',
+    // Operations thresholds
+    ops_queue_wait_degraded_minutes: 'Minutos que un trabajo puede esperar en cola antes de que la cola se marque con problemas.',
+    ops_running_job_degraded_minutes: 'Minutos de ejecución a partir de los cuales un trabajo se reporta como posiblemente trabado.',
+    ops_worker_heartbeat_stale_seconds: 'Segundos sin latido del worker a partir de los cuales se considera que nadie toma trabajos.',
+    ops_disk_free_min_percent: 'Porcentaje mínimo de espacio libre en el volumen de storage o de respaldos.',
+    ops_backup_max_age_hours: 'Horas máximas desde el último respaldo exitoso. 36 tolera una noche perdida.',
+    ops_pool_saturation_percent: 'Porcentaje del pool de conexiones en uso a partir del cual se marca con problemas.',
+    ops_latency_slo_ms: 'Milisegundos de p95 por encima de los cuales una familia de rutas se marca con problemas.',
+    ops_slow_query_ms: 'Milisegundos a partir de los cuales una consulta cuenta como lenta (solo se guarda el conteo y la peor; nunca los parámetros).',
+    backup_status_path: 'Ruta, vista desde el contenedor de la API, del marcador JSON que escribe el script de respaldo. Vacía = la lectura de respaldo queda «desconocida».',
+    backup_dir: 'Carpeta de respaldos, vista desde el contenedor de la API, para medir su espacio libre. Vacía omite esa lectura.',
   },
   ui: {
     title: 'Instalación',
@@ -311,6 +354,29 @@ const es: ServiceConfigCopy = {
     tenantLead: 'Los canales que llevan tu identidad a tu propia gente. Lo que dejes vacío usa lo que tenga la instalación.',
     tenantEmpty: 'Esta instalación no expone ningún canal configurable por empresa.',
     noneEditable: 'Este servicio se configura solo por entorno.',
+  },
+  // Panel Estado de la instalación
+  ops: {
+    title: 'Estado de la instalación',
+    refresh: 'Actualizar',
+    overall: { ok: 'Todo en orden', degraded: 'Hay algo fuera de su umbral', unknown: 'Hay lecturas que no se pueden tomar' },
+    checks: {
+      queue: 'Cola de trabajos', running_jobs: 'Trabajos en curso', worker_heartbeat: 'Latido del worker',
+      db_pool: 'Conexiones a la base', disk_storage: 'Disco de storage', disk_backup: 'Disco de respaldos',
+      backup: 'Último respaldo', latency: 'Latencia',
+    },
+    queueLine: 'En cola',
+    oldestQueued: 'El más antiguo espera',
+    running: 'En ejecución',
+    failed24h: 'Fallidos en 24 h por clase de error',
+    noFailures: 'Ninguno',
+    heartbeatLine: 'Último latido',
+    never: 'nunca',
+    latencyTitle: 'Latencia por familia de rutas',
+    latencyScope: 'Solo este proceso de la API, últimos 15 minutos; se pierde al reiniciar.',
+    noTraffic: 'Sin tráfico en la ventana.',
+    slowQueries: 'Consultas lentas en la última hora',
+    loadError: 'No se pudo leer el estado de la instalación.',
   },
 }
 
@@ -388,6 +454,13 @@ const en: ServiceConfigCopy = {
       whatBreaks: 'With it on, this instance serves ONLY the endpoints a customer’s own system is invited to call, plus /health. The web app served from this host stops working entirely — which is the point: it is meant to run as a second instance of the same image.',
       note: 'What it does NOT buy: isolation from the database. Both instances still share one Postgres, so a database problem takes down the customer’s integration and the app together.',
     },
+    // Operations
+    operations: {
+      name: 'Operations',
+      summary: 'Thresholds behind the installation status panel (queue, worker, disk, backup, latency).',
+      whatBreaks: 'Nothing turns off. They decide when the panel calls a reading degraded; they never block a request or a job.',
+      note: 'Latency is measured in the API process that answers (in-memory window, lost on restart). Queue, worker heartbeat and failures come from the database. The backup readings need the backup script marker to be visible to the API container: see deploy/RESTORE.md.',
+    },
   },
   fields: {
     secret_key: 'Signs every access and refresh token. Changing it logs everyone out immediately. Use a long random string.',
@@ -445,6 +518,17 @@ const en: ServiceConfigCopy = {
     sql_materialize_max_rows: 'Row ceiling when turning a SQL query into a file. Exceeding it is a refusal, never a truncation.',
     accuracy_degradation_threshold_pct: 'How much worse (relative percent) a forecast must perform against real sales, compared with its accuracy at training, before the app raises its single alert. A notice only: nothing retrains by itself.',
     public_api_only: 'Serve only the public integration surface on this instance.',
+    // Operations thresholds
+    ops_queue_wait_degraded_minutes: 'Minutes a job may wait in the queue before the queue is called degraded.',
+    ops_running_job_degraded_minutes: 'Minutes of running time after which a job is reported as possibly stuck.',
+    ops_worker_heartbeat_stale_seconds: 'Seconds without a worker heartbeat after which nobody is considered to be claiming jobs.',
+    ops_disk_free_min_percent: 'Minimum free-space percentage on the storage or backup volume.',
+    ops_backup_max_age_hours: 'Maximum hours since the last successful backup. 36 tolerates one missed night.',
+    ops_pool_saturation_percent: 'Share of the connection pool in use at which the pool is called degraded.',
+    ops_latency_slo_ms: 'p95 milliseconds above which a route family is called degraded.',
+    ops_slow_query_ms: 'Milliseconds from which a statement counts as slow (only the count and the worst are kept; never the parameters).',
+    backup_status_path: 'Path, as the API container sees it, of the JSON marker the backup script writes. Empty = the backup reading reports unknown.',
+    backup_dir: 'Backup folder, as the API container sees it, used to measure its free space. Empty skips that reading.',
   },
   ui: {
     title: 'Installation',
@@ -500,6 +584,29 @@ const en: ServiceConfigCopy = {
     tenantLead: 'The channels that carry your identity to your own people. Anything left empty uses what the installation has.',
     tenantEmpty: 'This installation exposes no per-company channel.',
     noneEditable: 'This service is configured by environment only.',
+  },
+  // Installation status panel
+  ops: {
+    title: 'Installation status',
+    refresh: 'Refresh',
+    overall: { ok: 'All within thresholds', degraded: 'Something is outside its threshold', unknown: 'Some readings cannot be taken' },
+    checks: {
+      queue: 'Job queue', running_jobs: 'Running jobs', worker_heartbeat: 'Worker heartbeat',
+      db_pool: 'Database connections', disk_storage: 'Storage disk', disk_backup: 'Backup disk',
+      backup: 'Last backup', latency: 'Latency',
+    },
+    queueLine: 'Queued',
+    oldestQueued: 'Oldest waits',
+    running: 'Running',
+    failed24h: 'Failed in 24 h by error class',
+    noFailures: 'None',
+    heartbeatLine: 'Last heartbeat',
+    never: 'never',
+    latencyTitle: 'Latency per route family',
+    latencyScope: 'This API process only, last 15 minutes; lost on restart.',
+    noTraffic: 'No traffic in the window.',
+    slowQueries: 'Slow queries in the last hour',
+    loadError: 'The installation status could not be read.',
   },
 }
 

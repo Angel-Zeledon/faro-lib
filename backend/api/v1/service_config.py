@@ -111,6 +111,21 @@ def _write(service_key: str, body: ValuesBody, *, tenant_id: str | None, actor: 
     return result
 
 
+# ── Operations snapshot — the instance operator only ────────────────────────
+
+@router.get("/ops")
+def get_ops(_: CurrentUser = Depends(require_instance_operator)):
+    """Queue, worker, pool, disk, backup and latency readings in one place.
+
+    Read-only. Cross-tenant numbers (every tenant's jobs), so it is gated like
+    the rest of instance configuration, never by the tenant `admin` role. The
+    thresholds are the `operations` service in the registry.
+    """
+    from backend.service_config import ops
+
+    return ok(ops.snapshot())
+
+
 # ── Capabilities — every authenticated caller ───────────────────────────────
 
 @router.get("/capabilities")
