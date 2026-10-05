@@ -2023,10 +2023,16 @@ export const getSuggestedQuestions = (profile = 'distributor', hasInventory = tr
  * the channels the deployment actually configured; an empty string means that
  * button is not shown at all.
  */
+export type PlanFeature = 'api' | 'mcp' | 'whatsapp_bot'
+
 export interface Entitlements {
-  tier: 'free' | 'paid' | 'demo'
+  tier: 'free' | 'paid' | 'corporate' | 'demo'
   trial: { state: string; ends_at: string | null }
   limits: Record<string, number | null>
+  /** Which machine-facing channels this plan includes. The free and demo tiers
+   *  do not include them; the screens show them locked, never hidden. A backend
+   *  that predates the field sends nothing, and the UI treats that as "open". */
+  features?: Partial<Record<PlanFeature, boolean>>
   usage: Record<string, number>
   contact: { whatsapp: string; email: string }
   read_only: boolean

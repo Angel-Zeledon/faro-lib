@@ -101,6 +101,11 @@ function catalogueKeys(code: string, params: Record<string, unknown>): string[] 
   if (code === 'PLAN_LIMIT_REACHED' && typeof params.limit === 'string') {
     return [`errors.plan_limit_${params.limit}`]
   }
+  // A feature the plan does not include: one sentence per feature, so each
+  // names what it gives and "available on the Full plan" reads naturally.
+  if (code === 'plan_feature_locked' && typeof params.feature === 'string') {
+    return [`errors.plan_feature_locked_${params.feature}`, 'errors.plan_feature_locked']
+  }
   return code === code.toLowerCase()
     ? [`errors.${code}`]
     : [`errors.${code}`, `errors.${code.toLowerCase()}`]

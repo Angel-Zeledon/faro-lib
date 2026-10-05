@@ -7,8 +7,8 @@ import { subpageMetadata } from '@/components/landing/subpageMetadata'
 export const metadata = subpageMetadata(
   '/precios',
   'StockAI precios: plan gratis para siempre, sin tarjeta',
-  'StockAI es gratis para siempre y con todas las funciones: 100 productos, 2 usuarios y 1 bodega. ' +
-  '¿Poco? Escríbenos y lo ampliamos, sin tarjeta ni checkout.',
+  'StockAI es gratis para siempre, con el motor completo: 100 productos, 2 usuarios y 1 bodega. ' +
+  'La API, el MCP y el bot de WhatsApp empiezan en el plan completo. Escríbenos y lo ampliamos, sin tarjeta ni checkout.',
 )
 
 export default function Page() {

@@ -682,9 +682,9 @@ export default function DevelopersPage() {
                   head={[D.facts.auth, '']}
                   rows={[
                     [<code key="a">/ min</code>, D.limits.perMinute(API.limits.per_minute_per_key)],
-                    ...(typeof perDay.demo === 'number' ? [[<code key="d">/ 24 h</code>, D.limits.perDayDemo(perDay.demo)]] : []),
-                    ...(typeof perDay.free === 'number' ? [[<code key="f">/ 24 h</code>, D.limits.perDayFree(perDay.free)]] : []),
-                    [<code key="p">/ 24 h</code>, D.limits.perDayPaid],
+                    [<code key="f">API</code>, D.limits.noApi],
+                    ...(typeof perDay.paid === 'number' ? [[<code key="p">/ 24 h</code>, D.limits.perDayPaid(perDay.paid)]] : []),
+                    [<code key="c">/ 24 h</code>, D.limits.perDayCorporate],
                   ]}
                 />
                 <p>{D.limits.over}</p>

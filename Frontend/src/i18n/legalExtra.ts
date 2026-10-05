@@ -87,7 +87,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         blocks: [
           {
             list: [
-              'Respeta los límites: hasta 120 llamadas por minuto por clave y, en el plan gratis, 500 por día. No repartas el trabajo entre varias cuentas o claves para saltártelos.',
+              'Respeta los límites: hasta 120 llamadas por minuto por clave y, en el plan completo, 2.000 por día por clave. No repartas el trabajo entre varias cuentas o claves para saltártelos.',
               'Cada clave es una credencial. No la publiques, no la incluyas en código que otros puedan ver y no la compartas fuera de tu empresa.',
               'Usa la API para conectar tus propios sistemas. No la uses para ofrecer a terceros un servicio construido sobre StockAI sin un acuerdo escrito con nosotros.',
             ],
@@ -586,7 +586,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
     title: 'Condiciones comerciales',
     intro: 'Cómo funcionan los planes de StockAI: qué incluye el plan gratis, cómo se contrata el plan completo, cómo se factura y qué pasa si lo dejas.',
     summary: [
-      'Los dos planes traen **todas las funciones**. Solo cambia cuánto cabe.',
+      'Los dos planes traen el motor completo; **la API, el servidor MCP y el bot de WhatsApp empiezan en el plan completo**. El plan corporativo lo incluye todo, con topes acordados.',
       'El plan gratis no vence. El plan completo se contrata conversando con nosotros: **no hay checkout ni pago con tarjeta en la aplicación**.',
       'El precio de la página de precios es una **estimación**. Lo que rige es lo que acordemos por escrito.',
       'Si vuelves al plan gratis, no borramos nada de lo que tengas.',
@@ -596,22 +596,23 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         id: 'plans',
         title: 'Los planes',
         blocks: [
-          'Hay un plan gratis y un plan completo (pagado). Los dos tienen las mismas pantallas, los mismos pronósticos, el mismo asistente y la misma API. La diferencia es solo de tamaño:',
+          'Hay un plan gratis y un plan completo (pagado), y un plan corporativo que se cotiza aparte. Los dos primeros tienen las mismas pantallas, los mismos pronósticos y el mismo asistente; el plan completo suma la API, el servidor MCP y el bot de WhatsApp, y tiene límites más amplios:',
           {
             table: {
               head: ['Límite', 'Plan gratis', 'Plan completo'],
               rows: [
-                ['Productos (SKUs)', '100', 'Sin límite'],
-                ['Usuarios', '2', 'Sin límite'],
-                ['Bodegas', '1', 'Sin límite'],
-                ['Pronósticos guardados', '3', 'Sin límite'],
-                ['Claves de API', '1', 'Sin límite'],
-                ['Llamadas a la API', '500 por día', 'Sin límite diario'],
-                ['Tamaño de cada archivo', '25 MB', '2 GB'],
+                ['Productos (SKUs)', '100', '500'],
+                ['Usuarios', '2', '3'],
+                ['Bodegas', '1', '2'],
+                ['Pronósticos guardados', '3', '20'],
+                ['API, servidor MCP y bot de WhatsApp', 'No incluidos', 'Incluidos'],
+                ['Claves de API', 'No incluida', '3'],
+                ['Llamadas a la API', 'No incluida', '2.000 por día por clave'],
+                ['Tamaño de cada archivo', '25 MB', '100 MB'],
               ],
             },
           },
-          'En los dos planes hay límites técnicos que protegen el servidor y no se venden, como el número de entrenamientos simultáneos y las 120 llamadas por minuto por clave de API.',
+          'En todos los planes hay límites técnicos que protegen el servidor y no se venden, como el número de entrenamientos simultáneos y las 120 llamadas por minuto por clave de API.',
         ],
       },
       {
@@ -645,12 +646,12 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Concepto', 'Precio estimado'],
               rows: [
-                ['Base mensual', 'USD 59, que incluye 1.000 productos, 5 usuarios, 3 bodegas y 50.000 llamadas a la API al mes'],
+                ['Base mensual', 'USD 59, que incluye 500 productos, 3 usuarios, 2 bodegas, la API, el servidor MCP, el bot de WhatsApp y 2.000 llamadas a la API por día por clave'],
                 ['Productos adicionales', 'USD 12 por cada bloque de 500'],
                 ['Usuarios adicionales', 'USD 7 por usuario'],
                 ['Bodegas adicionales', 'USD 10 por bodega'],
                 ['Llamadas a la API adicionales', 'USD 2,50 por cada bloque de 1.000'],
-                ['Plan corporativo', 'Desde USD 890 al mes, con contrato anual; los topes más amplios se acuerdan en la cotización'],
+                ['Plan corporativo', 'Desde USD 890 al mes, con contrato anual; incluye todo lo del plan completo, con los topes levantados y acordados en la cotización'],
               ],
             },
           },
@@ -684,7 +685,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         title: 'Volver al plan gratis o terminar',
         blocks: [
           'Puedes dejar el plan completo al final del periodo acordado. [CONDICIONES DE CANCELACIÓN Y REEMBOLSO — confirmar con el propietario]',
-          'Si tu cuenta vuelve al plan gratis con más de lo que cabe —por ejemplo, 300 productos—, **no borramos nada**: todo sigue visible y usable, pero no puedes agregar más de lo que está por encima del límite hasta que bajes de él o vuelvas al plan completo. El límite diario de llamadas a la API, en cambio, se aplica desde el cambio de plan.',
+          'Si tu cuenta vuelve al plan gratis con más de lo que cabe —por ejemplo, 300 productos—, **no borramos nada**: todo sigue visible y usable, pero no puedes agregar más de lo que está por encima del límite hasta que bajes de él o vuelvas al plan completo. Si vuelves al plan gratis, la API, el servidor MCP y el bot de WhatsApp dejan de estar disponibles desde el cambio de plan.',
           `Si prefieres cerrar la cuenta, puedes pedirnos una copia completa de tus datos y su borrado, como explican los [términos](/terminos#after). Escríbenos a ${MAIL}.`,
         ],
       },
@@ -871,7 +872,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         blocks: [
           {
             list: [
-              'Respect the limits: up to 120 calls per minute per key and, on the free plan, 500 per day. Do not spread the work across several accounts or keys to get around them.',
+              'Respect the limits: up to 120 calls per minute per key and, on the full plan, 2,000 per day per key. Do not spread the work across several accounts or keys to get around them.',
               'Each key is a credential. Do not publish it, do not put it in code others can see and do not share it outside your company.',
               'Use the API to connect your own systems. Do not use it to offer third parties a service built on StockAI without a written agreement with us.',
             ],
@@ -1370,7 +1371,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
     title: 'Commercial conditions',
     intro: 'How StockAI\'s plans work: what the free plan includes, how the full plan is contracted, how it is invoiced and what happens if you leave it.',
     summary: [
-      'Both plans include **every feature**. Only how much fits changes.',
+      'Both plans include the whole engine; **the API, the MCP server and the WhatsApp bot start on the full plan**. The corporate plan includes everything, with agreed ceilings.',
       'The free plan does not expire. The full plan is contracted by talking to us: **there is no checkout and no card payment in the app**.',
       'The price on the pricing page is an **estimate**. What governs is what we agree in writing.',
       'If you go back to the free plan, we delete nothing you have.',
@@ -1380,18 +1381,19 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'plans',
         title: 'The plans',
         blocks: [
-          'There is a free plan and a full (paid) plan. Both have the same screens, the same forecasts, the same assistant and the same API. The only difference is size:',
+          'There is a free plan and a full (paid) plan, and a corporate plan quoted separately. The first two have the same screens, the same forecasts and the same assistant; the full plan adds the API, the MCP server and the WhatsApp bot, and has wider limits:',
           {
             table: {
               head: ['Limit', 'Free plan', 'Full plan'],
               rows: [
-                ['Products (SKUs)', '100', 'Unlimited'],
-                ['Users', '2', 'Unlimited'],
-                ['Warehouses', '1', 'Unlimited'],
-                ['Saved forecasts', '3', 'Unlimited'],
-                ['API keys', '1', 'Unlimited'],
-                ['API calls', '500 per day', 'No daily limit'],
-                ['Size of each file', '25 MB', '2 GB'],
+                ['Products (SKUs)', '100', '500'],
+                ['Users', '2', '3'],
+                ['Warehouses', '1', '2'],
+                ['Saved forecasts', '3', '20'],
+                ['API, MCP server and WhatsApp bot', 'Not included', 'Included'],
+                ['API keys', 'Not included', '3'],
+                ['API calls', 'Not included', '2,000 per day per key'],
+                ['Size of each file', '25 MB', '100 MB'],
               ],
             },
           },
@@ -1429,12 +1431,12 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Item', 'Estimated price'],
               rows: [
-                ['Monthly base', 'USD 59, including 1,000 products, 5 users, 3 warehouses and 50,000 API calls a month'],
+                ['Monthly base', 'USD 59, including 500 products, 3 users, 2 warehouses, the API, the MCP server, the WhatsApp bot and 2,000 API calls per day per key'],
                 ['Additional products', 'USD 12 per block of 500'],
                 ['Additional users', 'USD 7 per user'],
                 ['Additional warehouses', 'USD 10 per warehouse'],
                 ['Additional API calls', 'USD 2.50 per block of 1,000'],
-                ['Corporate plan', 'From USD 890 a month, on an annual contract; the larger ceilings are agreed in the quote'],
+                ['Corporate plan', 'From USD 890 a month, on an annual contract; it includes everything in the full plan, with the ceilings lifted and agreed in the quote'],
               ],
             },
           },
@@ -1468,7 +1470,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         title: 'Going back to the free plan or ending',
         blocks: [
           'You can leave the full plan at the end of the agreed period. [CONDICIONES DE CANCELACIÓN Y REEMBOLSO — confirmar con el propietario]',
-          'If your account goes back to the free plan with more than fits — for example, 300 products — **we delete nothing**: everything stays visible and usable, but you cannot add more of whatever is over the limit until you are back under it or return to the full plan. The daily API call limit, on the other hand, applies from the moment the plan changes.',
+          'If your account goes back to the free plan with more than fits — for example, 300 products — **we delete nothing**: everything stays visible and usable, but you cannot add more of whatever is over the limit until you are back under it or return to the full plan. If you go back to the free plan, the API, the MCP server and the WhatsApp bot stop being available from the moment the plan changes.',
           `If you would rather close the account, you can ask us for a complete copy of your data and its deletion, as the [terms](/terminos#after) explain. Write to us at ${MAIL}.`,
         ],
       },

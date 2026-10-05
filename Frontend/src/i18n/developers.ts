@@ -34,9 +34,9 @@ export interface DevelopersCopy {
   limits: {
     title: string
     perMinute: (n: number) => string
-    perDayDemo: (n: number) => string
-    perDayFree: (n: number) => string
-    perDayPaid: string
+    noApi: string
+    perDayPaid: (n: number) => string
+    perDayCorporate: string
     over: string
     noHeaders: string
   }
@@ -149,17 +149,17 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     },
     limits: {
       title: 'Límites',
-      perMinute: n => `${n} llamadas por minuto por clave, en cualquier plan.`,
-      perDayDemo: n => `Cuentas de prueba: ${n} llamadas por día por clave.`,
-      perDayFree: n => `Plan gratis: además, ${n} llamadas por día por clave (ventana de 24 horas).`,
-      perDayPaid: 'Plan completo: sin tope diario.',
+      perMinute: n => `${n} llamadas por minuto por clave, en los planes que incluyen la API.`,
+      noApi: 'Plan gratis y cuentas de prueba: la API no está incluida; empieza en el plan completo.',
+      perDayPaid: n => `Plan completo: ${n} llamadas por día por clave (ventana de 24 horas).`,
+      perDayCorporate: 'Plan corporativo: sin tope diario.',
       over: 'Al pasarte recibes 429 con la cabecera Retry-After (segundos). El mismo 429 sirve para el límite por minuto y para el tope diario, y su cuerpo no trae error_code.',
       noHeaders: 'No hay cabeceras X-RateLimit-*: la única señal es el 429 con Retry-After. Cuenta tus llamadas o espera el 429.',
     },
     billing: {
       title: 'Medición y precio',
       body:
-        'La API se cobra por llamada. Contamos cada llamada con una API key que llegó a un endpoint, por día (UTC) y por clave; las rechazadas (clave inválida, sin permiso o por encima del límite) no cuentan. Un administrador ve el consumo del mes en la app, en la pantalla API.',
+        'La API viene desde el plan completo, con un tope diario de llamadas por clave; el volumen mayor se acuerda con nosotros. Contamos cada llamada con una API key que llegó a un endpoint, por día (UTC) y por clave; las rechazadas (clave inválida, sin permiso o por encima del límite) no cuentan. Un administrador ve el consumo del mes en la app, en la pantalla API.',
       pricingLink: 'Ver precios',
       contact: email => `No hay checkout ni tarjeta: para hablar del precio, escríbenos a ${email}.`,
     },
@@ -360,17 +360,17 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     },
     limits: {
       title: 'Limits',
-      perMinute: n => `${n} calls per minute per key, on any plan.`,
-      perDayDemo: n => `Trial accounts: ${n} calls per day per key.`,
-      perDayFree: n => `Free plan: also ${n} calls per day per key (a 24-hour window).`,
-      perDayPaid: 'Full plan: no daily cap.',
+      perMinute: n => `${n} calls per minute per key, on the plans that include the API.`,
+      noApi: 'Free plan and trial accounts: the API is not included; it starts on the Full plan.',
+      perDayPaid: n => `Full plan: ${n} calls per day per key (a 24-hour window).`,
+      perDayCorporate: 'Corporate plan: no daily cap.',
       over: 'Over the limit you get 429 with a Retry-After header (seconds). The same 429 serves the per-minute limit and the daily cap, and its body has no error_code.',
       noHeaders: 'There are no X-RateLimit-* headers: the only signal is the 429 with Retry-After. Count your own calls or wait for the 429.',
     },
     billing: {
       title: 'Metering and pricing',
       body:
-        'The API is billed per call. We count every API-key call that reached an endpoint, by day (UTC) and by key; refused calls (invalid key, no permission or over the limit) do not count. An administrator sees the month\'s usage in the app, on the API screen.',
+        'The API comes with the Full plan, with a daily cap of calls per key; larger volume is agreed with us. We count every API-key call that reached an endpoint, by day (UTC) and by key; refused calls (invalid key, no permission or over the limit) do not count. An administrator sees the month\'s usage in the app, on the API screen.',
       pricingLink: 'See pricing',
       contact: email => `There is no checkout and no card: to talk about pricing, write to us at ${email}.`,
     },
