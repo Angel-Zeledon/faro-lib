@@ -96,7 +96,10 @@ BODY_EXAMPLES: dict[tuple[str, str], object] = {
     ("POST", "/data-sources/sql"): {
         "name": "ERP sales", "host": "db.example.com", "port": 5432, "database": "erp",
         "username": "readonly", "password": "<password>", "engine": "postgresql",
-        "description": "Nightly sales view",
+        "ssl_mode": "require", "description": "Nightly sales view",
+    },
+    ("POST", "/data-sources/sql/parse"): {
+        "connection_string": "postgresql://readonly@db.example.com:5432/erp?sslmode=require",
     },
     ("PATCH", "/data-sources/{source_id}/sql-config"): {
         "host": "db.example.com", "port": 5432, "database": "erp",
@@ -128,9 +131,9 @@ BODY_EXAMPLES: dict[tuple[str, str], object] = {
     ("POST", "/sessions"): {"name": "October forecast", "description": "Monthly run", "tags": ["monthly"]},
     ("PATCH", "/sessions/{session_id}"): {"name": "October forecast (final)"},
     ("POST", "/inventory/events/catalog/seed"): {"country": "CR", "years": [2026, 2027]},
-    ("POST", "/data-sources/{source_id}/execute-query"): {"sql": "SELECT sku, date, quantity FROM sales", "limit": 500},
+    ("POST", "/data-sources/{source_id}/execute-query"): {"sql": "SELECT sku, date, quantity FROM sales", "limit": 500, "offset": 0},
     ("POST", "/data-sources/{source_id}/materialize"): {"sql": "SELECT sku, date, quantity FROM sales", "name": "Sales snapshot"},
-    ("POST", "/data-sources/{source_id}/export-query"): {"sql": "SELECT sku, date, quantity FROM sales", "name": "Sales snapshot"},
+    ("POST", "/data-sources/{source_id}/export-query"): {"sql": "SELECT sku, date, quantity FROM sales", "format": "xlsx"},
     ("PATCH", "/data-sources/{source_id}/query"): {"sql": "SELECT sku, date, quantity FROM sales"},
     ("POST", "/data-sources/{source_id}/save-as-new"): {
         "name": "Sales (edited)", "columns": ["sku", "date", "quantity"],

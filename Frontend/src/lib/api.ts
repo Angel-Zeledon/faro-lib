@@ -3,8 +3,9 @@ import type {
   QualityReport, RunWarnings, ConfigSchema, ChooseColumnsBody, CanonicalColumnsBody,
   JobResponse, MetricsResponse, InventoryResponse, RoutingPlan, TrainingResults,
   ForecastSeries, DataHealthReport,
-  Chat, ChatMessage, MessagesPage, ChatSourceType,
+  Chat, ChatMessage, FavoriteMessage, MessagesPage, ChatSourceType,
   DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
+  SqlSslMode, ConnectionProbe, ParsedConnectionString, SchemaTables, SchemaColumns,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
@@ -828,25 +829,43 @@ export const getDataSource = (id: string) =>
 export const createFileSource = (fd: FormData) =>
   request<DataSource>('POST', '/data-sources/file', fd)
 
-export const createSqlSource = (body: {
-  name: string; description?: string
-  host: string; port: number; database: string
-  username: string; password: string; engine: SqlEngine
-}) => request<DataSource>('POST', '/data-sources/sql', body)
+/** Connection fields shared by create and edit. Every field is optional on an
+ *  edit (omitted = keep the stored value; the password is required again only
+ *  when engine, host or port change). */
+export interface SqlConnectionBody {
+  host?: string; port?: number; database?: string
+  username?: string; password?: string; engine?: SqlEngine
+  ssl_mode?: SqlSslMode; ssl_ca?: string
+  connect_timeout_s?: number; statement_timeout_s?: number
+  connection_string?: string
+}
+
+export const createSqlSource = (body: SqlConnectionBody & { name: string; description?: string }) =>
+  request<DataSource>('POST', '/data-sources/sql', body)
+
+export const parseConnectionString = (connection_string: string) =>
+  // Shown inline next to the field it is about, so no toast as well.
+  request<ParsedConnectionString>('POST', '/data-sources/sql/parse', { connection_string }, { silent: true })
 
 export const replaceFileSource = (id: string, fd: FormData) =>
   request<DataSource>('POST', `/data-sources/${id}/file`, fd)
 
-export const updateSqlConfig = (id: string, body: {
-  host: string; port: number; database: string
-  username: string; password?: string; engine: SqlEngine
-}) => request<DataSource>('PATCH', `/data-sources/${id}/sql-config`, body)
+export const updateSqlConfig = (id: string, body: SqlConnectionBody & { clear_ssl_ca?: boolean }) =>
+  request<DataSource>('PATCH', `/data-sources/${id}/sql-config`, body)
 
 export const testSqlConnection = (id: string) =>
-  request<{ ok: boolean; status: string; error?: string }>('POST', `/data-sources/${id}/test-connection`)
+  request<ConnectionProbe>('POST', `/data-sources/${id}/test-connection`)
 
-export const executeSqlQuery = (id: string, sql: string, limit = 500) =>
-  request<SqlQueryResult>('POST', `/data-sources/${id}/execute-query`, { sql, limit })
+export const executeSqlQuery = (id: string, sql: string, limit = 500, offset = 0) =>
+  request<SqlQueryResult>('POST', `/data-sources/${id}/execute-query`, { sql, limit, offset })
+
+export const getSqlSchema = (id: string, refresh = false) =>
+  request<SchemaTables>('GET', `/data-sources/${id}/schema${refresh ? '?refresh=true' : ''}`, undefined, { silent: true })
+
+export const getSqlTableColumns = (id: string, schema: string | null, table: string) =>
+  request<SchemaColumns>('GET',
+    `/data-sources/${id}/schema/columns?table=${encodeURIComponent(table)}&schema=${encodeURIComponent(schema ?? '')}`,
+    undefined, { silent: true })
 
 export const saveSqlQuery = (id: string, sql: string) =>
   request<DataSource>('PATCH', `/data-sources/${id}/query`, { sql })
@@ -855,7 +874,10 @@ export const materializeSqlSource = (id: string, body: { sql?: string; name?: st
   request<DataSource>('POST', `/data-sources/${id}/materialize`, body)
 
 export const exportSqlQueryXlsx = (id: string, sql: string, filename: string) =>
-  downloadBlobPost(`/data-sources/${id}/export-query`, { sql }, filename)
+  downloadBlobPost(`/data-sources/${id}/export-query`, { sql, format: 'xlsx' }, filename)
+
+export const exportSqlQueryCsv = (id: string, sql: string, filename: string) =>
+  downloadBlobPost(`/data-sources/${id}/export-query`, { sql, format: 'csv' }, filename)
 
 export const getDataSourcePreview = (id: string, rows = 100, sheet?: string) =>
   request<DataPreview>('GET', `/data-sources/${id}/preview?rows=${rows}${sheet ? `&sheet=${encodeURIComponent(sheet)}` : ''}`)
@@ -888,6 +910,14 @@ export const deleteChat  = (chatId: string) =>
 
 export const getChatMessages = (chatId: string, limit = 30, before?: string) =>
   request<MessagesPage>('GET', `/analyst/chats/${chatId}/messages?limit=${limit}${before ? `&before=${before}` : ''}`)
+
+/** Star or unstar one of the signed-in user's own messages. */
+export const starChatMessage = (messageId: string, starred: boolean) =>
+  request<ChatMessage>('PATCH', `/analyst/messages/${messageId}/star`, { starred })
+
+/** The messages the signed-in user starred, newest star first. */
+export const listFavoriteMessages = () =>
+  request<FavoriteMessage[]>('GET', '/analyst/favorites')
 
 /**
  * Ask the assistant. `language` is the UI language the answer is written in;
@@ -1109,7 +1139,7 @@ export interface ScheduleRun {
   status: string; created_at: string
   started_at: string | null; completed_at: string | null; error: string | null
   /** Why a run did not train (`no_new_data`, `still_running`,
-   *  `source_refresh_failed`, `launch_failed`); null on a run that started.
+   *  `source_refresh_failed`, `launch_failed`, `training_cap_reached`); null on a run that started.
    *  Rendered through `schedule.run_reason.<code>`. */
   reason?: string | null
   reason_params?: Record<string, string | number>
@@ -1528,7 +1558,7 @@ export const getCommittedDemand = (opts?: { sku?: string; status?: import('./typ
   if (opts?.status) q.set('status', opts.status)
   if (opts?.limit) q.set('limit', String(opts.limit))
   const qs = q.toString()
-  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[] }>(
+  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[]; scope?: 'company' | 'warehouses' }>(
     'GET', `/committed-demand${qs ? `?${qs}` : ''}`)
 }
 export const createCommittedDemand = (body: import('./types').CommittedDemandInput) =>
@@ -1539,6 +1569,48 @@ export const updateCommittedDemand = (id: string, body: Partial<import('./types'
   request<import('./types').CommittedDemand>('PATCH', `/committed-demand/${encodeURIComponent(id)}`, body)
 export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
   request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
+// ── Blanket supply contracts (their releases become committed demand) ───────
+export const getSupplyContracts = () =>
+  request<{ statuses: import('./types').SupplyContractStatus[]; items: import('./types').SupplyContract[] }>('GET', '/supply-contracts')
+export const getSupplyContract = (rootId: string) =>
+  request<import('./types').SupplyContract>('GET', `/supply-contracts/${encodeURIComponent(rootId)}`)
+export const previewSupplyContract = (terms: import('./types').SupplyContractTerms) =>
+  request<{ releases: { sku: string; date: string; quantity: number }[]; lines: { sku: string; total_quantity: number }[] }>(
+    'POST', '/supply-contracts/preview', terms)
+export const createSupplyContract = (terms: import('./types').SupplyContractTerms, status: 'draft' | 'active') =>
+  request<import('./types').SupplyContract>('POST', '/supply-contracts', { ...terms, status })
+export const reviseSupplyContract = (rootId: string, terms: import('./types').SupplyContractTerms, expectedRevision: number) =>
+  request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/revisions`,
+    { ...terms, expected_revision: expectedRevision })
+export const setSupplyContractStatus = (rootId: string, status: 'active' | 'closed' | 'cancelled', expectedRevision: number) =>
+  request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/status`,
+    { status, expected_revision: expectedRevision })
+
+// ── Demand plan versions (a frozen plan and its sign-off; changes no purchase) ─
+export const listDemandPlans = () =>
+  request<import('./types').DemandPlanList>('GET', '/demand-plans')
+export const createDemandPlan = (body: { name: string; session_id?: string | null; horizon_periods?: number | null; note?: string | null }) =>
+  request<import('./types').DemandPlanVersion>('POST', '/demand-plans', body)
+export const getDemandPlan = (id: string) =>
+  request<import('./types').DemandPlanVersion>('GET', `/demand-plans/${encodeURIComponent(id)}`)
+export const getDemandPlanLines = (id: string, opts?: { q?: string; offset?: number; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.q) q.set('q', opts.q)
+  if (opts?.offset) q.set('offset', String(opts.offset))
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').DemandPlanLines>('GET', `/demand-plans/${encodeURIComponent(id)}/lines${qs ? `?${qs}` : ''}`)
+}
+export const diffDemandPlans = (a: string, b: string, limit = 50) =>
+  request<import('./types').DemandPlanDiff>(
+    'GET', `/demand-plans/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&limit=${limit}`)
+export const getDemandPlanAccuracy = (id: string) =>
+  request<import('./types').DemandPlanAccuracy>('GET', `/demand-plans/${encodeURIComponent(id)}/accuracy`)
+export const decideDemandPlan = (id: string, action: 'submit' | 'approve' | 'reject', comment?: string) =>
+  request<import('./types').DemandPlanVersion>(
+    'POST', `/demand-plans/${encodeURIComponent(id)}/${action}`, { comment: comment || null })
+export const commentDemandPlan = (id: string, comment: string) =>
+  request<import('./types').DemandPlanVersion>('POST', `/demand-plans/${encodeURIComponent(id)}/comments`, { comment })
 
 export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =>
   request<import('./types').AdjustmentValueAdded>(
@@ -2041,11 +2113,81 @@ export interface Entitlements {
 export const getEntitlements = () =>
   request<Entitlements>('GET', '/entitlements')
 
-/** Tell us this tenant wants more room. There is no checkout — this IS it. */
+// ── Buying the Full plan online (backend/api/v1/billing.py) ──────────────────
+// Hosted pages only: `startCheckout` answers a Stripe / PayPal URL the browser
+// is sent to. No card data ever passes through this app.
+export type BillingProvider = 'stripe' | 'paypal'
+
+export type BillingPurchaseBlock =
+  | 'billing_not_configured' | 'billing_trial_account' | 'billing_corporate_plan'
+  | 'billing_plan_managed_manually' | 'billing_subscription_active'
+
+export interface BillingSubscription {
+  provider: BillingProvider
+  /** Normalized: active | trialing | past_due | canceled | unpaid | expired |
+   *  incomplete | approval_pending | … */
+  status: string
+  current_period_end: string | null
+  cancel_at_period_end: boolean
+  past_due_since: string | null
+  grace_until: string | null
+  access_until: string | null
+}
+
+export interface BillingStatus {
+  tier: Entitlements['tier']
+  tier_source: 'manual' | 'billing'
+  payments: {
+    enabled: boolean
+    providers: BillingProvider[]
+    /** Variable names still to configure, per provider. Admins only; null otherwise. */
+    missing: Record<BillingProvider, string[]> | null
+    price_usd_monthly: number | null
+    currency: string
+  }
+  can_purchase: boolean
+  purchase_block: BillingPurchaseBlock | null
+  subscription: BillingSubscription | null
+  can_manage: boolean
+}
+
+export const getBillingStatus = (opts: RequestOpts = {}) =>
+  request<BillingStatus>('GET', '/billing/status', undefined, opts)
+
+export const startCheckout = (provider: BillingProvider) =>
+  request<{ provider: BillingProvider; url: string }>('POST', '/billing/checkout', { provider })
+
+export const openBillingPortal = (provider?: BillingProvider) =>
+  request<{ provider: BillingProvider; url: string }>(
+    'POST', '/billing/portal', provider ? { provider } : {},
+  )
+
+/** Tell us this tenant wants more room. The conversation path; the Full plan
+ *  can also be bought online when billing is configured (startCheckout). */
 export const requestUpgrade = (body: { limit_key?: string | null; message?: string; contact?: string }) =>
   request<{ id: string; created: boolean; notified: boolean }>(
     'POST', '/entitlements/upgrade-request', body,
   )
+
+/**
+ * "Send feedback". `notified: false` means the report is stored but the e-mail
+ * to the team did not leave; the dialog says so. Silent on purpose: the dialog
+ * owns the failure message (the global error toast would offer to open this
+ * same dialog again).
+ */
+export interface FeedbackPayload {
+  message: string
+  error_code?: string | null
+  page_path?: string | null
+  user_agent?: string | null
+  app_version?: string | null
+  /** PNG/JPEG data URL, or omitted when the person did not include one. */
+  screenshot?: string | null
+  consent_reply: boolean
+  consent_news: boolean
+}
+export const sendFeedback = (body: FeedbackPayload) =>
+  request<{ id: string; notified: boolean }>('POST', '/feedback', body, { silent: true })
 
 // ── Multi-period planning (Phase B) ──────────────────────────────────────────
 export const getPlanning = () =>

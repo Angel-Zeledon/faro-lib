@@ -1,18 +1,26 @@
 """
 Data Source service — file uploads + SQL connections, both stored in `datasets` table.
-SQL passwords are encrypted with Fernet (AES-128-CBC + HMAC) keyed from settings.secret_key.
+
+SQL secrets (password, CA certificate) are encrypted at rest with Fernet
+(`secrets.py`). Everything that touches a customer database goes through
+`client.open_session` (SSRF policy, TLS, timeouts, read-only, per-tenant
+concurrency, transient-only retries) and every failure leaves as a coded
+`AppError` (`errors.classify`) — never as raw driver text.
 """
 
-import base64
-import hashlib
 import logging
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import UploadFile
 
 from backend.config import settings
+from backend.datasources import connection as conn_mod
+from backend.datasources import secrets as ds_secrets
 from backend.db.connection import execute, query, query_one, _json
 from backend.errors import AppError
 from backend.utils.ids import generate_id
@@ -20,7 +28,12 @@ from backend.utils.ids import generate_id
 log = logging.getLogger(__name__)
 
 ALLOWED_FILE_EXTENSIONS = {".csv", ".xlsx", ".xls", ".parquet", ".json"}
-SQL_ENGINES = {"postgresql", "mysql", "mssql", "oracle"}
+SQL_ENGINES = set(conn_mod.ENGINES)
+FETCH_BATCH = 10_000
+# How far into a result the query editor may page (rows skipped server-side by
+# streaming them past). Beyond this, narrow the query.
+MAX_QUERY_OFFSET = 100_000
+EXPORT_FORMATS = ("xlsx", "csv")
 MAX_FILE_MB = 50
 
 # Every rejection a user can trip in this module answers with 400, the status
@@ -72,60 +85,77 @@ def _reject_oversized_upload(size_bytes: int) -> None:
         )
 
 
-def _make_sql_engine(cfg: dict, statement_timeout_ms: int = 30_000):
-    import sqlalchemy
-    conn_str = _build_conn_str(cfg)
-    engine_type = cfg.get("engine", "postgresql")
-    # Timeout keywords are driver-specific: psycopg2/pymysql take
-    # connect_timeout, but pyodbc rejects it (its login timeout is `timeout`).
-    if engine_type == "postgresql":
-        connect_args: dict = {
-            "connect_timeout": 15,
-            "options": f"-c statement_timeout={statement_timeout_ms}",
-        }
-    elif engine_type == "mysql":
-        timeout_s = max(1, statement_timeout_ms // 1000)
-        connect_args = {
-            "connect_timeout": 15,
-            "read_timeout": timeout_s,
-            "write_timeout": timeout_s,
-        }
-    elif engine_type == "mssql":
-        connect_args = {"timeout": 15}
-    else:
-        connect_args = {}
-    return sqlalchemy.create_engine(conn_str, connect_args=connect_args, pool_pre_ping=True)
-
-
-def _fernet():
-    from cryptography.fernet import Fernet
-    key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode()).digest())
-    return Fernet(key)
-
-
-def _enc(plain: str) -> str:
-    return _fernet().encrypt(plain.encode()).decode()
-
-
-def _dec(enc: str) -> str:
+def _secrets_of(cfg: dict) -> tuple[str, ...]:
+    """The cleartext secrets of a stored config, for scrubbing error text.
+    Never raises: a config whose password cannot be decrypted has nothing to
+    leak."""
     try:
-        return _fernet().decrypt(enc.encode()).decode()
-    except Exception:
-        # Fallback for legacy base64-encoded passwords already in the database.
-        try:
-            return base64.b64decode(enc.encode()).decode()
-        except Exception:
-            return enc
+        password = ds_secrets.decrypt(cfg.get("password_enc") or "")
+    except Exception:  # noqa: BLE001
+        return ()
+    return (password,) if password else ()
+
+
+def _classified(exc: BaseException, cfg: dict, *, during: str = "query") -> AppError:
+    """Any failure on a customer database as the coded `AppError` to raise."""
+    if isinstance(exc, AppError):
+        return exc
+    from backend.datasources.errors import as_app_error
+    return as_app_error(exc, engine=cfg.get("engine", ""), secrets=_secrets_of(cfg),
+                        host=str(cfg.get("host") or ""), database=str(cfg.get("database") or ""),
+                        during=during)
+
+
+@contextmanager
+def _read_only_rows(cfg: dict, sql: str, statement_timeout_ms: Optional[int] = None, *,
+                    stream: bool = False, tenant_id: Optional[str] = None, bulk: bool = False):
+    """Validate `sql`, run it on the customer's database inside a read-only
+    session (`client.open_session`), yield the SQLAlchemy result, and ALWAYS
+    roll back.
+
+    The single door every user- or saved-query execution goes through: the
+    preview, the analysis load, execute, export, materialize and the scheduled
+    refresh. A statement that is not one plain read never reaches a
+    connection.
+
+    The statement is sent as DRIVER SQL (no SQLAlchemy bind-parameter
+    parsing), so ``WHERE note = 'a :b'`` is the literal it looks like instead
+    of a missing bind parameter, and a ``%`` in a LIKE pattern is not a format
+    directive (no parameters are ever passed with user SQL).
+    """
+    from backend.datasources.client import open_session
+    from backend.datasources.sql_guard import validate_read_only_sql
+
+    engine_type = cfg.get("engine", "postgresql")
+    statement = validate_read_only_sql(sql, engine_type)
+    timeout_s = max(1, int(statement_timeout_ms) // 1000) if statement_timeout_ms else None
+    with open_session(cfg, tenant_id=tenant_id, statement_timeout_s=timeout_s, bulk=bulk) as session:
+        # no_parameters: the DBAPI cursor gets the statement ALONE, so neither a
+        # '%' (psycopg2/PyMySQL format directives) nor a ':name' (SQLAlchemy's
+        # bind syntax) inside a literal is read as a parameter.
+        options: dict = {"no_parameters": True}
+        if stream:
+            options["stream_results"] = True
+        yield session.conn.execution_options(**options).exec_driver_sql(statement)
 
 
 def _public(row: dict) -> dict:
-    """Strip sensitive fields before returning to client."""
+    """Strip every secret before a row leaves the service.
+
+    The stored config keeps `password_enc` and `ssl_ca_enc` (ciphertext); the
+    client gets only whether they are set, plus what is safe to show about a
+    CA certificate (subject, expiry, fingerprint)."""
     if not row:
         return row
     out = dict(row)
     if out.get("sql_config"):
         cfg = dict(out["sql_config"])
-        cfg.pop("password_enc", None)
+        cfg["has_password"] = bool(cfg.pop("password_enc", None))
+        cfg["has_ssl_ca"] = bool(cfg.pop("ssl_ca_enc", None))
+        engine = cfg.get("engine") or "postgresql"
+        cfg.setdefault("ssl_mode", conn_mod.LEGACY_SSL_MODE.get(engine, "prefer"))
+        cfg.setdefault("connect_timeout_s", conn_mod.DEFAULT_CONNECT_TIMEOUT_S)
+        cfg.setdefault("statement_timeout_s", conn_mod.DEFAULT_STATEMENT_TIMEOUT_S)
         out["sql_config"] = cfg
     return out
 
@@ -317,138 +347,332 @@ async def replace_file_source(
 
 # ── SQL sources ────────────────────────────────────────────────────────────────
 
+def _not_found(source_id: str) -> AppError:
+    return AppError("data_source_not_found", f"Data source {source_id} not found",
+                    status_code=404, params={"source_id": source_id})
+
+
+def _require_sql(src: dict, action_code: str = "data_source_not_sql") -> None:
+    if src.get("source_type") != "sql":
+        raise AppError(action_code, "This action only applies to SQL data sources.",
+                       status_code=_REJECTED)
+
+
+def _merge_connection_string(fields: dict, connection_string: Optional[str]) -> tuple[dict, Optional[str]]:
+    """Fill the fields a person did NOT type from a pasted connection string.
+    Typed fields win. Returns (fields, password-from-the-string)."""
+    if not connection_string or not connection_string.strip():
+        return fields, None
+    parsed = conn_mod.parse_connection_string(connection_string)
+    merged = dict(fields)
+    for key in ("engine", "host", "port", "database", "username", "ssl_mode"):
+        if merged.get(key) in (None, "") and parsed.get(key) not in (None, ""):
+            merged[key] = parsed[key]
+    return merged, parsed.get("password")
+
+
+def _ca_fields(engine: str, ssl_mode: str, ssl_ca: Optional[str],
+               existing: Optional[dict] = None, clear: bool = False) -> dict:
+    """The stored CA-related keys: the ciphertext and what is safe to show."""
+    if ssl_ca and ssl_ca.strip():
+        info = conn_mod.inspect_ca_pem(ssl_ca)
+        conn_mod.check_ca_compatible(engine, ssl_mode, True)
+        return {"ssl_ca_enc": ds_secrets.encrypt(ssl_ca.strip()), "ssl_ca": info}
+    keep = (existing or {}) if not clear else {}
+    has = bool(keep.get("ssl_ca_enc"))
+    conn_mod.check_ca_compatible(engine, ssl_mode, has)
+    if has:
+        return {"ssl_ca_enc": keep["ssl_ca_enc"], "ssl_ca": keep.get("ssl_ca")}
+    return {}
+
+
+def _check_reachable_literal(host: str, engine: str) -> None:
+    """Refuse at SAVE time a host that is a forbidden IP literal. A host name
+    is checked when it is resolved, on every connection."""
+    from backend.datasources import network
+    base = conn_mod.split_mssql_instance(host)[0] if engine == "mssql" else host
+    network.check_literal(base, allow_private=network.allow_private_hosts())
+
+
+def connection_summary(cfg: dict) -> dict:
+    """The non-secret description of a stored config, for the audit trail."""
+    return {
+        "engine": cfg.get("engine"), "host": cfg.get("host"), "port": cfg.get("port"),
+        "database": cfg.get("database"), "username": cfg.get("username"),
+        "ssl_mode": cfg.get("ssl_mode"), "ssl_ca": bool(cfg.get("ssl_ca_enc")),
+        "connect_timeout_s": cfg.get("connect_timeout_s"),
+        "statement_timeout_s": cfg.get("statement_timeout_s"),
+    }
+
+
+def build_sql_config(fields: dict, password: Optional[str], *, ssl_ca: Optional[str] = None,
+                     connection_string: Optional[str] = None) -> dict:
+    """Validate a new connection's fields and return the config to store."""
+    fields, cs_password = _merge_connection_string(fields, connection_string)
+    norm = conn_mod.normalize_fields(fields)
+    _check_reachable_literal(norm["host"], norm["engine"])
+    secret = password if password else (cs_password or "")
+    cfg = dict(norm)
+    cfg["password_enc"] = ds_secrets.encrypt(secret)
+    cfg.update(_ca_fields(norm["engine"], norm["ssl_mode"], ssl_ca))
+    return cfg
+
+
 def create_sql_source(
     tenant_id: str,
     user_id: str,
     name: str,
-    host: str,
-    port: int,
-    database: str,
-    username: str,
-    password: str,
-    engine: str,
+    host: Optional[str],
+    port: Any,
+    database: Optional[str],
+    username: Optional[str],
+    password: Optional[str],
+    engine: Optional[str],
     description: Optional[str] = None,
+    *,
+    ssl_mode: Optional[str] = None,
+    ssl_ca: Optional[str] = None,
+    connect_timeout_s: Optional[int] = None,
+    statement_timeout_s: Optional[int] = None,
+    connection_string: Optional[str] = None,
 ) -> dict:
-    if engine not in SQL_ENGINES:
-        raise ValueError(f"Unsupported engine '{engine}'. Options: {sorted(SQL_ENGINES)}")
-
+    sql_config = build_sql_config(
+        {"engine": engine, "host": host, "port": port, "database": database,
+         "username": username, "ssl_mode": ssl_mode,
+         "connect_timeout_s": connect_timeout_s, "statement_timeout_s": statement_timeout_s},
+        password, ssl_ca=ssl_ca, connection_string=connection_string,
+    )
     source_id = generate_id("ds")
-    sql_config = {
-        "host": host,
-        "port": port,
-        "database": database,
-        "username": username,
-        "password_enc": _enc(password),
-        "engine": engine,
-    }
     execute(
         """INSERT INTO datasets
            (id, tenant_id, name, description, file_type, source_type,
             connection_status, sql_config, uploaded_by, uploaded_at, updated_at)
            VALUES (%s,%s,%s,%s,%s,'sql','pending',%s,%s,NOW(),NOW())""",
-        (source_id, tenant_id, name, description, engine, _json(sql_config), user_id),
+        (source_id, tenant_id, name, description, sql_config["engine"], _json(sql_config), user_id),
     )
     return _public(get_source(tenant_id, source_id))
+
+
+# Fields whose change points the stored password at a DIFFERENT server. Keeping
+# the password across such a change would let anyone allowed to edit the
+# connection send the company's ERP password to a host of their choosing.
+_RETARGETING_FIELDS = ("engine", "host", "port")
+
+
+def _stored_target(old: dict) -> dict:
+    """The stored engine/host/port in normalised form, so a legacy row whose
+    host was saved as "DB.Example.com" is not mistaken for a change when the
+    form sends back "db.example.com"."""
+    engine = old.get("engine") or "postgresql"
+    host = str(old.get("host") or "")
+    try:
+        host = conn_mod.normalize_host(host, engine)
+    except AppError:
+        pass
+    try:
+        port = int(old.get("port") or conn_mod.DEFAULT_PORTS.get(engine, 0))
+    except (TypeError, ValueError):
+        port = None
+    return {"engine": engine, "host": host, "port": port}
 
 
 def update_sql_config(
     tenant_id: str,
     source_id: str,
-    host: str,
-    port: int,
-    database: str,
-    username: str,
-    password: Optional[str],
-    engine: str,
+    host: Optional[str] = None,
+    port: Any = None,
+    database: Optional[str] = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+    engine: Optional[str] = None,
+    *,
+    ssl_mode: Optional[str] = None,
+    ssl_ca: Optional[str] = None,
+    clear_ssl_ca: bool = False,
+    connect_timeout_s: Optional[int] = None,
+    statement_timeout_s: Optional[int] = None,
+    connection_string: Optional[str] = None,
 ) -> dict:
+    """Change a connection without re-entering what did not change.
+
+    Every field is optional: an omitted one keeps its stored value, the
+    password included — EXCEPT when the engine, host or port changes, which
+    requires the password again (`data_source_password_required`)."""
     existing = get_source(tenant_id, source_id)
     if not existing:
-        raise ValueError(f"Data source {source_id} not found")
+        raise _not_found(source_id)
+    _require_sql(existing)
+    old = dict(existing.get("sql_config") or {})
+    old_engine = old.get("engine") or "postgresql"
 
-    old_cfg = existing.get("sql_config") or {}
-    # Preserve password if not provided
-    if password:
-        enc_pw = _enc(password)
-    else:
-        enc_pw = old_cfg.get("password_enc", "")
+    given = {"engine": engine, "host": host, "port": port, "database": database,
+             "username": username, "ssl_mode": ssl_mode,
+             "connect_timeout_s": connect_timeout_s, "statement_timeout_s": statement_timeout_s}
+    given, cs_password = _merge_connection_string(given, connection_string)
+    password = password or cs_password
 
-    sql_config = {
-        "host": host,
-        "port": port,
-        "database": database,
-        "username": username,
-        "password_enc": enc_pw,
-        "engine": engine,
-    }
+    merged = {k: (v if v not in (None, "") else old.get(k)) for k, v in given.items()}
+    if not merged.get("ssl_mode"):
+        merged["ssl_mode"] = conn_mod.LEGACY_SSL_MODE.get(merged.get("engine") or old_engine, "prefer")
+    if merged.get("engine") != old_engine and given.get("ssl_mode") in (None, ""):
+        # A mode the old engine supported may not exist on the new one.
+        merged["ssl_mode"] = conn_mod.DEFAULT_SSL_MODE.get(merged.get("engine") or "", "prefer")
+    norm = conn_mod.normalize_fields(merged)
+
+    changed = [f for f in _RETARGETING_FIELDS if norm.get(f) != _stored_target(old).get(f)]
+    if changed and not password:
+        raise AppError(
+            "data_source_password_required",
+            "Enter the password again: the connection now points at a different "
+            "server, and the stored password is never sent to a new one.",
+            status_code=_REJECTED, params={"fields": ", ".join(changed)},
+        )
+    _check_reachable_literal(norm["host"], norm["engine"])
+
+    cfg = dict(norm)
+    cfg["password_enc"] = ds_secrets.encrypt(password) if password else old.get("password_enc", "")
+    cfg.update(_ca_fields(norm["engine"], norm["ssl_mode"], ssl_ca, existing=old, clear=clear_ssl_ca))
     execute(
         """UPDATE datasets
            SET sql_config=%s, file_type=%s, connection_status='pending', updated_at=NOW()
            WHERE id=%s AND tenant_id=%s""",
-        (_json(sql_config), engine, source_id, tenant_id),
+        (_json(cfg), norm["engine"], source_id, tenant_id),
     )
+    from backend.datasources.schema_cache import invalidate
+    invalidate(tenant_id, source_id)
     return _public(get_source(tenant_id, source_id))
 
 
+def parse_connection_string_public(text: str) -> dict:
+    """What a pasted connection string says, normalised where possible, with
+    the password reduced to whether there was one. The password never comes
+    back to the browser: the form sends the string again on save."""
+    parsed = conn_mod.parse_connection_string(text)
+    password = parsed.pop("password", None)
+    out = dict(parsed)
+    engine = out.get("engine")
+    if engine in conn_mod.ENGINES:
+        if out.get("host"):
+            out["host"] = conn_mod.normalize_host(out["host"], engine)
+        out["port"] = conn_mod.normalize_port(out["port"]) if out.get("port") else conn_mod.DEFAULT_PORTS[engine]
+        if out.get("ssl_mode"):
+            out["ssl_mode"] = conn_mod.normalize_ssl_mode(out["ssl_mode"], engine)
+    out["has_password"] = bool(password)
+    return out
+
+
+def _probe_summary(result: dict) -> dict:
+    """What is kept of the last connection test on the source row, so the
+    screen can show it again without re-running it."""
+    return {
+        "ok": result.get("ok"),
+        "tested_at": result.get("tested_at"),
+        "failed_stage": result.get("failed_stage"),
+        "error": result.get("error"),
+        "stages": [{k: s.get(k) for k in ("stage", "status", "code", "params") if s.get(k) is not None}
+                   for s in result.get("stages") or []],
+        "can_write": (result.get("write_access") or {}).get("can_write"),
+        "table_count": result.get("table_count"),
+        "server_version": result.get("server_version"),
+    }
+
+
 def test_sql_connection(tenant_id: str, source_id: str) -> dict:
+    """Run the staged connection test and store its verdict.
+
+    `connection_status` becomes `connected` only when no stage failed; the
+    stage summary lands in `sql_config.last_test` (no secrets in it)."""
+    from backend.datasources.probe import run_probe
+    from backend.datasources.schema_cache import invalidate
+
     existing = get_source(tenant_id, source_id)
     if not existing:
-        raise ValueError(f"Data source {source_id} not found")
+        raise _not_found(source_id)
+    _require_sql(existing)
     cfg = existing.get("sql_config") or {}
-    try:
-        import sqlalchemy
-        engine = _make_sql_engine(cfg, statement_timeout_ms=5_000)
-        with engine.connect() as conn:
-            conn.execute(sqlalchemy.text("SELECT 1"))
-        execute(
-            "UPDATE datasets SET connection_status='connected', updated_at=NOW() WHERE id=%s AND tenant_id=%s",
-            (source_id, tenant_id),
-        )
-        return {"ok": True, "status": "connected"}
-    except Exception as e:
-        execute(
-            "UPDATE datasets SET connection_status='error', updated_at=NOW() WHERE id=%s AND tenant_id=%s",
-            (source_id, tenant_id),
-        )
-        return {"ok": False, "status": "error", "error": str(e)}
+    result = run_probe(cfg, tenant_id=tenant_id)
+    execute(
+        "UPDATE datasets SET connection_status=%s, "
+        "sql_config = COALESCE(sql_config, '{}'::jsonb) || jsonb_build_object('last_test', %s::jsonb), "
+        "updated_at=NOW() WHERE id=%s AND tenant_id=%s",
+        ("connected" if result["ok"] else "error", _json(_probe_summary(result)), source_id, tenant_id),
+    )
+    invalidate(tenant_id, source_id)
+    return result
 
 
-def execute_sql_query(tenant_id: str, source_id: str, sql: str, limit: int = 500) -> dict:
-    existing = get_source(tenant_id, source_id)
-    if not existing:
-        raise ValueError(f"Data source {source_id} not found")
-    if existing.get("connection_status") != "connected":
+def _connected_sql_source(tenant_id: str, source_id: str) -> dict:
+    src = get_source(tenant_id, source_id)
+    if not src:
+        raise _not_found(source_id)
+    _require_sql(src)
+    if src.get("connection_status") != "connected":
         raise AppError(
             "data_source_not_connected",
             "This data source is not connected. Test the connection first.",
             status_code=_REJECTED,
         )
-    cfg = existing.get("sql_config") or {}
-    try:
-        import sqlalchemy
-        engine = _make_sql_engine(cfg, statement_timeout_ms=30_000)
-        with engine.connect() as conn:
-            result = conn.execute(sqlalchemy.text(sql))
-            rows = result.fetchmany(limit)
-            columns = list(result.keys())
-        data = [dict(zip(columns, row)) for row in rows]
-        return {
-            "columns": columns,
-            "rows": data,
-            "row_count": len(data),
-            "truncated": len(data) >= limit,
-        }
-    except AppError:
-        raise
-    except Exception as e:
-        # The user's own SQL failed. The driver's text is the only useful part
-        # and cannot be localized, so it travels as a param the frontend drops
-        # into its own sentence.
+    return src
+
+
+def execute_sql_query(tenant_id: str, source_id: str, sql: str, limit: int = 500,
+                      offset: int = 0) -> dict:
+    """One page of a query's result for the editor.
+
+    Streams past `offset` rows and reads `limit + 1`, so `has_more` is exact
+    (the old `truncated = len(rows) >= limit` said "truncated" for a result of
+    exactly `limit` rows). Values are converted for JSON (`values.json_cell`)."""
+    from backend.datasources.values import json_cell
+
+    src = get_source(tenant_id, source_id)
+    if not src:
+        raise _not_found(source_id)
+    if src.get("connection_status") != "connected":
         raise AppError(
-            "sql_query_failed",
-            f"Query failed: {e}",
+            "data_source_not_connected",
+            "This data source is not connected. Test the connection first.",
             status_code=_REJECTED,
-            params={"reason": str(e)},
         )
+    if offset < 0 or offset > MAX_QUERY_OFFSET:
+        raise AppError("sql_offset_out_of_range",
+                       f"The offset must be between 0 and {MAX_QUERY_OFFSET}.",
+                       status_code=_REJECTED, params={"max_offset": MAX_QUERY_OFFSET})
+    cfg = src.get("sql_config") or {}
+    started = time.monotonic()
+    try:
+        with _read_only_rows(cfg, sql, stream=True, tenant_id=tenant_id) as result:
+            columns = [str(c) for c in result.keys()]
+            skipped = 0
+            while skipped < offset:
+                chunk = result.fetchmany(min(FETCH_BATCH, offset - skipped))
+                if not chunk:
+                    break
+                skipped += len(chunk)
+            rows = result.fetchmany(limit + 1) if skipped >= offset else []
+    except Exception as exc:  # noqa: BLE001
+        raise _classified(exc, cfg) from None
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    data = [{columns[i]: json_cell(v) for i, v in enumerate(row)} for row in rows]
+    return {
+        "columns": columns,
+        "rows": data,
+        "row_count": len(data),
+        "offset": offset,
+        "limit": limit,
+        "has_more": has_more,
+        "truncated": has_more,
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
+    }
+
+
+def _too_large(max_rows: int, what: str) -> AppError:
+    return AppError(
+        "sql_result_too_large",
+        f"The query returned more than {max_rows} rows, the {what} limit. "
+        "Narrow it with WHERE or LIMIT.",
+        status_code=_REJECTED, params={"max_rows": max_rows},
+    )
 
 
 def materialize_sql_source(
@@ -465,10 +689,12 @@ def materialize_sql_source(
     a forecast must be reproducible against the data it actually trained on.
 
     Streams the result in batches so the row cap bounds memory, and refuses —
-    rather than silently truncates — when the result exceeds it."""
+    rather than silently truncates — when the result exceeds it. Values are
+    written by `values.csv_cell` (exact decimals, ISO dates with offsets, hex
+    bytes, JSON as JSON)."""
     src = get_source(tenant_id, source_id)
     if not src:
-        raise ValueError(f"Data source {source_id} not found")
+        raise _not_found(source_id)
     if src.get("source_type") != "sql":
         raise AppError(
             "data_source_not_sql",
@@ -491,10 +717,14 @@ def materialize_sql_source(
 
     import csv as _csv
 
-    import sqlalchemy
-
+    from backend.datasources.sql_guard import validate_read_only_sql
+    from backend.datasources.values import csv_cell
     from backend.storage import paths
     from backend.utils.csv_safe import csv_safe
+
+    cfg = src.get("sql_config") or {}
+    # Refuse before a directory is created for a dataset that will not exist.
+    validate_read_only_sql(query_sql, cfg.get("engine", "postgresql"))
 
     max_rows = settings.sql_materialize_max_rows
     new_id = generate_id("ds")
@@ -503,47 +733,37 @@ def materialize_sql_source(
     file_path = dst_dir / "data.csv"
     tmp_path = dst_dir / "data.csv.tmp"
 
+    def _discard() -> None:
+        tmp_path.unlink(missing_ok=True)
+        try:
+            if dst_dir.exists() and not any(dst_dir.iterdir()):
+                dst_dir.rmdir()
+        except OSError:
+            pass
+
     row_count = 0
     columns: list[str] = []
     try:
-        engine = _make_sql_engine(cfg=src.get("sql_config") or {}, statement_timeout_ms=120_000)
-        with engine.connect() as conn:
-            result = conn.execution_options(stream_results=True).execute(
-                sqlalchemy.text(query_sql)
-            )
+        with _read_only_rows(cfg, query_sql, stream=True, tenant_id=tenant_id, bulk=True) as result:
             columns = [str(c) for c in result.keys()]
             with open(tmp_path, "w", newline="", encoding="utf-8") as f:
                 writer = _csv.writer(f)
                 writer.writerow([csv_safe(c) for c in columns])
                 while True:
-                    batch = result.fetchmany(10_000)
+                    batch = result.fetchmany(FETCH_BATCH)
                     if not batch:
                         break
                     row_count += len(batch)
                     if row_count > max_rows:
-                        raise AppError(
-                            "sql_result_too_large",
-                            f"The query returned more than {max_rows} rows, the "
-                            "materialization limit. Narrow it with WHERE or LIMIT.",
-                            status_code=_REJECTED,
-                            params={"max_rows": max_rows},
-                        )
+                        raise _too_large(max_rows, "materialization")
                     for r in batch:
-                        writer.writerow([_safe_cell(v) for v in r])
-    except AppError:
-        tmp_path.unlink(missing_ok=True)
-        raise
-    except Exception as e:
-        tmp_path.unlink(missing_ok=True)
-        raise AppError(
-            "sql_query_failed",
-            f"Query failed: {e}",
-            status_code=_REJECTED,
-            params={"reason": str(e)},
-        )
+                        writer.writerow([csv_cell(v) for v in r])
+    except Exception as exc:  # noqa: BLE001
+        _discard()
+        raise _classified(exc, cfg) from None
 
     if row_count == 0:
-        tmp_path.unlink(missing_ok=True)
+        _discard()
         raise AppError(
             "sql_result_empty",
             "The query returned no rows — there is nothing to materialize.",
@@ -556,7 +776,7 @@ def materialize_sql_source(
         from backend.datasets.service import _enforce_dataset_size
         _enforce_dataset_size(tenant_id, size_bytes)
     except Exception:
-        tmp_path.unlink(missing_ok=True)
+        _discard()
         raise
     tmp_path.replace(file_path)
 
@@ -590,15 +810,48 @@ def materialize_sql_source(
     return _public(get_source(tenant_id, new_id))
 
 
-def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = None) -> bytes:
-    """Run a SQL source's query and return the FULL result as an .xlsx workbook.
+@dataclass
+class ExportFile:
+    """A finished export, spooled (memory up to 8 MB, then a temp file)."""
+    file: Any
+    rows: int
+    media_type: str
+    extension: str
+
+    def chunks(self, size: int = 256 * 1024):
+        try:
+            self.file.seek(0)
+            while True:
+                block = self.file.read(size)
+                if not block:
+                    break
+                yield block
+        finally:
+            self.file.close()
+
+
+def export_sql_query(tenant_id: str, source_id: str, sql: Optional[str] = None,
+                     fmt: str = "xlsx") -> ExportFile:
+    """Run a SQL source's query and return the FULL result as a spooled
+    .xlsx or .csv file. The whole result is read BEFORE the response starts,
+    so a failure is still a coded JSON error, not a truncated download.
 
     Same streaming fetch and row ceiling as materialize (refuse, never
     truncate). Text cells go through the formula-injection guard — Excel
     executes a leading '=' even more eagerly than a re-imported CSV does."""
+    import csv as _csv
+    import io
+    import tempfile
+
+    from backend.datasources.values import csv_cell
+    from backend.utils.csv_safe import csv_safe
+
+    if fmt not in EXPORT_FORMATS:
+        raise AppError("sql_export_format_unsupported", f"Unsupported export format {fmt!r}.",
+                       status_code=_REJECTED, params={"format": fmt, "allowed": ", ".join(EXPORT_FORMATS)})
     src = get_source(tenant_id, source_id)
     if not src:
-        raise ValueError(f"Data source {source_id} not found")
+        raise _not_found(source_id)
     if src.get("source_type") != "sql":
         raise AppError(
             "data_source_not_sql",
@@ -619,63 +872,97 @@ def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = N
             status_code=_REJECTED,
         )
 
-    import io
-
-    import sqlalchemy
-    from openpyxl import Workbook
-
-    from backend.utils.csv_safe import csv_safe
-
+    cfg = src.get("sql_config") or {}
     max_rows = settings.sql_materialize_max_rows
     row_count = 0
+    spool = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
     try:
-        engine = _make_sql_engine(cfg=src.get("sql_config") or {}, statement_timeout_ms=120_000)
-        with engine.connect() as conn:
-            result = conn.execution_options(stream_results=True).execute(
-                sqlalchemy.text(query_sql)
-            )
+        with _read_only_rows(cfg, query_sql, stream=True, tenant_id=tenant_id, bulk=True) as result:
             columns = [str(c) for c in result.keys()]
-            wb = Workbook(write_only=True)
-            ws = wb.create_sheet(title="data")
-            ws.append([csv_safe(c) for c in columns])
+            if fmt == "csv":
+                text = io.TextIOWrapper(spool, encoding="utf-8-sig", newline="", write_through=True)
+                writer = _csv.writer(text)
+                writer.writerow([csv_safe(c) for c in columns])
+                append = writer.writerow
+            else:
+                from openpyxl import Workbook
+                wb = Workbook(write_only=True)
+                ws = wb.create_sheet(title="data")
+                ws.append([csv_safe(c) for c in columns])
+                append = ws.append
             while True:
-                batch = result.fetchmany(10_000)
+                batch = result.fetchmany(FETCH_BATCH)
                 if not batch:
                     break
                 row_count += len(batch)
                 if row_count > max_rows:
-                    raise AppError(
-                        "sql_result_too_large",
-                        f"The query returned more than {max_rows} rows, the "
-                        "export limit. Narrow it with WHERE or LIMIT.",
-                        status_code=_REJECTED,
-                        params={"max_rows": max_rows},
-                    )
+                    raise _too_large(max_rows, "export")
                 for r in batch:
-                    ws.append([_safe_cell(v) for v in r])
-    except AppError:
-        raise
-    except Exception as e:
-        raise AppError(
-            "sql_query_failed",
-            f"Query failed: {e}",
-            status_code=_REJECTED,
-            params={"reason": str(e)},
-        )
+                    append([_xlsx_cell(v) if fmt == "xlsx" else csv_cell(v) for v in r])
+        if fmt == "csv":
+            text.flush()
+            text.detach()
+    except Exception as exc:  # noqa: BLE001
+        spool.close()
+        raise _classified(exc, cfg) from None
 
     if row_count == 0:
+        spool.close()
         raise AppError(
             "sql_result_empty",
             "The query returned no rows — there is nothing to export.",
             status_code=_REJECTED,
         )
+    if fmt == "xlsx":
+        wb.save(spool)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        media = "text/csv; charset=utf-8"
+    return ExportFile(spool, row_count, media, fmt)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+
+def _xlsx_cell(value: Any) -> Any:
+    """One value as an Excel cell. Dates stay dates and numbers stay numbers
+    (so the sheet sorts and sums), except where Excel would silently change
+    them: it holds 15 significant digits, so a longer integer or decimal is
+    written as text; and it has no time zones, so an aware timestamp is
+    written as ISO text with its offset rather than with the offset dropped.
+    Everything else goes through the CSV rules (formula guard included)."""
+    import datetime as _dt
+    from decimal import Decimal
+
+    from backend.datasources.values import csv_cell
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return str(value) if abs(value) >= 10 ** 15 else value
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            return None
+        return csv_cell(value) if len(value.as_tuple().digits) > 15 else value
+    if isinstance(value, _dt.datetime):
+        return value.isoformat() if value.utcoffset() is not None else value
+    if isinstance(value, (_dt.date, _dt.time)):
+        return value
+    return csv_cell(value)
+
+
+def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = None) -> tuple[bytes, int]:
+    """Back-compatible wrapper: the whole .xlsx as bytes, and its row count."""
+    out = export_sql_query(tenant_id, source_id, sql=sql, fmt="xlsx")
+    return b"".join(out.chunks()), out.rows
 
 
 def save_sql_query(tenant_id: str, source_id: str, sql: str) -> dict:
+    """Store the query a source's preview, analysis and scheduled refresh will
+    run later — possibly for a viewer, or unattended. It is checked now, so a
+    statement that would be refused at run time is never stored."""
+    from backend.datasources.sql_guard import validate_read_only_sql
+    src = get_source(tenant_id, source_id)
+    if not src:
+        raise _not_found(source_id)
+    _require_sql(src)
+    validate_read_only_sql(sql, (src.get("sql_config") or {}).get("engine", "postgresql"))
     execute(
         "UPDATE datasets SET saved_query=%s, updated_at=NOW() WHERE id=%s AND tenant_id=%s",
         (sql, source_id, tenant_id),
@@ -683,47 +970,50 @@ def save_sql_query(tenant_id: str, source_id: str, sql: str) -> dict:
     return _public(get_source(tenant_id, source_id))
 
 
-def _build_conn_str(cfg: dict) -> str:
-    host = cfg.get("host", "localhost")
-    port = cfg.get("port", 5432)
-    database = cfg.get("database", "")
-    username = cfg.get("username", "")
-    password = _dec(cfg.get("password_enc", "")) if cfg.get("password_enc") else ""
+# ── Schema browser ─────────────────────────────────────────────────────────────
+
+def get_schema(tenant_id: str, source_id: str, *, refresh: bool = False) -> dict:
+    """Tables and views the connection can read, with row estimates. Cached
+    per source for a few minutes (`schema_cache`); `refresh` re-reads."""
+    from backend.datasources import catalog
+    from backend.datasources.client import open_session
+    from backend.datasources.schema_cache import get_or_load
+
+    src = _connected_sql_source(tenant_id, source_id)
+    cfg = src.get("sql_config") or {}
+
+    def _load() -> dict:
+        try:
+            with open_session(cfg, tenant_id=tenant_id) as session:
+                return catalog.list_tables(session.conn, session.spec.engine)
+        except Exception as exc:  # noqa: BLE001
+            raise _classified(exc, cfg) from None
+
+    data, cached_at = get_or_load(tenant_id, source_id, cfg, ("tables",), _load, refresh=refresh)
+    return {**data, "cached_at": cached_at}
+
+
+def get_table_columns(tenant_id: str, source_id: str, schema: str, table: str, *,
+                      refresh: bool = False) -> dict:
+    from backend.datasources import catalog
+    from backend.datasources.client import open_session
+    from backend.datasources.schema_cache import get_or_load
+
+    src = _connected_sql_source(tenant_id, source_id)
+    cfg = src.get("sql_config") or {}
     engine = cfg.get("engine", "postgresql")
-    from urllib.parse import quote_plus
-    pw_enc = quote_plus(password)
-    user_enc = quote_plus(username)
-    drivers = {
-        "postgresql": "postgresql+psycopg2",
-        "mysql": "mysql+pymysql",
-        "mssql": "mssql+pyodbc",
-        "oracle": "oracle+cx_oracle",
-    }
-    driver = drivers.get(engine, "postgresql+psycopg2")
-    url = f"{driver}://{user_enc}:{pw_enc}@{host}:{port}/{database}"
-    if engine == "mssql":
-        # pyodbc needs an explicit ODBC driver name; pick the newest installed.
-        # TrustServerCertificate matches Driver 18's new encrypt-by-default,
-        # which otherwise rejects the self-signed certs typical of on-prem
-        # SQL Servers at SMB distributors.
-        url += f"?driver={quote_plus(_best_mssql_odbc_driver())}&TrustServerCertificate=yes"
-    return url
 
+    def _load() -> dict:
+        try:
+            with open_session(cfg, tenant_id=tenant_id) as session:
+                return catalog.list_columns(session.conn, engine, schema, table)
+        except Exception as exc:  # noqa: BLE001
+            raise _classified(exc, cfg) from None
 
-def _best_mssql_odbc_driver() -> str:
-    """Newest SQL Server ODBC driver installed on this host, falling back to
-    the legacy 'SQL Server' driver that ships with Windows."""
-    try:
-        import pyodbc
-        installed = [d for d in pyodbc.drivers() if "SQL Server" in d]
-        for preferred in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server"):
-            if preferred in installed:
-                return preferred
-        if installed:
-            return installed[-1]
-    except Exception:
-        pass
-    return "ODBC Driver 18 for SQL Server"
+    data, cached_at = get_or_load(tenant_id, source_id, cfg, ("columns", schema, table), _load,
+                                  refresh=refresh)
+    return {**data, "cached_at": cached_at,
+            "select_sql": catalog.select_preview_sql(engine, schema, table)}
 
 
 # ── Preview ────────────────────────────────────────────────────────────────────
@@ -970,6 +1260,19 @@ def sessions_using(tenant_id: str, source_id: str) -> list[dict]:
     )
 
 
+def schedules_fed_by(tenant_id: str, source_id: str) -> list[dict]:
+    """Enabled schedules whose template trains on a snapshot of this SQL
+    source — the ones that re-run its query on every due run."""
+    return query(
+        """SELECT j.id, s.name
+             FROM scheduled_jobs j
+             JOIN sessions s ON s.id = j.session_id AND s.tenant_id = j.tenant_id
+             JOIN datasets d ON d.id = s.dataset_id AND d.tenant_id = s.tenant_id
+            WHERE j.tenant_id = %s AND j.enabled AND d.parent_id = %s""",
+        (tenant_id, source_id),
+    ) or []
+
+
 def delete_source(tenant_id: str, source_id: str) -> None:
     src = get_source(tenant_id, source_id)
     if not src:
@@ -987,8 +1290,28 @@ def delete_source(tenant_id: str, source_id: str) -> None:
             params={"count": len(users),
                     "sessions": ", ".join(u["name"] for u in users[:3])},
         )
+    if src.get("source_type") == "sql":
+        # A schedule that retrains from this connection re-runs its query every
+        # night. With the connection gone, it would quietly fall back to
+        # retraining the last snapshot and report "no new data" forever.
+        feeding = schedules_fed_by(tenant_id, source_id)
+        if feeding:
+            raise AppError(
+                "data_source_feeds_schedule",
+                f"Cannot delete: {len(feeding)} scheduled retraining(s) refresh "
+                "their data from this connection. Turn them off first.",
+                status_code=409,
+                params={"count": len(feeding),
+                        "sessions": ", ".join(f["name"] for f in feeding[:3])},
+            )
     # Database first, file second: if the row cannot go, the file is untouched.
+    # The datasets materialized FROM a SQL source are separate rows (parent_id
+    # points here, with no cascade): they stay, like everything a session may
+    # have trained on.
     execute("DELETE FROM datasets WHERE id=%s AND tenant_id=%s", (source_id, tenant_id))
+    if src.get("source_type") == "sql":
+        from backend.datasources.schema_cache import invalidate
+        invalidate(tenant_id, source_id)
     if src.get("file_path"):
         p = Path(src["file_path"])
         if p.exists():
@@ -1024,12 +1347,18 @@ def load_dataframe(tenant_id: str, source_id: str, sheet: Optional[str] = None, 
                 status_code=_REJECTED,
             )
         cfg = src.get("sql_config") or {}
-        import sqlalchemy
-        eng = _make_sql_engine(cfg, statement_timeout_ms=60_000)
-        with eng.connect() as conn:
-            result = conn.execute(sqlalchemy.text(saved_q))
-            rows = result.fetchmany(max_rows)
-            cols = list(result.keys())
+        from decimal import Decimal
+        try:
+            with _read_only_rows(cfg, saved_q, stream=True, tenant_id=tenant_id, bulk=True) as result:
+                cols = [str(c) for c in result.keys()]
+                rows = result.fetchmany(max_rows)
+        except Exception as exc:  # noqa: BLE001
+            raise _classified(exc, cfg) from None
+        # The analysis is a read-only view: a NUMERIC column must be a number
+        # to it (Decimal would make the column text and hide it from every
+        # numeric check). The persisted snapshot keeps exact decimals.
+        rows = [tuple(float(v) if isinstance(v, Decimal) and v.is_finite() else v for v in r)
+                for r in rows]
         return dataframe_from_records(rows, cols)
 
     file_path = src.get("file_path")

@@ -180,9 +180,9 @@ export default function HoyMobile(props: HoyMobileProps) {
       {/* ── Greeting ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: 21, fontWeight: 700, color: C.text, margin: '0 0 3px', lineHeight: 1.25 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: '0 0 3px', lineHeight: 1.25 }}>
             {t('hoy.greeting_good_morning')}{firstName ? `, ${firstName}` : ''}.
-          </h1>
+          </h2>
           <p style={{ fontSize: 13, color: C.dim, margin: 0, lineHeight: 1.45 }}>
             {briefing
               ? <>
@@ -220,7 +220,7 @@ export default function HoyMobile(props: HoyMobileProps) {
 
       {loading && (
         <LoadingState label={t('hoy.loading_label')}>
-          <SkeletonCards count={4} height={110} />
+          <SkeletonCards count={3} height={110} stacked />
         </LoadingState>
       )}
 
@@ -586,7 +586,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
         {/* Quantity stepper — read-only for a viewer */}
         {isOrdered ? null : !canDecide ? (
           <div style={{ marginTop: 12, textAlign: 'center' }}>
-            <div style={{ color: C.text, fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtNum(item.qty)}</div>
+            <div style={{ color: C.text, fontSize: 18, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtNum(item.qty)}</div>
             <div style={{ fontSize: 11.5, color: C.dim, marginTop: 3 }}>
               {t('hoy.label_units')}{value > 0 && <> · ≈ {formatMoney(value)}</>}
             </div>
@@ -613,7 +613,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
                 style={{
                   width: '100%', textAlign: 'center', background: 'transparent',
                   border: 'none', borderBottom: `1px dashed var(--border-strong)`,
-                  color: C.text, fontSize: 22, fontWeight: 600, outline: 'none', fontVariantNumeric: 'tabular-nums',
+                  color: C.text, fontSize: 18, fontWeight: 600, outline: 'none', fontVariantNumeric: 'tabular-nums',
                   padding: '2px 0', minHeight: TAP, boxSizing: 'border-box',
                 }}
               />
@@ -832,7 +832,7 @@ function MiniKpi({ label, value, color }: { label: string; value: string; color:
         {dot && <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0 }} />}
         {label}
       </div>
-      <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   )
 }

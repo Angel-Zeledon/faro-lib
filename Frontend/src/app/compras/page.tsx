@@ -537,7 +537,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
           leaving it editable would put the "Generate PO" bar back on screen
           for someone whose role can never generate one. */}
       {!canDecide ? (
-       <span style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+       <span style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
         {fmtNum(item.qty)}
        </span>
       ) : editing ? (
@@ -560,7 +560,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
        />
       ) : (
        <button onClick={() => setEditing(true)} style={{
-        all: 'unset', cursor: 'pointer', fontSize: 20, fontWeight: 600, color: 'var(--text)',
+        all: 'unset', cursor: 'pointer', fontSize: 17, fontWeight: 600, color: 'var(--text)',
         borderBottom: '1px dashed var(--border-strong)', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums',
        }}>
         {fmtNum(item.qty)}
@@ -1637,14 +1637,14 @@ export default function HoyPage() {
     justifyContent: 'space-between', gap: 24, marginBottom: 32,
    }}>
     <div style={{ minWidth: 0 }}>
-     <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.01em', color: C.text, margin: '0 0 8px' }}>
+     <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', color: C.text, margin: '0 0 8px' }}>
       {t('hoy.greeting_good_morning')}{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}.
       {cart.length > 0 && totalPending > 0 && (
        <span style={{ fontSize: 14, fontWeight: 400, color: C.dim, marginLeft: 12 }}>
         {t('hoy.greeting_pending_actions_prefix')} {totalPending} {t('hoy.greeting_pending_actions_suffix')}
        </span>
       )}
-     </h1>
+     </h2>
      {briefing ? (
       <p data-tour={overduePOs.length > 0 ? 'hoy.receptions' : undefined} style={{ fontSize: 13, color: C.dim, margin: 0, lineHeight: 1.6 }}>
        {t('hoy.date_today_prefix')} {formatDateES(briefing.date, lang)}.{' '}
@@ -1677,11 +1677,11 @@ export default function HoyPage() {
         </>
        ) : null}
       </p>
-     ) : (
+     ) : error == null ? (
       <p style={{ fontSize: 13, color: C.dim, margin: 0 }}>
        {t('hoy.date_loading')}
       </p>
-     )}
+     ) : null}
     </div>
 
     {/* The tour anchor sits on this wrapper, not inside DataFreshness: that
@@ -2212,10 +2212,11 @@ export default function HoyPage() {
            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
             {t('hoy.optimizer_orders_title')}
            </h3>
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 8 }}>
            {optimization.orders.map(order => (
             <div key={`${order.sku}-${order.warehouse}`} style={{
-             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-             padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6,
+             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+             padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, minWidth: 0,
             }}>
              <span style={{ fontSize: 13 }}>
               {order.sku} — {order.warehouse}: <strong>{order.qty}</strong>
@@ -2238,6 +2239,7 @@ export default function HoyPage() {
              )}
             </div>
            ))}
+           </div>
           </div>
          )}
 
@@ -2246,10 +2248,11 @@ export default function HoyPage() {
            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
             {t('hoy.optimizer_transfers_title')}
            </h3>
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 8 }}>
            {optimization.transfers.map(tr => (
             <div key={`${tr.sku}-${tr.from_warehouse}-${tr.to_warehouse}`} style={{
-             fontSize: 13, padding: '10px 12px', border: '1px solid var(--border)',
-             borderRadius: 8, marginBottom: 6,
+             fontSize: 13, padding: '8px 12px', border: '1px solid var(--border)',
+             borderRadius: 8,
             }}>
              {t('hoy.optimizer_transfer_line')
               .replace('{qty}', String(tr.qty))
@@ -2258,6 +2261,7 @@ export default function HoyPage() {
               .replace('{to}', tr.to_warehouse)}
             </div>
            ))}
+           </div>
           </div>
          )}
         </section>
@@ -2674,7 +2678,7 @@ function KpiCard({ label, value, dot, help }: { label: string; value: string; do
     {label}
     {help && <HelpTip text={help} size={13} />}
    </div>
-   <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.1, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
+   <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.1, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
     {value}
    </div>
   </div>

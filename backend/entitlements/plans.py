@@ -55,6 +55,12 @@ class PlanDef:
     max_api_calls_per_day: int | None
     max_concurrent_jobs: int | None
     max_dataset_size_mb: int | None
+    # Training launches per calendar day in the TENANT's timezone (a launch is
+    # one run of the models: a family fan-out counts once; back-tests and
+    # re-forecasts that only reload stored models do not count). The cost
+    # ceiling behind the "Full" plan: training is the one expensive thing a
+    # tenant can do on our hardware.
+    max_trainings_per_day: int | None
     # Paid-only features (booleans, never None). Deliberately the LAST fields:
     # `service._LIMIT_FIELDS` is every field up to here, so these never leak
     # into the `limits` map the frontend already reads.
@@ -101,23 +107,28 @@ PLANS: dict[str, PlanDef] = {
         # 25 MB is roughly 4 years of daily sales over 100 SKUs — the history
         # that fits the SKU ceiling above, and no more.
         max_dataset_size_mb=25,
+        # One training a day: enough to retrain after loading the day's sales.
+        max_trainings_per_day=1,
     ),
     # The "Full" plan: first tier with API + MCP + the WhatsApp bot, and still
     # LIMITED. Proposed numbers, easy to edit. A mid-size distributor fits in
-    # 500 SKUs; three seats and two warehouses are a small team with a second
-    # site; twenty saved runs is a year of monthly retrains for a few
-    # variants; 3 keys is ERP + BI + an AI client; 2000 calls/day per key is a
-    # nightly push plus polling every minute during business hours; 100 MB is
-    # ~5 years of daily sales over 500 SKUs. Past this is `corporate`.
+    # 1,000 SKUs (owner decision 2026-10-05, raised from 500); five seats and
+    # three warehouses are a team with a few sites; twenty saved runs is a year
+    # of monthly retrains for a few variants; 3 keys is ERP + BI + an AI client;
+    # 2000 calls/day per key is a nightly push plus polling every minute during
+    # business hours; 100 MB is ~5 years of daily sales over 500 SKUs; ten
+    # trainings a day is a scheduled retrain plus several manual experiments.
+    # Past this is `corporate`.
     PAID: PlanDef(
-        max_skus=500,
-        max_users=3,
-        max_locations=2,
+        max_skus=1000,
+        max_users=5,
+        max_locations=3,
         max_sessions=20,
         max_api_keys=3,
         max_api_calls_per_day=2000,
         max_concurrent_jobs=_MAX_CONCURRENT_JOBS,
         max_dataset_size_mb=100,
+        max_trainings_per_day=10,
         api_access=True,
         mcp_access=True,
         whatsapp_bot=True,
@@ -135,6 +146,9 @@ PLANS: dict[str, PlanDef] = {
         # stays because an upload is read into memory before it is anything
         # else. For scale: 3 years of daily sales over 5.000 SKUs is ~200 MB.
         max_dataset_size_mb=2000,
+        # Unlimited: the corporate customer's demand is committed, and its
+        # retrains are the point.
+        max_trainings_per_day=None,
         api_access=True,
         mcp_access=True,
         whatsapp_bot=True,
@@ -157,6 +171,8 @@ PLANS: dict[str, PlanDef] = {
         # take every worker thread from the tenants who run on this server.
         max_concurrent_jobs=1,
         max_dataset_size_mb=5,
+        # The bundled demo run, once.
+        max_trainings_per_day=1,
     ),
 }
 

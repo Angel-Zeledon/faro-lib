@@ -208,7 +208,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 /* ── Type ── */
 .lp-h1 {
  font-family: var(--font-brand), system-ui, sans-serif;
- font-size: clamp(40px, 5.4vw, 66px); font-weight: 600; line-height: 1.02;
+ font-size: clamp(32px, 4.2vw, 48px); font-weight: 600; line-height: 1.02;
  letter-spacing: -0.045em; color: var(--lp-text); margin: 0 0 22px; max-width: 920px; text-wrap: balance;
 }
 /* Sized so the headline breaks into the SAME number of lines with the
@@ -218,14 +218,14 @@ section[id], #demo { scroll-margin-top: 88px; }
    layout shift of the whole page below the fold line: at 360px the old
    sizing went from five lines to six and moved everything ~40px (CLS 0.05).
    If the headline copy changes, re-check this. */
-@media (max-width: 640px) { .lp-h1 { font-size: clamp(30px, 8.4vw, 54px); } }
+@media (max-width: 640px) { .lp-h1 { font-size: clamp(26px, 7.4vw, 38px); } }
 .lp-h2 {
  font-family: var(--font-brand), system-ui, sans-serif;
- font-size: clamp(28px, 3.6vw, 42px); font-weight: 600; line-height: 1.1;
+ font-size: clamp(24px, 2.8vw, 32px); font-weight: 600; line-height: 1.1;
  letter-spacing: -0.035em; color: var(--lp-text); margin: 0 0 16px; text-wrap: balance;
 }
-.lp-h3 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 20px; font-weight: 600; color: var(--lp-text); margin: 0 0 16px; letter-spacing: -0.02em; line-height: 1.3; }
-.lp-lead { font-size: 16.5px; color: var(--lp-body); line-height: 1.7; margin: 0 0 48px; text-wrap: pretty; }
+.lp-h3 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 18px; font-weight: 600; color: var(--lp-text); margin: 0 0 16px; letter-spacing: -0.02em; line-height: 1.3; }
+.lp-lead { font-size: 15.5px; color: var(--lp-body); line-height: 1.7; margin: 0 0 48px; text-wrap: pretty; }
 .lp-tag { display: block; margin-bottom: 14px; font-size: 13.5px; font-weight: 600; color: var(--lp-accent); letter-spacing: 0; }
 .lp-tag-dot { display: none; }
 .lp-label { font-size: 12px; font-weight: 600; color: var(--lp-dim); letter-spacing: 0.01em; }
@@ -284,7 +284,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 
 .hero-inner { max-width: 1120px; width: 100%; margin: 0 auto; padding: 0 48px; }
 .hero-eyebrow { margin: 0 0 22px; font-size: 14px; font-weight: 600; color: var(--lp-accent); max-width: 60ch; }
-.hero-lead { font-size: clamp(16px, 1.6vw, 19px); color: var(--lp-body); line-height: 1.65; max-width: 590px; margin: 0 0 36px; text-wrap: pretty; }
+.hero-lead { font-size: clamp(15px, 1.4vw, 17px); color: var(--lp-body); line-height: 1.65; max-width: 590px; margin: 0 0 36px; text-wrap: pretty; }
 .hero-ctas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .hero-note { display: flex; align-items: center; gap: 8px; margin: 16px 0 64px; font-size: 13px; color: var(--lp-muted); line-height: 1.5; }
 
@@ -338,7 +338,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 .strip-grid { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
 .strip-cell { text-align: center; padding: 0 28px; border-right: 1px solid rgba(255,255,255,0.10); }
 .strip-cell:last-child { border-right: none; }
-.strip-value { font-family: var(--font-brand), system-ui, sans-serif; font-size: 44px; font-weight: 600; color: #fff; letter-spacing: -0.04em; margin-bottom: 8px; line-height: 1; }
+.strip-value { font-family: var(--font-brand), system-ui, sans-serif; font-size: 32px; font-weight: 600; color: #fff; letter-spacing: -0.04em; margin-bottom: 8px; line-height: 1; }
 .strip-label { font-size: 13px; color: rgba(231,240,239,0.66); line-height: 1.45; max-width: 26ch; margin: 0 auto; }
 
 /* ── Tour ── */
@@ -390,7 +390,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  box-shadow: 0 30px 60px -34px rgba(12,58,64,0.55);
 }
 .price-card.is-paid::before { content: ''; position: absolute; top: -1px; left: 32px; right: 32px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--lp-beam), transparent); }
-.price-card.is-paid .price-amount { color: #fff; font-size: 44px; }
+.price-card.is-paid .price-amount { color: #fff; font-size: 34px; }
 .price-card.is-paid .price-per { color: rgba(231,240,239,0.7); }
 .price-card.is-paid .price-row { color: rgba(231,240,239,0.78); border-bottom-color: rgba(255,255,255,0.12); }
 .price-paid-label { font-size: 13px; font-weight: 700; color: var(--lp-beam); margin-bottom: 10px; }
@@ -415,7 +415,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  .value-list { grid-template-columns: minmax(0, 1fr); margin-bottom: 36px; }
 }
 .price-per { font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--lp-muted); }
-.price-amount { font-family: var(--font-brand), system-ui, sans-serif; font-size: 34px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.03em; margin-bottom: 6px; line-height: 1.1; }
+.price-amount { font-family: var(--font-brand), system-ui, sans-serif; font-size: 28px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.03em; margin-bottom: 6px; line-height: 1.1; }
 .price-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; color: var(--lp-body); border-bottom: 1px solid var(--lp-border); padding-bottom: 9px; }
 .price-row:last-child { border-bottom: none; }
 

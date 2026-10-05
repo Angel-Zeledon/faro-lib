@@ -21,8 +21,10 @@ export type Translate = (key: string, params?: Record<string, unknown>) => strin
 // `global_lgbm` is appended, never inserted: it is a candidate like the rest —
 // it competes on the same table and can win a SKU — so it gets a number, and
 // appending is what keeps every number the user has already learned intact.
+// `tsb` (appended 2026-10-05) is an opt-in intermittent-demand model.
 export const MODEL_ORDER = [
   'lightgbm', 'xgboost', 'prophet', 'arima', 'ets', 'croston', 'sarimax', 'lstm', 'global_lgbm',
+  'tsb',
 ]
 
 // Baselines are not one of the candidates: they are the "what if we didn't

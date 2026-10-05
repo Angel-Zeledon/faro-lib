@@ -73,12 +73,18 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("bom_items", "bom_items", "*"),
     ("warehouses", "warehouses", "*"),
     ("documents", "documents", "*"),
+    # What the person typed on the feedback dialog. The screenshot FILES travel
+    # in the zip too (feedback_screenshots/), see build_export_zip.
+    ("feedback_reports", "feedback_reports", "*"),
     ("chats", "chats", "*"),
     ("chat_messages", "chat_messages", "*"),
     ("accuracy_snapshots", "accuracy_snapshots", "*"),
     ("forecast_overrides", "forecast_overrides", "*"),
     ("forecast_adjustments", "forecast_adjustments", "*"),
     ("committed_demand", "committed_demand", "*"),
+    ("supply_contracts", "supply_contracts", "*"),
+    ("demand_plan_versions", "demand_plan_versions", "*"),
+    ("demand_plan_version_events", "demand_plan_version_events", "*"),
     ("spike_edits", "spike_edits", "*"),
     ("spike_edit_applications", "spike_edit_applications", "*"),
     ("sku_analogies", "sku_analogies", "*"),
@@ -102,6 +108,12 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     # Microsoft / Apple is the person's data, so it travels with the export.
     ("user_identities", "user_identities",
      "id, user_id, tenant_id, provider, subject, email, created_at, last_used_at"),
+    # Paying for the plan. No secret lives in these tables (keys and webhook
+    # secrets are instance configuration, never per tenant); the provider ids
+    # are the tenant's own records at Stripe / PayPal, so they travel.
+    ("billing_customers", "billing_customers", "*"),
+    ("billing_subscriptions", "billing_subscriptions", "*"),
+    ("billing_events", "billing_events", "*"),
 ]
 
 # Deliberately NOT exported: pure security/credential artifacts, not "the
@@ -147,6 +159,23 @@ def build_export_zip(tenant_id: str) -> bytes:
             zf.writestr(f"{stem}.json", _dump(rows))
             manifest["tables"][stem] = len(rows)
 
+        # The screenshots are the tenant's data like any uploaded file: they
+        # travel with the export, under the report id that names them.
+        shots = 0
+        for row in query(
+            "SELECT screenshot_path FROM feedback_reports "
+            "WHERE tenant_id = %s AND screenshot_path IS NOT NULL", (tenant_id,),
+        ):
+            try:
+                from backend.feedback.service import screenshot_abspath
+                f = screenshot_abspath(tenant_id, row["screenshot_path"])
+                if f.is_file():
+                    zf.write(f, f"feedback_screenshots/{f.name}")
+                    shots += 1
+            except (OSError, ValueError) as exc:
+                log.warning("export: skipped a feedback screenshot: %s", exc)
+        manifest["feedback_screenshots"] = shots
+
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
 
     return buf.getvalue()
@@ -175,6 +204,13 @@ _DELETE_ORDER: list[str] = [
     "sso_domains",
     "sso_providers",
     "model_artifacts",
+    # Billing (2026-10-05). The first two cascade from tenants; the event log
+    # has no FK (an event may name no known tenant) and is only removed here.
+    # Erasing the tenant does NOT cancel a live subscription at the provider:
+    # whoever erases a paying account cancels it there first.
+    "billing_events",
+    "billing_subscriptions",
+    "billing_customers",
     "upgrade_requests",
     "whatsapp_conversations",
     "chat_messages",
@@ -183,6 +219,11 @@ _DELETE_ORDER: list[str] = [
     "po_approval_rules",
     "forecast_adjustments",
     "committed_demand",
+    "supply_contracts",
+    # Demand plan versions are permanent (immutable rows); only whole-tenant
+    # erasure removes them. Events first: they reference their version.
+    "demand_plan_version_events",
+    "demand_plan_versions",
     "spike_edit_applications",
     "spike_edits",
     "sku_analogies",
@@ -224,6 +265,7 @@ _DELETE_ORDER: list[str] = [
     "api_usage_daily",
     "api_keys",
     "documents",
+    "feedback_reports",
     "user_permissions",
     "user_identities",
     "refresh_tokens",
@@ -249,7 +291,7 @@ _DELETE_ORDER: list[str] = [
 # single rmtree per category instead of one helper per file type.
 _STORAGE_CATEGORIES = (
     "tenants", "users", "sessions", "datasets", "jobs", "artifacts",
-    "pos", "documents", "logs",
+    "pos", "documents", "logs", "feedback",
 )
 
 

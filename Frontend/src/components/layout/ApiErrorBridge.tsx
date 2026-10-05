@@ -12,7 +12,7 @@ import { setApiErrorNotifier, type ApiError } from '@/lib/api'
 import { useToast } from '@/contexts/ToastContext'
 import { useErrorCopy } from '@/components/ui/States'
 import { useUpgradePrompt } from '@/components/limits/UpgradeDialog'
-import { useBugReport } from '@/lib/bugReport'
+import { useFeedback } from '@/components/feedback/context'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 // A screen that fires several requests at once (the daily dashboard pulls
@@ -25,7 +25,7 @@ export default function ApiErrorBridge() {
   const { addToast } = useToast()
   const errorCopy = useErrorCopy()
   const openUpgrade = useUpgradePrompt()
-  const reportBug = useBugReport()
+  const reportBug = useFeedback()
   const { t } = useLanguage()
   const lastSeen = useRef<Map<string, number>>(new Map())
 
@@ -64,7 +64,7 @@ export default function ApiErrorBridge() {
     addToast(title, detail || body, 'error', ours ? {
       duration: 9000,
       action: {
-        label: t('bugreport.action'), kind: 'report',
+        label: t('feedback.action'), kind: 'report',
         onClick: () => reportBug({ code: err.code || `HTTP ${err.status}`, detail: detail || body }),
       },
     } : undefined)

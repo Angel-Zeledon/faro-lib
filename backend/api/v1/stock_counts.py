@@ -22,8 +22,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from backend.activity.events import record_event
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.inventory import stock_count_service as svc
+from backend.inventory import warehouse_service as wh_svc
 from backend.schemas.common import ok
 
 router = APIRouter(prefix="/inventory/stock-counts", tags=["inventory"])
@@ -55,6 +57,10 @@ class CountApply(BaseModel):
 @router.post("", status_code=201)
 def create_count(body: CountCreate, user: CurrentUser = Depends(require_analyst_or_above)):
     """Open a count session for one warehouse, optionally scoped to a category or supplier."""
+    # The warehouse the count will walk (and, once applied, write) must be the
+    # caller's. Resolved exactly as the service resolves it, so 'norte' is
+    # judged as the existing 'Norte' and no name means the default warehouse.
+    wscope.require_in_scope(user, wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse))
     return ok(svc.create_count(
         user.tenant_id, user.user_id, body.warehouse,
         scope_category=body.scope_category, scope_supplier=body.scope_supplier,
@@ -69,11 +75,16 @@ def list_counts(
     user: CurrentUser = Depends(get_current_user),
 ):
     """List stock counts, newest first, with how many products each holds."""
+    if wscope.is_scoped(user):
+        # Filtering after the cut would return fewer than `limit` rows; read wider.
+        rows = svc.list_counts(user.tenant_id, status=status, limit=10_000)
+        return ok(wscope.filter_rows(user, rows)[:limit])
     return ok(svc.list_counts(user.tenant_id, status=status, limit=limit))
 
 
 @router.get("/{count_id}")
-def get_count(count_id: str, user: CurrentUser = Depends(get_current_user)):
+def get_count(count_id: str, user: CurrentUser = Depends(get_current_user),
+              _scope: None = Depends(wscope.count_guard)):
     """One count with every line (counted quantity next to the system quantity at the first scan)."""
     return ok(svc.get_count(user.tenant_id, count_id))
 
@@ -82,6 +93,7 @@ def get_count(count_id: str, user: CurrentUser = Depends(get_current_user)):
 def upsert_line(
     count_id: str, body: CountLineUpsert,
     user: CurrentUser = Depends(require_analyst_or_above),
+    _scope: None = Depends(wscope.count_guard),
 ):
     """Record units of a SKU in an open count. mode 'add' (default) accumulates, 'set' replaces the counted total; a repeated client_ref is ignored."""
     return ok(svc.upsert_line(
@@ -91,19 +103,22 @@ def upsert_line(
 
 
 @router.delete("/{count_id}/lines/{sku}", status_code=204)
-def delete_line(count_id: str, sku: str, user: CurrentUser = Depends(require_analyst_or_above)):
+def delete_line(count_id: str, sku: str, user: CurrentUser = Depends(require_analyst_or_above),
+                _scope: None = Depends(wscope.count_guard)):
     """Remove one SKU from an open count."""
     svc.delete_line(user.tenant_id, count_id, sku)
 
 
 @router.post("/{count_id}/close")
-def close_count(count_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
+def close_count(count_id: str, user: CurrentUser = Depends(require_analyst_or_above),
+                _scope: None = Depends(wscope.count_guard)):
     """Finish counting. A closed count accepts no more lines and can be reviewed and applied."""
     return ok(svc.close_count(user.tenant_id, count_id, user.user_id))
 
 
 @router.get("/{count_id}/preview")
-def preview_count(count_id: str, user: CurrentUser = Depends(get_current_user)):
+def preview_count(count_id: str, user: CurrentUser = Depends(get_current_user),
+                  _scope: None = Depends(wscope.count_guard)):
     """Differences between counted and system quantity, largest value impact first. A SKU with no unit cost has a null value impact."""
     return ok(svc.preview(user.tenant_id, count_id))
 
@@ -112,6 +127,7 @@ def preview_count(count_id: str, user: CurrentUser = Depends(get_current_user)):
 def apply_count(
     count_id: str, body: Optional[CountApply] = None,
     user: CurrentUser = Depends(require_analyst_or_above),
+    _scope: None = Depends(wscope.count_guard),
 ):
     """Write the differences into stock, exactly once, and record each adjustment with reason 'physical_count'. Omit skus to apply every line; a list applies only those. All or nothing."""
     result = svc.apply_count(
@@ -131,6 +147,7 @@ def apply_count(
 
 
 @router.post("/{count_id}/cancel")
-def cancel_count(count_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
+def cancel_count(count_id: str, user: CurrentUser = Depends(require_analyst_or_above),
+                 _scope: None = Depends(wscope.count_guard)):
     """Discard an open or closed count. Stock is not changed."""
     return ok(svc.cancel_count(user.tenant_id, count_id, user.user_id))

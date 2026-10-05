@@ -21,6 +21,68 @@ log = logging.getLogger(__name__)
 # Statuses that mean "the buyer decided to order this line".
 _ORDERED = ("approved", "modified")
 
+# Every money/count figure on the ROI screen, the monthly table and the recap
+# describes orders that STAND. A cancelled order (`cancelled_at`, see
+# po_cancel_service) is one the buyer abandoned: it must not add to the month's
+# orders, units, value or "urgent lines ordered". Reopening clears the column,
+# so the order counts again with nothing to rebuild. One constant so the queries
+# below cannot disagree on what "standing" means.
+_STANDING = "cancelled_at IS NULL"
+_STANDING_POL = "pol.cancelled_at IS NULL"
+
+# How long a keyless re-export of the very same list is treated as the same
+# order (see `find_recent_identical`).
+EXPORT_DEDUP_WINDOW_MINUTES = 15
+
+
+# ── Calendar months in the TENANT's clock ─────────────────────────────────────
+#
+# "March" for a Costa Rican buyer starts at 06:00 UTC on March 1st. Cutting the
+# months at 00:00 UTC moved the last six hours of every month (and the first six
+# of the next) into the wrong recap: an order placed at 7 pm on March 31st was
+# reported in April, in the e-mail the company's boss reads. All month maths in
+# this module goes through these pure helpers, which take the zone explicitly.
+
+def month_bounds_utc(year: int, month: int, tz) -> tuple[datetime, datetime]:
+    """[start, end) of local calendar month (year, month), as UTC instants."""
+    nxt_y, nxt_m = (year + 1, 1) if month == 12 else (year, month + 1)
+    start = datetime(year, month, 1, tzinfo=tz).astimezone(timezone.utc)
+    end = datetime(nxt_y, nxt_m, 1, tzinfo=tz).astimezone(timezone.utc)
+    return start, end
+
+
+def local_month_key(moment: datetime, tz) -> str:
+    """'YYYY-MM' of the local calendar month `moment` falls in."""
+    local = moment.astimezone(tz)
+    return f"{local.year}-{local.month:02d}"
+
+
+def current_month_start_utc(now: datetime, tz) -> datetime:
+    """UTC instant at which the local month containing `now` began."""
+    local = now.astimezone(tz)
+    return month_bounds_utc(local.year, local.month, tz)[0]
+
+
+def recent_month_keys(now: datetime, tz, months: int) -> list[str]:
+    """The last `months` local calendar months, oldest first, ending with the
+    month `now` falls in."""
+    local = now.astimezone(tz)
+    y, m = local.year, local.month
+    keys: list[str] = []
+    for _ in range(months):
+        keys.append(f"{y}-{m:02d}")
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    keys.reverse()
+    return keys
+
+
+def _tenant_tz(tenant_id: str):
+    """The tenant's tzinfo (never raises — falls back to the default zone)."""
+    from backend.api.v1.timezone import zoneinfo_of
+    return zoneinfo_of(tenant_id)
+
 # SQLSTATE for unique_violation — the losing side of a po_number race.
 _UNIQUE_VIOLATION = "23505"
 
@@ -135,6 +197,36 @@ def find_by_idempotency_key(tenant_id: str, key: str) -> dict | None:
     row = query_one(
         "SELECT * FROM inventory_po_log WHERE tenant_id = %s AND idempotency_key = %s",
         (tenant_id, key),
+    )
+    return dict(row) if row else None
+
+
+def find_recent_identical(tenant_id: str, fingerprint: str) -> dict | None:
+    """A standing, untouched order with exactly this content, written moments ago.
+
+    This is what makes pressing "Export" again NOT write a second order. The
+    export carries no Idempotency-Key (the legacy download has no body, and a
+    second click is a new request as far as the browser can tell), so the only
+    honest sameness test is the CONTENT: same session, same destination, same
+    lines and quantities. Before this, three clicks wrote OC-000010, 11 and 12
+    for the same list, tripling the month's orders, units and money, and each
+    one counted as stock on its way (stability 2.2, "still live").
+
+    Reused only while the order is still exactly as it was generated: not sent,
+    not received, not paid, not cancelled. Once the buyer has acted on it, an
+    identical list is a deliberate re-order and gets its own number. The window
+    is short for the same reason: tomorrow's identical list is tomorrow's order.
+    """
+    row = query_one(
+        """SELECT * FROM inventory_po_log
+            WHERE tenant_id = %s AND idempotency_fingerprint = %s
+              AND idempotency_key IS NULL
+              AND cancelled_at IS NULL AND sent_at IS NULL AND paid_at IS NULL
+              AND reception_status = 'pending'
+              AND generated_at >= NOW() - (%s || ' minutes')::interval
+            ORDER BY generated_at DESC
+            LIMIT 1""",
+        (tenant_id, fingerprint, str(EXPORT_DEDUP_WINDOW_MINUTES)),
     )
     return dict(row) if row else None
 
@@ -258,7 +350,14 @@ def log_po_generation(
                                           "final_qty", "recommended_qty", "unit_cost",
                                           "warehouse")}
                   for i in norm],
-    }) if idempotency_key else None
+    })
+
+    # No key: fall back to the content. A keyed submission keeps its own,
+    # stricter contract (`_write_po_atomically`).
+    if not idempotency_key:
+        recent = find_recent_identical(tenant_id, fingerprint)
+        if recent:
+            return {**recent, "replayed": True}
 
     ordered = [i for i in norm if i["status"] in _ORDERED]
 
@@ -397,40 +496,42 @@ def get_roi_summary(tenant_id: str) -> dict:
     # test_no_spanish_in_backend_logic scans string literals, and quoting the
     # screen's own Spanish label inside the query tripped it — correctly, since
     # it cannot tell a comment from copy once both are inside the same string.
+    tz = _tenant_tz(tenant_id)
     agg = query_one(
         """SELECT
                COUNT(*)::int                    AS total_pos_generated,
-               COALESCE(SUM(skus_order_now), 0)::int  AS total_skus_protected,
+               COALESCE(SUM(skus_order_now), 0)::int  AS urgent_lines_ordered,
                COALESCE(SUM(total_units), 0)    AS total_units_ordered,
-               COALESCE(SUM(total_value), 0)    AS estimated_value_protected,
+               SUM(total_value)                 AS ordered_value,
                COALESCE(SUM(suggested_count), 0)::int AS total_suggested,
                COALESCE(SUM(approved_count), 0)::int  AS total_approved,
                COALESCE(SUM(rejected_count), 0)::int  AS total_rejected,
                MIN(generated_at)                AS first_po_at,
                MAX(generated_at)                AS last_po_at,
-               COUNT(DISTINCT generated_at::date)::int AS active_days
+               COUNT(DISTINCT (generated_at AT TIME ZONE %s)::date)::int AS active_days
            FROM inventory_po_log
-           WHERE tenant_id = %s""",
-        (tenant_id,),
+           WHERE tenant_id = %s AND """ + _STANDING,
+        (str(tz), tenant_id),
     )
 
     now = datetime.now(tz=timezone.utc)
 
-    # Month boundaries (UTC)
-    this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    # Last month start/end
-    if this_month_start.month == 1:
-        last_month_start = this_month_start.replace(year=this_month_start.year - 1, month=12)
-    else:
-        last_month_start = this_month_start.replace(month=this_month_start.month - 1)
+    # Month boundaries in the TENANT's clock (see month_bounds_utc).
+    local_now = now.astimezone(tz)
+    this_month_start = current_month_start_utc(now, tz)
+    prev_y, prev_m = ((local_now.year - 1, 12) if local_now.month == 1
+                      else (local_now.year, local_now.month - 1))
+    last_month_start = month_bounds_utc(prev_y, prev_m, tz)[0]
 
     this_month_count_row = query_one(
-        "SELECT COUNT(*)::int AS cnt FROM inventory_po_log WHERE tenant_id = %s AND generated_at >= %s",
+        "SELECT COUNT(*)::int AS cnt FROM inventory_po_log "
+        "WHERE tenant_id = %s AND " + _STANDING + " AND generated_at >= %s",
         (tenant_id, this_month_start),
     )
     last_month_count_row = query_one(
         """SELECT COUNT(*)::int AS cnt FROM inventory_po_log
-           WHERE tenant_id = %s AND generated_at >= %s AND generated_at < %s""",
+           WHERE tenant_id = %s AND """ + _STANDING + """
+             AND generated_at >= %s AND generated_at < %s""",
         (tenant_id, last_month_start, this_month_start),
     )
 
@@ -457,9 +558,14 @@ def get_roi_summary(tenant_id: str) -> dict:
 
     return {
         "total_pos_generated":      int(agg.get("total_pos_generated") or 0) if agg else 0,
-        "total_skus_protected":     int(agg.get("total_skus_protected") or 0) if agg else 0,
+        # Order LINES flagged "order now" that the buyer ordered — a count of
+        # what they did, not of stockouts avoided (never observable).
+        "urgent_lines_ordered":     int(agg.get("urgent_lines_ordered") or 0) if agg else 0,
         "total_units_ordered":      float(agg.get("total_units_ordered") or 0) if agg else 0.0,
-        "estimated_value_protected": float(agg.get("estimated_value_protected") or 0) if agg else 0.0,
+        # Units x unit cost of what was ordered. None (never 0) when no order
+        # carried a cost: "unknown" must not read as "nothing was ordered".
+        "ordered_value":            (float(agg["ordered_value"])
+                                      if agg and agg.get("ordered_value") is not None else None),
         "total_suggested":          total_suggested,
         "total_approved":           total_approved,
         "total_rejected":           total_rejected,
@@ -628,26 +734,22 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
     Stays None until two consecutive snapshots exist, and when overstock grew.
     """
     now = datetime.now(tz=timezone.utc)
-    month_starts: list[datetime] = []
-    y, m = now.year, now.month
-    for _ in range(months):
-        month_starts.append(datetime(y, m, 1, tzinfo=timezone.utc))
-        m -= 1
-        if m == 0:
-            y, m = y - 1, 12
-    month_starts.sort()  # oldest first
+    tz = _tenant_tz(tenant_id)
+    month_keys = recent_month_keys(now, tz, months)          # oldest first
+    first_y, first_m = (int(p) for p in month_keys[0].split("-"))
+    window_start = month_bounds_utc(first_y, first_m, tz)[0]
 
     po_rows = query(
-        """SELECT date_trunc('month', generated_at AT TIME ZONE 'UTC') AS month,
+        """SELECT date_trunc('month', generated_at AT TIME ZONE %s) AS month,
                   COUNT(*)::int                          AS pos_count,
                   COALESCE(SUM(skus_order_now), 0)::int    AS skus_order_now,
-                  COALESCE(SUM(total_value), 0)           AS total_value,
+                  SUM(total_value)                        AS total_value,
                   COALESCE(SUM(suggested_count), 0)::int  AS total_suggested,
                   COALESCE(SUM(approved_count), 0)::int   AS total_approved
            FROM inventory_po_log
-           WHERE tenant_id = %s AND generated_at >= %s
+           WHERE tenant_id = %s AND """ + _STANDING + """ AND generated_at >= %s
            GROUP BY month""",
-        (tenant_id, month_starts[0]),
+        (str(tz), tenant_id, window_start),
     )
     po_by_month = {r["month"].strftime("%Y-%m"): r for r in po_rows}
 
@@ -662,12 +764,14 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
     snap_by_month = {r["month"].strftime("%Y-%m"): float(r["overstock_value"]) for r in snap_rows}
 
     result: list[dict] = []
-    for start in month_starts:
-        key = start.strftime("%Y-%m")
+    for key in month_keys:
         po = po_by_month.get(key)
         pos_count       = int(po["pos_count"]) if po else 0
         skus_order_now   = int(po["skus_order_now"]) if po else 0
-        total_value     = float(po["total_value"]) if po else 0.0
+        # None = no order of the month carried a unit cost (or there was no
+        # order): unknown, which is not the same statement as "0 spent".
+        total_value     = (float(po["total_value"])
+                           if po and po["total_value"] is not None else None)
         total_suggested = int(po["total_suggested"]) if po else 0
         total_approved  = int(po["total_approved"]) if po else 0
         adoption_rate = (total_approved / total_suggested) if total_suggested > 0 else None
@@ -677,8 +781,8 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
         result.append({
             "month":            key,
             "pos_count":        pos_count,
-            "skus_order_now":    skus_order_now,
-            "total_value":      round(total_value, 2),
+            "urgent_lines_ordered": skus_order_now,
+            "total_value":      round(total_value, 2) if total_value is not None else None,
             "adoption_rate":    adoption_rate,
             "capital_freed":    capital_freed,
             "capital_freed_status": capital_status,
@@ -693,7 +797,9 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
 # Provenance of every figure below. Each one is a straight aggregation of rows
 # the product already writes; none is modelled, extrapolated or assumed.
 #
-#   orders_generated        COUNT(inventory_po_log) in the month.
+#   orders_generated        COUNT(inventory_po_log) in the TENANT'S calendar
+#                           month, cancelled orders excluded (a reopened order
+#                           counts again).
 #   recommendations_shown   SUM(suggested_count) — lines that reached this log,
 #                           i.e. lines the buyer DECIDED on. Recommendations
 #                           they never acted on are not recorded anywhere, so
@@ -703,7 +809,7 @@ def get_monthly_summary(tenant_id: str, months: int = 6) -> list[dict]:
 #                           product does not do.
 #   recommendations_followed SUM(approved_count)  — lines kept or modified.
 #   adoption_rate           followed / shown, None when nothing was shown.
-#   stockout_risks_handled  SUM(skus_order_now) over ordered lines: PEDIR_YA
+#   urgent_lines_ordered    SUM(skus_order_now) over ordered lines: PEDIR_YA
 #                           LINES the buyer actually ordered — lines, not
 #                           distinct SKUs, so the same 30 urgent products
 #                           ordered monthly for a year sum to 360. This is NOT
@@ -746,18 +852,21 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
     achievements. The monthly email is skipped entirely for such tenants.
     """
     key = f"{year}-{month:02d}"
-    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    # The month is the TENANT's calendar month, not the UTC one (see
+    # month_bounds_utc). Cancelled orders are not part of what was ordered.
+    tz = _tenant_tz(tenant_id)
+    start, end = month_bounds_utc(year, month, tz)
     nxt_y, nxt_m = (year + 1, 1) if month == 12 else (year, month + 1)
-    end = datetime(nxt_y, nxt_m, 1, tzinfo=timezone.utc)
 
     agg = query_one(
         """SELECT COUNT(*)::int                          AS orders_generated,
                   COALESCE(SUM(suggested_count), 0)::int  AS recommendations_shown,
                   COALESCE(SUM(approved_count), 0)::int   AS recommendations_followed,
-                  COALESCE(SUM(skus_order_now), 0)::int    AS stockout_risks_handled,
+                  COALESCE(SUM(skus_order_now), 0)::int    AS urgent_lines_ordered,
                   SUM(total_value)                        AS managed_purchase_value
            FROM inventory_po_log
-           WHERE tenant_id = %s AND generated_at >= %s AND generated_at < %s""",
+           WHERE tenant_id = %s AND """ + _STANDING + """
+             AND generated_at >= %s AND generated_at < %s""",
         (tenant_id, start, end),
     ) or {}
 
@@ -781,6 +890,7 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
            JOIN inventory_po_log pol ON pol.id = poi.po_log_id
            WHERE poi.tenant_id = %s
              AND poi.status IN ('approved', 'modified')
+             AND """ + _STANDING_POL + """
              AND pol.generated_at >= %s AND pol.generated_at < %s""",
         (tenant_id, start, end),
     ) or {}
@@ -788,14 +898,17 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
     n_costed = int(coverage.get("n_lines_costed") or 0)
     managed_value_complete = bool(n_lines > 0 and n_costed == n_lines)
 
-    # Overstock snapshots opening this month and the next one.
+    # Overstock snapshots opening this month and the next one. These stay on
+    # the UTC calendar on purpose: a snapshot is a measurement the worker takes
+    # at 00:05 UTC on the 1st and stamps with that instant, so its month is the
+    # UTC month it was taken for, whatever the tenant's clock says then.
     snap_rows = query(
         """SELECT date_trunc('month', recorded_at AT TIME ZONE 'UTC') AS month,
                   AVG(overstock_value) AS overstock_value
            FROM inventory_overstock_snapshots
            WHERE tenant_id = %s AND recorded_at >= %s AND recorded_at < %s
            GROUP BY month""",
-        (tenant_id, start, datetime(
+        (tenant_id, datetime(year, month, 1, tzinfo=timezone.utc), datetime(
             nxt_y + 1 if nxt_m == 12 else nxt_y,
             1 if nxt_m == 12 else nxt_m + 1, 1, tzinfo=timezone.utc,
         )),
@@ -813,7 +926,7 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
             "recommendations_shown": 0,
             "recommendations_followed": 0,
             "adoption_rate": None,
-            "stockout_risks_handled": None,
+            "urgent_lines_ordered": None,
             "managed_purchase_value": None,
             "managed_purchase_value_complete": False,
             "capital_freed": capital_freed,
@@ -831,7 +944,7 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
         "recommendations_shown": shown,
         "recommendations_followed": followed,
         "adoption_rate": (followed / shown) if shown > 0 else None,
-        "stockout_risks_handled": int(agg.get("stockout_risks_handled") or 0),
+        "urgent_lines_ordered": int(agg.get("urgent_lines_ordered") or 0),
         "managed_purchase_value": (
             round(float(raw_value), 2) if raw_value is not None else None
         ),
@@ -844,6 +957,14 @@ def get_month_report(tenant_id: str, year: int, month: int) -> dict:
 def previous_month(now: datetime) -> tuple[int, int]:
     """(year, month) of the calendar month that closed before `now`."""
     return (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
+
+
+def last_closed_month_for(now: datetime, tz) -> tuple[int, int]:
+    """(year, month) of the latest calendar month that has fully ended in `tz`
+    at the instant `now`. West of UTC the local month ends hours after the UTC
+    one, so at 00:05 UTC on the 1st a Costa Rican tenant's last month is still
+    open and its last CLOSED month is the one before."""
+    return previous_month(now.astimezone(tz))
 
 
 def run_monthly_roi_emails(now: datetime | None = None) -> int:
@@ -864,25 +985,30 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
         get_tenant_admin_emails,
         get_tenant_alert_recipients,
         get_tenants_with_active_sessions,
+        record_digest_withheld,
         record_notification_delivery,
     )
     from backend.notifications import email as email_mod
     from backend.notifications.email import send_monthly_roi_email
 
     now = now or datetime.now(tz=timezone.utc)
-    year, month = previous_month(now)
-    month_key = f"{year}-{month:02d}"
 
     app_url = getattr(settings, "frontend_url", "http://localhost:3000")
     roi_url = f"{app_url}/inventory/roi"
 
     tenants = get_tenants_with_active_sessions()
-    log.info("roi_email: checking %d tenants for %s", len(tenants), month_key)
+    log.info("roi_email: checking %d tenants", len(tenants))
 
     sent_count = 0
     for tenant in tenants:
         tid = tenant["tenant_id"]
         try:
+            # The month this tenant has finished, in ITS calendar: the worker
+            # runs this at 00:05 UTC and again once every supported zone has
+            # rolled over, so a tenant is mailed as soon as its month is closed
+            # and never with a recap that still has hours to go.
+            year, month = last_closed_month_for(now, _tenant_tz(tid))
+            month_key = f"{year}-{month:02d}"
             already = query_one(
                 "SELECT id FROM inventory_roi_email_log WHERE tenant_id = %s AND month = %s",
                 (tid, month_key),
@@ -894,7 +1020,10 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
             if not report["has_sufficient_history"]:
                 continue
 
+            # Company-wide money: active, unscoped admins/analysts only (the
+            # /impacto screen refuses a warehouse-scoped user the same figures).
             emails = get_tenant_admin_emails(tid)
+            record_digest_withheld(tid, "monthly_roi")
             if not emails:
                 continue
 

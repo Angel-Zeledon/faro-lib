@@ -3,10 +3,10 @@
  * "Continue with Google / Microsoft / Apple" — only for the providers this
  * installation enabled.
  *
- * Renders NOTHING until `/auth/providers` answers, and nothing at all when it
- * answers with an empty list. That is the default on every install (the
- * feature is off until the instance operator configures a provider), so the
- * login and signup screens look exactly as they did before this existed.
+ * Google and Microsoft always appear. A provider the backend reports as
+ * configured is the real, working link; any other is a disabled mould (owner's
+ * request) that navigates nowhere and sends no request. Apple appears only when
+ * configured. The mould renders first, so the block never shifts on load.
  *
  * Each button follows its brand's published guidelines: Google's four-colour
  * "G" on white (or #131314 in dark), Microsoft's four-square mark on white (or #2F2F2F in dark), Apple's logo in black/white. The label is the provider's own wording, "Continue with …".
@@ -17,7 +17,7 @@
  * sign-in through a provider CREATES an account.
  */
 import TermsSentence from '@/components/legal/TermsSentence'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getAuthProviders, socialStartUrl, type SocialProvider } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -71,11 +71,27 @@ function brand(provider: SocialProvider, dark: boolean): BrandStyle {
     : { bg: '#000000', fg: '#FFFFFF', border: '#000000', logo: <AppleLogo color="#FFFFFF" /> }
 }
 
+const ALWAYS_SHOWN: SocialProvider[] = ['google', 'microsoft']
+const ORDER: SocialProvider[] = ['google', 'microsoft', 'apple']
+
+const BASE_STYLE = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+  minHeight: 44, padding: '0 16px', borderRadius: 11,
+  fontFamily: 'Roboto, system-ui, -apple-system, "Segoe UI", sans-serif',
+  fontSize: 14, fontWeight: 500, textDecoration: 'none',
+} as const
+
 export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {
   const { t } = useLanguage()
   const { theme } = useTheme()
+  // Until /auth/providers answers (or if it fails) nothing counts as
+  // configured: Google and Microsoft render as the disabled mould, so the
+  // block never changes size when the answer arrives.
   const [providers, setProviders] = useState<SocialProvider[]>([])
   const [going, setGoing] = useState<SocialProvider | null>(null)
+  const [hint, setHint] = useState<SocialProvider | null>(null)
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (hintTimer.current) clearTimeout(hintTimer.current) }, [])
 
   useEffect(() => {
     let alive = true
@@ -94,13 +110,50 @@ export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {
     return () => window.removeEventListener('pageshow', onShow)
   }, [])
 
-  if (providers.length === 0) return null
   const dark = theme === 'dark'
+  // Apple only when the backend reports it; Google and Microsoft always.
+  const shown = ORDER.filter(p => ALWAYS_SHOWN.includes(p) || providers.includes(p))
+
+  const showHint = (p: SocialProvider) => {
+    setHint(p)
+    if (hintTimer.current) clearTimeout(hintTimer.current)
+    hintTimer.current = setTimeout(() => setHint(null), 3500)
+  }
 
   return (
     <div className="auth-enter" style={{ marginBottom: 22, animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.06s both' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {providers.map(p => {
+        {shown.map(p => {
+          if (!providers.includes(p)) {
+            // Disabled mould: same shape, no navigation, no request.
+            const label = t(`auth.social_continue_${p}`)
+            const why = t(`auth.social_inactive_${p}`)
+            return (
+              <button
+                key={p}
+                type="button"
+                data-provider={p}
+                data-mould="true"
+                aria-disabled="true"
+                title={why}
+                aria-label={`${label}. ${why}`}
+                onClick={() => showHint(p)}
+                style={{
+                  ...BASE_STYLE, width: '100%', cursor: 'not-allowed',
+                  background: 'transparent', color: 'var(--a-muted)',
+                  border: '1px solid var(--a-line)',
+                }}
+              >
+                {p === 'google' ? <GoogleLogo /> : <MicrosoftLogo />}
+                <span>{label}</span>
+                <span style={{
+                  fontSize: 10.5, fontWeight: 600, letterSpacing: '0.02em',
+                  padding: '2px 7px', borderRadius: 999,
+                  color: 'var(--a-dim)', border: '1px solid var(--a-line)',
+                }}>{t('auth.social_soon')}</span>
+              </button>
+            )
+          }
           const b = brand(p, dark)
           const busy = going === p
           return (
@@ -114,11 +167,8 @@ export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {
               }}
               aria-busy={busy}
               style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                minHeight: 44, padding: '0 16px', borderRadius: 11,
+                ...BASE_STYLE,
                 background: b.bg, color: b.fg, border: `1px solid ${b.border}`,
-                fontFamily: 'Roboto, system-ui, -apple-system, "Segoe UI", sans-serif',
-                fontSize: 14, fontWeight: 500, textDecoration: 'none',
                 opacity: going && !busy ? 0.55 : 1,
                 cursor: going ? 'wait' : 'pointer',
                 transition: 'opacity 0.15s ease, filter 0.15s ease',
@@ -136,8 +186,10 @@ export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {
           )
         })}
       </div>
-      <p style={{ margin: '10px 0 0', fontSize: 11.5, lineHeight: 1.5, color: 'var(--a-dim)', textAlign: 'center' }}>
-        <TermsSentence templateKey="auth.social_terms_notice" linkStyle={{ color: 'var(--a-muted)', textDecoration: 'underline', textUnderlineOffset: 2 }} />
+      <p role="status" aria-live="polite" style={{ margin: '10px 0 0', minHeight: 34, fontSize: 11.5, lineHeight: 1.5, color: hint ? 'var(--a-muted)' : 'var(--a-dim)', textAlign: 'center' }}>
+        {hint
+          ? t(`auth.social_inactive_${hint}`)
+          : <TermsSentence templateKey="auth.social_terms_notice" linkStyle={{ color: 'var(--a-muted)', textDecoration: 'underline', textUnderlineOffset: 2 }} />}
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 20 }}>
         <span style={{ flex: 1, height: 1, background: 'var(--a-line)' }} />

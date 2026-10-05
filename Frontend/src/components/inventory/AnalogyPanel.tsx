@@ -174,7 +174,7 @@ export default function AnalogyPanel({ onChanged }: { onChanged?: () => void }) 
             <button type="button" disabled={busy || !valid} onClick={save} style={{
               all: 'unset', cursor: busy || !valid ? 'default' : 'pointer', padding: narrow ? '0 14px' : '5px 12px',
               minHeight: touch, display: 'inline-flex', alignItems: 'center', borderRadius: 7, fontSize: 12, fontWeight: 600,
-              border: `1px solid ${C.border}`, color: C.text, opacity: busy || !valid ? 0.5 : 1,
+              border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff', opacity: busy || !valid ? 0.5 : 1,
             }}>{busy ? t('common.saving') : t('analogy.save')}</button>
             <button type="button" onClick={() => setOpen(false)} style={{
               all: 'unset', cursor: 'pointer', padding: narrow ? '0 14px' : '5px 12px', minHeight: touch,

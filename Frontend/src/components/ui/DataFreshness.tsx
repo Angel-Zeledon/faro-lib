@@ -70,7 +70,7 @@ export default function DataFreshness({ currentSession, loading }: {
         title={salesLate ? t('freshness.stale_warning') : undefined}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '5px 10px', borderRadius: 8, fontSize: 12,
+          padding: '5px 10px', borderRadius: 8, fontSize: 12, whiteSpace: 'nowrap',
           background: salesLate ? 'rgba(183,121,31,0.07)' : 'var(--surface-2)',
           border: `1px solid ${salesLate ? 'rgba(183,121,31,0.35)' : 'var(--border)'}`,
         }}

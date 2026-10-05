@@ -37,6 +37,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from fastapi import HTTPException
+
 from backend.db import session_store
 from backend.db.connection import execute, query, query_one
 from backend.errors import AppError
@@ -44,7 +46,7 @@ from backend.lineage.hashing import dataset_content_hash
 from backend.sessions import service as session_svc
 from backend.sessions.schedule_runs import (
     FAILED, LAUNCHED, REASON_LAUNCH_FAILED, REASON_NO_NEW_DATA, REASON_STILL_RUNNING,
-    REASON_SOURCE_REFRESH_FAILED, SKIPPED, last_successful_hash, record_run,
+    REASON_SOURCE_REFRESH_FAILED, REASON_TRAINING_CAP, SKIPPED, last_successful_hash, record_run,
 )
 
 log = logging.getLogger(__name__)
@@ -153,6 +155,43 @@ def _sql_parent(tenant_id: str, dataset_id: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+# Failures that mean the CONNECTION is broken (not the query): the source's
+# badge turns to "error" so the data screen says so too, not only the bell.
+_CONNECTION_FAILURES = frozenset({
+    "data_source_dns_failed", "data_source_host_unreachable", "data_source_connect_timeout",
+    "data_source_tls_failed", "data_source_auth_failed", "data_source_host_rejected",
+    "data_source_database_not_found", "data_source_credentials_unreadable",
+    "data_source_host_not_allowed", "data_source_host_forbidden", "data_source_driver_missing",
+    "data_source_connect_failed",
+    "data_source_not_connected",
+})
+
+
+def _report_refresh_failure(tenant_id: str, user_id: str, parent: dict, exc: Exception) -> None:
+    """Put a failed SQL refresh where the tenant looks: the bell (a critical
+    activity event naming the source and the failure's code) and, when the
+    connection itself is broken, the source's status. Never raises — the
+    schedule's own failure must still be recorded by the caller."""
+    code = getattr(exc, "code", None) or "data_source_connect_failed"
+    try:
+        from backend.activity.events import record_event
+        record_event(
+            tenant_id, user_id, "data.sql_refresh_failed", resource=parent.get("id"),
+            details={"source_name": parent.get("name")},
+            reason="sql_source_refresh_failed",
+            reason_params={"source_name": parent.get("name"), "error_code": code},
+            status="error",
+        )
+        if code in _CONNECTION_FAILURES:
+            execute(
+                "UPDATE datasets SET connection_status='error', updated_at=NOW() "
+                "WHERE id=%s AND tenant_id=%s",
+                (parent.get("id"), tenant_id),
+            )
+    except Exception:  # noqa: BLE001
+        log.exception("retrain: could not report the refresh failure of %s", parent.get("id"))
+
+
 def _current_dataset(
     tenant_id: str, schedule_id: str, template: dict, user_id: str,
 ) -> tuple[str, Optional[str]]:
@@ -181,6 +220,7 @@ def _current_dataset(
         )
     except Exception as exc:
         exc._schedule_run_reason = REASON_SOURCE_REFRESH_FAILED  # type: ignore[attr-defined]
+        _report_refresh_failure(tenant_id, user_id, parent, exc)
         raise
     fresh_id = fresh["id"]
     execute(
@@ -267,6 +307,46 @@ def _launch_reforecasts(
             "sessions": launched, "base_job_id": launched[0]["job_id"]}
 
 
+def _skip_for_training_cap(
+    tenant_id: str, schedule_id: str, template: dict, dataset_id: str,
+    content_hash: Optional[str], fresh_dataset_id: Optional[str], cap: dict,
+) -> None:
+    """The plan's daily training ceiling is spent: do not train, and say so.
+
+    A scheduled run has nobody in front of it, so a refusal into silence would
+    read as a schedule that works and numbers that stopped moving. The run is
+    recorded as SKIPPED with its reason (the automation screen renders it) and
+    a warning event reaches the feed, once per day per schedule so an hourly
+    schedule does not write twenty-four of them."""
+    from backend.activity.events import record_event
+    from backend.training import daily_cap
+    start, _ = daily_cap.day_bounds_utc(tenant_id)
+    already_told = query_one(
+        "SELECT 1 AS hit FROM schedule_runs WHERE tenant_id = %s AND schedule_id = %s "
+        "AND outcome = 'skipped' AND reason = %s AND ran_at >= %s LIMIT 1",
+        (tenant_id, schedule_id, REASON_TRAINING_CAP, start),
+    )
+    params = {"max": cap["max"], "used": cap["used"]}
+    record_run(
+        tenant_id, schedule_id, SKIPPED, reason=REASON_TRAINING_CAP,
+        reason_params=params, dataset_id=dataset_id, content_hash=content_hash,
+    )
+    if not already_told:
+        record_event(
+            tenant_id, "scheduler", "training.blocked",
+            resource=template["id"], reason=REASON_TRAINING_CAP,
+            reason_params=params,
+            details={"session_id": template["id"], "session_name": template.get("name"),
+                     "issues": None},
+            status="error",
+        )
+    if fresh_dataset_id:
+        from backend.datasources.service import delete_source
+        delete_source(tenant_id, fresh_dataset_id)
+    log.warning("Scheduled retrain skipped: daily training ceiling reached "
+                "(%s of %s) for schedule %s", cap["used"], cap["max"], schedule_id)
+
+
 def launch_scheduled_retrain(
     tenant_id: str, schedule_id: str, template_session_id: str,
     user_id: str = "scheduler",
@@ -343,6 +423,16 @@ def _launch(
                 _free_unreferenced_snapshots(tenant_id, schedule_id, keep=fresh_dataset_id)
             return reforecasted
 
+    # A full refit is a training and the plan allows so many a day. Decided
+    # BEFORE the prune and the new session: nothing is created or archived for
+    # a run that will not happen, and the serving session keeps serving.
+    from backend.training import daily_cap
+    cap = daily_cap.over_cap(tenant_id)
+    if cap:
+        _skip_for_training_cap(tenant_id, schedule_id, template, dataset_id,
+                               content_hash, fresh_dataset_id, cap)
+        return None
+
     # Free the slot this schedule used last time before asking for another one,
     # so a plan ceiling counts what the schedule actually keeps.
     prune_previous_runs(tenant_id, schedule_id)
@@ -379,6 +469,22 @@ def _launch(
     from backend.sessions import family_service as fam
     try:
         family = fam.launch_training_family(tenant_id, run_id, user_id)
+    except HTTPException as exc:
+        # Lost the race for the last training of the day to a launch made after
+        # the pre-check above: the same skip, not a failure.
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        try:
+            session_svc.archive_session(tenant_id, run_id, "scheduler")
+        except Exception:  # noqa: BLE001
+            log.warning("retrain: could not archive the skipped run %s", run_id)
+        if detail.get("code") == "PLAN_LIMIT_REACHED" and \
+                detail.get("limit") == daily_cap.LIMIT_KEY:
+            _skip_for_training_cap(
+                tenant_id, schedule_id, template, dataset_id, content_hash,
+                fresh_dataset_id,
+                {"max": detail.get("max"), "used": detail.get("current")})
+            return None
+        raise
     except Exception:
         # The run never started — a blocked data gate, a ceiling, a broken
         # dataset. The session it would have trained is of no use to anybody and

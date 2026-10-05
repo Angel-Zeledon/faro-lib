@@ -125,6 +125,19 @@ def po_pdf_file(tenant_id: str, po_log_id: str, supplier_slug: str) -> Path:
     return po_pdf_dir(tenant_id) / f"{po_log_id}_{supplier_slug}.pdf"
 
 
+# ── Feedback screenshots ───────────────────────────────────────────────────
+# One file per report, named by the report id and an extension the server chose
+# after reading the magic bytes (never from anything the client sent). Never
+# served by a public route: the only reader is the operator's e-mail attachment
+# and the tenant's own data export.
+
+def feedback_dir(tenant_id: str) -> Path:
+    return _base() / "feedback" / tenant_id
+
+def feedback_screenshot_file(tenant_id: str, report_id: str, ext: str) -> Path:
+    return feedback_dir(tenant_id) / f"{report_id}.{ext}"
+
+
 # ── Logs ───────────────────────────────────────────────────────────────────
 
 def logs_dir(tenant_id: str, session_id: str) -> Path:

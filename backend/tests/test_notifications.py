@@ -305,7 +305,7 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
     _REPORT = {
         "month": "2026-06", "adoption_rate": 0.75,
         "recommendations_followed": 6, "recommendations_shown": 8,
-        "stockout_risks_handled": 3, "capital_freed": 1250000.0,
+        "urgent_lines_ordered": 3, "capital_freed": 1250000.0,
         "managed_purchase_value": 890000.0,
     }
 
@@ -338,7 +338,7 @@ class TestMonthlyRecapCopyComesFromTheCatalog:
         # second copy of it, and it went stale the day the note was rewritten to
         # stop claiming the denominator was "everything StockAI suggested".
         assert "6" in html and "8" in html
-        for key in ("roi_email_metric_risks_label", "roi_email_metric_capital_note",
+        for key in ("roi_email_metric_urgent_lines_label", "roi_email_metric_capital_note",
                     "roi_email_metric_purchases_label", "roi_email_cta", "roi_email_footer"):
             assert render_es(key) in html, key
 

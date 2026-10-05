@@ -59,6 +59,23 @@ def delete_tenant_data(body: DeleteTenantRequest, user: CurrentUser = Depends(re
             detail="Confirmation required: pass the tenant's slug or the literal 'DELETE'.",
         )
 
+    # A subscription that still renews would keep charging a card for an
+    # account that no longer exists — and nothing here could ever stop it,
+    # because the erasure takes the record of it too. Cancel first.
+    from backend.billing.entitlement import grants_access
+    from backend.billing import service as billing_svc
+    now = billing_svc.utcnow()
+    live = [r for r in billing_svc.subscriptions_for(user.tenant_id)
+            if grants_access(billing_svc.state_of(r), now)
+            and not (r.get("status") == "canceled" or r.get("cancel_at_period_end"))]
+    if live:
+        from backend.errors import AppError
+        raise AppError(
+            "tenant_has_active_subscription",
+            "Cancel the plan's subscription before erasing the account.",
+            status_code=409, params={"provider": live[0]["provider"]},
+        )
+
     result = data_export.delete_tenant(user.tenant_id)
     log.warning("[tenant] tenant=%s ERASED by user=%s", user.tenant_id, user.user_id)
     return ok(result)

@@ -109,7 +109,7 @@ function LoginPageContent() {
         <div className="auth-enter" style={{ animation: 'auth-fade-in 0.5s ease-out both' }}>
 
           <div style={{ marginBottom: 30 }}>
-            <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 30, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
+            <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 24, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
               {t('auth.login_title')}
             </h1>
             <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: 0, lineHeight: 1.5 }}>
@@ -164,7 +164,7 @@ function LoginPageContent() {
                 id="login-email" name="email" className="auth-input"
                 type="email" value={email} required autoComplete="email"
                 onChange={e => setEmail(e.target.value)}
-                placeholder="you@company.com"
+                placeholder={t('auth.ph_email')}
               />
             </div>
 

@@ -44,6 +44,12 @@ typing_extensions==4.15.0
 uvicorn==0.48.0
 watchfiles==1.2.0
 websockets==16.0
+# SQL data sources run every query through SQLAlchemy (backend/datasources/
+# service.py: create_engine, text(), NullPool, execution_options). It was never
+# listed here, so the production image did not have it and every SQL source
+# answered `sql_query_failed` ("No module named 'sqlalchemy'"). 2.0.50 is the
+# version the dev environment runs and the 2.0 API the code is written against.
+SQLAlchemy==2.0.50
 # SQL data-source drivers (postgresql uses psycopg2 above)
 # 1.2.0 is the newest PyMySQL that exists, and the one the MySQL data-source
 # path was verified against. The previous pin, 2.2.8, was a version that was
@@ -51,3 +57,7 @@ websockets==16.0
 # production image had never been built.
 PyMySQL==1.2.0
 pyodbc==5.3.0
+# Oracle data sources: python-oracledb in thin mode (pure Python, no Oracle
+# client libraries). The code used to name the cx_Oracle dialect, which was
+# never installed, so every Oracle source failed with a missing-module error.
+oracledb==26.0.1

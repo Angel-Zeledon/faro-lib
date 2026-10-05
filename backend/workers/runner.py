@@ -1189,6 +1189,84 @@ def _generate_forecast_series(engine, config: dict) -> dict:
     return result
 
 
+# ── Several stores per SKU ─────────────────────────────────────────────────
+
+STOCK_SUMMED_CODE = "PREP_STOCK_SUMMED_ACROSS_STORES"
+
+
+def _store_col(col_cfg: dict):
+    """The mapped store column (the second series key), or None."""
+    keys = _group_cols(col_cfg)
+    return keys[1] if len(keys) >= 2 else None
+
+
+def _note_stock_summed(report: "dict | None", notes: "list | None" = None) -> None:
+    """Say that the stock of multi-store SKUs is the sum of the stores.
+
+    The stock sync used to take the latest ROW per SKU — one store's shelf —
+    and the purchase then covered every store's demand against it. It now sums
+    each store's latest reading; a store with no reading adds nothing, and the
+    reader is told how many (SKU, store) pairs that was, because their stock is
+    understated by exactly what those shelves hold.
+    """
+    if not report or not report.get("n_skus"):
+        return
+    has_gaps = bool(report.get("missing_pairs"))
+    _note(notes, STOCK_SUMMED_CODE, "warning" if has_gaps else "info",
+          n_skus=int(report["n_skus"]), n_stores=int(report.get("n_stores") or 0),
+          missing_pairs=int(report.get("missing_pairs") or 0),
+          n_skus_with_missing=int(report.get("n_skus_with_missing") or 0))
+
+def _sum_stores_before_training(df, col_cfg: dict, canonical_mapping: dict,
+                                notes: "list | None" = None):
+    """Forecast each SKU on its total when the file has several stores per SKU.
+
+    The engine keys every forecast by the bare SKU. Trained on
+    `group_keys=[sku, store]` it did not produce per-store forecasts — it
+    produced ONE store's number (the last one written) as the SKU forecast,
+    statistical models fitted on the stores' rows interleaved, and the history
+    came back empty. Nothing errored. The SKU total is what single-store tenants
+    already get, and the backend's share mode splits it across warehouses.
+
+    Mutates `col_cfg["group_keys"]` to the SKU alone, so the config stored with
+    the run (and its lineage) says what was trained. Returns `(df, record)`;
+    `record` is None when nothing was summed — one store per SKU, no store
+    column — and the frame is then the same object it was.
+    """
+    keys = _group_cols(col_cfg)
+    if df is None or len(keys) < 2:
+        return df, None
+    from forecasting_core.data.store_rollup import (
+        STORE_ROLLUP_CODE, rollup_stores_canonical,
+    )
+    out, info = rollup_stores_canonical(
+        df, date_col=col_cfg["date"], target_col=col_cfg["target"],
+        sku_col=keys[0], store_col=keys[1],
+        canonical_mapping=canonical_mapping,
+    )
+    if not info.applied:
+        return df, None
+    col_cfg["group_keys"] = [keys[0]]
+    record = info.as_dict()
+    log.warning(
+        "Summed demand across %d stores into one series per SKU for %d SKU(s) "
+        "(%d sold in several stores) — forecasts are per SKU, not per store.",
+        info.n_stores, info.n_skus, info.n_skus_multi_store,
+    )
+    if notes is not None:
+        notes.append({
+            "error_id": STORE_ROLLUP_CODE, "severity": "warning", "layer": "data_prep",
+            "message": (f"Stores summed before training: {info.n_stores} stores, "
+                        f"{info.n_skus} SKUs. Forecasts are per SKU; each "
+                        f"warehouse gets its configured share of the total."),
+            "context": {"n_stores": info.n_stores, "n_skus": info.n_skus,
+                        "n_skus_multi_store": info.n_skus_multi_store,
+                        "n_missing_target_cells": info.n_missing_target_cells},
+            "suggestions": [],
+        })
+    return out, record
+
+
 # ── Excluded-SKU transparency ──────────────────────────────────────────────
 
 def _store_data_through(df, col_cfg: dict) -> dict:
@@ -1813,6 +1891,7 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             )
 
         prog.begin("sync", "Syncing inventory from the dataset...")
+        stock_report: dict = {}
         if engine._df is not None:
             try:
                 from backend.inventory.service import sync_stock_from_dataset
@@ -1824,9 +1903,14 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                     # column the user mapped from the 0 that
                     # apply_canonical_defaults broadcasts into every session.
                     canonical_mapping=canonical_mapping,
+                    # Several stores per SKU: the SKU's stock is the sum of
+                    # each store's latest reading, not one store's last row.
+                    store_col=_store_col(col_cfg),
+                    report=stock_report,
                 )
                 if n_synced:
                     log.info(f"Synced inventory stock for {n_synced} SKU(s) from uploaded dataset")
+                _note_stock_summed(stock_report, prep_notes)
             except HTTPException:
                 # A plan-limit breach (e.g. max_skus) must fail the job with a
                 # clear reason — swallowing it here as "non-fatal" like a real
@@ -1837,6 +1921,18 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
                 raise
             except Exception as e:
                 log.warning(f"Inventory stock sync failed (non-fatal): {e}")
+
+        # 13 — several stores per SKU. Per-store freshness is read FIRST, while
+        # the store column still exists; then each SKU is summed to one series,
+        # because the engine forecasts one series per SKU (see the helper).
+        # Before the quality check and routing, so both judge the series the
+        # models will actually train on. Not wrapped as non-fatal: a rollup
+        # that fails its own units-in == units-out check must fail the run.
+        store_data_through = _store_data_through(engine._df, col_cfg)
+        engine._df, store_rollup = _sum_stores_before_training(
+            engine._df, col_cfg, canonical_mapping, prep_notes)
+        if store_rollup is not None:
+            engine._config.columns.group_keys = list(col_cfg["group_keys"])
 
         prog.begin("inspect", "Running data quality check...")
         dq_report = engine.get_data_quality_report()
@@ -1901,8 +1997,12 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             "config": config,
             # Newest sales date per store/warehouse (empty without a store
             # column): the read side of per-warehouse freshness.
-            "store_data_through": _store_data_through(engine._df, col_cfg),
+            "store_data_through": store_data_through,
         }
+        if store_rollup is not None:
+            # A multi-store file was summed to one series per SKU before
+            # training: the forecasts are per SKU, NOT per store.
+            result_payload["store_rollup"] = store_rollup
         if reforecast_result is not None:
             result_payload["reforecast"] = _reforecast_payload(
                 reforecast_result, reforecast_parent_id)

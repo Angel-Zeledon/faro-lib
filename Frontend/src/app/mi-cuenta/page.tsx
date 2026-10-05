@@ -14,6 +14,7 @@ import MobileFormScope from '@/components/mobile/MobileFormScope'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import CurrencySection from '@/components/billing/CurrencySection'
 import LimitsSection from '@/components/limits/LimitsSection'
+import { BillingPanel } from '@/components/billing/BillingSection'
 import FeatureLocked from '@/components/limits/FeatureLocked'
 import { useFeature } from '@/lib/entitlements'
 import TimezoneSection from '@/components/billing/TimezoneSection'
@@ -194,7 +195,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
           width: 64, height: 64, borderRadius: 16, flexShrink: 0,
           background: 'var(--accent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 22, fontWeight: 700, color: '#fff',
+          fontSize: 18, fontWeight: 700, color: '#fff',
         }}>
           {initials}
         </div>
@@ -853,10 +854,10 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       <SectionTitle icon={Lock} color="#B7791F" title={t('security')} subtitle={t('change_password')} />
 
       {step === 'idle' && (
-        <div data-tour="config.security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
+        <div data-tour="config.security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 220px', minWidth: 0 }}>
             <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>{t('password_label')}</div>
-            <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2, overflowWrap: 'anywhere' }}>
               {t('pw_code_hint')} {me?.email}
             </div>
           </div>
@@ -1442,6 +1443,9 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
 
   const on = enabled === true
   const blocked = !hasNumber
+  // The notice goes out by WhatsApp. Without the bot on the plan the card could
+  // only say "link your number above", which the card above does not allow.
+  const { locked: botLocked } = useFeature('whatsapp_bot')
 
   async function handleToggle() {
     if (enabled === null || saving || blocked) return
@@ -1456,6 +1460,8 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
       setSaving(false)
     }
   }
+
+  if (botLocked) return null
 
   return (
     <Card>
@@ -1621,6 +1627,7 @@ export default function ConfigPage() {
               subtitle={t('limits.section.header_subtitle')}
             />
             <LimitsSection />
+            <BillingPanel />
           </Card>
           <PlanningSection t={t} />
           {/* What the customer's own figures are worth — their choice, and
@@ -1720,6 +1727,8 @@ function MobileSettings() {
     getPlanning().then(setPlanningState).catch(() => setPlanningState(null))
   }, [key])
 
+  const { locked: botLocked } = useFeature('whatsapp_bot')
+
   function open(k: DrillKey) {
     window.history.pushState(null, '', `?s=${k}`)
     pushed.current = true
@@ -1765,7 +1774,7 @@ function MobileSettings() {
         body = (
           <Card>
             <SectionTitle icon={Gauge} color="var(--accent)" title={t('limits.section.title')} subtitle={t('limits.section.header_subtitle')} />
-            <div className="m-tap44"><LimitsSection /></div>
+            <div className="m-tap44"><LimitsSection /><BillingPanel /></div>
           </Card>
         )
         break
@@ -1807,7 +1816,7 @@ function MobileSettings() {
             leading={
               <span aria-hidden="true" style={{
                 width: 52, height: 52, borderRadius: 14, background: 'var(--accent)', color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700,
               }}>{initials}</span>
             }
             title={me?.full_name || me?.email || '—'}
@@ -1824,8 +1833,10 @@ function MobileSettings() {
           <MobileCard leading={<Tile Icon={MessageCircle} color="#2E8B62" />} title={t('config.wa_title')}
                       subtitle={waNumber ? waNumber : waNumber === '' ? t('config.m_wa_not_linked') : t('config.wa_subtitle')}
                       onClick={() => open('whatsapp')} />
-          <MobileCard leading={<Tile Icon={MessageSquare} color="var(--accent)" />} title={t('config.dm_sms_title')}
-                      subtitle={t('config.dm_sms_subtitle')} onClick={() => open('sms')} />
+          {!botLocked && (
+            <MobileCard leading={<Tile Icon={MessageSquare} color="var(--accent)" />} title={t('config.dm_sms_title')}
+                        subtitle={t('config.dm_sms_subtitle')} onClick={() => open('sms')} />
+          )}
         </MobileList>
       </MobileSection>
 

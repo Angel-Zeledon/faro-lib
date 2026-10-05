@@ -74,7 +74,7 @@ export function MobileMetricGrid({ metrics, ariaLabel }: { metrics: MobileMetric
       {metrics.map(m => {
         const inner = (
           <>
-            <span style={{ display: 'block', fontSize: 20, fontWeight: 600, color: 'var(--text)', lineHeight: 1.15,
+            <span style={{ display: 'block', fontSize: 17, fontWeight: 600, color: 'var(--text)', lineHeight: 1.15,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
               {m.value}
             </span>
@@ -303,7 +303,7 @@ export function MobileSkuSheet({
                   onChange={e => setDraft(e.target.value)}
                   onBlur={e => commit(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                  style={{ ...mInput, textAlign: 'center', fontSize: 22, fontWeight: 800, flex: 1 }}
+                  style={{ ...mInput, textAlign: 'center', fontSize: 18, fontWeight: 800, flex: 1 }}
                 />
                 <button type="button" className="mobile-btn mobile-btn-secondary" style={{ flex: '0 0 48px', padding: 0 }}
                   onClick={() => step(1)} aria-label={t('mobile.qty_increase')}><Plus size={18} aria-hidden="true" /></button>

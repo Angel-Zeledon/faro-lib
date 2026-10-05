@@ -347,6 +347,10 @@ from backend.api.v1 import sso as sso_router  # noqa: E402
 app.include_router(sso_router.router, prefix=_PREFIX)
 app.include_router(users.router,         prefix=_PREFIX)
 app.include_router(sessions.router,      prefix=_PREFIX)
+# BEFORE the upload router: its `/datasets/{dataset_id}` would swallow the fixed
+# `/datasets/inventory-status`-style paths of the flat BI feeds.
+from backend.api.v1 import bi_datasets as bi_datasets_router  # noqa: E402
+app.include_router(bi_datasets_router.router, prefix=_PREFIX)
 app.include_router(datasets.router,      prefix=_PREFIX)
 app.include_router(datasources.router,   prefix=_PREFIX)
 app.include_router(configuration.router, prefix=_PREFIX)
@@ -389,6 +393,10 @@ from backend.api.v1 import forecast_adjustments as forecast_adjustments_router  
 app.include_router(forecast_adjustments_router.router, prefix=_PREFIX)
 from backend.api.v1 import committed_demand as committed_demand_router  # noqa: E402
 app.include_router(committed_demand_router.router, prefix=_PREFIX)
+from backend.api.v1 import supply_contracts as supply_contracts_router  # noqa: E402
+app.include_router(supply_contracts_router.router, prefix=_PREFIX)
+from backend.api.v1 import demand_plans as demand_plans_router  # noqa: E402
+app.include_router(demand_plans_router.router, prefix=_PREFIX)
 from backend.api.v1 import spike_edits as spike_edits_router  # noqa: E402
 app.include_router(spike_edits_router.router, prefix=_PREFIX)
 from backend.api.v1 import sku_analogies as sku_analogies_router  # noqa: E402
@@ -399,6 +407,11 @@ app.include_router(demo.router,            prefix=_PREFIX)
 from backend.api.v1 import trial as trial_router  # noqa: E402
 app.include_router(trial_router.router,    prefix=_PREFIX)
 app.include_router(entitlements.router,    prefix=_PREFIX)
+from backend.api.v1 import feedback as feedback_router  # noqa: E402
+app.include_router(feedback_router.router, prefix=_PREFIX)
+from backend.api.v1 import billing as billing_router  # noqa: E402
+app.include_router(billing_router.router, prefix=_PREFIX)
+app.include_router(billing_router.webhook_router, prefix=_PREFIX)
 from backend.api.v1 import currency as currency_router  # noqa: E402
 app.include_router(currency_router.router, prefix=_PREFIX)
 from backend.api.v1 import mcp as mcp_router  # noqa: E402

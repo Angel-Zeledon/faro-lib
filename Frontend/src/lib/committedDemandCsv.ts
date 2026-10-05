@@ -27,14 +27,14 @@ const ALIASES: Record<string, string[]> = {
   note: ['note', 'notes', 'nota', 'notas', 'comentario', 'comment'],
 }
 
-function normHeader(h: string): string {
+export function normHeader(h: string): string {
   return h.replace(/^﻿/, '').trim().toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[\s-]+/g, '_')
 }
 
 /** Splits CSV text into records, honouring quotes; delimiter is , ; or tab. */
-function splitRecords(text: string): string[][] {
+export function splitRecords(text: string): string[][] {
   const firstLine = text.replace(/^﻿/, '').split(/\r?\n/, 1)[0] ?? ''
   const count = (ch: string) => firstLine.split(ch).length - 1
   const delim = [',', ';', '\t'].reduce((best, d) => (count(d) > count(best) ? d : best), ',')
@@ -61,7 +61,7 @@ function splitRecords(text: string): string[][] {
   return out.filter(r => r.some(c => c.trim() !== ''))
 }
 
-function parseDate(raw: string): string | null {
+export function parseDate(raw: string): string | null {
   const v = raw.trim()
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(v)
   let y: number, mo: number, d: number
@@ -73,7 +73,7 @@ function parseDate(raw: string): string | null {
   return dt.toISOString().slice(0, 10)
 }
 
-function parseNumber(raw: string): number | null {
+export function parseNumber(raw: string): number | null {
   let v = raw.trim().replace(/\s/g, '')
   if (v === '') return null
   // "1.234,5" (comma decimal) vs "1,234.5": the last separator is the decimal one.

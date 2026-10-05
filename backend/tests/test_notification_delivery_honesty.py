@@ -486,14 +486,14 @@ class TestAlertDeliveryFailuresAreObservable:
         monkeypatch.setattr(roi_service, "get_month_report", lambda t, y, m: {
             "month": "2026-03", "has_sufficient_history": True,
             "recommendations_shown": 8, "recommendations_followed": 6,
-            "adoption_rate": 0.75, "stockout_risks_handled": 2,
+            "adoption_rate": 0.75, "urgent_lines_ordered": 2,
             "capital_freed": 1500.0, "managed_purchase_value": 4000.0,
         })
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email", lambda **kw: False)
 
         sent = roi_service.run_monthly_roi_emails(
-            now=datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc))
+            now=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc))
 
         # Nothing was delivered, so the dedupe log must stay empty: a recorded
         # send would suppress next month's retry for a recap nobody received.

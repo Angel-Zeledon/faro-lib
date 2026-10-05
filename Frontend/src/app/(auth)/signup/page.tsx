@@ -147,7 +147,7 @@ function SignupPageContent() {
             }}>
               <CheckCircle2 size={21} color="var(--a-cta-fg)" strokeWidth={2} />
             </div>
-            <h1 style={{ fontSize: 23, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
+            <h1 style={{ fontSize: 20, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
               {verifyUrl ? t('auth.verify_link_onscreen_title') : t('auth.check_email_title')}
             </h1>
             {verifyUrl ? (
@@ -155,18 +155,33 @@ function SignupPageContent() {
                 <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: '0 0 16px', lineHeight: 1.6 }}>
                   {t('auth.verify_link_onscreen_body')}
                 </p>
+                {/* The action is a button; the raw link (a long signed token)
+                    is only the fallback, small and muted. */}
                 <a
                   href={verifyUrl}
+                  className="auth-submit"
                   style={{
-                    display: 'block', wordBreak: 'break-all', marginBottom: 22,
-                    padding: '11px 13px', borderRadius: 10,
-                    background: 'rgba(9,9,11,0.035)', border: '1px solid rgba(9,9,11,0.09)',
-                    fontSize: 12.5, color: 'var(--a-ink)', fontFamily: 'ui-monospace, monospace',
-                    textDecoration: 'none', lineHeight: 1.45,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '13px 24px', marginBottom: 14, borderRadius: 11,
+                    background: 'var(--a-cta-bg)', color: 'var(--a-cta-fg)',
+                    fontSize: 14, fontWeight: 600, textDecoration: 'none',
                   }}
                 >
-                  {verifyUrl}
+                  {t('auth.verify_link_cta')}
                 </a>
+                <p style={{ fontSize: 12, color: 'var(--a-dim)', margin: '0 0 6px', lineHeight: 1.5 }}>
+                  {t('auth.verify_link_fallback')}
+                </p>
+                <div style={{
+                  wordBreak: 'break-all', marginBottom: 22, userSelect: 'all',
+                  maxHeight: 64, overflow: 'auto',
+                  padding: '8px 11px', borderRadius: 10,
+                  background: 'var(--a-field, rgba(9,9,11,0.035))', border: '1px solid var(--a-line, rgba(9,9,11,0.09))',
+                  fontSize: 11.5, color: 'var(--a-muted)', fontFamily: 'ui-monospace, monospace',
+                  lineHeight: 1.45,
+                }}>
+                  {verifyUrl}
+                </div>
               </>
             ) : (
               <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: '0 0 26px', lineHeight: 1.6 }}>
@@ -190,7 +205,7 @@ function SignupPageContent() {
               marginBottom: 26, paddingLeft: 2,
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both',
             }}>
-              <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 30, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
+              <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 24, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
                 {t('auth.signup_title')}
               </h1>
               <p style={{ fontSize: 14.5, color: 'var(--a-muted)', margin: 0, lineHeight: 1.55 }}>
@@ -232,7 +247,7 @@ function SignupPageContent() {
                       id="signup-full-name" name="full_name"
                       type="text" value={form.full_name}
                       onChange={e => set('full_name', e.target.value)}
-                      placeholder="Jane Smith"
+                      placeholder={t('auth.ph_full_name')}
                       className="auth-input"
                     />
                   </div>
@@ -244,7 +259,7 @@ function SignupPageContent() {
                       id="signup-company" name="tenant_name"
                       type="text" value={form.tenant_name} required
                       onChange={e => set('tenant_name', e.target.value)}
-                      placeholder="Acme Corp"
+                      placeholder={t('auth.ph_company')}
                       className="auth-input"
                     />
                   </div>
@@ -258,7 +273,7 @@ function SignupPageContent() {
                     id="signup-email" name="email"
                     type="email" value={form.email} required
                     onChange={e => set('email', e.target.value)}
-                    placeholder="you@company.com"
+                    placeholder={t('auth.ph_email')}
                     className="auth-input"
                   />
                 </div>

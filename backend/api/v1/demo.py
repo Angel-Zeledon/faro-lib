@@ -120,6 +120,12 @@ def demo_quickstart(
     from backend.entitlements.service import enforce_limit
     enforce_limit(user.tenant_id, "max_sessions", session_svc.count_sessions(user.tenant_id))
 
+    # The daily training ceiling, refused BEFORE the dataset, session and stock
+    # writes below: the launch at the end checks it too, but by then a refusal
+    # would leave an orphaned dataset, session and seeded stock behind.
+    from backend.training import daily_cap
+    daily_cap.ensure_can_train(user.tenant_id)
+
     # Plan limit: quickstart also creates real inventory_stock rows for the
     # fixed _DEMO_STOCK set (step 3 below), all in the "principal" warehouse.
     # Without this pre-check, a tenant near its max_skus/max_locations cap

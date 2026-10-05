@@ -499,7 +499,7 @@ from backend.notifications.locale import render_es
 
 _RECAP = {"month": "2026-06", "adoption_rate": 0.75,
           "recommendations_followed": 6, "recommendations_shown": 8,
-          "stockout_risks_handled": 3, "capital_freed": 1250000.0,
+          "urgent_lines_ordered": 3, "capital_freed": 1250000.0,
           "managed_purchase_value": 890000.0}
 
 

@@ -37,7 +37,7 @@ class TestEnabledComponents:
         monkeypatch.setattr(settings, "scheduler_enabled", True)
         assert worker.enabled_components() == [
             "job-worker", "job-scheduler", "inventory-alerts",
-            "overstock-snapshot", "operator-digest", "trial-reaper",
+            "overstock-snapshot", "operator-digest", "trial-reaper", "billing-sweep",
         ]
 
     def test_api_only_instance_runs_nothing(self, monkeypatch):

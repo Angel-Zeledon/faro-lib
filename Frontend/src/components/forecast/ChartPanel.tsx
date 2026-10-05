@@ -474,7 +474,7 @@ export function buildChartOption(
           {
             xAxis: r.start,
             name: t('spike.chart_label'),
-            label: { show: true, position: 'insideTop', color: dim, fontSize: 10 },
+            label: { show: true, position: 'insideTop', color: dim, fontSize: 10, backgroundColor: tooltipBg, borderRadius: 7, padding: [1, 5, 1, 5] },
             itemStyle: {
               color: isDark ? 'rgba(148,163,184,0.18)' : 'rgba(100,116,139,0.14)',
               borderColor: 'rgba(100,116,139,0.55)', borderWidth: 1, borderType: 'solid',
@@ -525,14 +525,19 @@ export function buildChartOption(
     fcastSeries['markLine'] = {
       silent: true,
       symbol: 'none',
+      z: 30,
       lineStyle: { color: dim, type: 'dashed', width: 1, opacity: 0.55 },
       label: {
-        show: true, position: 'insideEndTop', color: dim, fontSize: 10,
+        // 'end' puts the caption in the margin above the plot, on its own pill,
+        // so it is never printed under the series or the gridlines.
+        show: true, position: 'end', color: dim, fontSize: 10,
         // ECharts rotates a markLine label to follow the line, which on a
         // vertical divider means the caption reads bottom-to-top. Force it flat.
         // Phones: the divider sits near the right edge, so the caption reads
         // leftwards from it instead of running off the canvas.
-        rotate: 0, align: compact ? 'right' : 'left', padding: compact ? [0, 6, 4, 0] : [0, 0, 4, 6],
+        rotate: 0, align: compact ? 'right' : 'center',
+        backgroundColor: tooltipBg, borderColor: isDark ? '#1e2030' : '#e2e8f0', borderWidth: 1,
+        borderRadius: 9, padding: [2, 7, 2, 7],
         formatter: t('skus.forecast_starts_here'),
       },
       data: [{ xAxis: historical[historical.length - 1].date }],

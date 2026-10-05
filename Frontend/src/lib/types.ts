@@ -621,6 +621,22 @@ export interface ChatMessage {
   source?:          string
   retrieved_count?: number
   created_at:       string
+  /** When the person starred it; null/absent when it is not a favorite. */
+  starred_at?:      string | null
+}
+
+/** A starred message with the chat it lives in and the question it answered. */
+export interface FavoriteMessage {
+  id:         string
+  chat_id:    string
+  role:       'user' | 'assistant'
+  content:    string
+  source:     string | null
+  created_at: string
+  starred_at: string
+  chat_title: string
+  /** The user message that produced an assistant answer; null for a user message. */
+  question:   string | null
 }
 
 export interface MessagesPage {
@@ -638,12 +654,106 @@ export type DataSourceType = 'file' | 'sql'
 export type ConnectionStatus = 'connected' | 'pending' | 'error'
 export type SqlEngine = 'postgresql' | 'mysql' | 'mssql' | 'oracle'
 
+export type SqlSslMode = 'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full'
+
+/** What the server keeps about an uploaded CA certificate (the PEM itself is
+ *  stored encrypted and never sent back). */
+export interface SqlCaInfo {
+  subject:            string
+  expires:            string
+  fingerprint_sha256: string
+  count:              number
+}
+
+export type ProbeStageName = 'dns' | 'tcp' | 'tls' | 'auth' | 'privileges' | 'select' | 'tables'
+export type ProbeStatus = 'ok' | 'warning' | 'failed' | 'skipped'
+
+export interface ProbeStage {
+  stage:        ProbeStageName
+  status:       ProbeStatus
+  code?:        string
+  params?:      Record<string, unknown>
+  detail?:      Record<string, unknown>
+  duration_ms?: number
+}
+
+/** The staged connection test (POST /data-sources/{id}/test-connection). */
+export interface ConnectionProbe {
+  ok:                boolean
+  status:            'connected' | 'error'
+  stages:            ProbeStage[]
+  failed_stage:      ProbeStageName | null
+  error:             string | null
+  tested_at:         string
+  write_access:      { can_write: boolean; privileges: string[]; superuser: boolean } | null
+  grant_sql:         string[] | null
+  tables_sample:     string[]
+  table_count:       number | null
+  tables_truncated?: boolean
+  server_version:    string | null
+  read_only_session: boolean | null
+}
+
+/** The summary of the last test kept on the source (no details, no SQL). */
+export interface StoredProbe {
+  ok:             boolean
+  tested_at:      string
+  failed_stage:   ProbeStageName | null
+  error:          string | null
+  stages:         ProbeStage[]
+  can_write:      boolean | null
+  table_count:    number | null
+  server_version: string | null
+}
+
 export interface SqlConfig {
-  host:     string
-  port:     number
-  database: string
-  username: string
-  engine:   SqlEngine
+  host:                string
+  port:                number
+  database:            string
+  username:            string
+  engine:              SqlEngine
+  ssl_mode?:           SqlSslMode
+  has_password?:       boolean
+  has_ssl_ca?:         boolean
+  ssl_ca?:             SqlCaInfo | null
+  connect_timeout_s?:  number
+  statement_timeout_s?: number
+  last_test?:          StoredProbe | null
+}
+
+/** Fields of a parsed connection string (the password only as a flag). */
+export interface ParsedConnectionString {
+  engine?:      SqlEngine
+  host?:        string
+  port?:        number
+  database?:    string
+  username?:    string
+  ssl_mode?:    SqlSslMode
+  has_password: boolean
+}
+
+export interface SchemaTable {
+  schema:       string | null
+  name:         string
+  kind:         'table' | 'view'
+  row_estimate: number | null
+  select_sql:   string | null
+}
+
+export interface SchemaTables {
+  tables:    SchemaTable[]
+  truncated: boolean
+  cap:       number
+  cached_at: string
+}
+
+export interface SchemaColumns {
+  schema:     string
+  table:      string
+  truncated:  boolean
+  columns:    { name: string; type: string; nullable: boolean }[]
+  cached_at:  string
+  select_sql: string | null
 }
 
 export interface DataSource {
@@ -681,10 +791,14 @@ export interface EditableTable {
 }
 
 export interface SqlQueryResult {
-  columns:   string[]
-  rows:      Record<string, unknown>[]
-  row_count: number
-  truncated: boolean
+  columns:     string[]
+  rows:        Record<string, unknown>[]
+  row_count:   number
+  truncated:   boolean
+  offset?:     number
+  limit?:      number
+  has_more?:   boolean
+  elapsed_ms?: number
 }
 
 // ── Forecast Series (ECharts) ─────────────────────────────────────────────────
@@ -780,9 +894,11 @@ export interface ActivityLogsResponse {
 // ── Platform Models ───────────────────────────────────────────────────────────
 export interface PlatformModel {
   name:        string
-  category:    'ML' | 'Statistical' | 'Deep Learning'
+  category:    'Global' | 'ML' | 'Statistical' | 'Deep Learning'
   status:      'available' | 'beta' | 'disabled'
   description: string
+  // English, for API readers; the UI renders `models.<name>.recommended_for`.
+  recommended_for?: string
 }
 
 // ── Statistical Analysis ──────────────────────────────────────────────────────
@@ -1057,6 +1173,88 @@ export interface CommittedDemand {
   latest_safe_order_date?: string | null
   /** The latest safe order date is already behind us. */
   order_date_passed?: boolean | null
+  /** 'contract' when a blanket contract's release materialised it. */
+  source?: 'manual' | 'contract'
+  contract_root_id?: string | null
+  contract_release_date?: string | null
+}
+
+export type SupplyContractStatus = 'draft' | 'active' | 'closed' | 'cancelled'
+export type SupplyContractScheduleKind = 'monthly' | 'weekly' | 'explicit'
+
+export interface SupplyContractLine {
+  sku: string
+  /** Optional on input for an explicit schedule: its releases define it. */
+  total_quantity: number | null
+  unit_price: number | null
+}
+
+export interface SupplyContractReleaseInput {
+  sku?: string | null
+  date: string
+  quantity: number | null
+}
+
+export interface SupplyContractTerms {
+  customer: string
+  reference?: string | null
+  lines: SupplyContractLine[]
+  period_start: string
+  period_end: string
+  schedule_kind: SupplyContractScheduleKind
+  releases?: SupplyContractReleaseInput[] | null
+  tolerance_pct: number
+  warehouse_id?: string | null
+  on_top_of_base: boolean
+  note?: string | null
+}
+
+/** fulfilled / open / cancelled come from the release's commitment;
+ *  missing = should already be a commitment and is not; scheduled = further out. */
+export type SupplyContractReleaseState = 'fulfilled' | 'open' | 'cancelled' | 'missing' | 'scheduled'
+
+export interface SupplyContractRelease {
+  sku: string
+  date: string
+  quantity: number
+  state: SupplyContractReleaseState
+  overdue: boolean
+}
+
+export interface SupplyContractProgress {
+  scheduled_total: number
+  due_to_date: number
+  delivered: number
+  remaining: number
+  progress_pct: number | null
+  behind_schedule: boolean
+  /** null = nothing due yet, so there is no pace to project from. */
+  projected_delivered: number | null
+  projected_shortfall: number | null
+  shortfall_beyond_tolerance: boolean | null
+  overdue_count: number
+  overdue_units: number
+  unmaterialised_due: number
+  next_release: SupplyContractRelease | null
+  lines: { sku: string; scheduled: number; due_to_date: number; delivered: number; remaining: number; behind_schedule: boolean }[]
+  releases: SupplyContractRelease[]
+}
+
+export interface SupplyContract extends SupplyContractTerms {
+  id: string
+  root_id: string
+  revision: number
+  status: SupplyContractStatus
+  warehouse_name: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  horizon_days: number
+  period_ended: boolean
+  progress: SupplyContractProgress
+  revisions?: { id: string; revision: number; status: SupplyContractStatus; created_by_name: string | null; created_at: string }[]
+  materialised?: number
+  withdrawn?: number
 }
 
 /** One line of the "by customer" summary of open commitments. */
@@ -1067,6 +1265,142 @@ export interface CommittedDemandCustomer {
   unknown: number
   shortfall: number
   first_safe_order_date: string | null
+}
+
+// ── Demand plan versions ─────────────────────────────────────────────────────
+
+export type DemandPlanStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'superseded'
+
+export interface DemandPlanTotals {
+  forecast: number | null
+  adjustment: number | null
+  committed: number | null
+  plan: number | null
+  sku_count: number
+  skus_without_forecast: number
+  period_count: number
+}
+
+export interface DemandPlanPeriodTotal {
+  period: string
+  forecast: number | null
+  adjustment: number | null
+  committed: number | null
+  plan: number | null
+}
+
+export interface DemandPlanEvent {
+  id: number
+  kind: 'status' | 'comment'
+  from_status: DemandPlanStatus | null
+  to_status: DemandPlanStatus | null
+  actor_id: string
+  actor_name: string | null
+  comment: string | null
+  details: { self_approved?: boolean; superseded_by?: string }
+  created_at: string
+}
+
+export interface DemandPlanVersion {
+  id: string
+  name: string
+  session_id: string
+  session_name: string | null
+  granularity: string | null
+  anchor_date: string
+  first_period: string
+  last_period: string
+  horizon_periods: number
+  sku_count: number
+  snapshot_bytes: number
+  totals: DemandPlanTotals
+  note: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  status: DemandPlanStatus
+  // Detail only.
+  by_period?: DemandPlanPeriodTotal[]
+  events?: DemandPlanEvent[]
+  submitted_by?: string | null
+  approver_count?: number
+  can_approve?: boolean
+  superseded?: string[]
+  self_approved?: boolean
+}
+
+export interface DemandPlanList {
+  items: DemandPlanVersion[]
+  statuses: DemandPlanStatus[]
+  approver_count: number
+  can_approve: boolean
+  max_versions: number
+}
+
+export interface DemandPlanLine {
+  sku: string
+  forecast: number | null
+  adjustment: number | null
+  committed: number | null
+  plan: number | null
+  has_forecast: boolean
+  adjustments: number
+  commitments: number
+  by_period: number[]
+}
+
+export interface DemandPlanLines {
+  total: number
+  offset: number
+  limit: number
+  periods: string[]
+  items: DemandPlanLine[]
+}
+
+export interface DemandPlanDiff {
+  version_a: string
+  version_b: string
+  status: 'ok' | 'no_common_periods'
+  n_common_periods: number
+  periods_only_in_a: number
+  periods_only_in_b: number
+  total_a: number | null
+  total_b: number | null
+  n_skus_changed: number
+  skus_only_in_a: number
+  skus_only_in_b: number
+  items: { sku: string; plan_a: number; plan_b: number; change: number; change_pct: number | null; only_in: 'a' | 'b' | null }[]
+}
+
+export interface DemandPlanFva {
+  n_points: number
+  actual_total: number | null
+  plan_error: number | null
+  model_error: number | null
+  plan_wape: number | null
+  model_wape: number | null
+  plan_bias: number | null
+  model_bias: number | null
+  improvement_pct: number | null
+  better_points: number
+  worse_points: number
+  verdict: 'improved' | 'worsened' | 'neutral' | 'too_little' | 'no_data'
+}
+
+export interface DemandPlanAccuracy {
+  version_id: string
+  version_status: DemandPlanStatus
+  status: string
+  source: { dataset_id: string; name: string } | null
+  periods_total: number
+  periods_passed: number
+  periods_compared: number
+  skipped_no_actual: number
+  skipped_no_forecast: number
+  first_period_end: string | null
+  aggregate: DemandPlanFva | null
+  n_skus: number
+  by_sku: (DemandPlanFva & { sku: string })[]
 }
 
 export interface CommittedDemandInput {
@@ -1592,9 +1926,12 @@ export interface InventoryDashboardSummary {
 // ── Inventory ROI ─────────────────────────────────────────────────────────────
 export interface InventoryROISummary {
   total_pos_generated:       number
-  total_skus_protected:      number
+  /** Order lines flagged "order now" that the buyer ordered: what was done,
+   *  not stockouts avoided. */
+  urgent_lines_ordered:      number
   total_units_ordered:       number
-  estimated_value_protected: number
+  /** Units x unit cost of what was ordered; null when no order carried a cost. */
+  ordered_value:             number | null
   // Adoption metrics (decision tracking)
   total_suggested:           number
   total_approved:            number
@@ -1616,8 +1953,9 @@ export type CapitalFreedStatus = 'measured' | 'not_measured' | 'grew'
 export interface ROIMonthlyRow {
   month:             string          // 'YYYY-MM'
   pos_count:         number
-  skus_order_now:     number
-  total_value:       number
+  urgent_lines_ordered: number
+  /** null when no order of the month carried a unit cost: unknown, not zero. */
+  total_value:       number | null
   adoption_rate:     number | null
   capital_freed:     number | null
   capital_freed_status: CapitalFreedStatus
@@ -1632,7 +1970,7 @@ export interface ROIMonthReport {
   recommendations_shown:   number
   recommendations_followed: number
   adoption_rate:           number | null
-  stockout_risks_handled:  number | null
+  urgent_lines_ordered:    number | null
   managed_purchase_value:  number | null
   /** false when only SOME ordered lines carried a unit cost, so the value above
    *  is a floor rather than the month's total. */

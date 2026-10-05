@@ -378,7 +378,12 @@ def run_daily_supplier_lead_time_alerts() -> None:
             app_url = getattr(settings, "frontend_url", "http://localhost:3000")
             scorecard_url = f"{app_url}/inventory/suppliers/scorecard"
 
-            for r in get_tenant_alert_recipients(tid):
+            # Active users only (the helper's default). Warehouse-scoped users
+            # are included on purpose: this alert is supplier-level lead-time
+            # drift — no stock, no warehouse names — the same figures the
+            # supplier scorecard shows them on screen (allow-listed in
+            # test_warehouse_scope_coverage.py for that reason).
+            for r in get_tenant_alert_recipients(tid, include_scoped=True):
                 if not r.get("email"):
                     continue
                 delivered = send_supplier_lead_time_alert_email(

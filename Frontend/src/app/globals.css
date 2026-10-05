@@ -28,6 +28,19 @@
     --dur-4:    260ms;
     --ease-out: cubic-bezier(0.2, 0, 0.2, 1);
     --ease-in:  cubic-bezier(0.4, 0, 1, 1);
+
+    /* Type scale. Screens write sizes inline, so these are the agreed steps
+       rather than something every call site reads: a page title is 18, a card
+       or section heading 14-15, a KPI figure 18 (a hero figure on /impacto
+       30-34), body in dense data screens 13, captions and table headers 11-12.
+       Nothing in the app shell is set above 22. The landing keeps its own,
+       slightly larger scale (hero 44, section 28). On phones form controls are
+       16px (see the end of this file) so iOS does not zoom on focus. */
+    --fs-title:   18px;
+    --fs-section: 15px;
+    --fs-kpi:     18px;
+    --fs-body:    13px;
+    --fs-small:   12px;
   }
 
   /* Light is the default: for this audience (SMB distributor, office light
@@ -889,6 +902,53 @@ input[type="password"]::-ms-clear { display: none; }
   }
 }
 
+/* Phones: a focused control under 16px makes iOS Safari zoom the whole page,
+   and the dense 12-13px geometry of the form scale is below that. Inline
+   sizes win over classes, hence !important. Checkboxes, radios and ranges are
+   not text entry and keep their own size; inputs inside a table keep their
+   height so a grid row does not grow, but still get 16px (zoom is about the
+   font, not the box). */
+@media (max-width: 760px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  select { min-height: 40px; }
+  table input, table select { min-height: 0; }
+}
+
+/* Scenario simulation layout: assumptions on the left, the result beside them,
+   saved scenarios under the assumptions. On narrow screens the order is
+   assumptions, result, saved: you change a number and see the answer without
+   scrolling past the history. The 1fr row keeps the result from stretching the
+   assumptions card when it is the taller one. */
+.sim-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "build result" "extras result";
+  gap: 16px 18px;
+  align-items: start;
+}
+.sim-build  { grid-area: build; }
+.sim-result { grid-area: result; }
+.sim-extras { grid-area: extras; }
+.sim-session { min-width: 220px; }
+@media (max-width: 900px) {
+  .sim-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: "build" "result" "extras";
+  }
+}
+@media (max-width: 760px) {
+  .sim-page { padding: 16px 16px !important; }
+  .sim-session { width: 100%; }
+  /* The buttons are written with `all: unset` inline, which only !important beats. */
+  .sim-btn { min-height: 44px !important; box-sizing: border-box !important; }
+}
 /* ── Explainer visuals (components/ui/ExplainerVisual.tsx) ──────────────────
    Calm entrance + a slow arrow nudge. All motion is off under
    prefers-reduced-motion; the static layout carries the meaning on its own. */
@@ -1377,3 +1437,33 @@ input[type="password"]::-ms-clear { display: none; }
 
 /* Sender / time labels: small and quiet. */
 .msg-meta { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Per-message actions (copy, star). On a mouse they appear when the message is
+   hovered or holds keyboard focus; on touch there is no hover, so they are
+   always there. A starred message keeps its star visible. */
+.msg-actions { display: inline-flex; align-items: center; gap: 2px; }
+.msg-action-btn {
+  all: unset; box-sizing: border-box; cursor: pointer;
+  width: 26px; height: 26px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--dim);
+}
+.msg-action-btn:hover { background: var(--surface-2); color: var(--text); }
+.msg-action-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.msg-action-btn[data-on="true"] { color: #B7791F; }
+.msg-action-note { font-size: 11px; color: var(--accent); margin-left: 2px; }
+.msg-row-large .msg-action-btn { width: 40px; height: 36px; border-radius: 10px; }
+.msg-row-large .msg-action-note { font-size: 12.5px; }
+@media (hover: hover) and (pointer: fine) {
+  .msg-row:not(.msg-row-large) .msg-action-btn { opacity: 0; transition: opacity var(--dur-2) var(--ease-out); }
+  .msg-row:not(.msg-row-large):hover .msg-action-btn,
+  .msg-row:not(.msg-row-large):focus-within .msg-action-btn,
+  .msg-row:not(.msg-row-large) .msg-action-btn[data-on="true"] { opacity: 1; }
+}
+/* The message a favorite was opened at: a brief wash so the eye finds it. */
+.msg-focus > div:last-child > div:first-child { animation: msgFocus 1800ms var(--ease-out); }
+@keyframes msgFocus {
+  0%, 60% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+  100%    { box-shadow: 0 0 0 3px transparent; }
+}
+

@@ -275,7 +275,7 @@ Entrenar **una vez por empresa**, descomponer por bodega según la densidad de l
 
 | Serie | Cómo se obtiene la demanda de la bodega |
 |---|---|
-| Rápida/densa en la bodega | **Directa** SKU×bodega (ya existe con `store` mapeado) |
+| Rápida/densa en la bodega | **Directa** SKU×bodega (NO existe: con `store` mapeado y varias tiendas por SKU, el runner suma las tiendas y pronostica el total del SKU — `PREP_STORES_SUMMED`) |
 | Lenta/intermitente en la bodega | **Top-down**: pronóstico del SKU (denso) × participación reciente de la bodega (promedio móvil de las últimas N semanas), en lugar del `demand_share` manual y estático |
 | SKU recién llegado a una bodega | Participación del grupo de bodegas similares o del SKU global hasta tener historia |
 

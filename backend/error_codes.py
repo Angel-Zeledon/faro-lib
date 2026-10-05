@@ -124,7 +124,7 @@ _RULES: list[tuple[re.Pattern[str], str]] = [
 # are listed here so the translation check covers them.
 PLAN_LIMIT_KEYS = (
     "max_skus", "max_users", "max_locations", "max_sessions",
-    "max_concurrent_jobs", "max_dataset_size_mb",
+    "max_concurrent_jobs", "max_dataset_size_mb", "max_trainings_per_day",
 )
 _STRUCTURED_CODES = ("plan_upgrade_required", "trial_expired")
 

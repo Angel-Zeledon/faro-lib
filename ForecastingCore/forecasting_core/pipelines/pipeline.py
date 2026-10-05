@@ -210,6 +210,9 @@ class Pipeline:
         from forecasting_core.models.prophet import run_prophet_core
         from forecasting_core.models.ets import run_ets_core
         from forecasting_core.models.croston import run_croston_core
+        from forecasting_core.models.intermittent import (
+            run_adida_core, run_imapa_core, run_tsb_core,
+        )
         from forecasting_core.models.sarimax import run_sarimax_core
         from forecasting_core.models.lstm import run_lstm_core
         from forecasting_core.ensemble.ensemble import WeightedEnsemble
@@ -371,6 +374,10 @@ class Pipeline:
             # Trainer._horizon_metrics.
             horizon=h,
             features_cfg=cfg.features,
+            # Opt-in per model (`"intermittent_objective": "tweedie"`); empty
+            # unless the config asks, and then applied only to intermittent /
+            # lumpy series. Each result says whether it was applied.
+            intermittent_objectives=factory.intermittent_objectives(),
         )
         results_ml = trainer.train(
             df_ml_f, ml_models,
@@ -464,6 +471,11 @@ class Pipeline:
             ("prophet", run_prophet_core),
             ("ets",     run_ets_core),
             ("croston", run_croston_core),
+            # Run only when declared: skus_for_model() is empty for a model the
+            # user did not select, and the router never adds one.
+            ("tsb",     run_tsb_core),
+            ("adida",   run_adida_core),
+            ("imapa",   run_imapa_core),
             ("lstm",    run_lstm_core),
         ]
         # One SKU fitted by Prophet or an LSTM costs far more than one fitted by
@@ -1333,7 +1345,18 @@ class Pipeline:
         rows = []
         for key, res in results_ml.items():
             model_name = res.get("model", key)
+            # Only when the opt-in count objective was configured for this model:
+            # which objective this SKU's row was actually trained with
+            # ("tweedie", "poisson", or "default" with the reason it was not
+            # applied). Absent otherwise, so a run without the option produces
+            # exactly the rows it always did.
+            objective_cols = {}
+            decision = res.get("intermittent_objective")
+            if isinstance(decision, dict):
+                objective_cols = {"objective": decision.get("objective"),
+                                  "objective_reason": decision.get("reason")}
             rows.append({
+                **objective_cols,
                 "model": model_name,
                 "type": "global" if model_name == "global_lgbm" else "ml",
                 "sku": res.get("sku", key), "mae": res.get("mae"),

@@ -53,6 +53,7 @@ export default function LimitsSection() {
             used={ent.usage?.[key] ?? 0}
             max={ent.limits?.[key] ?? null}
             unlimitedLabel={t('limits.unlimited')}
+            notIncludedLabel={t('limits.not_included')}
             usageLabel={(current, max) => t('limits.usage_of', { current, max })}
           />
         ))}
@@ -70,14 +71,18 @@ export default function LimitsSection() {
   )
 }
 
-function LimitRow({ name, used, max, unlimitedLabel, usageLabel }: {
+function LimitRow({ name, used, max, unlimitedLabel, notIncludedLabel, usageLabel }: {
   name: string
   used: number
   max: number | null
   unlimitedLabel: string
+  notIncludedLabel: string
   usageLabel: (current: number, max: number) => string
 }) {
   const unlimited = max === null
+  // A ceiling of 0 is not "0 of 0 used": the feature is not part of this plan
+  // (API keys on the free tier), so say that instead of drawing an empty meter.
+  const notIncluded = max === 0
   // Clamped, because usage CAN exceed a ceiling legitimately: a tenant moved
   // down a tier, or a limit lowered by hand, keeps the rows it already had. A
   // bar past 100% would render outside its track and read as a rendering bug.
@@ -93,12 +98,12 @@ function LimitRow({ name, used, max, unlimitedLabel, usageLabel }: {
         <span style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 500 }}>{name}</span>
         <span style={{
           fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
-          color: unlimited ? 'var(--dim)' : tone,
+          color: unlimited || notIncluded ? 'var(--dim)' : tone,
         }}>
-          {unlimited ? unlimitedLabel : usageLabel(used, max as number)}
+          {unlimited ? unlimitedLabel : notIncluded ? notIncludedLabel : usageLabel(used, max as number)}
         </span>
       </div>
-      {!unlimited && (
+      {!unlimited && !notIncluded && (
         <div style={{
           height: 5, borderRadius: 999, background: 'var(--surface-2)',
           border: '1px solid var(--border)', overflow: 'hidden',

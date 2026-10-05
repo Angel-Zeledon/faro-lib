@@ -102,11 +102,11 @@ export default function ServiceLevelClassesPanel() {
         <thead>
           <tr style={{ textAlign: 'left', color: 'var(--dim)', fontSize: 12 }}>
             <th style={th}>{t('inventory.slc_col_class')}</th>
-            <th style={th}>{t('inventory.slc_col_skus')}</th>
-            <th style={th}>{t('inventory.slc_col_value')}</th>
-            <th style={th}>{t('inventory.slc_col_current')}</th>
-            <th style={th}>{t('inventory.slc_col_suggested')}</th>
-            <th style={th}>{t('inventory.slc_col_changes')}</th>
+            <th style={thNum}>{t('inventory.slc_col_skus')}</th>
+            <th style={thNum}>{t('inventory.slc_col_value')}</th>
+            <th style={thNum}>{t('inventory.slc_col_current')}</th>
+            <th style={thNum}>{t('inventory.slc_col_suggested')}</th>
+            <th style={thNum}>{t('inventory.slc_col_changes')}</th>
             <th style={th} />
           </tr>
         </thead>
@@ -114,11 +114,11 @@ export default function ServiceLevelClassesPanel() {
           {state.classes.map(row => (
             <tr key={row.abc} data-testid={`slc-row-${row.abc}`}>
               <td style={td}><strong>{row.abc}</strong></td>
-              <td style={td}>{row.skus.toLocaleString(localeFor(lang))}</td>
-              <td style={td}>{pct(row.value_share)}</td>
-              <td style={td}>{pct(row.current_service_level)}</td>
-              <td style={td}>{pct(row.suggested_service_level)}</td>
-              <td style={td}>
+              <td style={tdNum}>{row.skus.toLocaleString(localeFor(lang))}</td>
+              <td style={tdNum}>{pct(row.value_share)}</td>
+              <td style={tdNum}>{pct(row.current_service_level)}</td>
+              <td style={{ ...tdNum, fontWeight: 700 }}>{pct(row.suggested_service_level)}</td>
+              <td style={tdNum}>
                 {row.would_change.toLocaleString(localeFor(lang))}
                 {row.owned > 0 && (
                   <span style={{ color: 'var(--dim)', fontSize: 11.5 }}>
@@ -129,7 +129,7 @@ export default function ServiceLevelClassesPanel() {
               <td style={{ ...td, textAlign: 'right' }}>
                 {canEdit && (
                   <Button
-                    size="sm" variant="secondary"
+                    size="sm" variant={row.would_change === 0 ? 'secondary' : 'primary'}
                     disabled={row.would_change === 0 || busy !== null}
                     loading={busy === row.abc}
                     onClick={() => void apply(row)}
@@ -157,3 +157,5 @@ const sectionStyle: React.CSSProperties = {
 const titleStyle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: 0 }
 const th: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600 }
 const td: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text)' }
+const thNum: React.CSSProperties = { ...th, textAlign: 'right' }
+const tdNum: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
