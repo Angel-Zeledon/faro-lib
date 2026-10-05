@@ -220,7 +220,7 @@ export default function HoyMobile(props: HoyMobileProps) {
 
       {loading && (
         <LoadingState label={t('hoy.loading_label')}>
-          <SkeletonCards count={4} height={110} />
+          <SkeletonCards count={3} height={110} stacked />
         </LoadingState>
       )}
 

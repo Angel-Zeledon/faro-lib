@@ -701,7 +701,7 @@ function KPICard({ label, value, color, sub, onClick, active }: {
  if (!onClick) return <div style={box}>{body}</div>
  return (
  <button type="button" onClick={onClick} aria-pressed={!!active}
-  style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'block', ...box }}>
+  style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', ...box }}>
  {body}
  </button>
  )
@@ -2101,7 +2101,7 @@ export default function InventoryPage() {
  getSignalThresholds({ silent: true }).then(setSignalRules).catch(() => setSignalRules(null))
  }, [])
  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
- const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
+ const { sessionId, setSessionId, currentSession, completedSessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  // Translates an ApiError's `error_code` + `params` into the user's language.
  const errorDetail = useErrorDetail()
  // `data.items` is ONE server page (filtered, sorted, 100 rows), never the
@@ -2967,7 +2967,7 @@ export default function InventoryPage() {
  )}
 
  {/* KPIs — skeleton first so the row does not pop in. */}
- {loading && !summary && !isAnalysisView && <SkeletonCards count={narrow ? 4 : 6} height={74} />}
+ {loading && !summary && !isAnalysisView && <SkeletonCards count={narrow ? 4 : 6} columns={narrow ? 2 : undefined} height={74} />}
  {summary && narrow && !isAnalysisView && (
  <div data-tour="inv.filters" className="page-enter">
  <MobileMetricGrid ariaLabel={t('inventory.m_filters_aria')} metrics={[
@@ -2978,7 +2978,7 @@ export default function InventoryPage() {
   { label: t('inventory.signal_overstock'), value: summary.overstock, color: C.blue, onClick: () => setSignalFilter(signalFilter === 'SOBRESTOCK' ? '' : 'SOBRESTOCK'), active: signalFilter === 'SOBRESTOCK', sub: summary.overstock > 0 ? t('inventory.kpi_sub_overstock') : undefined },
   // Compact money: the full figure of a real inventory does not fit half a phone.
   { label: t('inventory.kpi_inventory_value'), value: summary.total_inventory_value > 0 ? formatMoneyCompact(summary.total_inventory_value) : '—', color: C.dim, sub: t('inventory.kpi_skus_with_cost') },
- ]} />
+ ].map(({ sub: _hint, ...m }) => m) /* one line per card on a phone: the explanations are on the desktop cards */} />
  </div>
  )}
  {summary && !narrow && !isAnalysisView && (
@@ -3046,9 +3046,9 @@ export default function InventoryPage() {
 
  {/* Toolbar */}
  {!isAnalysisView && <div style={narrow
-  ? { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, minWidth: 0 }
+  ? { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12, minWidth: 0 }
   : { padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10, background: C.card }}>
- <input data-tour="inv.search" type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, minWidth: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none', ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, boxSizing: 'border-box' } : {}) }} />
+ <input data-tour="inv.search" type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: narrow ? '1 1 100%' : 1, minWidth: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none', ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, boxSizing: 'border-box' } : {}) }} />
  {search && <button onClick={() => setSearch('')} aria-label={t('inventory.search_clear')} title={t('inventory.search_clear')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', ...(narrow ? { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' } : {}) }}><X size={narrow ? 18 : 13} aria-hidden="true" /></button>}
  <select data-testid="inv-abc-filter" aria-label={t('inventory.abc_filter')} title={t('inventory.tip_abc_xyz')} value={abcFilter} onChange={e => setAbcFilter(e.target.value as AbcClass | '')} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 8px', fontSize: 12, color: C.text, ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10 } : {}) }}>
  <option value="">{t('inventory.abc_filter_all')}</option>
@@ -3059,9 +3059,11 @@ export default function InventoryPage() {
  <span style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }} aria-live="polite">{pageTotal.toLocaleString(localeFor(lang))} SKU{pageTotal !== 1 ? 's' : ''}</span>
  </div>}
 
- {loading ? (
+ {/* While the session list is still arriving there is no session id yet; that is
+     "loading", not "you have nothing", so the onboarding card must not flash. */}
+ {loading || (sessionsLoading && !sessionId && !sessionsError) ? (
  <LoadingState label={t('inventory.loading_label')}>
- <SkeletonTable rows={8} columns={6} />
+ {narrow ? <SkeletonCards count={5} height={88} stacked /> : <SkeletonTable rows={8} columns={6} />}
  </LoadingState>
  ) : error && !data ? (
  /* ── Status request failed outright ───────────────────────── */

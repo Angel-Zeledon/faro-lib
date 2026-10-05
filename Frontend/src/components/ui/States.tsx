@@ -120,9 +120,15 @@ export function SkeletonTable({ rows = 6, columns = 5 }: { rows?: number; column
 }
 
 /** Placeholder shaped like a row of KPI cards. */
-export function SkeletonCards({ count = 4, height = 74 }: { count?: number; height?: number }) {
+export function SkeletonCards({ count = 4, height = 74, stacked = false, columns }: {
+  count?: number; height?: number
+  /** Fixed column count (a phone's 2x2 KPI grid); defaults to one column per card. */
+  columns?: number
+  /** One card per row: the shape of a phone card list, where four columns would be slivers. */
+  stacked?: boolean
+}) {
   return (
-    <div role="status" aria-busy="true" style={{ display: 'grid', gridTemplateColumns: `repeat(${count}, 1fr)`, gap: 12 }}>
+    <div role="status" aria-busy="true" style={{ display: 'grid', gridTemplateColumns: stacked ? '1fr' : `repeat(${columns ?? count}, 1fr)`, gap: 12 }}>
       {Array.from({ length: count }, (_, i) => <Skeleton key={i} height={height} radius={10} />)}
     </div>
   )

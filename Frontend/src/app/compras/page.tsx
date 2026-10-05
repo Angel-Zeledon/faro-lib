@@ -2212,10 +2212,11 @@ export default function HoyPage() {
            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
             {t('hoy.optimizer_orders_title')}
            </h3>
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 8 }}>
            {optimization.orders.map(order => (
             <div key={`${order.sku}-${order.warehouse}`} style={{
-             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-             padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6,
+             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+             padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, minWidth: 0,
             }}>
              <span style={{ fontSize: 13 }}>
               {order.sku} — {order.warehouse}: <strong>{order.qty}</strong>
@@ -2238,6 +2239,7 @@ export default function HoyPage() {
              )}
             </div>
            ))}
+           </div>
           </div>
          )}
 
@@ -2246,10 +2248,11 @@ export default function HoyPage() {
            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
             {t('hoy.optimizer_transfers_title')}
            </h3>
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 8 }}>
            {optimization.transfers.map(tr => (
             <div key={`${tr.sku}-${tr.from_warehouse}-${tr.to_warehouse}`} style={{
-             fontSize: 13, padding: '10px 12px', border: '1px solid var(--border)',
-             borderRadius: 8, marginBottom: 6,
+             fontSize: 13, padding: '8px 12px', border: '1px solid var(--border)',
+             borderRadius: 8,
             }}>
              {t('hoy.optimizer_transfer_line')
               .replace('{qty}', String(tr.qty))
@@ -2258,6 +2261,7 @@ export default function HoyPage() {
               .replace('{to}', tr.to_warehouse)}
             </div>
            ))}
+           </div>
           </div>
          )}
         </section>
