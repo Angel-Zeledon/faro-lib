@@ -5,6 +5,7 @@ import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 import { LEGAL_PUBLIC_PATHS } from '@/components/landing/legalPaths'
 import { CONTENT_PUBLIC_PATHS } from '@/components/landing/contentPaths'
 import StorageNotice from '@/components/legal/StorageNotice'
+import { FeedbackProvider } from '@/components/feedback/FeedbackDialog'
 
 const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', '/auth/callback']
 // The landing and its public subpages: no app shell, no sign-in.
@@ -23,11 +24,13 @@ export default function ConditionalShell({ children }: { children: React.ReactNo
   // The one-time notice about browser storage rides on the landing and the
   // app shells; the sign-in screens keep it off their submit buttons (see
   // StorageNotice).
+  // The feedback dialog wraps everything, the error screens included: it is how
+  // an error anywhere in the app reaches us.
   return (
-    <>
+    <FeedbackProvider>
       <Shell isAuth={isAuth} isLanding={isLanding}>{children}</Shell>
       <StorageNotice suppress={isAuth} />
-    </>
+    </FeedbackProvider>
   )
 }
 

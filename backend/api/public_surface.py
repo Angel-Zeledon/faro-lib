@@ -80,6 +80,7 @@ INTERNAL_TAGS: dict[str, str] = {
     "spike-edits": "excluding a past spike is a person's judgement about their history, recorded under their name",
     "sku-analogies": "an analogy is a person's judgement that a new product sells like others, recorded under their name",
     "forecast-adjustments": "a forecast adjustment is a person's judgement, recorded under their name and graded per person",
+    "feedback": "a report names the person who read the confirmation step and pressed Send; a key has no such person",
     "trial": "unauthenticated trial signup",
     "inbound-email": "the tenant's private sales-by-e-mail address is a credential, and its allow-list is edited by an administrator on the Datos screen",
     "inbound-webhook": "the mail provider's webhook, authenticated by a shared-secret signature, not by key",

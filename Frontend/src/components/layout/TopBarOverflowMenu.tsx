@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { MoreHorizontal, MessageSquare, HelpCircle, LifeBuoy } from 'lucide-react'
+import { MoreHorizontal, MessageSquare, MessageSquareText, HelpCircle, LifeBuoy } from 'lucide-react'
 import { siteHref } from '@/lib/siteUrls'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTour } from '@/contexts/TourContext'
 import { useDmUnread } from '@/lib/dmUnread'
+import { useFeedback } from '@/components/feedback/context'
 
 /**
  * The top bar's secondary actions on a narrow screen, behind one "⋯".
@@ -24,6 +25,7 @@ export default function TopBarOverflowMenu() {
   const { t, lang } = useLanguage()
   const { available, active, start, stop } = useTour()
   const unread = useDmUnread()
+  const sendFeedback = useFeedback()
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -121,6 +123,10 @@ export default function TopBarOverflowMenu() {
               <LifeBuoy size={18} color="var(--muted)" aria-hidden="true" />
               <span style={{ flex: 1 }}>{t('help.center')}</span>
             </a>
+            <button role="menuitem" onClick={() => { setOpen(false); sendFeedback() }} style={itemStyle}>
+              <MessageSquareText size={18} color="var(--muted)" aria-hidden="true" />
+              <span style={{ flex: 1 }}>{t('feedback.action')}</span>
+            </button>
             {/* Only on screens that have a tour — never a dead control. */}
             {available && (
               <button
