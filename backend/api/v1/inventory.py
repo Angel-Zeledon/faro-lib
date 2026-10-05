@@ -127,6 +127,19 @@ def list_stock_page(
                                   q=q, warehouse=warehouse))
 
 
+@router.get("/stock/lookup")
+def lookup_stock(
+    code: str = Query(min_length=1, max_length=200,
+                      description="A scanned barcode or a SKU"),
+    warehouse: Optional[str] = Query(default=None, max_length=100),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Resolve a scanned code to a SKU (barcode first, then SKU). Declared before
+    `/stock/{sku}`, which would otherwise take 'lookup' for a SKU."""
+    from backend.inventory import stock_count_service as count_svc
+    return ok(count_svc.lookup(user.tenant_id, code, warehouse))
+
+
 @router.get("/stock/{sku}")
 def get_stock(sku: str, user: CurrentUser = Depends(get_current_user)):
     row = svc.get_stock(user.tenant_id, sku)

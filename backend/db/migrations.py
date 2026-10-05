@@ -1860,6 +1860,84 @@ _ENTERPRISE = [
 ]
 _MIGRATIONS += _ENTERPRISE
 
+# ── Physical stock count (2026-10-05) ────────────────────────────────────────
+# A count session walks one warehouse with a phone; its lines hold what was
+# counted next to what the system believed AT THAT MOMENT. Applying writes the
+# difference into inventory_stock and leaves one row per adjustment in
+# `stock_adjustments`, the ledger of stock changes that are neither a sale nor a
+# reception.
+_STOCK_COUNT = [
+    ("create_stock_counts",
+     """CREATE TABLE IF NOT EXISTS stock_counts (
+         id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id      TEXT NOT NULL,
+         warehouse      TEXT NOT NULL,
+         status         TEXT NOT NULL DEFAULT 'open'
+                        CHECK (status IN ('open', 'closed', 'applied', 'cancelled')),
+         scope_category TEXT,
+         scope_supplier TEXT,
+         notes          TEXT,
+         created_by     TEXT,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         closed_at      TIMESTAMPTZ,
+         closed_by      TEXT,
+         applied_at     TIMESTAMPTZ,
+         applied_by     TEXT,
+         cancelled_at   TIMESTAMPTZ,
+         cancelled_by   TEXT
+     )"""),
+    ("create_stock_counts_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS stock_counts_tenant_idx ON stock_counts (tenant_id, created_at DESC)"),
+    ("create_stock_count_lines",
+     """CREATE TABLE IF NOT EXISTS stock_count_lines (
+         id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id           TEXT NOT NULL,
+         count_id            TEXT NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+         sku                 TEXT NOT NULL,
+         counted_qty         FLOAT NOT NULL CHECK (counted_qty >= 0),
+         system_qty_at_count FLOAT NOT NULL,
+         source              TEXT NOT NULL DEFAULT 'manual'
+                             CHECK (source IN ('scan', 'manual')),
+         scanned_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         scanned_by          TEXT,
+         applied_at          TIMESTAMPTZ,
+         applied_by          TEXT,
+         applied_from        FLOAT,
+         applied_to          FLOAT,
+         UNIQUE (count_id, sku)
+     )"""),
+    ("create_stock_count_lines_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS stock_count_lines_tenant_idx ON stock_count_lines (tenant_id, count_id)"),
+    # One row per scan the phone has already delivered, so a retry after a lost
+    # response (or an offline queue replayed twice) cannot add the same units twice.
+    ("create_stock_count_ops",
+     """CREATE TABLE IF NOT EXISTS stock_count_ops (
+         count_id   TEXT NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+         client_ref TEXT NOT NULL,
+         tenant_id  TEXT NOT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (count_id, client_ref)
+     )"""),
+    ("create_stock_adjustments",
+     """CREATE TABLE IF NOT EXISTS stock_adjustments (
+         id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id   TEXT NOT NULL,
+         sku         TEXT NOT NULL,
+         warehouse   TEXT NOT NULL,
+         qty_before  FLOAT NOT NULL,
+         qty_after   FLOAT NOT NULL,
+         delta       FLOAT NOT NULL,
+         unit_cost   FLOAT,
+         reason      TEXT NOT NULL,
+         ref_id      TEXT,
+         created_by  TEXT,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_stock_adjustments_sku_idx",
+     "CREATE INDEX IF NOT EXISTS stock_adjustments_sku_idx ON stock_adjustments (tenant_id, sku, created_at DESC)"),
+]
+_MIGRATIONS += _STOCK_COUNT
+
 
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.

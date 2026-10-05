@@ -4,7 +4,7 @@ import {
   TrendingUp, Package, MessagesSquare, Users, User,
   ShoppingCart, Truck, Upload, ClipboardList, History, Database,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
-  ScrollText, Settings,
+  ScrollText, Settings, ScanLine,
 } from 'lucide-react'
 import { has, UNKNOWN_FACTS, type TenantFacts } from '@/hooks/useTenantFacts'
 
@@ -53,6 +53,9 @@ export const SCREENS: Screen[] = [
   // Kept flat as /configurar-inventario rather than nested under /inventario,
   // so it can never inherit a layout that screen does not want.
   { href: '/configurar-inventario', labelKey: 'nav.inventory_setup', Icon: ListChecks,   parent: '/inventario' },
+  // Counted with the phone, from Inventario's menu and the command palette. Not
+  // a sidebar entry: it is a task done now and then, not a daily screen.
+  { href: '/conteo-fisico',         labelKey: 'count.page_title',    Icon: ScanLine,     parent: '/inventario' },
 
   // ── Under Pronósticos: the analysis tabs (ANALYSIS_TABS below) ─────────────
   { href: '/escenarios',            labelKey: 'nav.scenarios',       Icon: FlaskConical, parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },

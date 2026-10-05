@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 227,
-  "read": 144,
-  "write": 83
+  "total": 237,
+  "read": 148,
+  "write": 89
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -9117,6 +9117,587 @@
       {
        "status": 403,
        "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-stock-counts",
+     "method": "GET",
+     "path": "/inventory/stock-counts",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "List Counts",
+     "description": "List stock counts, newest first, with how many products each holds.",
+     "parameters": [
+      {
+       "name": "status",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "enum": [
+         "open",
+         "closed",
+         "applied",
+         "cancelled"
+        ]
+       },
+       "example": "open"
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200,
+        "default": 50
+       },
+       "example": 50
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-stock-counts",
+     "method": "POST",
+     "path": "/inventory/stock-counts",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Create Count",
+     "description": "Open a count session for one warehouse, optionally scoped to a category or supplier.",
+     "parameters": [],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 100,
+         "nullable": true
+        },
+        {
+         "name": "scope_category",
+         "required": false,
+         "type": "string",
+         "max_length": 100,
+         "nullable": true
+        },
+        {
+         "name": "scope_supplier",
+         "required": false,
+         "type": "string",
+         "max_length": 200,
+         "nullable": true
+        },
+        {
+         "name": "notes",
+         "required": false,
+         "type": "string",
+         "max_length": 500,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {
+       "warehouse": "principal",
+       "scope_category": "scope_category",
+       "scope_supplier": "Distribuidora Andina",
+       "notes": "Free-text note"
+      }
+     },
+     "success_status": 201,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-stock-counts-count_id",
+     "method": "GET",
+     "path": "/inventory/stock-counts/{count_id}",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "Get Count",
+     "description": "One count with every line (counted quantity next to the system quantity at the first scan).",
+     "parameters": [
+      {
+       "name": "count_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<count_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-stock-counts-count_id-apply",
+     "method": "POST",
+     "path": "/inventory/stock-counts/{count_id}/apply",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Apply Count",
+     "description": "Write the differences into stock, exactly once, and record each adjustment with reason 'physical_count'. Omit skus to apply every line; a list applies only those. All or nothing.",
+     "parameters": [
+      {
+       "name": "count_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<count_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": false,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "skus",
+         "required": false,
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "nullable": true
+        }
+       ],
+       "nullable": true
+      },
+      "example": {
+       "skus": [
+        "skus"
+       ]
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-stock-counts-count_id-cancel",
+     "method": "POST",
+     "path": "/inventory/stock-counts/{count_id}/cancel",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Cancel Count",
+     "description": "Discard an open or closed count. Stock is not changed.",
+     "parameters": [
+      {
+       "name": "count_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<count_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-stock-counts-count_id-close",
+     "method": "POST",
+     "path": "/inventory/stock-counts/{count_id}/close",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Close Count",
+     "description": "Finish counting. A closed count accepts no more lines and can be reviewed and applied.",
+     "parameters": [
+      {
+       "name": "count_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<count_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "put-inventory-stock-counts-count_id-lines",
+     "method": "PUT",
+     "path": "/inventory/stock-counts/{count_id}/lines",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Upsert Line",
+     "description": "Record units of a SKU in an open count. mode 'add' (default) accumulates, 'set' replaces the counted total; a repeated client_ref is ignored.",
+     "parameters": [
+      {
+       "name": "count_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<count_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "sku",
+         "required": true,
+         "type": "string",
+         "min_length": 1,
+         "max_length": 200
+        },
+        {
+         "name": "quantity",
+         "required": true,
+         "type": "number",
+         "minimum": 0.0,
+         "maximum": 1000000000.0
+        },
+        {
+         "name": "mode",
+         "required": false,
+         "type": "string",
+         "enum": [
+          "add",
+          "set"
+         ],
+         "default": "add"
+        },
+        {
+         "name": "source",
+         "required": false,
+         "type": "string",
+         "enum": [
+          "scan",
+          "manual"
+         ],
+         "default": "manual"
+        },
+        {
+         "name": "client_ref",
+         "required": false,
+         "type": "string",
+         "max_length": 100,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {
+       "sku": "SKU-001",
+       "quantity": 1.0,
+       "mode": "add",
+       "source": "scan",
+       "client_ref": "client_ref"
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "delete-inventory-stock-counts-count_id-lines-sku",
+     "method": "DELETE",
+     "path": "/inventory/stock-counts/{count_id}/lines/{sku}",
+     "tag": "inventory",
+     "scope": "write",
+     "summary": "Delete Line",
+     "description": "Remove one SKU from an open count.",
+     "parameters": [
+      {
+       "name": "count_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<count_id>"
+      },
+      {
+       "name": "sku",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "SKU-001"
+      }
+     ],
+     "request_body": null,
+     "success_status": 204,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-stock-counts-count_id-preview",
+     "method": "GET",
+     "path": "/inventory/stock-counts/{count_id}/preview",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "Preview Count",
+     "description": "Differences between counted and system quantity, largest value impact first. A SKU with no unit cost has a null value impact.",
+     "parameters": [
+      {
+       "name": "count_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<count_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-stock-lookup",
+     "method": "GET",
+     "path": "/inventory/stock/lookup",
+     "tag": "inventory",
+     "scope": "read",
+     "summary": "Lookup Stock",
+     "description": "Resolve a scanned code to a SKU (barcode first, then SKU). Declared before `/stock/{sku}`, which would otherwise take 'lookup' for a SKU.",
+     "parameters": [
+      {
+       "name": "code",
+       "in": "query",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "min_length": 1,
+        "max_length": 200,
+        "description": "A scanned barcode or a SKU"
+       },
+       "example": "<code>"
+      },
+      {
+       "name": "warehouse",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 100
+       },
+       "example": "principal"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
       },
       {
        "status": 429,

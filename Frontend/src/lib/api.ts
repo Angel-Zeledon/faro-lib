@@ -2353,3 +2353,126 @@ export const getAuditTrail = (q: AuditQuery & { limit?: number; offset?: number 
 export const getAuditFilters = () => request<AuditFilters>('GET', '/audit/filters', undefined, { silent: true })
 export const downloadAuditCsv = (q: AuditQuery = {}) =>
   downloadBlob(`/audit/export?${auditQs(q)}`, `audit-${new Date().toISOString().slice(0, 10)}.csv`)
+
+// ── Physical stock count ─────────────────────────────────────────────────────
+// Count a warehouse with the phone, compare with the system, apply the
+// differences. Screen: /conteo-fisico. Everything here is `silent`: the count
+// screen owns its error text (a scan that fails must say which scan, not
+// raise a generic toast).
+
+export type StockCountStatus = 'open' | 'closed' | 'applied' | 'cancelled'
+
+export interface StockCount {
+  id:             string
+  warehouse:      string
+  status:         StockCountStatus
+  scope_category: string | null
+  scope_supplier: string | null
+  notes:          string | null
+  created_at:     string
+  closed_at:      string | null
+  applied_at:     string | null
+  lines_count?:   number
+}
+
+export interface StockCountLine {
+  sku:                 string
+  counted_qty:         number
+  system_qty_at_count: number
+  source:              'scan' | 'manual'
+  scanned_at:          string
+  applied_at:          string | null
+}
+
+export interface StockCountDetail extends StockCount { lines: StockCountLine[] }
+
+export interface StockLookupResult {
+  sku:             string
+  display_name:    string | null
+  barcode:         string | null
+  unit_of_measure: string | null
+  category:        string | null
+  unit_cost:       number | null
+  warehouse:       string | null
+  system_qty:      number
+  in_warehouse:    boolean | null
+  matched_by:      'barcode' | 'sku'
+}
+
+export interface StockCountPreviewLine {
+  sku:                 string
+  display_name:        string | null
+  counted_qty:         number
+  system_qty_at_count: number
+  current_qty:         number
+  difference:          number
+  unit_cost:           number | null
+  /** null when the SKU has no unit cost: unknown, never zero. */
+  value_impact:        number | null
+  moved_since_count:   boolean
+  applied_at:          string | null
+  applied_from:        number | null
+  applied_to:          number | null
+}
+
+export interface StockCountPreview {
+  count: StockCount
+  lines: StockCountPreviewLine[]
+  totals: {
+    lines: number; lines_with_difference: number
+    units_over: number; units_short: number
+    value_over: number; value_short: number; net_value: number
+    unpriced_lines: number; uncounted_skus: number
+  }
+}
+
+export interface StockCountApplyResult {
+  count_id: string; warehouse: string
+  lines_applied: number; lines_adjusted: number; lines_unchanged: number
+  units_added: number; units_removed: number
+  net_value: number; unpriced_lines: number
+}
+
+export interface StockCountLineBody {
+  sku: string; quantity: number
+  mode: 'add' | 'set'; source: 'scan' | 'manual'
+  client_ref: string
+}
+
+const SILENT = { silent: true } as const
+
+export const lookupStockCode = (code: string, warehouse?: string) =>
+  request<StockLookupResult>(
+    'GET',
+    `/inventory/stock/lookup?code=${encodeURIComponent(code)}${warehouse ? `&warehouse=${encodeURIComponent(warehouse)}` : ''}`,
+    undefined, SILENT,
+  )
+
+export const listStockCounts = (status?: StockCountStatus) =>
+  request<StockCount[]>('GET', `/inventory/stock-counts${status ? `?status=${status}` : ''}`, undefined, SILENT)
+
+export const createStockCount = (body: { warehouse?: string; scope_category?: string; scope_supplier?: string }) =>
+  request<StockCount>('POST', '/inventory/stock-counts', body, SILENT)
+
+export const getStockCount = (id: string) =>
+  request<StockCountDetail>('GET', `/inventory/stock-counts/${encodeURIComponent(id)}`, undefined, SILENT)
+
+export const upsertStockCountLine = (id: string, body: StockCountLineBody) =>
+  request<{ duplicate: boolean; line: StockCountLine | null }>(
+    'PUT', `/inventory/stock-counts/${encodeURIComponent(id)}/lines`, body, SILENT)
+
+export const deleteStockCountLine = (id: string, sku: string) =>
+  request<void>('DELETE', `/inventory/stock-counts/${encodeURIComponent(id)}/lines/${encodeURIComponent(sku)}`, undefined, SILENT)
+
+export const closeStockCount = (id: string) =>
+  request<StockCount>('POST', `/inventory/stock-counts/${encodeURIComponent(id)}/close`, undefined, SILENT)
+
+export const previewStockCount = (id: string) =>
+  request<StockCountPreview>('GET', `/inventory/stock-counts/${encodeURIComponent(id)}/preview`, undefined, SILENT)
+
+export const applyStockCount = (id: string, skus?: string[]) =>
+  request<StockCountApplyResult>(
+    'POST', `/inventory/stock-counts/${encodeURIComponent(id)}/apply`, skus ? { skus } : {}, SILENT)
+
+export const cancelStockCount = (id: string) =>
+  request<StockCount>('POST', `/inventory/stock-counts/${encodeURIComponent(id)}/cancel`, undefined, SILENT)

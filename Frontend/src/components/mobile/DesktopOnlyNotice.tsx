@@ -37,6 +37,8 @@ export const MOBILE_READY = [
   '/inventario',
   // Setup gaps as cards with inline boxes; semáforo rules save from a sticky bar.
   '/configurar-inventario',
+  // Built for the phone first: camera scanning, big stepper, offline queue.
+  '/conteo-fisico',
   // Supplier cards + detail/form sheets; also covers /proveedores/scorecard (cards).
   '/proveedores',
   // Upload wizard: stacked mapping, sticky confirm, wrapping step bar.

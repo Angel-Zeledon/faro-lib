@@ -196,6 +196,11 @@ EVENTS: dict[str, EventSpec] = {
         kind="data", severity=INFO,
         detail_keys=("sku", "quantity", "warehouse", "shrinkage_reason"),
     ),
+    # A physical count applied: one document, so counted rather than named.
+    "data.stock_count_applied": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("warehouse", "lines", "units"),
+    ),
     # A transfer is one document with many lines, so it is counted, not named:
     # a per-SKU event would put ten rows in the feed for one decision.
     "data.transfer_created": EventSpec(

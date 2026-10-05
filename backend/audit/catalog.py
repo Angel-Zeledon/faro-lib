@@ -123,6 +123,7 @@ LEGACY: dict[str, tuple[str, str]] = {
     "data.orders_import_partial":      ("bulk_import", "bulk_import.purchase_orders"),
     "data.transfer_created":           ("transfer", "transfer.created"),
     "data.shrinkage_recorded":         ("shrinkage", "shrinkage.recorded"),
+    "data.stock_count_applied":        ("stock_count", "stock_count.applied"),
     "api_write":                       ("api_call", "api_call.write"),
 }
 
