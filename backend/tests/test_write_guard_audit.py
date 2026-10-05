@@ -80,12 +80,20 @@ INFRA = {
     # Not a user at all: Twilio posting an inbound WhatsApp message. Authorised
     # by request signature, so a role guard here would reject the only caller.
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
+    # The mail provider posting an inbound message. No user session exists; it
+    # is refused (401) before anything is parsed unless it carries the
+    # installation's webhook secret (HMAC with a replay window, or Basic), and it
+    # is off (503) when no secret is configured. Past that, the secret per-tenant
+    # address picks the tenant and only verified analysts/admins or listed
+    # senders get a file ingested (backend/inbound_email/ingest.py).
+    "POST /api/v1/inbound/email": "mail-provider webhook, verified by shared secret + per-tenant address + sender allow-list",
 }
 
 # POSTs that read. HTTP makes you POST anything with a body, so a query, an
 # export or a connection probe is a POST without being a write.
 READ_ONLY_POSTS = {
-    "test-connection": "probes a stored connection, changes nothing",
+    # NOT "test-connection": the probe stores `datasets.connection_status`, so
+    # it is a write and carries require_analyst_or_above (see below).
     "execute-query": "runs a SELECT and returns rows",
     "export-query": "downloads what a SELECT returned",
     "simulate": "computes a scenario without persisting it",
@@ -193,6 +201,38 @@ class TestEveryMutatingRouteIsGuarded:
         ids = {rid for rid, _ in _mutating_routes(app) if "/data-sources" in rid}
         assert "POST /api/v1/data-sources/sql" in ids
         assert "DELETE /api/v1/data-sources/{source_id}" in ids
+
+    def test_the_connection_probe_is_a_guarded_write(self, app):
+        """It used to be excused as a read, but it writes connection_status -
+        which gates execute-query and materialize for the whole tenant."""
+        rid = "POST /api/v1/data-sources/{source_id}/test-connection"
+        routes = {r: route for r, route in _mutating_routes(app)}
+        assert rid in routes
+        assert not _excused(rid), "the probe must not hide behind an allow-list entry"
+        assert _is_guarded(routes[rid])
+
+    def test_the_inbound_mail_webhook_refuses_without_the_secret(self):
+        """The INFRA excuse holds only while the webhook checks its secret; the
+        two verifiers it relies on must reject a wrong or missing one."""
+        import base64
+        import hashlib
+        import hmac
+        import time
+        from backend.api.v1 import inbound_email as ie
+
+        body = b'{"x": 1}'
+        now = int(time.time())
+        good = hmac.new(b"s3cret", f"{now}.".encode() + body, hashlib.sha256).hexdigest()
+        assert ie.verify_signature("s3cret", f"t={now},v1={good}", body, now=now)
+        assert not ie.verify_signature("other", f"t={now},v1={good}", body, now=now)
+        assert not ie.verify_signature("s3cret", f"t={now},v1={good}", body + b" ", now=now)
+        assert not ie.verify_signature(
+            "s3cret", f"t={now},v1={good}", body, now=now + ie.REPLAY_WINDOW_SECONDS + 1)
+        assert not ie.verify_signature("s3cret", "garbage", body, now=now)
+        basic = "Basic " + base64.b64encode(b"x:s3cret").decode()
+        assert ie.verify_basic("s3cret", basic)
+        assert not ie.verify_basic("other", basic)
+        assert not ie.verify_basic("s3cret", "Bearer s3cret")
 
 
 class TestTheAllowlistCannotRot:

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from backend.activity.events import record_event
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import (
     CurrentUser, get_current_user, require_admin, require_analyst_or_above,
 )
@@ -61,21 +62,38 @@ def get_settings(user: CurrentUser = Depends(get_current_user)):
     read it (the PO screen needs to know whether the workflow is on); only an
     admin can change it."""
     rules = svc.list_rules(user.tenant_id)
+    shown = rules
+    if wscope.is_scoped(user):
+        # A rule narrowed to a warehouse outside the scope would name it; rules
+        # for every warehouse (no warehouse set) apply to theirs too and stay.
+        shown = [r for r in rules
+                 if not (r.get("warehouse") or "").strip()
+                 or wscope.in_scope(user, r["warehouse"])]
     return ok({
-        "rules": rules,
+        "rules": shown,
+        # Whether the workflow is on is a yes/no about the company, not a
+        # warehouse figure: the PO screen needs it to show the approval panel.
         "enabled": any(r["active"] for r in rules),
         "approvers": svc.list_approvers(user.tenant_id),
         "is_approver": svc.is_approver(user.tenant_id, user.user_id),
     })
 
 
+# The rules and the approver list govern every warehouse's orders (a rule with
+# no warehouse applies to all of them; an approver decides orders anywhere), so
+# changing them is a company-wide act: an administrator limited to some
+# warehouses is refused (`warehouse_scope_company_setting`), the same way a
+# scoped administrator cannot widen anybody's warehouse scope.
+
 @router.post("/po-approval/rules", status_code=201)
 def create_rule(body: RuleBody, user: CurrentUser = Depends(require_admin)):
+    wscope.require_company_setting(user)
     return ok(svc.create_rule(user.tenant_id, user.user_id, body.model_dump()))
 
 
 @router.patch("/po-approval/rules/{rule_id}")
 def update_rule(rule_id: str, body: RulePatch, user: CurrentUser = Depends(require_admin)):
+    wscope.require_company_setting(user)
     # exclude_unset: an omitted field keeps its value; an explicit null on
     # warehouse / supplier / self-approval clears it.
     return ok(svc.update_rule(user.tenant_id, rule_id, body.model_dump(exclude_unset=True)))
@@ -83,6 +101,7 @@ def update_rule(rule_id: str, body: RulePatch, user: CurrentUser = Depends(requi
 
 @router.delete("/po-approval/rules/{rule_id}")
 def delete_rule(rule_id: str, user: CurrentUser = Depends(require_admin)):
+    wscope.require_company_setting(user)
     svc.delete_rule(user.tenant_id, rule_id)
     return ok({"deleted": True})
 
@@ -90,6 +109,7 @@ def delete_rule(rule_id: str, user: CurrentUser = Depends(require_admin)):
 @router.put("/po-approval/approvers/{user_id}")
 def set_approver(user_id: str, body: ApproverBody,
                  user: CurrentUser = Depends(require_admin)):
+    wscope.require_company_setting(user)
     return ok(svc.set_approver(user.tenant_id, user_id, body.can_approve))
 
 
@@ -97,19 +117,27 @@ def set_approver(user_id: str, body: ApproverBody,
 
 @router.get("/po-approval/pending")
 def pending(user: CurrentUser = Depends(get_current_user)):
-    return ok(svc.list_pending(user.tenant_id, user.user_id))
+    inbox = svc.list_pending(user.tenant_id, user.user_id)
+    # An order belongs to its destination warehouse (see wscope.po_guard): a
+    # scoped approver's inbox holds only the orders they may open.
+    return ok({**inbox, "items": wscope.filter_po_rows(user, inbox["items"], key="po_log_id")})
 
 
 # ── Per order ────────────────────────────────────────────────────────────────
+# Every route here takes `{po_log_id}` and carries `wscope.po_guard`: the
+# approval panel shows the order's value, suppliers and history, and approving
+# or rejecting it decides a purchase for that order's warehouse.
 
 @router.get("/po/{po_log_id}/approval")
-def get_approval(po_log_id: str, user: CurrentUser = Depends(get_current_user)):
+def get_approval(po_log_id: str, user: CurrentUser = Depends(get_current_user),
+                 _scope: None = Depends(wscope.po_guard)):
     return ok(svc.describe(user.tenant_id, po_log_id, user.user_id))
 
 
 @router.post("/po/{po_log_id}/approval/request")
 def request_approval(po_log_id: str, body: Optional[RequestBody] = None,
-                     user: CurrentUser = Depends(require_analyst_or_above)):
+                     user: CurrentUser = Depends(require_analyst_or_above),
+                     _scope: None = Depends(wscope.po_guard)):
     result = svc.request_approval(user.tenant_id, po_log_id, user.user_id,
                                   note=body.note if body else None)
     if result["changed"]:
@@ -125,13 +153,15 @@ def request_approval(po_log_id: str, body: Optional[RequestBody] = None,
 
 @router.post("/po/{po_log_id}/approval/approve")
 def approve(po_log_id: str, body: Optional[DecisionBody] = None,
-            user: CurrentUser = Depends(require_analyst_or_above)):
+            user: CurrentUser = Depends(require_analyst_or_above),
+            _scope: None = Depends(wscope.po_guard)):
     return ok(_decide(user, po_log_id, "approved", body.comment if body else None))
 
 
 @router.post("/po/{po_log_id}/approval/reject")
 def reject(po_log_id: str, body: DecisionBody,
-           user: CurrentUser = Depends(require_analyst_or_above)):
+           user: CurrentUser = Depends(require_analyst_or_above),
+           _scope: None = Depends(wscope.po_guard)):
     return ok(_decide(user, po_log_id, "rejected", body.comment))
 
 

@@ -248,7 +248,10 @@ def update_sql_config(
 @router.post("/{source_id}/test-connection")
 def test_connection(
     source_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    # Not a read: the probe stores its verdict in `datasets.connection_status`,
+    # which gates execute-query and materialize for everybody. A viewer must not
+    # be able to flip it (nor to make the server open connections on demand).
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
     result = svc.test_sql_connection(user.tenant_id, source_id)

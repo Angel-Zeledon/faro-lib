@@ -3,8 +3,8 @@
  "base_path": "/api/v1",
  "counts": {
   "total": 241,
-  "read": 150,
-  "write": 91
+  "read": 149,
+  "write": 92
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -4034,7 +4034,7 @@
      "method": "POST",
      "path": "/data-sources/{source_id}/test-connection",
      "tag": "data-sources",
-     "scope": "read",
+     "scope": "write",
      "summary": "Test a SQL source's connection",
      "description": "Connects to the database with the stored settings and reports whether it worked.",
      "parameters": [
