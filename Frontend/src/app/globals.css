@@ -643,6 +643,12 @@
 .auth-eye:hover { color: #0a0a0a; }
 .auth-eye:focus-visible { outline: 2px solid #0a0a0a; outline-offset: 2px; border-radius: 8px; }
 
+/* Edge draws its own reveal / clear button inside every password field, flush
+   against the right border — a second eye next to ours, half outside the input.
+   The app has its own toggle on every password field, so the native one goes. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear { display: none; }
+
 .auth-link { position: relative; }
 .auth-link::after {
   content: ''; position: absolute; left: 0; right: 100%; bottom: -1px; height: 1px;
