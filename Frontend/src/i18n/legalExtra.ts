@@ -601,10 +601,11 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Límite', 'Plan gratis', 'Plan completo'],
               rows: [
-                ['Productos (SKUs)', '100', '500'],
-                ['Usuarios', '2', '3'],
-                ['Bodegas', '1', '2'],
+                ['Productos (SKUs)', '100', '1.000'],
+                ['Usuarios', '2', '5'],
+                ['Bodegas', '1', '3'],
                 ['Pronósticos guardados', '3', '20'],
+                ['Entrenamientos por día', '1', '10'],
                 ['API, servidor MCP y bot de WhatsApp', 'No incluidos', 'Incluidos'],
                 ['Claves de API', 'No incluida', '3'],
                 ['Llamadas a la API', 'No incluida', '2.000 por día por clave'],
@@ -646,7 +647,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Concepto', 'Precio estimado'],
               rows: [
-                ['Base mensual', 'USD 59, que incluye 500 productos, 3 usuarios, 2 bodegas, la API, el servidor MCP, el bot de WhatsApp y 2.000 llamadas a la API por día por clave'],
+                ['Base mensual', 'USD 59, que incluye 1.000 productos, 5 usuarios, 3 bodegas, 10 entrenamientos por día, la API, el servidor MCP, el bot de WhatsApp y 2.000 llamadas a la API por día por clave'],
                 ['Productos adicionales', 'USD 12 por cada bloque de 500'],
                 ['Usuarios adicionales', 'USD 7 por usuario'],
                 ['Bodegas adicionales', 'USD 10 por bodega'],
@@ -1386,10 +1387,11 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Limit', 'Free plan', 'Full plan'],
               rows: [
-                ['Products (SKUs)', '100', '500'],
-                ['Users', '2', '3'],
-                ['Warehouses', '1', '2'],
+                ['Products (SKUs)', '100', '1,000'],
+                ['Users', '2', '5'],
+                ['Warehouses', '1', '3'],
                 ['Saved forecasts', '3', '20'],
+                ['Trainings per day', '1', '10'],
                 ['API, MCP server and WhatsApp bot', 'Not included', 'Included'],
                 ['API keys', 'Not included', '3'],
                 ['API calls', 'Not included', '2,000 per day per key'],
@@ -1431,7 +1433,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Item', 'Estimated price'],
               rows: [
-                ['Monthly base', 'USD 59, including 500 products, 3 users, 2 warehouses, the API, the MCP server, the WhatsApp bot and 2,000 API calls per day per key'],
+                ['Monthly base', 'USD 59, including 1,000 products, 5 users, 3 warehouses, 10 trainings per day, the API, the MCP server, the WhatsApp bot and 2,000 API calls per day per key'],
                 ['Additional products', 'USD 12 per block of 500'],
                 ['Additional users', 'USD 7 per user'],
                 ['Additional warehouses', 'USD 10 per warehouse'],

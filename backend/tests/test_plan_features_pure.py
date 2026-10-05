@@ -39,7 +39,7 @@ def test_free_and_demo_have_no_api_ceilings_to_spend():
 def test_corporate_lifts_every_commercial_ceiling_but_not_infrastructure():
     c = PLANS[CORPORATE]
     for name in ("max_skus", "max_users", "max_locations", "max_sessions",
-                 "max_api_keys", "max_api_calls_per_day"):
+                 "max_api_keys", "max_api_calls_per_day", "max_trainings_per_day"):
         assert getattr(c, name) is None, name
     assert c.max_concurrent_jobs == PLANS[PAID].max_concurrent_jobs
     assert c.max_dataset_size_mb == 2000
@@ -48,7 +48,8 @@ def test_corporate_lifts_every_commercial_ceiling_but_not_infrastructure():
 def test_paid_is_limited_and_above_free():
     paid, free = PLANS[PAID], PLANS[FREE]
     for name in ("max_skus", "max_users", "max_locations", "max_sessions",
-                 "max_api_keys", "max_api_calls_per_day", "max_dataset_size_mb"):
+                 "max_api_keys", "max_api_calls_per_day", "max_dataset_size_mb",
+                 "max_trainings_per_day"):
         assert getattr(paid, name) is not None, name
         assert getattr(paid, name) > getattr(free, name), name
 
@@ -81,3 +82,26 @@ def test_locked_error_is_the_structured_403():
     assert err.params == {"feature": "mcp", "required_plan": FEATURE_REQUIRED_PLAN}
     assert FEATURE_REQUIRED_PLAN == PAID
     assert "Old keys stop working." in err.message
+
+
+def test_full_plan_numbers_of_2026_10_05():
+    """Owner decision: the Full plan fits 1,000 products, 5 users and 3
+    warehouses. A drift here is a price-list change, so it must be deliberate."""
+    paid = PLANS[PAID]
+    assert (paid.max_skus, paid.max_users, paid.max_locations) == (1000, 5, 3)
+
+
+def test_training_ceiling_per_day_by_tier():
+    assert PLANS[FREE].max_trainings_per_day == 1
+    assert PLANS[DEMO].max_trainings_per_day == 1
+    assert PLANS[PAID].max_trainings_per_day == 10
+    assert PLANS[CORPORATE].max_trainings_per_day is None
+    assert tenant_limits({"tier": PAID})["max_trainings_per_day"] == 10
+    # A per-tenant agreement wins, in both directions, like every other ceiling.
+    assert tenant_limits(
+        {"tier": FREE, "quota": {"max_trainings_per_day": 3}})["max_trainings_per_day"] == 3
+
+
+def test_the_training_ceiling_has_a_catalogue_key():
+    from backend.error_codes import all_bridge_codes
+    assert "plan_limit_max_trainings_per_day" in all_bridge_codes()
