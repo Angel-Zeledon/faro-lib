@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getPOItems, receivePO, sendPOToSuppliers } from '@/lib/api'
-import type { POLogEntry, POItemLine } from '@/lib/types'
+import type { POLogEntry, POItemLine, OverdueReception } from '@/lib/types'
+import AttentionChip from '@/components/layout/AttentionChip'
 import Spinner from '@/components/ui/Spinner'
 import { useErrorDetail } from '@/components/ui/States'
 import { Truck, X, Send } from 'lucide-react'
@@ -432,8 +433,10 @@ export function SendPOButton({ poLogId, suppliersWithoutContact, onSent }: {
   )
 }
 
-export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutContact = [] }: {
+export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutContact = [], overdueById = {} }: {
   entries: POLogEntry[]
+  /** Open orders past their expected arrival, by id: a calm chip in the row. */
+  overdueById?: Record<string, OverdueReception>
   onReceive: (id: string) => void
   /** Reload after an undo rewrote stock or the sent flag, or the order was
    *  marked paid / unpaid. */
@@ -542,6 +545,12 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                       }}>
                         {t(badge.labelKey)}
                       </span>
+                      {receivable && overdueById[entry.id] && (
+                        <>
+                          <AttentionChip>{t('attention.chip_arrival_to_confirm')}</AttentionChip>
+                          <AttentionChip dot={false}>{t('attention.chip_late_days', { n: overdueById[entry.id].days_overdue })}</AttentionChip>
+                        </>
+                      )}
                       {receivable && (
                         <button
                           onClick={() => onReceive(entry.id)}
@@ -552,7 +561,7 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                             border: `1px solid ${C.border}`, color: C.text,
                           }}
                         >
-                          <Truck size={11} aria-hidden="true" /> {t('po.reception_btn_register')}
+                          <Truck size={11} aria-hidden="true" /> {t(overdueById[entry.id] ? 'attention.confirm_arrival' : 'po.reception_btn_register')}
                         </button>
                       )}
                       <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact} />

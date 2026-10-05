@@ -26,9 +26,7 @@
 import { useEffect, useState } from 'react'
 import BulkImportButton from '@/components/inventory/BulkImportButton'
 import { ClipboardList, Truck, ShoppingCart, Plus, Package, RefreshCw } from 'lucide-react'
-import type {
-  POLogEntry, POItemLine, SupplierContactHealthRow, SupplierLeadTimeAlert,
-} from '@/lib/types'
+import type { POLogEntry, POItemLine, OverdueReception } from '@/lib/types'
 import { getPOItems } from '@/lib/api'
 import { formatMoney } from '@/lib/currency'
 import { formatPoNumber } from '@/lib/poNumber'
@@ -37,9 +35,7 @@ import { SendPOButton } from '@/components/po/POHistory'
 import { UndoPOActions } from '@/components/po/UndoPOActions'
 import { PaidPOActions } from '@/components/po/PaidPOActions'
 import { CancelPOActions, CancelledBadge } from '@/components/po/CancelPOActions'
-import {
-  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
-} from '@/components/suppliers/SupplierHealthBanners'
+import AttentionChip from '@/components/layout/AttentionChip'
 import { EmptyState, ErrorState, LoadingState, SkeletonCards, useErrorDetail } from '@/components/ui/States'
 import Spinner from '@/components/ui/Spinner'
 import BottomSheet from '@/components/mobile/BottomSheet'
@@ -58,11 +54,11 @@ interface PedidosMobileProps {
   error:   unknown
   onRetry: () => void
   entries: POLogEntry[]
-  /** Already narrowed to suppliers on an open order — see ./shared. */
-  contactHealth:  SupplierContactHealthRow[]
   /** Every supplier the send path would skip (the send confirmation names them). */
   suppliersWithoutContact: string[]
-  leadTimeAlerts: SupplierLeadTimeAlert[]
+  /** Open orders past their expected arrival, by order id. Shown as a chip on
+   *  the card, never as a banner. */
+  overdueById: Record<string, OverdueReception>
   onReceive: (poId: string) => void
   /** Reload the list after an action rewrote an order (send, undo). */
   onChanged: () => void
@@ -86,7 +82,7 @@ const STATUS_KEY: Record<string, string> = {
 export default function PedidosMobile(props: PedidosMobileProps) {
   const { t } = useLanguage()
   const {
-    loading, error, onRetry, entries, contactHealth, suppliersWithoutContact, leadTimeAlerts,
+    loading, error, onRetry, entries, suppliersWithoutContact, overdueById,
     onReceive, onChanged, canEdit, onCreate, multiWarehouse, transfers,
   } = props
 
@@ -121,11 +117,6 @@ export default function PedidosMobile(props: PedidosMobileProps) {
 
       {view === 'transfers' && multiWarehouse ? transfers : (
         <>
-          {/* The two supplier-health warnings survive the trip to the phone:
-              they are the reason an order may never reach the supplier. */}
-          <SupplierContactHealthBanner rows={contactHealth} />
-          <SupplierLeadTimeAlertBanner alerts={leadTimeAlerts} />
-
           {loading ? (
             <LoadingState label={t('orders.loading_label')}>
               <SkeletonCards count={4} height={92} />
@@ -161,6 +152,7 @@ export default function PedidosMobile(props: PedidosMobileProps) {
                 <OrderCard
                   key={entry.id}
                   entry={entry}
+                  overdue={isAwaitingReception(entry) ? overdueById[entry.id] : undefined}
                   onOpen={() => setDetailId(entry.id)}
                   onReceive={canEdit && isAwaitingReception(entry) ? () => onReceive(entry.id) : undefined}
                 />
@@ -209,8 +201,9 @@ export default function PedidosMobile(props: PedidosMobileProps) {
 }
 
 // ── One order in the list ────────────────────────────────────────────────────
-function OrderCard({ entry, onOpen, onReceive }: {
+function OrderCard({ entry, overdue, onOpen, onReceive }: {
   entry: POLogEntry
+  overdue?: OverdueReception
   onOpen: () => void
   onReceive?: () => void
 }) {
@@ -244,6 +237,12 @@ function OrderCard({ entry, onOpen, onReceive }: {
           <span style={{ fontSize: 13, color: C.muted, overflow: 'hidden', overflowWrap: 'anywhere', }}>
             {fmtShortDateTime(entry.generated_at, lang)} · {skuCountText(t, entry.sku_count)} · {unitCountText(t, entry.total_units)}
           </span>
+          {overdue && (
+            <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <AttentionChip>{t('attention.chip_arrival_to_confirm')}</AttentionChip>
+              <AttentionChip dot={false}>{t('attention.chip_late_days', { n: overdue.days_overdue })}</AttentionChip>
+            </span>
+          )}
           {(entry.skus_order_now > 0 || entry.skus_order_soon > 0 || entry.source === 'manual') && (
             <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
               {entry.skus_order_now > 0 && (
@@ -277,7 +276,7 @@ function OrderCard({ entry, onOpen, onReceive }: {
             onClick={onReceive}
             style={{ width: '100%' }}
           >
-            <Truck size={17} aria-hidden="true" /> {t('po.reception_btn_register')}
+            <Truck size={17} aria-hidden="true" /> {t(overdue ? 'attention.confirm_arrival' : 'po.reception_btn_register')}
           </button>
         </div>
       )}

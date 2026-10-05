@@ -5,7 +5,9 @@ import { useSearchParams } from 'next/navigation'
 import {
   listSuppliersPage, createSupplier, updateSupplier, deleteSupplier,
 } from '@/lib/api'
-import type { Supplier } from '@/lib/types'
+import type { Supplier, SupplierLeadTimeAlert } from '@/lib/types'
+import { useAttention } from '@/hooks/useAttention'
+import AttentionChip from '@/components/layout/AttentionChip'
 import Spinner from '@/components/ui/Spinner'
 import Pagination from '@/components/table/Pagination'
 import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable, useErrorDetail } from '@/components/ui/States'
@@ -349,9 +351,39 @@ function SupplierFormPanel({
   )
 }
 
+// ── Row chips ─────────────────────────────────────────────────────────────────
+// What is worth knowing about a supplier lives on the supplier's own row, as a
+// calm chip — not as a banner above the list. The same facts feed the bell and
+// the navigation count (hooks/useAttention).
+function SupplierChips({ missingContact, slow, onEdit }: {
+  missingContact: boolean
+  slow?: SupplierLeadTimeAlert
+  /** Absent where the chip sits inside another button (phone card). */
+  onEdit?: () => void
+}) {
+  const { t } = useLanguage()
+  if (!missingContact && !slow) return null
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, minWidth: 0 }}>
+      {missingContact && (
+        <AttentionChip onClick={onEdit}>{t('attention.chip_missing_contact')}</AttentionChip>
+      )}
+      {slow && (
+        <AttentionChip dot={!missingContact}>
+          {t('attention.chip_slow_supplier', {
+            n: Math.round(slow.lead_time_recent), usual: Math.round(slow.lead_time_historical),
+          })}
+        </AttentionChip>
+      )}
+    </div>
+  )
+}
+
 // ── Phone: supplier detail sheet ──────────────────────────────────────────────
-function SupplierSheet({ supplier, onClose, onEdit, onDelete }: {
+function SupplierSheet({ supplier, onClose, onEdit, onDelete, missingContact, slow }: {
   supplier: SupplierWithLearning | null
+  missingContact: boolean
+  slow?: SupplierLeadTimeAlert
   onClose: () => void
   onEdit: (s: Supplier) => void
   onDelete: (id: string) => void
@@ -380,6 +412,7 @@ function SupplierSheet({ supplier, onClose, onEdit, onDelete }: {
       ) : undefined}>
       {s && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <SupplierChips missingContact={missingContact} slow={slow} onEdit={() => onEdit(s)} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px 12px' }}>
             <div><div style={factLabel}>{t('suppliers.table_lead_time')}</div><div style={{ ...factValue, color: C.indigo }}>{s.lead_time_days}d</div></div>
             <div><div style={factLabel}>{t('suppliers.table_variability')}</div><div style={factValue}>±{s.lead_time_std}d</div></div>
@@ -413,7 +446,14 @@ function SupplierRow({
   expanded,
   onToggleExpand,
   first,
+  missingContact,
+  slow,
+  highlighted,
 }: {
+  missingContact: boolean
+  slow?: SupplierLeadTimeAlert
+  /** The row a deep link (?focus=) pointed at: tinted for a moment. */
+  highlighted: boolean
   supplier: SupplierWithLearning
   onEdit: (s: Supplier) => void
   onDelete: (id: string) => void
@@ -426,13 +466,21 @@ function SupplierRow({
   return (
     <>
       <tr
-        style={{ borderBottom: expanded ? 'none' : `1px solid ${C.border}` }}
+        id={`supplier-row-${supplier.id}`}
+        style={{
+          borderBottom: expanded ? 'none' : `1px solid ${C.border}`,
+          background: highlighted ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent',
+          transition: 'background 0.6s ease',
+        }}
         onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 3%, transparent)')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        onMouseLeave={e => (e.currentTarget.style.background = highlighted ? 'color-mix(in srgb, var(--accent) 9%, transparent)' : 'transparent')}
       >
         {/* The row divider lives on the <tr> here, because an expanded row has
             to suppress it — hence `divider={false}` on every cell. */}
-        <Td size="lg" divider={false} style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{supplier.name}</Td>
+        <Td size="lg" divider={false} style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+          {supplier.name}
+          <SupplierChips missingContact={missingContact} slow={slow} onEdit={() => onEdit(supplier)} />
+        </Td>
         <Td size="lg" divider={false} mono data-tour={first ? 'sup.leadtime' : undefined} style={{ color: C.indigo, fontWeight: 700 }}>
           {supplier.lead_time_days}d
         </Td>
@@ -516,6 +564,15 @@ function SuppliersPageInner() {
   const focusName = searchParams.get('focus')
   const [prefillName, setPrefillName] = useState<string | undefined>(undefined)
   const focusHandled = useRef(false)
+  // The supplier a deep link pointed at, until its row has been scrolled to.
+  const [focusRow, setFocusRow] = useState<{ id: string; name: string } | null>(null)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
+
+  // What is worth knowing about a supplier, as chips on its row.
+  const { contactHealth, leadTimeAlerts, reload: reloadAttention } = useAttention()
+  const missingContactNames = new Set(
+    contactHealth.filter(r => r.reason === 'no_contact').map(r => r.supplier.toLowerCase()))
+  const slowByName = new Map(leadTimeAlerts.map(a => [a.supplier.toLowerCase(), a]))
 
   const { t } = useLanguage()
   const confirm = useConfirm()
@@ -590,14 +647,35 @@ function SuppliersPageInner() {
         match = res.items.find(s => s.name.toLowerCase() === focusName.toLowerCase())
       } catch { /* the list's own load reports the failure */ }
       if (match) {
-        setEditing(match)
+        // Calm landing: narrow the list to that supplier, scroll to its row and
+        // tint it for a moment. The edit form opens from the row's own chip.
+        setFocusRow({ id: match.id, name: match.name })
+        setSearch(match.name)
       } else {
+        // No ficha yet under that name: a pre-filled new-supplier form.
         setPrefillName(focusName)
         setEditing(null)
+        setShowForm(true)
       }
-      setShowForm(true)
     })()
   }, [focusName])
+
+  // Scroll to the focused row once the list shows it, then let the tint fade.
+  useEffect(() => {
+    if (!focusRow || loading) return
+    if (debouncedSearch.toLowerCase() !== focusRow.name.toLowerCase()) return
+    if (!suppliers.some(s => s.id === focusRow.id)) return
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    document.getElementById(`supplier-row-${focusRow.id}`)
+      ?.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' })
+    setHighlightId(focusRow.id)
+    setFocusRow(null)
+  }, [focusRow, loading, debouncedSearch, suppliers])
+  useEffect(() => {
+    if (!highlightId) return
+    const h = setTimeout(() => setHighlightId(null), 3500)
+    return () => clearTimeout(h)
+  }, [highlightId])
 
   async function handleSave(form: SupplierForm) {
     setSaving(true); setActionError(null)
@@ -629,6 +707,7 @@ function SuppliersPageInner() {
       }
       setShowForm(false); setEditing(null)
       await load()
+      reloadAttention()
     } catch (e: unknown) {
       setActionError(errorDetail(e) || t('suppliers.err_saving'))
     } finally {
@@ -782,12 +861,16 @@ function SuppliersPageInner() {
         <MobileList ariaLabel={t('suppliers.page_title')}>
           {suppliers.map(s => (
             <MobileCard key={s.id}
-              title={s.name}
+              title={<span id={`supplier-row-${s.id}`}>{s.name}</span>}
+              selected={highlightId === s.id}
               subtitle={[s.payment_terms, s.email || s.phone || s.whatsapp].filter(Boolean).join(' · ') || undefined}
               value={<span style={{ color: C.indigo }}>{s.lead_time_days}d</span>}
               valueCaption={`±${s.lead_time_std}d`}
               onClick={() => setDetailId(s.id)}
-            />
+            >
+              <SupplierChips missingContact={missingContactNames.has(s.name.toLowerCase())}
+                             slow={slowByName.get(s.name.toLowerCase())} />
+            </MobileCard>
           ))}
         </MobileList>
       ) : suppliers.length > 0 ? (
@@ -829,6 +912,9 @@ function SuppliersPageInner() {
                     onDelete={handleDelete}
                     expanded={expandedId === s.id}
                     onToggleExpand={handleToggleExpand}
+                    missingContact={missingContactNames.has(s.name.toLowerCase())}
+                    slow={slowByName.get(s.name.toLowerCase())}
+                    highlighted={highlightId === s.id}
                   />
                 ))}
               </tbody>
@@ -850,6 +936,8 @@ function SuppliersPageInner() {
           onClose={() => setDetailId(null)}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          missingContact={!!detailId && missingContactNames.has((suppliers.find(s => s.id === detailId)?.name ?? '').toLowerCase())}
+          slow={slowByName.get((suppliers.find(s => s.id === detailId)?.name ?? '').toLowerCase())}
         />
       )}
       {narrow && !loading && !loadError && (suppliers.length > 0 || !!debouncedSearch) && (

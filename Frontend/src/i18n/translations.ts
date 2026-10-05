@@ -4906,6 +4906,13 @@ export const translations = {
     'precision.tracking_no_baseline': 'Hay ventas posteriores, pero esta corrida no guardó una precisión de entrenamiento con la que compararlas.',
     'precision.tracking_detail': 'Error al entrenar: {baseline} · error contra ventas reales: {realised} · {n} puntos comparados ({from} a {to}).',
     'precision.tracking_note': 'Se actualiza solo cuando subes ventas nuevas. Es un aviso: nada se reentrena automáticamente.',
+    // ── Quiet attention channels: row chips and nav dots ──
+    'attention.chip_arrival_to_confirm': 'Llegada por confirmar',
+    'attention.chip_late_days': 'Atrasado {n} d',
+    'attention.confirm_arrival': 'Confirmar llegada',
+    'attention.chip_missing_contact': 'Falta email o WhatsApp',
+    'attention.chip_slow_supplier': 'Tarda {n} d (suele ser {usual})',
+    'attention.nav_dot_aria': '{n} por revisar',
   },
   en: {
     // ── Auth screens (pre-login) — see the `es` block.
@@ -9658,6 +9665,13 @@ export const translations = {
     'precision.tracking_no_baseline': 'Later sales exist, but this run did not keep a training accuracy to compare them with.',
     'precision.tracking_detail': 'Error at training: {baseline} · error against real sales: {realised} · {n} points compared ({from} to {to}).',
     'precision.tracking_note': 'It updates itself when you upload new sales. It is a notice: nothing retrains automatically.',
+    // ── Quiet attention channels: row chips and nav dots ──
+    'attention.chip_arrival_to_confirm': 'Arrival to confirm',
+    'attention.chip_late_days': 'Late {n} d',
+    'attention.confirm_arrival': 'Confirm arrival',
+    'attention.chip_missing_contact': 'Email or WhatsApp missing',
+    'attention.chip_slow_supplier': 'Takes {n} d (usually {usual})',
+    'attention.nav_dot_aria': '{n} to review',
   },
 } as const
 

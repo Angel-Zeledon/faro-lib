@@ -1,25 +1,19 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getPOHistoryPage, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
-import type { POLogEntry, SupplierContactHealthRow, SupplierLeadTimeAlert } from '@/lib/types'
+import { getPOHistoryPage } from '@/lib/api'
+import type { POLogEntry } from '@/lib/types'
+import { useAttention } from '@/hooks/useAttention'
 import { POHistoryTable, ReceptionModal } from '@/components/po/POHistory'
 import { ManualPOModal } from '@/components/po/ManualPOModal'
 import { TransfersPanel } from '@/components/po/TransfersPanel'
 import BulkImportButton from '@/components/inventory/BulkImportButton'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
-import {
-  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
-} from '@/components/suppliers/SupplierHealthBanners'
 import { EmptyState, ErrorState, LoadingState, SkeletonTable } from '@/components/ui/States'
 import { ClipboardList, Plus, ShoppingCart } from 'lucide-react'
 import Card from '@/components/ui/Card'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
-// Which orders are still waiting for goods, and which suppliers are worth
-// warning about, live in ./shared so the phone card list below cannot answer
-// either question differently from this table.
-import { suppliersOnOpenOrders } from './shared'
 import PedidosMobile from './PedidosMobile'
 
 const C = {
@@ -43,8 +37,10 @@ export default function OrdersPage() {
   const [receivingPO, setReceivingPO] = useState<string | null>(null)
   const [creatingPO,  setCreatingPO]  = useState(false)
   const canCreate = getUser()?.role !== 'viewer'
-  const [contactHealth,  setContactHealth]  = useState<SupplierContactHealthRow[]>([])
-  const [leadTimeAlerts, setLeadTimeAlerts] = useState<SupplierLeadTimeAlert[]>([])
+  // What is waiting on the buyer is shown as a chip inside the order's row (and
+  // in the bell / nav count), never as a banner above the table.
+  const { overdue, contactHealth, reload: reloadAttention } = useAttention()
+  const overdueById = Object.fromEntries(overdue.map(o => [o.po_log_id, o]))
   // Multi-warehouse (feature 5.4): transfers tab, visible only with 2+ warehouses.
   const { multi: multiWarehouse } = useWarehouses()
   const [tab, setTab] = useState<'orders' | 'transfers'>('orders')
@@ -94,12 +90,6 @@ export default function OrdersPage() {
     if (canCreate) setCreatingPO(true)
   }, [canCreate])
 
-  // Supplier health signals (features 2.5 / 3.3) — server-computed.
-  useEffect(() => {
-    getSupplierContactHealth().then(setContactHealth).catch(() => {})
-    getSupplierLeadTimeAlerts().then(setLeadTimeAlerts).catch(() => {})
-  }, [])
-
   // Counted by the server over every open order, not over the loaded page: the
   // header badge answers a different question than the table's filter.
   const pendingCount = awaiting
@@ -107,11 +97,6 @@ export default function OrdersPage() {
   // cancelled. A draft was never invoiced, so it is neither. The filter itself
   // is applied by the server; what is loaded is already what the table shows.
   const visibleHistory = history
-
-  // On this screen there is no cart, so relevance is exactly "named on an
-  // order that is still open" — those are the orders that still need to
-  // reach the supplier.
-  const relevantContactHealth = suppliersOnOpenOrders(contactHealth)
 
   // ── Phone: a card list, not this table ────────────────────────────────────
   // Recording a delivery is done standing at the pallet. Everything above this
@@ -129,11 +114,10 @@ export default function OrdersPage() {
           error={error}
           onRetry={() => load(true)}
           entries={history}
-          contactHealth={relevantContactHealth}
           suppliersWithoutContact={contactHealth.map(r => r.supplier)}
-          leadTimeAlerts={leadTimeAlerts}
+          overdueById={overdueById}
           onReceive={setReceivingPO}
-          onChanged={() => load()}
+          onChanged={() => { load(); reloadAttention() }}
           canEdit={canCreate}
           onCreate={() => setCreatingPO(true)}
           multiWarehouse={multiWarehouse}
@@ -147,7 +131,7 @@ export default function OrdersPage() {
           <ReceptionModal
             poId={receivingPO}
             onClose={() => setReceivingPO(null)}
-            onSaved={() => { setReceivingPO(null); load() }}
+            onSaved={() => { setReceivingPO(null); load(); reloadAttention() }}
           />
         )}
         {creatingPO && (
@@ -209,10 +193,6 @@ export default function OrdersPage() {
 
       {tab === 'transfers' && multiWarehouse ? <TransfersPanel /> : (
       <>
-      {/* Supplier health (2.5) and lead-time deviation (3.3) */}
-      <SupplierContactHealthBanner rows={relevantContactHealth} />
-      <SupplierLeadTimeAlertBanner alerts={leadTimeAlerts} />
-
       {/* The three states: loading -> error -> empty -> data. */}
       {loading ? (
         <Card padding={8}>
@@ -260,8 +240,9 @@ export default function OrdersPage() {
             // Reloads after an undo or a payment change. It was never passed,
             // so an un-send or un-receive left the row showing the old state
             // until the page was reloaded by hand.
-            onUndone={() => load()}
+            onUndone={() => { load(); reloadAttention() }}
             suppliersWithoutContact={contactHealth.map(r => r.supplier)}
+            overdueById={overdueById}
           />
         </Card>
         )}
@@ -285,7 +266,7 @@ export default function OrdersPage() {
         <ReceptionModal
           poId={receivingPO}
           onClose={() => setReceivingPO(null)}
-          onSaved={() => { setReceivingPO(null); load() }}
+          onSaved={() => { setReceivingPO(null); load(); reloadAttention() }}
         />
       )}
 

@@ -11,6 +11,8 @@ import { roleLabel } from '@/lib/enumLabels'
 import { useInstall } from '@/lib/pwa'
 import { SCREENS, ANALYSIS_TABS, SETTINGS_HREF, navItemMatches, drawn, type Screen } from '@/components/layout/navItems'
 import { useTenantFacts } from '@/hooks/useTenantFacts'
+import { useAttentionCounts } from '@/hooks/useAttention'
+import AttentionDot from '@/components/layout/AttentionDot'
 import BottomSheet from './BottomSheet'
 import LegalLinks from '@/components/legal/LegalLinks'
 import { siteHref } from '@/lib/siteUrls'
@@ -38,6 +40,7 @@ export default function MoreSheet({ open, onClose, unread }: {
   const [iosHelp, setIosHelp] = useState(false)
   const user = getUser()
   const facts = useTenantFacts()
+  const attention = useAttentionCounts()
 
   function logout() {
     authLogout().catch(() => {})
@@ -78,6 +81,9 @@ export default function MoreSheet({ open, onClose, unread }: {
               >
                 <Icon size={20} aria-hidden="true" color={active ? 'var(--accent)' : 'var(--muted)'} />
                 <span style={{ flex: 1 }}>{t(item.labelKey)}</span>
+                {item.href === '/proveedores' && attention.suppliers > 0 && (
+                  <AttentionDot count={attention.suppliers} />
+                )}
                 {item.href === '/mensajes' && unread > 0 && (
                   <span aria-label={t('mobile.unread_count', { n: unread })} style={{
                     minWidth: 22, height: 22, borderRadius: 11, padding: '0 7px', boxSizing: 'border-box',

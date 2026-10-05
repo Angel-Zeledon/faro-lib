@@ -99,9 +99,8 @@ function ScorecardTable({ rows, alerts }: {
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap',
-                        fontSize: 11, fontWeight: 700,
-                        color: alert.severity === 'high' ? C.red : C.amber,
-                        background: `${alert.severity === 'high' ? C.red : C.amber}1a`,
+                        fontSize: 11, fontWeight: 500,
+                        color: C.muted, background: C.card, border: `1px solid ${C.border}`,
                       }}
                     >
                       <TrendingUp size={11} aria-hidden="true" /> +{alert.deviation_days}d
@@ -209,13 +208,13 @@ function ScorecardCards({ rows, alerts }: {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, marginBottom: 12 }}>
               <span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>{row.supplier}</span>
               {alert ? (
-                <StatusBadge tone={alert.severity === 'high' ? 'danger' : 'warning'} label={<><TrendingUp size={11} aria-hidden="true" /> +{alert.deviation_days}d</>} />
+                <StatusBadge tone="neutral" label={<><TrendingUp size={11} aria-hidden="true" /> +{alert.deviation_days}d</>} />
               ) : (
                 <StatusBadge tone="neutral" label={row.trend_measurable ? t('scorecard.stable') : t('scorecard.trend_not_measurable')} />
               )}
             </div>
             {alert && (
-              <div style={{ fontSize: 13, color: alert.severity === 'high' ? C.red : C.amber, marginBottom: 10, lineHeight: 1.45 }}>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 10, lineHeight: 1.45 }}>
                 {renderSupplierAlert(t, alert)}
               </div>
             )}
@@ -335,30 +334,11 @@ export default function SupplierScorecardPage() {
         <>
           {/* Feature 3.3 — the deviation is the headline, the table is the detail. */}
           {alerts.length > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'flex-start', gap: 10,
-              padding: '12px 16px', borderRadius: 10,
-              background: 'rgba(183,121,31,0.08)', border: '1px solid rgba(183,121,31,0.3)',
-            }}>
-              <TrendingUp size={15} color={C.amber} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
-              <div style={{ fontSize: 12, color: C.text, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <strong>
-                  {alerts.length}{' '}
-                  {alerts.length === 1 ? t('scorecard.deviation_singular') : t('scorecard.deviation_plural')}
-                </strong>
-                {alerts.map(a => (
-                  <span key={a.supplier}>
-                    {renderSupplierAlert(t, a)} {t('scorecard.deviation_days')}{' '}
-                    <span style={{ color: C.dim }}>
-                      ({t('scorecard.deviation_recent')} {a.n_recent} {t('scorecard.deviation_receptions_vs')} {a.n_baseline} {t('scorecard.deviation_previous')})
-                    </span>
-                  </span>
-                ))}
-                <span style={{ color: C.dim, fontSize: 11, marginTop: 2 }}>
-                  {t('scorecard.deviation_method')}
-                </span>
-              </div>
-            </div>
+            <p style={{ margin: 0, fontSize: 12, color: C.dim, lineHeight: 1.5 }}>
+              {alerts.length}{' '}
+              {alerts.length === 1 ? t('scorecard.deviation_singular') : t('scorecard.deviation_plural')}
+              {' · '}{t('scorecard.deviation_method')}
+            </p>
           )}
           {narrow ? (
             <ScorecardCards rows={rows} alerts={alertsBySupplier} />

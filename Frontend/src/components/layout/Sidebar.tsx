@@ -15,6 +15,8 @@ import { BrandMark } from '@/components/brand/BrandMark'
 import { NAV, TOOLS_NAV, SETTINGS_ITEM, drawn, activePrimary, rememberOrigin, type Screen } from './navItems'
 import { siteHref } from '@/lib/siteUrls'
 import { useTenantFacts } from '@/hooks/useTenantFacts'
+import { useAttentionCounts } from '@/hooks/useAttention'
+import AttentionDot from './AttentionDot'
 
 // The nav definition lives in ./navItems: six daily screens, then
 // Configuración pinned at the foot. Every other screen is reached from the one
@@ -67,6 +69,7 @@ export default function Sidebar() {
   // when the tenant has something for them, or when you are on them; the
   // command palette lists everything regardless.
   const facts = useTenantFacts()
+  const attention = useAttentionCounts()
   const show = (item: Screen) => drawn(item, user?.role, facts, path)
   const visibleNav = NAV.filter(show)
   const visibleTools = TOOLS_NAV.filter(show)
@@ -82,6 +85,8 @@ export default function Sidebar() {
     const { href, labelKey, Icon } = item
     const active = lit === href
     const label = t(labelKey)
+    // Quiet count: what is waiting on Pedidos (arrivals) or Proveedores.
+    const waiting = href === '/pedidos' ? attention.orders : href === '/proveedores' ? attention.suppliers : 0
     return (
       <Link key={href} href={href} onClick={isDrawer ? closeDrawer : undefined}
             aria-current={active ? 'page' : undefined}
@@ -101,7 +106,7 @@ export default function Sidebar() {
             justifyContent: collapsedNow ? 'center' : 'flex-start',
             gap: collapsedNow ? 0 : 10,
             padding: collapsedNow ? '9px 0' : isDrawer ? '8px 12px' : '9px 10px',
-            borderRadius: 7, marginBottom: 2,
+            borderRadius: 7, marginBottom: 2, position: 'relative',
             background: active ? 'var(--sidebar-active-bg)' : 'transparent',
             color: active ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
             fontWeight: active ? 600 : 400, fontSize: 13,
@@ -110,6 +115,9 @@ export default function Sidebar() {
         >
           <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
           {!collapsedNow && label}
+          {waiting > 0 && (collapsedNow
+            ? <span style={{ position: 'absolute', top: 1, right: 2 }}><AttentionDot count={waiting} /></span>
+            : <span style={{ marginLeft: 'auto' }}><AttentionDot count={waiting} /></span>)}
         </div>
       </Link>
     )
