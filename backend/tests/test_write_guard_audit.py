@@ -86,8 +86,10 @@ INFRA = {
 # export or a connection probe is a POST without being a write.
 READ_ONLY_POSTS = {
     "test-connection": "probes a stored connection, changes nothing",
-    "execute-query": "runs a SELECT and returns rows",
-    "export-query": "downloads what a SELECT returned",
+    # NOT excused: execute-query and export-query. They read, but they run
+    # caller-written SQL against the CUSTOMER's database, so they need
+    # analyst-or-above (a write-scope key) like any write — see
+    # test_datasource_sql_guard.py.
     "simulate": "computes a scenario without persisting it",
     "preview": "renders what an action would do",
     "narrative": "asks the LLM to describe existing data",
@@ -193,6 +195,15 @@ class TestEveryMutatingRouteIsGuarded:
         ids = {rid for rid, _ in _mutating_routes(app) if "/data-sources" in rid}
         assert "POST /api/v1/data-sources/sql" in ids
         assert "DELETE /api/v1/data-sources/{source_id}" in ids
+
+    def test_customer_database_sql_routes_need_a_write_guard(self, app):
+        """Running caller-written SQL on the customer's database is not a
+        viewer's (or a read-scope key's) to do, even though it only reads."""
+        routes = {rid: route for rid, route in _mutating_routes(app)}
+        for rid in ("POST /api/v1/data-sources/{source_id}/execute-query",
+                    "POST /api/v1/data-sources/{source_id}/export-query"):
+            assert rid in routes, f"{rid} disappeared — update this test"
+            assert _is_guarded(routes[rid]), f"{rid} is reachable by a viewer"
 
 
 class TestTheAllowlistCannotRot:

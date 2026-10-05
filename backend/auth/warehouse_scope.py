@@ -120,6 +120,23 @@ def is_scoped(user: CurrentUser) -> bool:
     return scope_names(user) is not None
 
 
+def scope_warehouse_ids(user: CurrentUser) -> frozenset[str] | None:
+    """Warehouse IDS the caller is limited to, resolved against the tenant's
+    own warehouses (stale or foreign ids drop out, as in `scope_names`); None
+    when unrestricted. For rows that name a warehouse by id rather than by
+    name, such as customer commitments."""
+    ids = scope_ids(user)
+    if ids is None:
+        return None
+    if not ids:
+        return frozenset()
+    rows = query(
+        "SELECT id FROM warehouses WHERE tenant_id = %s AND id = ANY(%s)",
+        (user.tenant_id, ids),
+    )
+    return frozenset(r["id"] for r in rows)
+
+
 def _fold(name: str | None) -> str:
     return (name or "").strip().casefold()
 

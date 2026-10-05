@@ -864,6 +864,7 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
         get_tenant_admin_emails,
         get_tenant_alert_recipients,
         get_tenants_with_active_sessions,
+        record_digest_withheld,
         record_notification_delivery,
     )
     from backend.notifications import email as email_mod
@@ -894,7 +895,10 @@ def run_monthly_roi_emails(now: datetime | None = None) -> int:
             if not report["has_sufficient_history"]:
                 continue
 
+            # Company-wide money: active, unscoped admins/analysts only (the
+            # /impacto screen refuses a warehouse-scoped user the same figures).
             emails = get_tenant_admin_emails(tid)
+            record_digest_withheld(tid, "monthly_roi")
             if not emails:
                 continue
 

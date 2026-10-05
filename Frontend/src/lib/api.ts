@@ -1528,7 +1528,7 @@ export const getCommittedDemand = (opts?: { sku?: string; status?: import('./typ
   if (opts?.status) q.set('status', opts.status)
   if (opts?.limit) q.set('limit', String(opts.limit))
   const qs = q.toString()
-  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[] }>(
+  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[]; scope?: 'company' | 'warehouses' }>(
     'GET', `/committed-demand${qs ? `?${qs}` : ''}`)
 }
 export const createCommittedDemand = (body: import('./types').CommittedDemandInput) =>

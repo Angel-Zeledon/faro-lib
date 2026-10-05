@@ -3,8 +3,8 @@
  "base_path": "/api/v1",
  "counts": {
   "total": 241,
-  "read": 150,
-  "write": 91
+  "read": 148,
+  "write": 93
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -3469,9 +3469,9 @@
      "method": "POST",
      "path": "/data-sources/{source_id}/execute-query",
      "tag": "data-sources",
-     "scope": "read",
+     "scope": "write",
      "summary": "Run a SQL query against a SQL source",
-     "description": "Executes a read query on the customer's database and returns up to `limit` rows.",
+     "description": "Executes ONE read statement (SELECT or WITH ... SELECT) on the customer's database, inside a read-only transaction that is always rolled back, and returns up to `limit` rows. Needs a `write`-scope key: it runs caller-written SQL on the customer's database. Anything else is refused with `sql_multiple_statements`, `sql_not_a_select`, `sql_forbidden_keyword`, `sql_forbidden_function` or `sql_unsupported_syntax`.",
      "parameters": [
       {
        "name": "source_id",
@@ -3537,9 +3537,9 @@
      "method": "POST",
      "path": "/data-sources/{source_id}/export-query",
      "tag": "data-sources",
-     "scope": "read",
+     "scope": "write",
      "summary": "Export a SQL query as Excel",
-     "description": "Runs the query and returns the result as an .xlsx file.",
+     "description": "Runs the query (same read-only rules as execute-query) and returns the result as an .xlsx file. Needs a `write`-scope key.",
      "parameters": [
       {
        "name": "source_id",
