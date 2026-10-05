@@ -229,7 +229,7 @@ const es: LandingCopy = {
     links: [
       ['/como-funciona', 'Cómo funciona'],
       ['#motor', 'Los modelos'],
-      ['#casos', 'Industrias'],
+      ['/industrias', 'Industrias'],
       ['/precios', 'Precio'],
       ['/desarrolladores', 'API'],
       ['/docs', 'Ayuda'],
@@ -242,7 +242,7 @@ const es: LandingCopy = {
   },
   heroPills: ['Distribución', 'Retail', 'Manufactura', 'Mayoristas', 'E-commerce'],
   footerLinks: {
-    product: [['/como-funciona', 'Cómo funciona'], ['#motor', 'Los modelos'], ['#funciones', 'Funciones'], ['#tu-manana', 'Tu mañana con StockAI'], ['#casos', 'Industrias'], ['/precios', 'Precio'], ['/desarrolladores', 'API para desarrolladores'], ['#comparacion', 'vs Excel']],
+    product: [['/como-funciona', 'Cómo funciona'], ['/como-se-calcula', 'Cómo se calcula'], ['#motor', 'Los modelos'], ['#funciones', 'Funciones'], ['/industrias', 'Industrias'], ['/stockai-vs-excel', 'StockAI vs. Excel'], ['/integraciones', 'Integraciones'], ['/precios', 'Precio'], ['/desarrolladores', 'API para desarrolladores'], ['/novedades', 'Novedades']],
     company: [['#problema', 'El problema'], ['#nosotros', 'Nosotros'], ['/seguridad', 'Seguridad'], ['/preguntas-frecuentes', 'Preguntas frecuentes'], ['#contacto', 'Contacto']],
   },
   hero: {
@@ -811,7 +811,7 @@ const en: LandingCopy = {
     links: [
       ['/como-funciona', 'How it works'],
       ['#motor', 'The models'],
-      ['#casos', 'Industries'],
+      ['/industrias', 'Industries'],
       ['/precios', 'Pricing'],
       ['/desarrolladores', 'API'],
       ['/docs', 'Help'],
@@ -824,7 +824,7 @@ const en: LandingCopy = {
   },
   heroPills: ['Distribution', 'Retail', 'Manufacturing', 'Wholesale', 'E-commerce'],
   footerLinks: {
-    product: [['/como-funciona', 'How it works'], ['#motor', 'The models'], ['#funciones', 'Features'], ['#tu-manana', 'Your morning with StockAI'], ['#casos', 'Industries'], ['/precios', 'Pricing'], ['/desarrolladores', 'Developer API'], ['#comparacion', 'vs Excel']],
+    product: [['/como-funciona', 'How it works'], ['/como-se-calcula', 'How it is calculated'], ['#motor', 'The models'], ['#funciones', 'Features'], ['/industrias', 'Industries'], ['/stockai-vs-excel', 'StockAI vs. Excel'], ['/integraciones', 'Integrations'], ['/precios', 'Pricing'], ['/desarrolladores', 'Developer API'], ['/novedades', 'What’s new']],
     company: [['#problema', 'The problem'], ['#nosotros', 'About us'], ['/seguridad', 'Security'], ['/preguntas-frecuentes', 'FAQ'], ['#contacto', 'Contact']],
   },
   hero: {

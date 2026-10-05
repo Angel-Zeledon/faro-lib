@@ -25,7 +25,7 @@ import { GUIDE_CSS, TourChapters } from '@/components/landing/ScreenGuide'
 import { mailHref } from '@/components/landing/contact'
 import { SUBPAGE_PATHS, SUBPAGE_ORDER, type SubpageKey as PageKey } from '@/components/landing/subpagePaths'
 
-const SUB_CSS = `
+export const SUB_CSS = `
 .sub-hero { position: relative; padding: 132px 0 64px; overflow: hidden; isolation: isolate; border-bottom: 1px solid var(--lp-border); background: var(--lp-bg); }
 .sub-hero .hero-grid {
  -webkit-mask-image: radial-gradient(ellipse 60% 90% at 18% 20%, black 20%, transparent 70%);
