@@ -100,7 +100,12 @@ export function TypingBubble() {
 
 // ── Message bubble ─────────────────────────────────────────────────────────────
 /** `large`: the phone layout — 15px text, no avatars, wider bubbles. */
-export function MessageBubble({ msg, large = false }: { msg: ChatMessage; large?: boolean }) {
+export function MessageBubble({ msg, large = false, onRetry }: {
+  msg: ChatMessage
+  large?: boolean
+  /** Given only to the newest failed answer: asks the same question again. */
+  onRetry?: () => void
+}) {
   const { t }  = useLanguage()
   const isUser = msg.role === 'user'
   const srcColor = msg.source ? (SOURCE_COLOR[msg.source] ?? '#94a3b8') : null
@@ -140,6 +145,21 @@ export function MessageBubble({ msg, large = false }: { msg: ChatMessage; large?
           {isUser
             ? <div className={`msg-prose msg-plain${large ? ' msg-prose-lg' : ''}`}>{msg.content}</div>
             : <Md text={msg.content} large={large} />}
+          {!isUser && msg.source === 'error' && onRetry && (
+            <button
+              type="button"
+              data-testid="assistant-retry"
+              onClick={onRetry}
+              style={{
+                all: 'unset', cursor: 'pointer', marginTop: 8,
+                padding: '5px 12px', borderRadius: 8, fontSize: large ? 14 : 12, fontWeight: 600,
+                color: 'var(--accent)', border: '1px solid var(--border)',
+                background: 'var(--surface)',
+              }}
+            >
+              {t('analyst.retry')}
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className="msg-meta">{fmtTime(msg.created_at)}</span>
