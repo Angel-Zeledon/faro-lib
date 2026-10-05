@@ -56,7 +56,7 @@ export default function TrainingPill() {
   if (outcome) {
     const failed = outcome.status !== 'COMPLETED'
     return (
-      <Link href={failed ? '/quick-start' : '/compras'} style={base} aria-live="polite"
+      <Link href={failed ? '/quick-start' : '/pronosticos'} style={base} aria-live="polite"
             data-testid="training-pill-outcome">
         {failed
           ? <AlertTriangle size={13} color="var(--danger, #dc2626)" />

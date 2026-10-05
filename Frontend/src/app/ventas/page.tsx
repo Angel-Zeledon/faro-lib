@@ -1410,7 +1410,10 @@ function QuickStartPageContent() {
  if (unmountedRef.current || gen !== pollGenRef.current) return
  await planningCtx?.reload()
  if (unmountedRef.current || gen !== pollGenRef.current) return
- router.push('/compras')
+ // Land on the forecast of the run the user just waited for: the first
+ // thing they want to see is what the model predicted, not the
+ // purchasing panel. `?session=` is honoured once by /pronosticos.
+ router.push(`/pronosticos?session=${encodeURIComponent(baseJob.session_id)}`)
  return
  }
  if (baseJob?.status === 'FAILED') {
