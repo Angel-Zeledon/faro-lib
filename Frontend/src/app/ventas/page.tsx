@@ -29,6 +29,7 @@ import { useErrorDetail } from '@/components/ui/States'
 import DataTabs from '@/components/layout/DataTabs'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import StickyActionBar from '@/components/mobile/StickyActionBar'
+import TrainingBudgetNote from '@/components/limits/TrainingBudgetNote'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { useTraining } from '@/contexts/TrainingContext'
@@ -1973,6 +1974,7 @@ function QuickStartPageContent() {
  <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 10px' }}>
  {t('qs.demo_prompt')}
  </p>
+ <TrainingBudgetNote />
  <button
  onClick={handleDemo}
  disabled={busy}
@@ -2220,6 +2222,7 @@ function QuickStartPageContent() {
  </>
  ) : narrow ? (
  <>
+ <TrainingBudgetNote />
  {unansweredFixable > 0 && !busy && (
  <p style={{ marginTop: 16, fontSize: 13, color: 'var(--dim)', textAlign: 'center', lineHeight: 1.5 }}>
   {t('gate.answer_first').replace('{count}', String(unansweredFixable))}
@@ -2248,6 +2251,7 @@ function QuickStartPageContent() {
  >
  {busy ? t('qs.processing') : t('qs.looks_good')}
  </button>
+ <TrainingBudgetNote />
  {/* Why the button is dead, said next to the button. A disabled control
      with no explanation is how a user concludes the app is broken. */}
  {unansweredFixable > 0 && !busy && (

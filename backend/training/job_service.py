@@ -4,7 +4,10 @@ from backend.db.connection import query_one, query, execute, _json
 from backend.utils.ids import generate_id
 
 
-def create_job(tenant_id: str, session_id: str, created_by: str) -> dict:
+def create_job(tenant_id: str, session_id: str, created_by: str, conn=None) -> dict:
+    """Insert a QUEUED job. `conn` is the connection of a `limit_guard` block
+    when the insert must be atomic with a ceiling check (the daily training
+    cap): the row is then visible to the next waiter's count at commit."""
     job_id = generate_id("job")
     initial_progress = {"percent": 0, "step": "queued", "message": "Waiting for worker..."}
     execute(
@@ -12,8 +15,9 @@ def create_job(tenant_id: str, session_id: str, created_by: str) -> dict:
            (id, tenant_id, session_id, created_by, status, created_at, progress)
            VALUES (%s, %s, %s, %s, 'QUEUED', NOW(), %s)""",
         (job_id, tenant_id, session_id, created_by, _json(initial_progress)),
+        conn=conn,
     )
-    return get_job(tenant_id, job_id)
+    return get_job(tenant_id, job_id) if conn is None else {"id": job_id}
 
 
 def get_job(tenant_id: str, job_id: str) -> Optional[dict]:

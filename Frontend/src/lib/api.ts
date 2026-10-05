@@ -1109,7 +1109,7 @@ export interface ScheduleRun {
   status: string; created_at: string
   started_at: string | null; completed_at: string | null; error: string | null
   /** Why a run did not train (`no_new_data`, `still_running`,
-   *  `source_refresh_failed`, `launch_failed`); null on a run that started.
+   *  `source_refresh_failed`, `launch_failed`, `training_cap_reached`); null on a run that started.
    *  Rendered through `schedule.run_reason.<code>`. */
   reason?: string | null
   reason_params?: Record<string, string | number>

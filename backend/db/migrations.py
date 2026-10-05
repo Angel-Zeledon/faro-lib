@@ -555,6 +555,9 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "CREATE INDEX IF NOT EXISTS idx_jobs_tenant ON jobs (tenant_id)"),
     ("create_jobs_session_idx",
      "CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs (session_id)"),
+    # The daily training ceiling counts one tenant's jobs created today.
+    ("create_jobs_tenant_created_idx",
+     "CREATE INDEX IF NOT EXISTS idx_jobs_tenant_created ON jobs (tenant_id, created_at)"),
     ("create_jobs_status_idx",
      "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status)"),
     ("create_chats",

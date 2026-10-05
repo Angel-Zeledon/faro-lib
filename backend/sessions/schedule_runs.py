@@ -28,6 +28,9 @@ REASON_NO_NEW_DATA = "no_new_data"
 REASON_STILL_RUNNING = "still_running"
 REASON_SOURCE_REFRESH_FAILED = "source_refresh_failed"
 REASON_LAUNCH_FAILED = "launch_failed"
+# The plan's daily training ceiling was spent: skipped, not failed, and the
+# next due slot tries again. Params: {max, used}.
+REASON_TRAINING_CAP = "training_cap_reached"
 
 
 def record_run(

@@ -150,10 +150,11 @@ const es: LegalCopy = {
               table: {
                 head: ['Límite', 'Plan gratis', 'Plan pagado'],
                 rows: [
-                  ['Productos (SKUs)', '100', '500'],
-                  ['Usuarios', '2', '3'],
-                  ['Bodegas', '1', '2'],
+                  ['Productos (SKUs)', '100', '1.000'],
+                  ['Usuarios', '2', '5'],
+                  ['Bodegas', '1', '3'],
                   ['Pronósticos guardados', '3', '20'],
+                  ['Entrenamientos por día', '1', '10'],
                   ['API, servidor MCP y bot de WhatsApp', 'No incluidos', 'Incluidos'],
                   ['Claves de API', 'No incluida', '3'],
                   ['Llamadas a la API por día, por clave', 'No incluida', '2.000'],
@@ -681,10 +682,11 @@ const en: LegalCopy = {
               table: {
                 head: ['Limit', 'Free plan', 'Paid plan'],
                 rows: [
-                  ['Products (SKUs)', '100', '500'],
-                  ['Users', '2', '3'],
-                  ['Warehouses', '1', '2'],
+                  ['Products (SKUs)', '100', '1,000'],
+                  ['Users', '2', '5'],
+                  ['Warehouses', '1', '3'],
                   ['Saved forecasts', '3', '20'],
+                  ['Trainings per day', '1', '10'],
                   ['API, MCP server and WhatsApp bot', 'Not included', 'Included'],
                   ['API keys', 'Not included', '3'],
                   ['API calls per day, per key', 'Not included', '2,000'],

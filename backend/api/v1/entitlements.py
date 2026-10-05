@@ -43,7 +43,13 @@ def _usage(tenant_id: str) -> dict:
     keys = query_one(
         "SELECT COUNT(*) AS n FROM api_keys WHERE tenant_id = %s", (tenant_id,)
     )
+    from backend.training import daily_cap
+    trainings_today = daily_cap.count_trainings_today(tenant_id)
     return {
+        # Paired with `limits.max_trainings_per_day` like every other key; the
+        # readable alias is for API consumers.
+        "max_trainings_per_day": trainings_today,
+        "trainings_today": trainings_today,
         "max_skus": inv_svc.count_stock(tenant_id),
         "max_users": user_svc.count_users(tenant_id),
         "max_locations": wh_svc.count_warehouses(tenant_id),

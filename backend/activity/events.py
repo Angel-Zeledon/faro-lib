@@ -363,6 +363,8 @@ REASONS: tuple[str, ...] = (
     "engine_error",
     "dataset_missing",
     "data_gate_blocked",
+    # a scheduled retrain skipped because the day's training ceiling is spent
+    "training_cap_reached",
     # the live forecast's error against real sales vs its training-time error
     "realised_accuracy_below_training",
     # delivery
