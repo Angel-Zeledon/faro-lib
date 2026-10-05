@@ -8,6 +8,7 @@
 // redirected to the app host). `npm run check:landing-routes` fails when one
 // is missing; run it after adding a page.
 import type { IndustryKey } from '@/i18n/landingContent'
+import type { GuideKey } from '@/i18n/landingGuides'
 
 export type { IndustryKey }
 export type ContentKey = 'excel' | 'method' | 'integrations' | 'changelog'
@@ -43,9 +44,26 @@ export const CONTENT_PATHS: Record<ContentKey, string> = {
 
 export const CONTENT_ORDER: ContentKey[] = ['method', 'excel', 'integrations', 'changelog']
 
+// The guides: long-form pages written for what a buyer types into a search
+// box. Copy in i18n/landingGuides.ts; page body in GuidePages.tsx. Written out
+// in full for the same reason as INDUSTRY_PATHS.
+export type { GuideKey }
+
+/** Order in the footer and in "more guides" lists. */
+export const GUIDE_ORDER: GuideKey[] = ['about', 'distributors', 'reorderPoint', 'safetyStock', 'forecast']
+
+export const GUIDE_PATHS: Record<GuideKey, string> = {
+  about: '/que-es-stockai',
+  distributors: '/software-de-inventario-para-distribuidores',
+  reorderPoint: '/como-calcular-el-punto-de-reorden',
+  safetyStock: '/stock-de-seguridad',
+  forecast: '/pronostico-de-demanda-para-compras',
+}
+
 // Every public content URL, for the sitemap, the shell and the auth guard.
 export const CONTENT_PUBLIC_PATHS: string[] = [
   INDUSTRIES_HUB_PATH,
   ...INDUSTRY_ORDER.map(k => INDUSTRY_PATHS[k]),
   ...CONTENT_ORDER.map(k => CONTENT_PATHS[k]),
+  ...GUIDE_ORDER.map(k => GUIDE_PATHS[k]),
 ]

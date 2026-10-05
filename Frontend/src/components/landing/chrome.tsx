@@ -17,6 +17,8 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
 import { LEGAL } from '@/i18n/legal'
 import { DOCS_CHROME } from '@/i18n/docs/chrome'
+import { GUIDES } from '@/i18n/landingGuides'
+import { GUIDE_ORDER, GUIDE_PATHS } from '@/components/landing/contentPaths'
 import { LEGAL_HUB_PATH, LEGAL_ORDER, LEGAL_PATHS } from '@/components/landing/legalPaths'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { T } from '@/components/landing/theme'
@@ -195,6 +197,10 @@ export function Footer(props: ChromeProps) {
  <div className="foot-head">{DOCS_CHROME[lang].footerHead}</div>
  {DOCS_CHROME[lang].footerLinks.map(([href, label]) => (
  <LandingLink key={href} href={href} className="foot-link">{label}</LandingLink>
+ ))}
+ <div className="foot-head" style={{ marginTop: 20 }}>{GUIDES[lang].footerHead}</div>
+ {GUIDE_ORDER.map(k => (
+ <LandingLink key={k} href={GUIDE_PATHS[k]} className="foot-link">{GUIDES[lang].items[k].label}</LandingLink>
  ))}
  </div>
  <div>

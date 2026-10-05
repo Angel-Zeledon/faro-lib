@@ -49,7 +49,7 @@ export const DOCS_CHROME: Record<Lang, DocsChromeCopy> = {
     intro:
       'Cómo usar StockAI de punta a punta: subir tus ventas, leer el semáforo, generar y recibir órdenes de compra, ' +
       'y entender de dónde sale cada número que te mostramos.',
-    metaTitle: 'Centro de ayuda — StockAI',
+    metaTitle: 'StockAI centro de ayuda: guías de uso paso a paso',
     sections: {
       'primeros-pasos': { title: 'Primeros pasos', blurb: 'De cuenta nueva a tu primer semáforo y tu primera orden de compra.' },
       'uso-diario': { title: 'Uso diario', blurb: 'Las pantallas de todos los días: compras, pedidos, inventario y proveedores.' },
