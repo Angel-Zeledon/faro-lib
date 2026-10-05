@@ -58,6 +58,10 @@ def generate_po_pdf(
     Resolved ONCE here, not per row: this document formats two amounts for every
     line of the order and the reader is a DB query. Callers that already hold the
     resolved dict (a loop over suppliers builds one PDF each) should pass it."""
+    # No document for an order that is waiting on approval: nothing built here
+    # can then be served or attached by a caller that skipped the check.
+    from backend.inventory import po_approval_service as approval_svc
+    approval_svc.assert_sendable(tenant_id, po_log_id)
     slug = slugify_supplier_name(supplier_name)
     path = paths.po_pdf_file(tenant_id, po_log_id, slug)
     path.parent.mkdir(parents=True, exist_ok=True)

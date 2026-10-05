@@ -14,6 +14,7 @@ Delivery contract (two tiers, so no caller can report a send that never left):
   responses, alert loops writing activity rows) branch on that bool.
 """
 
+import html as html_lib
 import base64
 import logging
 import smtplib
@@ -374,6 +375,65 @@ def send_account_setup_email(to: str, full_name: str, setup_url: str) -> bool:
         return True
     except Exception as exc:
         log.error("Failed to send account setup email to %s: %s", to, exc)
+        return False
+
+
+def send_po_approval_request_email(
+    *, to: str, approver_name: str, requester_name: str, po_ref: str,
+    amount_text: str, url: str, tenant_id: str | None = None,
+) -> bool:
+    """Tell an approver an order is waiting for their decision. Only tenants
+    that configured an approval rule ever send this. Returns True on success."""
+    html = _base_html(
+        render_es("po_approval_request_title"),
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">
+          {render_es("po_approval_request_heading", ref=po_ref)}
+        </p>
+        <p style="color:{_DIM};margin:0 0 20px;">
+          {render_es("po_approval_request_body", requester=requester_name or "-",
+                     ref=po_ref, amount=amount_text)}
+        </p>
+        {_button(render_es("po_approval_request_cta"), url)}
+        """,
+    )
+    try:
+        _send(to, render_es("po_approval_request_subject", ref=po_ref, amount=amount_text),
+              html, tenant_id=tenant_id)
+        return True
+    except Exception as exc:
+        log.error("Failed to send approval request email to %s: %s", to, exc)
+        return False
+
+
+def send_po_approval_decision_email(
+    *, to: str, requester_name: str, decider_name: str, approved: bool, po_ref: str,
+    amount_text: str, comment: str | None, url: str, tenant_id: str | None = None,
+) -> bool:
+    """Tell the person who asked what was decided, and why when they said."""
+    verdict = "approved" if approved else "rejected"
+    why = (f'<p style="margin:0 0 20px;">{render_es("po_approval_decision_comment")}: '
+           f'<em>{html_lib.escape(comment)}</em></p>') if comment else ""
+    html = _base_html(
+        render_es(f"po_approval_decision_{verdict}_title"),
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">
+          {render_es(f"po_approval_decision_{verdict}_heading", ref=po_ref)}
+        </p>
+        <p style="color:{_DIM};margin:0 0 20px;">
+          {render_es(f"po_approval_decision_{verdict}_body", decider=decider_name or "-",
+                     ref=po_ref, amount=amount_text)}
+        </p>
+        {why}
+        {_button(render_es("po_approval_decision_cta"), url)}
+        """,
+    )
+    try:
+        _send(to, render_es(f"po_approval_decision_{verdict}_subject", ref=po_ref),
+              html, tenant_id=tenant_id)
+        return True
+    except Exception as exc:
+        log.error("Failed to send approval decision email to %s: %s", to, exc)
         return False
 
 

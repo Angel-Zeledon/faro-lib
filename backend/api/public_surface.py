@@ -72,6 +72,10 @@ INTERNAL_TAGS: dict[str, str] = {
     # stop counting as on the way). Internal until the owner decides a machine
     # should be able to do that unattended.
     "inventory-cancellation": "cancelling / reopening a PO from the /pedidos screen",
+    # An approval is a person with the authority deciding; a machine key is not
+    # that person, and "who approved this" must name one.
+    "inventory-approvals": "purchase-order approval rules and decisions belong to the people who hold that authority",
+    "forecast-adjustments": "a forecast adjustment is a person's judgement, recorded under their name and graded per person",
     "trial": "unauthenticated trial signup",
     "whatsapp": "Twilio's inbound webhook, authenticated by signature, not by key",
     "models": "unauthenticated catalogue of model names",

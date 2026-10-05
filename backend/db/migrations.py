@@ -1860,6 +1860,10 @@ _ENTERPRISE = [
 ]
 _MIGRATIONS += _ENTERPRISE
 
+# PO approval workflow + forecast adjustments (own module, see its header).
+from backend.inventory.approval_migrations import MIGRATIONS as _APPROVALS  # noqa: E402
+_MIGRATIONS += _APPROVALS
+
 
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.

@@ -15,6 +15,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import PedidosMobile from './PedidosMobile'
+import { ApprovalInbox } from '@/components/po/POApproval'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -51,6 +52,17 @@ export default function OrdersPage() {
   // Phone or desktop. Declared with the other hooks so the hook order is stable
   // whichever tree ends up rendering (see the fork below).
   const isNarrow = useIsNarrow()
+  // The approver's inbox is reached from the bell / an email link
+  // (`/pedidos?view=approvals&po=...`): read once after mount, never in render.
+  const [approvalLink, setApprovalLink] = useState<{ open: boolean; po: string | null }>({ open: false, po: null })
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('view') === 'approvals') setApprovalLink({ open: true, po: q.get('po') })
+  }, [])
+  const inbox = (
+    <ApprovalInbox alwaysShow={approvalLink.open} focusId={approvalLink.po}
+                   onChanged={() => { load(); reloadAttention() }} />
+  )
 
   // `silent: true` — this screen renders the failure itself as a full ErrorState,
   // so the interceptor's toast would say the same thing twice.
@@ -109,6 +121,7 @@ export default function OrdersPage() {
   if (isNarrow) {
     return (
       <>
+        <div style={{ margin: '0 0 12px' }}>{inbox}</div>
         <PedidosMobile
           loading={loading}
           error={error}
@@ -148,6 +161,8 @@ export default function OrdersPage() {
   // AppShell, and a second one here would double-animate the same screen.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {inbox}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>

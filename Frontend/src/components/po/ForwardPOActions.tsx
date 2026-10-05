@@ -23,7 +23,12 @@ const btn: React.CSSProperties = {
   border: `1px solid ${C.border}`, color: C.text,
 }
 
-export function ForwardPOActions({ poLogId }: { poLogId: string }) {
+export function ForwardPOActions({ poLogId, approval }: {
+  poLogId: string
+  /** Server-set only when the tenant has an approval rule: an order that still
+   *  needs approval has nothing to forward yet. */
+  approval?: { required: boolean } | null
+}) {
   const { t } = useLanguage()
   // These were 25px tall on a phone. 44px there; the desktop row is unchanged.
   const narrow = useIsNarrow()
@@ -74,6 +79,8 @@ export function ForwardPOActions({ poLogId }: { poLogId: string }) {
     const data = payload ?? await fetchMessage()
     if (data) window.open(data.url, '_blank', 'noopener')
   }
+
+  if (approval?.required) return null
 
   return (
     <span style={narrow

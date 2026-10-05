@@ -139,6 +139,80 @@ def compare_forecast_to_actuals(
     }
 
 
+# ── Forecast value added: did a manual adjustment beat the untouched forecast? ─
+#
+# A planner who nudges a forecast ("+15%, promotion") is making a bet. Once the
+# real sales arrive the bet can be graded against the forecast the model made on
+# its own, on the very same (SKU, period) points: if the adjusted forecast ran
+# closer to what sold, the adjustment ADDED value; if farther, it destroyed some.
+#
+# Error is absolute error summed over the points (the numerator of WAPE), so a
+# group's figure is volume-weighted exactly like every other accuracy number in
+# the product. ``improvement_pct`` is the relative change of that error:
+#   +20  the adjusted forecast's error was 20% SMALLER than the model's
+#   -35  it was 35% LARGER
+# ``None`` when the model alone was exact (nothing to improve on, so no ratio).
+
+# Compared points below which a group's verdict is "too_little", never a claim.
+FVA_MIN_POINTS = 5
+# |improvement| under this many percent reads as "no real difference".
+FVA_NEUTRAL_BAND_PCT = 2.0
+
+
+def forecast_value_added(points: Sequence[dict]) -> dict:
+    """Grade adjusted forecasts against the unadjusted ones.
+
+    ``points``: ``{"base", "adjusted", "actual"}`` per (SKU, period), all
+    numbers. Returns the two absolute errors, their WAPEs, ``improvement_pct``
+    and a stable verdict code (``improved`` / ``worsened`` / ``neutral`` /
+    ``too_little`` / ``no_data``); the frontend renders the sentence.
+    """
+    n = len(points)
+    if n == 0:
+        return {"n_points": 0, "base_error": 0.0, "adjusted_error": 0.0, "actual_total": 0.0,
+                "base_wape": None, "adjusted_wape": None, "improvement_pct": None,
+                "better_points": 0, "worse_points": 0, "verdict": "no_data"}
+    base_err = sum(abs(float(p["base"]) - float(p["actual"])) for p in points)
+    adj_err = sum(abs(float(p["adjusted"]) - float(p["actual"])) for p in points)
+    total = sum(float(p["actual"]) for p in points)
+    better = sum(1 for p in points
+                 if abs(float(p["adjusted"]) - float(p["actual"]))
+                 < abs(float(p["base"]) - float(p["actual"])))
+    worse = sum(1 for p in points
+                if abs(float(p["adjusted"]) - float(p["actual"]))
+                > abs(float(p["base"]) - float(p["actual"])))
+    improvement = None if base_err <= 0 else (base_err - adj_err) / base_err * 100.0
+    if n < FVA_MIN_POINTS:
+        verdict = "too_little"
+    elif improvement is None:
+        verdict = "neutral"
+    elif improvement > FVA_NEUTRAL_BAND_PCT:
+        verdict = "improved"
+    elif improvement < -FVA_NEUTRAL_BAND_PCT:
+        verdict = "worsened"
+    else:
+        verdict = "neutral"
+    return {
+        "n_points": n, "base_error": base_err, "adjusted_error": adj_err,
+        "actual_total": total,
+        "base_wape": _safe_div(base_err, total), "adjusted_wape": _safe_div(adj_err, total),
+        "improvement_pct": improvement, "better_points": better, "worse_points": worse,
+        "verdict": verdict,
+    }
+
+
+def forecast_value_added_by(points: Sequence[dict], key: str) -> List[dict]:
+    """``forecast_value_added`` per distinct ``p[key]`` (a user, a reason), each
+    row carrying that value under ``key``; best improvement first, groups whose
+    ratio is undefined last."""
+    groups: Dict[str, List[dict]] = {}
+    for p in points:
+        groups.setdefault(str(p.get(key)), []).append(p)
+    rows = [{key: k, **forecast_value_added(v)} for k, v in groups.items()]
+    rows.sort(key=lambda r: (r["improvement_pct"] is None, -(r["improvement_pct"] or 0.0)))
+    return rows
+
+
 # ── Where a dataset sits relative to a forecast window ───────────────────────
 
 def describe_overlap(

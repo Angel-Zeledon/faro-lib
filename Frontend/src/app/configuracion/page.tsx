@@ -42,6 +42,7 @@ const screen = (href: string) => SCREENS.find(s => s.href === href)!
 const SECTIONS: Section[] = [
   { id: 'team', titleKey: 'hub.team_title', rows: [
     { screen: screen('/usuarios'), descKey: 'hub.users_desc' },
+    { screen: screen('/aprobaciones'), descKey: 'hub.po_approval_desc' },
   ] },
   { id: 'data', titleKey: 'hub.data_title', rows: [
     { screen: screen('/ventas'),                descKey: 'hub.sales_desc' },

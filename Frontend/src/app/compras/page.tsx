@@ -44,6 +44,7 @@ import NarrativeCard from '@/components/ui/NarrativeCard'
 import HelpTip from '@/components/ui/HelpTip'
 import { ReceptionModal } from '@/components/po/POHistory'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import { RequestApprovalButton, usePOApproval } from '@/components/po/POApproval'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -869,6 +870,9 @@ export default function HoyPage() {
 
  // Generate→send in one flow: the PO just logged, awaiting the "send now" decision
  const [generatedPO, setGeneratedPO]   = useState<POLogEntry | null>(null)
+ // Opt-in approval workflow: `required` only for a tenant with an approval rule
+ // the order matches. Until it is approved the order cannot be sent from here.
+ const { data: poApproval, reload: reloadPoApproval } = usePOApproval(generatedPO?.id)
  const [generatedLines, setGeneratedLines] = useState<ActionItem[]>([])
  const [sendState, setSendState]       = useState<'idle' | 'sending' | 'done'>('idle')
  // A FAILED send, kept apart from `sendResult`. Stuffing the error into
@@ -2052,7 +2056,13 @@ export default function HoyPage() {
               {t('hoy.generate_send_failed')} {errorDetail(sendError)}
              </div>
             )}
-            <div style={{ display: 'flex', gap: 10 }}>
+            {poApproval?.required && (
+             <p style={{ margin: 0, fontSize: 12, color: C.muted }}>{t('po_approval.generated_hint')}</p>
+            )}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {poApproval?.required ? (
+             <RequestApprovalButton poLogId={generatedPO.id} approval={poApproval} onChanged={reloadPoApproval} />
+            ) : (
             <button
              onClick={sendGeneratedPONow}
              disabled={sendState === 'sending'}
@@ -2066,6 +2076,7 @@ export default function HoyPage() {
              <Send size={13} />
              {sendState === 'sending' ? t('roi.send_po_sending') : t('hoy.generate_send_btn')}
             </button>
+            )}
             <Link href="/pedidos" style={{
              fontSize: 13, color: 'var(--dim)', textDecoration: 'none',
              display: 'flex', alignItems: 'center', padding: '9px 4px',
@@ -2081,7 +2092,7 @@ export default function HoyPage() {
            <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 8px' }}>
             {t('po.forward_hint')}
            </p>
-           <ForwardPOActions poLogId={generatedPO.id} />
+           <ForwardPOActions poLogId={generatedPO.id} approval={poApproval} />
           </div>
          </div>
         )}

@@ -149,3 +149,51 @@ def test_degradation_without_a_usable_baseline_says_so():
     assert assess_degradation(None, 0.3, 50)["status"] == "no_baseline"
     assert assess_degradation(0.0, 0.3, 50)["status"] == "no_baseline"
     assert assess_degradation(0.2, None, 50)["status"] == "no_baseline"
+
+
+# ── Forecast value added ─────────────────────────────────────────────────────
+
+def _fva_points(n, base, adjusted, actual):
+    return [{"base": base, "adjusted": adjusted, "actual": actual} for _ in range(n)]
+
+
+def test_value_added_by_hand_when_the_adjustment_helped():
+    from forecasting_core.evaluation.realized import forecast_value_added
+    # model said 100, planner said 120, reality 118: error 18 -> 2 per point.
+    out = forecast_value_added(_fva_points(6, 100.0, 120.0, 118.0))
+    assert out["base_error"] == pytest.approx(108.0)
+    assert out["adjusted_error"] == pytest.approx(12.0)
+    assert out["improvement_pct"] == pytest.approx((108 - 12) / 108 * 100)   # ~88.9
+    assert out["base_wape"] == pytest.approx(108 / (118 * 6))
+    assert (out["better_points"], out["worse_points"]) == (6, 0)
+    assert out["verdict"] == "improved"
+
+
+def test_value_added_is_negative_when_the_adjustment_hurt():
+    from forecasting_core.evaluation.realized import forecast_value_added
+    # the model alone was exact: nothing to improve on, so no ratio is invented.
+    exact = forecast_value_added(_fva_points(5, 100.0, 130.0, 100.0))
+    assert exact["base_error"] == 0 and exact["improvement_pct"] is None
+    # model off by 10, planner off by 20: error doubled.
+    worse = forecast_value_added(_fva_points(5, 100.0, 130.0, 110.0))
+    assert worse["improvement_pct"] == pytest.approx((50 - 100) / 50 * 100)   # -100
+    assert worse["verdict"] == "worsened" and worse["worse_points"] == 5
+
+
+def test_value_added_neutral_band_and_too_little_floor():
+    from forecasting_core.evaluation.realized import forecast_value_added
+    small = forecast_value_added(_fva_points(5, 100.0, 99.0, 90.0))     # 10 -> 9 per point
+    assert small["improvement_pct"] == pytest.approx(10.0) and small["verdict"] == "improved"
+    flat = forecast_value_added(_fva_points(5, 100.0, 100.0, 90.0))
+    assert flat["improvement_pct"] == 0.0 and flat["verdict"] == "neutral"
+    assert forecast_value_added(_fva_points(4, 100.0, 120.0, 118.0))["verdict"] == "too_little"
+    assert forecast_value_added([])["verdict"] == "no_data"
+
+
+def test_value_added_by_group_ranks_best_first_and_keeps_the_key():
+    from forecasting_core.evaluation.realized import forecast_value_added_by
+    pts = ([{"who": "ana", **p} for p in _fva_points(5, 100.0, 120.0, 118.0)]
+           + [{"who": "bob", **p} for p in _fva_points(5, 100.0, 130.0, 110.0)])
+    rows = forecast_value_added_by(pts, "who")
+    assert [r["who"] for r in rows] == ["ana", "bob"]
+    assert rows[0]["verdict"] == "improved" and rows[1]["verdict"] == "worsened"

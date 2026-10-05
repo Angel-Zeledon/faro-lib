@@ -16,18 +16,23 @@
  * must not each poll three endpoints.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { getOverduePOs, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
-import type { OverdueReception, SupplierContactHealthRow, SupplierLeadTimeAlert } from '@/lib/types'
+import { getOverduePOs, getPOApprovalPending, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
+import type {
+  OverdueReception, POApprovalPendingItem, SupplierContactHealthRow, SupplierLeadTimeAlert,
+} from '@/lib/types'
 
 export interface AttentionState {
   overdue: OverdueReception[]
   /** Suppliers whose missing contact data would make a send skip them. */
   contactHealth: SupplierContactHealthRow[]
   leadTimeAlerts: SupplierLeadTimeAlert[]
+  /** Orders waiting for THIS person's decision (empty unless they are an
+   *  approver of a tenant that configured an approval rule). */
+  approvals: POApprovalPendingItem[]
   loaded: boolean
 }
 
-const EMPTY: AttentionState = { overdue: [], contactHealth: [], leadTimeAlerts: [], loaded: false }
+const EMPTY: AttentionState = { overdue: [], contactHealth: [], leadTimeAlerts: [], approvals: [], loaded: false }
 const TTL_MS = 30_000
 const POLL_MS = 120_000
 
@@ -47,13 +52,15 @@ async function refresh(force = false): Promise<void> {
   const silent = { silent: true }
   inflight = Promise.allSettled([
     getOverduePOs(silent), getSupplierContactHealth(silent), getSupplierLeadTimeAlerts(silent),
-  ]).then(([o, c, l]) => {
+    getPOApprovalPending(silent),
+  ]).then(([o, c, l, a]) => {
     // A list that failed to load keeps what it had: a blink of the backend
     // must not read as "nothing is waiting on you".
     publish({
       overdue:        o.status === 'fulfilled' ? o.value : state.overdue,
       contactHealth:  c.status === 'fulfilled' ? c.value : state.contactHealth,
       leadTimeAlerts: l.status === 'fulfilled' ? l.value : state.leadTimeAlerts,
+      approvals:      a.status === 'fulfilled' ? a.value.items.filter(i => i.can_decide) : state.approvals,
       loaded: true,
     })
     fetchedAt = Date.now()
@@ -78,8 +85,9 @@ export function useAttention(): AttentionState & { reload: () => void } {
  *  `suppliers` the Suppliers one. Contact gaps only count while an open order
  *  could not be sent because of them. */
 export function useAttentionCounts(): { orders: number; suppliers: number; total: number } {
-  const { overdue, contactHealth, leadTimeAlerts } = useAttention()
-  const orders = overdue.length
+  const { overdue, contactHealth, leadTimeAlerts, approvals } = useAttention()
+  // An approval waiting for you is an order waiting on you: same entry.
+  const orders = overdue.length + approvals.length
   const suppliers = contactHealth.filter(r => r.has_open_pos).length + leadTimeAlerts.length
   return { orders, suppliers, total: orders + suppliers }
 }

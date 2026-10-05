@@ -84,6 +84,24 @@ _ES: dict[str, str] = {
     "account_setup_email_heading":      "Bienvenido a {app}, {name}!",
     "account_setup_email_intro":        "Un administrador ha creado una cuenta para ti en {app}. Haz clic en el botón de abajo para verificar tu correo y activar tu cuenta.",
     "account_setup_email_cta":          "Activar mi cuenta",
+    "wa_po_needs_approval": "Esta orden necesita aprobación antes de enviarse. Pídela desde la app.",
+    # Purchase-order approval (opt-in workflow): mail to the approver and back
+    # to the person who asked.
+    "po_approval_request_title":   "Una orden espera tu aprobación",
+    "po_approval_request_subject": "Aprobación pendiente: {ref} por {amount}",
+    "po_approval_request_heading":  "Orden {ref} pendiente de aprobación",
+    "po_approval_request_body":     "{requester} pidió aprobar la orden {ref} por {amount}. No se enviará al proveedor hasta que la apruebes.",
+    "po_approval_request_cta":      "Revisar la orden",
+    "po_approval_decision_approved_title":   "Tu orden fue aprobada",
+    "po_approval_decision_approved_subject": "Orden {ref} aprobada",
+    "po_approval_decision_approved_heading": "Orden {ref} aprobada",
+    "po_approval_decision_approved_body":    "{decider} aprobó la orden {ref} por {amount}. Ya puedes enviarla al proveedor.",
+    "po_approval_decision_rejected_title":   "Tu orden fue rechazada",
+    "po_approval_decision_rejected_subject": "Orden {ref} rechazada",
+    "po_approval_decision_rejected_heading": "Orden {ref} rechazada",
+    "po_approval_decision_rejected_body":    "{decider} rechazó la orden {ref} por {amount}. No se enviará al proveedor.",
+    "po_approval_decision_comment":          "Motivo",
+    "po_approval_decision_cta":              "Abrir la orden",
     "account_setup_email_expiry":       "Este enlace expira en {duration}. Si no esperabas esta invitación, puedes ignorar este correo.",
     # Two different windows: the 6-digit codes expire in minutes, the setup
     # LINK in hours. They used to share one label and the codes were announced

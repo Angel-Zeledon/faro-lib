@@ -58,8 +58,9 @@ import {
  ShoppingCart, AlertTriangle, CheckCircle2, TrendingDown, TrendingUp,
  ChevronDown, ChevronRight, RefreshCw, MoreHorizontal, Upload, Download, Edit2, Trash2,
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
- PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft,
+ PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft, SlidersHorizontal,
 } from 'lucide-react'
+import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
 // so dates follow the language toggle instead of always rendering in Spanish.
@@ -554,6 +555,16 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
      what-if. Kept as a short list, never a table: one line per event, and
      the override word only when the tenant's own SKU/category number is
      what actually fired instead of the event's own multiplier. */}
+ {exp.adjustments_applied && exp.adjustments_applied.length > 0 && (
+ <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+ {exp.adjustments_applied.map(a => (
+ <div key={a.adjustment_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text }}>
+ <SlidersHorizontal size={12} color={C.indigo} aria-hidden="true" />
+ <span>{adjustmentLine(t, a)}</span>
+ </div>
+ ))}
+ </div>
+ )}
  {exp.events_applied && exp.events_applied.length > 0 && (
  <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)` }}>
  {exp.events_applied.length > 1 && (
@@ -2019,6 +2030,7 @@ function ExpandedCalcRow({ item, background }: {
            under the calculation it explains the CHANGE to, not on its own
            screen: the buyer is already looking at this sku. */}
        <WhyChangedPanel sku={item.sku} />
+       <ForecastAdjustPanel sku={item.sku} />
        {/* Which of the four planning numbers are the buyer's and which are ours,
            plus what the lead-time learning is waiting for. */}
        <PlanningValues item={item} />
@@ -2186,6 +2198,12 @@ export default function InventoryPage() {
  const setPage = useCallback((p: number) => setPageState({ key: queryKey, page: p }), [queryKey])
 
  const [reloadTick, setReloadTick] = useState(0)
+ // A forecast adjustment moves the recommendation: refetch the table when one is saved.
+ useEffect(() => {
+  const h = () => setReloadTick(x => x + 1)
+  window.addEventListener(ADJUSTMENT_RELOAD_EVENT, h)
+  return () => window.removeEventListener(ADJUSTMENT_RELOAD_EVENT, h)
+ }, [])
  const reloadRef = useRef(true)       // true: the next fetch replaces the screen with a skeleton
  const loadedSessionRef = useRef('')
  const kpiRef = useRef<Record<string, number> | null>(null)
@@ -4639,6 +4657,7 @@ export default function InventoryPage() {
      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <CalcExplainer exp={detail.calc_explanation} moq={detail.moq} />
       <WhyChangedPanel sku={detail.sku} />
+      <ForecastAdjustPanel sku={detail.sku} />
       <PlanningValues item={detail} />
       <SimulatorPanel item={detail} />
      </div>

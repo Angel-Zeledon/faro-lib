@@ -481,7 +481,8 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
         """SELECT id, session_id, source, generated_at, sku_count, total_units,
                   total_value, skus_order_now, skus_order_soon,
                   reception_status, received_at, po_number, sent_at,
-                  paid_at, cancelled_at, cancel_reason
+                  paid_at, cancelled_at, cancel_reason,
+                  destination_warehouse, approval_status, approved_amount
            FROM inventory_po_log
            WHERE tenant_id = %s
            ORDER BY generated_at DESC
@@ -537,7 +538,8 @@ def get_po_history_page(
         f"""SELECT id, session_id, source, generated_at, sku_count, total_units,
                    total_value, skus_order_now, skus_order_soon,
                    reception_status, received_at, po_number, sent_at,
-                   paid_at, cancelled_at, cancel_reason
+                   paid_at, cancelled_at, cancel_reason,
+                   destination_warehouse, approval_status, approved_amount
               FROM inventory_po_log
              WHERE {where}
              ORDER BY generated_at DESC, id DESC

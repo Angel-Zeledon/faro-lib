@@ -1690,8 +1690,10 @@ def po_history(
     user: CurrentUser = Depends(get_current_user),
 ):
     """Returns recent PO generation events for the history panel."""
+    from backend.inventory import po_approval_service as approval_svc
     from backend.inventory.roi_service import get_po_history
-    return ok(get_po_history(user.tenant_id, limit))
+    # `approval` is added only for a tenant with an approval rule.
+    return ok(approval_svc.annotate_orders(user.tenant_id, get_po_history(user.tenant_id, limit)))
 
 
 @router.get("/po-history/page")
@@ -1705,9 +1707,12 @@ def po_history_page(
 ):
     """The PO history, filtered and paged on the server. `total` counts the
     filtered set; `awaiting_reception` counts every open order of the tenant."""
+    from backend.inventory import po_approval_service as approval_svc
     from backend.inventory.roi_service import get_po_history_page
-    return ok(get_po_history_page(user.tenant_id, limit=limit, offset=offset,
-                                  status=status, q=q))
+    page = get_po_history_page(user.tenant_id, limit=limit, offset=offset,
+                               status=status, q=q)
+    page["items"] = approval_svc.annotate_orders(user.tenant_id, page["items"])
+    return ok(page)
 
 
 # ── PO reception (cerrar el loop de purchase) ──────────────────────────────────
@@ -1866,6 +1871,11 @@ def download_po_pdf(po_log_id: str, supplier_slug: str):
     # do not call .parent on this, that would search one level too high.
     pos_root = storage_paths.po_pdf_dir("")
     for candidate in pos_root.glob(f"*/{po_log_id}_{supplier_slug}.pdf"):
+        # The directory name IS the tenant. A document generated before an
+        # approval rule existed must not be served for an order that now needs
+        # one and has not got it.
+        from backend.inventory import po_approval_service as approval_svc
+        approval_svc.assert_sendable(candidate.parent.name, po_log_id)
         return FileResponse(candidate, media_type="application/pdf", filename=candidate.name)
     raise AppError("po_pdf_not_found", "Purchase order PDF not found", status_code=404)
 
@@ -1896,6 +1906,11 @@ def send_po_to_suppliers(
         raise AppError("po_cancelled",
                        "This order was cancelled; reopen it before sending it",
                        status_code=409)
+    # An order that needs approval does not leave until it has it. Checked
+    # before anything is built or mailed (and again, lower down, in
+    # `generate_po_pdf` and `mark_po_sent`, so no caller can skip it).
+    from backend.inventory import po_approval_service as approval_svc
+    approval_svc.assert_sendable(user.tenant_id, po=po)
 
     items = rec_svc.get_po_items(user.tenant_id, po_log_id)
     ordered = [i for i in items if i["status"] in ("approved", "modified")]
@@ -2045,6 +2060,10 @@ def send_po_to_self(
     po = rec_svc.get_po(user.tenant_id, po_log_id)
     if not po:
         raise AppError("po_not_found", "Purchase order not found", status_code=404)
+    # The text this returns is what the buyer forwards to the supplier: it is a
+    # send path like any other, so it is held until the order is approved.
+    from backend.inventory import po_approval_service as approval_svc
+    approval_svc.assert_sendable(user.tenant_id, po=po)
 
     items = rec_svc.get_po_items(user.tenant_id, po_log_id)
     ordered = [i for i in items if i["status"] in ("approved", "modified")]

@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
-  AlertTriangle, Bell, CalendarClock, CheckCircle2, Clock, Database, Gauge,
+  AlertTriangle, Bell, CalendarClock, CheckCircle2, ClipboardCheck, Clock, Database, Gauge,
   KeyRound, LineChart, PackageX, RefreshCw, ShoppingCart, TrendingUp, Truck, X,
 } from 'lucide-react'
 
@@ -302,9 +302,17 @@ function LocalRow({ notice }: { notice: LocalNotice }) {
  */
 export function AttentionRows({ onNavigate }: { onNavigate?: () => void }) {
   const { t } = useLanguage()
-  const { overdue, contactHealth, leadTimeAlerts } = useAttention()
+  const { overdue, contactHealth, leadTimeAlerts, approvals } = useAttention()
   const contacts = contactHealth.filter(r => r.has_open_pos)
   const rows: { id: string; Icon: typeof PackageX; title: string; detail: string; href: string; cta: string }[] = []
+  if (approvals.length > 0) {
+    rows.push({
+      id: 'approvals', Icon: ClipboardCheck,
+      title: t(approvals.length === 1 ? 'alerts.attention.approvals_one' : 'alerts.attention.approvals_other', { n: approvals.length }),
+      detail: approvals.slice(0, 3).map(a => `${a.reference} (${formatMoney(a.amount)})`).join(' · '),
+      href: `/pedidos?view=approvals&po=${encodeURIComponent(approvals[0].po_log_id)}`, cta: t('alerts.attention.approvals_cta'),
+    })
+  }
   if (overdue.length > 0) {
     rows.push({
       id: 'overdue', Icon: Truck,
@@ -350,8 +358,8 @@ export function AttentionRows({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function useAttentionTotal(): number {
-  const { overdue, contactHealth, leadTimeAlerts } = useAttention()
-  return (overdue.length > 0 ? 1 : 0) + (contactHealth.some(r => r.has_open_pos) ? 1 : 0) + (leadTimeAlerts.length > 0 ? 1 : 0)
+  const { overdue, contactHealth, leadTimeAlerts, approvals } = useAttention()
+  return (approvals.length > 0 ? 1 : 0) + (overdue.length > 0 ? 1 : 0) + (contactHealth.some(r => r.has_open_pos) ? 1 : 0) + (leadTimeAlerts.length > 0 ? 1 : 0)
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
