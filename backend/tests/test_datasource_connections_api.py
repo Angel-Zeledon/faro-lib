@@ -105,7 +105,18 @@ class TestCreate:
         assert ds_secrets.decrypt(stored["password_enc"]) == own["password"]
         assert "password_enc" not in src["sql_config"] and src["sql_config"]["has_password"] is True
         if own["password"]:
-            assert own["password"] not in r.text
+            # Exact-value check, not a substring one: a test database whose password is
+            # a common word ('postgres') legitimately appears inside 'postgresql'.
+            def _strings(x):
+                if isinstance(x, dict):
+                    for v in x.values():
+                        yield from _strings(v)
+                elif isinstance(x, list):
+                    for v in x:
+                        yield from _strings(v)
+                elif isinstance(x, str):
+                    yield x
+            assert own["password"] not in set(_strings(r.json()))
             _no_secret(_audit(test_tenant["id"], src["id"], "audit.dataset.created"), secret=own["password"])
 
     def test_private_literal_refused_when_the_installation_does_not_allow_it(

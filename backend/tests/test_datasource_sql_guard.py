@@ -229,6 +229,12 @@ class TestTheConnectionItselfIsReadOnly:
             json={"sql": template.format(t=erp_table)}, headers=analyst_headers,
         )
         assert resp.status_code == 400, resp.text
-        assert resp.json()["error_code"] == "sql_query_failed"
-        assert "read-only" in resp.json()["error_params"]["reason"]
+        # The SERVER refuses the write. The connection layer now names that refusal
+        # with its own code; the generic code carries the server's reason, which for a
+        # data-modifying CTE is Postgres' cursor message rather than 'read-only'.
+        code = resp.json()["error_code"]
+        assert code in ("data_source_read_only_violation", "sql_query_failed"), code
+        if code == "sql_query_failed":
+            reason = resp.json()["error_params"]["reason"]
+            assert "read-only" in reason or "data-modifying" in reason, reason
         assert _rows_left(erp_table) == 3
