@@ -4893,10 +4893,30 @@ def get_latest_completed_session(tenant_id: str) -> Optional[dict]:
 #
 # `viewer` stays out on purpose: it is the read-only role, and a stockout digest
 # is a call to action addressed to whoever can act on it.
+#
+# Two more filters, both of which were missing:
+#   * ACTIVE users only. A deactivated or suspended user cannot sign in, and
+#     kept receiving the company's stock and money figures by e-mail.
+#   * COMPANY-WIDE users only for company-wide digests. The daily alert, the
+#     monthly recap and the freshness reminder are company totals — the same
+#     totals the screens refuse a warehouse-scoped user
+#     (`wscope.require_company_wide`). A scoped user is withheld from them and
+#     told so in their activity log (`record_digest_withheld`), rather than sent
+#     figures for warehouses they may not see.
+_ALERT_ROLES_SQL = "role IN ('admin', 'analyst') AND status = 'active'"
+# NULL (and a stored JSON null) = every warehouse; see auth/warehouse_scope.py.
+_COMPANY_WIDE_SQL = "(warehouse_scope IS NULL OR warehouse_scope = 'null'::jsonb)"
+
+# The activity-log action written when a company-wide digest is withheld from
+# a warehouse-scoped user (rendered by the frontend as enum.activity_<action>).
+DIGEST_WITHHELD_ACTION = "company_digest_withheld"
+
+
 def get_tenant_admin_emails(tenant_id: str) -> list[str]:
+    """E-mail addresses for a COMPANY-WIDE digest: active, unscoped admins/analysts."""
     rows = query(
-        """SELECT email FROM users
-           WHERE tenant_id = %s AND role IN ('admin', 'analyst')
+        f"""SELECT email FROM users
+           WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND {_COMPANY_WIDE_SQL}
            AND email IS NOT NULL""",
         (tenant_id,),
     )
@@ -4904,29 +4924,66 @@ def get_tenant_admin_emails(tenant_id: str) -> list[str]:
 
 
 def get_tenant_admin_whatsapps(tenant_id: str) -> list[str]:
-    """E.164 numbers of admins/analysts who opted into WhatsApp alerts."""
+    """E.164 numbers of active, unscoped admins/analysts who opted into WhatsApp alerts."""
     rows = query(
-        """SELECT whatsapp_number FROM users
-           WHERE tenant_id = %s AND role IN ('admin', 'analyst')
+        f"""SELECT whatsapp_number FROM users
+           WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND {_COMPANY_WIDE_SQL}
            AND whatsapp_number IS NOT NULL AND whatsapp_number <> ''""",
         (tenant_id,),
     )
     return [r["whatsapp_number"] for r in rows]
 
 
-def get_tenant_alert_recipients(tenant_id: str) -> list[dict]:
+def get_tenant_alert_recipients(tenant_id: str, *, include_scoped: bool = False) -> list[dict]:
     """
-    Admins/analysts with the identity needed to attribute a delivery outcome.
-    The email/WhatsApp lists above return bare contact strings, which cannot be
-    written to activity_logs (user_id is NOT NULL) — this returns the user row.
+    Active admins/analysts with the identity needed to attribute a delivery
+    outcome. The email/WhatsApp lists above return bare contact strings, which
+    cannot be written to activity_logs (user_id is NOT NULL) — this returns the
+    user row.
+
+    Company-wide users only, unless `include_scoped`: pass it ONLY for a digest
+    whose content is not warehouse-dimensioned (the supplier lead-time alert,
+    whose scorecard every scoped user already reads on screen).
     """
+    scope_sql = "" if include_scoped else f" AND {_COMPANY_WIDE_SQL}"
     return [
         dict(r) for r in query(
-            """SELECT id, email, whatsapp_number FROM users
-               WHERE tenant_id = %s AND role IN ('admin', 'analyst')""",
+            f"""SELECT id, email, whatsapp_number FROM users
+               WHERE tenant_id = %s AND {_ALERT_ROLES_SQL}{scope_sql}""",
             (tenant_id,),
         )
     ]
+
+
+def get_scoped_alert_recipients(tenant_id: str) -> list[dict]:
+    """Active admins/analysts limited to some warehouses — the people a
+    company-wide digest is withheld from."""
+    return [
+        dict(r) for r in query(
+            f"""SELECT id, email, whatsapp_number FROM users
+               WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND NOT {_COMPANY_WIDE_SQL}""",
+            (tenant_id,),
+        )
+    ]
+
+
+def record_digest_withheld(tenant_id: str, digest: str) -> int:
+    """Tell each warehouse-scoped recipient, in their own activity log, that a
+    company-wide digest went out without them and why. Without this row the
+    missing e-mail reads as "nothing to report" — the silence this module's
+    delivery log exists to rule out. Returns how many users were withheld.
+    Never raises."""
+    try:
+        scoped = get_scoped_alert_recipients(tenant_id)
+    except Exception as e:  # pragma: no cover - the lookup must not abort a digest
+        log.warning("digest withheld lookup failed tenant=%s: %s", tenant_id, e)
+        return 0
+    for r in scoped:
+        record_notification_delivery(
+            tenant_id, r["id"], DIGEST_WITHHELD_ACTION, True,
+            context={"digest": digest, "reason": "warehouse_scope"},
+        )
+    return len(scoped)
 
 
 def record_notification_delivery(
@@ -5046,7 +5103,10 @@ def run_daily_inventory_alerts() -> None:
             # rows itself, after counting, so the digest reports every SKU at
             # risk instead of the ten it had room to list.
             from backend.notifications import email as email_mod
+            # Company totals: active, unscoped recipients only. A warehouse-
+            # scoped buyer is told in their activity log that it was withheld.
             recipients = get_tenant_alert_recipients(tid)
+            record_digest_withheld(tid, "inventory_alert")
             for r in recipients:
                 if not r.get("email"):
                     continue

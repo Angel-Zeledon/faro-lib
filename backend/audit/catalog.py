@@ -62,6 +62,9 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("POST", "/data-sources/{source_id}/materialize"): _r("dataset.materialized", "dataset", "source_id"),
     ("POST", "/data-sources/{source_id}/save-as-new"): _r("dataset.created", "dataset", "source_id"),
     ("POST", "/data-sources/{source_id}/export-query"): _r("export.query", "dataset", "source_id"),
+    # Caller-written SQL run on the customer's database: who, which source,
+    # a hash of the statement and the row count (the handler's note).
+    ("POST", "/data-sources/{source_id}/execute-query"): _r("dataset.query_run", "dataset", "source_id"),
     ("DELETE", "/data-sources/{source_id}"):        _r("dataset.deleted", "dataset", "source_id"),
     # users (invites, role changes and deactivation are recorded by their own events)
     ("PATCH", "/users/{user_id}/permissions"):      _r("user.permissions_changed", "user", "user_id"),
