@@ -75,7 +75,7 @@ def claim(worker_id: str, is_tenant_blocked: Optional[Callable[[str], bool]] = N
                 excluded.append(tid)
 
     progress = json.dumps(
-        {"percent": 5, "step": "starting", "message": "Worker picked up job"})
+        {"percent": 0, "step": "starting", "message": "Worker picked up job"})
     return query_one(
         """UPDATE jobs SET status = 'RUNNING', started_at = NOW(),
                           worker_id = %s, progress = %s
@@ -102,3 +102,33 @@ def remove(job_id: str) -> None:
 def peek() -> list[dict]:
     """Returns all QUEUED jobs (used by /health endpoint)."""
     return query("SELECT id AS job_id, tenant_id FROM jobs WHERE status = 'QUEUED' ORDER BY created_at")
+
+
+def claim_specific(job_id: str, worker_id: str) -> Optional[dict]:
+    """Take ONE named job off the queue, or return None if it is already gone.
+
+    `claim()` above takes whatever is next; this takes a row someone already
+    holds the id of. `backend/scripts/seed_demo.py` is the caller: it enqueues a
+    training family through the real path and then runs those jobs in its own
+    process. Without claiming them first, the API's worker — which the seed is
+    normally run against, since `start.sh --seed` starts the server and then
+    seeds — picks the same QUEUED rows a few milliseconds later and trains the
+    same sessions a second time, in parallel, each run overwriting the other's
+    results and both fighting for the same cores.
+
+    None means the row was not QUEUED any more: somebody else owns it, and the
+    caller must wait for them rather than run it again.
+    """
+    progress = json.dumps(
+        {"percent": 5, "step": "starting", "message": "Worker picked up job"})
+    return query_one(
+        """UPDATE jobs SET status = 'RUNNING', started_at = NOW(),
+                          worker_id = %s, progress = %s
+           WHERE id = (
+               SELECT id FROM jobs
+               WHERE id = %s AND status = 'QUEUED'
+               FOR UPDATE SKIP LOCKED
+           )
+           RETURNING id AS job_id, tenant_id, session_id""",
+        (worker_id, progress, job_id),
+    )

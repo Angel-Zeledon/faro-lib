@@ -7,11 +7,12 @@ to produce per-SKU signals, ABC-XYZ classification, and order recommendations.
 
 import math
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from backend.db.connection import query, query_one, execute
-from backend.formatting import money, format_days as _format_days
+from backend.errors import AppError
+from backend.formatting import money, format_days as _format_days, format_coverage, format_coverage_en
 from backend.inventory.defaults import (
     DEFAULT_LEAD_TIME_DAYS,
     DEFAULT_MOQ,
@@ -20,6 +21,8 @@ from backend.inventory.defaults import (
     SOURCE_LEARNED,
     SOURCE_USER,
 )
+from backend.inventory import abc_xyz as _abc_xyz
+from backend.inventory import signal_thresholds as _sig_th
 
 log = logging.getLogger(__name__)
 
@@ -37,9 +40,127 @@ def _tenant_currency(tenant_id: str) -> dict:
     return currency_of(tenant_id)
 
 
-# Z-scores for common service levels
+# Z-scores for common service levels, kept as the exact values the product has
+# always used at those four points so a tenant's numbers do not move under it.
 _Z = {0.90: 1.282, 0.95: 1.645, 0.97: 1.881, 0.99: 2.326}
+
+
+def _z_for(service_level: float) -> float:
+    """The normal quantile for a service level — for ANY service level.
+
+    This was a dict lookup with a default, and the default was 1.645. The API
+    accepts any level in [0.5, 0.999] (`inventory.py` Query bounds), the
+    defaults cascade lets a tenant store 0.98 per SKU, and every one of those
+    values that was not one of the four keys silently got the z of 95%. A
+    buyer who deliberately raised a critical SKU to 98% got a 95% cushion and
+    no way to notice: the number is correct-looking, just smaller than asked.
+
+    Now: the four known points are returned verbatim, and anything else is
+    computed with the Acklam rational approximation of the inverse normal CDF
+    (|error| < 1.15e-9 over the whole domain). It stays pure Python on purpose
+    — `backend/` may not import numpy or scipy outside the three modules the
+    layering test allows, and the engine is not reachable from here.
+    """
+    if service_level in _Z:
+        return _Z[service_level]
+    # Outside the meaningful range the answer is not a cushion, it is a bug
+    # upstream. Clamped rather than raised: this runs inside the 08:00 alert
+    # loop, where an exception would cost a tenant their whole digest.
+    p = min(max(float(service_level), 0.5), 0.999999)
+    return _inverse_normal_cdf(p)
+
+
+# Acklam's algorithm. The coefficients are the published ones; they are not
+# derived here and must not be "tidied".
+_A = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+      1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+_B = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+      6.680131188771972e+01, -1.328068155288572e+01)
+_C = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+      -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+_D = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+      3.754408661907416e+00)
+_P_LOW = 0.02425
+
+
+def _inverse_normal_cdf(p: float) -> float:
+    """Φ⁻¹(p) for 0 < p < 1."""
+    if p < _P_LOW:
+        q = math.sqrt(-2 * math.log(p))
+        return (((((_C[0] * q + _C[1]) * q + _C[2]) * q + _C[3]) * q + _C[4]) * q + _C[5]) / \
+               ((((_D[0] * q + _D[1]) * q + _D[2]) * q + _D[3]) * q + 1)
+    if p <= 1 - _P_LOW:
+        q = p - 0.5
+        r = q * q
+        return (((((_A[0] * r + _A[1]) * r + _A[2]) * r + _A[3]) * r + _A[4]) * r + _A[5]) * q / \
+               (((((_B[0] * r + _B[1]) * r + _B[2]) * r + _B[3]) * r + _B[4]) * r + 1)
+    q = math.sqrt(-2 * math.log(1 - p))
+    return -(((((_C[0] * q + _C[1]) * q + _C[2]) * q + _C[3]) * q + _C[4]) * q + _C[5]) / \
+             ((((_D[0] * q + _D[1]) * q + _D[2]) * q + _D[3]) * q + 1)
 _SIGNAL_PRIORITY = {"PEDIR_YA": 0, "PEDIR_PRONTO": 1, "OK": 2, "SOBRESTOCK": 3, "SIN_DATOS": 4}
+
+
+# ── Status ordering (server-side paging) ──────────────────────────────────────
+
+STATUS_SORT_PATTERN = (
+    "^(urgency|sku|coverage|value|recommended|signal|name|stock|demand_lt|qty|"
+    "lead_time|moq|abc_xyz|decision|supplier_urgency)$"
+)
+
+
+def _num(field: str):
+    """Sort key for a numeric field: a missing value counts as -inf, so it leads
+    an ascending sort and trails a descending one, as the table always did."""
+    return lambda i: i.get(field) if i.get(field) is not None else float("-inf")
+
+
+_COLUMN_SORT_KEYS = {
+    "signal":      lambda i: _SIGNAL_PRIORITY.get(i["signal"], 99),
+    "name":        lambda i: (i.get("display_name") or i.get("sku") or "").lower(),
+    "sku":         lambda i: str(i.get("sku") or ""),
+    "stock":       _num("current_stock"),
+    "coverage":    _num("coverage_days"),
+    "demand_lt":   _num("lead_time_demand"),
+    "qty":         _num("recommended_qty"),
+    "recommended": _num("recommended_qty"),
+    "lead_time":   _num("lead_time_days"),
+    "moq":         _num("moq"),
+    "abc_xyz":     lambda i: i.get("abc_xyz") or "ZZ",
+    "value":       _num("inventory_value"),
+}
+
+
+def sort_status_items(items: list[dict], sort: str, order: Optional[str] = None) -> list[dict]:
+    """Orders the (already filtered) status rows for a page.
+
+    `urgency` is the service's own order. `decision` puts everything that needs
+    a purchasing decision ahead of OK / SIN_DATOS rows (the simple view).
+    `supplier_urgency` keeps each supplier's rows together, suppliers holding the
+    most urgent product first, so a page boundary never scatters a group. Column
+    sorts take `order`; with `order` omitted the original defaults hold
+    (coverage ascending, value and recommended descending).
+    """
+    if sort == "urgency":
+        return items
+    if sort == "decision":
+        return sorted(items, key=lambda i: i["signal"] in ("OK", "SIN_DATOS"))
+    if sort == "supplier_urgency":
+        best: dict[str, int] = {}
+        for i in items:
+            k = i.get("supplier") or ""
+            best[k] = min(best.get(k, 99), _SIGNAL_PRIORITY.get(i["signal"], 99))
+        return sorted(items, key=lambda i: (best[i.get("supplier") or ""],
+                                            (i.get("supplier") or "").casefold(),
+                                            i.get("supplier") or ""))
+    if order is None:
+        if sort == "coverage":
+            return sorted(items, key=lambda i: (i.get("coverage_days") is None, i.get("coverage_days") or 0))
+        if sort == "value":
+            return sorted(items, key=lambda i: -(i.get("inventory_value") or 0))
+        if sort == "recommended":
+            return sorted(items, key=lambda i: -(i.get("recommended_qty") or 0))
+    by_sku = sorted(items, key=lambda i: str(i.get("sku") or ""))   # stable tiebreak, always ascending
+    return sorted(by_sku, key=_COLUMN_SORT_KEYS[sort], reverse=(order == "desc"))
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -72,6 +193,16 @@ def upsert_stock(
     reports 'user' and the second 'default', and the explanation stops claiming
     a lead time was configured when it was assumed.
     """
+    # A SKU of nothing but spaces is not a SKU. `PUT /inventory/stock/%20%20%20`
+    # answered 200 and left a row whose code renders as nothing at all: it
+    # cannot be found in the list, cannot be searched for, and cannot be deleted
+    # from the UI. Refused at the chokepoint every write path funnels through,
+    # so the bulk import and the transfer path get the same answer as the
+    # screen. Non-blank SKUs are NOT trimmed — that would silently merge
+    # " SKU-1 " into an existing "SKU-1" and take its stock with it.
+    if not str(sku or "").strip():
+        raise AppError("sku_blank", "SKU cannot be blank", status_code=422)
+
     allowed = {
         "display_name", "current_stock", "min_stock",
         "lead_time_days", "unit_cost", "moq", "supplier", "notes",
@@ -143,9 +274,15 @@ def upsert_stock(
     # not a bypass.
     is_new_row = not get_stock(tenant_id, sku, warehouse=safe["warehouse"], conn=conn)
     if is_new_row:
-        enforce_limit(tenant_id, "max_skus", count_stock(tenant_id))
+        # On `conn` when there is one: under a limit_guard, the count, the check
+        # and the INSERT below are one transaction holding one lock, which is
+        # the only arrangement in which this ceiling actually holds. Without a
+        # conn it degrades to the old read-then-write, which is correct for one
+        # caller at a time and beatable by two.
+        enforce_limit(tenant_id, "max_skus", count_stock(tenant_id, conn=conn), conn=conn)
     if not wh_svc.get_warehouse_by_name(tenant_id, safe["warehouse"]):
-        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id))
+        enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id),
+                      conn=conn)
 
     # Stamp provenance for exactly the tracked fields this call actually writes.
     # Added to `safe` (not written separately) so the value and its provenance
@@ -182,9 +319,12 @@ def upsert_stock(
 
     row = get_stock(tenant_id, sku, warehouse=safe["warehouse"], conn=conn)
 
-    # Auto-snapshot when current_stock is updated
+    # Auto-snapshot when current_stock is updated, stamped with the warehouse
+    # the level belongs to — `safe["warehouse"]` is the canonical name this
+    # write landed on, not the spelling the caller sent.
     if "current_stock" in safe and row:
-        _record_snapshot(tenant_id, sku, float(safe["current_stock"]), conn=conn)
+        _record_snapshot(tenant_id, sku, float(safe["current_stock"]), conn=conn,
+                         warehouse=safe["warehouse"])
 
     return row
 
@@ -203,30 +343,74 @@ def _ensure_warehouse(tenant_id: str, name: str, conn: Optional[Any] = None) -> 
     shared transaction connection instead of its own auto-committing one.
     """
     try:
+        # is_default on the tenant's FIRST warehouse, decided inside the same
+        # statement so this stays one round-trip on the stock-write path. Without
+        # it every row kept is_default = false and "which is the default" fell
+        # through to name precedence — an answer that moves when a warehouse is
+        # renamed. See warehouse_service.create_warehouse for the other path.
         execute(
-            "INSERT INTO warehouses (tenant_id, name) VALUES (%s, %s) "
+            "INSERT INTO warehouses (tenant_id, name, is_default) "
+            "SELECT %s, %s, NOT EXISTS ("
+            "    SELECT 1 FROM warehouses WHERE tenant_id = %s"
+            ") "
             "ON CONFLICT (tenant_id, name) DO NOTHING",
-            (tenant_id, name),
+            (tenant_id, name, tenant_id),
             conn=conn,
         )
     except Exception as e:
         log.warning("_ensure_warehouse: failed to upsert warehouse=%s tenant=%s err=%s", name, tenant_id, e)
 
 
-def count_stock(tenant_id: str) -> int:
-    row = query_one("SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id = %s", (tenant_id,))
+def count_stock(tenant_id: str, conn: Optional[Any] = None) -> int:
+    """`conn` matters when this count is about to be enforced as a ceiling: it
+    has to be read on the same connection that holds the tenant's limit_guard
+    lock and will perform the write, or the count and the write are two
+    different moments again."""
+    row = query_one(
+        "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id = %s",
+        (tenant_id,), conn=conn,
+    )
     return row["c"] if row else 0
 
 
-def list_stock_keys(tenant_id: str) -> set:
+def list_stock_keys(tenant_id: str, conn: Optional[Any] = None) -> set:
     """(sku, warehouse) pairs already present for this tenant — the same
     conflict target `upsert_stock` writes to, used to tell how many rows a
-    bulk import would actually ADD (vs. update in place)."""
+    bulk import would actually ADD (vs. update in place).
+
+    `conn` when the answer is about to be enforced as a ceiling: read outside
+    the lock, "how many of these are new" is already stale by the time it is
+    checked."""
     rows = query(
         "SELECT sku, warehouse FROM inventory_stock WHERE tenant_id = %s",
-        (tenant_id,),
+        (tenant_id,), conn=conn,
     )
     return {(r["sku"], r["warehouse"]) for r in rows}
+
+
+def list_stock_warehouses(
+    tenant_id: str, sku: str, conn: Optional[Any] = None
+) -> list[str]:
+    """Every warehouse this SKU actually has a stock row in, ordered.
+
+    Exists because "does this SKU exist?" and "which row am I about to write?"
+    are two different questions, and PATCH /stock/{sku} used to answer the
+    second with the first: it 404-checked `get_stock()` with no warehouse
+    filter — which finds the row wherever it lives — and then wrote through
+    `upsert_stock`, which falls back to `principal` when no warehouse is
+    supplied. A SKU that only lived in 'Norte' therefore passed the existence
+    check on the Norte row and CREATED a second row in 'principal'. The Norte
+    row stayed put, the consolidated view summed both, and the coverage the
+    semáforo reads was inflated by units that do not exist — a SKU that should
+    have read PEDIR_YA reads OK and never gets bought.
+    """
+    rows = query(
+        "SELECT warehouse FROM inventory_stock WHERE tenant_id = %s AND sku = %s "
+        "ORDER BY warehouse",
+        (tenant_id, sku),
+        conn=conn,
+    )
+    return [r["warehouse"] for r in rows]
 
 
 def get_stock(
@@ -257,11 +441,156 @@ def list_stock(tenant_id: str) -> list[dict]:
     )
 
 
+def list_stock_page(
+    tenant_id: str, limit: int = 50, offset: int = 0,
+    q: Optional[str] = None, warehouse: Optional[str] = None,
+) -> dict:
+    """One page of stock rows. `total` counts the filtered set, so a screen can
+    say "51-100 of 4,812" without having loaded the other 4,700."""
+    where, params = "tenant_id = %s", [tenant_id]
+    if q and q.strip():
+        where += " AND (sku ILIKE %s OR display_name ILIKE %s OR category ILIKE %s OR supplier ILIKE %s)"
+        like = f"%{q.strip()}%"
+        params += [like, like, like, like]
+    if warehouse:
+        where += " AND warehouse = %s"
+        params.append(warehouse)
+    rows = query(
+        f"SELECT * FROM inventory_stock WHERE {where} ORDER BY sku, warehouse LIMIT %s OFFSET %s",
+        (*params, limit, offset),
+    )
+    total = query_one(f"SELECT COUNT(*) AS n FROM inventory_stock WHERE {where}", tuple(params))
+    return {"items": rows, "total": int(total["n"]) if total else 0,
+            "limit": limit, "offset": offset}
+
+
 def delete_stock(tenant_id: str, sku: str) -> None:
     execute(
         "DELETE FROM inventory_stock WHERE tenant_id = %s AND sku = %s",
         (tenant_id, sku),
     )
+
+
+def get_incoming_detail(tenant_id: str) -> list[dict]:
+    """THE definition of "stock already on its way" — one row per open source.
+
+    Every consumer (the semáforo's recommended quantity, /compras, /inventario,
+    the optimizer's opening position, the daily alerts and the exports) reads
+    this through `get_incoming_qty`, so there is exactly one rule:
+
+      · Purchase orders: every line the buyer ordered ('approved'/'modified')
+        on a PO that can still take goods in (`RECEIVABLE_STATES`: pending,
+        partial, not_received), counting only what has NOT arrived yet
+        (final_qty − received_qty, never below 0 per line).
+      · Transfers in transit from another of the tenant's own warehouses,
+        credited to the DESTINATION only (the origin already lost the units at
+        send time inside `transfer_service.create_transfer`'s transaction).
+
+    Whether the PO was ever *sent through StockAI* (`sent_at`) is deliberately
+    NOT part of the rule. It used to be: only POs stamped by the in-app send
+    counted. But the everyday path is "Descargar orden de compra" — a CSV the
+    buyer mails or WhatsApps from their own phone — which never stamps
+    `sent_at`. Mobile QA, 2026-10-01: 426 units of SKU-001 on OC-000001/2,
+    downloaded and pending, and the panel still said "Pedir pronto, 63
+    unidades". The buyer orders the same units twice, which is real money.
+    /pedidos, the reception nudge and the overdue list (`get_overdue_receptions`)
+    already treated a generated PO as a commitment — this was the one reader
+    that disagreed with them.
+
+    `not_received` stays included: it means "nothing had arrived when I
+    looked", not "this will never arrive".
+
+    A CANCELLED PO (`cancelled_at` set, `po_cancel_service`) is not on its way
+    and never counts, whatever its reception status says.
+
+    Rows: {sku, warehouse, qty, kind: 'po'|'transfer', reference, source_id}.
+    `reference` is the human order number (OC-000123) for a PO and the origin
+    warehouse for a transfer.
+    """
+    from backend.inventory.reception_service import RECEIVABLE_STATES
+    from backend.inventory.roi_service import format_po_number
+    from backend.inventory.warehouse_service import DEFAULT_WAREHOUSE
+
+    out: list[dict] = []
+
+    for r in query(
+        """SELECT poi.sku, poi.warehouse, pol.id AS po_log_id, pol.po_number,
+                  SUM(GREATEST(poi.final_qty - COALESCE(poi.received_qty, 0), 0)) AS qty
+             FROM inventory_po_items poi
+             JOIN inventory_po_log pol ON pol.id = poi.po_log_id
+            WHERE poi.tenant_id = %s
+              AND pol.tenant_id = %s
+              AND pol.reception_status IN %s
+              AND pol.cancelled_at IS NULL
+              AND poi.status IN ('approved', 'modified')
+            GROUP BY poi.sku, poi.warehouse, pol.id, pol.po_number
+            ORDER BY pol.po_number NULLS LAST, pol.id""",
+        (tenant_id, tenant_id, tuple(RECEIVABLE_STATES)),
+    ):
+        qty = float(r["qty"] or 0)
+        if qty > 0:
+            out.append({
+                "sku": r["sku"],
+                "warehouse": r["warehouse"] or DEFAULT_WAREHOUSE,
+                "qty": qty,
+                "kind": "po",
+                "reference": format_po_number(r["po_number"], str(r["po_log_id"])),
+                "source_id": str(r["po_log_id"]),
+            })
+
+    for r in query(
+        """SELECT tri.sku, trl.to_warehouse AS warehouse, trl.id AS transfer_id,
+                  trl.from_warehouse,
+                  SUM(GREATEST(tri.qty_sent - COALESCE(tri.qty_received, 0), 0)) AS qty
+             FROM inventory_transfer_items tri
+             JOIN inventory_transfer_log trl ON trl.id = tri.transfer_id
+            WHERE tri.tenant_id = %s
+              AND trl.status IN ('in_transit', 'partial')
+            GROUP BY tri.sku, trl.to_warehouse, trl.id, trl.from_warehouse
+            ORDER BY trl.id""",
+        (tenant_id,),
+    ):
+        qty = float(r["qty"] or 0)
+        if qty > 0:
+            out.append({
+                "sku": r["sku"],
+                "warehouse": r["warehouse"] or DEFAULT_WAREHOUSE,
+                "qty": qty,
+                "kind": "transfer",
+                "reference": r["from_warehouse"],
+                "source_id": str(r["transfer_id"]),
+            })
+
+    return out
+
+
+def sum_incoming(detail: list[dict]) -> dict[tuple[str, str], float]:
+    """Collapse `get_incoming_detail` rows to {(sku, warehouse): qty}."""
+    incoming: dict[tuple[str, str], float] = {}
+    for d in detail:
+        key = (d["sku"], d["warehouse"])
+        incoming[key] = incoming.get(key, 0.0) + float(d["qty"])
+    return incoming
+
+
+def incoming_sources_by_key(
+    detail: list[dict],
+) -> dict[tuple[str, str], list[dict]]:
+    """{(sku, warehouse): [{kind, reference, qty}, ...]} — what the screen
+    prints next to the quantity ("426 en camino: OC-000001, OC-000002")."""
+    out: dict[tuple[str, str], list[dict]] = {}
+    for d in detail:
+        out.setdefault((d["sku"], d["warehouse"]), []).append({
+            "kind": d["kind"], "reference": d["reference"],
+            "qty": round(float(d["qty"]), 2),
+        })
+    return out
+
+
+def get_incoming_qty(tenant_id: str) -> dict[tuple[str, str], float]:
+    """Units already on their way, per (sku, warehouse). The rule lives in
+    `get_incoming_detail`; this is its per-key total."""
+    return sum_incoming(get_incoming_detail(tenant_id))
 
 
 # Dataset columns we recognize as inventory data when present in an uploaded file.
@@ -276,7 +605,7 @@ _DATASET_STOCK_COLS = _DATASET_STOCK_FLOAT_COLS | _DATASET_STOCK_INT_COLS | _DAT
 # path that parses a numeric column straight out of a user's sales-history
 # file with no Pydantic validation in front of it — without this floor, a
 # stray 0 in a "lead_time_days" column would collapse every _calc_signal
-# threshold to 0 (lead_time * 0.5/1.2/3 are all 0), permanently misreporting
+# threshold to 0 (every lead-time multiple is 0), permanently misreporting
 # the SKU as SOBRESTOCK regardless of real coverage and silently hiding a
 # stockout risk. A stray negative current_stock/moq would similarly corrupt
 # the reorder-point math. Columns not listed here (e.g. service_level) have
@@ -328,6 +657,8 @@ def sync_stock_from_dataset(
     group_col: Optional[str],
     date_col: str,
     canonical_mapping: Optional[dict] = None,
+    store_col: Optional[str] = None,
+    report: Optional[dict] = None,
 ) -> int:
     """
     If the uploaded dataset contains recognized inventory columns (current_stock,
@@ -336,9 +667,15 @@ def sync_stock_from_dataset(
     recent value per SKU. This is what lets a Quick Start upload actually
     control what /inventory shows, instead of /inventory silently falling back
     to whatever was entered manually in a previous session.
+
+    `store_col`: the mapped store column, when the session has one. For a SKU
+    sold in several stores, its stock is the SUM of each store's latest stock
+    reading — the latest single row is one store's shelf, and buying the
+    network's demand against it over-orders. `report`, when given, is filled
+    with what that did (see `stock_summed_over_stores`), for the run findings.
     """
     from fastapi import HTTPException
-    from backend.dataframes.stock import last_row_per_group
+    from backend.dataframes.stock import last_row_per_group, stock_summed_over_stores
 
     # Pandas extraction lives at the boundary: latest row per SKU with raw
     # (unfloored) values, NaN cells dropped. Empty / no-recognized-columns
@@ -349,6 +686,24 @@ def sync_stock_from_dataset(
     # supply, so this can add data but never override it.
     wanted = set(_DATASET_STOCK_COLS) | set(canonical_cols)
     raw_entries = last_row_per_group(df, group_col, date_col, wanted)
+
+    # Several stores per SKU: replace the one-store stock with the network's.
+    # Which column carries the stock follows the same precedence as above.
+    stock_src = None
+    if df is not None and "current_stock" in getattr(df, "columns", []):
+        stock_src = "current_stock"
+    elif df is not None and "inventory" in canonical_cols and "inventory" in df.columns:
+        stock_src = "inventory"
+    if store_col and stock_src:
+        summed = stock_summed_over_stores(df, group_col, store_col, date_col, stock_src)
+        if summed["by_sku"]:
+            raw_entries = [
+                (sku, {**raw, stock_src: summed["by_sku"][sku]}
+                 if sku in summed["by_sku"] else raw)
+                for sku, raw in raw_entries
+            ]
+            if report is not None:
+                report.update({k: v for k, v in summed.items() if k != "by_sku"})
 
     # Resolve the per-SKU payload with the numeric floors up front (before the
     # max_skus check), exactly as before — only the pandas extraction moved out.
@@ -382,7 +737,7 @@ def sync_stock_from_dataset(
     if not entries:
         return 0
 
-    # CHOKEPOINT (pre-loop): this is the PRIMARY way SKUs enter Faro (Quick
+    # CHOKEPOINT (pre-loop): this is the PRIMARY way SKUs enter StockAI (Quick
     # Start upload), yet unlike PUT /stock and POST /bulk it had no max_skus
     # check at all — a Starter tenant could seed thousands of SKUs in one
     # upload. Computed BEFORE the loop, atomically over the WHOLE dataset, so
@@ -392,6 +747,37 @@ def sync_stock_from_dataset(
     # checks). Dataset rows never carry an explicit warehouse (not in
     # _DATASET_STOCK_COLS), so every new key lands in "principal".
     existing_keys = list_stock_keys(tenant_id)
+
+    # A price is not an inventory count.
+    #
+    # `current_stock` is NOT NULL DEFAULT 0, so CREATING a stock row for a SKU
+    # whose dataset said nothing about stock materialises a 0 — and the semáforo
+    # cannot tell that 0 from an empty shelf. Measured on a real upload: a file
+    # whose only inventory-ish mapping was `precio_unitario` seeded 200 rows with
+    # a sale_price and current_stock = 0, and every one of the 200 came out
+    # "PEDIR YA" for a catalogue nobody had ever counted.
+    #
+    # So a row is only CREATED when the dataset says something about what is on
+    # the shelf or how it is replenished. Price-only data still UPDATES a row
+    # that already exists — that is useful and invents nothing.
+    _STOCK_DEFINING = {"current_stock", "lead_time_days", "min_stock", "moq"}
+    filtered: list[tuple[str, dict]] = []
+    skipped_no_stock_signal = 0
+    for sku, data in entries:
+        if (sku, "principal") in existing_keys or (_STOCK_DEFINING & data.keys()):
+            filtered.append((sku, data))
+        else:
+            skipped_no_stock_signal += 1
+    if skipped_no_stock_signal:
+        log.info(
+            "sync_stock_from_dataset: %d SKU(s) not created — the file carried no "
+            "stock, lead time, min stock or MOQ for them (tenant=%s)",
+            skipped_no_stock_signal, tenant_id,
+        )
+    entries = filtered
+    if not entries:
+        return 0
+
     new_keys = {(sku, "principal") for sku, _ in entries} - existing_keys
     from backend.entitlements.service import enforce_limit
     enforce_limit(tenant_id, "max_skus", count_stock(tenant_id), adding=len(new_keys))
@@ -473,8 +859,17 @@ def bulk_upsert(
     rows: list[dict],
     source: str = SOURCE_FILE,
     only_fill_missing: bool = False,
+    failures: Optional[list[dict]] = None,
 ) -> int:
     """Upsert multiple SKUs from a CSV/bulk import. Returns count saved.
+
+    `failures`, when a list is passed, collects one entry per row that was read
+    from the file and did NOT reach the database: `{sku, warehouse, error}`.
+    The count already shrank for those rows, so the number was never a lie —
+    but "83 products imported" after a clean 120-row preview was the only
+    signal the user got, and it named neither the 37 rows nor a reason
+    (stability 11.34). The caller decides what to do with them; passing
+    nothing keeps the old behaviour for every other caller.
 
     `source` defaults to 'file' because that is what this function is for — a
     stock CSV the user uploaded. Callers that are replaying values the user
@@ -521,88 +916,238 @@ def bulk_upsert(
             raise
         except Exception as e:
             log.warning("bulk_upsert: skipped sku=%s err=%s", sku, e)
+            if failures is not None:
+                # The reason is a CODE, not the driver's sentence: the exception
+                # text is English prose from psycopg2 and would land on a
+                # Spanish screen verbatim. The row and its warehouse are what
+                # the user needs to find it in their file.
+                # Same shape as every other row error in this channel
+                # (`_row_error` in api/v1/inventory.py): a stable `code` the UI
+                # renders through i18n, its params, and an English fallback.
+                # The driver's own sentence is never the message — it is
+                # English prose that would land on a Spanish screen verbatim.
+                failures.append({
+                    "row":    None,
+                    "sku":    sku,
+                    "code":   "inventory_import_row_write_failed",
+                    "params": {"warehouse": (row.get("warehouse") or "").strip() or None},
+                    "error":  "inventory_import_row_write_failed",
+                })
     return count
 
 
 # ── Stock snapshots ───────────────────────────────────────────────────────────
 
 def _record_snapshot(
-    tenant_id: str, sku: str, current_stock: float, conn: Optional[Any] = None
+    tenant_id: str, sku: str, current_stock: float, conn: Optional[Any] = None,
+    warehouse: Optional[str] = None,
 ) -> None:
     """Record a point-in-time stock level. Called automatically on upsert.
+
+    `warehouse` is the location this level belongs to. It was missing until
+    2026-09-16, and without it one SKU's rows were a single interleaved series
+    across every warehouse (stability 11.15). Rows written before that carry
+    NULL and are read as tenant-wide totals, which is what they are.
 
     `conn`: see upsert_stock's docstring.
     """
     try:
         execute(
-            "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock) VALUES (%s, %s, %s)",
-            (tenant_id, sku, current_stock),
+            "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock, warehouse) "
+            "VALUES (%s, %s, %s, %s)",
+            (tenant_id, sku, current_stock, warehouse),
             conn=conn,
         )
     except Exception as e:
         log.warning("snapshot record failed sku=%s: %s", sku, e)
 
 
-def get_stock_history(tenant_id: str, sku: str, days: int = 30) -> list[dict]:
-    """Returns daily stock snapshots for the last N days, most recent last."""
+def get_stock_history(
+    tenant_id: str, sku: str, days: int = 30, warehouse: Optional[str] = None,
+) -> list[dict]:
+    """Stock snapshots for the last N days, oldest first.
+
+    Two readings, and the difference is the whole point of 11.15:
+
+    * `warehouse` given — only that location's rows, in the order they were
+      written. A location's own history starts when the column landed
+      (2026-09-16); older rows have no warehouse and are not attributed to one.
+    * `warehouse` omitted — the TENANT-WIDE level, which is a sum across
+      locations and not a list of their rows interleaved. Per-warehouse rows are
+      collapsed to one value per location per day (the last of that day) and
+      summed; legacy rows, which were already tenant-wide totals, join that
+      series unchanged. Before this, principal at 500 and Norte at 20 produced
+      `500, 20, 500, 20` and `_calc_demand_trend` read the difference as real
+      consumption.
+    """
     from datetime import timezone
     since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    if warehouse:
+        rows = query(
+            """SELECT current_stock, recorded_at
+               FROM inventory_snapshots
+               WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+                 AND warehouse = %s
+               ORDER BY recorded_at ASC""",
+            (tenant_id, sku, since, warehouse),
+        )
+        return [{"stock": r["current_stock"], "date": r["recorded_at"].isoformat()}
+                for r in rows]
+
+    return [{"stock": level, "date": at.isoformat()}
+            for at, level in tenant_wide_history(tenant_id, sku, since)]
+
+
+def get_stock_history_batch(
+    tenant_id: str, skus: list[str], days: int = 14,
+) -> dict[str, list[dict]]:
+    """`get_stock_history(tenant_id, sku, days)` (tenant-wide reading) for MANY
+    SKUs in three queries instead of three per SKU.
+
+    The status pass used to call the single-SKU reader once per row: at 2,500
+    SKUs that was 7,500 round trips and ~80% of the request. The per-SKU
+    arithmetic is the very same `tenant_wide_daily_levels`, only fed from
+    grouped rows, so each SKU's series is identical to the one-at-a-time answer
+    (the equality is asserted in test_status_snapshot.py).
+    """
+    from datetime import timezone
+    if not skus:
+        return {}
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    wanted = list(dict.fromkeys(skus))
+
+    rows_by_sku: dict[str, list[dict]] = {}
+    for r in query(
+        """SELECT sku, warehouse, current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = ANY(%s) AND recorded_at >= %s
+             AND warehouse IS NOT NULL
+           ORDER BY recorded_at ASC""",
+        (tenant_id, wanted, since),
+    ):
+        rows_by_sku.setdefault(r["sku"], []).append(r)
+
+    opening_by_sku: dict[str, dict[str, float]] = {}
+    for r in query(
+        """SELECT DISTINCT ON (sku, warehouse) sku, warehouse, current_stock
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = ANY(%s) AND recorded_at < %s
+             AND warehouse IS NOT NULL
+           ORDER BY sku, warehouse, recorded_at DESC""",
+        (tenant_id, wanted, since),
+    ):
+        opening_by_sku.setdefault(r["sku"], {})[r["warehouse"]] = float(r["current_stock"])
+
+    legacy_by_sku: dict[str, list[dict]] = {}
+    for r in query(
+        """SELECT sku, current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = ANY(%s) AND recorded_at >= %s
+             AND warehouse IS NULL""",
+        (tenant_id, wanted, since),
+    ):
+        legacy_by_sku.setdefault(r["sku"], []).append(r)
+
+    out: dict[str, list[dict]] = {}
+    for sku in wanted:
+        points = tenant_wide_daily_levels(
+            rows_by_sku.get(sku, []), opening_by_sku.get(sku, {}),
+        ) + [(r["recorded_at"], float(r["current_stock"])) for r in legacy_by_sku.get(sku, [])]
+        points.sort(key=lambda p: p[0])
+        out[sku] = [{"stock": level, "date": at.isoformat()} for at, level in points]
+    return out
+
+
+def tenant_wide_history(
+    tenant_id: str, sku: str, since: datetime,
+) -> list[tuple[datetime, float]]:
+    """The tenant-wide stock level of one SKU since `since`, oldest first, one
+    point per day — see `tenant_wide_daily_levels`. The single reader every
+    "how did this SKU's total stock move" question should go through."""
+    # Every per-warehouse write in the window, plus each warehouse's last level
+    # BEFORE the window — the level it still held when the window opened.
     rows = query(
-        """SELECT current_stock, recorded_at
+        """SELECT warehouse, current_stock, recorded_at
            FROM inventory_snapshots
            WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+             AND warehouse IS NOT NULL
            ORDER BY recorded_at ASC""",
         (tenant_id, sku, since),
     )
-    return [{"stock": r["current_stock"], "date": r["recorded_at"].isoformat()} for r in rows]
+    opening = query(
+        """SELECT DISTINCT ON (warehouse) warehouse, current_stock
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = %s AND recorded_at < %s
+             AND warehouse IS NOT NULL
+           ORDER BY warehouse, recorded_at DESC""",
+        (tenant_id, sku, since),
+    )
+    # Written before the column existed: already tenant-wide.
+    legacy = query(
+        """SELECT current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = %s AND recorded_at >= %s
+             AND warehouse IS NULL""",
+        (tenant_id, sku, since),
+    )
+    points = tenant_wide_daily_levels(
+        rows, {r["warehouse"]: float(r["current_stock"]) for r in opening},
+    ) + [(r["recorded_at"], float(r["current_stock"])) for r in legacy]
+    points.sort(key=lambda p: p[0])
+    return points
+
+
+def tenant_wide_daily_levels(
+    rows: list[dict], opening: Optional[dict] = None,
+) -> list[tuple[datetime, float]]:
+    """One tenant-wide stock level per day, from per-warehouse snapshot rows.
+
+    `rows` are `{warehouse, current_stock, recorded_at}` ordered by time;
+    `opening` is each warehouse's level before the first row.
+
+    A day's total is the sum of EVERY warehouse's latest known level as of the
+    end of that day — not only of the warehouses that happened to be written
+    that day. The SQL this replaced summed the latter, so principal written on
+    Monday (500) and Norte on Wednesday (20) came out as the series 500, 20: a
+    480-unit "fall" in a tenant whose stock never moved, read by the demand
+    trend as consumption and by dead capital as movement — the very artefact
+    stability 11.15 set out to remove (math audit 2026-10-01).
+    """
+    levels: dict[str, float] = dict(opening or {})
+    out: list[tuple[datetime, float]] = []
+    current_day = None
+    last_at = None
+    for r in rows:
+        day = r["recorded_at"].date()
+        if current_day is not None and day != current_day:
+            out.append((last_at, sum(levels.values())))
+        current_day = day
+        last_at = r["recorded_at"]
+        levels[r["warehouse"]] = float(r["current_stock"])
+    if current_day is not None:
+        out.append((last_at, sum(levels.values())))
+    return out
 
 
 # ── ABC-XYZ classification ────────────────────────────────────────────────────
 
 def _classify_xyz(cv: Optional[float]) -> str:
-    """
-    X = low variability (predictable), Y = moderate, Z = high (erratic).
-    Uses coefficient of variation from the series analysis.
-    """
-    if cv is None:
-        return "?"
-    if cv < 0.5:
-        return "X"
-    if cv < 1.0:
-        return "Y"
-    return "Z"
+    """X = predictable, Y = moderate, Z = erratic — from the engine's per-series
+    CV. The cut-offs live in `abc_xyz.py`, the one definition."""
+    return _abc_xyz.classify_xyz(cv)
 
 
 def _classify_abc(items: list[dict]) -> dict[str, str]:
+    """A = top 80% cumulative value, B = next 15%, C = rest.
+
+    Value proxy = daily_demand * unit_cost (or just daily_demand if no cost).
+    The math is `abc_xyz.classify_abc`, pure and tested on its own.
     """
-    A = top 80% cumulative revenue proxy, B = next 15%, C = rest.
-    Revenue proxy = daily_demand * unit_cost (or just daily_demand if no cost).
-    """
-    scored = []
-    for item in items:
-        demand = item.get("daily_demand") or 0.0
-        cost   = item.get("unit_cost") or 1.0
-        scored.append((item["sku"], demand * cost))
-
-    scored.sort(key=lambda x: x[1], reverse=True)
-    total = sum(v for _, v in scored)
-
-    if total == 0:
-        return {sku: "C" for sku, _ in scored}
-
-    result: dict[str, str] = {}
-    cumulative = 0.0
-    for sku, val in scored:
-        # Assign tier based on cumulative BEFORE adding this item,
-        # so a single dominant SKU (e.g. 99% revenue) gets classified as A not C.
-        if cumulative < 0.80:
-            result[sku] = "A"
-        elif cumulative < 0.95:
-            result[sku] = "B"
-        else:
-            result[sku] = "C"
-        cumulative += val / total
-    return result
+    return _abc_xyz.classify_abc(
+        (item["sku"], (item.get("daily_demand") or 0.0) * (item.get("unit_cost") or 1.0))
+        for item in items
+    )
 
 
 # ── Signal calculation ────────────────────────────────────────────────────────
@@ -633,7 +1178,15 @@ def _point_sigma(p: dict) -> float:
     if q90 is not None:
         return max(0.0, (float(q90) - value) / _Q90_Z)
     upper = p.get("upper")
-    return max(0.0, float(upper) - value) if upper is not None else 0.0
+    if upper is None:
+        return 0.0
+    # `upper` is the TOP of a band, not a sigma. The engine has always written
+    # it as roughly the 90th percentile, so returning the raw spread here handed
+    # the caller ~1.28 sigma and the caller multiplied by z(service_level)
+    # again — a configured 95% service level was really being served at ~98%,
+    # and nothing in the product said so. Dividing by the same z the q90 branch
+    # uses makes both branches return the same quantity.
+    return max(0.0, (float(upper) - value) / _Q90_Z)
 
 
 def _pick_model(model_forecasts: dict, preferred: Optional[str]) -> dict:
@@ -755,14 +1308,172 @@ def _steps_for_lead_time(lead_time_days: float, period: str) -> int:
     return max(1, math.ceil(float(lead_time_days) / _days_per_period(period)))
 
 
-def _calc_signal(coverage_days: float, lead_time: int) -> str:
-    if coverage_days < lead_time * 0.5:
+def _calc_signal(coverage_days: float, lead_time: float, reorder_point_days: float,
+                 thresholds: Optional[dict] = None) -> str:
+    """Classifies days-of-stock-cover into the four persisted signals.
+
+    stability.md 17c: the ordering boundary is now the reorder point itself,
+    not an arbitrary multiple of the lead time. The reorder point (lead-time
+    demand + safety stock) already answers "how much cover do I need to
+    survive the wait for a replenishment" — a flat `1.2 * lead_time` ignored
+    it and could sit BELOW the reorder point for any SKU whose safety stock
+    exceeded `0.2 * lead_time * avg_daily`, i.e. most volatile/intermittent
+    SKUs. In that band the old code reported OK and zeroed the recommendation
+    for a SKU that was, by its own reorder point, already due to be ordered.
+
+    Four-way split, `reorder_point_days` being the reorder point expressed in
+    the same days-of-cover unit as `coverage_days` (reorder_point / avg_daily):
+
+    - `coverage_days >= 9990` (the 9999-day sentinel for `avg_daily <= 0`, no
+      measurable demand) -> SOBRESTOCK, unchanged from before this fix. A
+      dead/discontinued SKU with any stock at all is overstock, never an
+      ordering signal — there is nothing to order it FOR.
+    - `coverage_days < 0.5 * lead_time` -> PEDIR_YA. Unchanged: PEDIR_YA has
+      always meant "already in trouble" — less than half a lead time of cover
+      — independent of the safety cushion. Half a lead time is always <= the
+      reorder point in days (reorder_point_days = lead_time + SS/avg_daily >=
+      lead_time > 0.5 * lead_time for any SS >= 0), so this sub-band always
+      sits inside "at or below the reorder point" and never contradicts it.
+    - `coverage_days <= reorder_point_days` -> PEDIR_PRONTO. The new boundary:
+      at or below the reorder point, the incoming shipment would not land
+      before the shelf runs out — "time to place the order."
+    - Between the reorder point and `sobrestock_at` -> OK; at or above it ->
+      SOBRESTOCK. `sobrestock_at` is the GREATER of `3 * lead_time` (the
+      original flat threshold, kept as the floor for the common case of a
+      small safety stock, so a stable SKU's classification does not move) and
+      `2 * reorder_point_days` (so a genuinely volatile SKU, whose own reorder
+      point can already sit past 3 lead times, still gets a real, non-empty OK
+      band instead of an inverted one).
+
+    The two lead-time multiples above (0.5 and 3) are the DEFAULTS of
+    `signal_thresholds`; the buyer can configure them per tenant, supplier or
+    category. `thresholds` is what `signal_thresholds.resolve_signal_thresholds`
+    returned for this SKU — every production caller passes it. The middle
+    boundary stays the reorder point whatever is configured, so no setting can
+    bring back the 17c defect of an OK below the reorder point, and the bounds
+    in `signal_thresholds.FACTOR_BOUNDS` (order-now < 1) keep PEDIR_YA inside
+    the ordering band.
+    """
+    th = thresholds or _sig_th.DEFAULT_THRESHOLDS
+    if coverage_days >= 9990:
+        return "SOBRESTOCK"
+    if coverage_days < lead_time * th["order_now_factor"]:
         return "PEDIR_YA"
-    if coverage_days < lead_time * 1.2:
+    if coverage_days <= reorder_point_days:
         return "PEDIR_PRONTO"
-    if coverage_days < lead_time * 3:
+    sobrestock_at = max(
+        lead_time * th["overstock_factor"],
+        reorder_point_days * _sig_th.OVERSTOCK_REORDER_POINT_MULTIPLE,
+    )
+    if coverage_days < sobrestock_at:
         return "OK"
     return "SOBRESTOCK"
+
+
+# Series classes whose cushion was MEASURED unable to keep the service level the
+# buyer configured (stability.md 17b): on intermittent demand the lead-time sum
+# is zero-inflated and skewed, and four modelling attempts — per-horizon bands
+# twice, stratified banks, a parametric compound model — delivered ~50% against
+# a nominal 95%. Until something measures better, the row SAYS so instead of
+# printing a percentage it does not keep ("degrade out loud", CLAUDE.md).
+# A code, not a sentence: the frontend renders it in the reader's language.
+_SERVICE_LEVEL_CAVEAT_BY_FLAG = {"intermittent": "intermittent_demand"}
+
+
+def _service_level_caveats(result: dict) -> dict[str, str]:
+    """{sku: caveat code} from the run's stored routing plan.
+
+    `routing[sku]["flags"]` is the engine's multi-label series classification
+    (`ForecastEngine.get_routing_plan`), stored with every training result. A
+    session trained before flags were stored yields {} — no caveat is invented
+    for a series nobody classified.
+    """
+    caveats: dict[str, str] = {}
+    for sku, plan in (result.get("routing") or {}).items():
+        if not isinstance(plan, dict):
+            continue
+        flags = set(plan.get("flags") or [])
+        for flag, code in _SERVICE_LEVEL_CAVEAT_BY_FLAG.items():
+            if flag in flags:
+                caveats[str(sku)] = code
+                break
+    return caveats
+
+
+def _measured_safety_stock(
+    risk: Optional[dict], lead_time: float, service_level: float,
+) -> Optional[float]:
+    """
+    Safety stock read off the engine's measured cumulative error, or None.
+
+    `z * sigma * sqrt(L)` is an approximation of the quantile of demand over the
+    lead time, and it assumes the per-bucket forecast errors are normal and
+    independent. Neither holds: demand is non-negative and skewed, and a
+    forecast that runs high today runs high tomorrow, so the errors compound
+    faster than `sqrt(L)`. When the engine ran a rolling-origin backtest it
+    measured the cumulative error at each lead time directly, and that number
+    needs no assumptions at all.
+
+    This covers DEMAND uncertainty only — the spread of cumulative demand over
+    a lead time assumed FIXED at its mean. Lead-time uncertainty (the supplier
+    sometimes takes longer) is a separate, independent source of variance that
+    this band says nothing about; `_safety_stock` adds it back in quadrature
+    rather than treating this measurement as the whole cushion.
+
+    Returns None whenever the measurement is absent — the caller then keeps the
+    classical formula rather than pretending.
+    """
+    if not risk:
+        return None
+    offsets = risk.get("cumulative_offsets") or {}
+    if not offsets:
+        return None
+
+    horizons = sorted(int(h) for h in offsets if str(h).isdigit())
+    if not horizons:
+        return None
+    wanted = max(1, int(math.ceil(float(lead_time))))
+    key = wanted if wanted in horizons else max(
+        [h for h in horizons if h <= wanted] or [horizons[0]]
+    )
+    band = offsets.get(str(key)) or {}
+    if not band:
+        return None
+
+    try:
+        target = float(service_level)
+        levels = {float(q): float(v) for q, v in band.items()}
+    except (TypeError, ValueError):
+        return None
+
+    # The quantile the buyer asked for. The engine measures a handful of levels
+    # (0.5 / 0.9 / 0.95 by default) and the API accepts any level in
+    # [0.5, 0.999]; this used to return the NEAREST measured level verbatim, so
+    # a SKU raised to 99% got exactly the 95% cushion — the same defect the
+    # `_z_for` docstring records fixing for the classical path (stability
+    # 2026-09-14), re-opened on the measured one (math audit 2026-10-01).
+    # An exactly measured level is used as is; otherwise the nearest measured
+    # level ABOVE the median is rescaled by z(target) / z(measured), which
+    # keeps the measured spread and only assumes the tail keeps its shape.
+    exact = [q for q in levels if abs(q - target) < 1e-6]
+    if exact:
+        offset = levels[exact[0]]
+    else:
+        upper = [q for q in levels if q > 0.5]
+        if not upper:
+            return None
+        nearest = min(upper, key=lambda q: abs(q - target))
+        offset = levels[nearest] * (_z_for(target) / _z_for(nearest))
+
+    # A lead time the backtest did not reach. This used to reuse the longest
+    # measured horizon's offset unchanged — as if no uncertainty accumulated
+    # after it, which no demand process does: a 60-day importer was cushioned
+    # for 30 days of error. Cumulative error grows at LEAST like sqrt(L)
+    # (exactly so for independent errors, faster for persistent ones), so
+    # sqrt(wanted / key) is the conservative extension, never an inflation.
+    if key != wanted:
+        offset *= math.sqrt(wanted / key)
+    return max(0.0, offset)
 
 
 def _calc_recommended(
@@ -772,14 +1483,122 @@ def _calc_recommended(
     lead_time: int,
     moq: float,
     service_level: float = 0.95,
+    risk: Optional[dict] = None,
+    risk_scale: float = 1.0,
+    incoming: float = 0.0,
+    lead_time_std: float = 0.0,
+    review_period: float = 0.0,
 ) -> float:
-    z = _Z.get(service_level, 1.645)
-    lead_time_demand = avg_daily * lead_time
-    safety_stock = z * avg_std * math.sqrt(lead_time)
-    raw = max(0.0, lead_time_demand + safety_stock - current_stock)
-    if moq and moq > 0:
-        raw = math.ceil(raw / moq) * moq
+    """How much to order, against the INVENTORY POSITION rather than the shelf.
+
+    `incoming` is what is already on its way and not yet received: purchase
+    orders the buyer has sent, and stock transferred from another warehouse of
+    theirs. Without it the buyer was told to order the same units again every
+    day until they physically arrived — and in a multi-warehouse tenant a single
+    internal move produced TWO of those, because the origin loses the stock at
+    send time and the destination does not gain it until reception.
+
+    Measured before this: 200 units sent San José -> Cartago, and one second
+    later StockAI asked for 250 more at the origin and 90 more at the destination,
+    for a company that already owned 430.
+
+    Defaults to 0.0 so every caller that has nothing on order behaves exactly as
+    before.
+
+    `lead_time_std` is the supplier's lead-time standard deviation, ALREADY in
+    the active period's units (see `_lead_time_in_periods` — the same
+    conversion `lead_time` itself went through). Defaults to 0.0, which makes
+    `_safety_stock`'s combined-variance term vanish and reproduces exactly
+    today's number — see `_safety_stock` for why.
+
+    `review_period` is how often this buyer actually orders from this
+    supplier, ALREADY in the active period's units — same conversion, same
+    reason. stability.md 17/19.3: an order-up-to level sized on the lead time
+    alone is exactly one review period short, because the position is back at
+    the reorder point the moment a shipment lands and the next chance to react
+    is not until the next review. The PROTECTION INTERVAL the order has to
+    last through is therefore `lead_time + review_period`, not `lead_time`
+    alone — it replaces `lead_time` in BOTH the demand term below and the
+    safety-stock term `_safety_stock` computes, so the cushion also covers the
+    longer wait, not only the bigger mean. Defaults to 0.0, under which
+    `protection_interval == lead_time` and this reproduces exactly today's
+    number — see `_resolve_review_period_days` for why 0.0 is what "no
+    supplier" and "no declared cadence" both resolve to.
+    """
+    protection_interval = lead_time + max(0.0, review_period)
+    lead_time_demand = avg_daily * protection_interval
+    safety_stock = _safety_stock(
+        avg_std, protection_interval, service_level, risk, risk_scale,
+        avg_daily=avg_daily, lead_time_std=lead_time_std,
+    )
+    raw = max(0.0, lead_time_demand + safety_stock - current_stock - max(0.0, incoming))
+    if moq and moq > 0 and raw > 0:
+        # MOQ is a MINIMUM ORDER QUANTITY — a floor under the order — not a pack
+        # multiple. It used to be applied as `ceil(raw/moq) * moq`, which is the
+        # arithmetic for "the supplier only ships in boxes of this size", a
+        # concept this product does not have a field for and never asked the
+        # user about.
+        #
+        # The gap between the two is not cosmetic. Needing 520 with a MOQ of 500
+        # asked for 1000 — a 92% overshoot, with a button to turn it into a
+        # purchase order. Every SKU whose need lands just past a multiple was
+        # over-ordered by up to a full MOQ, on money the buyer does not get back
+        # until the units sell.
+        #
+        # `raw > 0` keeps "nothing to order" meaning nothing: the old ceil
+        # returned 0 for a raw of 0 and this must too, or a well-stocked SKU
+        # would be handed a full minimum order out of nowhere.
+        #
+        # The ceil to whole units is kept — you cannot buy 96.15 units, and the
+        # old expression rounded there as a side effect of the MOQ arithmetic.
+        # Dropping it here would have started emitting fractional order lines.
+        raw = max(float(math.ceil(raw)), float(moq))
     return float(round(raw, 2))
+
+
+def _safety_stock(
+    avg_std: float, lead_time: float, service_level: float,
+    risk: Optional[dict] = None, risk_scale: float = 1.0,
+    avg_daily: float = 0.0, lead_time_std: float = 0.0,
+) -> float:
+    """The cushion above lead-time demand: measured when we have it, modelled
+    when we do not. One function so the recommendation, the reorder point and
+    the explanation breakdown can never disagree about the number.
+
+    Two independent sources of variance feed the cushion — demand is
+    uncertain even over a FIXED lead time, and the lead time itself is
+    uncertain even for AVERAGE demand — and they combine in quadrature
+    (variances add, standard deviations do not):
+
+        sigma_LT = sqrt(L * avg_std^2 + avg_daily^2 * lead_time_std^2)
+        safety_stock = z * sigma_LT
+
+    which is algebraically `sqrt((z*avg_std*sqrt(L))^2 + (z*avg_daily*lead_time_std)^2)`
+    — the classical term this function has always returned, plus a second
+    term for a supplier who does not always take exactly `lead_time`.
+    `lead_time_std=0.0` (no supplier, or one with neither a learned nor a
+    configured spread — see `_resolve_lead_time_std`) zeroes that second term
+    and reproduces the old number exactly.
+
+    `_measured_safety_stock` replaces the DEMAND term only (it already covers
+    demand uncertainty over the lead time, measured rather than assumed) —
+    the lead-time term is still added in quadrature on top of it, not
+    discarded, because the two protect against different things.
+
+    `risk_scale` splits a whole-SKU band across warehouses, mirroring how the
+    per-warehouse view already splits `avg_std` (and `avg_daily`, for this
+    term) by that warehouse's share. The lead-time term is built from
+    already-scaled inputs at the per-warehouse call site, so it needs no
+    separate scaling of its own — only the measured (whole-SKU) band does.
+    """
+    z = _z_for(service_level)
+    lead_time_term = z * avg_daily * max(0.0, lead_time_std)
+    measured = _measured_safety_stock(risk, lead_time, service_level)
+    if measured is not None:
+        demand_term = measured * float(risk_scale)
+    else:
+        demand_term = z * avg_std * math.sqrt(lead_time)
+    return math.sqrt(demand_term ** 2 + lead_time_term ** 2)
 
 
 # Signals for which recommending an order is meaningful. On any other signal
@@ -830,6 +1649,88 @@ def get_learned_lead_times(tenant_id: str) -> dict[str, float]:
         for r in rows
         if r.get("supplier") and r.get("avg_days") is not None
     }
+
+
+def get_learned_lead_time_stds(tenant_id: str) -> dict[str, float]:
+    """
+    Standard deviation of REAL lead times per supplier, learned from the same
+    `supplier_lead_time_obs` receptions `get_learned_lead_times` averages —
+    one more aggregate (STDDEV_SAMP instead of AVG) over a query that already
+    runs, gated on the SAME MIN_LEAD_TIME_OBSERVATIONS threshold so a supplier
+    without enough receptions to trust its learned MEAN lead time does not get
+    a learned SPREAD either. That spread is what `_safety_stock` needs for the
+    lead-time-variance term of the combined-variance formula; the mean alone
+    (what this function's sibling returns) only feeds `lead_time_days` demand.
+
+    Keys are lower-cased supplier names, like `get_learned_lead_times`. Absent
+    here means "not enough evidence yet" — the caller falls back to the
+    supplier's configured `lead_time_std`.
+    """
+    rows = query(
+        """SELECT LOWER(supplier) AS supplier,
+                  STDDEV_SAMP(lead_time_days) AS std_days
+           FROM supplier_lead_time_obs
+           WHERE tenant_id = %s
+           GROUP BY LOWER(supplier)
+           HAVING COUNT(*) >= %s""",
+        (tenant_id, MIN_LEAD_TIME_OBSERVATIONS),
+    )
+    return {
+        r["supplier"]: float(r["std_days"])
+        for r in rows
+        if r.get("supplier") and r.get("std_days") is not None
+    }
+
+
+def _resolve_lead_time_std(
+    supplier: Optional[str],
+    learned_stds: dict[str, float],
+    configured_stds: dict[str, float],
+) -> float:
+    """The lead-time standard deviation (DAYS) the safety-stock formula uses
+    for a SKU's supplier, in priority order:
+
+      (a) the standard deviation of that supplier's real receptions, once
+          MIN_LEAD_TIME_OBSERVATIONS of them exist (`learned_stds` — already
+          gated on that threshold by `get_learned_lead_time_stds`, exactly
+          like `learned_stds` gates the learned MEAN);
+      (b) the `lead_time_std` configured on the supplier record
+          (`configured_stds`, from `supplier_service.get_lead_time_std_map`);
+      (c) 0.0 when the SKU has no supplier at all, or the name matches
+          neither map — which collapses the combined-variance formula in
+          `_safety_stock` back to exactly today's `z * avg_std * sqrt(L)`.
+    """
+    if not supplier:
+        return 0.0
+    key = supplier.strip().lower()
+    learned = learned_stds.get(key)
+    if learned is not None:
+        return max(0.0, learned)
+    configured = configured_stds.get(key)
+    if configured is not None:
+        return max(0.0, configured)
+    return 0.0
+
+
+def _resolve_review_period_days(
+    supplier: Optional[str],
+    review_period_map: dict[str, float],
+) -> float:
+    """The order cadence (DAYS) this buyer actually uses with a SKU's
+    supplier — how long the order placed today has to last past the lead
+    time, because the next chance to react is not until the next review.
+
+    Unlike the lead time there is nothing to learn here: a reception tells you
+    how long a shipment took, never how often you chose to ask for one. So
+    there is exactly one source, `suppliers.review_period_days`
+    (`supplier_service.get_review_period_map`), and no supplier or an unset
+    value (the column's own DEFAULT 0) both mean "no declared cadence" —
+    which is what makes the protection interval collapse back to the lead
+    time alone, reproducing today's numbers exactly.
+    """
+    if not supplier:
+        return 0.0
+    return max(0.0, review_period_map.get(supplier.strip().lower(), 0.0))
 
 
 def get_supplier_observation_counts(tenant_id: str) -> dict[str, int]:
@@ -934,6 +1835,8 @@ def build_explanation(
     reorder_point: float,
     signal: str,
     lead_time_rule_scope: Optional[str] = None,
+    review_period_days: float = 0.0,
+    period: str = "daily",
 ) -> dict:
     """
     The reasoning behind a recommendation, as a STRUCTURED value:
@@ -955,8 +1858,32 @@ def build_explanation(
 
     `text` is the English fallback, shown only by a client that has no mapping
     for `code`.
+
+    `review_period_days` (stability.md 17/19.3) is the order cadence this
+    buyer declared for the supplier, in DAYS. 0.0 (no cadence declared, the
+    overwhelming majority of tenants today) keeps the exact code and sentence
+    this function has always returned — a screen that has never heard of a
+    review period must not change. A positive value switches to
+    `inventory_explain_reorder_review` and names the protection interval —
+    "covers you until your next order, expected in N days" — because a
+    quantity that grew for a new reason and says nothing about it is worse
+    than one that did not grow: CLAUDE.md's silent-failures lens applies to a
+    NUMBER, not only to a missing send. A client that only knows the older
+    code (frontend not yet updated for this — see the module's own comment on
+    graceful degradation) falls back to this English `text` rather than
+    rendering nothing.
     """
     scope = lead_time_rule_scope or "supplier"
+
+    # The sentence says "you sell X a day, so it lasts you N days". On a weekly
+    # or monthly tenant `daily_demand` is per WEEK/MONTH and `coverage_days` is
+    # in weeks/months, so a weekly buyer read "you sell 70 a day, it lasts you
+    # 3 days" about 10 a day and 3 weeks (math audit 2026-10-01). Converted to
+    # calendar days here, the unit the sentence names and the lead time is in.
+    dpp = _days_per_period(period)
+    daily_demand = float(daily_demand) / dpp
+    if coverage_days is not None:
+        coverage_days = float(coverage_days) * dpp
 
     if daily_demand <= 0:
         # No projected sales at all: coverage is effectively unlimited, saying
@@ -1007,10 +1934,28 @@ def build_explanation(
     else:
         text = base + "."
 
-    return {"code": "inventory_explain_reorder", "params": params, "text": text}
+    review_period_days = float(review_period_days or 0.0)
+    if review_period_days <= 0:
+        # No declared cadence: byte-identical to before this feature existed.
+        return {"code": "inventory_explain_reorder", "params": params, "text": text}
+
+    protection_interval = lead_time + review_period_days
+    params["review_period_days"] = round(review_period_days, 2)
+    params["protection_interval_days"] = round(protection_interval, 2)
+    text += (
+        f" That quantity is sized to last until your NEXT order, not just until this "
+        f"one arrives: you order from this supplier roughly every "
+        f"{_english_days(review_period_days)}, so it has to cover "
+        f"{_english_days(protection_interval)} of demand in total "
+        f"({_english_days(lead_time)} for this shipment to arrive, plus "
+        f"{_english_days(review_period_days)} before you place the next one)."
+    )
+    return {"code": "inventory_explain_reorder_review", "params": params, "text": text}
 
 
-def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
+def _aggregate_stock_rows_by_sku(
+    stock_rows: list[dict], default_warehouse: str | None = None,
+) -> dict[str, dict]:
     """
     Collapse per-warehouse inventory_stock rows into one summary row per SKU:
     current_stock is SUMMED across warehouses (true total stock the tenant
@@ -1021,11 +1966,31 @@ def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
     catalog attributes, not per-warehouse quantities, so picking one is
     correct as long as it's deterministic.
 
-    This is a hot path fed ONLY stock rows: precedence is decided by NAME
-    (shared name_precedence_key), deliberately without a DB query for
-    warehouses.is_default — see the key's docstring.
+    `default_warehouse` is the tenant's ANCHORED default — `warehouses.is_default`
+    — and when given it wins over the name ordering. It has to, because
+    `warehouse_service.get_demand_shares` already resolves the default that way,
+    and the two answers were not the same one.
+
+    Concretely: a tenant whose first warehouse was "Bodega Sur" carries
+    is_default there, while the name key puts DEFAULT_WAREHOUSE ("principal")
+    first. So 100% of a SKU's demand was attributed to Bodega Sur while the
+    aggregated row took that SKU's cost, lead time, MOQ and supplier — and with
+    them the headline "valor en bodega" — from principal. Two warehouses, one
+    row, and no way to tell from the screen which one it was describing.
+    `get_demand_shares`' own comment claimed the question was "answered
+    identically everywhere"; this parameter is what makes that true.
+
+    Omitting it falls back to the name key alone, which is what callers holding
+    nothing but stock rows can do — that is why it is optional rather than
+    required, and why the aggregation itself still issues no query.
     """
     from backend.inventory.warehouse_service import name_precedence_key
+
+    def _key(row: dict) -> tuple:
+        wh = row.get("warehouse")
+        # The anchored default sorts ahead of everything; the rest keep the
+        # shared name ordering so ties stay deterministic.
+        return (wh != default_warehouse,) + name_precedence_key(wh)
 
     by_sku: dict[str, list[dict]] = {}
     for r in stock_rows:
@@ -1033,7 +1998,7 @@ def _aggregate_stock_rows_by_sku(stock_rows: list[dict]) -> dict[str, dict]:
 
     result: dict[str, dict] = {}
     for sku, rows in by_sku.items():
-        rows_sorted = sorted(rows, key=lambda r: name_precedence_key(r.get("warehouse")))
+        rows_sorted = sorted(rows, key=_key)
         representative = dict(rows_sorted[0])
         representative["current_stock"] = sum(float(r["current_stock"] or 0) for r in rows)
         result[sku] = representative
@@ -1067,7 +2032,9 @@ def _compute_inventory_status(
     forecasts: Optional[dict] = None,
     stock_rows: Optional[list] = None,
     learned_lead_times: Optional[dict] = None,
+    incoming_qty: Optional[dict] = None,
     period: str = "daily",
+    signal_threshold_patch: Optional[tuple] = None,
 ) -> list[dict]:
     """
     Implementation of get_inventory_status. The keyword-only args accept
@@ -1076,6 +2043,12 @@ def _compute_inventory_status(
     ONCE per tenant and share them with get_inventory_status_by_warehouse
     instead of double-fetching; None means fetch here as always. Inputs are
     never mutated (rollup_by_sku copies).
+
+    `signal_threshold_patch` = (scope_type, scope_value, triple-or-None) is the
+    settings preview asking "what would the semáforo say if these multipliers
+    were saved". It is applied to the rule index the SAME resolver reads, and a
+    patched pass is never written to the recommendation log — it describes a
+    hypothetical, not what the tenant was told.
     """
     from backend.db import session_store
     from backend.inventory.series import rollup_by_sku
@@ -1092,19 +2065,46 @@ def _compute_inventory_status(
     # And which model actually won for each SKU, so the recommendation is
     # computed from that one instead of the mean of every model trained.
     best_model: dict[str, str] = {}
+    # Measured cumulative demand uncertainty per SKU, when the engine produced
+    # it. Absent for older sessions and for champions that ran no rolling-origin
+    # backtest — the safety stock falls back to the classical formula.
+    demand_risk: dict[str, dict] = {}
+    service_level_caveats: dict[str, str] = {}
     try:
         result = session_store.get_training_result(tenant_id, session_id) or {}
+        service_level_caveats = _service_level_caveats(result)
         quality: dict = result.get("data_quality") or {}
         for sku_key, q in quality.items():
             if isinstance(q, dict):
                 cv_by_sku[str(sku_key)] = q.get("cv")
         best_model = best_model_by_sku((result.get("metrics") or {}).get("rows") or [])
+        demand_risk = {
+            str(k): v for k, v in (result.get("demand_risk") or {}).items()
+            if isinstance(v, dict)
+        }
     except Exception as e:
         log.debug("cv_by_sku lookup failed for session=%s: %s", session_id, e)
 
     if stock_rows is None:
         stock_rows = list_stock(tenant_id)
-    stock_map = _aggregate_stock_rows_by_sku(stock_rows)
+    # One query for the whole request, not one per row: which warehouse
+    # represents a SKU must be the same warehouse that owns its demand (see
+    # _aggregate_stock_rows_by_sku).
+    from backend.inventory import warehouse_service as _wh
+    stock_map = _aggregate_stock_rows_by_sku(
+        stock_rows, _wh.get_default_warehouse_name(tenant_id),
+    )
+
+    # What is already on its way: open purchase orders and transfers in
+    # transit (see get_incoming_detail for the one rule). One query pair for
+    # the whole tenant, never inside the SKU loop. The per-order breakdown is
+    # only known when we load it here; a caller that preloaded the totals (the
+    # alert loop) prints no references and loses nothing it would show.
+    incoming_sources: dict = {}
+    if incoming_qty is None:
+        _incoming_detail = get_incoming_detail(tenant_id)
+        incoming_qty = sum_incoming(_incoming_detail)
+        incoming_sources = incoming_sources_by_key(_incoming_detail)
 
     # Scope strictly to the SKUs forecast in THIS session. inventory_stock is a
     # tenant-wide table (no session_id column) that accumulates rows from every
@@ -1112,7 +2112,38 @@ def _compute_inventory_status(
     # SKUs to display — only of the stock fields to enrich a SKU already present
     # in the active session's forecasts. Otherwise, stale/unrelated SKUs from
     # past sessions leak into sessions that never uploaded them.
-    all_skus = sorted(forecasts.keys())
+    # A SKU with an open commitment is listed even with no forecast of its own
+    # (a new product a customer already ordered): it never reached the loop, so
+    # the commitment was invisible. No forecast is invented for it below.
+    from backend.inventory import committed_demand_service as _cd_all
+    _committed_skus = _cd_all.active_by_sku(tenant_id)
+    all_skus = sorted(set(forecasts.keys()) | set(_committed_skus.keys()))
+
+    # Forecast by analogy: a product the engine could not train (too little
+    # history) can be planned from the products a person said it sells like.
+    # Empty for a tenant that defined none, which leaves every row as it was.
+    # A failure here must not take the status screen down, but it is logged and
+    # the products stay SIN_DATOS exactly as before (never a guessed number).
+    analogy_serving: dict = {}
+    analogy_retired: dict = {}
+    analogy_unavailable: dict = {}
+    try:
+        from backend.inventory import analogy_service as _an_svc
+        _analogies = _an_svc.active_by_sku(tenant_id)
+        if _analogies:
+            analogy_serving, analogy_retired, analogy_unavailable = \
+                _an_svc.plan_analogies(_analogies, forecasts, best_model)
+            if analogy_retired and signal_threshold_patch is None:
+                # First time the trained model is seen to have taken over: say
+                # so on the ledger, once.
+                _an_svc.mark_superseded(
+                    tenant_id,
+                    [a["id"] for a in analogy_retired.values() if not a.get("superseded_at")],
+                    session_id)
+            all_skus = sorted(set(all_skus) | set(analogy_serving) | set(analogy_unavailable))
+    except Exception:
+        log.exception("forecast by analogy skipped for tenant=%s", tenant_id)
+        analogy_serving, analogy_retired, analogy_unavailable = {}, {}, {}
 
     # Real lead times learned from recorded receptions, one query for the whole
     # tenant (never per SKU inside the loop).
@@ -1141,16 +2172,91 @@ def _compute_inventory_status(
         log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
         primary_suppliers = {}
 
+    # Lead-time VARIABILITY, for the safety-stock formula's lead-time-variance
+    # term (stability.md 17a): the standard deviation of the same receptions
+    # `learned_lead_times` averages, and — for suppliers thin on receptions —
+    # the `lead_time_std` configured on the supplier record. Two more
+    # tenant-wide queries, never per SKU.
+    learned_lead_time_stds = get_learned_lead_time_stds(tenant_id)
+    try:
+        configured_lead_time_stds = _sup_svc.get_lead_time_std_map(tenant_id)
+    except Exception as e:
+        log.debug("configured lead-time std lookup failed tenant=%s: %s", tenant_id, e)
+        configured_lead_time_stds = {}
+
+    # Order cadence per supplier (stability.md 17/19.3): how often this buyer
+    # actually places an order with this supplier, which the protection
+    # interval needs alongside the lead time (see `_calc_recommended`). One
+    # more tenant-wide query, never per SKU; absent/failed means every SKU
+    # resolves review_period=0, i.e. today's arithmetic.
+    try:
+        review_period_map = _sup_svc.get_review_period_map(tenant_id)
+    except Exception as e:
+        log.debug("review period map lookup failed tenant=%s: %s", tenant_id, e)
+        review_period_map = {}
+
     # Supplier/category/global planning rules, one query for the whole tenant.
     # A distributor configures 12 suppliers, not 2.000 SKUs — this is where that
     # configuration enters the recommendation.
     rule_index = _sd_svc.build_rule_index(tenant_id)
+    if signal_threshold_patch is not None:
+        rule_index = _sig_th.patch_rule_index(rule_index, *signal_threshold_patch)
+
+    # Declared events (stability.md 19.5): a saved "Semana Santa, x1.8,
+    # 24th-31st" must reach the decision itself, not just the what-if
+    # simulator. One tenant-wide query for the events plus one per active
+    # event for its overrides — never per SKU, same discipline as every
+    # other tenant-wide map above.
+    today = date.today()
+    active_events = _active_events_window(tenant_id, today)
+    overrides_by_event: dict[str, dict] = {
+        ev["id"]: _index_overrides(get_event_multipliers(tenant_id, ev["id"]))
+        for ev in active_events
+    }
+    # Manual forecast adjustments ("+15%, promotion", by who): one query for the
+    # whole tenant, applied beside the events below and always named on the row.
+    from backend.inventory import forecast_adjustment_service as _fa_svc
+    adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
+    # Orders customers placed ahead of time: units inside the protection interval
+    # are added on top of the forecast and named on the row. Empty for a tenant
+    # that recorded none, which leaves every number below exactly as it was.
+    from backend.inventory import committed_demand_service as _cd_svc
+    committed_by_sku = _committed_skus
+
+    # Per-SKU views of the incoming maps, built ONCE. The loop used to scan
+    # every (sku, warehouse) key for every SKU — quadratic in the catalogue.
+    # Iteration order of the source dicts is preserved so the float sums and
+    # the order of the source lists are the same as before.
+    incoming_by_sku: dict[str, float] = {}
+    for (i_sku, _w), q in incoming_qty.items():
+        incoming_by_sku[i_sku] = incoming_by_sku.get(i_sku, 0) + q
+    incoming_sources_by_sku: dict[str, list] = {}
+    for (i_sku, _w), srcs in incoming_sources.items():
+        incoming_sources_by_sku.setdefault(i_sku, []).extend(srcs)
+
+    # Sparkline history for every SKU that has stock: three queries for the
+    # whole catalogue, not three per row.
+    history_by_sku: dict[str, list[dict]] = {}
+    try:
+        history_by_sku = get_stock_history_batch(
+            tenant_id, [k for k in all_skus if k in stock_map], days=14)
+    except Exception as e:
+        log.debug("stock history sparkline batch failed tenant=%s: %s", tenant_id, e)
 
     items: list[dict] = []
 
     for sku in all_skus:
         stock = stock_map.get(sku)
         model_forecasts = forecasts.get(sku, {})
+        # Where this row's demand comes from. A trained model, or - only while
+        # there is none - the analogy a person defined (never presented as a
+        # trained forecast: the row says so and is low confidence).
+        forecast_source = "trained" if model_forecasts else None
+        analogy_applied: list[dict] = []
+        if not model_forecasts and sku in analogy_serving:
+            model_forecasts = analogy_serving[sku]["model_forecasts"]
+            forecast_source = "analogy"
+            analogy_applied = [analogy_serving[sku]["applied"]]
 
         primary           = primary_suppliers.get(sku) or {}
         supplier          = (stock.get("supplier") if stock else None) or primary.get("supplier_name")
@@ -1179,6 +2285,16 @@ def _compute_inventory_status(
 
         has_forecast = bool(model_forecasts)
         has_stock    = stock is not None and current_stock is not None
+        analogy_note = analogy_unavailable.get(sku)
+        if analogy_applied and not has_stock:
+            # The semaphore cannot run without a stock figure, so the analogy
+            # moved nothing on this row: say so instead of claiming it applied.
+            analogy_note = {"analogy_id": analogy_applied[0]["analogy_id"],
+                            "references_missing": [], "reason": "no_stock"}
+            analogy_applied, forecast_source = [], None
+        adjustments_applied: list[dict] = []
+        committed_applied: list[dict] = []
+        committed_only: Optional[dict] = None
 
         _sl_val, service_level_source, service_level_rule_scope = _sd_svc.resolve_field(
             "service_level", stock, rule_index, supplier=supplier, category=category,
@@ -1194,9 +2310,18 @@ def _compute_inventory_status(
             float(service_level) if service_level_source == SOURCE_DEFAULT
             else float(_sl_val)
         )
+        # The semáforo's lead-time multipliers for this SKU: supplier >
+        # category > tenant > defaults, resolved as one triple.
+        sku_thresholds = _sig_th.resolve_signal_thresholds(
+            rule_index, supplier=supplier, category=category,
+        )
+
+        # Company-wide for this SKU: the aggregated row sums every warehouse's
+        # stock, so it must sum every warehouse's incoming too. Hoisted above the
+        # branch so a row without a forecast still reports what is on its way.
+        sku_incoming = incoming_by_sku.get(sku, 0)
 
         if has_forecast and has_stock:
-            z = _Z.get(sku_service_level, 1.645)
             # Per-period demand: average over as many forecast buckets as the
             # lead time spans in periods, and judge the signal against the lead
             # time expressed in the same period. For daily all three helpers are
@@ -1206,21 +2331,114 @@ def _compute_inventory_status(
             avg_daily, avg_std = _avg_daily_forecast(
                 model_forecasts, steps, best_model.get(sku)
             )
-            coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
-            signal = _calc_signal(coverage_days, lt_periods)
+            # Declared events (stability.md 19.5): when the lead-time window
+            # starting TODAY overlaps a saved event, the demand that drives
+            # the reorder point and the recommended quantity carries that
+            # event's multiplier — blended for however much of the window
+            # the event actually covers (see `_event_demand_multiplier`).
+            # `avg_daily` itself stays the plain forecast (what the model
+            # actually predicts, shown as "daily_demand"); `avg_daily_eff` is
+            # what plans against it. Only the MEAN demand is scaled — the
+            # model's own measured spread (avg_std / the demand_risk band)
+            # describes ordinary conditions and scaling it would invent data
+            # this product has no basis for; the lead-time-variance term
+            # still grows with it because that term is already `z * avg_daily
+            # * lead_time_std`, proportional to demand by construction.
+            event_mult, events_applied = _event_demand_multiplier(
+                {"sku": sku, "family": stock.get("family") if stock else None,
+                 "category": category},
+                today, lead_time, active_events, overrides_by_event,
+            ) if active_events else (1.0, [])
+            # A person's adjustment of this product's forecast (who/why on the
+            # row): same blending over the lead-time window as an event.
+            adj_mult, adjustments_applied = _fa_svc.demand_multiplier(
+                adjustments_by_sku.get(sku), today, lead_time)
+            avg_daily_eff = avg_daily * event_mult * adj_mult
+            # Committed customer orders due inside the protection interval, as an
+            # extra rate that adds exactly their units over that interval (see
+            # committed_demand_service). Only evaluated when the SKU has any.
+            if committed_by_sku.get(sku):
+                _rp_days = _resolve_review_period_days(supplier, review_period_map)
+                _committed_units, committed_applied = _cd_svc.committed_units(
+                    committed_by_sku[sku], today, lead_time + _rp_days)
+                avg_daily_eff += _cd_svc.extra_rate(
+                    _committed_units,
+                    lt_periods + _lead_time_in_periods(_rp_days, period))
+            coverage_days = current_stock / avg_daily_eff if avg_daily_eff > 0 else 9999.0
+            # The measured band belongs to ONE model's forecast. Pairing it with
+            # a different model's point forecast would mix a global model's
+            # error distribution with, say, prophet's numbers — a plausible
+            # figure describing nothing.
+            sku_risk = demand_risk.get(sku)
+            if sku_risk and sku_risk.get("model") != best_model.get(sku):
+                sku_risk = None
+            # Lead-time variance term (stability.md 17a): DAYS, resolved per
+            # supplier, then converted into the same period units as lt_periods
+            # — the exact conversion `lead_time` itself already went through.
+            lt_std_days = _resolve_lead_time_std(
+                supplier, learned_lead_time_stds, configured_lead_time_stds,
+            )
+            lt_std_periods = _lead_time_in_periods(lt_std_days, period)
+            # Order cadence (stability.md 17/19.3): DAYS, resolved per
+            # supplier, then into this period's units — the same conversion
+            # the lead time itself and its std already went through.
+            review_period_days = _resolve_review_period_days(supplier, review_period_map)
+            review_periods = _lead_time_in_periods(review_period_days, period)
+            # The PROTECTION INTERVAL an order has to last through: the lead
+            # time plus the review period. `review_periods` is 0.0 for any
+            # supplier with no declared cadence, so this equals `lt_periods`
+            # for every tenant who has not set one — see `_calc_recommended`.
+            protection_interval = lt_periods + review_periods
+            # Reorder point ahead of the signal (stability.md 17c): the signal's
+            # ordering boundary IS the reorder point, so it must exist before
+            # `_calc_signal` is called, not after.
+            _demand_lt  = round(avg_daily_eff * protection_interval, 2)
+            _safety      = round(
+                _safety_stock(
+                    avg_std, protection_interval, sku_service_level, sku_risk,
+                    avg_daily=avg_daily_eff, lead_time_std=lt_std_periods,
+                ), 2
+            )
+            reorder_point = round(_demand_lt + _safety, 2)
+            reorder_point_days = reorder_point / avg_daily_eff if avg_daily_eff > 0 else 9999.0
+            # `_calc_signal`'s own `lead_time` argument stays the PLAIN lead
+            # time (not the protection interval): PEDIR_YA keeps meaning "less
+            # than half a LEAD TIME of cover" regardless of order cadence, and
+            # that invariant (reorder_point_days >= lead_time > 0.5*lead_time)
+            # only strengthens once the reorder point also carries the review
+            # period — see `_calc_signal`'s docstring.
+            signal = _calc_signal(coverage_days, lt_periods, reorder_point_days,
+                                  sku_thresholds)
+            # Math audit 2026-10-01: no stock and no forecast demand is an
+            # empty shelf nobody is selling from, not overstock. The 9999
+            # coverage sentinel means "dead SKU WITH stock"; without stock there
+            # is nothing to order and nothing tied up, so the signal is OK.
+            if avg_daily_eff <= 0 and current_stock <= 0:
+                signal = "OK"
             recommended = _calc_recommended(
-                current_stock, avg_daily, avg_std, lt_periods, moq, sku_service_level
+                current_stock, avg_daily_eff, avg_std, lt_periods, moq,
+                sku_service_level, risk=sku_risk, incoming=sku_incoming,
+                lead_time_std=lt_std_periods, review_period=review_periods,
             )
             recommended = _gate_recommended_by_signal(signal, recommended)
             inventory_value = (
                 round(current_stock * float(stock["unit_cost"]), 2)
                 if stock.get("unit_cost") is not None else None
             )
-            _demand_lt  = round(avg_daily * lt_periods, 2)
-            _safety      = round(z * avg_std * math.sqrt(lt_periods), 2)
-            _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock), 2)
+            # The breakdown is a sum the buyer can redo by hand:
+            #   daily demand x protection days = LT demand; + safety - stock
+            #   - incoming = before rounding. Three things kept it from adding
+            #   up (math audit 2026-10-01): `daily_demand` was per PERIOD on a
+            #   weekly tenant (70/"day" x 14 days = "140"); it was the plain
+            #   forecast while LT demand used the event-adjusted rate; and the
+            #   units already on their way were subtracted from `final_qty`
+            #   but missing from the steps, so "before rounding 150" was
+            #   followed by an order of 50.
+            _antes_moq   = round(max(0.0, _demand_lt + _safety - current_stock
+                                     - max(0.0, sku_incoming)), 2)
             calc_explanation = {
-                "daily_demand":    round(avg_daily, 2),
+                "daily_demand":    round(avg_daily_eff / _days_per_period(period), 2),
+                "incoming":        round(max(0.0, float(sku_incoming)), 2),
                 "lead_time_days":    lead_time,
                 # Where the lead time came from, so the breakdown labels it the
                 # same way /hoy does — now across all five real sources, not the
@@ -1234,6 +2452,30 @@ def _compute_inventory_status(
                 "antes_moq":         _antes_moq,
                 "moq":               moq,
                 "final_qty":    recommended,
+                # Order cadence (stability.md 17/19.3), in DAYS (not periods —
+                # this is what a date is built from). 0 = no declared cadence;
+                # `lead_time_days + review_period_days` is the protection
+                # interval this quantity was actually sized to cover, which is
+                # what "Ver por qué" has to name or the number just grows with
+                # nothing explaining why.
+                "review_period_days":      round(review_period_days, 2),
+                "protection_interval_days": round(lead_time + review_period_days, 2),
+                # Which declared event(s) moved this number and by how much —
+                # empty when none apply. A number that silently changed is
+                # worse than one that did not change at all (CLAUDE.md /
+                # silent-failures): this is what lets "Ver por qué" name the
+                # event instead of leaving the buyer to notice the quantity
+                # moved on its own.
+                "events_applied": events_applied,
+                # Manual forecast adjustments that moved this number: who, by
+                # how much, why. Empty when none apply.
+                "adjustments_applied": adjustments_applied,
+                # Customer orders placed ahead of time that moved this number:
+                # who, when, how many units. Empty when none apply.
+                "committed_applied": committed_applied,
+                # An analogy stood in for the model: named here so the
+                # breakdown never reads as a trained forecast. Empty otherwise.
+                "analogy_applied": analogy_applied,
             }
             if recommended <= 0:
                 # Enough stock: keep the numbers (the what-if simulator needs
@@ -1242,17 +2484,25 @@ def _compute_inventory_status(
 
             # Reorder point: the stock level at which an order must be placed so
             # the shipment arrives before the shelf empties (lead-time demand
-            # plus the safety cushion).
-            reorder_point = round(_demand_lt + _safety, 2)
+            # plus the safety cushion). Computed earlier now, ahead of the
+            # signal — see the comment above `_demand_lt`.
             explanation_obj = build_explanation(
                 current_stock=current_stock,
-                daily_demand=avg_daily,
+                # The effective (event-adjusted) rate: `coverage_days` and
+                # `reorder_point` below were both computed from it, and the
+                # sentence's own arithmetic (current_stock / daily_demand ==
+                # coverage_days) must hold even when an event is moving the
+                # number — a mismatched sentence would look like a second bug,
+                # not the one line explaining the first.
+                daily_demand=avg_daily_eff,
                 coverage_days=round(coverage_days, 1) if coverage_days < 9990 else None,
                 lead_time=lead_time,
                 lead_time_source=lead_time_source,
                 reorder_point=reorder_point,
                 signal=signal,
                 lead_time_rule_scope=lead_time_rule_scope,
+                review_period_days=review_period_days,
+                period=period,
             )
         else:
             avg_daily = avg_std = None
@@ -1263,21 +2513,33 @@ def _compute_inventory_status(
             calc_explanation = None
             reorder_point = None
             explanation_obj = None
+            # No forecast or no stock row: the semaphore cannot run, but a
+            # commitment must not vanish with it. Show its units and, when the
+            # stock plus incoming does not cover it, say an order is needed.
+            # No forecast is invented (see committed_demand_service).
+            if committed_by_sku.get(sku):
+                _cover = _cd_svc.cover_without_forecast(
+                    committed_by_sku[sku], today, lead_time,
+                    _resolve_review_period_days(supplier, review_period_map),
+                    current_stock if has_stock else None, sku_incoming, moq)
+                committed_applied = _cover["applied"]
+                committed_only = _cover
+                if _cover["signal"]:
+                    signal = _cover["signal"]
+                    recommended = _cover["recommended"]
 
         # Recent stock history (last 14 days, at most 10 points for sparkline)
-        history: list[dict] = []
-        if has_stock:
-            try:
-                history = get_stock_history(tenant_id, sku, days=14)[-10:]
-            except Exception as e:
-                log.debug("stock history sparkline failed sku=%s: %s", sku, e)
+        history: list[dict] = history_by_sku.get(sku, [])[-10:] if has_stock else []
 
         # "__all__" is the internal sentinel used when the dataset has no SKU/group
         # column (single-series session) — it must never surface unexplained as a SKU
         # name in the UI, so give it a friendly label traceable to its real cause.
+        # English: the frontend recognises the sentinel and renders its own label
+        # (`inventory.single_series_label`); this is the fallback for a client
+        # that does not.
         display_name = stock.get("display_name") if stock else None
         if sku == "__all__" and not display_name:
-            display_name = "Serie única (sin columna SKU)"
+            display_name = "Single series (no SKU column)"
 
         items.append({
             "sku":                sku,
@@ -1318,6 +2580,9 @@ def _compute_inventory_status(
             "moq_source":         moq_source,
             "moq_rule_scope":     moq_rule_scope,
             "service_level":      sku_service_level,
+            # Set when this SKU's cushion was measured unable to keep that
+            # service level (see _SERVICE_LEVEL_CAVEAT_BY_FLAG); None otherwise.
+            "service_level_caveat": service_level_caveats.get(sku),
             "service_level_source": service_level_source,
             "service_level_rule_scope": service_level_rule_scope,
             "supplier":          supplier,
@@ -1342,10 +2607,43 @@ def _compute_inventory_status(
             "has_forecast":       has_forecast,
             "has_stock":          has_stock,
             "daily_demand":     round(avg_daily, 4) if avg_daily is not None else None,
-            "lead_time_demand":  round(avg_daily * lead_time, 2) if avg_daily is not None else None,
+            # `_demand_lt`, not a second computation. This line used to be
+            # `avg_daily * lead_time` — per-PERIOD demand multiplied by
+            # CALENDAR DAYS — while the reorder point and the "cómo se calcula"
+            # breakdown both used `avg_daily * lt_periods`. Both values reached
+            # the same screen from the same dict: for a weekly tenant with 10
+            # units/week and a 14-day lead time the "Demanda LT" column read
+            # 140 and expanding that very row read 20. Factor of 7 weekly, 30
+            # monthly, and the CSV export inherited the wrong one.
+            "lead_time_demand":  _demand_lt if avg_daily is not None else None,
             "coverage_days":     round(coverage_days, 1) if coverage_days is not None and coverage_days < 9990 else None,
             "signal":             signal,
+            # The multipliers this signal was judged by, and which rule they
+            # came from (default | global | supplier | category). Shipped with
+            # the row so no screen restates a threshold it could get wrong.
+            "signal_thresholds":  sku_thresholds,
             "recommended_qty": recommended,
+            "adjustments_applied": adjustments_applied,
+            "committed_applied": committed_applied,
+            # Where the demand came from: "trained" (a model fitted on this
+            # product), "analogy" (a person's "it sells like A and B"; never a
+            # trained forecast) or None (no forecast). `analogy_applied` names
+            # the references, factor and band widening; `analogy_retired` says a
+            # trained model has since taken over; `analogy_unavailable` that an
+            # analogy exists but none of its references has a forecast.
+            "forecast_source": forecast_source,
+            "low_confidence": forecast_source == "analogy",
+            "analogy_applied": analogy_applied,
+            "analogy_retired": ({"analogy_id": analogy_retired[sku]["id"],
+                                 "retired_at": (analogy_retired[sku].get("superseded_at")
+                                               or date.today().isoformat())}
+                                if sku in analogy_retired else None),
+            "analogy_unavailable": analogy_note,
+            # Already on its way: open POs + transfers in transit. Exposed so
+            # the UI can say "N units arriving (OC-000123)" instead of leaving
+            # the buyer to wonder why the quantity dropped.
+            "incoming_qty": round(float(sku_incoming), 2),
+            "incoming_sources": list(incoming_sources_by_sku.get(sku, [])),
             "inventory_value":   inventory_value,
             "n_models":           len(model_forecasts),
             "xyz":               _classify_xyz(cv_by_sku.get(sku)),
@@ -1353,6 +2651,14 @@ def _compute_inventory_status(
             "calc_explanation":  calc_explanation,
             "demand_trend_pct":  None,  # populated by morning_briefing; None by default in status
         })
+        if committed_only is not None:
+            # This row's signal came from its commitments alone (no forecast or
+            # no stock row). Named so no screen mistakes it for the semaphore's
+            # verdict: how many units no stock covers, and whether the stock
+            # figure was missing (then counted as zero and no quantity given).
+            items[-1]["committed_only"] = True
+            items[-1]["committed_shortfall"] = committed_only["shortfall"]
+            items[-1]["committed_stock_unknown"] = committed_only["stock_unknown"]
 
     # ABC classification across all items (needs demand info so done after building list)
     abc_map = _classify_abc(items)
@@ -1361,6 +2667,33 @@ def _compute_inventory_status(
         item["abc_xyz"] = f"{item['abc']}{item['xyz']}" if item["xyz"] != "?" else item["abc"]
 
     items.sort(key=lambda x: (_SIGNAL_PRIORITY.get(x["signal"], 5), x["coverage_days"] or 9999))
+
+    # Write down what we just told this tenant. Nothing else in the product
+    # does: stock is snapshotted, purchase orders are logged, overstock and
+    # accuracy are snapshotted — the RECOMMENDATION was not, so "what did it
+    # cost me to ignore you" and "why is today's number different" were both
+    # unanswerable (docs/stability.md 19, items 4 and 7).
+    #
+    # This function is the one chokepoint every caller funnels through, which
+    # is why the recorder rides here — and also why it is guarded. Every screen
+    # load, the assistant, the MCP tools and the public API all land in this
+    # function, so an unguarded write would rewrite the whole catalogue's log
+    # on every read. The table's natural key is one row per tenant per SKU per
+    # DAY, so the first look of the day is what gets written down.
+    #
+    # It can never break the read: the recommendation is the product, the log
+    # is a record of it.
+    if signal_threshold_patch is not None:
+        # A preview of unsaved multipliers: nobody was told this.
+        return items
+    try:
+        from backend.inventory import recommendation_log
+        if not recommendation_log.already_recorded(tenant_id):
+            recommendation_log.record_recommendations(
+                tenant_id, session_id, items, period=period)
+    except Exception:
+        log.exception("recommendation log: not recorded for tenant=%s", tenant_id)
+
     return items
 
 
@@ -1378,6 +2711,7 @@ def get_inventory_status_by_warehouse(
     stock_rows: Optional[list] = None,
     learned_lead_times: Optional[dict] = None,
     lanes: Optional[dict] = None,
+    incoming_qty: Optional[dict] = None,
 ) -> list[dict]:
     """
     Per-(sku, warehouse) semaphore rows (feature 5.4).
@@ -1403,6 +2737,7 @@ def get_inventory_status_by_warehouse(
     from backend.db import session_store
     from backend.inventory import warehouse_service as wh_svc
     from backend.inventory import stock_defaults_service as _sd_svc
+    from backend.inventory import supplier_service as _sup_svc
     from backend.inventory.series import stores_in, for_store, split_key
 
     if forecasts is None:
@@ -1413,18 +2748,69 @@ def get_inventory_status_by_warehouse(
         learned_lead_times = get_learned_lead_times(tenant_id)
     rule_index = _sd_svc.build_rule_index(tenant_id)
 
+    # The primary-supplier map, for the same reason the aggregated view loads
+    # it: a SKU with a blank `supplier` on its stock row still has a supplier
+    # configured under /proveedores, and that name is what every supplier-scoped
+    # rule and the learned lead time are keyed on. Without it these rows
+    # resolved `supplier = None` and silently lost the learned lead time, the
+    # supplier rule for lead_time_days, moq and service_level — so one SKU in
+    # one warehouse could read PEDIR_YA on the "Todas" tab and PEDIR_PRONTO on
+    # the warehouse tab of the same page.
+    try:
+        primary_suppliers = _sup_svc.get_primary_suppliers_map(tenant_id)
+    except Exception as e:
+        log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
+        primary_suppliers = {}
+
+    # Same lead-time-variability maps as the aggregated view (stability.md
+    # 17a) — learned spread first, configured `lead_time_std` fallback. Was
+    # previously reached through `_sup_svc` with no local import in THIS
+    # function, so `primary_suppliers` above silently fell back to `{}` on
+    # every call (the bare NameError was swallowed by the `except Exception`
+    # around it). Fixed by the import added above; this map needs that same
+    # name.
+    learned_lead_time_stds = get_learned_lead_time_stds(tenant_id)
+    try:
+        configured_lead_time_stds = _sup_svc.get_lead_time_std_map(tenant_id)
+    except Exception as e:
+        log.debug("configured lead-time std lookup failed tenant=%s: %s", tenant_id, e)
+        configured_lead_time_stds = {}
+
+    # Order cadence per supplier (stability.md 17/19.3), same map the
+    # aggregated view loads — see `_compute_inventory_status`.
+    try:
+        review_period_map = _sup_svc.get_review_period_map(tenant_id)
+    except Exception as e:
+        log.debug("review period map lookup failed tenant=%s: %s", tenant_id, e)
+        review_period_map = {}
+
     # Same best-model-per-SKU selection as the aggregated view. These rows must
     # not disagree with it: a warehouse row and the tenant total for the same
     # SKU would otherwise be computed from different models.
     best_model: dict[str, str] = {}
+    demand_risk: dict[str, dict] = {}
+    service_level_caveats: dict[str, str] = {}
     try:
         _res = session_store.get_training_result(tenant_id, session_id) or {}
+        service_level_caveats = _service_level_caveats(_res)
         best_model = best_model_by_sku((_res.get("metrics") or {}).get("rows") or [])
+        demand_risk = {
+            str(k): v for k, v in (_res.get("demand_risk") or {}).items()
+            if isinstance(v, dict)
+        }
     except Exception as e:
         log.debug("best_model lookup failed for session=%s: %s", session_id, e)
 
-    warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
-                  or [wh_svc.DEFAULT_WAREHOUSE])
+    incoming_sources: dict = {}
+    if incoming_qty is None:
+        _incoming_detail = get_incoming_detail(tenant_id)
+        incoming_qty = sum_incoming(_incoming_detail)
+        incoming_sources = incoming_sources_by_key(_incoming_detail)
+
+    _wh_rows = wh_svc.list_warehouses(tenant_id)
+    warehouses = [w["name"] for w in _wh_rows] or [wh_svc.DEFAULT_WAREHOUSE]
+    # A commitment names its warehouse by ID; this view works in names.
+    wh_id_by_name = {w["name"]: str(w["id"]) for w in _wh_rows}
     store_names = stores_in(forecasts)
     wh_by_lower = {w.lower().strip(): w for w in warehouses}
 
@@ -1448,6 +2834,47 @@ def get_inventory_status_by_warehouse(
                      for r in stock_rows}
     all_skus = sorted(sku_forecasts.keys())
 
+    # Does this tenant actually keep stock per warehouse, or does every unit it
+    # has recorded sit in ONE location while its demand is split across several?
+    #
+    # The second shape is what an ERP sync produces today: `fetch_stock` in both
+    # providers hardcodes `warehouse="principal"` while `fetch_sales` reads the
+    # real branch off each invoice (stability 11.5). Every branch then has
+    # demand and no stock row, and `current_stock or 0.0` turned "we were never
+    # told" into "there are none" — PEDIR_YA at full reorder quantity for the
+    # entire catalogue at every branch, with the goods sitting in principal.
+    #
+    # A missing row is not a zero, and this is where the product already knows
+    # how to say so: SIN_DATOS. Scoped deliberately to the one-location case,
+    # because a tenant who DOES maintain stock per warehouse means it when a
+    # pair has no row.
+    stocked_warehouses = {wh for (_s, wh) in stock_by_pair}
+    stock_is_single_location = len(stocked_warehouses) == 1 and len(warehouses) > 1
+
+    # Declared events (stability.md 19.5): the SAME rule as the aggregated
+    # view (_compute_inventory_status), reusing its own helpers rather than
+    # a second implementation of "does an event overlap this decision
+    # window" — see the module comments above _active_events_window for why
+    # that duplication is exactly how the two views drifted apart before.
+    # Tenant-wide, fetched ONCE here — never per (sku, warehouse) row.
+    today = date.today()
+    active_events = _active_events_window(tenant_id, today)
+    overrides_by_event: dict[str, dict] = {
+        ev["id"]: _index_overrides(get_event_multipliers(tenant_id, ev["id"]))
+        for ev in active_events
+    }
+    # Manual forecast adjustments ("+15%, promotion", by who): one query for the
+    # whole tenant, applied beside the events below and always named on the row.
+    from backend.inventory import forecast_adjustment_service as _fa_svc
+    adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
+    # Customer orders placed ahead of time, same ledger and rules as the
+    # aggregated view. (This function used the names below without ever defining
+    # them: every warehouse row with a forecast and stock raised NameError.)
+    from backend.inventory import committed_demand_service as _cd_svc
+    committed_by_sku = _cd_svc.active_by_sku(tenant_id)
+    # A SKU with a commitment is listed even with no forecast of its own.
+    all_skus = sorted(set(all_skus) | set(committed_by_sku))
+
     items: list[dict] = []
     for sku in all_skus:
         for wh in warehouses:
@@ -1459,10 +2886,19 @@ def get_inventory_status_by_warehouse(
                 model_forecasts = sku_forecasts.get(sku, {})
                 share = shares.get(wh, 0.0)
             # Pairs with neither stock nor demand don't exist for this tenant.
-            if stock is None and (not model_forecasts or share == 0.0):
+            # A commitment that NAMES this warehouse keeps the pair alive: the
+            # customer order is real even where nobody records stock or demand
+            # (otherwise it vanished from the only view that names the warehouse).
+            _named_here = any(
+                c.get("warehouse_id") and c.get("warehouse_id") == wh_id_by_name.get(wh)
+                for c in committed_by_sku.get(sku, ()))
+            if stock is None and (not model_forecasts or share == 0.0) and not _named_here:
                 continue
 
-            supplier = stock.get("supplier") if stock else None
+            # Identical resolution to the aggregated view (see the primary map
+            # above): stock row first, configured primary supplier second.
+            primary  = primary_suppliers.get(sku) or {}
+            supplier = (stock.get("supplier") if stock else None) or primary.get("supplier_name")
             category = stock.get("category") if stock else None
             # Same SKU > supplier > category > global > system cascade as the
             # aggregated view; the per-warehouse rows must not disagree with it.
@@ -1474,16 +2910,27 @@ def get_inventory_status_by_warehouse(
             if lead_time_source == SOURCE_LEARNED:
                 lead_time_rule_scope = None
             current_stock = float(stock["current_stock"]) if stock else 0.0
+            # "Nobody ever recorded stock for this SKU in this warehouse", as
+            # opposed to "there are none". See stock_is_single_location above.
+            stock_unknown_here = stock is None and stock_is_single_location
             _moq_val, _, _ = _sd_svc.resolve_field(
                 "moq", stock, rule_index, supplier=supplier, category=category)
             moq = float(_moq_val if _moq_val is not None else DEFAULT_MOQ)
+            # Same resolver as the aggregated view — one source of truth for
+            # the semáforo's multipliers (stability.md 3.5's lesson).
+            sku_thresholds = _sig_th.resolve_signal_thresholds(
+                rule_index, supplier=supplier, category=category)
+            # Hoisted above the branch: a row with no demand of its own still
+            # has units on the way, and the buyer needs to see them before they
+            # order more into a warehouse that already has a truck coming.
+            wh_incoming = incoming_qty.get((sku, wh), 0.0)
+            committed_only = None
 
-            if model_forecasts and share > 0.0:
+            if model_forecasts and share > 0.0 and not stock_unknown_here:
                 _sl_val, sl_source, _ = _sd_svc.resolve_field(
                     "service_level", stock, rule_index, supplier=supplier, category=category)
                 sku_service_level = (
                     float(service_level) if sl_source == SOURCE_DEFAULT else float(_sl_val))
-                z = _Z.get(sku_service_level, 1.645)
                 # Per-period demand + period lead time (identity for daily).
                 lt_periods = _lead_time_in_periods(lead_time, period)
                 steps = _steps_for_lead_time(lead_time, period)
@@ -1492,25 +2939,137 @@ def get_inventory_status_by_warehouse(
                 )
                 avg_daily *= share
                 avg_std *= share
-                coverage_days = current_stock / avg_daily if avg_daily > 0 else 9999.0
-                signal = _calc_signal(coverage_days, lt_periods)
-                recommended = _calc_recommended(
-                    current_stock, avg_daily, avg_std, lt_periods, moq,
-                    sku_service_level)
-                recommended = _gate_recommended_by_signal(signal, recommended)
+                # Declared events (stability.md 19.5): applied HERE, AFTER
+                # the share/store split, not before — reusing the aggregate
+                # view's own helpers (_active_events_window,
+                # _event_demand_multiplier), never a second implementation of
+                # the overlap/blend math.
+                #
+                # Why after the split rather than before: multiplying a
+                # whole-SKU total by a scalar and then splitting it equals
+                # splitting first and multiplying each part by the same
+                # scalar — the two orders are mathematically identical AS
+                # LONG AS every warehouse uses the same multiplier. They
+                # don't necessarily: the multiplier depends on `lead_time`
+                # (how much of the event window falls inside the decision
+                # window), and lead_time is resolved PER WAREHOUSE here — a
+                # warehouse can carry its own stock row's supplier, and thus
+                # its own learned/configured lead time, independent of the
+                # aggregated row's. Applying the multiplier post-split, with
+                # THIS row's own already-resolved `lead_time`, is what keeps
+                # this row's number honest for the warehouse it actually
+                # describes.
+                #
+                # Consequence for whether the per-warehouse rows sum exactly
+                # to the aggregate: when every warehouse resolves the SAME
+                # lead time as the aggregated row (the common case — one
+                # supplier per SKU), the multiplier is identical everywhere,
+                # it factors out of the sum, and
+                # sum(avg_daily_wh) * mult == mult * sum(avg_daily_wh) ==
+                # the aggregate's avg_daily_eff exactly. When warehouses
+                # disagree on supplier/lead time, each row's event-window
+                # overlap can differ and the rows sum only approximately —
+                # that is a pre-existing property of per-warehouse lead-time
+                # resolution (see the "which is the default warehouse"
+                # comments elsewhere in this file), not something this
+                # change introduces.
+                #
+                # Only the MEAN demand is scaled, matching the aggregate:
+                # avg_std (the model's own measured spread) is left alone —
+                # scaling it would invent data this product has no basis
+                # for — while the lead-time-variance term below still grows
+                # with the event because it is already `z * avg_daily *
+                # lead_time_std`, proportional to demand by construction.
+                event_mult, events_applied = _event_demand_multiplier(
+                    {"sku": sku, "family": stock.get("family") if stock else None,
+                     "category": category},
+                    today, lead_time, active_events, overrides_by_event,
+                ) if active_events else (1.0, [])
+                adj_mult, adjustments_applied = _fa_svc.demand_multiplier(
+                    adjustments_by_sku.get(sku), today, lead_time)
+                avg_daily_eff = avg_daily * event_mult * adj_mult
+                # Committed customer orders, scoped to THIS warehouse: ones naming
+                # it count in full, unassigned ones by its share of the SKU's
+                # demand. In store mode every store has its own forecast and
+                # share is 1.0, so an unassigned order is NOT repeated in each
+                # store (that would count it once per store): it only counts
+                # where a warehouse is named, and in the company-wide view.
+                committed_applied = []
+                if committed_by_sku.get(sku):
+                    _rp_days = _resolve_review_period_days(supplier, review_period_map)
+                    _committed_units, committed_applied = _cd_svc.committed_units(
+                        committed_by_sku[sku], today, lead_time + _rp_days,
+                        warehouse_id=wh_id_by_name.get(wh, wh),
+                        share=0.0 if demand_mode == "store" else share)
+                    avg_daily_eff += _cd_svc.extra_rate(
+                        _committed_units,
+                        lt_periods + _lead_time_in_periods(_rp_days, period))
+                sku_risk = demand_risk.get(sku)
+                if sku_risk and sku_risk.get("model") != best_model.get(sku):
+                    sku_risk = None
+                # Same resolution as the aggregated view (stability.md 17a):
+                # DAYS, per supplier, then into this period's units.
+                lt_std_days = _resolve_lead_time_std(
+                    supplier, learned_lead_time_stds, configured_lead_time_stds,
+                )
+                lt_std_periods = _lead_time_in_periods(lt_std_days, period)
+                # Order cadence (stability.md 17/19.3): same resolution and
+                # same period conversion as the aggregated view.
+                review_period_days = _resolve_review_period_days(supplier, review_period_map)
+                review_periods = _lead_time_in_periods(review_period_days, period)
+                protection_interval = lt_periods + review_periods
+                coverage_days = current_stock / avg_daily_eff if avg_daily_eff > 0 else 9999.0
+                # Reorder point ahead of the signal (stability.md 17c): the
+                # signal's ordering boundary IS the reorder point.
                 reorder_point = round(
-                    avg_daily * lt_periods
-                    + z * avg_std * math.sqrt(lt_periods), 2)
+                    avg_daily_eff * protection_interval
+                    + _safety_stock(avg_std, protection_interval, sku_service_level,
+                                    sku_risk, share,
+                                    avg_daily=avg_daily_eff, lead_time_std=lt_std_periods), 2)
+                reorder_point_days = reorder_point / avg_daily_eff if avg_daily_eff > 0 else 9999.0
+                # `lt_periods` (plain lead time), not the protection interval —
+                # see the identical comment at the aggregated call site.
+                signal = _calc_signal(coverage_days, lt_periods, reorder_point_days,
+                                      sku_thresholds)
+                # Empty shelf with no demand: OK, not SOBRESTOCK (see the
+                # aggregated call site).
+                if avg_daily_eff <= 0 and current_stock <= 0:
+                    signal = "OK"
+                recommended = _calc_recommended(
+                    current_stock, avg_daily_eff, avg_std, lt_periods, moq,
+                    sku_service_level, risk=sku_risk, risk_scale=share,
+                    incoming=wh_incoming, lead_time_std=lt_std_periods,
+                    review_period=review_periods)
+                recommended = _gate_recommended_by_signal(signal, recommended)
             else:
                 avg_daily = avg_std = None
                 coverage_days = None
                 signal = "SIN_DATOS"
                 recommended = None
                 reorder_point = None
+                events_applied = []
+                adjustments_applied = []
+                committed_applied = []
+                committed_only = None
+                # No demand of its own here, or no stock figure: the commitments
+                # still count and can still say an order is needed.
+                if committed_by_sku.get(sku):
+                    committed_only = _cd_svc.cover_without_forecast(
+                        committed_by_sku[sku], today, lead_time,
+                        _resolve_review_period_days(supplier, review_period_map),
+                        (current_stock if stock is not None and not stock_unknown_here
+                         else None),
+                        wh_incoming, moq, warehouse_id=wh_id_by_name.get(wh, wh),
+                        share=0.0 if demand_mode == "store" else share)
+                    committed_applied = committed_only["applied"]
+                    if committed_only["signal"]:
+                        signal = committed_only["signal"]
+                        recommended = committed_only["recommended"]
 
             items.append({
                 "sku": sku,
                 "warehouse": wh,
+                "warehouse_id": wh_id_by_name.get(wh),
                 "display_name": stock.get("display_name") if stock else None,
                 "supplier": supplier,
                 "current_stock": current_stock if stock else None,
@@ -1524,15 +3083,44 @@ def get_inventory_status_by_warehouse(
                                   else None),
                 "reorder_point": reorder_point,
                 "signal": signal,
+                "signal_thresholds": sku_thresholds,
+                # Why this row has no signal, when the reason is something the
+                # buyer can fix. A code, not a sentence: the frontend renders it
+                # (inventory.no_stock_record_here) in the reader's language.
+                "sin_datos_reason": ("stock_not_recorded_in_this_warehouse"
+                                     if stock_unknown_here else None),
+                # Which declared event(s) moved this row and by how much — the
+                # same shape as the aggregated view's
+                # `calc_explanation.events_applied` (stability.md 19.5), so
+                # the "Ver por qué" panel can name the event here too, not
+                # just on the aggregate row. Empty when none apply.
+                "events_applied": events_applied,
+                "adjustments_applied": adjustments_applied,
+                "committed_applied": committed_applied,
                 "recommended_qty": recommended,
+                # Already on its way: open POs + transfers in transit. Exposed so
+                # the UI can say "N units arriving (OC-000123)" instead of
+                # leaving the buyer to wonder why the quantity dropped.
+                "incoming_qty": round(float(wh_incoming), 2),
+                "incoming_sources": incoming_sources.get((sku, wh), []),
                 "recommended_action": None,
                 "transfer_suggestion": None,
                 # Why a possible transfer LOST against buying (structured
                 # {reason_code, params}; the frontend renders the sentence).
                 "transfer_rejected_reason": None,
+                # An OPTION, not the recommendation: a donor that can cover part
+                # of the need. Set by _network_transfer_pass when the full
+                # transfer was refused for being too small but its lane is still
+                # sound. See its "Move what there is, buy the rest" note.
+                "partial_transfer": None,
                 "unit_cost": (float(stock["unit_cost"])
                               if stock and stock.get("unit_cost") is not None else None),
+                "service_level_caveat": service_level_caveats.get(sku),
             })
+            if committed_only is not None:
+                items[-1]["committed_only"] = True
+                items[-1]["committed_shortfall"] = committed_only["shortfall"]
+                items[-1]["committed_stock_unknown"] = committed_only["stock_unknown"]
 
     if lanes is None:
         from backend.inventory import transfer_lane_service as lane_svc
@@ -1572,6 +3160,13 @@ def _evaluate_transfer_lane(
         "qty": round(qty, 2),
         "lane_days": lane_days,
         "purchase_days": purchase_days,
+        # Whether `lane_days` and the costs below were CONFIGURED or are the
+        # documented fallback for an unconfigured pair — transfer_lane_service
+        # resolves those to 1 day and zero cost and calls that "deliberately
+        # optimistic". The flag rode on the resolved lane and never reached the
+        # UI, so a measured lane and an invented one rendered identically, and
+        # the optimistic default is precisely the one that wins comparisons.
+        "lane_is_default": bool(lane.get("is_default")),
     }
     if lane_days >= purchase_days:
         return False, "transfer_too_slow", params
@@ -1580,16 +3175,23 @@ def _evaluate_transfer_lane(
     unit_cost = needy.get("unit_cost")
     if unit_cost is None:
         unit_cost = donor.get("unit_cost")
-    saving = None
-    if unit_cost is not None and float(unit_cost) > 0:
-        purchase_cost = qty * float(unit_cost)
-        if transfer_cost >= purchase_cost:
-            return False, "transfer_more_expensive", {
-                **params,
-                "transfer_cost": round(transfer_cost, 2),
-                "purchase_cost": round(purchase_cost, 2),
-            }
-        saving = round(purchase_cost - transfer_cost, 2)
+    if unit_cost is None or float(unit_cost) <= 0:
+        # No unit cost anywhere, so the money test never ran. The transfer is
+        # still accepted — arriving sooner is a real argument on its own — but
+        # under its OWN code, because the caller used to return
+        # "transfer_faster_and_cheaper" here and the UI duly told the buyer the
+        # move "costs less than buying". It compared nothing. `saving` stays
+        # None, which the copy for this code must not print.
+        return True, "transfer_faster_price_unknown", {**params, "saving": None}
+
+    purchase_cost = qty * float(unit_cost)
+    if transfer_cost >= purchase_cost:
+        return False, "transfer_more_expensive", {
+            **params,
+            "transfer_cost": round(transfer_cost, 2),
+            "purchase_cost": round(purchase_cost, 2),
+        }
+    saving = round(purchase_cost - transfer_cost, 2)
     return True, "transfer_faster_and_cheaper", {**params, "saving": saving}
 
 
@@ -1646,6 +3248,15 @@ def _network_transfer_pass(
             r["recommended_action"] = "order"
             need = float(r["recommended_qty"])
             candidates: list[dict] = []
+            # Why each warehouse holding this SKU was ruled out BEFORE the lane
+            # rules got a say. Without this the row just said "order" while a
+            # sister warehouse visibly held hundreds of units, and
+            # `transfer_rejected_reason` stayed null — the buyer could see the
+            # stock and not the reason, which is the one thing this feature owes
+            # them. Ordered by how much the buyer needs to hear it.
+            near_miss: Optional[dict] = None
+            # Best donor that can cover only PART of the need (see below).
+            partial: Optional[dict] = None
             for d in rows:
                 if d is r or not d.get("current_stock"):
                     continue
@@ -1657,14 +3268,74 @@ def _network_transfer_pass(
                         donatable,
                         float(d["current_stock"]) - daily * min_cov)
                 if donatable <= 0:
+                    # It HAS stock, it just cannot spare any: lending would push
+                    # the donor under its own safety floor.
+                    if near_miss is None:
+                        near_miss = {
+                            "reason_code": "transfer_donor_would_run_short",
+                            "params": {
+                                "from_warehouse": d["warehouse"],
+                                "donor_stock": round(float(d["current_stock"]), 2),
+                                "donor_coverage_days": (
+                                    round(float(d["current_stock"]) / daily, 1)
+                                    if daily > 0 else None),
+                                "min_coverage_days": round(min_cov, 1),
+                            },
+                        }
+                    continue
+                # Move whole units of whatever this SKU is counted in. The
+                # purchase side gets integers for free (its MOQ ceiling rounds
+                # up), so the same table read "Pedir 174" next to "Transferir
+                # 132.95" — and nobody moves 0.95 of a bottle. FLOOR, never
+                # ceil: the donor cannot lend more than it can spare. A SKU sold
+                # by weight keeps its fractions through its own moq.
+                #
+                # The step is ONE unit. It was the SKU's `moq`, from when MOQ was
+                # read as a pack multiple; since 2026-08-12 it is the SUPPLIER'S
+                # minimum order, which says nothing about moving goods between
+                # two of the buyer's own warehouses. With a minimum of 500, a
+                # sister warehouse able to spare 450 lent 0 and the buyer was
+                # told to purchase all 520 — and a spare of 900 against a need
+                # of 520 moved only 500 (math audit 2026-10-01). A fractional
+                # MOQ (a SKU sold by weight) still sets a finer step.
+                moq_val = float(r.get("moq") or 0)
+                step = moq_val if 0 < moq_val < 1 else 1.0
+                donatable = math.floor(donatable / step) * step
+                if donatable <= 0:
                     continue
                 after = float(d["current_stock"]) - donatable
                 cov_after = after / daily if daily > 0 else 9999.0
                 if cov_after < min_cov:
+                    if near_miss is None:
+                        near_miss = {
+                            "reason_code": "transfer_donor_would_run_short",
+                            "params": {
+                                "from_warehouse": d["warehouse"],
+                                "donor_stock": round(float(d["current_stock"]), 2),
+                                "donor_coverage_days": round(cov_after, 1),
+                                "min_coverage_days": round(min_cov, 1),
+                            },
+                        }
                     continue
                 # A donation that doesn't materially cover the need never
-                # replaced the order (pre-feature rule, unchanged).
+                # replaced the order (pre-feature rule, unchanged) — but the
+                # buyer is told, because "move 100 of the 174 I need" is a
+                # decision they may well want to take by hand.
                 if donatable < 0.8 * need:
+                    near_miss = {
+                        "reason_code": "transfer_donation_too_small",
+                        "params": {
+                            "from_warehouse": d["warehouse"],
+                            "qty": round(donatable, 2),
+                            "need": round(need, 2),
+                        },
+                    }
+                    # Keep the largest one: the purchase stands, but moving part
+                    # of it is a decision the buyer can take, and they can only
+                    # take it if we offer it. Attached after the main loop, and
+                    # only if the lane rules accept it.
+                    if not partial or donatable > partial["qty"]:
+                        partial = {"donor": d, "qty": donatable}
                     continue
                 candidates.append({"donor": d, "qty": donatable, "cov_after": cov_after})
 
@@ -1703,8 +3374,35 @@ def _network_transfer_pass(
                 }
                 rejection = None
                 break
+            # A lane verdict outranks a pre-lane filter: it describes a donor
+            # that could actually have lent, which is the more useful answer.
             if rejection is not None:
                 r["transfer_rejected_reason"] = rejection
+            elif r["recommended_action"] == "order" and near_miss is not None:
+                r["transfer_rejected_reason"] = near_miss
+
+            # "Move what there is, buy the rest." The full transfer was refused
+            # because it would not close the gap, which is the right call for a
+            # RECOMMENDATION — but the units next door are real and the buyer may
+            # well want them. Offered as an extra, never as the recommendation:
+            # `recommended_action` stays "order" and `recommended_qty` is
+            # untouched. Accepting it creates a transfer, and the purchase then
+            # shrinks on its own, because in-transit stock nets out of the next
+            # recommendation (see _calc_recommended's `incoming`).
+            if (r["recommended_action"] == "order" and partial
+                    and r["transfer_suggestion"] is None):
+                lane = lane_for(lanes, partial["donor"]["warehouse"], r["warehouse"])
+                accepted, reason_code, params = _evaluate_transfer_lane(
+                    lane, partial["qty"], r, partial["donor"])
+                if accepted:
+                    r["partial_transfer"] = {
+                        "from_warehouse": partial["donor"]["warehouse"],
+                        "qty": round(partial["qty"], 2),
+                        "remaining_qty": round(max(0.0, need - partial["qty"]), 2),
+                        "lane_days": lane["lead_time_days"],
+                        "reason_code": reason_code,
+                        "params": params,
+                    }
 
 
 # ── Per-product event multipliers ────────────────────────────────────────────
@@ -1805,6 +3503,128 @@ def _resolve_multiplier(item: dict, base: float, idx: dict) -> tuple[float, str]
     return base, "event"
 
 
+# ── Declared events reaching the standing recommendation (stability.md 19.5) ─
+# Until this, inventory_events / inventory_event_multipliers only fed the
+# event SIMULATOR (simulate_event_impact below): a tenant could declare
+# "Semana Santa, x1.8, 24th to 31st", save it, and the semáforo asked for the
+# same quantity the next day regardless. The functions below let
+# _compute_inventory_status see a saved event when it overlaps the window a
+# decision is being made for RIGHT NOW — the lead-time window starting today.
+# A recommendation is forward-looking: an event that already ended, or one
+# whose window opens after the order would already have arrived, must not
+# move it.
+
+def _active_events_window(tenant_id: str, today: date) -> list[dict]:
+    """Active events whose date range has not entirely passed, fetched ONCE
+    per call — not per SKU. _compute_inventory_status walks hundreds of SKUs
+    and every one of them checks the same small handful of declared events,
+    the same shape as the other tenant-wide maps above (learned_lead_times,
+    incoming_qty, rule_index). A future event is still returned here (its
+    start may or may not fall inside any given SKU's lead-time window, which
+    is what `_event_window_overlap_days` decides per SKU); a past one
+    (end_date < today) never is, which is what keeps a lapsed event from
+    ever reaching a forward-looking decision."""
+    return query(
+        """SELECT * FROM inventory_events
+           WHERE tenant_id = %s AND active IS TRUE AND end_date >= %s
+           ORDER BY start_date""",
+        (tenant_id, today),
+    )
+
+
+def _event_window_overlap_days(today: date, lead_time_days: float, event: dict) -> int:
+    """
+    Calendar-day overlap between the DECISION window — [today, today +
+    lead_time_days), the days an order placed right now would actually have
+    to cover — and the declared event's [start_date, end_date] (inclusive).
+
+    Deliberately calendar arithmetic, not period arithmetic: an event is a
+    fact about the CALENDAR (Semana Santa runs the 24th to the 31st
+    regardless of whether this tenant plans in days, weeks or months). The
+    period conversion happens one level up, when this day COUNT becomes a
+    FRACTION of the lead time (see `_event_demand_multiplier`) — the same
+    trap `lead_time_demand`'s own comment already documents: multiplying a
+    PER-PERIOD figure by a raw CALENDAR-day count silently produces a number
+    off by 7x (weekly) or 30x (monthly). Working in day counts on both sides
+    of the ratio, and only ever using the RATIO downstream, sidesteps that
+    the same way.
+
+    A future event whose start sits at or beyond the end of the decision
+    window (start_date >= today + lead_time_days) returns 0 — that is what
+    keeps "far in the future" from moving today's decision; a past event
+    never reaches this call at all (`_active_events_window` excludes it).
+    """
+    window_start = today
+    window_end = today + timedelta(days=max(0.0, lead_time_days))  # exclusive
+    ev_start = event["start_date"]
+    ev_end_exclusive = event["end_date"] + timedelta(days=1)
+    overlap_start = max(window_start, ev_start)
+    overlap_end = min(window_end, ev_end_exclusive)
+    return max(0, (overlap_end - overlap_start).days)
+
+
+def _event_demand_multiplier(
+    item: dict, today: date, lead_time_days: float, events: list[dict],
+    overrides_by_event: dict[str, dict],
+) -> tuple[float, list[dict]]:
+    """
+    Combined demand multiplier for THIS sku's lead-time window, blended by
+    how much of that window each active event actually covers.
+
+    Partial overlap: a 15-day lead time that covers 4 event days and 11
+    ordinary ones must NOT be scaled by the full multiplier for all 15 — that
+    overstates the order by treating 11 ordinary days as if they were also
+    Semana Santa. `fraction = overlap_days / lead_time_days` is a plain ratio
+    of calendar days on both sides, so it is correct at ANY planning grain
+    without a second conversion: `lead_time_days` here is the same DAYS
+    figure `_lead_time_in_periods` converts for the rest of the pipeline, not
+    periods, and a fraction of days stays the same fraction regardless of
+    what bucket the forecast itself is expressed in.
+    `blended = 1 + fraction * (multiplier - 1)` is the multiplier that,
+    applied to the WHOLE window's demand, gives the same total extra units as
+    applying the real multiplier to only the overlapping days and leaving the
+    rest at the baseline rate — e.g. x1.8 over 4 of 15 days blends to
+    ~1.213, not 1.8.
+
+    Multiple overlapping events compound multiplicatively (each is an
+    independent fact about the calendar); in the normal case a tenant
+    declares one event over any given date range, so this is a correctness
+    net for an edge case, not the expected path.
+
+    Returns (multiplier, applied) where `applied` lists one entry per event
+    that actually touched this window — enough for the "Ver por qué" panel to
+    name it, never a silent change to the number.
+    """
+    if lead_time_days <= 0:
+        return 1.0, []
+    combined = 1.0
+    applied: list[dict] = []
+    for ev in events:
+        overlap_days = _event_window_overlap_days(today, lead_time_days, ev)
+        if overlap_days <= 0:
+            continue
+        idx = overrides_by_event.get(ev["id"]) or {s: {} for s in _MULTIPLIER_SCOPES}
+        sku_mult, mult_source = _resolve_multiplier(item, float(ev["multiplier"]), idx)
+        fraction = min(1.0, overlap_days / float(lead_time_days))
+        blended = 1.0 + fraction * (sku_mult - 1.0)
+        combined *= blended
+        applied.append({
+            "event_id":           ev["id"],
+            "event_name":         ev["name"],
+            # The multiplier actually resolved for THIS sku (event-wide, or
+            # its sku/family/category override) and where it came from.
+            "multiplier":         sku_mult,
+            "multiplier_source":  mult_source,
+            "overlap_days":       overlap_days,
+            "window_days":        int(math.ceil(lead_time_days)),
+            # What was actually applied to the window's demand, after
+            # blending for partial overlap — the number that explains why the
+            # recommendation moved by less than the raw multiplier suggests.
+            "blended_multiplier": round(blended, 4),
+        })
+    return combined, applied
+
+
 def build_multiplier_explanation(event: Optional[dict], base: float,
                                  overrides: list[dict]) -> dict:
     """
@@ -1815,7 +3635,7 @@ def build_multiplier_explanation(event: Optional[dict], base: float,
     from_catalog = bool(event and event.get("catalog_key"))
     return {
         "base_multiplier": base,
-        # 'catalog' = estimate preloaded by Faro; 'user' = set by the
+        # 'catalog' = estimate preloaded by StockAI; 'user' = set by the
         # administrator (or edited on top of the estimate).
         "source": "catalog" if from_catalog else "user",
         "reason": (event or {}).get("notes"),
@@ -1838,6 +3658,7 @@ def simulate_event_impact(
     multiplier: float,
     event_name: Optional[str] = None,
     event_id: Optional[str] = None,
+    period: str = "daily",
 ) -> dict:
     """
     Project what a demand event (promo, season) does to each SKU:
@@ -1853,14 +3674,42 @@ def simulate_event_impact(
     """
     from datetime import date as _date, timedelta
 
-    if isinstance(start_date, str):
-        start_date = _date.fromisoformat(start_date)
-    if isinstance(end_date, str):
-        end_date = _date.fromisoformat(end_date)
+    # These three used to be `ValueError`s that the endpoint re-raised as
+    # `HTTPException(422, detail=str(e))`, which put two problems on the wire:
+    # the messages were hardcoded SPANISH inside backend logic (CLAUDE.md
+    # forbids it — the backend returns a code, the frontend renders the
+    # Spanish), and an unparseable date escaped as Python's own
+    # "Invalid isoformat string: 'ayer'", in English, naming an internal
+    # function to a distributor. Structured codes fix both at once.
+    def _parse(value, field: str):
+        if not isinstance(value, str):
+            return value
+        try:
+            return _date.fromisoformat(value)
+        except ValueError:
+            raise AppError(
+                "event_date_invalid",
+                f"'{field}' must be a date written as YYYY-MM-DD.",
+                status_code=422,
+                params={"field": field, "value": str(value)[:32]},
+            )
+
+    start_date = _parse(start_date, "start_date")
+    end_date = _parse(end_date, "end_date")
     if end_date < start_date:
-        raise ValueError("end_date no puede ser anterior a start_date")
+        raise AppError(
+            "event_end_before_start",
+            "The event ends before it starts.",
+            status_code=422,
+            params={"start": str(start_date), "end": str(end_date)},
+        )
     if multiplier <= 0:
-        raise ValueError("multiplier debe ser mayor que 0")
+        raise AppError(
+            "event_multiplier_not_positive",
+            "The multiplier must be greater than 0.",
+            status_code=422,
+            params={"multiplier": multiplier},
+        )
 
     today = _date.today()
     event_days = (end_date - start_date).days + 1
@@ -1870,20 +3719,23 @@ def simulate_event_impact(
     override_rows = get_event_multipliers(tenant_id, event_id) if event_id else []
     idx = _index_overrides(override_rows)
 
-    items = get_inventory_status(tenant_id, session_id)
+    # Read at the tenant's own grain, like every screen. Without it a weekly
+    # tenant's per-week demand was multiplied by the event's CALENDAR days, so
+    # the simulated extra units were off by the ratio between the two.
+    items = get_inventory_status(tenant_id, session_id, period=period)
     rows: list[dict] = []
 
     for it in items:
         daily = it.get("daily_demand")
         if not daily or daily <= 0:
-            continue  # sin forecast no hay nada que simular
+            continue  # nothing to simulate without a forecast
 
         lead_time = int(it.get("lead_time_days") or DEFAULT_LEAD_TIME_DAYS)
         moq       = float(it.get("moq") or 1)
         stock     = it.get("current_stock")
         cost      = it.get("unit_cost")
 
-        # Cada product puede tener su propio multiplier.
+        # Each product can carry its own multiplier.
         sku_mult, mult_source = _resolve_multiplier(it, multiplier, idx)
 
         baseline_units = daily * event_days
@@ -1909,8 +3761,8 @@ def simulate_event_impact(
             "display_name":      it.get("display_name"),
             "supplier":         it.get("supplier"),
             "category":         it.get("category"),
-            # Which multiplier applied to THIS product and why: without this
-            # la fila no se puede explicar cuando hay overrides.
+            # Which multiplier applied to THIS product and why: without it
+            # the row cannot be explained once overrides are in play.
             "multiplier":     round(sku_mult, 2),
             "multiplier_source": mult_source,
             "daily_demand":    round(daily, 2),
@@ -2051,8 +3903,12 @@ def seed_calendar_events(
 
     country = (country or "CR").upper()
     if country not in cat.SUPPORTED_COUNTRIES:
-        raise ValueError(
-            f"País '{country}' sin catálogo. Disponibles: {', '.join(cat.SUPPORTED_COUNTRIES)}"
+        raise AppError(
+            "calendar_country_unsupported",
+            f"No calendar catalog for country '{country}'. "
+            f"Available: {', '.join(cat.SUPPORTED_COUNTRIES)}",
+            params={"country": country,
+                    "available": ", ".join(cat.SUPPORTED_COUNTRIES)},
         )
 
     occurrences = cat.build_occurrences(country, years)
@@ -2151,10 +4007,30 @@ def set_catalog_group_active(tenant_id: str, catalog_prefix: str, active: bool) 
 
 # ── PDF report ────────────────────────────────────────────────────────────────
 
-def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float = 0.95) -> bytes:
+def _pdf_text(value) -> str:
+    """Escape user-supplied text for reportlab's Paragraph.
+
+    Paragraph parses its argument as XML-like markup, so a product named
+    "Tuerca <M8> & arandela" or a session id with "<" made the whole
+    document fail ("paraparser: syntax error") — a 500 for the one file the
+    buyer forwards. Every name, note or id from data goes through here;
+    only the template's own <b>/<font> tags stay as markup.
+    """
+    from xml.sax.saxutils import escape
+    return escape(str(value))
+
+
+def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float = 0.95,
+                           period: str = "daily") -> bytes:
     """
     Generates a one-page executive summary PDF in Spanish.
     Returns raw bytes ready for StreamingResponse.
+
+    `period` had no parameter at all, so this document was always computed as
+    daily. It is the artifact the buyer forwards to other people — the one copy
+    of these numbers that leaves the app — and for a weekly or monthly tenant it
+    disagreed with every screen it was printed from. Default "daily" keeps every
+    existing caller byte-identical; the endpoint resolves the real one.
     """
     from io import BytesIO
     from datetime import date
@@ -2167,7 +4043,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
 
-    items = get_inventory_status(tenant_id, session_id, service_level)
+    items = get_inventory_status(tenant_id, session_id, service_level, period)
 
     # Resolved once for the whole document (one DB read), then handed to every
     # amount it renders — the report is read by whoever the buyer forwards it to,
@@ -2187,9 +4063,15 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
         "PEDIR_YA": RED, "PEDIR_PRONTO": AMBER,
         "OK": GREEN, "SOBRESTOCK": BLUE, "SIN_DATOS": colors.grey,
     }
+    # This document is downloaded and forwarded, so the frontend never renders
+    # it: its Spanish comes from the backend copy catalog, keyed in English.
+    from backend.notifications.locale import render_es, render_date, coverage_short
     SIGNAL_LABELS = {
-        "PEDIR_YA": "🔴 PEDIR YA", "PEDIR_PRONTO": "🟡 Pedir pronto",
-        "OK": "🟢 OK", "SOBRESTOCK": "🔵 Sobrestock", "SIN_DATOS": "Sin datos",
+        "PEDIR_YA":     render_es("inventory_pdf_signal_order_now"),
+        "PEDIR_PRONTO": render_es("inventory_pdf_signal_order_soon"),
+        "OK":           render_es("inventory_pdf_signal_ok"),
+        "SOBRESTOCK":   render_es("inventory_pdf_signal_overstock"),
+        "SIN_DATOS":    render_es("inventory_pdf_signal_no_data"),
     }
 
     buf = BytesIO()
@@ -2212,10 +4094,11 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     story = []
 
     # ── Header ─────────────────────────────────────────────────────────────
-    today_str = date.today().strftime("%d de %B de %Y")
+    today_str = render_date(date.today())
     header_data = [[
-        Paragraph("<b>RESUMEN DE INVENTARIO</b>", H1),
-        Paragraph(f"<font color='#64748b'>Generado el {today_str}</font>", SMALL),
+        Paragraph(f"<b>{render_es('inventory_pdf_title')}</b>", H1),
+        Paragraph(f"<font color='#64748b'>"
+                  f"{render_es('inventory_pdf_generated_on', date=today_str)}</font>", SMALL),
     ]]
     header_table = Table(header_data, colWidths=["70%", "30%"])
     header_table.setStyle(TableStyle([
@@ -2239,12 +4122,13 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
          Paragraph(l, ParagraphStyle("kl", fontSize=7.5, alignment=TA_CENTER,
                                      textColor=colors.HexColor("#64748b")))]
         for n, l, c in [
-            (total,   "Total SKUs",      "6366f1"),
-            (urgent,  "Pedir YA",        "ef4444"),
-            (warning, "Pedir pronto",    "f59e0b"),
-            (ok,      "OK",              "22c55e"),
-            (over,    "Sobrestock",      "3b82f6"),
-            (money(value, currency=currency) if value else "—", "Valor bodega", "6366f1"),
+            (total,   render_es("inventory_pdf_kpi_total"),     "6366f1"),
+            (urgent,  render_es("inventory_pdf_kpi_urgent"),    "ef4444"),
+            (warning, render_es("inventory_pdf_kpi_warning"),   "f59e0b"),
+            (ok,      render_es("inventory_pdf_kpi_ok"),        "22c55e"),
+            (over,    render_es("inventory_pdf_kpi_overstock"), "3b82f6"),
+            (money(value, currency=currency) if value else "—",
+             render_es("inventory_pdf_kpi_value"), "6366f1"),
         ]
     ]]
     kpi_row = [[Table([[v] for v in cell], colWidths=["100%"]) for cell in kpi_table_data[0]]]
@@ -2262,30 +4146,33 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     # ── Urgent SKUs table ──────────────────────────────────────────────────
     critical_items = [i for i in items if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO")][:20]
     if critical_items:
-        story.append(Paragraph("Productos que requieren acción", H2))
+        story.append(Paragraph(render_es("inventory_pdf_section_action"), H2))
         tdata = [[
-            Paragraph("<b>SKU</b>", CELL_BOLD),
-            Paragraph("<b>Nombre</b>", CELL_BOLD),
-            Paragraph("<b>Señal</b>", CELL_BOLD),
-            Paragraph("<b>Stock actual</b>", CELL_BOLD),
-            Paragraph("<b>Días cobertura</b>", CELL_BOLD),
-            Paragraph("<b>Pedir</b>", CELL_BOLD),
-            Paragraph("<b>Proveedor</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_sku')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_name')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_signal')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_stock')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_coverage')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_order')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_supplier')}</b>", CELL_BOLD),
         ]]
         row_styles = []
         for idx, item in enumerate(critical_items):
             sig_color = SIGNAL_COLORS.get(item["signal"], colors.grey)
-            sig_label = SIGNAL_LABELS.get(item["signal"], item["signal"])
+            sig_label = _pdf_text(SIGNAL_LABELS.get(item["signal"], item["signal"]))
             tdata.append([
-                Paragraph(item["sku"], CELL),
-                Paragraph(item.get("display_name") or "—", CELL),
+                Paragraph(_pdf_text(item["sku"]), CELL),
+                Paragraph(_pdf_text(item.get("display_name") or "—"), CELL),
                 Paragraph(sig_label, ParagraphStyle("sig", fontSize=8,
                           fontName="Helvetica-Bold", textColor=sig_color)),
                 Paragraph(f"{item['current_stock']:,.0f}" if item.get("current_stock") is not None else "—", CELL),
-                Paragraph(f"{item['coverage_days']:.0f} días" if item.get("coverage_days") is not None else "—", CELL),
+                # In the planning period's unit: the figure is in weeks on a
+                # weekly tenant, and this printed "4 días" for 4 weeks (math
+                # audit 2026-10-01). The email already said "4 semanas".
+                Paragraph(format_coverage(item["coverage_days"], period) if item.get("coverage_days") is not None else "—", CELL),
                 Paragraph(f"<b>{item['recommended_qty']:,.0f}</b>" if item.get("recommended_qty") else "—",
                           ParagraphStyle("qty", fontSize=8, fontName="Helvetica-Bold", textColor=GREEN)),
-                Paragraph(item.get("supplier") or "—", CELL),
+                Paragraph(_pdf_text(item.get("supplier") or "—"), CELL),
             ])
             if idx % 2 == 0:
                 row_styles.append(("BACKGROUND", (0, idx+1), (-1, idx+1), colors.HexColor("#f8fafc")))
@@ -2309,22 +4196,22 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     # ── All SKUs compact table ─────────────────────────────────────────────
     remaining = [i for i in items if i["signal"] not in ("PEDIR_YA", "PEDIR_PRONTO")]
     if remaining:
-        story.append(Paragraph("Resto del inventario", H2))
+        story.append(Paragraph(render_es("inventory_pdf_section_rest"), H2))
         small_data = [[
-            Paragraph("<b>SKU</b>", CELL_BOLD),
-            Paragraph("<b>Nombre</b>", CELL_BOLD),
-            Paragraph("<b>Señal</b>", CELL_BOLD),
-            Paragraph("<b>Días cobertura</b>", CELL_BOLD),
-            Paragraph("<b>ABC-XYZ</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_sku')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_name')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_signal')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_coverage')}</b>", CELL_BOLD),
+            Paragraph(f"<b>{render_es('inventory_pdf_col_abc_xyz')}</b>", CELL_BOLD),
         ]]
         for item in remaining[:30]:
             small_data.append([
-                Paragraph(item["sku"], CELL),
-                Paragraph(item.get("display_name") or "—", CELL),
+                Paragraph(_pdf_text(item["sku"]), CELL),
+                Paragraph(_pdf_text(item.get("display_name") or "—"), CELL),
                 Paragraph(SIGNAL_LABELS.get(item["signal"], "—"),
                           ParagraphStyle("s2", fontSize=8, textColor=SIGNAL_COLORS.get(item["signal"], colors.grey))),
-                Paragraph(f"{item['coverage_days']:.0f}d" if item.get("coverage_days") is not None else "—", CELL),
-                Paragraph(item.get("abc_xyz") or "—", CELL),
+                Paragraph(coverage_short(item["coverage_days"], period) if item.get("coverage_days") is not None else "—", CELL),
+                Paragraph(_pdf_text(item.get("abc_xyz") or "—"), CELL),
             ])
         st = Table(small_data, colWidths=[3*cm, 5*cm, 3.2*cm, 3*cm, 2*cm])
         st.setStyle(TableStyle([
@@ -2341,7 +4228,8 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     story.append(Spacer(1, 12))
     story.append(HRFlowable(width="100%", thickness=0.5, color=BORDER))
     story.append(Paragraph(
-        f"Generado automáticamente · Sesión {session_id[:8]} · Nivel de servicio {service_level*100:.0f}%",
+        render_es("inventory_pdf_footer", session=_pdf_text(session_id[:8]),
+                  level=f"{service_level*100:.0f}"),
         ParagraphStyle("footer", fontSize=7, textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER),
     ))
 
@@ -2351,13 +4239,30 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
 
 # ── Decision Centre helpers ───────────────────────────────────────────────────
 
-def _calc_demand_trend(tenant_id: str, sku: str, avg_daily: float, days: int = 14) -> Optional[float]:
+def _calc_demand_trend(tenant_id: str, sku: str, avg_daily: float, days: int = 14,
+                       period: str = "daily") -> Optional[float]:
     """
     Returns % change in actual demand vs forecast.
     Positive = demand is running above forecast (risk of stockout).
     Negative = demand is below forecast (risk of overstock).
     Uses stock snapshot history to estimate actual consumption.
     Returns None if insufficient data or change is not significant (< 15%).
+
+    `avg_daily` is the forecast per bucket of `period` (per WEEK on a weekly
+    tenant), so it is converted to a per-day rate before being compared with
+    a consumption measured over calendar days.
+
+    Three things this used to get wrong (math audit 2026-10-01):
+
+    * The expected consumption was `avg_daily * len(history)` — the number of
+      SNAPSHOTS, not the days they span. Snapshots are written on every stock
+      write, not once a day: four writes spread over 14 days expected 4 days
+      of sales against 14 days of real consumption and reported "+250%".
+    * The forecast was per period and the window in days, so every weekly
+      tenant read "-86% below forecast" on every SKU.
+    * Consumption was `first - last`, so a reception inside the window
+      cancelled the sales against it. It is now the sum of the FALLS between
+      consecutive levels; a rise is a reception or an adjustment, not demand.
     """
     if avg_daily <= 0:
         return None
@@ -2366,16 +4271,24 @@ def _calc_demand_trend(tenant_id: str, sku: str, avg_daily: float, days: int = 1
     if len(history) < 4:
         return None
 
-    # Actual depletion (stock went down)
-    first_stock = history[0]['stock']
-    last_stock  = history[-1]['stock']
-    actual_depletion = first_stock - last_stock
+    try:
+        first_at = datetime.fromisoformat(history[0]['date'])
+        last_at = datetime.fromisoformat(history[-1]['date'])
+    except (TypeError, ValueError):
+        return None
+    elapsed_days = (last_at - first_at).total_seconds() / 86400.0
+    if elapsed_days < 1.0:
+        return None
 
-    # Expected depletion based on forecast
-    period_days      = min(len(history), days)
-    expected_depletion = avg_daily * period_days
+    levels = [float(h['stock']) for h in history]
+    actual_depletion = sum(
+        max(0.0, prev - cur) for prev, cur in zip(levels, levels[1:])
+    )
 
-    if expected_depletion <= 0 or actual_depletion < 0:
+    per_day = avg_daily / _days_per_period(period)
+    expected_depletion = per_day * elapsed_days
+
+    if expected_depletion <= 0:
         return None
 
     trend_pct = ((actual_depletion - expected_depletion) / expected_depletion) * 100
@@ -2398,6 +4311,7 @@ def get_demand_spikes(
     uplift_threshold: float = 0.25,
     items: Optional[list[dict]] = None,
     forecasts: Optional[dict] = None,
+    period: str = "daily",
 ) -> list[dict]:
     """
     Proactive demand alerts — the value Excel can't give.
@@ -2415,7 +4329,11 @@ def get_demand_spikes(
     from datetime import date as _date
 
     if items is None:
-        items = get_inventory_status(tenant_id, session_id, service_level)
+        # Only reached by a caller that did not already have the status in hand.
+        # The briefing (the one real caller) passes `items`, computed at the
+        # tenant's grain — this path exists so a direct call cannot silently
+        # compute a different one.
+        items = get_inventory_status(tenant_id, session_id, service_level, period)
     if forecasts is None:
         from backend.db import session_store
         forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
@@ -2499,20 +4417,24 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                              currency: dict | None = None) -> list[dict]:
     """
     Generates plain-language, actionable recommendations from inventory status items.
-    Each recommendation has: priority (1=critical), sku, name, rec_type, text, action.
+    Each recommendation has: priority (1=critical), sku, name, rec_type, signal,
+    plus two ways to say the same thing — `text_code`/`text_params` and
+    `action_code`/`action_params`, which the frontend renders through the
+    catalogue in the reader's language, and `text`/`action`, an English sentence
+    kept only as the fallback for a frontend older than this API.
 
     `currency` is the tenant's currency setting, resolved once by the caller: the
-    OVERSTOCK sentence quotes an amount, and that sentence is what the executive
-    summary renders verbatim. Omitting it renders the anchor market's colón.
+    OVERSTOCK sentence quotes an amount, and that amount is pre-formatted here
+    (in `text` and in `text_params['amount']`) because only the backend knows the
+    tenant's setting. Omitting it renders the anchor market's colón.
 
     `period` (multi-period Phase C): the active planning grain. A period-trained
     session reports coverage in that grain's unit (a weekly session's
-    coverage_days of 3 means 3 WEEKS), so the coverage figures are formatted in
-    that unit and the "óptimo" ceiling is compared in the same unit. Lead time
-    stays in real calendar days — a supplier takes N days regardless of the
-    planning grain. "daily" reproduces the prior output byte-for-byte.
+    coverage_days of 3 means 3 WEEKS), so the coverage figures travel in that
+    unit and the optimal ceiling is compared in the same unit. Lead time stays in
+    real calendar days — a supplier takes N days regardless of the planning
+    grain, which is why `lead_days` is a separate param from `days`.
     """
-    from backend.formatting import format_coverage
     days_per_period = _days_per_period(period)
     recs: list[dict] = []
 
@@ -2523,7 +4445,11 @@ def generate_recommendations(items: list[dict], period: str = "daily",
         days     = item.get('coverage_days')
         lead     = item.get('lead_time_days', DEFAULT_LEAD_TIME_DAYS)
         qty      = item.get('recommended_qty') or 0
-        prov     = item.get('supplier') or 'el proveedor'
+        # Raw, with no article and no preposition attached. Spanish needs the
+        # contraction `a + el = al` and a named supplier takes no article at all,
+        # so this used to be carried twice, pre-declined. Both forms belong to
+        # the catalogue now: a supplier and no supplier get their own key.
+        supplier = item.get('supplier')
         abc      = item.get('abc', '?')
         trend    = item.get('demand_trend_pct')
         value    = item.get('inventory_value')
@@ -2533,11 +4459,30 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                 'priority': 1, 'sku': sku, 'name': name,
                 'rec_type': 'STOCKOUT_RISK',
                 'text': (
-                    f"Emite la orden de {name} HOY — tienes {format_coverage(days, period)} de stock "
-                    f"y {prov} tarda {_format_days(lead)} en entregar. "
-                    f"Si no actúas hoy, habrá quiebre antes de recibir el pedido."
+                    f"Order {name} TODAY — you have {format_coverage_en(days, period)} of stock "
+                    f"and {supplier or 'the supplier'} takes {round(lead)} days to deliver. "
+                    f"If you do not act today it runs out before the order arrives."
                 ),
-                'action': f"Pedir {qty:.0f} unidades a {prov}" if qty > 0 else "Emitir orden urgente",
+                # Raw numbers, never pre-formatted words: `format_coverage`
+                # and `_format_days` emit Spanish nouns ("días", "semanas"), so
+                # interpolating them would smuggle Spanish into whatever
+                # language the reader chose. The frontend has coverageUnitLabel
+                # for exactly this.
+                'text_params': {
+                    'name': name, 'days': round(days), 'lead_days': round(lead),
+                    'supplier': supplier or '',
+                },
+                # Grammar belongs to the catalogue, not to the data: a param
+                # carrying "a Acme" rendered as "Order 216 units a Acme" the
+                # moment the UI was English, and an unnamed supplier fell back to
+                # the Spanish words "el proveedor" inside an English sentence.
+                # Each case gets its own key and the name travels raw.
+                'text_code': 'STOCKOUT_RISK' if supplier else 'STOCKOUT_RISK_NO_SUPPLIER',
+                'action': (f"Order {qty:.0f} units from {supplier or 'the supplier'}"
+                           if qty > 0 else "Issue an urgent order"),
+                'action_code': ('order_qty_from_supplier' if supplier else 'order_qty_from_generic')
+                               if qty > 0 else 'order_urgent',
+                'action_params': {'qty': f"{qty:.0f}", 'supplier': supplier or ''},
                 'signal': signal,
             })
 
@@ -2546,10 +4491,15 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                 'priority': 2, 'sku': sku, 'name': name,
                 'rec_type': 'REORDER_SOON',
                 'text': (
-                    f"{name} tiene {format_coverage(days, period)} de cobertura frente a un lead time de {_format_days(lead)}. "
-                    f"Emite el pedido esta semana para mantener el colchón de seguridad."
+                    f"{name} has {format_coverage_en(days, period)} of coverage against a lead "
+                    f"time of {round(lead)} days. Issue the order this week to keep the safety buffer."
                 ),
-                'action': f"Pedir {qty:.0f} unidades antes del viernes" if qty > 0 else "Planificar pedido",
+                'text_params': {
+                    'name': name, 'days': round(days), 'lead_days': round(lead),
+                },
+                'action': f"Order {qty:.0f} units before Friday" if qty > 0 else "Plan the order",
+                'action_code': 'order_qty_by_friday' if qty > 0 else 'plan_order',
+                'action_params': {'qty': f"{qty:.0f}"},
                 'signal': signal,
             })
 
@@ -2559,10 +4509,13 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                     'priority': 3, 'sku': sku, 'name': name,
                     'rec_type': 'DEMAND_UP',
                     'text': (
-                        f"La demanda real de {name} está corriendo {trend:.0f}% por encima del pronóstico. "
-                        f"Considera aumentar el stock de seguridad o anticipar el próximo pedido."
+                        f"Real demand for {name} is running {trend:.0f}% above the forecast. "
+                        f"Consider raising the safety stock or bringing the next order forward."
                     ),
-                    'action': "Revisar stock de seguridad",
+                    'text_params': {'name': name, 'pct': f"{trend:.0f}"},
+                    'action': "Review the safety stock",
+                    'action_code': 'review_safety_stock',
+                    'action_params': {},
                     'signal': signal,
                 })
             elif trend <= -15:
@@ -2570,28 +4523,50 @@ def generate_recommendations(items: list[dict], period: str = "daily",
                     'priority': 4, 'sku': sku, 'name': name,
                     'rec_type': 'DEMAND_DOWN',
                     'text': (
-                        f"La demanda de {name} está {abs(trend):.0f}% por debajo del pronóstico. "
-                        f"Verifica si perdiste un cliente clave o hay un cambio de tendencia real."
+                        f"Demand for {name} is {abs(trend):.0f}% below the forecast. "
+                        f"Check whether you lost a key customer or the trend really changed."
                     ),
-                    'action': "Revisar con el equipo de ventas",
+                    'text_params': {'name': name, 'pct': f"{abs(trend):.0f}"},
+                    'action': "Review with the sales team",
+                    'action_code': 'review_with_sales',
+                    'action_params': {},
                     'signal': signal,
                 })
 
         if signal == 'SOBRESTOCK' and abc in ('A', 'B') and days is not None and value:
             # `days` is coverage in the active period's unit; the "óptimo" ceiling
-            # is 3× the lead time expressed in that SAME unit, so the excess is a
+            # is the SKU's configured overstock factor (3 by default) times the
+            # lead time expressed in that SAME unit, so the excess is a
             # coherent period figure (mixing weeks against day-count lead was the
             # weekly-mode bug that produced "-12 días más de lo óptimo").
             lead_periods = lead / days_per_period
-            excess = days - lead_periods * 3
+            overstock_factor = (
+                (item.get("signal_thresholds") or {}).get("overstock_factor")
+                or _sig_th.DEFAULT_OVERSTOCK_FACTOR
+            )
+            excess = days - lead_periods * overstock_factor
+            # What pausing can free is the capital in the units ABOVE the
+            # ceiling, not the whole shelf. This quoted `value` — every unit
+            # on hand — so a SKU one day past its ceiling "would free" 100% of
+            # its stock value; the excess is `excess / days` of it, the same
+            # coverage arithmetic the sentence itself prints (math audit
+            # 2026-10-01).
+            freed = value * max(0.0, excess) / days if days > 0 else 0.0
             recs.append({
                 'priority': 5, 'sku': sku, 'name': name,
                 'rec_type': 'OVERSTOCK',
                 'text': (
-                    f"{name} tiene {format_coverage(days, period)} de cobertura ({format_coverage(excess, period)} más de lo óptimo). "
-                    f"Pausar el próximo pedido liberaría {money(value, currency=currency)} en capital de trabajo."
+                    f"{name} has {format_coverage_en(days, period)} of coverage "
+                    f"({format_coverage_en(excess, period)} more than optimal). Pausing the next order "
+                    f"would free {money(freed, currency=currency)} of working capital."
                 ),
-                'action': "Pausar próximo pedido",
+                'text_params': {
+                    'name': name, 'days': round(days), 'excess': round(excess),
+                    'amount': money(freed, currency=currency),
+                },
+                'action': "Pause the next order",
+                'action_code': 'pause_next_order',
+                'action_params': {},
                 'signal': signal,
             })
 
@@ -2605,36 +4580,101 @@ def generate_recommendations(items: list[dict], period: str = "daily",
     return list(seen.values())[:20]  # top 20 recommendations
 
 
-def best_model_by_sku(rows: list[dict]) -> dict[str, str]:
-    """{sku: name of its most accurate real model}, by lowest WAPE.
+# Ranking metric for choosing the model each SKU is bought from, best first.
+#
+# Repeated here as a literal rather than imported because the layering keeps
+# forecasting_core out of this module — the authority is
+# `forecasting_core/evaluation/metrics.py:CHAMPION_METRIC_ORDER`, and
+# `backend/tests/test_champion_metric_parity.py` asserts the two are equal so
+# the duplication cannot silently drift. Same arrangement as
+# DEFAULT_LEAD_TIME_DAYS.
+#
+# The drift is not hypothetical: this list started at ("cost", "wape") while the
+# engine had already moved to ("cost_horizon", ...), and on a real 13-SKU
+# session the two layers then disagreed on 8 of them. The engine computed its
+# recommendations from one model, the semáforo and the order quantity came from
+# another, and the accuracy on screen described a third.
+_CHAMPION_METRICS = ("cost_horizon", "cost", "wape", "mae")
 
-    Deliberately the same rule `compute_session_accuracy` scores with, so the
-    accuracy the app displays and the model the purchase is computed from are
-    the same one. Baselines are excluded: they exist to be beaten, and buying
-    from a naive forecast because it happened to win would be a bug, not a
-    fallback.
+
+def _champion_metric(rows: list[dict]) -> str:
+    for metric in _CHAMPION_METRICS:
+        if any(r.get(metric) is not None for r in rows):
+            return metric
+    return "wape"
+
+
+def best_model_by_sku(rows: list[dict]) -> dict[str, str]:
+    """{sku: the model its purchase is computed from}, by lowest asymmetric cost.
+
+    This used to rank by WAPE. WAPE, like MAE, is symmetric: it scores a
+    forecast that runs 10% under exactly as well as one that runs 10% over, so
+    it crowned models that were wrong in the expensive direction as readily as
+    in the cheap one. Ranking by `cost` picks the model whose mistakes are the
+    affordable kind.
+
+    `compute_session_accuracy` reports the WAPE of whichever model this
+    function picked, so the accuracy on screen still describes the forecast the
+    orders came from — the invariant the old shared-rule comment was protecting.
+
+    Baselines are excluded: they exist to be beaten, and buying from a naive
+    forecast because it happened to win would be a bug, not a fallback.
+
+    A lead under 10% on one validation window is inside the noise, so a near-tie
+    is settled by each model's record over every SKU (see `champion.py`).
     """
-    best: dict[str, tuple[float, str]] = {}
+    metric = _champion_metric(rows)
+    scores: dict[str, dict[str, float]] = {}
     for r in rows:
         if r.get("type") == "baseline":
             continue
-        wape, model = r.get("wape"), r.get("model")
-        if wape is None or not model:
+        score, model = r.get(metric), r.get("model")
+        if score is None or not model:
             continue
-        sku = str(r.get("sku"))
-        if sku not in best or float(wape) < best[sku][0]:
-            best[sku] = (float(wape), str(model))
-    return {sku: model for sku, (_w, model) in best.items()}
+        per_model = scores.setdefault(str(r.get("sku")), {})
+        m = str(model)
+        if m not in per_model or float(score) < per_model[m]:
+            per_model[m] = float(score)
+    # The engine's own rule, not a copy: a near-tie goes to the model with the
+    # better record across the whole session (forecasting_core.evaluation.champion).
+    # `rows` must therefore be the session's WHOLE metrics table; a caller that
+    # passes one SKU's rows gets the plain minimum and can disagree with the
+    # catalogue-wide decision.
+    from forecasting_core.evaluation.champion import select_champions
+    return select_champions(scores)
+
+
+# A WAPE at or above this is the engine's `sum|e| / (0 + 1e-8)` — a validation
+# window with no demand at all — not an error rate: a real one would need errors
+# a million times the units actually sold.
+_WAPE_UNDEFINED = 1e6
 
 
 def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[float]:
-    """Session-level accuracy: 1 - WAPE of each SKU's best real model.
+    """Session-level accuracy: 1 - WAPE of the model each SKU is bought from.
+
+    Not the best WAPE available for that SKU — the WAPE of the model that
+    actually produced the numbers on screen. Those were the same thing while the
+    champion was chosen by WAPE; now that it is chosen by asymmetric cost they
+    can differ, and reporting the better one would be advertising a forecast
+    nobody is using.
 
     Baseline rows (naive & friends) are scored for reference only and must not
     drag the headline number down. The aggregate is weighted by each SKU's
     daily demand so low-volume SKUs don't dominate; falls back to a plain mean
     when no demand weights are available. Clamped at 0 (WAPE can exceed 1).
+
+    A SKU scoring wape == 0 AND mae == 0 is left out entirely. WAPE divides by
+    the total real demand in the validation window, so a window with no demand
+    gives 0/0 — an error of zero over a scale of zero. That is not a perfect
+    forecast, it is the absence of anything to be accurate about, and the SKU
+    screen has always refused to print it. Measured on a real session: every one
+    of seven models (including the naive baselines) scored exactly 0/0, the
+    demand weight was unknown so the weighted branch fell through to the plain
+    mean, and the purchasing panel told the buyer "Precisión promedio 100.0%"
+    directly above a suggested order of 130 units.
     """
+    champions = best_model_by_sku(rows)
     best_wape: dict[str, float] = {}
     for r in rows:
         if r.get('type') == 'baseline':
@@ -2642,9 +4682,24 @@ def compute_session_accuracy(rows: list[dict], items: list[dict]) -> Optional[fl
         wape = r.get('wape')
         if wape is None:
             continue
+        if float(wape) == 0.0 and float(r.get('mae') or 0.0) == 0.0:
+            continue
+        # The other face of the same 0/0: no demand in the window but a
+        # forecast that was not exactly zero. The engine divides by
+        # `sum|y| + 1e-8`, so 30 days of 0.3 against 30 zeros scores a WAPE of
+        # 900,000,000 — and one such dead SKU, at any weight, took the session's
+        # "Precisión promedio" from 89% to 0% (math audit 2026-10-01). A WAPE
+        # that large only exists as that epsilon; it measures nothing.
+        if not math.isfinite(float(wape)) or float(wape) >= _WAPE_UNDEFINED:
+            continue
         sku = str(r.get('sku'))
-        if sku not in best_wape or wape < best_wape[sku]:
-            best_wape[sku] = wape
+        if champions.get(sku) == r.get('model'):
+            best_wape[sku] = float(wape)
+        elif sku not in champions and (sku not in best_wape or wape < best_wape[sku]):
+            # No champion (e.g. every row for this SKU lacks the ranking
+            # metric): fall back to the old best-of rule rather than dropping
+            # the SKU out of the headline entirely.
+            best_wape[sku] = float(wape)
     if not best_wape:
         return None
     weights = {str(i.get('sku')): float(i.get('daily_demand') or 0.0) for i in items}
@@ -2687,13 +4742,33 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         avg = item.get('daily_demand')
         if avg and avg > 0 and item.get('has_stock') and item.get('has_forecast'):
             item['demand_trend_pct'] = _calc_demand_trend(
-                tenant_id, item['sku'], avg, days=14
+                tenant_id, item['sku'], avg, days=14, period=period,
             )
         else:
             item['demand_trend_pct'] = None
 
-    risks      = [i for i in items if i['signal'] == 'PEDIR_YA']
-    warnings   = [i for i in items if i['signal'] == 'PEDIR_PRONTO']
+    # Money at risk ("what to order first"): annotation + ordering only, the
+    # signals and quantities are untouched. Rows with no price/cost carry None
+    # and sort after valued ones in their previous order.
+    from backend.inventory import money_at_risk as _mar
+    for item in items:
+        if item['signal'] not in ('PEDIR_YA', 'PEDIR_PRONTO'):
+            continue
+        stock_now = item.get('current_stock')
+        stocked_out = bool(item.get('has_stock')) and stock_now is not None and stock_now <= 0
+        amount, basis = _mar.money_at_risk(
+            item.get('daily_demand'),
+            _lead_time_in_periods(item.get('lead_time_days') or 0, period),
+            item.get('coverage_days'),
+            item.get('sale_price'),
+            item.get('unit_cost'),
+            in_stockout=stocked_out,
+        )
+        item['money_at_risk'] = amount
+        item['money_at_risk_basis'] = basis
+
+    risks      = _mar.sort_by_money_at_risk(i for i in items if i['signal'] == 'PEDIR_YA')
+    warnings   = _mar.sort_by_money_at_risk(i for i in items if i['signal'] == 'PEDIR_PRONTO')
     overstocked = sorted(
         [i for i in items if i['signal'] == 'SOBRESTOCK' and i.get('inventory_value')],
         key=lambda x: x.get('inventory_value') or 0,
@@ -2715,7 +4790,7 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
     try:
         demand_spikes = get_demand_spikes(
             tenant_id, session_id, service_level,
-            items=items, forecasts=briefing_forecasts,
+            items=items, forecasts=briefing_forecasts, period=period,
         )
     except Exception as e:
         log.warning("get_demand_spikes failed for session=%s: %s", session_id, e)
@@ -2750,6 +4825,13 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
 
     total_value    = sum(i['inventory_value'] for i in items if i.get('inventory_value') or 0)
     overstock_val  = sum(i['inventory_value'] for i in overstocked if i.get('inventory_value') or 0)
+    # How many products the value above could be computed from at all. Without
+    # it, a catalogue where nobody recorded a unit cost reports "₡0 en bodega" —
+    # which reads as "your stock is worth nothing" when the truth is that we
+    # were never told what it cost. The inventory screen already distinguishes
+    # the two ("SKUs con costo registrado"); the purchasing panel could not,
+    # because this number arrived with no denominator.
+    valued_skus    = sum(1 for i in items if i.get('inventory_value'))
 
     # Session name
     try:
@@ -2783,10 +4865,16 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
             'order_now':             len(risks),
             'order_soon':         len(warnings),
             'ok':                   sum(1 for i in items if i['signal'] == 'OK'),
-            'overstock':           len(overstocked),
+            # Every SKU in SOBRESTOCK, as /status, the dashboard summary and
+            # scenarios count it. `overstocked` keeps only the ones with a cost
+            # (it feeds the capital figure), so counting it read "0 in
+            # overstock" on the demo tenant beside a SOBRESTOCK row with no
+            # cost on file (math audit 2026-10-01).
+            'overstock':           sum(1 for i in items if i['signal'] == 'SOBRESTOCK'),
             'sin_datos':            sum(1 for i in items if i['signal'] == 'SIN_DATOS'),
             'avg_accuracy':         avg_accuracy,
             'total_inventory_value': round(total_value, 2),
+            'valued_skus':          valued_skus,
             'capital_in_overstock':  round(overstock_val, 2),
             'demand_alerts':        len(demand_changes),
             'demand_spikes':        len(demand_spikes),
@@ -2803,7 +4891,7 @@ def get_tenants_with_active_sessions() -> list[dict]:
                   MAX(s.updated_at) AS last_session_at
            FROM sessions s
            JOIN tenants t ON t.id = s.tenant_id
-           WHERE s.status = 'COMPLETED'
+           WHERE s.status = 'COMPLETED' AND s.archived_at IS NULL AND NOT s.is_backtest
            GROUP BY s.tenant_id, t.name""",
     )
 
@@ -2812,15 +4900,49 @@ def get_latest_completed_session(tenant_id: str) -> Optional[dict]:
     return query_one(
         """SELECT id AS session_id FROM sessions
            WHERE tenant_id = %s AND status = 'COMPLETED'
+             AND archived_at IS NULL AND NOT is_backtest
            ORDER BY updated_at DESC LIMIT 1""",
         (tenant_id,),
     )
 
 
+# WHO gets an alert. This read 'admin', 'manager' in all three functions below
+# and in freshness_service — and `manager` is not a role this product has ever
+# had: VALID_ROLES is {admin, analyst, viewer} (users/roles.py) and the users
+# column defaults to 'analyst' (db/migrations.py), which is also what the invite
+# dialog proposes. So every alert went to admins only, while /mi-cuenta invited
+# ANY role to link their WhatsApp "to receive inventory alerts", walked them
+# through the OTP and showed them a green "Verificado". They then received
+# nothing, on either channel, and were not even written to activity_logs — so
+# the alert bell was empty too, and a person excluded from every digest looked
+# exactly like a quiet week.
+#
+# `viewer` stays out on purpose: it is the read-only role, and a stockout digest
+# is a call to action addressed to whoever can act on it.
+#
+# Two more filters, both of which were missing:
+#   * ACTIVE users only. A deactivated or suspended user cannot sign in, and
+#     kept receiving the company's stock and money figures by e-mail.
+#   * COMPANY-WIDE users only for company-wide digests. The daily alert, the
+#     monthly recap and the freshness reminder are company totals — the same
+#     totals the screens refuse a warehouse-scoped user
+#     (`wscope.require_company_wide`). A scoped user is withheld from them and
+#     told so in their activity log (`record_digest_withheld`), rather than sent
+#     figures for warehouses they may not see.
+_ALERT_ROLES_SQL = "role IN ('admin', 'analyst') AND status = 'active'"
+# NULL (and a stored JSON null) = every warehouse; see auth/warehouse_scope.py.
+_COMPANY_WIDE_SQL = "(warehouse_scope IS NULL OR warehouse_scope = 'null'::jsonb)"
+
+# The activity-log action written when a company-wide digest is withheld from
+# a warehouse-scoped user (rendered by the frontend as enum.activity_<action>).
+DIGEST_WITHHELD_ACTION = "company_digest_withheld"
+
+
 def get_tenant_admin_emails(tenant_id: str) -> list[str]:
+    """E-mail addresses for a COMPANY-WIDE digest: active, unscoped admins/analysts."""
     rows = query(
-        """SELECT email FROM users
-           WHERE tenant_id = %s AND role IN ('admin', 'manager')
+        f"""SELECT email FROM users
+           WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND {_COMPANY_WIDE_SQL}
            AND email IS NOT NULL""",
         (tenant_id,),
     )
@@ -2828,29 +4950,66 @@ def get_tenant_admin_emails(tenant_id: str) -> list[str]:
 
 
 def get_tenant_admin_whatsapps(tenant_id: str) -> list[str]:
-    """E.164 numbers of admins/managers who opted into WhatsApp alerts."""
+    """E.164 numbers of active, unscoped admins/analysts who opted into WhatsApp alerts."""
     rows = query(
-        """SELECT whatsapp_number FROM users
-           WHERE tenant_id = %s AND role IN ('admin', 'manager')
+        f"""SELECT whatsapp_number FROM users
+           WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND {_COMPANY_WIDE_SQL}
            AND whatsapp_number IS NOT NULL AND whatsapp_number <> ''""",
         (tenant_id,),
     )
     return [r["whatsapp_number"] for r in rows]
 
 
-def get_tenant_alert_recipients(tenant_id: str) -> list[dict]:
+def get_tenant_alert_recipients(tenant_id: str, *, include_scoped: bool = False) -> list[dict]:
     """
-    Admins/managers with the identity needed to attribute a delivery outcome.
-    The email/WhatsApp lists above return bare contact strings, which cannot be
-    written to activity_logs (user_id is NOT NULL) — this returns the user row.
+    Active admins/analysts with the identity needed to attribute a delivery
+    outcome. The email/WhatsApp lists above return bare contact strings, which
+    cannot be written to activity_logs (user_id is NOT NULL) — this returns the
+    user row.
+
+    Company-wide users only, unless `include_scoped`: pass it ONLY for a digest
+    whose content is not warehouse-dimensioned (the supplier lead-time alert,
+    whose scorecard every scoped user already reads on screen).
     """
+    scope_sql = "" if include_scoped else f" AND {_COMPANY_WIDE_SQL}"
     return [
         dict(r) for r in query(
-            """SELECT id, email, whatsapp_number FROM users
-               WHERE tenant_id = %s AND role IN ('admin', 'manager')""",
+            f"""SELECT id, email, whatsapp_number FROM users
+               WHERE tenant_id = %s AND {_ALERT_ROLES_SQL}{scope_sql}""",
             (tenant_id,),
         )
     ]
+
+
+def get_scoped_alert_recipients(tenant_id: str) -> list[dict]:
+    """Active admins/analysts limited to some warehouses — the people a
+    company-wide digest is withheld from."""
+    return [
+        dict(r) for r in query(
+            f"""SELECT id, email, whatsapp_number FROM users
+               WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND NOT {_COMPANY_WIDE_SQL}""",
+            (tenant_id,),
+        )
+    ]
+
+
+def record_digest_withheld(tenant_id: str, digest: str) -> int:
+    """Tell each warehouse-scoped recipient, in their own activity log, that a
+    company-wide digest went out without them and why. Without this row the
+    missing e-mail reads as "nothing to report" — the silence this module's
+    delivery log exists to rule out. Returns how many users were withheld.
+    Never raises."""
+    try:
+        scoped = get_scoped_alert_recipients(tenant_id)
+    except Exception as e:  # pragma: no cover - the lookup must not abort a digest
+        log.warning("digest withheld lookup failed tenant=%s: %s", tenant_id, e)
+        return 0
+    for r in scoped:
+        record_notification_delivery(
+            tenant_id, r["id"], DIGEST_WITHHELD_ACTION, True,
+            context={"digest": digest, "reason": "warehouse_scope"},
+        )
+    return len(scoped)
 
 
 def record_notification_delivery(
@@ -2896,6 +5055,7 @@ def run_daily_inventory_alerts() -> None:
     log.info("inventory_alert: checking %d tenants", len(tenants))
 
     from backend.db import session_store
+    from backend.sessions import planning_service
     from backend.sessions.planning_service import resolve_active_session
 
     for tenant in tenants:
@@ -2916,31 +5076,73 @@ def run_daily_inventory_alerts() -> None:
             forecasts = session_store.get_forecasts(tid, sid) or {}
             stock_rows = list_stock(tid)
             learned_lead_times = get_learned_lead_times(tid)
+            incoming_qty = get_incoming_qty(tid)
+
+            # The SAME period the screens use. `resolve_active_session` above
+            # deliberately returns the session the app is showing — and this
+            # loop then read it as if it were daily, because `period` defaults
+            # to "daily" in the signature and nobody passed one.
+            #
+            # For a weekly tenant that inverts the verdict: a SKU with 4 weeks
+            # of cover against a 2-week lead time is OK on screen, and the
+            # same numbers read as days are 4 against 14 — PEDIR_YA. The buyer
+            # got an 8:00 email calling a SKU critical, opened /inventario, and
+            # saw green. Every HTTP entry point passes the period
+            # (api/v1/inventory.py:693); the two schedulers were the gap.
+            period = planning_service.get_planning(tid).get("period", "daily")
 
             items = _compute_inventory_status(
                 tid, sid,
                 forecasts=forecasts, stock_rows=stock_rows,
                 learned_lead_times=learned_lead_times,
+                incoming_qty=incoming_qty,
+                period=period,
             )
             critical = [i for i in items if i["signal"] == "PEDIR_YA"]
             warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
 
-            if not critical and not warning:
+            # Users limited to some warehouses get the digest of THEIR
+            # warehouses (notifications/scoped_digest.py), so the tenant-wide
+            # "nothing at risk" verdict must not end the run for them: the
+            # aggregate can be fine while one warehouse is out.
+            scoped_recipients = get_scoped_alert_recipients(tid)
+            company_has_alert = bool(critical or warning)
+            if not company_has_alert and not scoped_recipients:
                 continue
 
             # Transfer suggestions (feature 5.4): only meaningful — and only
             # computed — for tenants with 2+ warehouses.
             from backend.inventory import warehouse_service as wh_svc
             transfer_count = 0
-            if wh_svc.count_warehouses(tid) >= 2:
+            wh_items = None
+            scoped_error: Optional[Exception] = None
+            if scoped_recipients:
+                # The exact computation their screens read. A failure here must
+                # reach them as a failed row (below) without costing the
+                # company digest its send.
                 try:
                     wh_items = get_inventory_status_by_warehouse(
                         tid, sid,
                         forecasts=forecasts, stock_rows=stock_rows,
                         learned_lead_times=learned_lead_times,
+                        incoming_qty=incoming_qty,
+                        period=period,
                     )
+                except Exception as e:
+                    scoped_error = e
+                    log.error("inventory_alert: scoped status failed tenant=%s: %s", tid, e)
+            if company_has_alert and wh_svc.count_warehouses(tid) >= 2:
+                try:
+                    company_wh_items = wh_items if wh_items is not None else \
+                        get_inventory_status_by_warehouse(
+                            tid, sid,
+                            forecasts=forecasts, stock_rows=stock_rows,
+                            learned_lead_times=learned_lead_times,
+                            incoming_qty=incoming_qty,
+                            period=period,          # same reason as above
+                        )
                     transfer_count = sum(
-                        1 for i in wh_items if i.get("recommended_action") == "transfer")
+                        1 for i in company_wh_items if i.get("recommended_action") == "transfer")
                 except Exception as e:
                     log.debug("alert transfer count failed tenant=%s: %s", tid, e)
 
@@ -2951,7 +5153,9 @@ def run_daily_inventory_alerts() -> None:
             # rows itself, after counting, so the digest reports every SKU at
             # risk instead of the ten it had room to list.
             from backend.notifications import email as email_mod
-            recipients = get_tenant_alert_recipients(tid)
+            # Company totals: active, unscoped recipients only. A warehouse-
+            # scoped buyer gets the digest of their own warehouses below.
+            recipients = get_tenant_alert_recipients(tid) if company_has_alert else []
             for r in recipients:
                 if not r.get("email"):
                     continue
@@ -2960,6 +5164,13 @@ def run_daily_inventory_alerts() -> None:
                     critical_items=critical,
                     warning_items=warning,
                     inventory_url=inventory_url,
+                    period=period,      # so coverage reads "4 semanas", not "4 días"
+                    # This message carries the TENANT's identity to the tenant's
+                    # own buyer, so it leaves through the tenant's transport when
+                    # it configured one. Without this argument the override is
+                    # stored, shown as in effect, and never used — which is the
+                    # failure this whole layer exists to prevent.
+                    tenant_id=tid,
                 )
                 if not delivered:
                     log.warning("alert email not delivered to=%s", r["email"])
@@ -2970,47 +5181,70 @@ def run_daily_inventory_alerts() -> None:
                         "recipient": r["email"],
                         "critical": len(critical),
                         "warning": len(warning),
-                        **({} if delivered else {"reason": email_mod.failure_reason()}),
+                        **({} if delivered else {"reason": email_mod.failure_reason(tid)}),
                     },
                 )
 
             # WhatsApp channel — highest open-rate in LatAm; opt-in per user
             # via users.whatsapp_number. No-op when Twilio isn't configured.
-            # Also gated by plan: WHATSAPP_ALERTS is a Professional+ feature.
-            # `tenant` here only carries tenant_id/tenant_name/last_session_at
-            # (from get_tenants_with_active_sessions), not plan/trial_ends_at,
-            # so the full tenant row must be fetched to check entitlement.
-            from backend.entitlements.service import has_feature
-            from backend.entitlements.plans import Feature
-            from backend.tenants.service import get_tenant
-            full_tenant = get_tenant(tid) or {}
-            if has_feature(full_tenant, Feature.WHATSAPP_ALERTS):
-                from backend.notifications import whatsapp as wa_mod
-                from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
-                text = build_inventory_alert_text(
-                    critical, warning, inventory_url,
-                    transfer_count=transfer_count,
+            from backend.notifications import whatsapp as wa_mod
+            from backend.notifications.whatsapp import build_inventory_alert_text, send_whatsapp
+            text = build_inventory_alert_text(
+                critical, warning, inventory_url,
+                transfer_count=transfer_count,
+                period=period,
+            )
+            for r in recipients:
+                number = (r.get("whatsapp_number") or "").strip()
+                if not number:
+                    continue
+                delivered = send_whatsapp(number, text, tenant_id=tid, plan_gated=True)
+                if not delivered:
+                    log.warning("alert whatsapp not delivered to=%s", number)
+                record_notification_delivery(
+                    tid, r["id"], "inventory_alert_whatsapp", delivered,
+                    context={
+                        "channel": "whatsapp",
+                        "recipient": number,
+                        "critical": len(critical),
+                        "warning": len(warning),
+                        **({} if delivered else {"reason": wa_mod.failure_reason(tid)}),
+                    },
                 )
-                for r in recipients:
-                    number = (r.get("whatsapp_number") or "").strip()
-                    if not number:
-                        continue
-                    delivered = send_whatsapp(number, text)
-                    if not delivered:
-                        log.warning("alert whatsapp not delivered to=%s", number)
+
+            if scoped_recipients and scoped_error is not None:
+                for r in scoped_recipients:
                     record_notification_delivery(
-                        tid, r["id"], "inventory_alert_whatsapp", delivered,
-                        context={
-                            "channel": "whatsapp",
-                            "recipient": number,
-                            "critical": len(critical),
-                            "warning": len(warning),
-                            **({} if delivered else {"reason": wa_mod.failure_reason()}),
-                        },
+                        tid, r["id"], "inventory_alert_email", False,
+                        context={"channel": "email", "recipient": r.get("email"),
+                                 "reason": f"scoped digest failed: {scoped_error}"},
                     )
+            elif scoped_recipients:
+                from backend.notifications.scoped_digest import send_scoped_inventory_alerts
+                send_scoped_inventory_alerts(
+                    tid, scoped_recipients, wh_items or [],
+                    inventory_url=inventory_url, period=period,
+                )
 
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)
+            # A crash BEFORE any send (a corrupt forecasts blob, an unreadable
+            # stock table) used to leave this tenant with no email and no row
+            # anywhere — and silence is what a normal day looks like, so "the
+            # digest broke" was indistinguishable from "nothing is urgent".
+            # record_notification_delivery's own docstring makes the argument:
+            # without a failed row, absence is ambiguous. Write one per
+            # recipient so it shows up in /me/activity, where they can see it.
+            try:
+                for r in get_tenant_alert_recipients(tid, include_scoped=True) or []:
+                    record_notification_delivery(
+                        tid, r["id"], "inventory_alert_email", False,
+                        context={"channel": "email", "recipient": r.get("email"),
+                                 "reason": f"digest failed: {e}"},
+                    )
+            except Exception as inner:  # the recipient lookup itself may be what broke
+                log.error("inventory_alert: tenant=%s could not record failure: %s",
+                          tid, inner)
 
 
 def _sum_overstock_value(items: list[dict]) -> float:
@@ -3031,6 +5265,7 @@ def run_monthly_overstock_snapshot() -> None:
     tenants = get_tenants_with_active_sessions()
     log.info("overstock_snapshot: checking %d tenants", len(tenants))
 
+    from backend.sessions import planning_service
     from backend.sessions.planning_service import resolve_active_session
 
     for tenant in tenants:
@@ -3040,7 +5275,13 @@ def run_monthly_overstock_snapshot() -> None:
             if not sid:
                 continue
 
-            items = get_inventory_status(tid, sid)
+            # Read at the tenant's own planning grain, like every screen does.
+            # Without this a weekly session was classified as daily, so the
+            # SOBRESTOCK population this snapshot measures was not the one the
+            # app calls overstocked — and the monthly difference between two
+            # such snapshots is what /impacto headlines as "capital liberado".
+            period = planning_service.get_planning(tid).get("period", "daily")
+            items = get_inventory_status(tid, sid, period=period)
             overstock_value = _sum_overstock_value(items)
 
             execute(

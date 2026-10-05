@@ -6,7 +6,10 @@
     "dev": "next dev -p 5000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:samples": "node scripts/check-code-samples.mjs",
+    "check:icons": "node scripts/check-icons.mjs",
+    "check:landing-routes": "node scripts/check-landing-routes.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

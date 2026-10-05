@@ -139,6 +139,7 @@ def get_sales_freshness(tenant_id: str, now: Optional[datetime] = None) -> dict:
            FROM sessions s
            LEFT JOIN session_configs sc ON sc.session_id = s.id
            WHERE s.tenant_id = %s AND s.status = 'COMPLETED'
+             AND s.archived_at IS NULL AND NOT s.is_backtest
            ORDER BY s.updated_at DESC LIMIT 1""",
         (tenant_id,),
     )
@@ -179,6 +180,103 @@ def get_sales_freshness(tenant_id: str, now: Optional[datetime] = None) -> dict:
     }
 
 
+# ── Per warehouse ─────────────────────────────────────────────────────────────
+
+def _norm_name(name: object) -> str:
+    return str(name or "").strip().casefold()
+
+
+def _latest_store_data_through(tenant_id: str) -> dict[str, str]:
+    """{store: ISO date of its newest sales row} from the newest completed
+    session. Written by the training runner (`store_data_through` on the result)
+    so this is one small JSON read; empty when the sales file has no store
+    column or the session predates the field."""
+    row = query_one(
+        """SELECT sr.training_result -> 'store_data_through' AS through
+           FROM sessions s
+           JOIN session_results sr ON sr.session_id = s.id
+           WHERE s.tenant_id = %s AND s.status = 'COMPLETED'
+             AND s.archived_at IS NULL AND NOT s.is_backtest
+           ORDER BY s.updated_at DESC LIMIT 1""",
+        (tenant_id,),
+    )
+    through = (row or {}).get("through")
+    return through if isinstance(through, dict) else {}
+
+
+def get_warehouse_freshness(tenant_id: str, now: Optional[datetime] = None) -> dict:
+    """When each warehouse last reported: its newest stock update and its newest
+    sales date.
+
+    The company-wide clocks above answer "is the data old". With several
+    warehouses that hides the case that actually costs money: three of them are
+    current and one went quiet, so the network looks fine while that warehouse's
+    semaforo is computed on weeks-old figures.
+
+    A warehouse is **silent** when everything it reported (stock update, sales
+    date; whichever is newer) is at least `STOCK_STALE_DAYS` old. Silence is
+    only called out as `lagging` when at least one OTHER warehouse is still
+    current: when every warehouse is late the company-wide warning already says
+    so, and repeating it per warehouse would be noise. A tenant with a single
+    warehouse has no per-warehouse story at all (`multi` is false).
+
+    Sales dates are matched to warehouses by name, ignoring case, like the rest
+    of the per-warehouse views.
+    """
+    now = _now(now)
+    stock_rows = query(
+        """SELECT warehouse, MAX(updated_at) AS last_update, COUNT(*) AS skus
+           FROM inventory_stock WHERE tenant_id = %s GROUP BY warehouse""",
+        (tenant_id,),
+    )
+    registered = [r["name"] for r in query(
+        "SELECT name FROM warehouses WHERE tenant_id = %s", (tenant_id,))]
+    sales_through = {_norm_name(k): v for k, v in _latest_store_data_through(tenant_id).items()}
+
+    names: dict[str, str] = {}
+    for name in registered + [r["warehouse"] for r in stock_rows]:
+        names.setdefault(_norm_name(name), name)
+    stock_by = {_norm_name(r["warehouse"]): r for r in stock_rows}
+
+    items = []
+    for key, name in sorted(names.items(), key=lambda kv: kv[1].casefold()):
+        stock = stock_by.get(key)
+        stock_at = stock["last_update"] if stock else None
+        stock_age = _age_days(stock_at, now)
+        sales_age: Optional[int] = None
+        sales_date = sales_through.get(key)
+        if sales_date:
+            try:
+                sales_age = _age_days(
+                    datetime.fromisoformat(str(sales_date)).replace(tzinfo=timezone.utc), now)
+            except ValueError:
+                log.debug("unparseable store date for tenant=%s: %r", tenant_id, sales_date)
+        known = [a for a in (stock_age, sales_age) if a is not None]
+        silent_days = min(known) if known else None
+        items.append({
+            "name":              name,
+            "tracked_skus":      int(stock["skus"]) if stock else 0,
+            "stock_updated_at":  stock_at.isoformat() if stock_at else None,
+            "stock_age_days":    stock_age,
+            "sales_through":     str(sales_date) if sales_date else None,
+            "sales_age_days":    sales_age,
+            "silent_days":       silent_days,
+            "state": ("unknown" if silent_days is None
+                      else "stale" if silent_days >= STOCK_STALE_DAYS else "fresh"),
+        })
+
+    multi = len(items) > 1
+    any_current = any(i["state"] == "fresh" for i in items)
+    for i in items:
+        i["lagging"] = bool(multi and any_current and i["state"] == "stale")
+    return {
+        "multi":      multi,
+        "stale_days": STOCK_STALE_DAYS,
+        "items":      items,
+        "lagging":    [i["name"] for i in items if i["lagging"]],
+    }
+
+
 # ── Combined verdict ──────────────────────────────────────────────────────────
 
 def get_tenant_freshness(tenant_id: str, now: Optional[datetime] = None) -> dict:
@@ -193,6 +291,7 @@ def get_tenant_freshness(tenant_id: str, now: Optional[datetime] = None) -> dict
     now = _now(now)
     sales = get_sales_freshness(tenant_id, now)
     stock = get_stock_freshness(tenant_id, now)
+    warehouses = get_warehouse_freshness(tenant_id, now)
 
     reasons = []
     if stock["state"] == "blind":
@@ -203,11 +302,13 @@ def get_tenant_freshness(tenant_id: str, now: Optional[datetime] = None) -> dict
     return {
         "sales": sales,
         "stock": stock,
+        "warehouses": warehouses,
         "semaphore": "degraded" if reasons else "current",
         "degraded_by": reasons,
         # True when the user should be nudged even though the semáforo still
         # holds — the passive warning tier.
-        "warn": bool(reasons) or sales["state"] == "stale" or stock["state"] == "stale",
+        "warn": (bool(reasons) or sales["state"] == "stale" or stock["state"] == "stale"
+                 or bool(warehouses["lagging"])),
     }
 
 
@@ -224,14 +325,13 @@ def _tenants_with_completed_sessions() -> list[str]:
 
 
 def _recipients(tenant_id: str) -> list[dict]:
-    """Admins/managers, with the id needed to attribute the delivery outcome."""
-    return [
-        dict(r) for r in query(
-            """SELECT id, email, whatsapp_number FROM users
-               WHERE tenant_id = %s AND role IN ('admin', 'manager')""",
-            (tenant_id,),
-        )
-    ]
+    """Active, company-wide admins/analysts, with the id needed to attribute
+    the delivery outcome. The reminder names lagging warehouses, so a user
+    limited to some warehouses is withheld from it (see
+    `inventory.service.get_tenant_alert_recipients`), and a deactivated user
+    no longer receives it."""
+    from backend.inventory.service import get_tenant_alert_recipients
+    return get_tenant_alert_recipients(tenant_id)
 
 
 def _last_reminder_at(tenant_id: str) -> Optional[datetime]:
@@ -268,7 +368,19 @@ def _is_due(freshness: dict) -> bool:
     sales_age = freshness["sales"]["age_days"]
     if sales_age is not None and sales_age >= SALES_REMINDER_DAYS:
         return True
-    return freshness["stock"]["state"] == "blind"
+    if freshness["stock"]["state"] == "blind":
+        return True
+    return bool(_silent_warehouses(freshness))
+
+
+def _silent_warehouses(freshness: dict) -> list[dict]:
+    """Warehouses the reminder names: the ones `get_warehouse_freshness` calls
+    lagging (quiet for a full stale window while another warehouse is current).
+    Name and days only; the message never carries more."""
+    return [
+        {"name": w["name"], "days": w["silent_days"]}
+        for w in freshness["warehouses"]["items"] if w["lagging"]
+    ]
 
 
 def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
@@ -301,8 +413,10 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
                 if now - last < timedelta(days=REMINDER_COOLDOWN_DAYS):
                     continue
 
+            from backend.inventory.service import get_scoped_alert_recipients
             recipients = _recipients(tid)
-            if not recipients:
+            scoped_recipients = get_scoped_alert_recipients(tid)
+            if not recipients and not scoped_recipients:
                 continue
 
             sales_age = freshness["sales"]["age_days"]
@@ -313,15 +427,18 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
             # how a reminder teaches the reader to ignore the next one.
             sales_late = sales_age is not None and sales_age >= SALES_REMINDER_DAYS
             stock_late = freshness["stock"]["state"] == "blind"
+            silent = _silent_warehouses(freshness)
             any_delivered = False
 
             for r in recipients:
                 if not r.get("email"):
                     continue
                 delivered = email_mod.send_data_freshness_reminder_email(
+                    tenant_id=tid,
                     to=r["email"],
                     sales_age_days=sales_age if sales_late else None,
                     stock_age_days=stock_age if stock_late else None,
+                    silent_warehouses=silent,
                     upload_url=upload_url,
                 )
                 any_delivered = any_delivered or delivered
@@ -330,32 +447,44 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
                     "recipient": r["email"],
                     "sales_age_days": sales_age,
                     "stock_age_days": stock_age,
-                    **({} if delivered else {"reason": email_mod.failure_reason()}),
+                    **({"silent_warehouses": len(silent)} if silent else {}),
+                    **({} if delivered else {"reason": email_mod.failure_reason(tid)}),
                 })
 
-            # WhatsApp is a paid feature and opt-in per user (users.whatsapp_number).
-            from backend.entitlements.plans import Feature
-            from backend.entitlements.service import has_feature
-            from backend.tenants.service import get_tenant
-            if has_feature(get_tenant(tid) or {}, Feature.WHATSAPP_ALERTS):
-                text = wa_mod.build_freshness_reminder_text(
-                    sales_age_days=sales_age if sales_late else None,
-                    stock_age_days=stock_age if stock_late else None,
+            # WhatsApp is opt-in per user (users.whatsapp_number).
+            text = wa_mod.build_freshness_reminder_text(
+                sales_age_days=sales_age if sales_late else None,
+                stock_age_days=stock_age if stock_late else None,
+                silent_warehouses=silent,
+                upload_url=upload_url,
+            )
+            for r in recipients:
+                number = (r.get("whatsapp_number") or "").strip()
+                if not number:
+                    continue
+                delivered = wa_mod.send_whatsapp(number, text, tenant_id=tid, plan_gated=True)
+                any_delivered = any_delivered or delivered
+                _record(tid, r["id"], REMINDER_WHATSAPP_ACTION, delivered, {
+                    "channel": "whatsapp",
+                    "recipient": number,
+                    "sales_age_days": sales_age,
+                    "stock_age_days": stock_age,
+                    **({} if delivered else {"reason": wa_mod.failure_reason(tid)}),
+                })
+
+            if scoped_recipients:
+                # Users limited to some warehouses: the same clocks the screen
+                # shows them, naming only their own silent warehouses.
+                from backend.notifications.scoped_digest import send_scoped_freshness_reminders
+                scoped_reached = send_scoped_freshness_reminders(
+                    tid, scoped_recipients, freshness,
+                    sales_age=sales_age, stock_age=stock_age,
+                    sales_late=sales_late, stock_late=stock_late,
                     upload_url=upload_url,
+                    email_action=REMINDER_EMAIL_ACTION,
+                    whatsapp_action=REMINDER_WHATSAPP_ACTION,
                 )
-                for r in recipients:
-                    number = (r.get("whatsapp_number") or "").strip()
-                    if not number:
-                        continue
-                    delivered = wa_mod.send_whatsapp(number, text)
-                    any_delivered = any_delivered or delivered
-                    _record(tid, r["id"], REMINDER_WHATSAPP_ACTION, delivered, {
-                        "channel": "whatsapp",
-                        "recipient": number,
-                        "sales_age_days": sales_age,
-                        "stock_age_days": stock_age,
-                        **({} if delivered else {"reason": wa_mod.failure_reason()}),
-                    })
+                any_delivered = any_delivered or scoped_reached > 0
 
             if any_delivered:
                 notified += 1

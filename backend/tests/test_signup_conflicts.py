@@ -16,10 +16,11 @@ def _payload(**over):
     tag = uuid.uuid4().hex[:10]
     body = {
         "tenant_name": f"Empresa {tag}",
-        "email": f"owner.{tag}@faro-e2e.io",   # no MX: undeliverable by design
+        "email": f"owner.{tag}@stockai-e2e.io",   # no MX: undeliverable by design
         "password": "FaroQA2026!",
         "full_name": "Owner Test",
         "whatsapp_number": f"+5068{uuid.uuid4().int % 10**7:07d}",
+        "accept_terms": True,
     }
     body.update(over)
     return body

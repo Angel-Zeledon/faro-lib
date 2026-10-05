@@ -1,6 +1,7 @@
+import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
@@ -11,6 +12,8 @@ from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 from backend.sessions.state_machine import PRE_TRAIN_STATES
 from backend.training import job_service
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["training"])
 
@@ -85,6 +88,17 @@ def list_jobs(session_id: str, user: CurrentUser = Depends(get_current_user)):
     return ok(jobs)
 
 
+@router.get("/jobs/active")
+def list_active_jobs(user: CurrentUser = Depends(get_current_user)):
+    """Training runs of this tenant that are queued or running right now.
+
+    Declared before ``/jobs/{job_id}`` so "active" is not read as a job id. Backs
+    the app-wide "training in progress" indicator and lets the training screen
+    resume from server state after the user navigated away.
+    """
+    return ok({"families": job_service.list_active_training(user.tenant_id)})
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str, user: CurrentUser = Depends(get_current_user)):
     job = job_service.get_job(user.tenant_id, job_id)
@@ -97,7 +111,8 @@ def get_job(job_id: str, user: CurrentUser = Depends(get_current_user)):
 def get_job_logs(
     job_id: str,
     user: CurrentUser = Depends(get_current_user),
-    tail: int = 200,
+    # Bounded: a negative value reached SQL as `LIMIT -1` and answered 500.
+    tail: int = Query(200, ge=0, le=5000),
 ):
     job = job_service.get_job(user.tenant_id, job_id)
     if not job:
@@ -145,9 +160,20 @@ def cancel_job(job_id: str, user: CurrentUser = Depends(require_analyst_or_above
             params={"status": existing["status"]},
         )
 
+    # The job row is already CANCELLED at this point. If the SESSION row does not
+    # follow, swallowing that left the session sitting in QUEUED with no job
+    # behind it — the history screen then showed "En cola" for a run that had
+    # been cancelled, forever, and nobody could tell why. The cancellation is
+    # real either way, so the job is still returned; the flag says whether the
+    # session caught up, and the failure is logged instead of vanishing.
+    session_updated = True
     try:
         session_svc.force_status(user.tenant_id, job["session_id"], "CANCELLED")
-    except Exception:
-        pass
+    except Exception as exc:
+        session_updated = False
+        log.error(
+            "[cancel] job %s cancelled but session %s left in %s: %s",
+            job_id, job["session_id"], existing["status"], exc, exc_info=True,
+        )
 
-    return ok(job)
+    return ok({**job, "session_status_updated": session_updated})

@@ -204,6 +204,96 @@ class TestSetupGapsOrdering:
         # No stock row at all -> everything is missing, including the stock.
         assert "stock" in data["items"][0]["missing"]
 
+    def test_a_lead_time_nobody_set_is_reported_as_missing(
+            self, client, auth_headers, test_tenant):
+        """
+        `inventory_stock.lead_time_days` is INT NOT NULL DEFAULT 15, so a row
+        that never had one looks configured. The gap list used to check only
+        cost, price and supplier, so the field was never reportable for an
+        existing row — while the screen's copy promised the product would not
+        appear in the semáforo until it was filled. It does appear, planned on
+        the assumed 15: an importer with 45 days of real transit reorders a
+        month late on their best sellers, cycle after cycle, unwarned.
+        """
+        tid = test_tenant["id"]
+        sku = _sku()
+        # A real gap (no cost), so the row surfaces — and the lead time it was
+        # never given must be named alongside the cost, not silently dropped.
+        client.put(f"/api/v1/inventory/stock/{sku}",
+                   json={"current_stock": 10, "sale_price": 150.0, "supplier": "Acme"},
+                   headers=auth_headers)
+        session_id = _session_with_forecasts(tid, {sku: _flat_forecast(1.0)})
+
+        data = _ok(client.get(
+            f"/api/v1/inventory/setup-gaps?session_id={session_id}", headers=auth_headers))
+
+        row = query_one(
+            "SELECT lead_time_days, lead_time_set_by FROM inventory_stock "
+            "WHERE tenant_id = %s AND sku = %s", (tid, sku))
+        assert row["lead_time_days"] == 15, "the schema default is what makes this a trap"
+        assert not row["lead_time_set_by"], "nobody set it — that is the point"
+
+        item = next(i for i in data["items"] if i["sku"] == sku)
+        assert "lead_time" in item["missing"]
+        assert "cost" in item["missing"]
+
+    def test_a_sku_missing_only_its_lead_time_still_does_not_surface(
+            self, client, auth_headers, test_tenant):
+        """
+        KNOWN LIMITATION, pinned deliberately so it is not mistaken for a fix.
+
+        `items` carries only entries where `is_gap` is true, and `is_gap` is
+        BLOCKING_FIELDS = (stock, cost). A lead time nobody set is now reported
+        on rows that surface for another reason, but a SKU whose only omission
+        is the lead time is still invisible on this screen — it is planned on an
+        assumed 15 days and nothing says so.
+
+        Making it visible is not a one-line fix in either direction: marking it
+        blocking would be false (the SKU DOES appear in the semáforo) and would
+        move `covered_pct`, `gap_skus` and the progress bar; showing it as a
+        warning needs a second list on the response and a section on the screen.
+        That is new capability, and it is the owner's call.
+        """
+        tid = test_tenant["id"]
+        sku = _sku()
+        client.put(f"/api/v1/inventory/stock/{sku}",
+                   json={"current_stock": 10, "unit_cost": 100.0,
+                         "sale_price": 150.0, "supplier": "Acme"},
+                   headers=auth_headers)
+        session_id = _session_with_forecasts(tid, {sku: _flat_forecast(1.0)})
+
+        data = _ok(client.get(
+            f"/api/v1/inventory/setup-gaps?session_id={session_id}", headers=auth_headers))
+
+        assert sku not in [i["sku"] for i in data["items"]]
+        assert data["configured_skus"] == 1
+
+    def test_a_lead_time_a_supplier_rule_already_answers_is_not_reported(
+            self, client, auth_headers, test_tenant):
+        """
+        The gap list must not ask for something the tenant has already given us
+        by another route. A supplier rule is exactly what the semáforo plans on,
+        so if it answers, this SKU's lead time is known — reporting it anyway
+        trains the user to ignore the column.
+        """
+        from backend.inventory import stock_defaults_service as sd_svc
+
+        tid = test_tenant["id"]
+        sku = _sku()
+        # No cost, so the row surfaces and its `missing` list can be inspected.
+        client.put(f"/api/v1/inventory/stock/{sku}",
+                   json={"current_stock": 10, "sale_price": 150.0, "supplier": "Acme"},
+                   headers=auth_headers)
+        sd_svc.set_stock_default(tid, "supplier", "Acme", {"lead_time_days": 45})
+        session_id = _session_with_forecasts(tid, {sku: _flat_forecast(1.0)})
+
+        data = _ok(client.get(
+            f"/api/v1/inventory/setup-gaps?session_id={session_id}", headers=auth_headers))
+
+        item = next(i for i in data["items"] if i["sku"] == sku)
+        assert "cost" in item["missing"], "the row must surface for this to prove anything"
+        assert "lead_time" not in item["missing"]
+
     def test_horizon_scales_the_projected_spend(self, client, auth_headers, test_tenant):
         """60 days of the same daily demand is twice the money of 30."""
         tid = test_tenant["id"]

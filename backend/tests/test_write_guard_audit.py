@@ -39,6 +39,7 @@ MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 PUBLIC = {
     "POST /api/v1/auth/login": "you cannot be authorised before you log in",
     "POST /api/v1/auth/signup": "creates the account and its tenant",
+    "POST /api/v1/trial": "the landing visitor has no account yet; it creates one",
     "POST /api/v1/auth/refresh": "the refresh token IS the credential",
     "POST /api/v1/auth/logout": "revoking your own session needs no role",
     "POST /api/v1/auth/forgot-password": "you are locked out by definition",
@@ -46,6 +47,9 @@ PUBLIC = {
     "POST /api/v1/auth/reset-password": "the emailed token is the credential",
     "POST /api/v1/auth/verify-email": "the emailed token is the credential",
     "POST /api/v1/auth/resend-verification": "you cannot verify without it",
+    "POST /api/v1/auth/oauth/{provider}/callback": "Apple's form_post; the single-use state is the credential",
+    "POST /api/v1/auth/oauth/exchange": "the one-time handoff code is the credential",
+    "POST /api/v1/auth/sso/discover": "a lookup typed as POST so the address is not in a URL; writes nothing",
 }
 
 SELF = {
@@ -57,6 +61,7 @@ SELF = {
     "POST /api/v1/users/me/whatsapp/confirm": "your own phone number",
     "POST /api/v1/users/me/change-password/request": "your own password",
     "POST /api/v1/users/me/change-password/confirm": "your own password",
+    "DELETE /api/v1/auth/identities/{provider}": "unlinking your own sign-in provider",
     "PATCH /api/v1/me/preferences": "your own preferences",
     "POST /api/v1/analyst/chats": "your own conversation with the analyst",
     "POST /api/v1/analyst/chats/{chat_id}/messages": "your own conversation",
@@ -64,25 +69,33 @@ SELF = {
     "DELETE /api/v1/analyst/chats/{chat_id}": "deleting your own conversation",
     "POST /api/v1/messages": "sending a message is communication, not company state",
     "POST /api/v1/messages/read": "marking your own unread count",
+    # Same category, and for a concrete reason: the bell now carries tenant-wide
+    # SYSTEM events (a failed training is addressed to nobody in particular), so
+    # a viewer collects a badge. Requiring analyst-or-above to clear it would
+    # leave the one role that cannot clear it staring at it forever.
+    "POST /api/v1/alerts/read": "marking your own unread count",
 }
 
 INFRA = {
     # Not a user at all: Twilio posting an inbound WhatsApp message. Authorised
     # by request signature, so a role guard here would reject the only caller.
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
-    # Stripe's callback, and the only path that changes tenants.plan. A role
-    # guard here would reject the only legitimate caller, so its authorisation
-    # is the signature instead — see test_billing.py, which asserts an unsigned,
-    # wrongly-signed or tampered body is refused and changes nothing.
-    "POST /api/v1/billing/webhook": "Stripe webhook, verified by signature",
+    # The mail provider posting an inbound message. No user session exists; it
+    # is refused (401) before anything is parsed unless it carries the
+    # installation's webhook secret (HMAC with a replay window, or Basic), and it
+    # is off (503) when no secret is configured. Past that, the secret per-tenant
+    # address picks the tenant and only verified analysts/admins or listed
+    # senders get a file ingested (backend/inbound_email/ingest.py).
+    "POST /api/v1/inbound/email": "mail-provider webhook, verified by shared secret + per-tenant address + sender allow-list",
 }
 
 # POSTs that read. HTTP makes you POST anything with a body, so a query, an
 # export or a connection probe is a POST without being a write.
 READ_ONLY_POSTS = {
-    "test-connection": "probes a stored connection, changes nothing",
-    "execute-query": "runs a SELECT and returns rows",
-    "export-query": "downloads what a SELECT returned",
+    # NOT excused: execute-query, export-query and test-connection. The first two
+    # run caller-written SQL against the CUSTOMER's database (see
+    # test_datasource_sql_guard.py); the probe stores `datasets.connection_status`,
+    # so it is a write too. All three carry require_analyst_or_above.
     "simulate": "computes a scenario without persisting it",
     "preview": "renders what an action would do",
     "narrative": "asks the LLM to describe existing data",
@@ -97,6 +110,14 @@ READ_ONLY_POSTS = {
     "/reconcile": "recomputes a hierarchy total and returns it",
     "/run": "runs a saved scenario and returns the comparison",
     "cash-calendar/fit": "fits a payment pattern and returns it",
+    # MCP is JSON-RPC: the method lives in the BODY, so `tools/list` and every
+    # read tool arrive as a POST. The excuse holds only because the catalogue
+    # (`backend/mcp/catalog.py`) is closed and every entry in it reads — which
+    # `test_mcp_server.py::test_every_tool_actually_only_calls_GET_endpoints`
+    # enforces structurally, by resolving each handler's calls to their FastAPI
+    # routes and demanding {GET}. Add a write tool there and this line becomes
+    # a lie; that test goes red first, which is the point.
+    "/mcp": "JSON-RPC over a closed catalogue of reads; see backend/mcp/catalog.py",
 }
 
 
@@ -117,10 +138,8 @@ def _dependency_calls(dependant) -> list:
 
 
 # A dependency created by a factory is an inner function called `guard`, so the
-# name alone tells you nothing: `require_role("admin")` and
-# `require_feature(Feature.TEAM_MESSAGING)` both produce one. Only the first
-# authorises a write — a plan gate says the tenant PAID for something, not that
-# this user may change it. The qualname is what separates them.
+# name alone tells you nothing about what it authorises. The qualname is what
+# separates a role check from any other factory-made dependency.
 ROLE_FACTORIES = ("require_role", "require_analyst", "require_admin", "require_verified")
 
 
@@ -182,6 +201,47 @@ class TestEveryMutatingRouteIsGuarded:
         ids = {rid for rid, _ in _mutating_routes(app) if "/data-sources" in rid}
         assert "POST /api/v1/data-sources/sql" in ids
         assert "DELETE /api/v1/data-sources/{source_id}" in ids
+
+    def test_customer_database_sql_routes_need_a_write_guard(self, app):
+        """Running caller-written SQL on the customer's database is not a
+        viewer's (or a read-scope key's) to do, even though it only reads."""
+        routes = {rid: route for rid, route in _mutating_routes(app)}
+        for rid in ("POST /api/v1/data-sources/{source_id}/execute-query",
+                    "POST /api/v1/data-sources/{source_id}/export-query"):
+            assert rid in routes, f"{rid} disappeared — update this test"
+            assert _is_guarded(routes[rid]), f"{rid} is reachable by a viewer"
+
+    def test_the_connection_probe_is_a_guarded_write(self, app):
+        """It used to be excused as a read, but it writes connection_status -
+        which gates execute-query and materialize for the whole tenant."""
+        rid = "POST /api/v1/data-sources/{source_id}/test-connection"
+        routes = {r: route for r, route in _mutating_routes(app)}
+        assert rid in routes
+        assert not _excused(rid), "the probe must not hide behind an allow-list entry"
+        assert _is_guarded(routes[rid])
+
+    def test_the_inbound_mail_webhook_refuses_without_the_secret(self):
+        """The INFRA excuse holds only while the webhook checks its secret; the
+        two verifiers it relies on must reject a wrong or missing one."""
+        import base64
+        import hashlib
+        import hmac
+        import time
+        from backend.api.v1 import inbound_email as ie
+
+        body = b'{"x": 1}'
+        now = int(time.time())
+        good = hmac.new(b"s3cret", f"{now}.".encode() + body, hashlib.sha256).hexdigest()
+        assert ie.verify_signature("s3cret", f"t={now},v1={good}", body, now=now)
+        assert not ie.verify_signature("other", f"t={now},v1={good}", body, now=now)
+        assert not ie.verify_signature("s3cret", f"t={now},v1={good}", body + b" ", now=now)
+        assert not ie.verify_signature(
+            "s3cret", f"t={now},v1={good}", body, now=now + ie.REPLAY_WINDOW_SECONDS + 1)
+        assert not ie.verify_signature("s3cret", "garbage", body, now=now)
+        basic = "Basic " + base64.b64encode(b"x:s3cret").decode()
+        assert ie.verify_basic("s3cret", basic)
+        assert not ie.verify_basic("other", basic)
+        assert not ie.verify_basic("s3cret", "Bearer s3cret")
 
 
 class TestTheAllowlistCannotRot:

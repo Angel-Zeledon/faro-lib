@@ -1,33 +1,45 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useContext, createContext, useRef } from 'react'
 import {
-  User, Settings2, Cpu, Activity,
+  User, Settings2, Info, Activity,
   Moon, Sun, Globe, CheckCircle2, Edit2, X,
-  ChevronDown, Clock, Shield, Sparkles, Lock, Eye, EyeOff, Mail,
-  MessageCircle, Unlink, CalendarClock, MessageSquare, CreditCard, Coins,
+  ChevronDown, Clock, Shield, Lock, Eye, EyeOff, Mail,
+  MessageCircle, Unlink, CalendarClock, MessageSquare, Coins, Gauge,
+  FileText, ShieldCheck, Cookie, Scale,
 } from 'lucide-react'
-import BillingPanel from '@/components/billing/BillingPanel'
+import Link from 'next/link'
+import { LEGAL_HUB_PATH, LEGAL_PATHS } from '@/components/landing/legalPaths'
+import { MobileList, MobileCard, MobileSection, useMobileHeader } from '@/components/mobile'
+import MobileFormScope from '@/components/mobile/MobileFormScope'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import CurrencySection from '@/components/billing/CurrencySection'
-import { useEntitlements } from '@/lib/entitlements'
+import LimitsSection from '@/components/limits/LimitsSection'
+import FeatureLocked from '@/components/limits/FeatureLocked'
+import { useFeature } from '@/lib/entitlements'
+import TimezoneSection from '@/components/billing/TimezoneSection'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
 import BaseCard from '@/components/ui/Card'
 import Input, { FieldLabel } from '@/components/ui/Input'
+import PhoneInput from '@/components/ui/PhoneInput'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { roleLabel, modelCategoryLabel, activityActionLabel, modelDescription } from '@/lib/enumLabels'
-import { getUser } from '@/lib/auth'
+import { roleLabel, activityActionLabel } from '@/lib/enumLabels'
+import { getUser, patchUser } from '@/lib/auth'
+import { useErrorDetail } from '@/components/ui/States'
 import {
   getMe, updateMe,
   getPreferences, updatePreferences,
-  getPlatformModels,
   getActivityLogs, getActivityActionTypes,
   requestPasswordChange, confirmPasswordChange,
   linkWhatsappNumber, confirmWhatsappNumber,
   getPlanning, setPlanning,
+  getMyIdentities, unlinkIdentity,
   isApiError,
+  type LinkedIdentity, type SocialProvider,
 } from '@/lib/api'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/contexts/ToastContext'
-import type { PlatformModel, ActivityLog, PlanningState, PlanningPeriod } from '@/lib/types'
+import type { ActivityLog, PlanningState, PlanningPeriod } from '@/lib/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -38,16 +50,21 @@ function formatDate(iso: string, lang: 'es' | 'en') {
   })
 }
 
-const CAT_COLOR: Record<string, string> = {
-  'ML':            'var(--accent)',
-  'Statistical':   '#22c55e',
-  'Deep Learning': '#f59e0b',
-}
+// ── Phone drill-in ────────────────────────────────────────────────────────────
+//
+// On a phone this screen is a grouped settings list (MobileSettings, bottom of
+// the file); tapping a row opens ONE section full-screen. The sections are the
+// same components desktop renders, told by this context that they are drilled
+// into: the header already names the section, so they drop their title row,
+// and their controls grow to a 44px tap target.
 
-const STATUS_COLOR: Record<string, string> = {
-  available: '#22c55e',
-  beta:      '#f59e0b',
-  disabled:  '#64748b',
+const DrillIn = createContext(false)
+
+/** Style for a control that must be a 44px tap target in a phone drill-in. */
+function tap(drill: boolean): React.CSSProperties {
+  return drill
+    ? { minHeight: 44, minWidth: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
+    : {}
 }
 
 // ── Section header ────────────────────────────────────────────────────────────
@@ -55,6 +72,10 @@ const STATUS_COLOR: Record<string, string> = {
 function SectionTitle({ icon: Icon, color, title, subtitle }: {
   icon: React.ElementType; color: string; title: string; subtitle: string
 }) {
+  const drill = useContext(DrillIn)
+  if (drill) {
+    return <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>{subtitle}</p>
+  }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
       <div style={{
@@ -78,7 +99,8 @@ function SectionTitle({ icon: Icon, color, title, subtitle }: {
 // its cards are one step rounder and roomier than the list screens' default.
 // The shape itself still comes from the shared primitive.
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <BaseCard radius={14} padding="24px" style={style}>{children}</BaseCard>
+  const drill = useContext(DrillIn)
+  return <BaseCard radius={14} padding={drill ? '16px' : '24px'} style={style}>{children}</BaseCard>
 }
 
 // /config labels its fields with a slightly larger, wider-tracked eyebrow than
@@ -124,21 +146,37 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
 // ── Section 1: User Profile ───────────────────────────────────────────────────
 
 function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'en' }) {
-  const me = getUser()
+  // Held in state, not re-read from localStorage on every render: the saved
+  // name has to be what the screen shows straight after saving it.
+  const [me, setMe] = useState(() => getUser())
   const [editing,  setEditing]  = useState(false)
   const [name,     setName]     = useState(me?.full_name || '')
   const [saving,   setSaving]   = useState(false)
   const [feedback, setFeedback] = useState<'saved' | null>(null)
+  const [error,    setError]    = useState<unknown>(null)
+  // Renders `errors.<code>` in the user's language instead of the backend's
+  // English sentence — the helper this screen already had and did not use.
+  const errorDetail = useErrorDetail()
+  const drill = useContext(DrillIn)
 
   async function handleSave() {
     if (!name.trim()) return
     setSaving(true)
+    setError(null)
     try {
       await updateMe({ full_name: name.trim() })
-      if (me) me.full_name = name.trim()
+      // `if (me) me.full_name = ...` used to mutate the object `getUser()` had
+      // just parsed out of localStorage and thrown away, so the cache — which
+      // the sidebar footer and the /compras greeting also read — kept the old
+      // name until the next login, under a green "Guardado".
+      setMe(patchUser({ full_name: name.trim() }))
       setFeedback('saved')
       setEditing(false)
       setTimeout(() => setFeedback(null), 2500)
+    } catch (e: unknown) {
+      // Was `try/finally` with no catch: a failed save rejected unhandled and
+      // left the form open with nothing said.
+      setError(e)
     } finally {
       setSaving(false)
     }
@@ -149,8 +187,8 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
 
   return (
     <Card>
-      <SectionTitle icon={User} color="var(--accent)" title={t('user_profile')} subtitle={t('email')} />
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+      {!drill && <SectionTitle icon={User} color="var(--accent)" title={t('user_profile')} subtitle={t('email')} />}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexDirection: drill ? 'column' : undefined }}>
         {/* Avatar */}
         <div style={{
           width: 64, height: 64, borderRadius: 16, flexShrink: 0,
@@ -162,7 +200,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
         </div>
 
         {/* Fields */}
-        <div data-tour="config.profile" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div data-tour="config.profile" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, ...(drill ? { width: '100%', minWidth: 0 } : {}) }}>
 
           {/* Full name */}
           <div>
@@ -170,13 +208,15 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
               {t('full_name')}
             </FieldLabel>
             {editing ? (
-              <div style={{ display: 'flex', gap: 8, marginTop: 5 }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: drill ? 'wrap' : undefined }}>
                 <Input
                   value={name}
                   onChange={e => setName(e.target.value)}
                   autoFocus
+                  autoComplete="name"
+                  enterKeyHint="done"
                   onKeyDown={e => e.key === 'Enter' && handleSave()}
-                  style={{ fontSize: 13 }}
+                  style={{ fontSize: 13, ...(drill ? { flex: '1 1 100%', width: '100%' } : {}) }}
                 />
                 <button
                   onClick={handleSave}
@@ -186,6 +226,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                     padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
                     background: 'var(--accent)', color: '#fff',
                     opacity: saving ? 0.6 : 1,
+                    ...tap(drill), ...(drill ? { flex: 1, fontSize: 15, borderRadius: 12 } : {}),
                   }}
                 >
                   {saving ? t('saving') : t('save_changes')}
@@ -197,6 +238,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                     all: 'unset', cursor: 'pointer', padding: '7px 10px',
                     borderRadius: 7, color: 'var(--dim)',
                     border: '1px solid var(--border)',
+                    ...tap(drill), ...(drill ? { borderRadius: 12 } : {}),
                   }}
                 >
                   <X size={13} aria-hidden="true" />
@@ -212,6 +254,11 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                     <CheckCircle2 size={11} /> {t('saved')}
                   </span>
                 )}
+                {error != null && (
+                  <span style={{ fontSize: 11, color: 'var(--danger)' }}>
+                    {errorDetail(error)}
+                  </span>
+                )}
                 <button
                   onClick={() => setEditing(true)}
                   title={t('edit')}
@@ -219,9 +266,10 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
                   style={{
                     all: 'unset', cursor: 'pointer', padding: 4, borderRadius: 5,
                     color: 'var(--dim)', display: 'flex', alignItems: 'center',
+                    ...tap(drill), ...(drill ? { marginLeft: 'auto' } : {}),
                   }}
                 >
-                  <Edit2 size={12} aria-hidden="true" />
+                  <Edit2 size={drill ? 16 : 12} aria-hidden="true" />
                 </button>
               </div>
             )}
@@ -256,7 +304,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
               <div style={{
                 marginTop: 5, display: 'inline-block',
                 padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                background: 'rgba(34,197,94,0.12)', color: 'var(--success)',
+                background: 'rgba(46,139,98,0.12)', color: 'var(--success)',
               }}>
                 {t('active')}
               </div>
@@ -274,6 +322,7 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
   const { theme, setTheme }  = useTheme()
   const { lang, setLang }    = useLanguage()
   const [saving, setSaving]  = useState<'lang' | 'theme' | null>(null)
+  const drill = useContext(DrillIn)
 
   async function handleTheme(val: 'dark' | 'light') {
     setTheme(val)
@@ -289,11 +338,12 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
 
   return (
     <Card>
-      <SectionTitle icon={Settings2} color="#22c55e" title={t('app_settings')} subtitle={`${t('language')} · ${t('theme')}`} />
+      <SectionTitle icon={Settings2} color="#2E8B62" title={t('app_settings')} subtitle={`${t('language')} · ${t('theme')}`} />
 
       <div data-tour="config.appearance" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-        {/* Language */}
+        {/* Language. No "Español" caption under the label: the pressed button
+            beside it already says which one is on (same for the theme). */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '14px 0', borderBottom: '1px solid var(--border)',
@@ -301,14 +351,13 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 32, height: 32, borderRadius: 8,
-              background: 'rgba(34,197,94,0.1)',
+              background: 'rgba(46,139,98,0.1)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <Globe size={14} color="#22c55e" />
+              <Globe size={14} color="#2E8B62" />
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('language')}</div>
-              <div style={{ fontSize: 11, color: 'var(--dim)' }}>{lang === 'es' ? t('spanish') : t('english')}</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -324,7 +373,9 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
                   color: lang === l ? 'var(--accent)' : 'var(--muted)',
                   transition: 'all 0.15s',
                   opacity: saving === 'lang' ? 0.6 : 1,
+                  ...tap(drill),
                 }}
+                aria-pressed={lang === l}
               >
                 {l === 'es' ? 'Español' : 'English'}
               </button>
@@ -347,7 +398,6 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('theme')}</div>
-              <div style={{ fontSize: 11, color: 'var(--dim)' }}>{theme === 'dark' ? t('dark') : t('light')}</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -363,7 +413,9 @@ function AppConfigSection({ t }: { t: (k: string) => string }) {
                   color: theme === th ? 'var(--accent)' : 'var(--muted)',
                   transition: 'all 0.15s',
                   opacity: saving === 'theme' ? 0.6 : 1,
+                  ...tap(drill),
                 }}
+                aria-pressed={theme === th}
               >
                 {th === 'dark' ? t('dark') : t('light')}
               </button>
@@ -388,6 +440,7 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
   const [state, setState] = useState<PlanningState | null>(null)
   const [busy, setBusy]   = useState(false)
   const isAdmin = getUser()?.role === 'admin'
+  const drill = useContext(DrillIn)
 
   useEffect(() => {
     getPlanning().then(setState).catch(() => setState(null))
@@ -403,7 +456,7 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
       setState(await setPlanning(period, Math.max(1, Math.min(state.horizon, state.max_horizon))))
       addToast(t('planning.saved'), '', 'success')
     } catch (e) {
-      addToast(t('planning.save_error'), isApiError(e) ? e.detail : '', 'error')
+      addToast(t('planning.save_error'), isApiError(e) ? e.message : '', 'error')
     } finally {
       setBusy(false)
     }
@@ -447,6 +500,7 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
               background: p === state.period ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
               color: p === state.period ? 'var(--accent)' : 'var(--muted)',
               opacity: !isAdmin && p !== state.period ? 0.45 : 1,
+              ...tap(drill),
             }}
           >
             {t(`planning.${p}`)}
@@ -464,70 +518,23 @@ function PlanningSection({ t }: { t: (k: string, p?: Record<string, unknown>) =>
 }
 
 
-// ── Section 3: Available Models ───────────────────────────────────────────────
+// ── Section 3: How StockAI calculates ────────────────────────────────────────────
+//
+// This used to list every algorithm by its raw id (lightgbm, xgboost, prophet,
+// lstm...) tagged "MACHINE LEARNING" / "DEEP LEARNING" / "beta" — an analyst's
+// instrument panel on a screen a distributor opens. It undid the `Modelo N`
+// abstraction that lib/modelLabel.ts exists to provide everywhere else. There
+// is nothing to configure here, so one sentence replaces the catalogue.
 
 function ModelsSection({ t }: { t: (k: string) => string }) {
-  const [models,  setModels]  = useState<PlatformModel[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    getPlatformModels()
-      .then(setModels)
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
-
   return (
     <Card>
-      <SectionTitle icon={Cpu} color="#f59e0b" title={t('available_models')} subtitle={`${models.length} ${t('models_count')}`} />
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Spinner size={18} /></div>
-      ) : (
-        <div data-tour="config.models" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
-          {models.map(m => {
-            const catColor    = CAT_COLOR[m.category]    ?? '#64748b'
-            const statusColor = STATUS_COLOR[m.status]   ?? '#64748b'
-            return (
-              <div
-                key={m.name}
-                style={{
-                  padding: '14px 16px', borderRadius: 10,
-                  border: '1px solid var(--border)',
-                  background: 'var(--surface-2)',
-                  display: 'flex', flexDirection: 'column', gap: 6,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{
-                    fontFamily: 'monospace', fontSize: 13, fontWeight: 700,
-                    color: 'var(--text)',
-                  }}>{m.name}</span>
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, borderRadius: 5,
-                    padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.05em',
-                    background: statusColor + '18', color: statusColor,
-                  }}>
-                    {m.status === 'available' ? t('available') : t('beta')}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    fontSize: 9, fontWeight: 600,
-                    background: catColor + '18', color: catColor,
-                    borderRadius: 5, padding: '2px 7px',
-                    textTransform: 'uppercase', letterSpacing: '0.05em',
-                  }}>
-                    {modelCategoryLabel(t, m.category)}
-                  </span>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.5 }}>
-                  {modelDescription(t, m.name, m.description)}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Info size={16} color="var(--dim)" strokeWidth={1.8} style={{ flexShrink: 0 }} />
+        <span style={{ fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.5 }}>
+          {t('config.how_stockai_calculates')}
+        </span>
+      </div>
     </Card>
   )
 }
@@ -581,13 +588,73 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
   }
 
   const hasMore = logs.length < total
+  const drill = useContext(DrillIn)
+
+  // Phone: a native picker for the filter and one row per entry. The desktop
+  // grid has three fixed columns (140 + 80 + 150px) and ran 240px off a phone.
+  if (drill) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--muted)', padding: '0 4px', visibility: loading ? 'hidden' : undefined }}>
+          {`${total} ${t('records_count')}`}
+        </div>
+        <select
+          name="activity_action"
+          aria-label={t('all_actions')}
+          value={actionFilter}
+          onChange={e => setActionFilter(e.target.value)}
+          style={{
+            width: '100%', padding: '0 12px', borderRadius: 12,
+            border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
+          }}
+        >
+          {['', ...actionTypes].map(a => (
+            <option key={a || '__all__'} value={a}>{a ? activityActionLabel(t, a) : t('all_actions')}</option>
+          ))}
+        </select>
+        {actionTypesErr && (
+          <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('config.action_types_load_error')}</div>
+        )}
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner size={20} /></div>
+        ) : logs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--dim)', fontSize: 14 }}>
+            <Clock size={28} style={{ marginBottom: 8, opacity: 0.4 }} aria-hidden="true" />
+            <div>{t('no_activity')}</div>
+          </div>
+        ) : (
+          <>
+            <MobileList ariaLabel={t('activity_logs')}>
+              {logs.map(log => (
+                <MobileCard
+                  key={log.id}
+                  title={activityActionLabel(t, log.action)}
+                  subtitle={`${log.resource || '—'} · ${formatDate(log.created_at, lang)}`}
+                  status={{
+                    label: log.status === 'success' ? t('success') : t('error'),
+                    tone: log.status === 'success' ? 'success' : 'danger',
+                  }}
+                />
+              ))}
+            </MobileList>
+            {hasMore && (
+              <button type="button" className="mobile-btn mobile-btn-secondary" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? <Spinner size={14} /> : null}
+                {t('load_more')} ({total - logs.length} {t('config.remaining')})
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
 
   return (
     <Card>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <SectionTitle
           icon={Activity}
-          color="#0ea5e9"
+          color="#3F86AB"
           title={t('activity_logs')}
           subtitle={`${total} ${t('records_count')}`}
         />
@@ -686,13 +753,13 @@ function ActivitySection({ t, lang }: { t: (k: string) => string; lang: 'es' | '
               }}>
                 {activityActionLabel(t, log.action)}
               </span>
-              <span style={{ color: 'var(--muted)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ color: 'var(--muted)', fontSize: 11, overflow: 'hidden', overflowWrap: 'anywhere', }}>
                 {log.resource || '—'}
               </span>
               <span>
                 <span style={{
                   fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-                  background: log.status === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                  background: log.status === 'success' ? 'rgba(46,139,98,0.12)' : 'rgba(192,80,77,0.12)',
                   color: log.status === 'success' ? 'var(--success)' : 'var(--danger)',
                 }}>
                   {log.status === 'success' ? t('success') : t('error')}
@@ -742,6 +809,12 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
   const [code,       setCode]       = useState('')
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState<string | null>(null)
+  // `e.message` on an ApiError is the BACKEND's English sentence (or the
+  // literal "HTTP 0" offline), shown under a Spanish form. This resolves
+  // `error_code` + `params` against the catalogue first — the WhatsApp section
+  // right below already maps its failures to catalogue copy; this one did not.
+  const errorDetail = useErrorDetail()
+  const drill = useContext(DrillIn)
 
   function reset() {
     setStep('idle'); setNewPw(''); setCode(''); setError(null); setShowPw(false)
@@ -755,7 +828,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       await requestPasswordChange(newPw)
       setStep('code')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t('pw_error_send') || 'Error')
+      setError(errorDetail(e) || t('pw_error_send'))
     } finally {
       setLoading(false)
     }
@@ -769,7 +842,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       setStep('done')
       setTimeout(reset, 3500)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t('pw_error_confirm') || 'Error')
+      setError(errorDetail(e) || t('pw_error_confirm'))
     } finally {
       setLoading(false)
     }
@@ -777,13 +850,13 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
 
   return (
     <Card>
-      <SectionTitle icon={Lock} color="#f59e0b" title={t('security')} subtitle={t('change_password')} />
+      <SectionTitle icon={Lock} color="#B7791F" title={t('security')} subtitle={t('change_password')} />
 
       {step === 'idle' && (
-        <div data-tour="config.security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
+        <div data-tour="config.security" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 220px', minWidth: 0 }}>
             <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>{t('password_label')}</div>
-            <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2, overflowWrap: 'anywhere' }}>
               {t('pw_code_hint')} {me?.email}
             </div>
           </div>
@@ -795,6 +868,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
               border: '1px solid var(--border)',
               color: 'var(--muted)', background: 'var(--surface-2)',
               transition: 'all 0.15s',
+              ...tap(drill),
             }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted)' }}
@@ -827,13 +901,14 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 all: 'unset', position: 'absolute', right: 10, top: '50%',
                 transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--dim)',
                 display: 'flex',
+                ...tap(drill),
               }}
             >
               {showPw ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
             </button>
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: drill ? 'wrap' : undefined }}>
             <button
               onClick={handleRequestCode}
               disabled={loading || !newPw.trim()}
@@ -843,6 +918,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'var(--accent)', color: '#fff',
                 opacity: loading || !newPw.trim() ? 0.55 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {loading ? <Spinner size={12} /> : <Mail size={12} />}
@@ -854,6 +930,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 all: 'unset', cursor: 'pointer',
                 padding: '8px 14px', borderRadius: 8, fontSize: 12,
                 border: '1px solid var(--border)', color: 'var(--dim)',
+                ...tap(drill),
               }}
             >
               {t('cancel')}
@@ -866,8 +943,8 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
         <div data-tour="config.security" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
-            borderRadius: 8, fontSize: 12, color: '#22c55e',
+            background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.2)',
+            borderRadius: 8, fontSize: 12, color: '#2E8B62',
           }}>
             <Mail size={13} />
             {t('code_sent_to')} <strong style={{ marginLeft: 4 }}>{me?.email}</strong>
@@ -891,7 +968,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
             />
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: drill ? 'wrap' : undefined }}>
             <button
               onClick={handleConfirm}
               disabled={loading || code.length !== 6}
@@ -901,6 +978,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'var(--accent)', color: '#fff',
                 opacity: loading || code.length !== 6 ? 0.55 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {loading ? <Spinner size={12} /> : <CheckCircle2 size={12} />}
@@ -912,6 +990,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
                 all: 'unset', cursor: 'pointer',
                 padding: '8px 14px', borderRadius: 8, fontSize: 12,
                 border: '1px solid var(--border)', color: 'var(--dim)',
+                ...tap(drill),
               }}
             >
               {t('go_back')}
@@ -924,14 +1003,118 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
           padding: '12px 16px',
-          background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
-          borderRadius: 8, fontSize: 13, color: '#22c55e', fontWeight: 500,
+          background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.2)',
+          borderRadius: 8, fontSize: 13, color: '#2E8B62', fontWeight: 500,
         }}>
           <CheckCircle2 size={16} />
           {t('pw_updated')}
         </div>
       )}
+
+      <LinkedAccounts />
     </Card>
+  )
+}
+
+// ── Linked sign-in providers (Google / Microsoft / Apple) ─────────────────────
+//
+// Shown only when this installation offers social sign-in, or when the person
+// already has a linked provider (so they can still remove it after the
+// operator turned the feature off). Otherwise this block does not exist and
+// Security looks as it always did.
+
+const PROVIDER_NAME: Record<SocialProvider, string> = {
+  google: 'Google', microsoft: 'Microsoft', apple: 'Apple',
+}
+
+function LinkedAccounts() {
+  const { t, lang } = useLanguage()
+  const confirm = useConfirm()
+  const { addToast } = useToast()
+  const errorDetail = useErrorDetail()
+  const drill = useContext(DrillIn)
+  const [data, setData] = useState<{
+    identities: LinkedIdentity[]; has_password: boolean; providers_enabled: SocialProvider[]
+  } | null>(null)
+  const [busy, setBusy] = useState<SocialProvider | null>(null)
+
+  const load = useCallback(() => {
+    getMyIdentities().then(setData).catch(() => setData(null))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  if (!data) return null
+  if (data.identities.length === 0 && data.providers_enabled.length === 0) return null
+
+  async function handleUnlink(provider: SocialProvider) {
+    const name = PROVIDER_NAME[provider] ?? provider
+    const ok = await confirm({
+      title: t('security.confirm_unlink_title', { provider: name }),
+      message: t('security.confirm_unlink_body', { provider: name }),
+      confirmLabel: t('security.unlink'),
+      danger: true,
+    })
+    if (!ok) return
+    setBusy(provider)
+    try {
+      await unlinkIdentity(provider)
+      addToast(t('security.unlinked_ok'), '', 'success')
+      load()
+    } catch (e: unknown) {
+      addToast(errorDetail(e) || t('security.unlink'), '', 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>{t('security.linked_title')}</div>
+      <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2, marginBottom: 10 }}>
+        {data.identities.length ? t('security.linked_desc') : t('security.linked_none')}
+      </div>
+      {!data.has_password && (
+        <div style={{
+          fontSize: 12, color: '#b45309', background: 'rgba(183,121,31,0.08)',
+          border: '1px solid rgba(183,121,31,0.25)', borderRadius: 8,
+          padding: '8px 12px', marginBottom: 10, lineHeight: 1.5,
+        }}>
+          {t('security.no_password_note')}
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {data.identities.map(id => (
+          <div key={id.provider} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            flexWrap: drill ? 'wrap' : undefined,
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                {PROVIDER_NAME[id.provider] ?? id.provider}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--dim)', overflowWrap: 'anywhere' }}>
+                {id.email}
+                {id.created_at && ` · ${t('security.linked_since', { date: formatDate(id.created_at, lang) })}`}
+              </div>
+            </div>
+            <button
+              onClick={() => handleUnlink(id.provider)}
+              disabled={busy !== null}
+              style={{
+                all: 'unset', cursor: busy ? 'wait' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                border: '1px solid var(--border)', color: 'var(--muted)',
+                ...tap(drill),
+              }}
+            >
+              {busy === id.provider ? <Spinner size={12} /> : <Unlink size={12} aria-hidden="true" />}
+              {t('security.unlink')}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -942,7 +1125,23 @@ type WaStep = 'loading' | 'form' | 'code' | 'verified'
 const isE164 = (s: string) => /^\+[1-9]\d{7,14}$/.test(s.trim())
 const IS_DEV = process.env.NODE_ENV !== 'production'
 
+// The plan decides whether the WhatsApp bot is included. A tenant without it sees
+// the real card replaced by a calm locked one (and the way to ask), never a form
+// whose "send code" would fail.
 function WhatsAppSection({ t }: { t: (k: string) => string }) {
+  const { locked } = useFeature('whatsapp_bot')
+  if (locked) {
+    return (
+      <Card>
+        <SectionTitle icon={MessageCircle} color="#2E8B62" title={t('config.wa_title')} subtitle={t('config.wa_subtitle')} />
+        <div data-tour="config.whatsapp"><FeatureLocked feature="whatsapp_bot" compact /></div>
+      </Card>
+    )
+  }
+  return <WhatsAppSetup t={t} />
+}
+
+function WhatsAppSetup({ t }: { t: (k: string) => string }) {
   const [step,           setStep]           = useState<WaStep>('loading')
   const [number,         setNumber]         = useState('')
   const [pendingNumber,  setPendingNumber]  = useState('')
@@ -954,6 +1153,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
   const [error,          setError]          = useState<string | null>(null)
   // Seconds until the resend button re-enables (mirrors the backend cooldown).
   const [resendIn,       setResendIn]       = useState(0)
+  const drill = useContext(DrillIn)
 
   useEffect(() => {
     if (resendIn <= 0) return
@@ -991,6 +1191,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
         setResendIn(ra)
         setError(t('config.wa_err_cooldown').replace('{s}', String(ra)))
       }
+      else if (isApiError(e) && e.code === 'plan_feature_locked') setError(t('errors.plan_feature_locked_whatsapp_bot'))
       else if (isApiError(e) && e.status === 409) setError(t('config.wa_err_taken'))
       else if (isApiError(e) && e.status === 503) setError(t('config.wa_err_unavailable'))
       else setError(t('config.wa_err_send'))
@@ -1034,7 +1235,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
 
   return (
     <Card>
-      <SectionTitle icon={MessageCircle} color="#22c55e" title={t('config.wa_title')} subtitle={t('config.wa_subtitle')} />
+      <SectionTitle icon={MessageCircle} color="#2E8B62" title={t('config.wa_title')} subtitle={t('config.wa_subtitle')} />
 
       {step === 'loading' && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Spinner size={18} /></div>
@@ -1047,17 +1248,14 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             <FieldLabel htmlFor="wa-number" variant="eyebrow" style={{ ...EYEBROW_STYLE, marginBottom: 6 }}>
               {t('config.wa_number_label')}
             </FieldLabel>
-            <Input
+            <PhoneInput
               id="wa-number"
               name="whatsapp_number"
-              type="tel"
-              inputMode="tel"
-              placeholder="+50688888888"
               value={number}
-              onChange={e => { setNumber(e.target.value); if (error) setError(null) }}
+              onChange={v => { setNumber(v); if (error) setError(null) }}
               autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleSendCode()}
-              style={{ fontSize: 13, maxWidth: 240 }}
+              onEnter={handleSendCode}
+              style={{ maxWidth: 360 }}
             />
             <p style={{ fontSize: 11, color: 'var(--dim)', margin: '6px 0 0' }}>{t('config.wa_hint')}</p>
           </div>
@@ -1072,6 +1270,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'var(--accent)', color: '#fff',
                 opacity: loading || !number.trim() ? 0.55 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {loading ? <Spinner size={12} /> : <MessageCircle size={12} />}
@@ -1085,8 +1284,8 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
         <div data-tour="config.whatsapp" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{
             display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '10px 14px',
-            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
-            borderRadius: 8, fontSize: 12, color: '#22c55e',
+            background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.2)',
+            borderRadius: 8, fontSize: 12, color: '#2E8B62',
           }}>
             <MessageCircle size={13} />
             {t('config.wa_code_sent_to')} <strong>{pendingNumber}</strong>
@@ -1116,7 +1315,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             />
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: drill ? 'wrap' : undefined }}>
             <button
               onClick={handleConfirm}
               disabled={loading || code.length !== 6}
@@ -1126,6 +1325,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 background: 'var(--accent)', color: '#fff',
                 opacity: loading || code.length !== 6 ? 0.55 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {loading ? <Spinner size={12} /> : <CheckCircle2 size={12} />}
@@ -1140,6 +1340,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 border: '1px solid var(--border)',
                 color: resendIn > 0 ? 'var(--dim)' : 'var(--muted)',
                 opacity: loading || resendIn > 0 ? 0.6 : 1, transition: 'opacity 0.15s',
+                ...tap(drill),
               }}
             >
               {resendIn > 0
@@ -1152,6 +1353,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 all: 'unset', cursor: 'pointer',
                 padding: '8px 14px', borderRadius: 8, fontSize: 12,
                 border: '1px solid var(--border)', color: 'var(--dim)',
+                ...tap(drill),
               }}
             >
               {t('go_back')}
@@ -1165,12 +1367,12 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '12px 16px',
-            background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)',
+            background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.2)',
             borderRadius: 8,
           }}>
-            <CheckCircle2 size={16} color="#22c55e" />
+            <CheckCircle2 size={16} color="#2E8B62" />
             <div>
-              <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 600 }}>
+              <div style={{ fontSize: 13, color: '#2E8B62', fontWeight: 600 }}>
                 {t('config.wa_verified_title')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
@@ -1180,13 +1382,13 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
             <span style={{
               marginLeft: 'auto', fontSize: 10, fontWeight: 700,
               padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em',
-              background: 'rgba(34,197,94,0.14)', color: '#22c55e',
+              background: 'rgba(46,139,98,0.14)', color: '#2E8B62',
             }}>
               {t('config.wa_verified_badge')}
             </span>
           </div>
           {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: drill ? 'wrap' : undefined }}>
             <button
               onClick={handleChangeNumber}
               style={{
@@ -1194,6 +1396,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 border: '1px solid var(--border)', color: 'var(--muted)', background: 'var(--surface-2)',
+                ...tap(drill),
               }}
             >
               <Edit2 size={12} /> {t('config.wa_change')}
@@ -1207,6 +1410,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
                 padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                 border: '1px solid var(--border)', color: 'var(--danger)',
                 opacity: unlinking ? 0.6 : 1,
+                ...tap(drill),
               }}
             >
               {unlinking ? <Spinner size={12} /> : <Unlink size={12} />}
@@ -1221,26 +1425,26 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
 
 // ── Section: SMS heads-up for team messages ──────────────────────────────────
 //
-// Professional-plan companion to /mensajes: when someone writes to you and you
-// are away, Faro sends one short SMS to the number linked above. Hidden (not
-// padlocked) on plans without team_messaging, same policy as the sidebar.
+// Companion to /mensajes: when someone writes to you and you are away, StockAI
+// sends one short SMS to the number linked above. It used to be hidden for
+// plans without team_messaging; every tenant has the screen now.
 
 function DmSmsSection({ t }: { t: (k: string) => string }) {
-  const { has } = useEntitlements()
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [hasNumber, setHasNumber] = useState(false)
   const [saving, setSaving] = useState(false)
+  const drill = useContext(DrillIn)
 
   useEffect(() => {
-    if (!has('team_messaging')) return
     getPreferences().then(p => setEnabled(p.dm_sms_enabled)).catch(() => setEnabled(false))
     getMe().then(u => setHasNumber(!!u.whatsapp_number)).catch(() => {})
-  }, [has])
-
-  if (!has('team_messaging')) return null
+  }, [])
 
   const on = enabled === true
   const blocked = !hasNumber
+  // The notice goes out by WhatsApp. Without the bot on the plan the card could
+  // only say "link your number above", which the card above does not allow.
+  const { locked: botLocked } = useFeature('whatsapp_bot')
 
   async function handleToggle() {
     if (enabled === null || saving || blocked) return
@@ -1255,6 +1459,8 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
       setSaving(false)
     }
   }
+
+  if (botLocked) return null
 
   return (
     <Card>
@@ -1271,6 +1477,34 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
             {blocked ? t('config.dm_sms_needs_number') : t('config.dm_sms_hint')}
           </div>
         </div>
+        {drill ? (
+          // Phone: an iOS-sized switch inside a 44px-tall hit area.
+          <button
+            role="switch"
+            aria-checked={on}
+            aria-label={t('config.dm_sms_toggle_label')}
+            onClick={handleToggle}
+            disabled={enabled === null || saving || blocked}
+            style={{
+              all: 'unset', boxSizing: 'border-box', position: 'relative', flexShrink: 0,
+              width: 52, height: 44,
+              cursor: enabled === null || saving || blocked ? 'default' : 'pointer',
+              opacity: blocked ? 0.5 : 1,
+            }}
+          >
+            <span aria-hidden="true" style={{
+              position: 'absolute', left: 0, top: 6, width: 52, height: 32, borderRadius: 16,
+              background: on ? 'var(--accent)' : 'var(--border-strong)',
+              transition: 'background var(--dur-2) var(--ease-out)',
+            }} />
+            <span aria-hidden="true" style={{
+              position: 'absolute', top: 8, left: 2, width: 28, height: 28, borderRadius: '50%',
+              background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              transform: on ? 'translateX(20px)' : 'none',
+              transition: 'transform var(--dur-2) var(--ease-out)',
+            }} />
+          </button>
+        ) : (
         <button
           role="switch"
           aria-checked={on}
@@ -1292,7 +1526,42 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
             background: '#fff', transition: 'left 0.15s',
           }} />
         </button>
+        )}
       </div>
+    </Card>
+  )
+}
+
+// ── Legal documents ───────────────────────────────────────────────────────────
+// Links only: the documents are public pages (/terminos, /privacidad, …), the
+// same ones the landing and the signup form point to.
+
+// The four main documents, then the /legal hub that lists every other one.
+const LEGAL_ROWS: { key: string; href: string; label: string; Icon: React.ElementType }[] = [
+  { key: 'terms',   href: LEGAL_PATHS.terms,   label: 'legal.terms_full',   Icon: FileText },
+  { key: 'privacy', href: LEGAL_PATHS.privacy, label: 'legal.privacy_full', Icon: ShieldCheck },
+  { key: 'cookies', href: LEGAL_PATHS.cookies, label: 'legal.cookies_full', Icon: Cookie },
+  { key: 'notice',  href: LEGAL_PATHS.notice,  label: 'legal.notice',       Icon: Scale },
+  { key: 'all',     href: LEGAL_HUB_PATH,      label: 'legal.all',          Icon: FileText },
+]
+
+function LegalSection({ t }: { t: (k: string) => string }) {
+  return (
+    <Card>
+      <SectionTitle icon={Scale} color="var(--muted)" title={t('legal.group')} subtitle={t('legal.account_subtitle')} />
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {LEGAL_ROWS.map(({ key, href, label, Icon }) => (
+          <li key={key}>
+            <Link href={href} target="_blank" rel="noopener" prefetch={false} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderRadius: 8,
+              fontSize: 13, color: 'var(--text)', textDecoration: 'none',
+            }}>
+              <Icon size={14} color="var(--muted)" aria-hidden="true" />
+              {t(label)}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </Card>
   )
 }
@@ -1300,58 +1569,68 @@ function DmSmsSection({ t }: { t: (k: string) => string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ConfigPage() {
-  const { t, lang, setLang }  = useLanguage()
-  const { setTheme }          = useTheme()
+  const { t, lang }           = useLanguage()
+  const { theme }             = useTheme()
 
-  // Sync stored preferences from DB to context/localStorage on mount
+  // The device's current choice wins; the account copy follows it.
+  //
+  // This used to do the opposite — pull the account's theme and language down
+  // on mount and apply them. Anything chosen where it could not be saved (the
+  // theme/language toggles on the signed-out login screen) or not saved YET
+  // (a toggle's PUT still in flight when this GET answered) was then reverted
+  // the moment the user opened Mi cuenta: the theme flipped on navigation.
+  // Pushing the local value up instead keeps the account in step without ever
+  // changing what the user is looking at.
   useEffect(() => {
     getPreferences()
       .then(prefs => {
-        setTheme(prefs.theme)
-        setLang(prefs.language)
+        const patch: { theme?: 'dark' | 'light'; language?: 'es' | 'en' } = {}
+        if (prefs.theme !== theme) patch.theme = theme
+        if (prefs.language !== lang) patch.language = lang
+        if (patch.theme || patch.language) return updatePreferences(patch)
       })
       .catch(() => {})
-  }, [setTheme, setLang])
+    // Once per visit: the toggles persist their own changes after this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const narrow = useIsNarrow()
+  if (narrow) return <MobileSettings />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 9,
-          background: 'var(--accent)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <Sparkles size={16} color="#fff" strokeWidth={2} />
-        </div>
-        <div>
-          <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', margin: 0 }}>
-            {t('configuration')}
-          </h1>
-        </div>
-      </div>
-
+      {/* The top bar already says "Mi cuenta": the page starts with its sections. */}
       {/* Sections */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <ProfileSection t={t} lang={lang} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Company-level, but this is where the Stripe checkout returns to,
-              and where someone looks for "what am I paying". The panel renders
-              nothing at all on a deployment with no Stripe key. */}
+      {/* Two balanced columns, grouped like the phone's settings list: the
+          person on the left, the company on the right. The left column used to
+          hold the profile card alone while nine cards stacked on the right,
+          leaving most of the screen empty. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+          <ProfileSection t={t} lang={lang} />
+          <AppConfigSection t={t} />
+          <SecuritySection t={t} />
+          <WhatsAppSection t={t} />
+          <DmSmsSection t={t} />
+          <LegalSection t={t} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+          {/* How much room is left. First in this column on purpose: a
+              ceiling nobody can see is a trap, and this is the screen where
+              somebody goes looking before they go looking for us. */}
           <Card>
             <SectionTitle
-              icon={CreditCard} color="var(--accent)"
-              title={t('billing.section_title')}
-              subtitle={t('billing.section_subtitle')}
+              icon={Gauge} color="var(--accent)"
+              title={t('limits.section.title')}
+              subtitle={t('limits.section.header_subtitle')}
             />
-            <BillingPanel />
+            <LimitsSection />
           </Card>
-          {/* Separate card on purpose: what Faro costs (above, always USD) and
-              what the customer's own figures are worth (here, their choice) are
-              two different things, and merging them invites the reading that
-              picking colones changes the price of the plan. */}
+          <PlanningSection t={t} />
+          {/* What the customer's own figures are worth — their choice, and
+              nothing to do with what StockAI costs, which is a conversation with
+              us and not a setting on this screen. */}
           <Card>
             <SectionTitle
               icon={Coins} color="var(--accent)"
@@ -1360,17 +1639,243 @@ export default function ConfigPage() {
             />
             <CurrencySection />
           </Card>
-          <AppConfigSection t={t} />
-          <PlanningSection t={t} />
-          <WhatsAppSection t={t} />
-          <DmSmsSection t={t} />
-          <SecuritySection t={t} />
+          {/* Its own card, next to currency: both are "how this company's data is
+              expressed", and the scheduled-retrain hours are meaningless without
+              a zone attached. */}
+          <Card>
+            <SectionTitle
+              icon={Clock} color="var(--accent)"
+              title={t('timezone.section_title')}
+              subtitle={t('timezone.section_subtitle')}
+            />
+            <TimezoneSection />
+          </Card>
         </div>
       </div>
 
       <ModelsSection t={t} />
 
       <ActivitySection t={t} lang={lang} />
+    </div>
+  )
+}
+
+// ── Phone: grouped settings list with drill-in sections ───────────────────────
+//
+// The desktop page is a two-column grid of ten cards; at 360px it measured
+// 601px wide. A phone gets what a phone's own Settings app looks like: one
+// list, grouped, each row naming its current value, and a tap opening that one
+// section full-screen with a back button. The open section lives in `?s=` so
+// the system back gesture closes it instead of leaving the screen.
+
+type DrillKey =
+  | 'profile' | 'security' | 'whatsapp' | 'sms'
+  | 'limits' | 'currency' | 'timezone' | 'planning'
+  | 'appearance' | 'activity'
+
+const DRILL_KEYS: DrillKey[] = [
+  'profile', 'security', 'whatsapp', 'sms',
+  'limits', 'currency', 'timezone', 'planning',
+  'appearance', 'activity',
+]
+
+function Tile({ Icon, color }: { Icon: React.ElementType; color: string }) {
+  return (
+    <span aria-hidden="true" style={{
+      width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+      background: `color-mix(in srgb, ${color} 16%, transparent)`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Icon size={16} color={color} strokeWidth={2} />
+    </span>
+  )
+}
+
+function MobileSettings() {
+  const { t, lang } = useLanguage()
+  const { theme } = useTheme()
+  const [key, setKey] = useState<DrillKey | null>(null)
+  // Whether WE pushed the history entry for the open section. Opened from a
+  // shared `?s=` link there is nothing of ours to pop, and history.back()
+  // would leave the app.
+  const pushed = useRef(false)
+  const [waNumber, setWaNumber] = useState<string | null>(null)
+  const [planning, setPlanningState] = useState<PlanningState | null>(null)
+  // Re-read on every return to the list: the profile section may have just
+  // renamed the person.
+  const [me, setMe] = useState(() => getUser())
+
+  useEffect(() => {
+    const read = () => {
+      const s = new URLSearchParams(window.location.search).get('s') as DrillKey | null
+      setKey(s && DRILL_KEYS.includes(s) ? s : null)
+      if (!s) pushed.current = false
+    }
+    read()
+    window.addEventListener('popstate', read)
+    return () => window.removeEventListener('popstate', read)
+  }, [])
+
+  useEffect(() => {
+    if (key !== null) return
+    setMe(getUser())
+    getMe()
+      .then(u => setWaNumber(u.whatsapp_verified_at ? (u.whatsapp_number || '') : ''))
+      .catch(() => setWaNumber(null))
+    getPlanning().then(setPlanningState).catch(() => setPlanningState(null))
+  }, [key])
+
+  const { locked: botLocked } = useFeature('whatsapp_bot')
+
+  function open(k: DrillKey) {
+    window.history.pushState(null, '', `?s=${k}`)
+    pushed.current = true
+    setKey(k)
+    document.querySelector('.page-content')?.scrollTo({ top: 0 })
+  }
+
+  const back = useCallback(() => {
+    if (pushed.current) {
+      window.history.back()
+    } else {
+      window.history.replaceState(null, '', window.location.pathname)
+      setKey(null)
+    }
+  }, [])
+
+  const titles: Record<DrillKey, string> = {
+    profile: t('user_profile'),
+    security: t('security'),
+    whatsapp: t('config.wa_title'),
+    sms: t('config.dm_sms_title'),
+    limits: t('limits.section.title'),
+    currency: t('currency.section_title'),
+    timezone: t('timezone.section_title'),
+    planning: t('planning.section_title'),
+    appearance: t('app_settings'),
+    activity: t('activity_logs'),
+  }
+
+  useMobileHeader(key ? { title: titles[key], onBack: back } : null)
+
+  if (key) {
+    let body: React.ReactNode
+    switch (key) {
+      case 'profile':    body = <ProfileSection t={t} lang={lang} />; break
+      case 'security':   body = <SecuritySection t={t} />; break
+      case 'whatsapp':   body = <WhatsAppSection t={t} />; break
+      case 'sms':        body = <DmSmsSection t={t} />; break
+      case 'appearance': body = <AppConfigSection t={t} />; break
+      case 'planning':   body = <PlanningSection t={t} />; break
+      case 'activity':   body = <ActivitySection t={t} lang={lang} />; break
+      case 'limits':
+        body = (
+          <Card>
+            <SectionTitle icon={Gauge} color="var(--accent)" title={t('limits.section.title')} subtitle={t('limits.section.header_subtitle')} />
+            <div className="m-tap44"><LimitsSection /></div>
+          </Card>
+        )
+        break
+      case 'currency':
+        body = (
+          <Card>
+            <SectionTitle icon={Coins} color="var(--accent)" title={t('currency.section_title')} subtitle={t('currency.section_subtitle')} />
+            <CurrencySection />
+          </Card>
+        )
+        break
+      case 'timezone':
+        body = (
+          <Card>
+            <SectionTitle icon={Clock} color="var(--accent)" title={t('timezone.section_title')} subtitle={t('timezone.section_subtitle')} />
+            <TimezoneSection />
+          </Card>
+        )
+        break
+    }
+    return (
+      <DrillIn.Provider value={true}>
+        <MobileFormScope>
+          <div key={key} className="m-drill-enter">{body}</div>
+        </MobileFormScope>
+      </DrillIn.Provider>
+    )
+  }
+
+  const initials = (me?.full_name || me?.email || 'U')
+    .split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+  const hasPlanningChoice = !!planning && planning.available_periods.length > 1
+
+  return (
+    <div className="m-drill-enter">
+      <MobileSection>
+        <MobileList ariaLabel={t('user_profile')}>
+          <MobileCard
+            leading={
+              <span aria-hidden="true" style={{
+                width: 52, height: 52, borderRadius: 14, background: 'var(--accent)', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700,
+              }}>{initials}</span>
+            }
+            title={me?.full_name || me?.email || '—'}
+            subtitle={`${me?.email ?? ''}${me?.role ? ` · ${roleLabel(t, me.role)}` : ''}`}
+            onClick={() => open('profile')}
+          />
+        </MobileList>
+      </MobileSection>
+
+      <MobileSection title={t('config.m_group_account')}>
+        <MobileList>
+          <MobileCard leading={<Tile Icon={Lock} color="#B7791F" />} title={t('security')}
+                      subtitle={t('change_password')} onClick={() => open('security')} />
+          <MobileCard leading={<Tile Icon={MessageCircle} color="#2E8B62" />} title={t('config.wa_title')}
+                      subtitle={waNumber ? waNumber : waNumber === '' ? t('config.m_wa_not_linked') : t('config.wa_subtitle')}
+                      onClick={() => open('whatsapp')} />
+          {!botLocked && (
+            <MobileCard leading={<Tile Icon={MessageSquare} color="var(--accent)" />} title={t('config.dm_sms_title')}
+                        subtitle={t('config.dm_sms_subtitle')} onClick={() => open('sms')} />
+          )}
+        </MobileList>
+      </MobileSection>
+
+      <MobileSection title={t('config.m_group_company')}>
+        <MobileList>
+          <MobileCard leading={<Tile Icon={Gauge} color="var(--accent)" />} title={t('limits.section.title')}
+                      subtitle={t('limits.section.header_subtitle')} onClick={() => open('limits')} />
+          <MobileCard leading={<Tile Icon={Coins} color="var(--accent)" />} title={t('currency.section_title')}
+                      subtitle={t('currency.section_subtitle')} onClick={() => open('currency')} />
+          <MobileCard leading={<Tile Icon={Clock} color="var(--accent)" />} title={t('timezone.section_title')}
+                      subtitle={t('timezone.section_subtitle')} onClick={() => open('timezone')} />
+          {hasPlanningChoice && (
+            <MobileCard leading={<Tile Icon={CalendarClock} color="var(--accent)" />} title={t('planning.section_title')}
+                        subtitle={t(`planning.${planning!.period}`)} onClick={() => open('planning')} />
+          )}
+        </MobileList>
+      </MobileSection>
+
+      <MobileSection title={t('config.m_group_app')}>
+        <MobileList>
+          <MobileCard leading={<Tile Icon={Settings2} color="#2E8B62" />} title={t('app_settings')}
+                      subtitle={`${lang === 'es' ? t('spanish') : t('english')} · ${theme === 'dark' ? t('dark') : t('light')}`}
+                      onClick={() => open('appearance')} />
+          <MobileCard leading={<Tile Icon={Activity} color="#3F86AB" />} title={t('activity_logs')}
+                      onClick={() => open('activity')} />
+        </MobileList>
+      </MobileSection>
+
+      <MobileSection title={t('legal.group')}>
+        <MobileList>
+          {LEGAL_ROWS.map(({ key, href, label, Icon }) => (
+            <MobileCard key={key} leading={<Tile Icon={Icon} color="var(--muted)" />}
+                        title={t(label)} href={href} />
+          ))}
+        </MobileList>
+      </MobileSection>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '0 4px 8px' }}>
+        <Info size={16} color="var(--dim)" strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+        <span style={{ fontSize: 13, color: 'var(--dim)', lineHeight: 1.5 }}>{t('config.how_stockai_calculates')}</span>
+      </div>
     </div>
   )
 }

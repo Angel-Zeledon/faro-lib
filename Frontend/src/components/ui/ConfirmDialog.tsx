@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 /**
@@ -40,17 +40,77 @@ export function useConfirm(): ConfirmFn {
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const { t } = useLanguage()
   const [opts, setOpts] = useState<ConfirmOptions | null>(null)
-  const resolver = useRef<(v: boolean) => void>(() => {})
+  const resolver = useRef<((v: boolean) => void) | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const returnFocusTo = useRef<HTMLElement | null>(null)
+
+  /** Resolve the pending promise once, then forget it. */
+  const settle = useCallback((result: boolean) => {
+    const pending = resolver.current
+    resolver.current = null          // never resolve the same promise twice
+    pending?.(result)
+  }, [])
 
   const confirm = useCallback<ConfirmFn>((o) => {
+    // A second confirm() arriving while one was open used to OVERWRITE this
+    // ref, and the first promise then never settled: its `await` hung forever,
+    // so the caller's action was abandoned with no message, no spinner and no
+    // error. It failed safe — nothing was written — but it failed invisibly,
+    // which is worse to diagnose than a crash. Reachable in practice because
+    // the dialog had no focus trap: you could tab out to the page behind and
+    // press another button. Settling the old one as `false` keeps the promise
+    // contract intact — the abandoned question means "no".
+    settle(false)
+    const answered = new Promise<boolean>((resolve) => { resolver.current = resolve })
     setOpts(o)
-    return new Promise<boolean>((resolve) => { resolver.current = resolve })
-  }, [])
+    return answered
+  }, [settle])
 
   const close = useCallback((result: boolean) => {
-    resolver.current(result)
+    settle(result)
     setOpts(null)
-  }, [])
+  }, [settle])
+
+  // Escape closes, Tab cannot leave, and focus goes back where it came from.
+  // `aria-modal` was a claim the component did not honour: without a trap the
+  // dialog is modal to the mouse and porous to the keyboard, which is how the
+  // stranded-promise bug above was reached in the first place.
+  useEffect(() => {
+    if (!opts) return
+    returnFocusTo.current = document.activeElement as HTMLElement | null
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        close(false)                 // dismissing a question means "no"
+        return
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+
+    // Capture phase: a page that stops propagation on keydown must not be able
+    // to swallow Escape and leave the user shut inside the dialog.
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      returnFocusTo.current?.focus?.()
+    }
+  }, [opts, close])
 
   return (
     <ConfirmContext.Provider value={confirm}>
@@ -75,11 +135,13 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
           onClick={() => close(false)}
         >
           <div
+            ref={panelRef}
             onClick={(e) => e.stopPropagation()}
             className="modal-panel-enter"
             style={{
               background: 'var(--surface)', border: '1px solid var(--border)',
               borderRadius: 14, padding: 24, width: '100%', maxWidth: 420,
+              maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', overflowWrap: 'anywhere',
               boxShadow: '0 24px 60px -20px rgba(0,0,0,0.5)',
             }}
           >
@@ -91,9 +153,10 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 {opts.message}
               </p>
             )}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button
                 onClick={() => close(false)}
+                className="confirm-btn"
                 style={{
                   padding: '9px 16px', borderRadius: 9, cursor: 'pointer',
                   background: 'transparent', border: '1px solid var(--border)',
@@ -104,10 +167,11 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 autoFocus
+                className="confirm-btn"
                 onClick={() => close(true)}
                 style={{
                   padding: '9px 16px', borderRadius: 9, cursor: 'pointer', border: 'none',
-                  background: opts.danger ? '#dc2626' : 'var(--accent)',
+                  background: opts.danger ? '#B94A4A' : 'var(--accent)',
                   color: '#fff', fontSize: 13, fontWeight: 600,
                 }}
               >

@@ -32,28 +32,56 @@ class TestSumOverstockValue:
 
 
 class TestRunMonthlyOverstockSnapshot:
-    def test_inserts_snapshot_row_per_tenant(self, client, monkeypatch, test_tenant):
-        from backend.inventory import service
+    """
+    The loop resolves its session with `resolve_active_session` — the same
+    resolver every screen uses — and reads the status at the tenant's own
+    planning grain.
 
-        tid = test_tenant["id"]
-        sess_id = f"sess_{tid[:8]}"
+    Both tests here used to patch `get_latest_completed_session`, which this
+    loop stopped calling. A patch on a function nobody calls does nothing, so
+    `test_skips_tenant_without_completed_session` was asserting an empty table
+    for a reason unrelated to what it claimed to test: it could not fail. And
+    the surviving `get_inventory_status` double took `(t, s)` positionally, so
+    the day the loop started passing `period=` the call raised TypeError, the
+    per-tenant `except` swallowed it into a log line, and the only visible
+    symptom was a missing row.
+    """
+
+    def _patch_loop(self, monkeypatch, tid, sid, period, items, seen):
+        from backend.inventory import service
+        from backend.sessions import planning_service
 
         monkeypatch.setattr(
             service, "get_tenants_with_active_sessions",
             lambda: [{"tenant_id": tid}],
         )
         monkeypatch.setattr(
-            service, "get_latest_completed_session",
-            lambda t: {"session_id": sess_id} if t == tid else None,
+            planning_service, "resolve_active_session",
+            lambda t: sid if t == tid else None,
         )
         monkeypatch.setattr(
-            service, "get_inventory_status",
-            lambda t, s: [
-                {"sku": "OS-1", "signal": "SOBRESTOCK", "inventory_value": 3000.0},
-                {"sku": "OS-2", "signal": "SOBRESTOCK", "inventory_value": 1500.0},
-                {"sku": "OK-1", "signal": "OK", "inventory_value": 999.0},
-            ],
+            planning_service, "get_planning",
+            lambda t: {"period": period},
         )
+
+        def _status(t, s, period=None, **kwargs):
+            seen.append({"tenant_id": t, "session_id": s, "period": period})
+            return items
+
+        monkeypatch.setattr(service, "get_inventory_status", _status)
+
+    def test_inserts_snapshot_row_per_tenant(self, client, monkeypatch, test_tenant):
+        from backend.inventory import service
+
+        tid = test_tenant["id"]
+        sess_id = f"sess_{tid[:8]}"
+        seen: list[dict] = []
+
+        self._patch_loop(monkeypatch, tid, sess_id, "daily", [
+            {"sku": "OS-1", "signal": "SOBRESTOCK", "inventory_value": 3000.0},
+            {"sku": "OS-2", "signal": "SOBRESTOCK", "inventory_value": 1500.0},
+            {"sku": "OK-1", "signal": "OK", "inventory_value": 999.0},
+        ], seen)
 
         service.run_monthly_overstock_snapshot()
 
@@ -66,15 +94,42 @@ class TestRunMonthlyOverstockSnapshot:
         assert float(row["overstock_value"]) == 4500.0
         assert row["session_id"] == sess_id
 
-    def test_skips_tenant_without_completed_session(self, client, monkeypatch, test_tenant):
+    def test_reads_the_status_at_the_tenants_own_grain(self, client, monkeypatch, test_tenant):
+        """
+        The snapshot difference between two months is what /impacto headlines as
+        "capital liberado", so the SOBRESTOCK population it measures has to be
+        the one the app calls overstocked. Read as daily, a weekly tenant's
+        coverage is divided by the wrong unit and a different set of SKUs comes
+        back overstocked — a figure about a population no screen ever showed.
+        """
         from backend.inventory import service
+
+        tid = test_tenant["id"]
+        seen: list[dict] = []
+
+        self._patch_loop(monkeypatch, tid, f"sess_{tid[:8]}", "weekly", [], seen)
+
+        service.run_monthly_overstock_snapshot()
+
+        assert seen, "the loop never reached get_inventory_status"
+        assert seen[0]["period"] == "weekly"
+
+    def test_a_tenant_with_no_active_session_is_skipped(self, client, monkeypatch, test_tenant):
+        from backend.inventory import service
+        from backend.sessions import planning_service
 
         tid = test_tenant["id"]
         monkeypatch.setattr(
             service, "get_tenants_with_active_sessions",
             lambda: [{"tenant_id": tid}],
         )
-        monkeypatch.setattr(service, "get_latest_completed_session", lambda t: None)
+        monkeypatch.setattr(planning_service, "resolve_active_session", lambda t: None)
+        # If the loop ignored the resolver and snapshotted anyway, this would
+        # raise rather than quietly writing a row against the wrong session.
+        monkeypatch.setattr(
+            service, "get_inventory_status",
+            lambda *a, **k: pytest.fail("no session resolved — nothing should be read"),
+        )
 
         service.run_monthly_overstock_snapshot()
 
@@ -142,18 +197,20 @@ class TestGetMonthlySummary:
 
         this_row = rows[0]
         assert this_row["pos_count"] == 1
-        assert this_row["skus_order_now"] == 1
+        assert this_row["urgent_lines_ordered"] == 1
         assert this_row["total_value"] == 150.0
         assert this_row["adoption_rate"] == 0.5          # 1 approved / 2 suggested
         # No snapshot opening next month yet, so this month is still unmeasured.
         assert this_row["capital_freed"] is None
+        assert this_row["capital_freed_status"] == "not_measured"
 
         last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
         assert last_row["pos_count"] == 2
-        assert last_row["skus_order_now"] == 3
+        assert last_row["urgent_lines_ordered"] == 3
         assert last_row["total_value"] == 800.0
         assert last_row["adoption_rate"] == pytest.approx(5 / 6)
         assert last_row["capital_freed"] == 4000.0    # 10000 -> 6000 during last month
+        assert last_row["capital_freed_status"] == "measured"
 
     def test_month_with_no_activity_returns_zeroed_row(self, test_tenant):
         from backend.inventory.roi_service import get_monthly_summary
@@ -163,9 +220,49 @@ class TestGetMonthlySummary:
         assert len(rows) == 2
         for row in rows:
             assert row["pos_count"] == 0
-            assert row["skus_order_now"] == 0
+            assert row["urgent_lines_ordered"] == 0
+            assert row["total_value"] is None   # unknown, not a measured zero
             assert row["adoption_rate"] is None
             assert row["capital_freed"] is None
+            assert row["capital_freed_status"] == "not_measured"
+
+    def test_a_month_that_grew_is_told_apart_from_a_month_never_measured(
+        self, test_tenant,
+    ):
+        """
+        Both cases leave `capital_freed` None, and the screen printed the same
+        sentence for both — *"Necesitamos dos mediciones mensuales seguidas"*.
+        So a tenant whose dead stock had just GROWN was told we lacked data, and
+        the column became structurally incapable of reporting anything but good
+        news. The status is what separates them.
+        """
+        from backend.inventory.roi_service import get_monthly_summary
+
+        tid = test_tenant["id"]
+        now = datetime.now(tz=timezone.utc)
+        this_month = now.replace(day=1, hour=12, minute=0, second=0, microsecond=0)
+        last_month = (this_month - timedelta(days=1)).replace(
+            day=1, hour=12, minute=0, second=0, microsecond=0
+        )
+        for value, when in ((5000, last_month), (8000, this_month)):
+            execute(
+                """INSERT INTO inventory_overstock_snapshots
+                       (tenant_id, session_id, overstock_value, recorded_at)
+                   VALUES (%s, 's1', %s, %s)""",
+                (tid, value, when),
+            )
+
+        rows = get_monthly_summary(tid, months=2)
+        last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
+        this_row = rows[0]
+
+        # Both measurements exist and overstock went UP: this is a fact about
+        # the tenant's inventory, not a gap in ours.
+        assert last_row["capital_freed"] is None
+        assert last_row["capital_freed_status"] == "grew"
+        # No snapshot opening next month, so this one genuinely is unmeasured.
+        assert this_row["capital_freed"] is None
+        assert this_row["capital_freed_status"] == "not_measured"
 
     def test_capital_freed_is_none_when_overstock_increases(self, test_tenant):
         from backend.inventory.roi_service import get_monthly_summary

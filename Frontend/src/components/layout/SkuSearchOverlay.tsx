@@ -10,7 +10,6 @@ import { useSkuSearch } from '@/contexts/SkuSearchContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
-import { useEntitlements } from '@/lib/entitlements'
 import { getUser } from '@/lib/auth'
 import { visibleCommands, scoreCommand, scoreSku, type Command } from '@/components/command/commands'
 
@@ -59,7 +58,7 @@ function MiniForecastChart({ historical, forecast }: {
         <path d={histPath} fill="none" stroke="var(--accent)" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" />
       )}
       {fcastVals.length > 0 && fcastPath && (
-        <path d={fcastPath} fill="none" stroke="#22c55e" strokeWidth={1.75} strokeDasharray="3,3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={fcastPath} fill="none" stroke="#2E8B62" strokeWidth={1.75} strokeDasharray="3,3" strokeLinecap="round" strokeLinejoin="round" />
       )}
     </svg>
   )
@@ -90,10 +89,10 @@ function ResultRow({ item, active, onClick, onMouseEnter }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           <Package size={13} style={{ flexShrink: 0, color: 'var(--dim)' }} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', }}>
               {item.display_name || item.sku}
             </div>
-            <div style={{ fontSize: 10.5, color: 'var(--dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 10.5, color: 'var(--dim)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
               {item.sku}
             </div>
           </div>
@@ -127,7 +126,7 @@ function CommandRow({ cmd, active, onClick, onMouseEnter }: {
       }}
     >
       <Icon size={13} style={{ flexShrink: 0, color: active ? 'var(--accent)' : 'var(--dim)' }} />
-      <span style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', }}>
         {t(cmd.labelKey)}
       </span>
       {cmd.href && (
@@ -153,7 +152,6 @@ export default function SkuSearchOverlay() {
   const { isOpen, close, toggle } = useSkuSearch()
   const { t, lang, setLang } = useLanguage()
   const { toggle: toggleTheme } = useTheme()
-  const { ent, has } = useEntitlements()
   const router = useRouter()
   const role = getUser()?.role
 
@@ -263,14 +261,8 @@ export default function SkuSearchOverlay() {
       .finally(() => setLoadingList(false))
   }, [sessionId, t])
 
-  // ── Commands available to this tenant/role ─────────────────────────────────
-  // `has` is a fresh closure on every entitlements render, so the memo keys off
-  // the entitlements payload itself — which settles once, right after login.
-  const commands = useMemo(
-    () => visibleCommands(has, role),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ent, role],
-  )
+  // ── Commands available to this role ────────────────────────────────────────
+  const commands = useMemo(() => visibleCommands(role), [role])
 
   // ── Ranking ────────────────────────────────────────────────────────────────
   // Commands and SKUs are scored on one scale and then shown as two blocks,
@@ -507,7 +499,7 @@ export default function SkuSearchOverlay() {
                 dead request) without taking the commands down with it. */}
             {listError && (
               <div style={{ padding: '10px 16px', color: 'var(--dim)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <AlertTriangle size={13} style={{ flexShrink: 0, color: '#f59e0b' }} />
+                <AlertTriangle size={13} style={{ flexShrink: 0, color: '#B7791F' }} />
                 {listError}
               </div>
             )}
@@ -563,7 +555,7 @@ function SkuDetail({ item, intel, loading, error, warehouseBreakdown, onBack }: 
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', overflowWrap: 'anywhere', }}>
             {item.display_name || item.sku}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--dim)' }}>{item.sku}</div>
@@ -612,7 +604,7 @@ function SkuDetail({ item, intel, loading, error, warehouseBreakdown, onBack }: 
             <Spinner size={13} /> {t('search.loading')}
           </div>
         ) : error ? (
-          <div style={{ color: '#ef4444', fontSize: 11.5 }}>{error}</div>
+          <div style={{ color: '#C0504D', fontSize: 11.5 }}>{error}</div>
         ) : intel && (intel.historical.length > 0 || intel.forecast.length > 0) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <MiniForecastChart historical={intel.historical} forecast={intel.forecast} />
@@ -622,7 +614,7 @@ function SkuDetail({ item, intel, loading, error, warehouseBreakdown, onBack }: 
                 {t('search.legend_historical')}
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 10, height: 2, background: '#22c55e', display: 'inline-block' }} />
+                <span style={{ width: 10, height: 2, background: '#2E8B62', display: 'inline-block' }} />
                 {t('search.legend_forecast')}
               </span>
               {intel.model && <span style={{ color: 'var(--dim)' }}>{t('search.model_label')}: {intel.model}</span>}

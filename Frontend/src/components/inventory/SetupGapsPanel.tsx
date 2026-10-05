@@ -22,14 +22,22 @@ import Tooltip from '@/components/ui/Tooltip'
 import { useSetupCopy } from '@/i18n/useSetupCopy'
 import { getSetupGaps, patchInventoryStock, upsertInventoryStock } from '@/lib/api'
 import type { SetupGapItem, SetupGapsResponse } from '@/lib/stockSetupTypes'
+import type { InventoryStock } from '@/lib/types'
+import { fmtNum } from '@/lib/numberLocale'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
-const GREEN = '#22c55e'
-const AMBER = '#f59e0b'
+const GREEN = '#2E8B62'
+const AMBER = '#B7791F'
 
-type RowState = { stock: string; cost: string; lead: string; saving: boolean; saved: boolean; failed: boolean }
+type RowState = {
+  stock: string; cost: string; lead: string
+  saving: boolean; saved: boolean; failed: boolean
+  /** The row does not exist yet and the user saved without a stock count. */
+  needsStock: boolean
+}
 
 const emptyRow = (): RowState =>
-  ({ stock: '', cost: '', lead: '', saving: false, saved: false, failed: false })
+  ({ stock: '', cost: '', lead: '', saving: false, saved: false, failed: false, needsStock: false })
 
 export default function SetupGapsPanel({
   sessionId, horizonDays = 30, onChanged,
@@ -40,6 +48,9 @@ export default function SetupGapsPanel({
   onChanged?: () => void
 }) {
   const c = useSetupCopy()
+  // Phone: the 8-column table (720px minimum) becomes one card per product
+  // with the three boxes stacked under it — same rows, same save.
+  const narrow = useIsNarrow()
   const [data, setData]       = useState<SetupGapsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed]   = useState(false)
@@ -61,7 +72,7 @@ export default function SetupGapsPanel({
   useEffect(() => { void load() }, [load])
 
   const money = (n: number) =>
-    n >= 1000 ? Math.round(n).toLocaleString('es') : n.toFixed(2)
+    n >= 1000 ? fmtNum(Math.round(n)) : n.toFixed(2)
 
   async function save(item: SetupGapItem) {
     const state = rows[item.sku] ?? emptyRow()
@@ -70,25 +81,49 @@ export default function SetupGapsPanel({
     const lead  = state.lead.trim()  === '' ? null : Number(state.lead.replace(',', '.'))
     if (stock === null && cost === null && lead === null) return
 
-    setRows(r => ({ ...r, [item.sku]: { ...state, saving: true, failed: false } }))
-    try {
-      const body: Record<string, number> = {}
-      if (stock !== null && Number.isFinite(stock)) body.current_stock = stock
-      if (cost !== null && Number.isFinite(cost))   body.unit_cost = cost
-      if (lead !== null && Number.isFinite(lead))   body.lead_time_days = Math.round(lead)
+    const body: Partial<InventoryStock> = {}
+    if (stock !== null && Number.isFinite(stock)) body.current_stock = stock
+    if (cost !== null && Number.isFinite(cost))   body.unit_cost = cost
+    if (lead !== null && Number.isFinite(lead))   body.lead_time_days = Math.round(lead)
 
+    // A product with no stock row yet can only be CREATED with a count, and we
+    // ask for it rather than inventing one.
+    //
+    // `PUT /inventory/stock/{sku}` requires `current_stock` (it is the one
+    // non-optional field of StockUpsert), so this panel used to send a 0 when
+    // the user had filled in only the cost. Nothing downstream can tell that
+    // invented 0 from a counted one — there is no column recording who supplied
+    // it — and 0 units means 0 days of coverage, which is exactly what makes the
+    // semáforo shout PEDIR_YA. Someone typing costs for thirty products he has
+    // full pallets of got thirty emergency purchase orders for goods already on
+    // his shelf. Asking for one more number is cheaper than that.
+    if (!item.has_row && body.current_stock == null) {
+      setRows(r => ({
+        ...r,
+        [item.sku]: { ...state, saving: false, saved: false, failed: false, needsStock: true },
+      }))
+      return
+    }
+
+    setRows(r => ({ ...r, [item.sku]: { ...state, saving: true, failed: false, needsStock: false } }))
+    try {
       if (item.has_row) {
         await patchInventoryStock(item.sku, body)
       } else {
-        // PUT requires a stock figure; a row created here starts at 0 when the
-        // user only filled in the cost, which is still more than we had.
-        await upsertInventoryStock(item.sku, { current_stock: 0, ...body })
+        // Guarded above: `body.current_stock` is a number the user counted.
+        await upsertInventoryStock(item.sku, body)
       }
-      setRows(r => ({ ...r, [item.sku]: { ...state, saving: false, saved: true, failed: false } }))
+      setRows(r => ({
+        ...r,
+        [item.sku]: { ...state, saving: false, saved: true, failed: false, needsStock: false },
+      }))
       onChanged?.()
       void load()
     } catch {
-      setRows(r => ({ ...r, [item.sku]: { ...state, saving: false, saved: false, failed: true } }))
+      setRows(r => ({
+        ...r,
+        [item.sku]: { ...state, saving: false, saved: false, failed: true, needsStock: false },
+      }))
     }
   }
 
@@ -115,7 +150,7 @@ export default function SetupGapsPanel({
   return (
     <section style={{
       border: '1px solid var(--border)', borderRadius: 12,
-      background: 'var(--surface)', padding: '18px 20px',
+      background: 'var(--surface)', padding: narrow ? '16px 14px' : '18px 20px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: 0, flex: 1 }}>
@@ -188,7 +223,84 @@ export default function SetupGapsPanel({
         </div>
       )}
 
-      {data.items.length > 0 && (
+      {data.items.length > 0 && narrow && (
+        <ol aria-label={c('setupStock.gaps.title')} style={{ listStyle: 'none', margin: '14px -14px 0', padding: 0 }}>
+          {data.items.map(item => {
+            const state = rows[item.sku] ?? emptyRow()
+            const withinTarget = item.rank <= data.recommended_count
+            const set = (patch: Partial<RowState>) => setRows(r => ({ ...r, [item.sku]: { ...state, ...patch } }))
+            const label = (k: string) => (
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--muted)' }}>{c(k)}</span>
+            )
+            return (
+              <li key={item.sku} style={{
+                borderTop: '1px solid var(--border)', padding: '14px',
+                background: withinTarget ? 'rgba(46,139,98,0.05)' : 'transparent',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, color: 'var(--dim)', flexShrink: 0 }}>{item.rank}.</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
+                    {item.display_name || item.sku}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: withinTarget ? GREEN : 'var(--dim)', flexShrink: 0 }}
+                        title={c('setupStock.gaps.col_cumulative_tip')}>
+                    {item.cumulative_pct.toFixed(1)}%
+                  </span>
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--dim)', marginTop: 3, lineHeight: 1.45 }}>
+                  {item.display_name ? `${item.sku} · ` : ''}
+                  {fmtNum(Math.round(item.projected_demand))} {c('setupStock.gaps.units_suffix')}
+                  {isMoney ? ` · ${money(item.projected_spend)}` : ''}
+                  {` · ${c('setupStock.gaps.col_share')} ${item.share_pct.toFixed(1)}%`}
+                </div>
+                <div style={{ fontSize: 12.5, color: AMBER, marginTop: 2 }}>
+                  {c('setupStock.gaps.col_missing')}: {item.missing.map(f => c(`setupStock.gaps.missing.${f}`)).join(', ')}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 10 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    {label('setupStock.gaps.field_stock')}
+                    <input value={state.stock} inputMode="decimal" enterKeyHint="next"
+                           onChange={e => set({ stock: e.target.value, saved: false, needsStock: false })}
+                           aria-label={`${item.sku} — ${c('setupStock.gaps.legend_stock')}`}
+                           aria-required={!item.has_row} style={inputStyleNarrow} />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    {label('setupStock.gaps.field_cost')}
+                    <input value={state.cost} inputMode="decimal" enterKeyHint="next"
+                           onChange={e => set({ cost: e.target.value, saved: false })}
+                           aria-label={`${item.sku} — ${c('setupStock.gaps.legend_cost')}`} style={inputStyleNarrow} />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    {label('setupStock.gaps.field_lead_time')}
+                    <input value={state.lead} inputMode="numeric" enterKeyHint="done"
+                           onChange={e => set({ lead: e.target.value, saved: false })}
+                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void save(item) } }}
+                           aria-label={`${item.sku} — ${c('setupStock.gaps.legend_lead_time')}`} style={inputStyleNarrow} />
+                  </label>
+                </div>
+                <button type="button" className="mobile-btn mobile-btn-secondary" disabled={state.saving}
+                        onClick={() => void save(item)} style={{ width: '100%', marginTop: 10 }}>
+                  {state.saving ? <Spinner size={14} /> : state.saved
+                    ? <><Check size={16} color={GREEN} /> {c('setupStock.gaps.saved')}</>
+                    : c('setupStock.gaps.save')}
+                </button>
+                {state.needsStock && (
+                  <div role="alert" style={{ color: AMBER, fontSize: 12.5, marginTop: 6, lineHeight: 1.45 }}>
+                    {c('setupStock.gaps.stock_required')}
+                  </div>
+                )}
+                {state.failed && (
+                  <div role="alert" style={{ color: '#C0504D', fontSize: 12.5, marginTop: 6 }}>
+                    {c('setupStock.gaps.save_error')}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      )}
+
+      {data.items.length > 0 && !narrow && (
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 720 }}>
             <thead>
@@ -238,7 +350,7 @@ export default function SetupGapsPanel({
                 return (
                   <tr key={item.sku} style={{
                     borderTop: '1px solid var(--border)',
-                    background: withinTarget ? 'rgba(34,197,94,0.05)' : 'transparent',
+                    background: withinTarget ? 'rgba(46,139,98,0.05)' : 'transparent',
                   }}>
                     <td style={{ padding: '7px 8px', color: 'var(--dim)' }}>{item.rank}</td>
                     <td style={{ padding: '7px 8px' }}>
@@ -250,7 +362,7 @@ export default function SetupGapsPanel({
                       )}
                     </td>
                     <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text)' }}>
-                      {Math.round(item.projected_demand).toLocaleString('es')}{' '}
+                      {fmtNum(Math.round(item.projected_demand))}{' '}
                       <span style={{ color: 'var(--dim)', fontSize: 11 }}>
                         {c('setupStock.gaps.units_suffix')}
                       </span>
@@ -281,9 +393,12 @@ export default function SetupGapsPanel({
                             these carry it to a screen reader per row. */}
                         <input
                           value={state.stock}
-                          onChange={e => setRows(r => ({ ...r, [item.sku]: { ...state, stock: e.target.value, saved: false } }))}
+                          onChange={e => setRows(r => ({ ...r, [item.sku]: { ...state, stock: e.target.value, saved: false, needsStock: false } }))}
                           placeholder={c('setupStock.gaps.field_stock')}
                           aria-label={`${item.sku} — ${c('setupStock.gaps.legend_stock')}`}
+                          // A product with no row yet cannot be created without
+                          // this box — see `save()`.
+                          aria-required={!item.has_row}
                           inputMode="decimal"
                           style={inputStyle}
                         />
@@ -310,8 +425,13 @@ export default function SetupGapsPanel({
                             : c('setupStock.gaps.save')}
                         </Button>
                       </div>
+                      {state.needsStock && (
+                        <div role="alert" style={{ color: AMBER, fontSize: 11, marginTop: 3, maxWidth: 320, lineHeight: 1.45 }}>
+                          {c('setupStock.gaps.stock_required')}
+                        </div>
+                      )}
                       {state.failed && (
-                        <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>
+                        <div style={{ color: '#C0504D', fontSize: 11, marginTop: 3 }}>
                           {c('setupStock.gaps.save_error')}
                         </div>
                       )}
@@ -335,6 +455,12 @@ export default function SetupGapsPanel({
       )}
     </section>
   )
+}
+
+const inputStyleNarrow: React.CSSProperties = {
+  boxSizing: 'border-box', width: '100%', minWidth: 0, minHeight: 44,
+  padding: '8px 10px', fontSize: 16, borderRadius: 10,
+  border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)',
 }
 
 const inputStyle: React.CSSProperties = {

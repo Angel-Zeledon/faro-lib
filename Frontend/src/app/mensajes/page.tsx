@@ -11,6 +11,7 @@ import Spinner from '@/components/ui/Spinner'
 import Input from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import MessagesMobile from './MessagesMobile'
 
 const CONVERSATIONS_POLL_MS = 15000
 const THREAD_POLL_MS = 5000
@@ -136,25 +137,58 @@ export default function MessagesPage() {
     }
   }
 
+  // Phone: a messaging app — list, then a full-screen thread (MessagesMobile).
+  // Same state and requests as below; only the layout forks.
+  if (narrow) {
+    return (
+      <MessagesMobile
+        meId={me?.id ?? null}
+        conversations={conversations}
+        contactsCount={contacts.length}
+        shownConversations={shownConversations}
+        newContacts={newContacts}
+        search={search}
+        onSearch={setSearch}
+        activeId={activeId}
+        activeName={activeName}
+        onOpen={openThread}
+        onBack={() => setActiveId(null)}
+        messages={messages}
+        threadLoading={threadLoading}
+        draft={draft}
+        onDraft={setDraft}
+        sending={sending}
+        onSend={handleSend}
+        displayName={displayName}
+        timeLabel={iso => timeLabel(iso, lang)}
+      />
+    )
+  }
+
   const showList   = !narrow || activeId === null
   const showThread = !narrow || activeId !== null
 
   return (
-    <div style={{ padding: narrow ? 12 : 24, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Card padding={0} style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+    // Edge to edge: the shell pads every page by 24px, so the screen cancels it
+    // and sizes itself to the viewport below the top bar. Each pane scrolls on
+    // its own; the page itself never does.
+    <div style={{
+      margin: narrow ? 0 : -24,
+      height: narrow ? '100%' : 'calc(100vh - 51px - var(--section-tabs-h, 0px))',
+      display: 'flex', flexDirection: 'column',
+    }}>
+      <Card padding={0} style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0, borderRadius: narrow ? undefined : 0, border: narrow ? undefined : 'none' }}>
 
         {/* ── Conversation list ── */}
         {showList && (
           <div style={{
-            width: narrow ? '100%' : 280, minWidth: narrow ? undefined : 280,
+            width: narrow ? '100%' : 'clamp(280px, 24vw, 380px)', flexShrink: 0,
             borderRight: narrow ? 'none' : '1px solid var(--border)',
             display: 'flex', flexDirection: 'column', minHeight: 0,
           }}>
             <div style={{ padding: '14px 16px 12px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-                  {t('messages.page_title')}
-                </span>
+              {/* The top bar already says "Mensajes": only the count here. */}
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-start', gap: 8, marginBottom: 10 }}>
                 <span style={{ fontSize: 11, color: 'var(--dim)' }}>
                   {t('messages.people_count', { n: contacts.length })}
                 </span>
@@ -221,7 +255,7 @@ export default function MessagesPage() {
                       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                         <span style={{
                           fontSize: 12.5, fontWeight: c.unread_count ? 700 : 500,
-                          color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere',
                         }}>
                           {displayName(c)}
                         </span>
@@ -233,7 +267,7 @@ export default function MessagesPage() {
                         <span style={{
                           fontSize: 11.5, color: c.unread_count ? 'var(--text)' : 'var(--dim)',
                           fontWeight: c.unread_count ? 600 : 400, flex: 1, minWidth: 0,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          overflow: 'hidden', overflowWrap: 'anywhere',
                         }}>
                           {c.last_is_mine ? `${t('messages.you')}: ` : ''}{c.last_body}
                         </span>
@@ -284,10 +318,10 @@ export default function MessagesPage() {
                         {initial(c)}
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
                           {displayName(c)}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 11, color: 'var(--dim)', overflow: 'hidden', overflowWrap: 'anywhere', }}>
                           {c.email}
                         </div>
                       </div>
@@ -339,7 +373,10 @@ export default function MessagesPage() {
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{activeName}</span>
                 </div>
 
-                <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 }}>
+                <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', minHeight: 0 }}>
+                  {/* The pane uses the full width; the conversation itself is a
+                      centred column so a line never runs across 1,500px. */}
+                  <div style={{ maxWidth: 920, margin: '0 auto' }}>
                   {threadLoading && (
                     <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner size={16} /></div>
                   )}
@@ -353,13 +390,13 @@ export default function MessagesPage() {
                     return (
                       <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
                         <div style={{
-                          maxWidth: '72%', padding: '8px 12px',
+                          maxWidth: 'min(80%, 640px)', padding: '8px 12px',
                           borderRadius: mine ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
                           background: mine ? 'var(--accent)' : 'var(--surface-2)',
                           color: mine ? '#fff' : 'var(--text)',
                           border: mine ? 'none' : '1px solid var(--border)',
                         }}>
-                          <div style={{ fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>
+                          <div className="msg-prose msg-plain">{m.body}</div>
                           <div style={{
                             fontSize: 10, marginTop: 3, textAlign: 'right',
                             color: mine ? 'rgba(255,255,255,0.75)' : 'var(--dim)',
@@ -370,10 +407,12 @@ export default function MessagesPage() {
                       </div>
                     )
                   })}
+                  </div>
                 </div>
 
+                <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border)' }}>
                 <div style={{
-                  padding: 12, borderTop: '1px solid var(--border)',
+                  maxWidth: 920, margin: '0 auto',
                   display: 'flex', gap: 8, alignItems: 'center',
                 }}>
                   <Input
@@ -400,6 +439,7 @@ export default function MessagesPage() {
                   >
                     {sending ? <Spinner size={14} /> : <Send size={15} />}
                   </button>
+                </div>
                 </div>
               </>
             )}

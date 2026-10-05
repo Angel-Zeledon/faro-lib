@@ -386,6 +386,75 @@ def get_accuracy(
     return ok({"snapshots": snapshots, "overall_wape": overall_wape, "threshold": threshold})
 
 
+@router.get("/sessions/{session_id}/forecast-vs-actual")
+def get_forecast_vs_actual(
+    session_id: str,
+    dataset_id: Optional[str] = Query(
+        None,
+        description="Sales upload to compare against; default is the later upload "
+                    "that overlaps the forecast the most"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """What this session predicted vs. what the tenant's LATER sales uploads say
+    actually happened: per-SKU and pooled WAPE / MAPE / bias, the predicted-vs-
+    actual series, and a verdict code the frontend renders in words."""
+    s = _require_completed(user.tenant_id, session_id)
+    from backend.forecast_check.service import forecast_vs_actual
+    return ok(forecast_vs_actual(user.tenant_id, s, dataset_id))
+
+
+@router.get("/sessions/{session_id}/accuracy-tracking")
+def get_accuracy_tracking(
+    session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """The latest automatic reading of how this forecast is doing against the
+    sales uploaded after it was made, next to its accuracy at training time.
+
+    Stored, not computed: it is refreshed whenever a sales file lands, so
+    opening the screen costs one row read. `null` until a file reaching the
+    forecast window has been uploaded. `status`: `degraded` / `stable` /
+    `too_little` (not enough compared points) / `no_baseline`."""
+    _require_completed(user.tenant_id, session_id)
+    from backend.forecast_check.tracking import get_tracking
+    return ok(get_tracking(user.tenant_id, session_id))
+
+
+class BacktestRequest(BaseModel):
+    holdout_periods: int
+    name: Optional[str] = None
+
+    @field_validator("holdout_periods")
+    @classmethod
+    def _positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("holdout_periods must be at least 1")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: Optional[str]) -> Optional[str]:
+        v = (v or "").strip()
+        return v[:200] or None
+
+
+@router.post("/sessions/{session_id}/backtest", status_code=202)
+def start_backtest(
+    session_id: str,
+    body: BacktestRequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Train a back-test of a completed session: the same configuration on a copy
+    of its dataset with the last `holdout_periods` periods held out. Its forecast
+    then covers those periods and can be graded against the full dataset with
+    `forecast-vs-actual`. The source session and dataset are not modified; the
+    run counts against the plan's saved-forecast ceiling and is refused (nothing
+    deleted) when that is full."""
+    s = _require_completed(user.tenant_id, session_id)
+    from backend.forecast_check.backtest import launch_backtest
+    return ok(launch_backtest(user.tenant_id, user.user_id, s, body.holdout_periods, body.name))
+
+
 @router.get("/sessions/{session_id}/config-schema")
 def get_config_schema(session_id: str, user: CurrentUser = Depends(get_current_user)):
     session_svc.get_session(user.tenant_id, session_id)
@@ -455,6 +524,31 @@ def get_forecast_series(
     })
 
 
+def _champion_model(
+    sku: str, metrics_rows: list[dict], available_models: list[str],
+) -> Optional[str]:
+    """The model this SKU's purchases are computed from, if we can draw it.
+
+    Delegates to `best_model_by_sku` rather than re-deciding: that function is
+    the one the semáforo and the accuracy figure already obey, and the comment
+    above it records what happened the last time a second copy of this question
+    drifted — three layers describing three different models on one session.
+
+    Returns None when the champion has no stored forecast, which is not an
+    error: metrics can exist for a model whose series was never persisted, and
+    naming a curve we cannot draw would be worse than falling back.
+    """
+    if not metrics_rows or not available_models:
+        return None
+    from backend.inventory.service import best_model_by_sku
+
+    # The WHOLE session's rows, not this SKU's: a near-tie is settled by each
+    # model's record across every SKU, so one SKU's rows alone would pick a
+    # different champion than the orders and the accuracy figure use.
+    champion = best_model_by_sku(metrics_rows).get(sku)
+    return champion if champion in available_models else None
+
+
 @router.get("/sessions/{session_id}/sku-intelligence/{sku:path}")
 def get_sku_intelligence(
     session_id: str,
@@ -475,9 +569,20 @@ def get_sku_intelligence(
 
     historical_raw = _historical_for_sku(user.tenant_id, session_id, sku)
 
+    metrics_rows = result.get("metrics", {}).get("rows", [])
+    sku_metrics  = [r for r in metrics_rows if r.get("sku") == sku]
+
     sku_forecasts = forecasts_data.get(sku, {})
-    chosen_model  = model or next(iter(sku_forecasts.keys()), None)
     available_models = list(sku_forecasts.keys()) if isinstance(sku_forecasts, dict) else []
+    # Default to the model this SKU is actually BOUGHT from, not to whichever
+    # key the forecasts dict happened to store first. Serving the first key made
+    # the chart an accident of insertion order: on a real session it drew
+    # prophet at 45.7% WAPE while the purchase quantity came from xgboost at
+    # 24.6%, and the screen showed both numbers without ever saying they belong
+    # to different models. `best_model_by_sku` is the same authority the
+    # semáforo and the accuracy figure use, so all three now describe one model.
+    chosen_model = model or _champion_model(sku, metrics_rows, available_models) \
+        or next(iter(sku_forecasts.keys()), None)
 
     forecast_raw: list = []
     if chosen_model and isinstance(sku_forecasts, dict):
@@ -520,8 +625,6 @@ def get_sku_intelligence(
     values  = [p["value"] for p in historical_out if isinstance(p.get("value"), (int, float))]
     stats   = compute_stats(values)
 
-    metrics_rows = result.get("metrics", {}).get("rows", [])
-    sku_metrics  = [r for r in metrics_rows if r.get("sku") == sku]
     data_quality = result.get("data_quality", {})
     sku_quality  = data_quality.get(sku) if isinstance(data_quality, dict) else None
 
@@ -537,6 +640,99 @@ def get_sku_intelligence(
         "metrics":                 sku_metrics,
         "quality":                 sku_quality,
         "stats":                   stats or None,
+    })
+
+
+@router.get("/sessions/{session_id}/forecast-total")
+def get_forecast_total(
+    session_id: str,
+    granularity: Optional[str] = Query(None),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """The whole catalogue as one series: every SKU's champion forecast and
+    history summed per date. Feeds the session-comparison chart's "all SKUs"
+    option, where two sessions are only comparable as totals.
+
+    Same envelope as `sku-intelligence` so one client reads both. Quantile
+    bands are omitted on purpose: percentiles of independent SKUs do not add.
+    `accuracy_wape` is the mean of each SKU's champion WAPE.
+    """
+    _require_completed(user.tenant_id, session_id)
+    result = session_store.get_training_result(user.tenant_id, session_id)
+    if not result:
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
+    forecasts_data = session_store.get_forecasts(user.tenant_id, session_id) or {}
+    metrics_rows = result.get("metrics", {}).get("rows", [])
+    rows_by_sku: dict[str, list[dict]] = {}
+    for r in metrics_rows:
+        rows_by_sku.setdefault(r.get("sku"), []).append(r)
+
+    from backend.inventory.service import best_model_by_sku
+    champions = best_model_by_sku(metrics_rows)
+    from backend.utils.temporal_agg import (
+        _FREQ_ORDER, detect_frequency, available_granularities as _avail_gran,
+        aggregate_historical, aggregate_forecast,
+    )
+
+    hist_tot: dict[str, float] = {}
+    fc_tot: dict[str, float] = {}
+    wapes: list[float] = []
+    n_skus = 0
+    for sku, models in forecasts_data.items():
+        if not isinstance(models, dict) or not models:
+            continue
+        sku_rows = rows_by_sku.get(sku, [])
+        champion = champions.get(sku) if sku_rows else None
+        if champion not in models:
+            champion = next(iter(models.keys()))
+        raw = models.get(champion)
+        if isinstance(raw, dict):
+            fc, hist = raw.get("forecast", []), raw.get("historical", [])
+        elif isinstance(raw, list):
+            fc, hist = raw, []
+        else:
+            continue
+        hist = _historical_for_sku(user.tenant_id, session_id, sku) or list(hist)
+        n_skus += 1
+        for p in hist:
+            if isinstance(p.get("value"), (int, float)):
+                hist_tot[p["date"]] = hist_tot.get(p["date"], 0.0) + p["value"]
+        for p in fc:
+            if isinstance(p, dict) and isinstance(p.get("value"), (int, float)):
+                fc_tot[p["date"]] = fc_tot.get(p["date"], 0.0) + p["value"]
+        champ_row = next((r for r in sku_rows if r.get("model") == champion), None)
+        w = champ_row.get("wape") if champ_row else None
+        if isinstance(w, (int, float)) and 0 <= w < 1e6:
+            wapes.append(float(w))
+
+    historical_raw = [{"date": d, "value": v} for d, v in sorted(hist_tot.items())]
+    forecast_raw = [{"date": d, "value": v} for d, v in sorted(fc_tot.items())]
+    hist_freq = detect_frequency([p["date"] for p in historical_raw])
+    fc_freq = detect_frequency([p["date"] for p in forecast_raw]) if len(forecast_raw) >= 2 else hist_freq
+    base_freq = fc_freq if _FREQ_ORDER.index(fc_freq) > _FREQ_ORDER.index(hist_freq) else hist_freq
+    valid_gran = _avail_gran(base_freq, len(historical_raw))
+    gran = granularity if granularity in valid_gran else base_freq
+    if gran != hist_freq:
+        historical_raw = aggregate_historical(historical_raw, gran, agg="sum")
+    if gran != fc_freq:
+        forecast_raw = aggregate_forecast(forecast_raw, gran, agg="sum")
+
+    return ok({
+        "sku":                     "__total__",
+        "model":                   None,
+        "available_models":        [],
+        "original_freq":           base_freq,
+        "applied_granularity":     gran,
+        "available_granularities": valid_gran,
+        "historical":              historical_raw,
+        "forecast":                _enrich_forecast_points(forecast_raw),
+        "metrics":                 [],
+        "quality":                 None,
+        "stats":                   None,
+        "n_skus":                  n_skus,
+        "accuracy_wape":           (sum(wapes) / len(wapes)) if wapes else None,
     })
 
 

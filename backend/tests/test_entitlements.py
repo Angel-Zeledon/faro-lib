@@ -1,81 +1,60 @@
+"""What a tenant may do, now that a tier only decides how much.
+
+The old catalog these tests were written against is gone: no starter /
+professional / enterprise, no feature sets, no `require_feature`. Two tiers
+remain and both ship every feature — `free` with short ceilings, `paid` with
+none — so what is tested here is the machinery underneath: limit resolution,
+per-tenant `quota` overrides, the trial clock, and a few guards that the
+FEATURE walls really did come down and cannot creep back in.
+
+The tier-by-tier ceilings themselves live in `test_tiers.py`.
+"""
+
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from backend.entitlements.plans import Feature, PLAN_CATALOG
+from backend.entitlements.plans import PLANS
 from backend.entitlements import service as ent
 
 
 @pytest.mark.offline
-def test_catalog_has_three_plans():
-    assert set(PLAN_CATALOG) == {"starter", "professional", "enterprise"}
+def test_a_corporate_tenant_counts_nothing():
+    """SKUs, users, warehouses and saved sessions are the four numbers a
+    customer used to buy more of. On the corporate tier they are unlimited, and
+    this test is what would notice a ceiling quietly appearing there."""
+    corporate = PLANS["corporate"]
+    assert corporate.max_skus is None
+    assert corporate.max_users is None
+    assert corporate.max_locations is None
+    assert corporate.max_sessions is None
 
 
 @pytest.mark.offline
-def test_each_tier_is_a_superset_of_the_lower():
-    starter = PLAN_CATALOG["starter"].features
-    pro = PLAN_CATALOG["professional"].features
-    ent = PLAN_CATALOG["enterprise"].features
-    assert starter <= pro <= ent
+def test_the_infrastructure_ceiling_is_not_for_sale():
+    """Concurrent jobs protect the server, not a price list, so both tiers get
+    the same number. Upload size is the one commercial ceiling that survives on
+    paid, because an upload is read into memory before it is anything else."""
+    assert PLANS["free"].max_concurrent_jobs == PLANS["paid"].max_concurrent_jobs == 8
+    assert PLANS["corporate"].max_concurrent_jobs == 8
+    assert PLANS["corporate"].max_dataset_size_mb == 2000
 
 
-@pytest.mark.offline
-def test_starter_excludes_paid_features_but_includes_core():
-    starter = PLAN_CATALOG["starter"].features
-    assert Feature.SEMAPHORE in starter
-    assert Feature.EMAIL_ALERTS in starter
-    assert Feature.WHATSAPP_ALERTS not in starter
-    assert Feature.API_ACCESS not in starter
-
-
-@pytest.mark.offline
-def test_enterprise_only_features():
-    pro = PLAN_CATALOG["professional"].features
-    assert Feature.BOM not in pro
-    assert Feature.WEBHOOKS not in pro
-    ent = PLAN_CATALOG["enterprise"].features
-    assert {Feature.BOM, Feature.WEBHOOKS} <= ent
-
-
-@pytest.mark.offline
-def test_api_access_reaches_professional():
-    """The customer with an ERP and a few thousand SKUs is a Professional, and
-    they are the one who most needs to stop uploading files by hand. Held at
-    Enterprise, the API was sold to the tier that feels that pain least."""
-    assert Feature.API_ACCESS not in PLAN_CATALOG["starter"].features
-    assert Feature.API_ACCESS in PLAN_CATALOG["professional"].features
-    assert Feature.API_ACCESS in PLAN_CATALOG["enterprise"].features
-
-
-@pytest.mark.offline
-def test_numeric_limits():
-    assert PLAN_CATALOG["starter"].max_skus == 1000
-    assert PLAN_CATALOG["professional"].max_skus == 5000
-    assert PLAN_CATALOG["enterprise"].max_skus is None
-    assert PLAN_CATALOG["starter"].max_users == 2
-    assert PLAN_CATALOG["starter"].max_locations == 1
-
-
-def _tenant(plan="starter", trial_ends_at=None, quota=None):
-    return {"id": "ten_x", "plan": plan, "trial_ends_at": trial_ends_at,
-            "quota": quota or {}}
-
-
-@pytest.mark.offline
-def test_has_feature_by_plan():
-    assert ent.has_feature(_tenant("professional"), Feature.WHATSAPP_ALERTS)
-    assert not ent.has_feature(_tenant("starter"), Feature.WHATSAPP_ALERTS)
-
-
-@pytest.mark.offline
-def test_unknown_plan_falls_back_to_starter():
-    assert ent.get_plan_def("garbage").max_skus == 1000
+def _tenant(trial_ends_at=None, quota=None, tier="paid"):
+    """A tenant dict for the pure-function tests. Defaults to `paid` so these
+    exercise limit MERGING rather than re-asserting the free ceilings, which
+    test_tiers.py owns."""
+    return {"id": "ten_x", "tier": tier,
+            "trial_ends_at": trial_ends_at, "quota": quota or {}}
 
 
 @pytest.mark.offline
 def test_tenant_limits_merge_override():
-    limits = ent.tenant_limits(_tenant("starter", quota={"max_skus": 999}))
-    assert limits["max_skus"] == 999          # override wins
-    assert limits["max_users"] == 2           # catalog default preserved
+    limits = ent.tenant_limits(_tenant(quota={"max_skus": 999}))
+    assert limits["max_skus"] == 999          # the agreement with one customer
+    # Everything else stays the plan's own ceiling: `paid` is the limited Full
+    # plan since 2026-10-05, so the override changes ONE number and no other.
+    assert limits["max_users"] == PLANS["paid"].max_users
+    assert limits["max_dataset_size_mb"] == PLANS["paid"].max_dataset_size_mb
 
 
 @pytest.mark.offline
@@ -89,74 +68,43 @@ def test_trial_state_and_read_only():
     assert ent.is_read_only(_tenant(trial_ends_at=future)) is False
 
 
-@pytest.mark.offline
-def test_required_plans_for():
-    assert ent.required_plans_for(Feature.WHATSAPP_ALERTS) == ["professional", "enterprise"]
-    assert ent.required_plans_for(Feature.API_ACCESS) == ["professional", "enterprise"]
-    assert ent.required_plans_for(Feature.WEBHOOKS) == ["enterprise"]
-
-
 from backend.tenants import service as tenant_svc
-from backend.db.connection import execute as _db_execute
+from backend.db.connection import execute as _db_execute, _json as _db_json
 
 
-def test_create_tenant_starts_on_starter_trial(client):  # client fixture ensures migrations ran
+def _set_quota(tenant_id: str, quota: dict) -> None:
+    """Narrow one tenant the only way that is left: an explicit agreement."""
+    _db_execute("UPDATE tenants SET quota = %s WHERE id = %s",
+                (_db_json(quota), tenant_id))
+
+
+def test_create_tenant_starts_free_and_not_on_a_countdown(client):  # client fixture ensures migrations ran
+    """Signup used to open a 14-day trial that ended in a read-only account.
+    The free tier replaced it: a permanent home with short ceilings, so a new
+    tenant lands on `free` with nothing expiring over it."""
     t = tenant_svc.create_tenant("Acme Trial Co")
     try:
-        assert t["plan"] == "starter"
-        assert t["trial_ends_at"] is not None
-        ends = t["trial_ends_at"]
-        delta = ends - datetime.now(timezone.utc)
-        assert timedelta(days=13) < delta < timedelta(days=15)
+        assert t["tier"] == "free"
+        assert t["trial_ends_at"] is None
     finally:
         _db_execute("DELETE FROM tenants WHERE id = %s", (t["id"],))
 
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI  # noqa: F401  (kept for the TestClient import below)
 from fastapi.testclient import TestClient
 
 
-def _mini_app():
-    from backend.auth.guards import CurrentUser
-    from backend.entitlements.guards import require_feature
-    app = FastAPI()
-
-    @app.get("/whatsapp-thing")
-    def thing(user: CurrentUser = Depends(require_feature(Feature.WHATSAPP_ALERTS))):
-        return {"ok": True}
-
-    return app
-
-
-def test_require_feature_blocks_starter(monkeypatch, make_tenant_user_headers):
-    monkeypatch.setattr("backend.config.settings.testing_mode", False)
-    headers = make_tenant_user_headers(plan="starter")
-    r = TestClient(_mini_app()).get("/whatsapp-thing", headers=headers)
-    assert r.status_code == 403
-    body = r.json()["detail"]
-    assert body["code"] == "PLAN_UPGRADE_REQUIRED"
-    assert body["feature"] == "whatsapp_alerts"
-    assert body["current_plan"] == "starter"
-    assert body["required_plans"] == ["professional", "enterprise"]
-
-
-def test_require_feature_allows_professional(monkeypatch, make_tenant_user_headers):
-    monkeypatch.setattr("backend.config.settings.testing_mode", False)
-    headers = make_tenant_user_headers(plan="professional")
-    r = TestClient(_mini_app()).get("/whatsapp-thing", headers=headers)
-    assert r.status_code == 200
-
-
-def test_user_limit_on_starter(monkeypatch, make_tenant_user_headers):
+def test_user_limit_from_a_quota_override(monkeypatch, make_tenant_user_headers):
+    """Nothing caps users by default any more, so this exercises the override —
+    the mechanism a real agreement would use — rather than a tier."""
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.main import app
     from backend.db.connection import query_one
 
-    headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
-    )
+    headers, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True)
+    _set_quota(tenant_id, {"max_users": 2})
     client = TestClient(app)
-    # tenant already has 1 admin user; Starter allows 2 → first create OK
+    # tenant already has 1 admin user; the override allows 2 -> first create OK
     r1 = client.post("/api/v1/users", headers=headers,
                      json={"email": "u2@x.com", "full_name": "U2",
                            "password": "pw12345678", "role": "analyst"})
@@ -164,7 +112,7 @@ def test_user_limit_on_starter(monkeypatch, make_tenant_user_headers):
 
     before = query_one("SELECT COUNT(*) AS c FROM users WHERE tenant_id=%s",
                        (tenant_id,))["c"]
-    # 3rd user exceeds Starter's max_users=2 → blocked, count unchanged
+    # 3rd user exceeds max_users=2 -> blocked, count unchanged
     r2 = client.post("/api/v1/users", headers=headers,
                      json={"email": "u3@x.com", "full_name": "U3",
                            "password": "pw12345678", "role": "analyst"})
@@ -181,18 +129,20 @@ def test_bulk_import_blocks_new_warehouses_beyond_max_locations(
     """
     Regression for the max_locations bypass: POST /bulk used to create every
     NEW warehouse name it saw (via svc.upsert_stock -> _ensure_warehouse) with
-    no limit check at all, so a Starter tenant (max_locations=1) could get
-    unlimited warehouses through a CSV import even though POST /warehouses
-    enforced the same limit correctly. A CSV introducing 2 distinct new
-    warehouse names must be blocked before anything is written — the
-    warehouses AND inventory_stock row counts must be unchanged after.
+    no limit check at all, so a tenant capped at one warehouse could get
+    unlimited ones through a CSV import even though POST /warehouses enforced
+    the same limit correctly. A CSV introducing 2 distinct new warehouse names
+    must be blocked before anything is written — the warehouses AND
+    inventory_stock row counts must be unchanged after.
+
+    Nothing caps warehouses by default now, so the cap here is a quota
+    override: the bypass is what is under test, not the number.
     """
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.db.connection import query_one
 
-    headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
-    )
+    headers, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True)
+    _set_quota(tenant_id, {"max_locations": 1})
 
     wh_before = query_one(
         "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
@@ -230,15 +180,14 @@ def test_bulk_import_blocks_new_warehouses_beyond_max_locations(
 def test_put_stock_blocks_new_warehouse_beyond_max_locations(
     monkeypatch, make_tenant_user_headers, client,
 ):
-    """Same bypass, direct PUT /stock/{sku} path: a Starter tenant already at
-    its 1-warehouse cap must not get a 2nd warehouse auto-created by writing
-    stock for a SKU tagged with a brand-new warehouse name."""
+    """Same bypass, direct PUT /stock/{sku} path: a tenant already at its
+    1-warehouse cap (quota override) must not get a 2nd warehouse auto-created
+    by writing stock for a SKU tagged with a brand-new warehouse name."""
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.db.connection import query_one
 
-    headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
-    )
+    headers, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True)
+    _set_quota(tenant_id, {"max_locations": 1})
 
     # First write establishes warehouse #1 ("principal"), consuming the cap.
     r0 = client.put(
@@ -254,7 +203,7 @@ def test_put_stock_blocks_new_warehouse_beyond_max_locations(
     assert wh_before == 1
 
     # Second write targets a NEW warehouse name -> would be warehouse #2,
-    # exceeding Starter's max_locations=1.
+    # exceeding max_locations=1.
     r1 = client.put(
         "/api/v1/inventory/stock/PUTWH-2",
         json={"current_stock": 7, "warehouse": "Norte"},
@@ -278,25 +227,32 @@ def test_patch_stock_blocks_new_warehouse_beyond_max_locations(
     monkeypatch, make_tenant_user_headers, client,
 ):
     """
-    Regression for the 4th max_locations bypass path: PATCH /stock/{sku} calls
-    svc.get_stock(tenant_id, sku) WITHOUT a warehouse filter, so its 404 check
-    passes as long as the SKU exists in ANY warehouse. If the PATCH body then
-    sets a DIFFERENT warehouse, svc.upsert_stock inserts a brand-new
-    (tenant_id, sku, warehouse) row and auto-creates the warehouse via
-    _ensure_warehouse — bypassing max_locations entirely, with no per-caller
-    guard on this endpoint (unlike PUT /stock, POST /bulk and receive_po).
-    The fix enforces max_locations inside upsert_stock itself so every caller
-    is covered.
+    The 4th max_locations bypass path, now closed at the root rather than at
+    the ceiling.
+
+    PATCH /stock/{sku} used to 404-check svc.get_stock(tenant_id, sku) with NO
+    warehouse filter, so the check passed as long as the SKU existed in ANY
+    warehouse; a body naming a DIFFERENT warehouse then inserted a brand-new
+    (tenant_id, sku, warehouse) row and auto-created the warehouse. The ceiling
+    inside upsert_stock caught it — but a ceiling was never the right answer to
+    this: PATCH is a partial update, and creating a second stock row for a SKU
+    is not something it should be able to do at ANY plan size (see
+    test_patch_stock_never_invents_a_warehouse.py — the phantom units inflate
+    coverage and talk the buyer out of a purchase).
+
+    So the refusal is now a 404 on the (sku, warehouse) pair that does not
+    exist, and it arrives before any limit is consulted. The max_locations
+    chokepoint in upsert_stock is unchanged and still covered by the PUT,
+    bulk-import and receive_po tests around this one.
     """
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.db.connection import query_one
 
-    headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
-    )
+    headers, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True)
+    _set_quota(tenant_id, {"max_locations": 1})
 
     # Seed SKU X in the default warehouse -> warehouse #1 ("principal"),
-    # consuming Starter's max_locations=1 cap.
+    # consuming the max_locations=1 cap.
     r0 = client.put(
         "/api/v1/inventory/stock/X",
         json={"current_stock": 10},
@@ -314,15 +270,14 @@ def test_patch_stock_blocks_new_warehouse_beyond_max_locations(
     assert stock_before == 1
 
     # PATCH the SKU into a DIFFERENT warehouse -> would be warehouse #2,
-    # exceeding Starter's max_locations=1.
+    # exceeding max_locations=1.
     r1 = client.patch(
         "/api/v1/inventory/stock/X",
         json={"warehouse": "Norte"},
         headers=headers,
     )
-    assert r1.status_code == 403
-    assert r1.json()["detail"]["code"] == "PLAN_LIMIT_REACHED"
-    assert r1.json()["detail"]["limit"] == "max_locations"
+    assert r1.status_code == 404
+    assert r1.json()["error_code"] == "stock_sku_not_found_in_warehouse"
 
     wh_after = query_one(
         "SELECT COUNT(*) AS c FROM warehouses WHERE tenant_id=%s", (tenant_id,)
@@ -339,14 +294,13 @@ def test_bulk_import_blocks_new_skus_beyond_max_skus_quota_override(
 ):
     """
     max_skus enforcement, exercised through a per-tenant quota override rather
-    than the full 500-row Starter catalog value — cheap to set up and doubles
+    than a shipped ceiling — cheap to set up and doubles
     as proof that quota overrides actually take effect.
     """
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.db.connection import execute, query_one, _json
 
-    headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
+    headers, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True
     )
     execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
 
@@ -379,9 +333,9 @@ def test_bulk_import_blocks_new_skus_beyond_max_skus_quota_override(
 def test_dataset_sync_respects_max_skus(monkeypatch, make_tenant_user_headers):
     """
     Regression: the dataset-sync path (runner.py -> sync_stock_from_dataset,
-    the PRIMARY way SKUs enter Faro via Quick Start upload) had NO max_skus
-    enforcement at all, unlike PUT /stock and POST /bulk. A Starter tenant
-    could seed thousands of SKUs through an upload despite a low quota.
+    the PRIMARY way SKUs enter StockAI via Quick Start upload) had NO max_skus
+    enforcement at all, unlike PUT /stock and POST /bulk. A tenant could seed
+    thousands of SKUs through an upload despite a low quota.
 
     Calls sync_stock_from_dataset directly (its actual signature) with a
     2-new-SKU dataset against a max_skus=1 quota override, and asserts the
@@ -395,8 +349,7 @@ def test_dataset_sync_respects_max_skus(monkeypatch, make_tenant_user_headers):
 
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 
-    _, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
+    _, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True
     )
     execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
 
@@ -426,18 +379,19 @@ def test_dataset_sync_respects_max_skus(monkeypatch, make_tenant_user_headers):
 
 def test_patch_stock_respects_max_skus(monkeypatch, make_tenant_user_headers, client):
     """
-    Regression for the max_skus class of the max_locations PATCH bug: PATCH
-    /stock/{sku} 404-checks svc.get_stock(tenant_id, sku) WITHOUT a warehouse
-    filter, so as long as the SKU exists in ANY warehouse the 404 guard passes.
-    If the PATCH body then targets a DIFFERENT warehouse, svc.upsert_stock
-    inserts a brand-new (tenant_id, sku, warehouse) row — a class of write the
-    old per-caller max_skus checks (PUT /stock, POST /bulk) never covered.
+    Same path as the max_locations test above, for the max_skus ceiling: PATCH
+    /stock/{sku} could insert a brand-new (tenant_id, sku, warehouse) row by
+    naming a warehouse the SKU was not in.
+
+    It no longer can — the endpoint refuses the pair with a 404 before any
+    ceiling is read — so what this asserts today is the stronger guarantee:
+    the row count does not move, at any plan size. max_skus itself is still
+    enforced in upsert_stock and covered by the PUT / bulk / receive_po tests.
     """
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.db.connection import execute, query_one, _json
 
-    headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
+    headers, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True
     )
     execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
 
@@ -461,9 +415,8 @@ def test_patch_stock_respects_max_skus(monkeypatch, make_tenant_user_headers, cl
         json={"warehouse": "Sur", "current_stock": 7},
         headers=headers,
     )
-    assert r1.status_code == 403
-    assert r1.json()["detail"]["code"] == "PLAN_LIMIT_REACHED"
-    assert r1.json()["detail"]["limit"] == "max_skus"
+    assert r1.status_code == 404
+    assert r1.json()["error_code"] == "stock_sku_not_found_in_warehouse"
 
     stock_after = query_one(
         "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
@@ -478,7 +431,7 @@ def test_receive_po_respects_max_skus_atomically(monkeypatch, make_tenant_user_h
     PO line, step 2 upserts inventory_stock per line (creating a new row when
     the (sku, warehouse) pair doesn't exist yet), step 3 updates the PO header
     status. Only a pre-loop max_locations check existed; there was no max_skus
-    pre-check, so a Starter tenant at its max_skus cap receiving a PO into a
+    pre-check, so a tenant at its max_skus cap receiving a PO into a
     warehouse it already has (so max_locations doesn't fire) but for a NEW
     (sku, warehouse) pair could 403 mid-loop, after step 1 already committed
     received_qty for every line — a partial write that leaves PO items marked
@@ -498,8 +451,7 @@ def test_receive_po_respects_max_skus_atomically(monkeypatch, make_tenant_user_h
 
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 
-    _, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
+    _, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True
     )
     execute("UPDATE tenants SET quota = %s WHERE id = %s", (_json({"max_skus": 1}), tenant_id))
 
@@ -587,8 +539,7 @@ def test_demo_quickstart_respects_max_skus_atomically(
 
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
 
-    headers, tenant_id = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
+    headers, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True
     )
     # 1 pre-existing stock row + max_skus=1 quota override -> the demo's 5
     # brand-new SKUs would all exceed the cap.
@@ -645,7 +596,8 @@ def test_demo_quickstart_respects_max_skus_atomically(
     stock_final = query_one(
         "SELECT COUNT(*) AS c FROM inventory_stock WHERE tenant_id=%s", (tenant_id,)
     )["c"]
-    assert stock_final == stock_before + 5  # the 1 pre-existing + all 5 demo SKUs
+    from backend.api.v1.demo import _DEMO_STOCK
+    assert stock_final == stock_before + len(_DEMO_STOCK)  # the 1 pre-existing + every demo SKU
 
 
 def test_expired_trial_blocks_mutation_but_allows_read(
@@ -655,8 +607,7 @@ def test_expired_trial_blocks_mutation_but_allows_read(
     from backend.main import app
     from backend.db.connection import query_one
 
-    headers, tenant_id = make_tenant_user_headers(
-        plan="starter", expired_trial=True, return_tenant_id=True
+    headers, tenant_id = make_tenant_user_headers(expired_trial=True, return_tenant_id=True
     )
     client = TestClient(app)
 
@@ -680,105 +631,27 @@ def test_expired_trial_blocks_mutation_but_allows_read(
     ("/api/v1/documents", "get"),
     ("/api/v1/api-keys", "get"),
 ])
-def test_router_feature_gate_blocks_starter(
+def test_the_routers_that_used_to_be_walled_answer_everyone(
     monkeypatch, make_tenant_user_headers, path, method
 ):
+    """These two routers answered 403 PLAN_UPGRADE_REQUIRED to anyone below the
+    tier that included them. testing_mode OFF is what used to switch that wall
+    on, so this is the test that would catch one being put back."""
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.main import app
-    headers = make_tenant_user_headers(plan="starter")
+    headers = make_tenant_user_headers()
     r = getattr(TestClient(app), method)(path, headers=headers)
-    assert r.status_code == 403
-    assert r.json()["detail"]["code"] == "PLAN_UPGRADE_REQUIRED"
-
-
-def test_router_feature_gate_allows_enterprise(
-    monkeypatch, make_tenant_user_headers
-):
-    monkeypatch.setattr("backend.config.settings.testing_mode", False)
-    from backend.main import app
-    headers = make_tenant_user_headers(plan="enterprise")
-    r = TestClient(app).get("/api/v1/api-keys", headers=headers)
-    assert r.status_code != 403
-
-
-def test_dead_stock_hides_abc_and_derived_action_for_starter(
-    monkeypatch, make_tenant_user_headers, client,
-):
-    """
-    Regression: GET /dead-stock computed `action_suggested` from
-    item['abc'] BEFORE _strip_abc_xyz_unless_entitled ran, and the strip
-    only removed the raw abc/xyz/abc_xyz keys — leaving action_suggested as
-    a way for a Starter tenant (no Feature.ABC_XYZ) to reverse-engineer the
-    gated classification ('Devolver al proveedor' <=> abc == 'C', etc).
-    The fix drops action_suggested too whenever the raw keys are stripped.
-
-    Real dead-stock classification depends on stock-history-derived demand
-    data that's impractical to seed deterministically through the API, so
-    this monkeypatches the two service calls the handler makes
-    (get_inventory_status / get_stock_history) to produce exactly one
-    dead-stock item, while still exercising the real endpoint handler
-    end-to-end — including the actual strip call site.
-    """
-    monkeypatch.setattr("backend.config.settings.testing_mode", False)
-
-    def _fake_item():
-        return {
-            "sku": "DEAD-1", "has_stock": True, "current_stock": 50,
-            "daily_demand": 5, "unit_cost": 2.0, "abc": "C", "xyz": "Z",
-            "signal": "OK", "display_name": "Dead Item", "supplier": "Acme",
-        }
-
-    # first_stock == last_stock == 50 -> depletion 0; expected = 5 * 2 = 10;
-    # 0 < 10 * 0.20 -> classified as dead stock.
-    history = [{"stock": 50}, {"stock": 50}]
-
-    monkeypatch.setattr(
-        "backend.inventory.service.get_inventory_status",
-        lambda tenant_id, session_id: [_fake_item()],
-    )
-    monkeypatch.setattr(
-        "backend.inventory.service.get_stock_history",
-        lambda tenant_id, sku, days=30: history,
-    )
-
-    starter_headers = make_tenant_user_headers(plan="starter", role="analyst")
-    r = client.get(
-        "/api/v1/inventory/dead-stock",
-        params={"session_id": "sess_x"},
-        headers=starter_headers,
-    )
     assert r.status_code == 200, r.text
-    items = r.json()["data"]["items"]
-    assert len(items) == 1
-    for key in ("abc", "xyz", "abc_xyz", "action_suggested"):
-        assert key not in items[0], f"Starter dead-stock response leaked {key!r}"
-
-    # Proves the gate actually toggles rather than the field being always
-    # absent: an entitled plan gets the classification and derived action.
-    pro_headers = make_tenant_user_headers(plan="professional", role="analyst")
-    r2 = client.get(
-        "/api/v1/inventory/dead-stock",
-        params={"session_id": "sess_x"},
-        headers=pro_headers,
-    )
-    assert r2.status_code == 200, r2.text
-    items2 = r2.json()["data"]["items"]
-    assert len(items2) == 1
-    assert items2[0]["abc"] == "C"
-    assert items2[0]["action_suggested"] == "Devolver al proveedor"
 
 
-def test_send_now_allows_starter_without_whatsapp(
+def test_send_now_fires_both_channels_for_any_tenant(
     monkeypatch, make_tenant_user_headers, client,
 ):
     """
-    Regression: POST /alerts/send-now used to 403 the ENTIRE endpoint for
-    Starter tenants via an endpoint-level require_feature(WHATSAPP_ALERTS)
-    dependency, even though the handler also test-fires email — a core,
-    all-plans feature (Feature.EMAIL_ALERTS is in every plan). The fix
-    removes the endpoint-level gate and instead wraps only the
-    WhatsApp-sending block in a has_feature check, mirroring
-    run_daily_inventory_alerts() in backend/inventory/service.py.
+    POST /alerts/send-now once 403-ed the whole endpoint for tenants without
+    WHATSAPP_ALERTS, then — after that was fixed — fired the email and skipped
+    the WhatsApp. Neither wall exists now: a test fire that quietly skipped a
+    channel would tell the user their channel works when it was never tried.
     """
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.db.connection import execute
@@ -794,7 +667,7 @@ def test_send_now_allows_starter_without_whatsapp(
 
     sent_calls = []
 
-    def _fake_send_whatsapp(number, text):
+    def _fake_send_whatsapp(number, text, *_a, **_kw):
         sent_calls.append((number, text))
         return True
 
@@ -802,72 +675,48 @@ def test_send_now_allows_starter_without_whatsapp(
         "backend.notifications.whatsapp.send_whatsapp", _fake_send_whatsapp
     )
 
-    # Starter tenant, admin has a WhatsApp number on file — must still be
-    # skipped purely because the plan lacks Feature.WHATSAPP_ALERTS, and the
-    # endpoint itself must NOT 403.
-    starter_headers, starter_tid = make_tenant_user_headers(
-        plan="starter", role="admin", return_tenant_id=True
-    )
+    headers, tenant_id = make_tenant_user_headers(role="admin", return_tenant_id=True)
     execute(
         "UPDATE users SET whatsapp_number=%s WHERE tenant_id=%s",
-        ("+573001112222", starter_tid),
+        ("+573003334444", tenant_id),
     )
     r = client.post(
         "/api/v1/inventory/alerts/send-now",
         params={"session_id": "sess_x"},
-        headers=starter_headers,
+        headers=headers,
     )
     assert r.status_code == 202, r.text
     data = r.json()["data"]
     assert data["sent"] is True
-    assert data["whatsapp_sent"] == 0
-    assert sent_calls == []
-
-    # Professional tenant, same setup — WhatsApp IS attempted.
-    pro_headers, pro_tid = make_tenant_user_headers(
-        plan="professional", role="admin", return_tenant_id=True
-    )
-    execute(
-        "UPDATE users SET whatsapp_number=%s WHERE tenant_id=%s",
-        ("+573003334444", pro_tid),
-    )
-    r2 = client.post(
-        "/api/v1/inventory/alerts/send-now",
-        params={"session_id": "sess_x"},
-        headers=pro_headers,
-    )
-    assert r2.status_code == 202, r2.text
-    data2 = r2.json()["data"]
-    assert data2["sent"] is True
-    assert data2["whatsapp_sent"] == 1
+    assert data["whatsapp_sent"] == 1
     assert len(sent_calls) == 1
     assert sent_calls[0][0] == "+573003334444"
 
 
-def test_entitlements_endpoint_reports_plan(monkeypatch, make_tenant_user_headers):
+def test_entitlements_endpoint_reports_a_trial_not_a_plan(
+    monkeypatch, make_tenant_user_headers,
+):
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     from backend.main import app
-    headers = make_tenant_user_headers(plan="professional")
+    headers = make_tenant_user_headers()
     r = TestClient(app).get("/api/v1/entitlements", headers=headers)
     assert r.status_code == 200
     data = r.json()["data"] if "data" in r.json() else r.json()
-    assert data["plan"] == "professional"
-    assert data["features"]["whatsapp_alerts"] is True
-    assert data["features"]["api_access"] is True
-    assert data["features"]["webhooks"] is False
-    assert data["limits"]["max_skus"] == 5000
+
+    # A fresh tenant is free, so the ceilings it reports are the free ones —
+    # and `usage` arrives beside them, keyed identically, so the UI can never
+    # pair a count with the wrong limit.
+    assert data["tier"] == "free"
+    assert data["limits"]["max_skus"] == PLANS["free"].max_skus
+    assert data["limits"]["max_dataset_size_mb"] == PLANS["free"].max_dataset_size_mb
+    assert data["usage"]["max_skus"] == 0
     assert data["read_only"] is False
-    # feature_plans: the minimum plan that unlocks each feature, so the upsell
-    # can name the tier the user needs to reach.
-    assert data["feature_plans"]["ai_analyst"] == "professional"
-    assert data["feature_plans"]["api_access"] == "professional"
-    assert data["feature_plans"]["webhooks"] == "enterprise"
-    assert data["feature_plans"]["semaphore"] == "starter"  # core = available from starter
+    assert data["trial"]["state"] == "active"
 
-
-@pytest.mark.offline
-def test_integrations_is_enterprise_only():
-    from backend.entitlements.plans import Feature, PLAN_CATALOG
-    assert Feature.INTEGRATIONS not in PLAN_CATALOG["starter"].features
-    assert Feature.INTEGRATIONS not in PLAN_CATALOG["professional"].features
-    assert Feature.INTEGRATIONS in PLAN_CATALOG["enterprise"].features
+    # Since 2026-10-05 three features are paid-only (API, MCP, WhatsApp bot), so
+    # `features` is reported, and a fresh free tenant has none of them. A `plan`
+    # string or a per-feature plan map would still invite the browser to compare
+    # plans, so those stay absent.
+    assert data["features"] == {"api": False, "mcp": False, "whatsapp_bot": False}
+    for gone in ("plan", "feature_plans"):
+        assert gone not in data, f"/entitlements still reports {gone!r}"

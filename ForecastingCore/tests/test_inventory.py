@@ -57,6 +57,31 @@ class TestInventoryAdvisorRecommend:
         rec = adv.recommend("S", np.full(14, 10.0), current_stock=1_000_000.0)
         assert rec.stockout_risk < 0.01
 
+    def test_unknown_stock_reports_none_not_a_number(self):
+        """current_stock omitted (the engine's own call shape — Pipeline
+        never has a stock source) must not be silently treated as 0.0. Under
+        the old default, this SKU would get stockout_risk~1.0,
+        days_of_coverage=0.0 and action="REORDER" — a specific, confident,
+        wrong answer for a quantity nobody supplied."""
+        adv = self._advisor()
+        rec = adv.recommend("S", np.full(14, 100.0))
+        assert rec.stockout_risk is None
+        assert rec.days_of_coverage is None
+        assert rec.action == "UNKNOWN"
+        assert rec.overstock_alert is False
+
+    def test_explicit_zero_stock_is_not_treated_as_unknown(self):
+        """current_stock=0.0 is a caller telling us the shelf is genuinely
+        empty, not an absence of information — it must take the normal
+        REORDER/high-risk path, not UNKNOWN. Guards against a `not
+        current_stock` check, which is also true for 0.0 and would collapse
+        the two cases."""
+        adv = self._advisor()
+        rec = adv.recommend("S", np.full(14, 100.0), current_stock=0.0)
+        assert rec.action != "UNKNOWN"
+        assert rec.stockout_risk is not None
+        assert rec.days_of_coverage is not None
+
     def test_reorder_point_positive(self):
         adv = self._advisor()
         rec = adv.recommend("S", np.full(14, 50.0))
@@ -108,17 +133,52 @@ class TestInventoryAdvisorRecommend:
         rec = adv.recommend("S", np.zeros(14), current_stock=100.0)
         assert np.isfinite(rec.days_of_coverage)
 
-    # ⚠️ CRITICAL FIX REQUIRED: service_level=1.0 causes ppf(1.0)=inf
-    def test_service_level_boundary_1_causes_inf(self):
-        with pytest.raises(Exception):
-            adv = InventoryAdvisor(service_level=1.0)
-            adv.recommend("S", np.full(7, 10.0))
+    # These two used to read:
+    #
+    #     # ⚠️ CRITICAL FIX REQUIRED: service_level=1.0 causes ppf(1.0)=inf
+    #     def test_service_level_boundary_1_causes_inf(self):
+    #         with pytest.raises(Exception):
+    #             ...
+    #
+    # which is a test of the SYMPTOM, not of the behaviour: it passes while the
+    # bug is alive, keeps passing after the bug is fixed (the guard raises too),
+    # and would keep passing if a renamed argument made the constructor raise
+    # TypeError before reaching any inventory logic at all. `Exception` catches
+    # every one of those. The fix it demanded had in fact already been made —
+    # the constructor validates — and nobody could tell from the suite.
+    #
+    # What the advisor actually promises, asserted: the open interval is
+    # enforced, the error says which argument and why, and nothing infinite
+    # ever reaches the recommendation.
 
-    # ⚠️ CRITICAL FIX REQUIRED: service_level=0.0 causes ppf(0.0)=-inf
-    def test_service_level_boundary_0_causes_neg_inf(self):
-        with pytest.raises(Exception):
-            adv = InventoryAdvisor(service_level=0.0)
-            adv.recommend("S", np.full(7, 10.0))
+    @pytest.mark.parametrize("bad", [1.0, 0.0, -0.1, 1.5])
+    def test_a_service_level_outside_the_open_interval_is_refused(self, bad):
+        with pytest.raises(ValueError, match="service_level"):
+            InventoryAdvisor(service_level=bad)
+
+    @pytest.mark.parametrize("good", [0.5, 0.9, 0.95, 0.99, 0.999])
+    def test_every_accepted_service_level_yields_a_finite_z(self, good):
+        adv = InventoryAdvisor(service_level=good)
+        assert np.isfinite(adv._z)
+        rec = adv.recommend("S", np.full(7, 10.0))
+        assert np.isfinite(rec.details["z_score"])
+        assert np.isfinite(rec.reorder_point)
+        assert np.isfinite(rec.safety_stock)
+
+    def test_a_higher_service_level_never_buys_less_cushion(self):
+        """The property a buyer actually relies on. A z lookup that silently
+        collapsed distinct levels onto one value — the defect the backend had
+        in `_z_for` — is invisible to a single-point assertion and obvious
+        here."""
+        levels = [0.80, 0.90, 0.95, 0.99]
+        cushions = [
+            InventoryAdvisor(service_level=s).recommend(
+                "S", np.full(14, 10.0), demand_std=3.0
+            ).safety_stock
+            for s in levels
+        ]
+        assert cushions == sorted(cushions), cushions
+        assert cushions[0] < cushions[-1], "distinct service levels collapsed onto one cushion"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,7 +214,30 @@ class TestBatchRecommend:
         assert "action" in df.columns
         assert len(df) == 2
 
-    def test_missing_stock_defaults_to_zero(self):
+    def test_missing_stock_is_unknown_not_zero(self):
+        """The engine never receives stock levels, so this is the path every
+        engine-generated recommendation takes. Silently defaulting to 0.0
+        made every SKU look like it was about to stock out (stockout_risk
+        ~1.0, action REORDER, confidently wrong) — see
+        backend/ai/rag_service.py ~line 723 for where that reached a tenant.
+        """
         adv = InventoryAdvisor()
         recs = adv.batch_recommend({"A": np.full(7, 50.0)})
-        assert recs[0].details["current_stock"] == 0.0
+        assert recs[0].details["current_stock"] is None
+        assert recs[0].stockout_risk is None
+        assert recs[0].days_of_coverage is None
+        assert recs[0].action == "UNKNOWN"
+
+    def test_batch_recommend_sorts_unknown_stock_last_without_crashing(self):
+        """stockout_risk=None (unknown stock) used to be compared directly
+        against float stockout_risk values by `sorted(..., reverse=True)`,
+        which raises TypeError in Python 3. Mixing a known and an unknown SKU
+        reproduces it."""
+        adv = InventoryAdvisor()
+        forecasts = {
+            "known_risky": np.full(7, 100.0),
+            "unknown":     np.full(7, 50.0),
+        }
+        recs = adv.batch_recommend(forecasts, stocks_by_sku={"known_risky": 0.0})
+        assert [r.sku for r in recs] == ["known_risky", "unknown"]
+        assert recs[-1].stockout_risk is None

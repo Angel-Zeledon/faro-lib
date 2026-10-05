@@ -11,8 +11,9 @@
 import { TrendingDown, Info } from 'lucide-react'
 import type { PriceBreakOpportunity, PriceBreakReason } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { fmtNum } from '@/lib/numberLocale'
 
-const GREEN = '#22c55e'
+const GREEN = '#2E8B62'
 const DIM   = 'var(--dim)'
 
 const REASON_KEY: Record<PriceBreakReason, string> = {
@@ -30,7 +31,12 @@ export function PriceBreakPanel({
   opportunities:  PriceBreakOpportunity[]
   totalNetSaving: number
   currency:       (n: number) => string
-  onApplyStepUp:  (sku: string, quantity: number) => void
+  /** `unitPrice` is the rung's price, and it is not optional: accepting a
+   *  break used to raise the quantity and leave the OLD unit cost on the
+   *  line, so the panel promised a saving that never reached the cart total,
+   *  the PO, the PDF the supplier receives, the cash calendar or the
+   *  scorecard. */
+  onApplyStepUp:  (sku: string, quantity: number, unitPrice: number) => void
 }) {
   const { t } = useLanguage()
 
@@ -64,9 +70,9 @@ export function PriceBreakPanel({
         >
           <div style={{ flex: 1, fontSize: 12, color: 'var(--text)' }}>
             <strong>{o.sku}</strong>{': '}
-            {t('pricebreaks.step_prefix')} {o.extra_units.toLocaleString('es-419')}{' '}
-            {t('pricebreaks.step_more_units')} ({o.current_quantity.toLocaleString('es-419')}
-            {' → '}{o.step_quantity.toLocaleString('es-419')}){', '}
+            {t('pricebreaks.step_prefix')} {fmtNum(o.extra_units)}{' '}
+            {t('pricebreaks.step_more_units')} ({fmtNum(o.current_quantity)}
+            {' → '}{fmtNum(o.step_quantity)}){', '}
             {t('pricebreaks.unit_price_falls')}{' '}
             <strong style={{ color: GREEN }}>
               {o.unit_price_drop_pct != null ? `${(o.unit_price_drop_pct * 100).toFixed(1)}%` : '—'}
@@ -82,7 +88,7 @@ export function PriceBreakPanel({
             </span>
           </div>
           <button
-            onClick={() => onApplyStepUp(o.sku, o.step_quantity)}
+            onClick={() => onApplyStepUp(o.sku, o.step_quantity, o.step_unit_price)}
             style={{
               all: 'unset', cursor: 'pointer', flexShrink: 0,
               fontSize: 12, fontWeight: 700, color: GREEN,
@@ -111,7 +117,7 @@ export function PriceBreakPanel({
                   <>
                     {t('pricebreaks.blocked_discount_prefix')}{' '}
                     {(o.unit_price_drop_pct * 100).toFixed(1)}%{' '}
-                    {t('pricebreaks.blocked_at')} {o.step_quantity.toLocaleString('es-419')}
+                    {t('pricebreaks.blocked_at')} {fmtNum(o.step_quantity)}
                     {' '}{t('pricebreaks.step_more_units')}{', '}
                   </>
                 )}

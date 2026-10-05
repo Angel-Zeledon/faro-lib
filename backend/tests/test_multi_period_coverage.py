@@ -31,26 +31,64 @@ class TestRecommendationUnitLabels:
     def _text(self, recs, sku, rec_type):
         return next(r["text"] for r in recs if r["sku"] == sku and r["rec_type"] == rec_type)
 
-    def test_weekly_coverage_labeled_in_weeks_not_days(self):
-        recs = generate_recommendations(self._items(), period="weekly")
-        ya = self._text(recs, "YA", "STOCKOUT_RISK")
-        over = self._text(recs, "OVER", "OVERSTOCK")
-        # Coverage reads in weeks; the supplier lead time stays in days.
-        assert "0 semanas de stock" in ya
-        assert "tarda 10 días en entregar" in ya
-        # 32.1 weeks coverage — NOT "32 días".
-        assert "32 semanas de cobertura" in over
-        assert "días de cobertura" not in over
-        # Excess vs the 3×lead ceiling is computed in the SAME unit (weeks):
-        # 32.1 − (7/7)*3 = 29.1 → "29 semanas", never a mixed-unit "11 días".
-        assert "29 semanas más de lo óptimo" in over
+    def _rec(self, recs, sku, rec_type):
+        return next(r for r in recs if r["sku"] == sku and r["rec_type"] == rec_type)
 
-    def test_daily_output_is_byte_identical_to_default(self):
+    def test_weekly_coverage_is_carried_in_weeks_not_days(self):
+        """The sentence now lives in the frontend catalogue, so what the backend
+        must get right is the NUMBER and the period it belongs to. Coverage is
+        in the active period's unit; the supplier lead time is a real calendar
+        duration and stays in days."""
+        recs = generate_recommendations(self._items(), period="weekly")
+        ya = self._rec(recs, "YA", "STOCKOUT_RISK")["text_params"]
+        over = self._rec(recs, "OVER", "OVERSTOCK")["text_params"]
+        assert ya["days"] == 0          # 0.3 weeks of stock
+        assert ya["lead_days"] == 10    # days, not weeks
+        assert over["days"] == 32       # 32.1 WEEKS
+        # Excess vs the 3x-lead ceiling is computed in the SAME unit:
+        # 32.1 - (7/7)*3 = 29.1 -> 29 weeks, never a mixed-unit 11.
+        assert over["excess"] == 29
+
+    def test_daily_excess_uses_the_daily_ceiling(self):
+        """The same arithmetic under daily: 32.1 - (7/1)*3 = 11.1 -> 11 days.
+        A single unit conversion missing here is what produced the original
+        "-12 dias mas de lo optimo"."""
+        recs = generate_recommendations(self._items(), period="daily")
+        over = self._rec(recs, "OVER", "OVERSTOCK")["text_params"]
+        assert over["days"] == 32
+        assert over["excess"] == 11
+
+    def test_daily_is_still_the_default(self):
         items = self._items()
         assert generate_recommendations(items, period="daily") == generate_recommendations(items)
-        over = self._text(generate_recommendations(items), "OVER", "OVERSTOCK")
-        # Daily keeps the "días" wording exactly as before.
-        assert "32 días de cobertura" in over
+
+    def test_the_english_fallback_agrees_with_the_period(self):
+        """`text` is only the fallback for a frontend with no catalogue entry,
+        but it must not be Spanglish: `format_coverage` emits Spanish nouns, and
+        interpolating it here printed "Azucar has 32 dias of coverage"."""
+        weekly = self._rec(generate_recommendations(self._items(), period="weekly"),
+                           "OVER", "OVERSTOCK")["text"]
+        assert "32 weeks of coverage" in weekly
+        assert "29 weeks more than optimal" in weekly
+        assert "dias" not in weekly and "días" not in weekly
+        daily = self._rec(generate_recommendations(self._items(), period="daily"),
+                          "OVER", "OVERSTOCK")["text"]
+        assert "32 days of coverage" in daily
+
+    def test_the_supplier_name_travels_without_a_preposition(self):
+        """Grammar belongs to the catalogue: a param carrying "a Andina"
+        rendered as "Order 264 units a Andina" once the UI was English."""
+        ya = self._rec(generate_recommendations(self._items()), "YA", "STOCKOUT_RISK")
+        assert ya["text_params"]["supplier"] == "Andina"
+        assert ya["action_params"]["supplier"] == "Andina"
+        assert ya["action_code"] == "order_qty_from_supplier"
+
+    def test_no_supplier_gets_its_own_key_rather_than_a_spanish_default(self):
+        items = [dict(self._items()[0], supplier=None)]
+        ya = self._rec(generate_recommendations(items), "YA", "STOCKOUT_RISK")
+        assert ya["text_code"] == "STOCKOUT_RISK_NO_SUPPLIER"
+        assert ya["action_code"] == "order_qty_from_generic"
+        assert "proveedor" not in ya["text"]
 
     def test_format_coverage_daily_matches_format_days(self):
         for n in (0, 1, 2, 5.4, 32.1, 144):
@@ -142,6 +180,94 @@ class TestWeeklyCoverage:
         assert daily["signal"] == "PEDIR_YA"
         assert weekly["signal"] == "PEDIR_PRONTO"
         assert daily["coverage_days"] == 2.0 and weekly["coverage_days"] == 2.0
+
+
+class TestEverySurfaceReadsTheTenantsGrain:
+    """
+    `get_inventory_status` defaults `period` to "daily", so any caller that
+    forgets to pass it silently re-derives a weekly or monthly tenant's numbers
+    as daily. Ten call sites did.
+
+    The one that cost money: `GET /export-po` does NOT export what the buyer is
+    looking at — it re-derives the list server-side. For the tenant below the
+    screen offers nothing to order (4 weeks of cover against a 2-week lead) and
+    the CSV came back with an order, plus a purchase order in /pedidos they
+    never saw. Same shape for the PDF (which had no `period` parameter at all),
+    dashboard-summary, dead-stock, the price-break cart, the alert test send,
+    production-requirements and the event simulator.
+
+    These assert through the HTTP endpoints on purpose: the defect was never in
+    the calculation, it was in what the endpoint passed to it.
+    """
+
+    def _weekly_tenant(self, client, auth_headers, test_tenant, monkeypatch):
+        from backend.sessions import planning_service
+
+        tid = test_tenant["id"]
+        sid = create_session(tid, "usr_test", "grain-surfaces")["id"]
+        # 40 units, 10/week, 14-day lead. Weekly: 4 weeks of cover against 2
+        # weeks of lead -> OK. Read as daily: 4 "days" against 14 -> PEDIR_YA.
+        _put_stock(client, auth_headers, "GRAIN", current_stock=40,
+                   lead_time_days=14, moq=1, unit_cost=5.0)
+        session_store.set_forecasts(tid, sid, {"GRAIN": _forecast(10.0, 0.0)})
+        monkeypatch.setattr(
+            planning_service, "get_planning",
+            lambda t: {"period": "weekly", "horizon": 4},
+        )
+        return tid, sid
+
+    def test_the_screen_and_the_csv_export_agree(
+        self, client, auth_headers, test_tenant, monkeypatch,
+    ):
+        tid, sid = self._weekly_tenant(client, auth_headers, test_tenant, monkeypatch)
+
+        on_screen = next(i for i in svc.get_inventory_status(tid, sid, period="weekly")
+                         if i["sku"] == "GRAIN")
+        assert on_screen["signal"] == "OK", "the premise: nothing to order on screen"
+
+        resp = client.get(f"/api/v1/inventory/status/export-po?session_id={sid}",
+                          headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        assert "GRAIN" not in resp.text, (
+            "the CSV re-derived the list as daily and exported an order the "
+            "screen never showed")
+
+    def test_the_dashboard_summary_counts_the_same_signals(
+        self, client, auth_headers, test_tenant, monkeypatch,
+    ):
+        tid, sid = self._weekly_tenant(client, auth_headers, test_tenant, monkeypatch)
+
+        resp = client.get(f"/api/v1/inventory/dashboard-summary?session_id={sid}",
+                          headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["order_now"] == 0, (
+            "the widget called a SKU critical that the screen calls OK")
+        assert data["ok"] == 1
+
+    def test_the_pdf_is_generated_at_the_tenants_grain(
+        self, client, auth_headers, test_tenant, monkeypatch,
+    ):
+        """The PDF had no `period` parameter at all — it was ALWAYS daily. It is
+        the one copy of these numbers that leaves the app, forwarded to people
+        who cannot check it against a screen."""
+        import inspect
+
+        tid, sid = self._weekly_tenant(client, auth_headers, test_tenant, monkeypatch)
+        assert "period" in inspect.signature(svc.generate_inventory_pdf).parameters
+
+        captured = {}
+        real = svc.get_inventory_status
+
+        def _spy(tenant_id, session_id, service_level=0.95, period="daily"):
+            captured["period"] = period
+            return real(tenant_id, session_id, service_level, period)
+
+        monkeypatch.setattr(svc, "get_inventory_status", _spy)
+        resp = client.get(f"/api/v1/inventory/report/pdf?session_id={sid}",
+                          headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        assert captured.get("period") == "weekly"
 
 
 class TestDailyRegression:
@@ -268,7 +394,7 @@ class TestOptimizerHorizonConversion:
         import backend.api.v1.inventory as inv_api
         captured = {}
 
-        def _fake_build(tenant_id, session_id, horizon_days, stock_rows=None, period="daily"):
+        def _fake_build(tenant_id, session_id, horizon_days, stock_rows=None, period="daily", **kwargs):
             captured["horizon_days"] = horizon_days
             captured["period"] = period
             return None
@@ -304,10 +430,12 @@ class TestOptimizerLeadTimeBuckets:
         _put_stock(client, auth_headers, "OPTL", current_stock=5, lead_time_days=30,
                    moq=1, warehouse="principal")
         session_store.set_forecasts(tid, sid, {"OPTL": _forecast(10.0, 0.0)})
-        inp = opt.build_optimization_input(tid, sid, horizon_days=4, period="monthly")
+        # Horizons past the 30-day lead time: a shorter one is Panel-sized now
+        # (lead time >= horizon), so the SKU never reaches the optimizer.
+        inp = opt.build_optimization_input(tid, sid, horizon_days=120, period="monthly")
         assert inp is not None
         assert inp.lead_time_buckets["OPTL"] == 1
-        inp_d = opt.build_optimization_input(tid, sid, horizon_days=30)
+        inp_d = opt.build_optimization_input(tid, sid, horizon_days=60)
         assert inp_d.lead_time_buckets["OPTL"] == 30
 
 
@@ -350,12 +478,15 @@ class TestNarrativeKpiConsistency:
     def _immediate_risk_from_narrative(self, narrative: dict) -> int:
         """The narrative's own count of immediate-risk products, read from the
         structured key_points the endpoint returns. Both the fallback builder and
-        the LLM path derive these from the same briefing kpis['order_now']."""
-        import re
+        the LLM path derive these from the same briefing kpis['order_now'].
+
+        Read from the CODE and its params, not by parsing the sentence: the
+        sentence is now the frontend's to compose, and a test that greps prose
+        for "riesgo inmediato" would have started passing vacuously the moment
+        the wording moved."""
         for kp in narrative.get("key_points", []):
-            m = re.match(r"\s*(\d+)\s+producto", kp)
-            if m and "riesgo inmediato" in kp:
-                return int(m.group(1))
+            if kp.get("code") == "immediate_stockout_risk":
+                return int(kp["params"]["n"])
         return 0
 
     def _force_rule_based_fallback(self, monkeypatch):
@@ -398,7 +529,9 @@ class TestNarrativeKpiConsistency:
         assert self._immediate_risk_from_narrative(n) == kpi_order_now
         assert n["urgency"] == "ok"   # not 'critical'
         # The prose must not claim immediate-risk products the KPI denies.
-        assert "riesgo inmediato" not in n["narrative"]
+        # (English: the rule-based narrative is the API's fallback, and /hoy
+        # composes its own from the briefing — see buildFallbackNarrative.)
+        assert "immediate risk" not in n["narrative"]
 
     def test_daily_narrative_agrees_with_kpi_tile(
         self, client, auth_headers, test_tenant, monkeypatch
@@ -428,4 +561,4 @@ class TestNarrativeKpiConsistency:
         n = narr.json()["data"]
         assert self._immediate_risk_from_narrative(n) == kpi_order_now
         assert n["urgency"] == "critical"
-        assert "riesgo inmediato" in n["narrative"]
+        assert "immediate risk" in n["narrative"]

@@ -1,7 +1,8 @@
 'use client'
 import { useEffect } from 'react'
 import Button from '@/components/ui/Button'
-import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { AlertTriangle, MessageSquareText, RefreshCw } from 'lucide-react'
+import { useFeedback } from '@/components/feedback/context'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 export default function GlobalError({
@@ -12,6 +13,7 @@ export default function GlobalError({
   reset: () => void
 }) {
   const { t } = useLanguage()
+  const reportBug = useFeedback()
   useEffect(() => { console.error('[page error]', error) }, [error])
 
   return (
@@ -21,10 +23,10 @@ export default function GlobalError({
     }}>
       <div style={{
         width: 48, height: 48, borderRadius: 12,
-        background: 'rgba(239,68,68,0.1)',
+        background: 'rgba(192,80,77,0.1)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <AlertTriangle size={22} color="#ef4444" />
+        <AlertTriangle size={22} color="#C0504D" />
       </div>
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('states.err_unknown_title')}</div>
@@ -40,9 +42,17 @@ export default function GlobalError({
           </div>
         )}
       </div>
-      <Button variant="primary" icon={<RefreshCw size={13} />} onClick={reset}>
-        {t('states.retry')}
-      </Button>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <Button variant="primary" icon={<RefreshCw size={13} />} onClick={reset}>
+          {t('states.retry')}
+        </Button>
+        <Button
+          variant="ghost" icon={<MessageSquareText size={13} />}
+          onClick={() => reportBug({ code: error.digest, detail: error.message })}
+        >
+          {t('feedback.action')}
+        </Button>
+      </div>
     </div>
   )
 }

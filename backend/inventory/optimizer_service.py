@@ -10,6 +10,7 @@ does the translation between the database and that model.
 
 from __future__ import annotations
 
+import logging
 import threading
 from contextlib import contextmanager
 from typing import Optional
@@ -17,13 +18,48 @@ from typing import Optional
 from forecasting_core.business.optimizer import OptimizationInput
 
 import math as _math
+from datetime import date
 
 from backend.db import session_store
+from backend.inventory import stock_defaults_service as sd_svc
+from backend.inventory import supplier_service as sup_svc
 from backend.inventory import transfer_lane_service as lane_svc
+from backend.inventory import warehouse_service as wh_svc
 from backend.inventory.defaults import DEFAULT_LEAD_TIME_DAYS as _DEFAULT_LEAD_TIME_DAYS
-from backend.inventory.service import list_stock, _avg_forecast_curve, _days_per_period
+from backend.inventory.defaults import DEFAULT_MOQ as _DEFAULT_MOQ
+from backend.inventory.series import for_store, rollup_by_sku, stores_in
+from backend.inventory.service import (
+    _aggregate_stock_rows_by_sku,
+    _avg_forecast_curve,
+    _days_per_period,
+    _resolve_review_period_days,
+    get_learned_lead_times,
+    list_stock,
+    resolve_lead_time,
+)
+
+log = logging.getLogger(__name__)
 
 _DEFAULT_UNIT_COST = 1.0
+
+
+def _usable_unit_cost(value) -> Optional[float]:
+    """The unit cost the optimizer can actually reason with, or None.
+
+    Zero is not a price, it is a blank that happens to be a number — and to a
+    cost minimizer the difference is total. With unit_cost = 0 the SKU's order
+    cost, holding cost and stockout penalty are ALL zero, so leaving its demand
+    unmet costs the objective nothing: the solver drops it, `/planning` shows
+    no line for it, and `/hoy` goes on painting it PEDIR_YA. The old check was
+    `if row["unit_cost"] is not None`, and a stored 0.0 sailed through it, so
+    the SKU vanished from the plan without ever being flagged as assumed.
+    Negative costs are refused for the same reason: they would pay the solver
+    to buy.
+    """
+    if value is None:
+        return None
+    cost = float(value)
+    return cost if cost > 0 else None
 
 # A MILP solve is CPU-bound and can take tens of seconds. FastAPI runs sync
 # endpoints on a bounded thread pool, so an unthrottled burst of /optimize
@@ -31,12 +67,52 @@ _DEFAULT_UNIT_COST = 1.0
 # (QA drove /health to time out for 8+ minutes). This bounded gate caps how
 # many solves run concurrently; requests beyond the cap are rejected fast
 # (OptimizerBusy -> 503 retry) instead of piling onto the thread pool.
-_MAX_CONCURRENT_SOLVES = 2
+#
+# ONE, because one is how many solves the engine can actually run.
+#
+# Every HiGHS solve in the process is submitted to a single dedicated thread
+# (`forecasting_core.business.optimizer._SOLVE_EXECUTOR`, max_workers=1 — see the
+# long comment there; entering HiGHS from different OS threads is what deadlocked
+# it, and that fix must not be undone). The cap was 2, so a second admitted
+# caller did not solve in parallel: it QUEUED behind the first on that thread.
+# And the caller's wait — `.result(timeout=time_limit_s + grace)` — starts when
+# the future is SUBMITTED, so the queue time is spent out of it. A first solve
+# that runs near its 10s limit expires the second caller's 15s wait before its
+# own solve has begun, and `optimize()` treats a timed-out wait like any other
+# unsolved case: it returns the greedy `status="fallback"` plan, which ignores
+# transfers entirely.
+#
+# The result was two buyers hitting /planning seconds apart and getting two
+# different answers for the same catalogue, each with a button that turns it
+# into a purchase order — and the divergence depended on who arrived second.
+#
+# With the cap at 1 the second caller is refused immediately and honestly (503,
+# retry) instead of being served a silently different plan. Nothing is lost:
+# the second slot never bought concurrency, only a wait that ended in a
+# downgrade. `test_solver_gate_is_total.py` pins the cap to the executor's real
+# width, so raising one without the other fails there.
+_MAX_CONCURRENT_SOLVES = 1
 _solve_gate = threading.BoundedSemaphore(_MAX_CONCURRENT_SOLVES)
 
 
 class OptimizerBusy(Exception):
     """Raised when all concurrent-solve slots are taken; caller should 503."""
+
+
+def solve(inp: OptimizationInput):
+    """Run the MILP on `inp`, or skip it when every SKU was sized like the
+    Panel (O1) and nothing is left for the solver.
+
+    The engine handed an empty problem fails the solve and reports the greedy
+    "fallback" — and /compras then warns the buyer that the plan is an
+    approximation, about a plan that never needed the optimizer at all.
+    Callers still hold `solve_slot()` around this.
+    """
+    from forecasting_core.business.optimizer import OptimizationResult, optimize
+    if not inp.skus:
+        return OptimizationResult(orders={}, transfers={}, inventory={},
+                                  shortages={}, total_cost=0.0, status="optimal")
+    return optimize(inp)
 
 
 @contextmanager
@@ -52,6 +128,229 @@ def solve_slot():
         _solve_gate.release()
 
 
+def _net_transfer_moves(
+    transfer_totals: dict[tuple[str, str, str], float],
+) -> list[dict]:
+    """Per-bucket transfer variables → the smallest set of moves that means the same.
+
+    A lane the tenant has not configured defaults to free, and free movement
+    makes CIRCULATION cost the solver nothing. Measured on a three-warehouse
+    tenant: "mover 2126 uds de SKU-001 de Cartago a Heredia" printed directly
+    above "mover 1518 de Heredia a Cartago", and SKU-005 came out as a clean
+    three-way ring (Cartago→principal→Heredia→Cartago, 831 each) that returns
+    every unit where it started. Summed over buckets the quantities also
+    exceeded the stock that exists, because opposite moves accumulate on both
+    sides. A warehouse worker would have driven all of it.
+
+    Cancelling pairs only removes 2-cycles, so this works from what physically
+    matters instead: each warehouse's NET change for that SKU. Warehouses that
+    end up net-negative ship, net-positive receive, and they are paired off
+    largest-first. The result carries the same net effect per location, can
+    contain no cycle of any length, and never moves a unit twice.
+    """
+    by_sku: dict[str, dict[str, float]] = {}
+    for (sku, a, b), qty in transfer_totals.items():
+        if qty <= 0:
+            continue
+        balance = by_sku.setdefault(sku, {})
+        balance[a] = balance.get(a, 0.0) - qty      # ships
+        balance[b] = balance.get(b, 0.0) + qty      # receives
+
+    moves: list[dict] = []
+    for sku in sorted(by_sku):
+        balance = by_sku[sku]
+        # Whole units, and rounded the way each side is used: a shipper rounds
+        # DOWN (never send more than the plan says leaves) and a receiver rounds
+        # DOWN too, so the pairing can never invent stock.
+        senders = sorted(
+            ((w, -q) for w, q in balance.items() if q < -0.5),
+            key=lambda pair: -pair[1])
+        receivers = sorted(
+            ((w, q) for w, q in balance.items() if q > 0.5),
+            key=lambda pair: -pair[1])
+        si = ri = 0
+        send_left = senders[si][1] if senders else 0.0
+        recv_left = receivers[ri][1] if receivers else 0.0
+        while si < len(senders) and ri < len(receivers):
+            qty = min(send_left, recv_left)
+            whole = int(_math.floor(qty))
+            if whole > 0:
+                moves.append({
+                    "sku": sku,
+                    "from_warehouse": senders[si][0],
+                    "to_warehouse": receivers[ri][0],
+                    "qty": whole,
+                })
+            send_left -= qty
+            recv_left -= qty
+            if send_left <= 0.5:
+                si += 1
+                send_left = senders[si][1] if si < len(senders) else 0.0
+            if recv_left <= 0.5:
+                ri += 1
+                recv_left = receivers[ri][1] if ri < len(receivers) else 0.0
+    return moves
+
+
+def skus_missing_stock(forecasts, stock_rows: list[dict]) -> list[str]:
+    """Forecast SKUs with no stock on file — the ones nothing can be decided for.
+
+    How much to buy is a function of how much is left, and how much is left is
+    exactly what nobody told us. There is no honest quantity to compute, so
+    these are named rather than guessed at.
+    """
+    measurable = {
+        r["sku"] for r in stock_rows
+        if r.get("sku") and r.get("current_stock") is not None
+    }
+    return sorted(sku for sku in forecasts if sku not in measurable)
+
+
+def _demand_shares_for(tenant_id: str, warehouses: list[str]) -> dict[str, float]:
+    """How a SKU's demand divides across `warehouses` — fractions summing to 1.
+
+    Demand used to be split by where the stock already SAT
+    (`stock0[(sku,w)] / total_stock`), which made the transfer half of the model
+    self-defeating: a warehouse's need was defined as proportional to what it
+    already had, so a store holding 0 units of a SKU it sells was assigned 0
+    demand and could never be a transfer destination, while the central depot
+    that already held everything got 100% of the demand and was told to buy
+    more. The one real signal the product has for "where does this sell" is
+    `warehouses.demand_share` (set in /bodegas), which is what the per-warehouse
+    semáforo reads — so the optimizer reads the same thing and the two screens
+    can no longer contradict each other.
+
+    Restricted and renormalized to the warehouses the optimizer is planning for
+    (those with stock rows): a share configured for a location that has no
+    inventory row at all would otherwise silently swallow part of the demand.
+    """
+    raw = wh_svc.get_demand_shares(tenant_id)
+    shares = {w: float(raw.get(w, 0.0)) for w in warehouses}
+    total = sum(shares.values())
+    if total > 0:
+        return {w: s / total for w, s in shares.items()}
+    # Every configured share belongs to a warehouse with no stock rows, so the
+    # tenant has told us nothing about the locations we can actually plan for.
+    # The whole demand goes to the default warehouse — the same answer
+    # get_demand_shares itself gives when nobody has configured anything, and
+    # the same name precedence the rest of the codebase uses. Deliberately NOT
+    # an even split: spreading demand across warehouses on no evidence orders a
+    # SKU into locations that have never stocked it.
+    default = sorted(warehouses, key=wh_svc.name_precedence_key)[0]
+    return {w: (1.0 if w == default else 0.0) for w in warehouses}
+
+
+def resolve_planning_inputs(
+    tenant_id: str,
+    stock_rows: list[dict],
+    *,
+    learned_lead_times: Optional[dict] = None,
+) -> dict[str, dict]:
+    """Per-SKU lead time and MOQ — the SAME numbers the semáforo plans on.
+
+    `{sku: {"supplier", "lead_time_days", "lead_time_source", "moq",
+    "review_period_days"}}`.
+
+    `review_period_days` is the supplier's declared order cadence, read the
+    way the semáforo reads it (`service._resolve_review_period_days`): it is
+    what decides how far past the lead time this SKU's plan has to reach (see
+    `effective_horizon_buckets`).
+
+    This function exists because the optimizer used to answer these two
+    questions by itself, and its answers were not the product's answers. It read
+    `inventory_stock.lead_time_days` RAW — the column whose value is 15 for
+    every row nobody has ever edited, because that is the schema default — and
+    it never read an MOQ at all. Meanwhile `/hoy` resolves both through the
+    cascade in `stock_defaults_service.resolve_field` (SKU row that somebody
+    actually set > supplier rule > category rule > global rule > system default)
+    and then lets real receptions override the lead time
+    (`service.resolve_lead_time`).
+
+    Measured on one SKU: `/hoy` planned on 45 days *"aprendido de tus
+    recepciones"* with a supplier MOQ of 500, while `/planning` solved on 15 days
+    and offered 137 units. Both screens print a "convertir en OC" button. Two
+    screens, two different purchase orders, same product, same afternoon.
+
+    So there is no second resolution path here: this calls the semáforo's own
+    resolvers, on the same representative row per SKU
+    (`service._aggregate_stock_rows_by_sku`, anchored on the tenant's default
+    warehouse) and the same supplier fallback (the stock row's free-text
+    supplier, else the SKU's configured primary). Any future change to the
+    cascade moves both screens at once, which is the only way they can stay
+    equal.
+
+    Every query here is once per request, never once per SKU — the same
+    discipline `_compute_inventory_status` follows.
+    """
+    stock_map = _aggregate_stock_rows_by_sku(
+        stock_rows, wh_svc.get_default_warehouse_name(tenant_id),
+    )
+    if learned_lead_times is None:
+        learned_lead_times = get_learned_lead_times(tenant_id)
+    try:
+        primary_suppliers = sup_svc.get_primary_suppliers_map(tenant_id)
+    except Exception as e:
+        log.debug("primary supplier map lookup failed tenant=%s: %s", tenant_id, e)
+        primary_suppliers = {}
+    rule_index = sd_svc.build_rule_index(tenant_id)
+    try:
+        review_period_map = sup_svc.get_review_period_map(tenant_id)
+    except Exception as e:
+        log.debug("review period map lookup failed tenant=%s: %s", tenant_id, e)
+        review_period_map = {}
+
+    resolved: dict[str, dict] = {}
+    for sku, stock in stock_map.items():
+        primary = primary_suppliers.get(sku) or {}
+        supplier = (stock.get("supplier") or None) or primary.get("supplier_name")
+        category = stock.get("category")
+
+        lt_cfg, lt_cfg_source, _scope = sd_svc.resolve_field(
+            "lead_time_days", stock, rule_index, supplier=supplier, category=category,
+        )
+        lead_time_config = int(lt_cfg if lt_cfg is not None else _DEFAULT_LEAD_TIME_DAYS)
+        lead_time, lead_time_source, _learned = resolve_lead_time(
+            lead_time_config, supplier, learned_lead_times, lt_cfg_source,
+        )
+
+        moq_val, _moq_source, _moq_scope = sd_svc.resolve_field(
+            "moq", stock, rule_index, supplier=supplier, category=category,
+        )
+        moq = float(moq_val if moq_val is not None else _DEFAULT_MOQ)
+
+        resolved[sku] = {
+            "supplier": supplier,
+            "lead_time_days": max(1, int(lead_time)),
+            "lead_time_source": lead_time_source,
+            "moq": moq if moq > 0 else 1.0,
+            "review_period_days": _resolve_review_period_days(supplier, review_period_map),
+        }
+    return resolved
+
+
+def effective_horizon_buckets(
+    horizon_buckets: int, lead_time_buckets: int, review_period_buckets: int,
+) -> int:
+    """How far one SKU's plan has to reach: the configured horizon, or the
+    arrival of the order after today's, whichever is later.
+
+    Math audit O1 (2026-10-01). In the MILP an order arrives at bucket t only
+    for t > lead time, so a SKU whose lead time reached the horizon had every
+    arrival gated and was planned at 0 — with the default 15-day lead time and
+    14-day horizon, every SKU nobody had configured. A review period of 0 means
+    no cadence was declared and the next chance to order is the next bucket, so
+    it counts as 1.
+
+    A SKU whose reach exceeds the configured horizon is NOT solved by the MILP:
+    the owner's decision ("igual que el Panel") is that it gets exactly the
+    quantity the semáforo recommends — see `build_optimization_input`. With
+    `horizon > lead` and no declared cadence this returns the configured
+    horizon, and the SKU is optimized exactly as before.
+    """
+    reach = int(lead_time_buckets) + max(1, int(review_period_buckets))
+    return max(int(horizon_buckets), reach)
+
+
 def build_optimization_input(
     tenant_id: str,
     session_id: str,
@@ -59,8 +358,32 @@ def build_optimization_input(
     stock_rows: Optional[list[dict]] = None,
     period: str = "daily",
     lanes: Optional[dict] = None,
+    planning: Optional[dict[str, dict]] = None,
+    incoming: Optional[dict] = None,
 ) -> Optional[OptimizationInput]:
     """
+    `incoming`: preloaded `service.get_incoming_qty` ({(sku, warehouse): qty});
+    fetched here when omitted.
+
+    `horizon_days` is in CALENDAR DAYS, whatever the active period is — it is
+    the caller's natural unit and the endpoint's query parameter. The MILP's
+    buckets, however, are the ACTIVE PERIOD's buckets, because that is the unit
+    every other input already speaks: a period-trained session forecasts
+    per-period demand (a monthly session's values are units/month), and lead
+    times are converted with `ceil(days / days_per_period)`. So the conversion
+    happens here, once, and everything downstream is in buckets.
+
+    This used to be the other way round and nothing agreed. The endpoint passed
+    `horizon * days_per_period` (120 for a monthly plan of 4) and it was used
+    as the bucket count, while the buckets were filled from a per-MONTH forecast
+    curve and lead time was divided DOWN into 1 bucket. A monthly tenant got 120
+    buckets of which four carried any demand, a 30-day supplier that appeared to
+    deliver within one bucket, holding cost charged per DAY across buckets that
+    were really months (understating carrying cost ~30x), and `n_vars` inflated
+    30x — enough for six SKUs to cross the engine's `max_vars_before_fallback`
+    and land every real weekly/monthly tenant permanently in the transfer-blind
+    greedy fallback.
+
     `lanes`: preloaded transfer_lane_service.lane_map ({(from,to): lane}); when
     omitted it is fetched here. Lanes are what give a transfer a price and a
     transit time in the MILP — the engine stays DB-free, so this function
@@ -74,20 +397,91 @@ def build_optimization_input(
     max=10) raises PoolError rather than blocking once every connection is in
     use, so trimming redundant queries reduces the chance this path tips it.
     Omit it and the function fetches the snapshot itself, as before.
+
+    `planning`: preloaded `resolve_planning_inputs` output ({sku: {lead_time_days,
+    moq, ...}}) — the semáforo's own resolution of the supplier inputs. Same
+    reason as `stock_rows`: the endpoint resolves it once and hands it to both
+    this function and `serialize_optimization_result`, so the plan is BUILT and
+    REPORTED on one set of numbers. Omit it and it is resolved here.
     """
-    forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
-    skus = sorted(forecasts.keys())
+    raw_forecasts: dict = session_store.get_forecasts(tenant_id, session_id) or {}
+    # A session trained on sales history with a store column is keyed
+    # "sku│store", not "sku". Read raw, those keys match no stock row, so every
+    # SKU looked uncounted and the optimizer planned nothing at all. The rollup
+    # is the SKU-level total (what `skus` and the shares path need); the raw
+    # dict is kept because the per-store split below is the best demand signal
+    # this product has.
+    forecasts: dict = rollup_by_sku(raw_forecasts)
 
     if stock_rows is None:
         stock_rows = list_stock(tenant_id)
     warehouses = sorted({r["warehouse"] for r in stock_rows if r.get("warehouse")})
 
+    # A SKU with no stock on file is not optimized at all.
+    #
+    # It used to be: `float(current_stock or 0)` — assume the shelf is empty,
+    # which is the assumption that produces the LARGEST possible order. Measured
+    # on a real session, this endpoint told the buyer to order 130 units of a
+    # SKU the inventory screen was simultaneously refusing to give any signal to
+    # ("SIN_DATOS — agrega stock actual para ver la señal"). Two screens, one
+    # product, opposite advice, and the one with the buy button was the one that
+    # had invented its input.
+    #
+    # There is no honest quantity to compute here: how much to buy is a function
+    # of how much is left, and how much is left is precisely what nobody told
+    # us. So the SKU is left out and named in `needs_stock`, and the screens say
+    # what is missing instead of printing a number about nothing.
+    #
+    # Orders customers placed ahead of time are demand the forecast cannot see
+    # (see committed_demand_service). A SKU that only has commitments (no forecast
+    # of its own) is planned on them alone, with no forecast invented.
+    from backend.inventory import committed_demand_service as _cd_svc
+    committed_by_sku = _cd_svc.active_by_sku(tenant_id)
+    plannable = set(forecasts) | set(committed_by_sku)
+    skus = sorted(plannable - set(skus_missing_stock(plannable, stock_rows)))
+
     if not skus or not warehouses:
         return None
+
+    if incoming is None:
+        from backend.inventory.service import get_incoming_qty
+        incoming = get_incoming_qty(tenant_id)
+
+    # Lead time and MOQ come from the semáforo's cascade, not from the raw
+    # column — see resolve_planning_inputs for what reading the column raw cost.
+    if planning is None:
+        planning = resolve_planning_inputs(tenant_id, stock_rows)
 
     business_cfg: dict = session_store.get_field(tenant_id, session_id, "business_cfg") or {}
     holding_cost_pct = float(business_cfg.get("holding_cost_pct", 0.20))
     stockout_cost_multiplier = float(business_cfg.get("stockout_cost_multiplier", 3.0))
+
+    # ONE unit for the whole model: buckets of the active period. See the
+    # docstring — the forecast curve and the lead-time conversion both speak it
+    # already, so the horizon is what has to move.
+    days_per_period = _days_per_period(period)
+    horizon_buckets = max(1, _math.ceil(horizon_days / days_per_period))
+
+    # Where each SKU's demand lives, in preference order — the SAME order the
+    # per-warehouse semáforo uses (service.get_inventory_status_by_warehouse),
+    # so a warehouse's need means the same thing on both screens:
+    #   1. store-keyed forecasts, matched to warehouse names case-insensitively
+    #      — a real per-location measurement of what sells there;
+    #   2. the SKU-global forecast split by warehouses.demand_share.
+    wh_by_lower = {w.lower().strip(): w for w in warehouses}
+    per_wh_forecasts: dict[str, dict] = {}
+    for store in stores_in(raw_forecasts):
+        wh = wh_by_lower.get(store.lower().strip())
+        # A store with no warehouse of that name has no stock rows either, so
+        # there is nothing to plan for it — it is not a location this model can
+        # buy into. Its demand is left out rather than reassigned to a
+        # warehouse that does not serve it.
+        if wh is not None:
+            per_wh_forecasts[wh] = for_store(raw_forecasts, store)
+    # If not one store name matched a warehouse, the store split would zero out
+    # every location and the optimizer would confidently recommend nothing.
+    # Fall back to the configured shares instead.
+    shares = {} if per_wh_forecasts else _demand_shares_for(tenant_id, warehouses)
 
     # rows_by_sku[sku] -> {warehouse: row}, only for warehouses that actually have a row.
     rows_by_sku: dict[str, dict[str, dict]] = {}
@@ -101,43 +495,115 @@ def build_optimization_input(
     stockout_cost: dict[str, float] = {}
     order_cost: dict[str, float] = {}
 
+    # The lead time this SKU is planned on, resolved ONCE for the whole
+    # product (see resolve_planning_inputs). It used to be
+    # `max(raw lead_time_days across the SKU's rows)`, which answered a
+    # different question from every other screen: it ignored supplier and
+    # category rules, ignored what the supplier's real receptions have taught
+    # us, and could not tell a lead time somebody typed from the schema's
+    # untouched 15. In the model's own buckets: for daily it is the day count;
+    # for weekly/monthly the lead time rounded up to whole periods —
+    # commensurable with `horizon_buckets`, both counts of the same bucket.
+    #
+    # A SKU whose next-order arrival lies past the horizon (O1) leaves the MILP
+    # here and is sized like the Panel below.
+    like_panel: list[str] = []
     for sku in skus:
+        sku_planning = planning.get(sku) or {}
+        raw_lead = int(sku_planning.get("lead_time_days") or _DEFAULT_LEAD_TIME_DAYS)
+        lead_time_buckets[sku] = max(1, _math.ceil(raw_lead / days_per_period))
+        review_days = float(sku_planning.get("review_period_days") or 0.0)
+        review_buckets = _math.ceil(review_days / days_per_period) if review_days > 0 else 0
+        if effective_horizon_buckets(
+                horizon_buckets, lead_time_buckets[sku], review_buckets) > horizon_buckets:
+            like_panel.append(sku)
+    milp_skus = [sku for sku in skus if sku not in set(like_panel)]
+    for sku in like_panel:
+        del lead_time_buckets[sku]
+
+    panel_lines = _panel_lines(
+        tenant_id, session_id, like_panel, raw_forecasts, stock_rows, incoming,
+        period, warehouses)
+
+    if not milp_skus and not panel_lines:
+        return None
+
+    def _bucketed(model_forecasts: dict) -> list[float]:
+        """One forecast curve laid into the horizon's buckets, padded with 0.
+
+        The curve's points are one per bucket of the active period already —
+        a monthly session's step 0 is next month's units — so no rescaling
+        happens here; step index IS bucket index.
+        """
+        series = [0.0] * horizon_buckets
+        for point in _avg_forecast_curve(model_forecasts, max_steps=horizon_buckets):
+            step = point["step"]
+            if step < horizon_buckets:
+                series[step] = point["value"]
+        return series
+
+    # A commitment names its warehouse by ID; the model works in names. One
+    # read for the whole tenant, and only when something is committed.
+    _wh_ids = ({w["name"]: str(w["id"]) for w in wh_svc.list_warehouses(tenant_id)}
+               if committed_by_sku else {})
+    for sku in milp_skus:
         sku_rows = rows_by_sku.get(sku, {})
 
+        # The MILP needs an opening balance for every (sku, warehouse) pair it
+        # indexes, and a warehouse with no row for this SKU has no counted
+        # quantity. 0 is the only assumption available — and it is now
+        # harmless where it used to compound, because demand is no longer
+        # derived from these numbers: a location with no share of the demand
+        # gets no order regardless of what its opening balance says. A SKU
+        # counted NOWHERE never reaches this loop (see skus_missing_stock).
         for w in warehouses:
             stock0[(sku, w)] = float(sku_rows[w]["current_stock"] or 0) if w in sku_rows else 0.0
+            # The INVENTORY POSITION, not the shelf: what is already on its way
+            # (sent POs, transfers in transit) — the same netting `/hoy`
+            # applies in `service._calc_recommended`. Without it the plan
+            # bought again, on the same screen, every unit the buyer had
+            # ordered last week and the semáforo had already netted out: stock
+            # 40 with 200 on order planned a 200-unit purchase (math audit
+            # 2026-10-01). Counted as available from the first bucket, which is
+            # exactly the inventory-position convention the semáforo uses.
+            stock0[(sku, w)] += max(0.0, float(incoming.get((sku, w), 0.0)))
 
-        total_stock = sum(stock0[(sku, w)] for w in warehouses)
+        if per_wh_forecasts:
+            for w in warehouses:
+                demand[(sku, w)] = _bucketed(per_wh_forecasts.get(w, {}).get(sku, {}))
+        else:
+            total_curve = _bucketed(forecasts.get(sku, {}))
+            for w in warehouses:
+                share = shares.get(w, 0.0)
+                demand[(sku, w)] = [v * share for v in total_curve]
 
-        model_forecasts = forecasts.get(sku, {})
-        curve = _avg_forecast_curve(model_forecasts, max_steps=horizon_days)
-        daily_total = [0.0] * horizon_days
-        for point in curve:
-            step = point["step"]
-            if step < horizon_days:
-                daily_total[step] = point["value"]
+        # Committed customer orders due inside the horizon, laid into the bucket
+        # of their delivery date. Every rule about what counts comes from the
+        # same function the Panel uses; a SKU with none is left untouched.
+        if committed_by_sku.get(sku):
+            _default_wh = wh_svc.get_default_warehouse_name(tenant_id)
+            if _default_wh not in warehouses:
+                _default_wh = sorted(warehouses, key=wh_svc.name_precedence_key)[0]
+            extra = _cd_svc.demand_buckets_by_warehouse(
+                committed_by_sku[sku], date.today(), horizon_days, days_per_period,
+                horizon_buckets, warehouses, None if per_wh_forecasts else shares,
+                _default_wh,
+                _wh_ids)
+            for w, series in extra.items():
+                demand[(sku, w)] = [a + b for a, b in zip(demand[(sku, w)], series)]
 
-        for w in warehouses:
-            if total_stock > 0:
-                share = stock0[(sku, w)] / total_stock
-            else:
-                share = 1.0 / len(warehouses)
-            demand[(sku, w)] = [v * share for v in daily_total]
-
-        lead_times = [int(row["lead_time_days"]) for row in sku_rows.values() if row.get("lead_time_days") is not None]
-        raw_lead = max(lead_times) if lead_times else _DEFAULT_LEAD_TIME_DAYS
-        # Lead time in the horizon's own buckets: for daily this is the day
-        # count (unchanged); for weekly/monthly it is the lead time rounded up
-        # to whole periods, staying commensurable with horizon_days (which the
-        # endpoint expresses in that period's buckets when a coarser period is
-        # active).
-        lead_time_buckets[sku] = max(1, _math.ceil(raw_lead / _days_per_period(period)))
-
-        costs = [float(row["unit_cost"]) for row in sku_rows.values() if row.get("unit_cost") is not None]
+        costs = [c for c in (_usable_unit_cost(row.get("unit_cost"))
+                             for row in sku_rows.values()) if c is not None]
         unit_cost = max(costs) if costs else _DEFAULT_UNIT_COST
 
         order_cost[sku] = unit_cost
-        holding_cost[sku] = unit_cost * holding_cost_pct / 365
+        # Carrying cost per unit per BUCKET, not per day: the objective charges
+        # holding_cost once per bucket, and for a monthly plan a bucket is 30
+        # days of warehousing. Left as the daily rate it understated the cost of
+        # sitting on stock by exactly days_per_period (~30x monthly), which is
+        # the side of the trade-off that decides between buying now and buying
+        # later.
+        holding_cost[sku] = unit_cost * holding_cost_pct / 365 * days_per_period
         # short[i,w,t] in the optimizer is a PER-BUCKET unmet-demand penalty,
         # not an accumulating backorder — each day's shortfall is evaluated
         # independently, it doesn't compound across days. So the right
@@ -178,13 +644,13 @@ def build_optimization_input(
             lane = lane_svc.lane_for(lanes, a, b)
             transfer_cost_by_lane[(a, b)] = float(lane["cost_per_unit"])
             transfer_lead_buckets[(a, b)] = int(
-                _math.ceil(int(lane["lead_time_days"]) / _days_per_period(period)))
+                _math.ceil(int(lane["lead_time_days"]) / days_per_period))
             transfer_fixed_cost_by_lane[(a, b)] = float(lane["fixed_cost"])
 
-    return OptimizationInput(
-        skus=skus,
+    inp = OptimizationInput(
+        skus=milp_skus,
         warehouses=warehouses,
-        horizon=horizon_days,
+        horizon=horizon_buckets,
         demand=demand,
         stock0=stock0,
         lead_time_buckets=lead_time_buckets,
@@ -197,17 +663,93 @@ def build_optimization_input(
         transfer_lead_buckets=transfer_lead_buckets,
         transfer_fixed_cost_by_lane=transfer_fixed_cost_by_lane,
     )
+    # The lines sized like the Panel ride along to serialize_optimization_result.
+    # Not engine input: the engine never sees these SKUs.
+    inp.panel_lines = panel_lines
+    inp.days_per_period = days_per_period
+    return inp
 
 
-def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
+def _panel_lines(
+    tenant_id: str, session_id: str, skus: list[str], raw_forecasts: dict,
+    stock_rows: list[dict], incoming: dict, period: str, warehouses: list[str],
+) -> list[dict]:
+    """The Panel's own quantity for SKUs the MILP cannot plan (O1, "igual que
+    el Panel").
+
+    A SKU whose next-order arrival lies past the horizon used to be planned at
+    0 here while /compras showed a real number for it. Rather than derive a
+    second answer, this asks the SAME function the Panel reads
+    (`service._compute_inventory_status`, behind `get_inventory_status` and the
+    morning briefing) on the same preloaded data: demand × (lead time + review
+    period) + safety stock − (on hand + on order), with its MOQ floor and its
+    signal gate. The two screens then cannot show two numbers for one SKU.
+
+    That function is the tenant-wide view, so the line goes to the default
+    warehouse (the one the Panel's representative row is anchored on); moving
+    stock between warehouses for these SKUs is left to the per-warehouse
+    semáforo on /inventario, which is where it already lives.
+    """
+    if not skus:
+        return []
+    from backend.inventory.service import _compute_inventory_status
+    rows = _compute_inventory_status(
+        tenant_id, session_id, 0.95,
+        forecasts=raw_forecasts, stock_rows=stock_rows, incoming_qty=incoming,
+        period=period,
+    )
+    wanted = set(skus)
+    default = wh_svc.get_default_warehouse_name(tenant_id)
+    if default not in warehouses:
+        default = sorted(warehouses, key=wh_svc.name_precedence_key)[0]
+    lines: list[dict] = []
+    for row in rows:
+        if row.get("sku") not in wanted:
+            continue
+        calc = row.get("calc_explanation") or {}
+        protection = calc.get("protection_interval_days")
+        if protection is None:
+            protection = float(row.get("lead_time_days") or 0) + float(
+                calc.get("review_period_days") or 0)
+        lines.append({
+            "sku": row["sku"],
+            "warehouse": default,
+            "qty": int(_math.ceil(float(row.get("recommended_qty") or 0))),
+            "unit_cost": row.get("unit_cost"),
+            "supplier": row.get("supplier"),
+            "signal": row.get("signal"),
+            # Calendar days the Panel's quantity protects: lead time + review.
+            "protection_days": int(_math.ceil(float(protection))),
+        })
+    return lines
+
+
+def serialize_optimization_result(inp, result, stock_rows: list[dict],
+                                  horizon_days: Optional[int] = None,
+                                  planning: Optional[dict[str, dict]] = None) -> dict:
     """
     Collapses an OptimizationResult into one actionable total per (sku, warehouse) order
     and per (sku, from_warehouse, to_warehouse) transfer, dropping any with qty == 0.
 
     Args:
-        inp: OptimizationInput (used for horizon_days)
+        inp: OptimizationInput — `inp.horizon` is a count of BUCKETS
         result: OptimizationResult from MILP solver
         stock_rows: list of dicts with {sku, warehouse, unit_cost, supplier}
+        horizon_days: the horizon in CALENDAR DAYS, as the caller asked for it.
+        planning: `resolve_planning_inputs` output. It carries the MOQ, which
+            the MILP itself cannot express (the model has no minimum-order
+            variable), so the floor is applied here — exactly as `/hoy` applies
+            it, in `service._calc_recommended`. Omit it and no floor is applied,
+            which is only correct for a caller that has no tenant to resolve
+            one for; both endpoints pass it.
+
+    `horizon_days` has to be passed in rather than read off `inp`, because
+    `inp.horizon` counts buckets and a bucket is a month on a monthly plan. The
+    response key is named `horizon_days` and the screen renders it straight into
+    "cubrir los próximos {n} días" — so returning `inp.horizon` would have told a
+    tenant on a four-month plan that the plan covers the next 4 DAYS. Falls back
+    to the bucket count only when the caller gives nothing, which is the daily
+    case where the two are equal anyway.
 
     Returns:
         dict with keys: status, total_cost, horizon_days, orders[], transfers[]
@@ -228,26 +770,91 @@ def serialize_optimization_result(inp, result, stock_rows: list[dict]) -> dict:
     # In daily mode the solve already lands on integers, so ceil is a no-op there;
     # coarser periods (weekly/monthly) carry larger per-bucket demand and can
     # produce fractional totals, which must round up so we never under-order.
+    # Whole units first, then the supplier's minimum. A SKU's MOQ is the floor
+    # under ONE purchase order to that supplier — not a floor per warehouse and
+    # not a pack multiple (`service._calc_recommended` says why: applied as
+    # `ceil(need/moq)*moq` a need of 520 against a MOQ of 500 ordered 1000). So
+    # the SKU's whole planned quantity is compared against the MOQ once, and any
+    # shortfall is added to its largest line — the line most likely to be the
+    # one actually placed, and a deterministic choice either way.
+    qty_by_line: dict[tuple[str, str], int] = {
+        line: int(_math.ceil(total)) for line, total in order_totals.items()
+    }
+    lines_by_sku: dict[str, list[tuple[str, str]]] = {}
+    for line in qty_by_line:
+        lines_by_sku.setdefault(line[0], []).append(line)
+    for sku, lines in lines_by_sku.items():
+        moq = int(_math.ceil(float((planning or {}).get(sku, {}).get("moq") or 0)))
+        planned = sum(qty_by_line[line] for line in lines)
+        # `planned > 0` keeps "nothing to order" meaning nothing: a well-stocked
+        # SKU must not be handed a full minimum order out of nowhere.
+        if planned > 0 and moq > planned:
+            biggest = sorted(lines, key=lambda line: (-qty_by_line[line], line[1]))[0]
+            qty_by_line[biggest] += moq - planned
+
     orders = []
     for (sku, w) in sorted(order_totals):
         row = row_by_sku_warehouse.get((sku, w), {})
+        # What the quantity RESTS ON, carried out with it.
+        #
+        # The optimizer has to assume something when a SKU has no stock row, and
+        # `float(current_stock or 0)` assumes zero — which is the assumption that
+        # produces the LARGEST possible order. Measured on a real session: the
+        # inventory screen refused to give SKU A a signal at all ("SIN_DATOS —
+        # agrega stock actual para ver la señal") while this endpoint told the
+        # same buyer to order 130 units of it, with a Convertir-en-OC button
+        # next to the number. Two screens, one SKU, opposite advice, and the one
+        # with the buy button was the one that had invented its input.
+        #
+        # `unit_cost` rides along for the same reason: with no cost on file the
+        # solve runs on _DEFAULT_UNIT_COST = 1.0, so `total_cost` is a number
+        # about nothing. The flags say which, so the screen can be honest
+        # instead of the caller having to infer it from a null.
         orders.append({
-            "sku": sku, "warehouse": w, "qty": int(_math.ceil(order_totals[(sku, w)])),
+            "sku": sku, "warehouse": w, "qty": qty_by_line[(sku, w)],
             "unit_cost": row.get("unit_cost"),
             "supplier": row.get("supplier"),
+            # The solve ran on _DEFAULT_UNIT_COST = 1.0 for this line, so its
+            # share of `total_cost` is a number about nothing. Stock is not
+            # flagged here because a SKU with no stock on file never reaches
+            # the solve at all — see skus_missing_stock.
+            #
+            # `_usable_unit_cost`, not `is None`: a stored 0.0 is a blank that
+            # happens to be a number, and the solve substitutes the placeholder
+            # for it exactly like a NULL (see that function). Checking `is None`
+            # here reported those lines as priced on a real cost — the screen
+            # printed a total and no warning, over a plan built on 1.0.
+            "assumed_unit_cost": _usable_unit_cost(row.get("unit_cost")) is None,
+            "sized_like_panel": False,
+            "horizon_extended": False,
         })
 
-    transfers = []
-    for (sku, a, b) in sorted(transfer_totals):
-        transfers.append({
-            "sku": sku, "from_warehouse": a, "to_warehouse": b,
-            "qty": int(_math.ceil(transfer_totals[(sku, a, b)])),
+    # SKUs whose next order lands past the horizon carry the Panel's own
+    # quantity (see _panel_lines). A 0 there means the Panel says "no pedir",
+    # and a line of 0 is not an order.
+    for line in getattr(inp, "panel_lines", None) or []:
+        if line["qty"] <= 0:
+            continue
+        orders.append({
+            "sku": line["sku"], "warehouse": line["warehouse"], "qty": line["qty"],
+            "unit_cost": line.get("unit_cost"),
+            "supplier": line.get("supplier"),
+            "assumed_unit_cost": _usable_unit_cost(line.get("unit_cost")) is None,
+            "sized_like_panel": True,
+            "horizon_extended": True,
+            "effective_horizon_days": line["protection_days"],
         })
+
+    transfers = _net_transfer_moves(transfer_totals)
 
     return {
         "status": result.status,
         "total_cost": round(result.total_cost, 2),
-        "horizon_days": inp.horizon,
+        "horizon_days": horizon_days if horizon_days is not None else inp.horizon,
+        # How many lines carry the Panel's quantity because their supplier's
+        # next order lands past the horizon — said once, above the list.
+        "extended_lines": sum(1 for o in orders if o["sized_like_panel"]),
         "orders": orders,
         "transfers": transfers,
     }
+

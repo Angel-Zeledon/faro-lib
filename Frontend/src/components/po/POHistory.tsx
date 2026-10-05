@@ -1,7 +1,8 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getPOItems, receivePO, sendPOToSuppliers } from '@/lib/api'
-import type { POLogEntry, POItemLine } from '@/lib/types'
+import type { POLogEntry, POItemLine, OverdueReception, POApprovalBadge } from '@/lib/types'
+import AttentionChip from '@/components/layout/AttentionChip'
 import Spinner from '@/components/ui/Spinner'
 import { useErrorDetail } from '@/components/ui/States'
 import { Truck, X, Send } from 'lucide-react'
@@ -10,17 +11,24 @@ import { formatMoney } from '@/lib/currency'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import { UndoPOActions } from '@/components/po/UndoPOActions'
+import { PaidPOActions } from '@/components/po/PaidPOActions'
+import { ApprovalChip, RequestApprovalButton } from '@/components/po/POApproval'
+import { CancelPOActions, CancelledBadge } from '@/components/po/CancelPOActions'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import BottomSheet from '@/components/mobile/BottomSheet'
 
 // ── Palette (same CSS vars as the rest of the app) ───────────────────────────
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
+  red: '#C0504D', amber: '#B7791F', green: '#2E8B62', indigo: 'var(--accent)',
 }
 
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('es', {
+// The locale has to follow the interface language: hardcoding 'es' printed
+// "22 ago 2026" to a user reading an English screen.
+function fmtDateTime(iso: string, lang: string): string {
+  return new Date(iso).toLocaleString(lang === 'en' ? 'en-US' : 'es-CR', {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
@@ -49,6 +57,25 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   const [qty,     setQty]     = useState<Record<string, string>>({})
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Read through a ref so a parent that passes a fresh arrow each render does
+  // not re-run the open/close effect (which would steal focus mid-typing).
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
+  // A modal that says it is one: Esc closes it, and focus moves into it on
+  // open and back to whatever opened it on close, so a screen-reader or
+  // keyboard user is not left behind on the page underneath.
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    dialogRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current() }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      opener?.focus?.()
+    }
+  }, [])
 
   useEffect(() => {
     getPOItems(poId)
@@ -86,6 +113,97 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
     }
   }, [items, poId, qty, onSaved])
 
+  // On a phone the form is a bottom sheet: the quantity boxes scroll inside it
+  // and the two decisions stay pinned under the thumb instead of at the end of
+  // a list that may be longer than the screen.
+  if (narrow) {
+    return (
+      <BottomSheet
+        open
+        onClose={onClose}
+        maxHeight="94dvh"
+        title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <Truck size={17} color={C.indigo} aria-hidden="true" /> {t('po.reception_title')}
+        </span>}
+        footer={items ? (
+          <>
+            <button className="mobile-btn mobile-btn-secondary" onClick={() => save(false)} disabled={saving}>
+              {t('po.reception_btn_save_quantities')}
+            </button>
+            <button
+              className="mobile-btn"
+              onClick={() => save(true)}
+              disabled={saving}
+              aria-busy={saving}
+              style={{ background: C.green, color: '#fff' }}
+            >
+              {saving ? t('common.saving') : t('po.reception_btn_all_arrived')}
+            </button>
+          </>
+        ) : undefined}
+      >
+        <p style={{ margin: '0 0 14px', fontSize: 13, color: C.dim, lineHeight: 1.5 }}>
+          {t('po.reception_subtitle')}
+        </p>
+        {!items && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={18} /></div>}
+        {items && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {items.map(i => {
+              const pending = Math.max(0, (i.final_qty || 0) - (i.received_qty || 0))
+              return (
+                <div key={i.sku} style={{
+                  border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 14px',
+                  background: C.card,
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: 15, color: C.text, overflowWrap: 'anywhere' }}>
+                    {i.display_name || i.sku}
+                  </div>
+                  <div style={{ fontSize: 12, color: C.dim, fontFamily: 'monospace', marginTop: 2, overflowWrap: 'anywhere' }}>
+                    {i.sku}{i.supplier ? ` · ${i.supplier}` : ''}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginTop: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>
+                      {t('po.reception_col_ordered')}:{' '}
+                      <strong style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{i.final_qty.toLocaleString()}</strong>
+                      {(i.received_qty || 0) > 0 && (
+                        <><br />{t('po.reception_col_received_before')}:{' '}
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{(i.received_qty || 0).toLocaleString()}</span>
+                        </>
+                      )}
+                    </div>
+                    <label style={{ width: 120, flexShrink: 0, fontSize: 11.5, color: C.dim }}>
+                      {t('po.reception_col_arriving')}
+                      <input
+                        type="number" min={0} inputMode="numeric" enterKeyHint="done"
+                        name={`reception-qty-${i.sku}`}
+                        aria-label={`${t('po.reception_col_arriving')} — ${i.display_name || i.sku}`}
+                        value={qty[i.sku] ?? ''}
+                        placeholder={String(pending)}
+                        onFocus={e => e.currentTarget.select()}
+                        onChange={e => setQty(prev => ({ ...prev, [i.sku]: e.target.value }))}
+                        style={{
+                          display: 'block', boxSizing: 'border-box', width: '100%', marginTop: 4,
+                          minHeight: 48, padding: '0 12px', borderRadius: 10, textAlign: 'right',
+                          border: `1px solid ${C.border}`, background: C.surface,
+                          color: C.text, fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {error && (
+          <div role="alert" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'rgba(192,80,77,0.08)', fontSize: 13, color: C.red }}>
+            {error}
+          </div>
+        )}
+      </BottomSheet>
+    )
+  }
+
   return (
     <div
       onClick={onClose}
@@ -96,8 +214,14 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
       }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="po-reception-title"
+        tabIndex={-1}
         onClick={e => e.stopPropagation()}
         style={{
+          outline: 'none',
           width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto',
           background: C.surface, border: `1px solid ${C.border}`,
           borderRadius: 14, padding: 24,
@@ -105,11 +229,13 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <Truck size={16} color={C.indigo} />
-          <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('po.reception_title')}</span>
+          <span id="po-reception-title" style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{t('po.reception_title')}</span>
           <button
             onClick={onClose}
             aria-label={t('common.close')}
-            style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim }}
+            style={{
+              all: 'unset', cursor: 'pointer', marginLeft: 'auto', color: C.dim,
+            }}
           >
             <X size={16} aria-hidden="true" />
           </button>
@@ -120,59 +246,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
 
         {!items && !error && <div style={{ padding: 24, textAlign: 'center' }}><Spinner size={16} /></div>}
 
-        {/* Recording a delivery is warehouse work: the person doing it is at a
-            pallet with a phone. A five-column table cannot shrink into that —
-            it just scrolls sideways inside the modal, hiding the quantity box
-            that is the entire point. On a narrow viewport each line becomes a
-            stacked card with a full-width input instead. */}
-        {items && narrow && (
-          <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {items.map(i => (
-                <div key={i.sku} style={{
-                  border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px',
-                  background: C.card,
-                }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: C.text }}>
-                    {i.display_name || i.sku}
-                  </div>
-                  <div style={{ fontSize: 10, color: C.dim, fontFamily: 'monospace', marginBottom: 6 }}>
-                    {i.sku}{i.supplier ? ` · ${i.supplier}` : ''}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>
-                    {t('po.reception_col_ordered')}:{' '}
-                    <strong style={{ color: C.text, fontFamily: 'monospace' }}>
-                      {i.final_qty.toLocaleString()}
-                    </strong>
-                    {(i.received_qty || 0) > 0 && (
-                      <> · {t('po.reception_col_received_before')}:{' '}
-                        <span style={{ fontFamily: 'monospace' }}>
-                          {(i.received_qty || 0).toLocaleString()}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  <label style={{ display: 'block', fontSize: 11, color: C.dim, marginBottom: 4 }}>
-                    {t('po.reception_col_arriving')}
-                  </label>
-                  <input
-                    type="number" min={0} inputMode="numeric"
-                    name={`reception-qty-${i.sku}`} aria-label={`${t('po.reception_col_arriving')} — ${i.display_name || i.sku}`}
-                    value={qty[i.sku] ?? ''}
-                    onChange={e => setQty(prev => ({ ...prev, [i.sku]: e.target.value }))}
-                    style={{
-                      width: '100%', padding: '10px 12px', borderRadius: 8,
-                      border: `1px solid ${C.border}`, background: C.surface,
-                      color: C.text, fontSize: 15, fontFamily: 'monospace',
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {items && !narrow && (
+        {items && (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
@@ -221,18 +295,12 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
         {items && (
           <>
             {error && (
-              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 12, color: C.red }}>
+              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(192,80,77,0.08)', fontSize: 12, color: C.red }}>
                 {error}
               </div>
             )}
 
-            {/* On a phone the two actions stack full-width: side-by-side at
-                375px leaves each below the 44px touch target. */}
-            <div style={{
-              display: 'flex', gap: 10, marginTop: 18,
-              flexDirection: narrow ? 'column-reverse' : 'row',
-              justifyContent: 'flex-end',
-            }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => save(false)}
                 disabled={saving}
@@ -259,7 +327,7 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
           </>
         )}
         {error && !items && (
-          <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 12, color: C.red }}>
+          <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(192,80,77,0.08)', fontSize: 12, color: C.red }}>
             {error}
           </div>
         )}
@@ -268,15 +336,27 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   )
 }
 
-function SendPOButton({ poLogId, suppliersWithoutContact }: {
+export function SendPOButton({ poLogId, suppliersWithoutContact, onSent, approval }: {
   poLogId: string
   suppliersWithoutContact: string[]
+  /** Set by the server only for a tenant with an approval rule. While the order
+   *  needs an approval it lacks, "send" is replaced by "request approval". */
+  approval?: POApprovalBadge | null
+  /** Called after a send that reached at least one supplier (the phone detail
+   *  sheet reloads the order so its "sent" state is current). */
+  onSent?: () => void
 }) {
   const { t } = useLanguage()
+  // 25px tall on desktop; a 48px full-width button on a phone.
+  const narrow = useIsNarrow()
   const confirm = useConfirm()
   const errorDetail = useErrorDetail()
   const [state, setState] = useState<'idle' | 'sending' | 'done'>('idle')
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  // The hooks above are all unconditional; this return only changes the output.
+  if (approval?.required) {
+    return <RequestApprovalButton poLogId={poLogId} approval={approval} onChanged={onSent} />
+  }
 
   async function handleClick() {
     setState('sending')
@@ -314,6 +394,7 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
         : anySkipped ? t('roi.send_po_partial') : t('roi.send_po_success')
       setResult({ ok: anySent, message })
       setState('done')
+      if (anySent) onSent?.()
     } catch (e: unknown) {
       setResult({ ok: false, message: errorDetail(e) || t('roi.send_po_error') })
       setState('done')
@@ -322,9 +403,24 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
 
   if (state === 'done' && result) {
     return (
-      <span style={{ fontSize: 11, color: result.ok ? C.green : C.red, fontWeight: 600 }}>
+      <span role="status" style={{ fontSize: narrow ? 13 : 11, color: result.ok ? C.green : C.red, fontWeight: 600 }}>
         {result.message}
       </span>
+    )
+  }
+
+  if (narrow) {
+    return (
+      <button
+        className="mobile-btn mobile-btn-secondary"
+        onClick={handleClick}
+        disabled={state === 'sending'}
+        aria-busy={state === 'sending'}
+        style={{ width: '100%' }}
+      >
+        <Send size={16} aria-hidden="true" />
+        {state === 'sending' ? t('roi.send_po_sending') : t('roi.send_po')}
+      </button>
     )
   }
 
@@ -345,12 +441,17 @@ function SendPOButton({ poLogId, suppliersWithoutContact }: {
   )
 }
 
-export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [] }: {
+export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutContact = [], overdueById = {} }: {
   entries: POLogEntry[]
+  /** Open orders past their expected arrival, by id: a calm chip in the row. */
+  overdueById?: Record<string, OverdueReception>
   onReceive: (id: string) => void
+  /** Reload after an undo rewrote stock or the sent flag, or the order was
+   *  marked paid / unpaid. */
+  onUndone?: () => void
   suppliersWithoutContact?: string[]
 }) {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   if (entries.length === 0) {
     return (
       <div style={{ padding: '40px 24px', textAlign: 'center', color: C.dim, fontSize: 13 }}>
@@ -399,14 +500,14 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
                 {formatPoNumber(entry.po_number)}
               </td>
               <td style={{ padding: '11px 14px', color: C.text, fontVariantNumeric: 'tabular-nums' }}>
-                {fmtDateTime(entry.generated_at)}
+                {fmtDateTime(entry.generated_at, lang)}
               </td>
               <td style={{ padding: '11px 14px', fontWeight: 600, color: C.text }}>
                 {entry.sku_count}
               </td>
               <td style={{ padding: '11px 14px' }}>
                 {entry.skus_order_now > 0
-                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(239,68,68,0.1)', color: C.red, fontWeight: 700, fontSize: 11 }}>
+                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(192,80,77,0.1)', color: C.red, fontWeight: 700, fontSize: 11 }}>
                       {entry.skus_order_now}
                     </span>
                   : <span style={{ color: C.dim }}>—</span>
@@ -414,7 +515,7 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
               </td>
               <td style={{ padding: '11px 14px' }}>
                 {entry.skus_order_soon > 0
-                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(245,158,11,0.1)', color: C.amber, fontWeight: 700, fontSize: 11 }}>
+                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'rgba(183,121,31,0.1)', color: C.amber, fontWeight: 700, fontSize: 11 }}>
                       {entry.skus_order_soon}
                     </span>
                   : <span style={{ color: C.dim }}>—</span>
@@ -431,6 +532,19 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
                   const status = entry.reception_status || 'pending'
                   const badge = RECEPTION_LABEL[status] || RECEPTION_LABEL.pending
                   const receivable = status === 'pending' || status === 'partial'
+                  // A cancelled order offers only its badge and "reopen": it
+                  // cannot be received, sent, paid or un-sent until reopened
+                  // (the server refuses each of those too).
+                  if (entry.cancelled_at) {
+                    return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <CancelledBadge cancelledAt={entry.cancelled_at} />
+                        <CancelPOActions poLogId={entry.id} receptionStatus={status}
+                                         paidAt={entry.paid_at} cancelledAt={entry.cancelled_at}
+                                         onChanged={onUndone} />
+                      </span>
+                    )
+                  }
                   return (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
@@ -439,6 +553,12 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
                       }}>
                         {t(badge.labelKey)}
                       </span>
+                      {receivable && overdueById[entry.id] && (
+                        <>
+                          <AttentionChip>{t('attention.chip_arrival_to_confirm')}</AttentionChip>
+                          <AttentionChip dot={false}>{t('attention.chip_late_days', { n: overdueById[entry.id].days_overdue })}</AttentionChip>
+                        </>
+                      )}
                       {receivable && (
                         <button
                           onClick={() => onReceive(entry.id)}
@@ -449,11 +569,35 @@ export function POHistoryTable({ entries, onReceive, suppliersWithoutContact = [
                             border: `1px solid ${C.border}`, color: C.text,
                           }}
                         >
-                          <Truck size={11} aria-hidden="true" /> {t('po.reception_btn_register')}
+                          <Truck size={11} aria-hidden="true" /> {t(overdueById[entry.id] ? 'attention.confirm_arrival' : 'po.reception_btn_register')}
                         </button>
                       )}
-                      <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact} />
-                      <ForwardPOActions poLogId={entry.id} />
+                      <ApprovalChip approval={entry.approval} />
+                      <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact}
+                                    approval={entry.approval} onSent={onUndone} />
+                      <ForwardPOActions poLogId={entry.id} approval={entry.approval} />
+                      {/* A paid order cannot be un-sent (the server refuses:
+                          the invoice is evidence it reached the supplier), so
+                          the undo is not offered until the payment is unmarked. */}
+                      <UndoPOActions
+                        poLogId={entry.id}
+                        receptionStatus={status}
+                        sent={Boolean(entry.sent_at) && !entry.paid_at}
+                        onDone={onUndone}
+                      />
+                      <PaidPOActions
+                        poLogId={entry.id}
+                        sent={Boolean(entry.sent_at)}
+                        paidAt={entry.paid_at}
+                        onChanged={onUndone}
+                      />
+                      <CancelPOActions
+                        poLogId={entry.id}
+                        receptionStatus={status}
+                        paidAt={entry.paid_at}
+                        cancelledAt={entry.cancelled_at}
+                        onChanged={onUndone}
+                      />
                     </span>
                   )
                 })()}

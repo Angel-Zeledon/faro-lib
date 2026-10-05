@@ -103,3 +103,47 @@ class TestClamping:
     def test_wape_above_one_clamps_accuracy_to_zero(self):
         rows = [_row("A", "lightgbm", 1.5)]
         assert compute_session_accuracy(rows, [_item("A", 1.0)]) == 0.0
+
+
+def _dead(sku, model, type_="ml"):
+    """A row from a validation window that held no demand: 0 error, 0 scale."""
+    return {"sku": sku, "model": model, "wape": 0.0, "mae": 0.0, "type": type_}
+
+
+class TestAnEmptyValidationWindowIsNotPerfectAccuracy:
+    """
+    WAPE divides by the total real demand in the VALIDATION window. A window
+    with no demand gives 0/0 — an error of zero over a scale of zero. That is
+    not a perfect forecast; it is the absence of anything to be accurate about.
+
+    Measured on a real session (break_fechas.csv, 1 SKU): all seven models,
+    naive baselines included, scored exactly wape=0 mae=0. `daily_demand` was
+    unknown, so the demand-weighted branch fell through to the plain mean and
+    the purchasing panel announced "Precisión promedio 100.0%" — twice, once as
+    a KPI and once in the footer — directly above a suggested order of 130
+    units. The SKU screen already refused to print that same number, so the two
+    screens were reporting different things about the same session.
+    """
+
+    def test_a_zero_over_zero_window_reports_no_accuracy(self):
+        rows = [_dead("A", "lightgbm"), _dead("A", "xgboost"),
+                _dead("A", "naive", "baseline")]
+        assert compute_session_accuracy(rows, [_item("A", None)]) is None
+
+    def test_it_holds_when_the_demand_weight_is_unknown(self):
+        """The exact shape measured: demand None, so no weight rules it out."""
+        assert compute_session_accuracy([_dead("A", "global_lgbm")], [{"sku": "A"}]) is None
+
+    def test_a_dead_sku_does_not_inflate_a_real_catalog(self):
+        rows = [
+            {"sku": "REAL", "model": "lightgbm", "wape": 0.20, "mae": 4.0, "type": "ml"},
+            _dead("DEAD", "lightgbm"),
+        ]
+        # Without the guard the dead SKU's 0 pulls the plain mean to 0.10 and
+        # reports 90% for a catalog whose only real model scores 80%.
+        assert compute_session_accuracy(rows, [{"sku": "REAL"}, {"sku": "DEAD"}]) == 0.8
+
+    def test_a_real_model_with_a_zero_wape_but_real_error_is_kept(self):
+        """Only 0/0 is excluded. A tiny error against a huge scale is real."""
+        rows = [{"sku": "A", "model": "lightgbm", "wape": 0.0, "mae": 0.4, "type": "ml"}]
+        assert compute_session_accuracy(rows, [_item("A", 8.0)]) == 1.0

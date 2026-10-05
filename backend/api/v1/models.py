@@ -6,6 +6,13 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 _MODELS = [
     {
+        "name":        "global_lgbm",
+        "category":    "Global",
+        "status":      "available",
+        "description": "Cross-learning model — one fit across the whole catalogue, "
+                       "so short and new SKUs borrow the seasonality of the rest",
+    },
+    {
         "name":        "lightgbm",
         "category":    "ML",
         "status":      "available",
@@ -30,6 +37,13 @@ _MODELS = [
         "description": "ARIMA — classical statistical model for stationary series",
     },
     {
+        "name":        "sarimax",
+        "category":    "Statistical",
+        "status":      "available",
+        "description": "SARIMAX — seasonal ARIMA that can also read external "
+                       "drivers such as price or promotions",
+    },
+    {
         "name":        "ets",
         "category":    "Statistical",
         "status":      "available",
@@ -40,6 +54,20 @@ _MODELS = [
         "category":    "Statistical",
         "status":      "available",
         "description": "Croston's method — specialized for intermittent/sparse demand",
+    },
+    {
+        # Opt-in only: it is in no default selection and the router never adds
+        # it (routing narrows the user's selection, it never grows it). On the
+        # synthetic benchmark it ties with Croston on ordinary intermittent
+        # demand; what it adds is a forecast that fades when a product stops
+        # selling, where Croston keeps forecasting its last rate.
+        "name":        "tsb",
+        "category":    "Statistical",
+        "status":      "available",
+        "description": "TSB (Teunter-Syntetos-Babai) — intermittent demand whose "
+                       "forecast decays when a product stops selling",
+        "recommended_for": "Discontinued or end-of-life products and intermittent "
+                           "demand; not selected by default",
     },
     {
         "name":        "lstm",

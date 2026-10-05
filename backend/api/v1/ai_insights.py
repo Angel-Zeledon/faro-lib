@@ -9,35 +9,40 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.api.v1.currency import currency_of
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
 from backend.sessions import planning_service
 
 router = APIRouter(
     prefix="/ai", tags=["ai-insights"],
-    dependencies=[Depends(require_feature(Feature.AI_ANALYST))],
 )
 log = logging.getLogger(__name__)
 
 
 # ── Request models ─────────────────────────────────────────────────────────────
 
+# `language` is the reader's active UI language, sent by the frontend. It only
+# reaches the model as an answer instruction — nothing in the rule-based path
+# branches on it, so an unknown value degrades to the anchor market's Spanish
+# rather than failing the request.
 class MorningNarrativeRequest(BaseModel):
     session_id:  str
     profile:     str = 'distributor'
+    language:    str = 'es'
 
 
 class InventoryInsightRequest(BaseModel):
     session_id: str
     profile:    str = 'distributor'
+    language:   str = 'es'
 
 
 class ForecastExplanationRequest(BaseModel):
     sku:        str
     session_id: str
     profile:    str = 'distributor'
+    language:   str = 'es'
 
 
 class SuggestedQuestionsRequest(BaseModel):
@@ -57,6 +62,7 @@ def morning_narrative(
     Generates an executive morning briefing narrative from the inventory briefing data.
     Adapts language and focus to the business profile.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory.service import get_morning_briefing
     from backend.ai.narrative_service import generate_morning_narrative
 
@@ -70,7 +76,8 @@ def morning_narrative(
         # Resolved once per request: the narrative's key points and its
         # rule-based fallback quote money, and this reader is a DB query.
         result   = generate_morning_narrative(briefing, body.profile,
-                                              currency_of(user.tenant_id))
+                                              currency_of(user.tenant_id),
+                                              language=body.language)
         return ok(result)
     except Exception as e:
         log.error("Morning narrative error: %s", e)
@@ -85,6 +92,7 @@ def inventory_insight(
     """
     Generates a concise insight about the current inventory state.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory.service import get_inventory_status
     from backend.ai.narrative_service import generate_inventory_insight
 
@@ -92,7 +100,8 @@ def inventory_insight(
         period = planning_service.get_planning(user.tenant_id).get("period", "daily")
         items  = get_inventory_status(user.tenant_id, body.session_id, period=period)
         result = generate_inventory_insight(items, body.profile,
-                                           currency_of(user.tenant_id))
+                                           currency_of(user.tenant_id),
+                                           language=body.language)
         return ok(result)
     except Exception as e:
         log.error("Inventory insight error: %s", e)
@@ -107,6 +116,7 @@ def forecast_explanation(
     """
     Explains a specific SKU's inventory signal and recommendation in plain language.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory.service import get_inventory_status
     from backend.ai.narrative_service import generate_forecast_explanation
 
@@ -116,7 +126,8 @@ def forecast_explanation(
         sku_data = next((i for i in items if i['sku'] == body.sku), None)
         if not sku_data:
             raise HTTPException(status_code=404, detail=f"SKU '{body.sku}' not found in inventory status")
-        result = generate_forecast_explanation(body.sku, sku_data, body.profile)
+        result = generate_forecast_explanation(body.sku, sku_data, body.profile,
+                                               language=body.language)
         return ok(result)
     except HTTPException:
         raise

@@ -8,9 +8,14 @@ import json
 import logging
 from typing import Any, Optional
 
+from backend.ai.style_rules import MONEY_WORDING_RULE
+
 log = logging.getLogger(__name__)
 
-_MODEL       = "claude-sonnet-4-6"
+# Ignored by the client — `settings.deepseek_model` is what actually runs.
+# Kept only because the call signature takes it. Named honestly so nobody
+# reads this file and concludes the product talks to Claude.
+_MODEL       = "deepseek-chat"
 _MAX_TOKENS  = 1500
 _MAX_HISTORY = 6
 _DATA_LIMIT  = 12_000  # chars — truncate very large payloads
@@ -28,7 +33,7 @@ Rules:
   (cost savings, top performers, reorder candidates).
 - Never invent data not present in the JSON.
 - Keep your answer under ~400 words unless the user explicitly asks for more detail.
-"""
+""" + MONEY_WORDING_RULE + "\n"
 
 
 def narrate(

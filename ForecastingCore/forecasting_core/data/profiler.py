@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Optional
 from forecasting_core.data.canonical import FIELD_DEFAULTS
+from forecasting_core.data import gate as _gate
 
 
 class DataProfiler:
@@ -28,6 +29,16 @@ class DataProfiler:
     """
 
     MAX_SAMPLE = 10_000
+
+    # Periods a single SKU needs before the engine will train anything on it.
+    # This is `min_history` — default 20 in ValidationConfigRequest
+    # (backend/schemas/configuration.py) and in backend/sessions/defaults.py —
+    # the threshold DataQualityChecker.filter_valid_skus applies to drop a
+    # series before routing. When it drops every series, the run ends in
+    # `no_models_trained`.
+    # Single source of truth lives in the gate module, so the threshold the
+    # profiler reports and the threshold the gate enforces cannot drift apart.
+    MIN_TRAINABLE_PERIODS = _gate.MIN_TRAINABLE_PERIODS
 
     def profile(self, df: pd.DataFrame) -> dict:
         """
@@ -49,7 +60,10 @@ class DataProfiler:
         if len(df) == 0:
             warnings.append("Dataset is empty (header only) — no rows to analyze")
         elif len(df) == 1:
-            warnings.append("Dataset has only 1 row — minimum ~30 rows required for training")
+            warnings.append(
+                f"Dataset has only 1 row — at least {self.MIN_TRAINABLE_PERIODS} "
+                f"periods per product are required for training"
+            )
 
         cols = [self._profile_column(col, sample[col]) for col in df.columns]
         recommended = self._recommend(sample, warnings)
@@ -69,17 +83,14 @@ class DataProfiler:
                 pass
 
         # ── Comprehensive data-quality checks ────────────────────────────
-        data_quality: dict = {"issues": [], "gap_fill_needed": False}
-        if len(df) > 0 and recommended["date"] and recommended["target"]:
-            self._check_quality(
-                df,
-                recommended["date"],
-                recommended["target"],
-                recommended["group"],
-                warnings,
-                data_quality,
-                stats,
-            )
+        data_quality = self.evaluate_gate(
+            df,
+            date_col=recommended["date"],
+            target_col=recommended["target"],
+            group_col=recommended["group"],
+            warnings=warnings,
+            stats=stats,
+        )
 
         return {
             "columns":     cols,
@@ -251,6 +262,157 @@ class DataProfiler:
     # ------------------------------------------------------------------
     # Data-quality checks
     # ------------------------------------------------------------------
+
+    # Name of the composite key the gate builds for a multi-key session. Chosen
+    # to be something no exported ERP column could collide with.
+    _SERIES_KEY = "__series_key__"
+
+    def evaluate_gate(
+        self,
+        df: pd.DataFrame,
+        date_col: Optional[str],
+        target_col: Optional[str],
+        group_col: Optional[str],
+        warnings: Optional[list] = None,
+        stats: Optional[dict] = None,
+        canonical_mapping: Optional[dict] = None,
+        group_cols: Optional[List[str]] = None,
+    ) -> dict:
+        """The pre-training gate, run against ONE explicit column mapping.
+
+        `profile()` calls this with the columns it guessed, so the wizard shows
+        the gate the moment the file is inspected. The backend calls it again at
+        launch with the columns the user CONFIRMED — the two must be the same
+        computation or the browser and the API would enforce different rules,
+        which is how a gate becomes a suggestion.
+
+        `group_cols` is EVERY column that identifies a series, not just the SKU,
+        and getting this wrong is an over-block rather than an under-block. A
+        distributor with two branches sells the same SKU on the same day in
+        both; grouped by SKU alone those two rows look like a duplicate, and the
+        gate would demand a decision about a problem that does not exist —
+        forever, on every sync. The runner already trains on the full key (see
+        `_group_cols`), so the gate must judge the same series it does.
+        """
+        from forecasting_core.data import gate as gate_mod
+
+        warnings = warnings if warnings is not None else []
+        data_quality: dict = {"issues": [], "gap_fill_needed": False, "blocking": False}
+
+        keys = [c for c in (group_cols or []) if c and c in df.columns]
+        series_col = group_col
+        if len(keys) > 1:
+            df = df.copy()
+            df[self._SERIES_KEY] = df[keys].astype(str).agg("|".join, axis=1)
+            series_col = self._SERIES_KEY
+
+        # Runs FIRST and unconditionally: the file that cannot train at all is
+        # exactly the file whose date/target columns often fail to be detected,
+        # so it must not sit behind the guard below.
+        self._check_trainability(
+            df, {"date": date_col, "group": series_col}, warnings, data_quality,
+        )
+
+        if len(df) > 0 and date_col and target_col:
+            self._check_quality(
+                df, date_col, target_col, series_col,
+                warnings, data_quality, stats if stats is not None else {},
+            )
+
+        return gate_mod.evaluate(
+            df, date_col, target_col, group_col,
+            data_quality=data_quality,
+            canonical_mapping=canonical_mapping,
+            series_col=series_col,
+        )
+
+    def _check_trainability(
+        self,
+        df: pd.DataFrame,
+        recommended: dict,
+        warnings: list,
+        data_quality: dict,
+    ) -> None:
+        """
+        Flag the one case the wizard must never wave through: NO product in
+        this file can reach `min_history` periods, so filter_valid_skus drops
+        every series and the run can only end in `no_models_trained`. Every
+        other check here is "this will be worse"; this one is "this cannot
+        work", and it is marked `blocking` so the UI can say so.
+
+        Two upper bounds on the longest trainable series, checked in order.
+        Both can only UNDER-report — neither can block a file that would have
+        trained:
+
+        1. Total row count. A product cannot have more time periods than the
+           whole file has rows, so `n_rows < MIN_TRAINABLE_PERIODS` settles it
+           with no date column needed at all. This is the branch that catches
+           the one-row upload, whose date column is not even detectable — a
+           single date value never passes `_is_date` (it requires more than
+           one distinct parsed value).
+        2. The longest per-SKU history, as distinct dates. That is an upper
+           bound on the rows that reach training: aggregating to a coarser
+           granularity only merges periods, and duplicate date+SKU rows are
+           summed into one. Computed over EVERY group, not the 50-group sample
+           `_check_quality` uses — one long series is enough to make the file
+           trainable, and missing it would block a good file.
+
+        Deliberately NOT blocked: a catalogue where only SOME products are
+        short. One new product with three weeks of history is normal and must
+        still train; `short_history` already says so as a soft warning.
+
+        Lag features consume rows on top of `min_history`, so a file that
+        clears this bar can still train nothing. That stays a soft warning:
+        this check only claims what is arithmetically impossible.
+        """
+        n_rows = len(df)
+        min_needed = self.MIN_TRAINABLE_PERIODS
+        # Bound 1 — holds even when nothing else about the file is known.
+        longest = n_rows
+
+        if n_rows >= min_needed:
+            # Bound 1 is silent; only a per-SKU count can decide, and that
+            # needs a usable date column. Without one the file has a different,
+            # already-reported problem — don't guess.
+            date_col = recommended.get("date")
+            if not date_col or date_col not in df.columns:
+                return
+            try:
+                dates = pd.to_datetime(df[date_col], errors="coerce")
+            except Exception:
+                return
+            keep = dates.notna()
+            if not bool(keep.any()):
+                return  # unparseable dates are reported by _check_quality
+
+            group_col = recommended.get("group")
+            if group_col and group_col in df.columns:
+                longest = int(dates[keep].groupby(df.loc[keep, group_col]).nunique().max())
+            else:
+                longest = int(dates[keep].nunique())
+
+            if longest >= min_needed:
+                return
+
+        message = (
+            f"No product has enough history to train: the longest series has "
+            f"{longest} period{'s' if longest != 1 else ''}, and at least "
+            f"{min_needed} are required"
+        )
+        warnings.append(message)
+        data_quality["blocking"] = True
+        data_quality["issues"].append({
+            "type": "no_trainable_history",
+            "severity": "error",
+            # The flag that separates advice from a dead end. Consumers must
+            # not infer it from `severity`: `all_zeros` and the granularity
+            # conflict are already "error" and are still overrulable.
+            "blocking": True,
+            "message": message,
+            "longest_history": longest,
+            "min_required": min_needed,
+            "n_rows": n_rows,
+        })
 
     def _check_quality(
         self,
@@ -426,16 +588,19 @@ class DataProfiler:
         gap_skus: List[str] = []
         outlier_per_sku: dict = {}
 
-        # Detect native frequency from first non-trivial group
+        # Detect native frequency from first non-trivial group. Shared with
+        # DataQualityChecker._missing_dates through quality.infer_freq_days, so
+        # "how often does this series report" has one answer — this inference
+        # and that checker used to disagree by construction, and the user could
+        # read both numbers one tab apart.
+        from forecasting_core.data.quality import infer_freq_days
+
         freq_days: Optional[int] = None
         for g in groups[:5]:
             sub = df if g is None else df[df[group_col] == g]
-            d = sub[date_col].dropna().sort_values().drop_duplicates()
-            if len(d) >= 3:
-                md = int(d.diff().dropna().dt.days.median())
-                if md >= 1:
-                    freq_days = md
-                    break
+            freq_days = infer_freq_days(sub[date_col])
+            if freq_days:
+                break
 
         for g in groups[:50]:  # cap for performance
             sub = df if g is None else df[df[group_col] == g]
@@ -674,9 +839,23 @@ class DataProfiler:
             warnings.append("No group/SKU column detected — treating as single series")
         return best
 
+    # A text column this numeric IS the quantity column with dirt in it, not a
+    # different kind of column. Below the threshold we do not claim it.
+    _TARGET_MIN_NUMERIC_SHARE = 0.8
+
     def _detect_target(self, df, dt_col, group_col, warnings) -> Optional[str]:
         exclude = {dt_col, group_col}
         numeric = [c for c in df.select_dtypes(include=np.number).columns if c not in exclude]
+
+        # A quantity column with a few dirty cells ("3 unidades", a blank) is
+        # read by pandas as text, so a dtype-only search did not see it at all:
+        # the file was rejected as having NO quantity column while the mapping
+        # screen showed that very column selected as Demanda. The gate's
+        # `non_numeric_target` already offers to strip, zero or drop those
+        # cells — it just never got the chance, because this returned None.
+        if not numeric:
+            numeric = self._mostly_numeric_columns(df, exclude)
+
         if not numeric:
             warnings.append("No numeric target column detected")
             return None
@@ -692,12 +871,42 @@ class DataProfiler:
 
         scores = {}
         for col in numeric:
-            s = df[col].dropna()
+            # Coerce: `numeric` can now hold a mostly-numeric TEXT column, and
+            # .std() on text either raises or returns nonsense.
+            s = pd.to_numeric(df[col], errors="coerce").dropna()
             if len(s) < 2:
                 continue
             cv = s.std() / (abs(s.mean()) + 1e-8)
             scores[col] = cv * (s >= 0).mean()
         return max(scores, key=scores.get) if scores else numeric[0]
+
+    def _mostly_numeric_columns(self, df, exclude: set) -> list:
+        """Text columns that are numbers with dirt in them, most-numeric first.
+
+        Excludes anything that parses as a date: a `dd/mm/yyyy` column is not a
+        quantity, and neither is one pandas already turned into datetimes.
+        """
+        candidates = []
+        for col in df.columns:
+            if col in exclude:
+                continue
+            s = df[col]
+            if (pd.api.types.is_numeric_dtype(s)
+                    or pd.api.types.is_datetime64_any_dtype(s)
+                    or pd.api.types.is_bool_dtype(s)):
+                continue
+            filled = s.dropna().astype(str).str.strip()
+            filled = filled[filled != ""]
+            if filled.empty:
+                continue
+            parsed = pd.to_numeric(filled.str.replace(",", ".", regex=False),
+                                   errors="coerce")
+            share = float(parsed.notna().mean())
+            if share < self._TARGET_MIN_NUMERIC_SHARE:
+                continue
+            candidates.append((share, col))
+        candidates.sort(key=lambda pair: pair[0], reverse=True)
+        return [col for _, col in candidates]
 
     def _detect_freq(self, df, dt_col, group_col) -> Optional[str]:
         if not dt_col:

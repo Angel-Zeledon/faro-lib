@@ -29,7 +29,14 @@ def sniff_separator(sample: str) -> str:
     a single unusable column named "sku;fecha;cantidad". Picks whichever
     candidate splits the header into the most fields; ties fall back to ','.
     """
-    header = (sample or "").lstrip("﻿").splitlines()[0] if sample.strip() else ""
+    # `splitlines()[0]` is not safe on its own: a file that is nothing but the
+    # BOM Excel writes into an EMPTY export survives `sample.strip()` (U+FEFF is
+    # not whitespace to Python), and then `lstrip` leaves the empty string,
+    # whose `splitlines()` is `[]`. That was an IndexError — so uploading an
+    # empty export answered "an unexpected error occurred", blaming the server
+    # for a file the user could see was empty.
+    lines = (sample or "").lstrip("﻿").splitlines()
+    header = lines[0] if lines else ""
     best, best_count = ",", 1
     for candidate in (",", ";", "\t", "|"):
         count = len(header.split(candidate))
@@ -51,6 +58,36 @@ def _csv_sep(source: _Source) -> str:
     return sniff_separator(sample)
 
 
+CSV_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+
+
+def read_csv_any_encoding(source, **kwargs) -> pd.DataFrame:
+    """``pd.read_csv`` that survives a file its exporter did not write in UTF-8.
+
+    An ERP export from a Windows machine in a Spanish locale is cp1252, not
+    UTF-8, and ``utf-8-sig`` raises ``UnicodeDecodeError`` on the first accented
+    byte — so a whole year of history was refused over one "Camión", with a
+    failure that reads as a broken file rather than a wrong encoding. The stock
+    importer already fell back (``backend/api/v1/inventory.py::_decode_csv``);
+    the sales path, where most files actually enter, did not.
+
+    UTF-8 is tried first so a correctly encoded file is never reinterpreted.
+    latin-1 goes last because it maps all 256 byte values and therefore always
+    succeeds — the chain never ends without a DataFrame for an encoding reason.
+    Only ``UnicodeDecodeError`` is retried: a malformed or empty CSV must still
+    surface as itself, not as an encoding problem.
+    """
+    last: Optional[UnicodeDecodeError] = None
+    for encoding in CSV_ENCODINGS:
+        try:
+            if hasattr(source, "seek"):
+                source.seek(0)
+            return pd.read_csv(source, encoding=encoding, **kwargs)
+        except UnicodeDecodeError as exc:
+            last = exc
+    raise last                                  # pragma: no cover - latin-1 cannot fail
+
+
 def _to_records(df: pd.DataFrame) -> list[dict]:
     """DataFrame -> list[dict] with NaN -> None and numpy scalars -> Python."""
     df = df.where(pd.notna(df), None)
@@ -64,7 +101,56 @@ def _to_records(df: pd.DataFrame) -> list[dict]:
     return records
 
 
+# Formats whose bytes legitimately contain NUL. An .xlsx is a ZIP and a
+# .parquet is a binary column store — both are full of them, and scanning
+# either for NUL refuses every valid file. Only the text formats can be
+# checked, which is also the only place the truncation bug exists: the CSV/JSON
+# reader is the one that stops at a NUL mid-field.
+_BINARY_FORMATS = {"excel", "parquet"}
+
+
+def _refuse_nul_bytes(source: _Source, fmt: Optional[str] = None) -> None:
+    """Refuse a file whose cells contain NUL, before pandas silently eats them.
+
+    pandas' C parser treats NUL as end-of-field: `SKU-\x00-1` is read as
+    `SKU-`, with no error and no warning. The file says one thing and the
+    import stores another — a buyer then orders against a product code their
+    supplier has never heard of.
+
+    Refusing is the only honest option at this layer. A DataFrame has no
+    channel to report "and by the way, 12 rows were dropped", so silently
+    filtering them would trade one invisible corruption for another. The stock
+    CSV importer, which DOES have a per-row error report, rejects the
+    individual rows instead — see `_parse_stock_rows`.
+
+    Only the first 1 MB is scanned when the source is a path: a NUL is a
+    corrupt-export symptom, and a corrupt export is corrupt from the start.
+    Reading the whole file here would double the cost of every import.
+
+    Binary formats are skipped entirely — see _BINARY_FORMATS.
+    """
+    fmt = fmt or (None if isinstance(source, bytes) else _fmt_from_path(source))
+    if fmt in _BINARY_FORMATS:
+        return
+    try:
+        if isinstance(source, bytes):
+            sample = source
+        else:
+            with open(source, "rb") as fh:
+                sample = fh.read(1_048_576)
+    except OSError:
+        return                      # unreadable is the reader's problem, not ours
+    if b"\x00" in sample:
+        line = sample[: sample.index(b"\x00")].count(b"\n") + 1
+        raise ValueError(
+            f"The file contains a NUL byte (first seen on line {line}). "
+            f"Rows containing one cannot be imported, because the value would "
+            f"be silently truncated. Re-export the file from your system."
+        )
+
+
 def _read_df(source: _Source, fmt: Optional[str], nrows: Optional[int]) -> pd.DataFrame:
+    _refuse_nul_bytes(source, fmt)
     if isinstance(source, bytes):
         if fmt is None:
             raise ValueError("fmt is required when reading from bytes")
@@ -80,7 +166,20 @@ def _read_df(source: _Source, fmt: Optional[str], nrows: Optional[int]) -> pd.Da
     if fmt == "parquet":
         df = pd.read_parquet(buf)
         return df.head(nrows) if nrows is not None else df
-    return pd.read_csv(buf, nrows=nrows, sep=_csv_sep(source), encoding="utf-8-sig")
+    return read_csv_any_encoding(buf, nrows=nrows, sep=_csv_sep(source))
+
+
+def peek_columns(content: bytes, suffix: str) -> list[str]:
+    """Column names of an in-memory table file, read from its first rows only.
+
+    Used by the e-mail ingest, which has to decide whether a file matches the
+    last confirmed mapping BEFORE it stores anything. Refuses a file with a NUL
+    byte (ValueError, same message as every other reader); any other failure to
+    parse also surfaces as an exception for the caller to report.
+    """
+    fmt = {".xlsx": "excel", ".xls": "excel", ".json": "json",
+           ".parquet": "parquet"}.get(suffix.lower(), "csv")
+    return [str(c) for c in _read_df(content, fmt, 5).columns]
 
 
 def read_rows(source: _Source, fmt: Optional[str] = None,
@@ -96,6 +195,7 @@ def read_dataframe(source: _Source, fmt: Optional[str] = None,
     functions that returns a DataFrame — callers pass it straight to
     ForecastingCore and never call pandas themselves. For Excel, ``sheet``
     defaults to the first sheet."""
+    _refuse_nul_bytes(source, fmt)
     if isinstance(source, bytes):
         if fmt is None:
             raise ValueError("fmt is required when reading from bytes")
@@ -115,7 +215,7 @@ def read_dataframe(source: _Source, fmt: Optional[str] = None,
     if fmt == "parquet":
         df = pd.read_parquet(buf)
         return df.head(nrows) if nrows is not None else df
-    return pd.read_csv(buf, nrows=nrows, sep=_csv_sep(source), encoding="utf-8-sig")
+    return read_csv_any_encoding(buf, nrows=nrows, sep=_csv_sep(source))
 
 
 def dataframe_from_records(rows, columns: list[str]):
@@ -130,7 +230,7 @@ def read_columns(path: str, cols: list[str]) -> list[dict]:
     if fmt == "excel":
         df = pd.read_excel(path, usecols=cols)
     else:
-        df = pd.read_csv(path, usecols=cols, sep=_csv_sep(path), encoding="utf-8-sig")
+        df = read_csv_any_encoding(path, usecols=cols, sep=_csv_sep(path))
     return _to_records(df)
 
 
@@ -139,6 +239,7 @@ def dataset_preview(path: str, rows: int, sheet: Optional[str] = None) -> dict:
     plus Excel sheet names and the full row count (for the caller's DB update).
     Returns plain Python; the DB write stays in the caller."""
     fmt = _fmt_from_path(path)
+    _refuse_nul_bytes(path, fmt)
     sheets: Optional[list] = None
     total_rows: Optional[int] = None
 
@@ -161,7 +262,7 @@ def dataset_preview(path: str, rows: int, sheet: Optional[str] = None) -> dict:
             total_rows = None
         df = pd.read_parquet(path).head(rows)
     else:
-        df = pd.read_csv(path, nrows=rows, sep=_csv_sep(path), encoding="utf-8-sig")
+        df = read_csv_any_encoding(path, nrows=rows, sep=_csv_sep(path))
         # Full row count without loading the whole file into memory.
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as _f:
@@ -190,8 +291,19 @@ def read_table(path: str, sheet: Optional[str] = None) -> dict:
     elif fmt == "parquet":
         df = pd.read_parquet(path)
     else:
-        df = pd.read_csv(path, sep=_csv_sep(path), encoding="utf-8-sig")
+        df = read_csv_any_encoding(path, sep=_csv_sep(path))
     return {"columns": list(df.columns), "rows": _to_records(df)}
+
+
+def xlsx_bytes(columns: list[str], rows: list[dict]) -> bytes:
+    """An .xlsx workbook as bytes (header row + `rows`), for downloadable
+    templates. Cells are written verbatim as strings, so a phone number keeps
+    its leading zeros and nothing is evaluated as a formula."""
+    df = pd.DataFrame([{c: ("" if r.get(c) is None else str(r.get(c))) for c in columns}
+                       for r in rows], columns=columns)
+    buf = _io.BytesIO()
+    df.to_excel(buf, index=False)
+    return buf.getvalue()
 
 
 def write_rows(path: str, columns: list[str], rows: list[dict],

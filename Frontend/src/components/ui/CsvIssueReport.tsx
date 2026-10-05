@@ -8,9 +8,11 @@ import { AlertTriangle, AlertCircle, Download } from 'lucide-react'
 import type { CsvIssueGroup } from '@/lib/csvCheck'
 import { downloadCsvTemplate, csvText, csvIssueText } from '@/lib/csvCheck'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 export function CsvTemplateButton({ compact = false }: { compact?: boolean }) {
   const { t } = useLanguage()
+  const narrow = useIsNarrow()
   return (
     <button
       type="button"
@@ -25,6 +27,7 @@ export function CsvTemplateButton({ compact = false }: { compact?: boolean }) {
         fontSize: compact ? 12 : 13,
         fontWeight: 600,
         cursor: 'pointer',
+        ...(narrow ? { minHeight: 44, boxSizing: 'border-box', fontSize: 14, borderRadius: 10 } : {}),
       }}
     >
       <Download size={compact ? 13 : 15} />
@@ -41,8 +44,8 @@ export default function CsvIssueReport({ groups, fileName }: {
   if (groups.length === 0) return null
 
   const hasFatal = groups.some(g => g.fatal)
-  const accent   = hasFatal ? '#dc2626' : '#d97706'
-  const bg       = hasFatal ? 'rgba(220,38,38,0.06)' : 'rgba(217,119,6,0.07)'
+  const accent   = hasFatal ? '#B94A4A' : '#A8701C'
+  const bg       = hasFatal ? 'rgba(185,74,74,0.06)' : 'rgba(217,119,6,0.07)'
 
   return (
     <div
@@ -80,8 +83,8 @@ export default function CsvIssueReport({ groups, fileName }: {
             }}>
               <span>{csvText(t, g.titleKey)}</span>
               <span style={{
-                fontSize: 11, fontWeight: 700, color: g.fatal ? '#dc2626' : '#d97706',
-                background: g.fatal ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.14)',
+                fontSize: 11, fontWeight: 700, color: g.fatal ? '#B94A4A' : '#A8701C',
+                background: g.fatal ? 'rgba(185,74,74,0.12)' : 'rgba(217,119,6,0.14)',
                 padding: '1px 8px', borderRadius: 20,
               }}>
                 {g.count} {t('csv.rows_affected')}

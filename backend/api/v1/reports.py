@@ -1,9 +1,10 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from backend import audit
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.db import session_store
 from backend.errors import AppError
@@ -169,6 +170,7 @@ def report_status(
 def download_report(
     session_id: str,
     format: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
 ):
     s = session_svc.get_session(user.tenant_id, session_id)
@@ -181,6 +183,10 @@ def download_report(
 
     report_dir = paths.reports_artifact_dir(user.tenant_id, session_id)
     for f in report_dir.glob(f"*{ext}"):
+        # Audited only when a file actually leaves (the refusals below return
+        # >= 400 and the trail records successful calls only).
+        audit.note(request, label=f.name,
+                   after={"format": format, "bytes": f.stat().st_size})
         return FileResponse(f, filename=f.name)
 
     # No file. Say what actually happened instead of "generate one first",

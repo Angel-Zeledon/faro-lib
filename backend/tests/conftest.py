@@ -142,22 +142,128 @@ def client(app):
             yield c
 
 
+@pytest.fixture(autouse=True)
+def _testing_mode_is_declared_not_inherited():
+    """Pin `TESTING_MODE` on, because the suite is written against it being on.
+
+    The house rule is that a test which depends on a quota or a rate limit turns
+    the mode off ITSELF (68 of them do). What was never pinned is the other
+    direction: every other test assumed it was on, and inherited that from
+    whatever `backend/.env` happened to say on the machine running them.
+
+    On 2026-09-14 that file said `false`, and **34 tests went red accusing the
+    warehouse split, the transfer lanes and the optimizer of being broken** —
+    all eight affected files seed a second warehouse, and the free tier stops at
+    one, so each died on `PLAN_LIMIT_REACHED` before reaching its subject. The
+    fix was one line in a gitignored file nobody can see in `git status`, and
+    finding it cost half an hour of blaming the most expensive code in the repo.
+
+    Declaring it here makes the suite say what it needs instead of inheriting
+    it. A test that wants the limits live still turns it off — that path is
+    unchanged, and `test_tiers.py` and the chaos suites exercise it.
+    """
+    from backend.config import settings
+    original = settings.testing_mode
+    settings.testing_mode = True
+    yield
+    settings.testing_mode = original
+
+
+@pytest.fixture(autouse=True)
+def _forget_the_generated_encryption_key():
+    """Drop the process-cached Fernet key between tests.
+
+    `service_config/crypto.py` caches the key it reads or generates, because the
+    alert loop encrypts inside a loop. Across tests that cache is a liar: one
+    test sets `INTEGRATIONS_SECRET_KEY`, the next blanks it and gets the
+    GENERATED key instead — a different one — so a secret stored by the first
+    is no longer decryptable and the service silently reports itself
+    unconfigured. That is correct behaviour and a terrible test fixture.
+    """
+    from backend.service_config import crypto
+    crypto.reset_cache()
+    yield
+    crypto.reset_cache()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _db_pool_is_open():
+    """Open the connection pool for the test session, whatever the test asks for.
+
+    The pool used to be a side effect of the `client` fixture: TestClient's
+    __enter__ fires FastAPI's startup, which calls init_pool. Any DB-touching
+    test that does not request `client` therefore passed only when some earlier
+    test had already built one. Run by node id it died in the `test_tenant`
+    fixture with "DB pool not initialized — check DATABASE_URL in .env", which
+    accuses an env var that is perfectly fine — measured on every test in
+    test_notification_delivery_honesty.py, none of which take `client`.
+
+    Guarded the same way workers/__main__.py guards it, and main.py's startup
+    now reuses an already-open pool instead of replacing it.
+    """
+    from backend.config import settings
+    from backend.db.connection import init_pool, pool_is_initialized
+
+    if not pool_is_initialized() and settings.database_url:
+        # Same ceiling the app opens at startup (backend/main.py:62), on purpose:
+        # a stress test that fires 10 concurrent requests against a pool half
+        # the production size measures a deployment nobody runs. It exhausted
+        # at 10 and reported "connection pool exhausted" as if the product
+        # could not take the load.
+        init_pool(settings.database_url, min_conn=1, max_conn=20)
+    yield
+
+
+class _OfflineLLMMessages:
+    """The `messages.create` surface, answering without a network call."""
+
+    def create(self, model=None, max_tokens=1024, system=None, messages=None, **_):
+        from backend.ai.local_llm import _ContentBlock, _LLMResponse, _Usage
+        return _LLMResponse(
+            content=[_ContentBlock(text="offline test narrative")],
+            usage=_Usage(input_tokens=0, output_tokens=0),
+        )
+
+
+class _OfflineLLMClient:
+    """Stands in for DeepSeek across the whole suite. See
+    `_force_local_llm_in_tests` — no test may reach a billed API."""
+
+    def __init__(self, *_a, **_k):
+        self.messages = _OfflineLLMMessages()
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _force_local_llm_in_tests():
     """
-    backend/ai/local_llm.py::get_local_llm_client() returns a real
-    Anthropic-backed client whenever ANTHROPIC_API_KEY is set in .env — the
-    same .env the dev server reads. Without this, any test that reaches an
-    AI call site fires a real, billed request, and stalls for a long time if
-    that key's account has no credit (observed directly: a full-suite run
-    died silently mid-test after several such calls each burned the
-    client's retry/timeout budget). Autouse + session-scoped so every test
-    is protected regardless of whether it uses the `client` fixture.
-    """
-    from backend.ai.local_llm import LocalLLMClient
+    backend/ai/local_llm.py::get_local_llm_client() returns a real DeepSeek
+    client whenever DEEPSEEK_API_KEY is set in .env — the same .env the dev
+    server reads, and it IS set on this machine. Without this, any test that
+    reaches an AI call site fires a real, billed request, and stalls for a long
+    time if that key's account has no credit (observed directly: a full-suite
+    run died silently mid-test after several such calls each burned the
+    client's retry/timeout budget). Autouse + session-scoped so every test is
+    protected regardless of whether it uses the `client` fixture.
 
-    with mock.patch("backend.ai.local_llm.get_local_llm_client", side_effect=LocalLLMClient):
+    The stub answers instead of raising, deliberately: consumers catch
+    exceptions and fall back to rule-based text, so a raising stub would test
+    the fallback everywhere and the LLM path nowhere. Tests that want the
+    fallback pin `_get_client` to None themselves.
+    """
+    with mock.patch("backend.ai.local_llm.get_local_llm_client",
+                    side_effect=lambda *a, **k: _OfflineLLMClient()):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _no_background_accuracy_tracking(monkeypatch):
+    """Every sales upload schedules a background accuracy reading
+    (forecast_check/tracking.py). A daemon thread racing the next test's tenant
+    teardown would make unrelated tests flaky, so the spawn is a no-op by
+    default; the tracking tests call `track_dataset` directly or patch `_spawn`
+    to run inline."""
+    monkeypatch.setattr("backend.forecast_check.tracking._spawn", lambda fn: None)
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -274,12 +380,12 @@ def viewer_headers(client, viewer_user):
 @pytest.fixture
 def make_tenant_user_headers(client):
     """
-    Factory fixture for entitlements tests: creates a fresh tenant on a given
-    plan/trial state, plus a verified user with a given role, and returns
-    login headers for that user.
+    Factory fixture for entitlements tests: creates a fresh tenant in a given
+    trial state, plus a verified user with a given role, and returns login
+    headers for that user.
 
-    make_tenant_user_headers(plan="starter", role="analyst",
-                              expired_trial=False, return_tenant_id=False)
+    make_tenant_user_headers(role="analyst", expired_trial=False,
+                             return_tenant_id=False)
 
     Every tenant created through the factory is tracked and CASCADE-deleted
     on teardown, mirroring `test_tenant`.
@@ -290,7 +396,7 @@ def make_tenant_user_headers(client):
 
     created_tenant_ids: list[str] = []
 
-    def _make(plan="starter", role="analyst", expired_trial=False, return_tenant_id=False):
+    def _make(role="analyst", expired_trial=False, return_tenant_id=False):
         tenant = create_tenant(f"pytest-{uuid4().hex[:10]}")
         tenant_id = tenant["id"]
         created_tenant_ids.append(tenant_id)
@@ -300,8 +406,8 @@ def make_tenant_user_headers(client):
         else:
             trial_ends_at = None
         execute(
-            "UPDATE tenants SET plan=%s, trial_ends_at=%s WHERE id=%s",
-            (plan, trial_ends_at, tenant_id),
+            "UPDATE tenants SET trial_ends_at=%s WHERE id=%s",
+            (trial_ends_at, tenant_id),
         )
 
         email = f"{role}-{uuid4().hex[:8]}@example.com"

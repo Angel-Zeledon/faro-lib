@@ -1,0 +1,279 @@
+'use client'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { AlertTriangle, Check, Copy, Clock, Database, ShieldAlert } from 'lucide-react'
+import { authLogin, createTrialAccount, type TrialAccount } from '@/lib/api'
+import { setAuth } from '@/lib/auth'
+import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
+import { useLanguage } from '@/contexts/LanguageContext'
+import { useAuthErrorText } from '@/hooks/useAuthErrorText'
+import TermsSentence from '@/components/legal/TermsSentence'
+
+// The landing's "try it without signing up". Arriving here creates a throwaway
+// account (backend/trial/) and shows its user and password, which the visitor
+// can copy to come back later in the same 24 hours, or use straight away.
+// Entering goes to the one-click demo (/ventas?demo=1), which loads the sample
+// history and shows the training progress until there is a semáforo to see.
+//
+// The credentials are kept in sessionStorage so a reload shows the same account
+// instead of minting another one — the backend allows three per address a day,
+// and a refresh must not spend them. The password lives nowhere else: the
+// server stores only its hash.
+
+const STORE_KEY = 'stockai_trial_account'
+
+function readStored(): TrialAccount | null {
+  try {
+    const raw = sessionStorage.getItem(STORE_KEY)
+    if (!raw) return null
+    const acct = JSON.parse(raw) as TrialAccount
+    return new Date(acct.expires_at).getTime() > Date.now() ? acct : null
+  } catch {
+    return null
+  }
+}
+
+function store(acct: TrialAccount) {
+  try { sessionStorage.setItem(STORE_KEY, JSON.stringify(acct)) } catch { /* private mode */ }
+}
+
+function CopyField({ id, label, value }: { id: string; label: string; value: string }) {
+  const { t } = useLanguage()
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1600)
+    } catch {
+      // Clipboard refused (insecure origin, permissions): the value is on
+      // screen and selectable, which is the fallback.
+    }
+  }
+
+  return (
+    <div className="auth-field">
+      <label htmlFor={id} style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: 'var(--a-muted)' }}>
+        {label}
+      </label>
+      <div style={{ position: 'relative' }}>
+        <input
+          id={id} readOnly value={value} className="auth-input auth-input-affix"
+          onFocus={e => e.currentTarget.select()}
+          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 14 }}
+        />
+        <button
+          type="button" onClick={copy} className="auth-eye"
+          aria-label={copied ? t('trial.copied') : t('trial.copy')}
+          title={copied ? t('trial.copied') : t('trial.copy')}
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function TrialPage() {
+  const { t, lang } = useLanguage()
+  const authErrorText = useAuthErrorText()
+  const router = useRouter()
+  const [acct, setAcct] = useState<TrialAccount | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [entering, setEntering] = useState(false)
+  // Entering is held until the visitor says they kept the credentials: the
+  // backend allows three trials per connection a day, so a lost password is a
+  // locked door until tomorrow, and the page that shows it is the only copy.
+  const [saved, setSaved] = useState(false)
+  const [copiedBoth, setCopiedBoth] = useState(false)
+
+  async function copyBoth() {
+    if (!acct) return
+    try {
+      await navigator.clipboard.writeText(`${t('trial.user_label')}: ${acct.email}\n${t('auth.password_label')}: ${acct.password}`)
+      setCopiedBoth(true)
+      setTimeout(() => setCopiedBoth(false), 1800)
+    } catch { /* the fields above stay selectable */ }
+  }
+  // React runs effects twice in development; without this a reload would
+  // create two accounts and show one.
+  const started = useRef(false)
+
+  function create() {
+    setError(null)
+    createTrialAccount()
+      .then(a => { store(a); setAcct(a) })
+      .catch(err => setError(authErrorText(err, 'trial.create_failed')))
+  }
+
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    const stored = readStored()
+    if (stored) setAcct(stored)
+    else create()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function enter() {
+    if (!acct) return
+    setEntering(true)
+    setError(null)
+    try {
+      const res = await authLogin(acct.email, acct.password)
+      setAuth(res.access_token, res.refresh_token, {
+        id:        res.user.id,
+        email:     res.user.email,
+        full_name: res.user.full_name,
+        role:      res.user.role,
+        tenant_id: res.user.tenant_id,
+      })
+      try { sessionStorage.removeItem(INTRO_SEEN_KEY) } catch { /* storage blocked */ }
+      router.replace('/ventas?demo=1')
+    } catch (err) {
+      setError(authErrorText(err, 'auth.login_failed'))
+      setEntering(false)
+    }
+  }
+
+  const expires = acct
+    ? new Date(acct.expires_at).toLocaleString(lang === 'es' ? 'es-CR' : 'en-US', {
+        weekday: 'long', hour: '2-digit', minute: '2-digit',
+      }).replace(/\.$/, '')   // "p. m." already ends in a period; the sentence adds its own
+    : ''
+
+  return (
+    <div className="auth-shell">
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <div className="auth-enter" style={{ animation: 'auth-fade-in 0.5s ease-out both' }}>
+
+          <div style={{ marginBottom: 26 }}>
+            <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 24, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
+              {t('trial.title')}
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: 0, lineHeight: 1.5 }}>
+              {t('trial.subtitle')}
+            </p>
+          </div>
+
+          {error && (
+            <div role="alert" style={{
+              display: 'flex', flexDirection: 'column', gap: 10,
+              padding: '10px 12px', borderRadius: 10, marginBottom: 20,
+              background: 'rgba(185,74,74,0.04)', border: '1px solid rgba(185,74,74,0.15)',
+              fontSize: 13, color: '#B94A4A',
+            }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+                {error}
+              </div>
+              {!acct && (
+                <button
+                  type="button" onClick={create}
+                  style={{ all: 'unset', cursor: 'pointer', alignSelf: 'flex-start', fontSize: 12.5, fontWeight: 600, color: 'var(--a-ink)', textDecoration: 'underline', textUnderlineOffset: 3 }}
+                >
+                  {t('trial.retry')}
+                </button>
+              )}
+            </div>
+          )}
+
+          {!acct && !error && (
+            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: 'var(--a-muted)', padding: '18px 0' }}>
+              <span style={{
+                width: 14, height: 14, border: '2px solid var(--a-dim)',
+                borderTopColor: 'var(--a-ink)', borderRadius: '50%',
+                animation: 'spin 0.7s linear infinite', display: 'inline-block',
+              }} />
+              {t('trial.creating')}
+            </div>
+          )}
+
+          {acct && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <CopyField id="trial-user" label={t('trial.user_label')} value={acct.email} />
+              <CopyField id="trial-password" label={t('auth.password_label')} value={acct.password} />
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5, color: 'var(--a-muted)', lineHeight: 1.5 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Clock size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{t('trial.expires_note', { when: expires })}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Database size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>{t('trial.data_note')}</span>
+                </div>
+              </div>
+
+              <div role="note" style={{
+                display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', borderRadius: 11,
+                background: 'rgba(183,121,31,0.08)', border: '1px solid rgba(183,121,31,0.35)',
+              }}>
+                <div style={{ display: 'flex', gap: 9 }}>
+                  <ShieldAlert size={16} color="#A8701C" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--a-ink)', marginBottom: 3 }}>
+                      {t('trial.save_warning_title')}
+                    </div>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--a-muted)' }}>
+                      {t('trial.save_warning_body')}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button" onClick={copyBoth}
+                    style={{
+                      all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '7px 11px', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+                      border: '1px solid var(--a-dim)', color: 'var(--a-ink)',
+                    }}
+                  >
+                    {copiedBoth ? <Check size={13} /> : <Copy size={13} />}
+                    {copiedBoth ? t('trial.copied_both') : t('trial.copy_both')}
+                  </button>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: 'var(--a-ink)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox" checked={saved} onChange={e => setSaved(e.target.checked)}
+                      style={{ width: 16, height: 16, accentColor: '#0F766E' }}
+                    />
+                    {t('trial.saved_check')}
+                  </label>
+                </div>
+              </div>
+
+              <button
+                type="button" onClick={enter} disabled={entering || !saved} className="auth-submit"
+                style={{
+                  width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
+                  background: entering || !saved ? 'var(--a-dim)' : 'var(--a-cta-bg)',
+                  color: 'var(--a-cta-fg)', fontSize: 14, fontWeight: 600,
+                  cursor: entering || !saved ? 'not-allowed' : 'pointer', marginTop: 4,
+                }}
+              >
+                {entering ? t('auth.signing_in') : t('trial.enter')}
+              </button>
+              {/* backend/trial/service.py records acceptance (date + version)
+                  when the account is created; this is where it is stated. */}
+              <p style={{ margin: '-6px 0 0', fontSize: 12.5, color: 'var(--a-muted)', lineHeight: 1.5 }}>
+                <TermsSentence
+                  templateKey="trial.terms_note"
+                  linkStyle={{ color: 'var(--a-ink)', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3 }}
+                />
+              </p>
+            </div>
+          )}
+        </div>
+
+        <p style={{ marginTop: 28, fontSize: 13.5, color: 'var(--a-muted)' }}>
+          {t('trial.prefer_signup')}{' '}
+          <Link href="/signup" className="auth-link" style={{ color: 'var(--a-ink)', textDecoration: 'none', fontWeight: 600 }}>
+            {t('auth.request_access')}
+          </Link>
+        </p>
+      </div>
+    </div>
+  )
+}

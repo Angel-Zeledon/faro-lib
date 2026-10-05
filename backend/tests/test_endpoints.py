@@ -36,8 +36,8 @@ def unique_phone() -> str:
 
 
 def _email(prefix: str) -> str:
-    """@faro-e2e.io has no MX record, so no test address can reach a person."""
-    return f"{prefix}-{uuid4().hex[:8]}@faro-e2e.io"
+    """@stockai-e2e.io has no MX record, so no test address can reach a person."""
+    return f"{prefix}-{uuid4().hex[:8]}@stockai-e2e.io"
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -82,6 +82,7 @@ class TestSignup:
             "tenant_name": tenant_name,
             "full_name": "Test User",
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 201
         tenant_id = resp.json()["data"]["tenant"]["id"]
@@ -102,9 +103,18 @@ class TestSignup:
             assert user["hashed_password"] != "StrongPass123!"
             assert user["hashed_password"].startswith("$2"), "not a bcrypt hash"
 
-            tenant = query_one("SELECT name, plan FROM tenants WHERE id = %s", (tenant_id,))
+            tenant = query_one(
+                "SELECT name, tier, trial_ends_at FROM tenants WHERE id = %s", (tenant_id,))
             assert tenant is not None and tenant["name"] == tenant_name
-            assert tenant["plan"], "a new tenant was created with no plan"
+            # A new tenant lands on the free tier, and the free tier is a
+            # permanent home rather than a countdown: the 14-day trial was
+            # removed on 2026-08-22, so `trial_ends_at` is NULL on every new
+            # signup. The column survives only to suspend an account by hand.
+            assert tenant["tier"] == "free"
+            assert tenant["trial_ends_at"] is None, (
+                "a new tenant was given a trial clock — the trial was removed "
+                "on 2026-08-22 and the free tier does not expire"
+            )
         finally:
             execute("DELETE FROM tenants WHERE id = %s", (tenant_id,))
 
@@ -117,6 +127,7 @@ class TestSignup:
             "password": "StrongPass123!",
             "tenant_name": tenant_name,
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
         })
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "email_already_registered"
@@ -155,6 +166,7 @@ class TestSignup:
             "password": "StrongPass123!",
             "tenant_name": tenant_name,
             "whatsapp_number": unique_phone(),
+            "accept_terms": True,
             **payload_patch,
         }
         resp = client.post("/api/v1/auth/signup", json=body)
@@ -180,6 +192,7 @@ class TestSignupWhatsapp:
             "password": "StrongPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": phone,
+            "accept_terms": True,
         })
         assert resp.status_code == 201, resp.text
         row = query_one(
@@ -221,6 +234,7 @@ class TestSignupWhatsapp:
             "password": "StrongPass123!",
             "tenant_name": f"tenant-{uuid4().hex[:6]}",
             "whatsapp_number": phone,
+            "accept_terms": True,
         })
         assert resp.status_code == 409, resp.text
         assert resp.json().get("error_code") == "whatsapp_number_taken"
@@ -314,7 +328,7 @@ class TestLogin:
         It used to 403, which left anyone whose verification mail hit spam
         permanently outside with no self-service way back and nothing of the
         product seen. They now get in with `email_verified: false` on the token,
-        and only outward-facing actions (inviting users, integrations, sending
+        and only outward-facing actions (inviting users, sending
         notifications) are refused — see test_email_verification_unblock.py for
         those, including the pair that proves an unverified admin cannot invite.
         """
@@ -434,20 +448,24 @@ class TestSessionsCRUD:
         assert row["name"] == new_name, "the response echoed the new name but the row kept the old one"
         assert row["updated_at"] >= row["created_at"]
 
-    def test_delete_session_removes_the_row_and_its_config(self, client, auth_headers):
+    def test_delete_session_archives_it_and_keeps_its_config(self, client, auth_headers):
+        """Sessions are permanent: DELETE answers 204 but only archives. The row
+        and its configuration stay (restorable), and the active list drops it."""
         create = client.post("/api/v1/sessions", json={"name": "to-delete"}, headers=auth_headers)
         sid = create.json()["data"]["id"]
-        # create_session also inserts the session_configs row; both must go.
         assert query_one("SELECT session_id FROM session_configs WHERE session_id = %s", (sid,)) is not None
 
         resp = client.delete(f"/api/v1/sessions/{sid}", headers=auth_headers)
         assert resp.status_code == 204
-        assert query_one("SELECT id FROM sessions WHERE id = %s", (sid,)) is None, (
-            "204 returned but the session row is still there"
+        row = query_one("SELECT archived_at FROM sessions WHERE id = %s", (sid,))
+        assert row is not None and row["archived_at"] is not None, (
+            "204 returned but the session was not archived"
         )
         assert query_one(
             "SELECT session_id FROM session_configs WHERE session_id = %s", (sid,),
-        ) is None, "the session was deleted but its config blob was orphaned"
+        ) is not None, "archiving must not drop the configuration"
+        ids = [s["id"] for s in client.get("/api/v1/sessions", headers=auth_headers).json()["data"]["items"]]
+        assert sid not in ids, "an archived session must leave the active list"
 
     def test_pagination_pages_are_disjoint_and_complete(self, client, auth_headers, test_tenant):
         created = []

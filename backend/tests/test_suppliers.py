@@ -207,6 +207,141 @@ class TestSupplierCRUD:
             execute("DELETE FROM tenants WHERE id=%s", (t2["id"],))
 
 
+# ── Duplicate names: the unique index must not surface as a 500 ───────────────
+
+class TestDuplicateSupplierName:
+    """`suppliers` has UNIQUE (tenant_id, name) and the index does NOT exclude
+    deactivated rows. Re-registering a supplier the business had dropped
+    therefore hit a raw UniqueViolation: a generic 500 naming nothing, about a
+    row that is invisible in every list on screen."""
+
+    @staticmethod
+    def _rows_named(tenant_id, name):
+        from backend.db.connection import query
+        return query(
+            "SELECT id, active FROM suppliers WHERE tenant_id = %s AND LOWER(name) = LOWER(%s)",
+            (tenant_id, name),
+        )
+
+    def test_second_supplier_with_the_same_name_is_a_named_conflict(
+        self, client, analyst_headers, test_tenant,
+    ):
+        name = f"Dup-{uuid4().hex[:6]}"
+        _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                        json={"name": name}), 201)
+
+        r = client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                        json={"name": name})
+        assert r.status_code == 409, f"Expected a named conflict, got {r.status_code}: {r.text}"
+        body = r.json()
+        assert body["error_code"] == "supplier_name_taken"
+        assert body["error_params"]["name"] == name
+        assert len(self._rows_named(test_tenant["id"], name)) == 1
+
+    def test_case_variant_of_an_existing_name_is_refused_too(
+        self, client, analyst_headers, test_tenant,
+    ):
+        """Every supplier-by-name lookup in the product is case-insensitive, so
+        'andina' next to 'Andina' is two cards answering the same question."""
+        name = f"Case-{uuid4().hex[:6]}"
+        _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                        json={"name": name}), 201)
+
+        r = client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                        json={"name": name.upper()})
+        assert r.status_code == 409
+        assert len(self._rows_named(test_tenant["id"], name)) == 1
+
+    def test_recreating_a_deactivated_supplier_says_so_instead_of_500ing(
+        self, client, analyst_headers, test_tenant,
+    ):
+        """The case the buyer actually hits: they deactivated a supplier, then
+        tried to add it back. The row is in the way and nothing on screen shows
+        it, so the error has to name it."""
+        name = f"Gone-{uuid4().hex[:6]}"
+        created = _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                                  json={"name": name}), 201)
+        assert client.delete(f"/api/v1/inventory/suppliers/{created['id']}",
+                             headers=analyst_headers).status_code == 204
+
+        r = client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                        json={"name": name})
+        assert r.status_code == 409, f"Expected a named conflict, got {r.status_code}: {r.text}"
+        body = r.json()
+        assert body["error_code"] == "supplier_name_taken_by_deactivated"
+        assert body["error_params"]["name"] == name
+
+        rows = self._rows_named(test_tenant["id"], name)
+        assert len(rows) == 1, "The refused create left a row behind"
+        assert rows[0]["active"] is False, "The deactivated supplier was resurrected silently"
+
+    def test_renaming_onto_an_existing_name_is_the_same_conflict(
+        self, client, analyst_headers, test_tenant,
+    ):
+        from backend.db.connection import query_one
+
+        taken = f"Taken-{uuid4().hex[:6]}"
+        other = f"Other-{uuid4().hex[:6]}"
+        _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                        json={"name": taken}), 201)
+        moving = _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                                 json={"name": other}), 201)
+
+        r = client.patch(f"/api/v1/inventory/suppliers/{moving['id']}",
+                         headers=analyst_headers, json={"name": taken})
+        assert r.status_code == 409, f"Expected a named conflict, got {r.status_code}: {r.text}"
+        assert r.json()["error_code"] == "supplier_name_taken"
+        assert query_one("SELECT name FROM suppliers WHERE id = %s",
+                         (moving["id"],))["name"] == other
+
+    def test_renaming_a_supplier_to_its_own_name_is_not_a_conflict(
+        self, client, analyst_headers,
+    ):
+        """The guard must not fire on the row it is guarding."""
+        name = f"Self-{uuid4().hex[:6]}"
+        created = _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                                  json={"name": name}), 201)
+        r = client.patch(f"/api/v1/inventory/suppliers/{created['id']}",
+                         headers=analyst_headers, json={"name": name, "lead_time_days": 9})
+        assert r.status_code == 200
+        assert _ok(r)["lead_time_days"] == 9
+
+    def test_viewer_cannot_create_a_supplier_and_no_row_appears(
+        self, client, viewer_headers, analyst_headers, test_tenant,
+    ):
+        """Permission pair: the viewer is refused and writes nothing; the
+        analyst creates the same name successfully."""
+        name = f"Perm-{uuid4().hex[:6]}"
+        r = client.post("/api/v1/inventory/suppliers", headers=viewer_headers,
+                        json={"name": name})
+        assert r.status_code == 403
+        assert self._rows_named(test_tenant["id"], name) == []
+
+        _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                        json={"name": name}), 201)
+        assert len(self._rows_named(test_tenant["id"], name)) == 1
+
+    def test_viewer_cannot_rename_a_supplier_onto_a_taken_name(
+        self, client, viewer_headers, analyst_headers, test_tenant,
+    ):
+        """The permission check comes first: a viewer gets 403, not the
+        conflict, and the row is untouched either way."""
+        from backend.db.connection import query_one
+
+        taken = f"PermTaken-{uuid4().hex[:6]}"
+        other = f"PermOther-{uuid4().hex[:6]}"
+        _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                        json={"name": taken}), 201)
+        moving = _ok(client.post("/api/v1/inventory/suppliers", headers=analyst_headers,
+                                 json={"name": other}), 201)
+
+        r = client.patch(f"/api/v1/inventory/suppliers/{moving['id']}",
+                         headers=viewer_headers, json={"name": taken})
+        assert r.status_code == 403
+        assert query_one("SELECT name FROM suppliers WHERE id = %s",
+                         (moving["id"],))["name"] == other
+
+
 # ── Get supplier by name ───────────────────────────────────────────────────────
 
 class TestGetSupplierByName:

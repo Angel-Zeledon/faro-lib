@@ -17,16 +17,26 @@ from uuid import uuid4
 
 import pytest
 
+from backend.config import settings as config_settings
 from backend.db.connection import query, query_one
 
 
 def _no_transport(monkeypatch):
-    """Strip every credential and restore the real dispatch path."""
+    """Strip every credential and restore the real dispatch path.
+
+    Patched on `backend.config.settings` rather than on the email module: since
+    2026-09-13 the transport reads its credentials through
+    `service_config.resolver.effective()`, which resolves a stored override
+    first and falls back to this singleton. Patching the singleton is therefore
+    still the way to say "this deployment has no transport", and it is now the
+    only way that reaches every consumer.
+    """
+    from backend.config import settings
     from backend.notifications import email as email_mod
 
-    monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-    monkeypatch.setattr(email_mod.settings, "smtp_user", "")
-    monkeypatch.setattr(email_mod.settings, "smtp_pass", "")
+    monkeypatch.setattr(settings, "resend_api_key", "")
+    monkeypatch.setattr(settings, "smtp_user", "")
+    monkeypatch.setattr(settings, "smtp_pass", "")
     monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
 
@@ -78,9 +88,9 @@ class TestUnconfiguredTransportIsNotASend:
         """The fix must not turn every send into a failure."""
         from backend.notifications import email as email_mod
 
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_user", "user@example.com")
-        monkeypatch.setattr(email_mod.settings, "smtp_pass", "app-password")
+        monkeypatch.setattr(config_settings, "resend_api_key", "")
+        monkeypatch.setattr(config_settings, "smtp_user", "user@example.com")
+        monkeypatch.setattr(config_settings, "smtp_pass", "app-password")
         monkeypatch.setattr(email_mod, "_send_smtp", lambda *a, **kw: None)
         monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
@@ -93,7 +103,7 @@ class TestUnconfiguredTransportIsNotASend:
         _no_transport(monkeypatch)
         assert email_mod.failure_reason() == "not_configured"
 
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "re_live_key")
+        monkeypatch.setattr(config_settings, "resend_api_key", "re_live_key")
         assert email_mod.failure_reason() == "transport_error"
 
 
@@ -106,6 +116,7 @@ class TestSignupDoesNotClaimAnUnsentVerificationLink:
             "email": email, "password": "TestPass123!",
             "full_name": "Nadie", "tenant_name": f"pytest-{uuid4().hex[:8]}",
             "whatsapp_number": f"+5730{uuid4().int % 10_000_000:07d}",
+            "accept_terms": True,
         })
         assert resp.status_code == 201, resp.text
         data = resp.json()["data"]
@@ -158,9 +169,9 @@ class TestAdminInviteDoesNotClaimAnUnsentInvite:
     ):
         from backend.notifications import email as email_mod
 
-        monkeypatch.setattr(email_mod.settings, "resend_api_key", "")
-        monkeypatch.setattr(email_mod.settings, "smtp_user", "user@example.com")
-        monkeypatch.setattr(email_mod.settings, "smtp_pass", "app-password")
+        monkeypatch.setattr(config_settings, "resend_api_key", "")
+        monkeypatch.setattr(config_settings, "smtp_user", "user@example.com")
+        monkeypatch.setattr(config_settings, "smtp_pass", "app-password")
         monkeypatch.setattr(email_mod, "_send_smtp", lambda *a, **kw: None)
         monkeypatch.setattr(email_mod, "_send", email_mod._transport_send)
 
@@ -236,7 +247,7 @@ class TestDigestCountsAreNotTruncated:
         captured = {}
         monkeypatch.setattr(
             email_mod, "_send",
-            lambda to, subject, html, attachment=None: captured.update(
+            lambda to, subject, html, attachment=None, **_kw: captured.update(
                 subject=subject, html=html),
         )
 
@@ -258,7 +269,7 @@ class TestDigestCountsAreNotTruncated:
         captured = {}
         monkeypatch.setattr(
             email_mod, "_send",
-            lambda to, subject, html, attachment=None: captured.update(
+            lambda to, subject, html, attachment=None, **_kw: captured.update(
                 subject=subject, html=html),
         )
         email_mod.send_inventory_alert_email("boss@acme.cr", _critical(3), [], "http://x/hoy")
@@ -335,7 +346,7 @@ class TestAlertDeliveryFailuresAreObservable:
         _arrange_daily_loop(monkeypatch, tid, _critical(47))
         monkeypatch.setattr(
             "backend.notifications.email.send_inventory_alert_email", lambda **kw: False)
-        monkeypatch.setattr("backend.notifications.email.is_configured", lambda: True)
+        monkeypatch.setattr("backend.notifications.email.is_configured", lambda *_a, **_kw: True)
 
         inv_svc.run_daily_inventory_alerts()
 
@@ -380,6 +391,41 @@ class TestAlertDeliveryFailuresAreObservable:
         assert rows[0]["status"] == "success"
         assert "reason" not in rows[0]["context"]
 
+    def test_a_digest_that_crashes_before_sending_still_leaves_a_trace(
+        self, monkeypatch, registered_user, test_tenant,
+    ):
+        """The gap the three tests above did not cover: the failure happening
+        BEFORE any send.
+
+        Every case above reaches `send_inventory_alert_email` and records its
+        result. When the computation itself throws — a corrupt forecasts blob,
+        an unreadable stock table — the per-tenant handler logged one line and
+        moved on: no email, and no row anywhere in the product. Silence is also
+        what a healthy day looks like, so the user reads a broken digest as
+        "nothing is urgent today".
+        """
+        from backend.inventory import service as inv_svc
+
+        tid = test_tenant["id"]
+        uid = registered_user["user"]["id"]
+        _arrange_daily_loop(monkeypatch, tid, _critical(5))
+        monkeypatch.setattr(
+            inv_svc, "_compute_inventory_status",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("forecasts blob unreadable")),
+        )
+        sent = []
+        monkeypatch.setattr(
+            "backend.notifications.email.send_inventory_alert_email",
+            lambda **kw: sent.append(kw) or True)
+
+        inv_svc.run_daily_inventory_alerts()   # must not raise
+
+        assert sent == [], "the digest computation failed yet an email went out"
+        rows = _activity(tid, uid, "inventory_alert_email")
+        assert len(rows) == 1, "a digest that crashed left no trace for the user"
+        assert rows[0]["status"] == "failed"
+        assert "forecasts blob unreadable" in rows[0]["context"]["reason"]
+
     def test_failed_whatsapp_alert_is_recorded(
         self, monkeypatch, registered_user, test_tenant,
     ):
@@ -393,7 +439,6 @@ class TestAlertDeliveryFailuresAreObservable:
         _arrange_daily_loop(monkeypatch, tid, _critical(3))
         monkeypatch.setattr(
             "backend.notifications.email.send_inventory_alert_email", lambda **kw: True)
-        monkeypatch.setattr("backend.entitlements.service.has_feature", lambda *a, **kw: True)
         monkeypatch.setattr("backend.notifications.whatsapp.send_whatsapp", lambda *a, **kw: False)
 
         inv_svc.run_daily_inventory_alerts()
@@ -413,7 +458,7 @@ class TestAlertDeliveryFailuresAreObservable:
         monkeypatch.setattr(sh_svc, "query", lambda *a, **kw: [{"tenant_id": tid}])
         monkeypatch.setattr(
             sh_svc, "get_lead_time_deviations",
-            lambda t: [{"supplier": "Acme", "deviation_days": 4.0, "severidad": "alta"}])
+            lambda t: [{"supplier": "Acme", "deviation_days": 4.0, "severity": "high"}])
         monkeypatch.setattr(
             "backend.notifications.email.send_supplier_lead_time_alert_email",
             lambda **kw: False)
@@ -441,14 +486,14 @@ class TestAlertDeliveryFailuresAreObservable:
         monkeypatch.setattr(roi_service, "get_month_report", lambda t, y, m: {
             "month": "2026-03", "has_sufficient_history": True,
             "recommendations_shown": 8, "recommendations_followed": 6,
-            "adoption_rate": 0.75, "stockout_risks_handled": 2,
+            "adoption_rate": 0.75, "urgent_lines_ordered": 2,
             "capital_freed": 1500.0, "managed_purchase_value": 4000.0,
         })
         monkeypatch.setattr(
             "backend.notifications.email.send_monthly_roi_email", lambda **kw: False)
 
         sent = roi_service.run_monthly_roi_emails(
-            now=datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc))
+            now=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc))
 
         # Nothing was delivered, so the dedupe log must stay empty: a recorded
         # send would suppress next month's retry for a recap nobody received.

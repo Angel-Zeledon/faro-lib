@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import type { TourDefinition } from '@/components/tour/types'
 import { TOURS, tourForRoute } from '@/components/tour/tours'
+import { firstStep, nextShown } from '@/components/tour/anchors'
 
 /**
  * Which tours exist, which one is running, and which the user has already
@@ -80,7 +81,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     const target = id ?? available?.id
     if (!target) return
     setActiveId(target)
-    setStepIndex(0)
+    const def = TOURS.find(t => t.id === target)
+    setStepIndex(def ? firstStep(def) : 0)
   }, [available])
 
   const stop = useCallback(() => {
@@ -89,15 +91,21 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     setStepIndex(0)
   }, [activeId, markSeen])
 
+  // Steps whose anchor is not on screen are skipped in both directions: a card
+  // pointing at nothing is noise, and the counter in the overlay counts only the
+  // steps that will actually be shown.
   const next = useCallback(() => {
     if (!active) return
-    setStepIndex(i => {
-      if (i + 1 >= active.steps.length) { stop(); return i }
-      return i + 1
-    })
-  }, [active, stop])
+    const j = nextShown(active, stepIndex + 1, 1)
+    if (j < 0) { stop(); return }
+    setStepIndex(j)
+  }, [active, stepIndex, stop])
 
-  const back = useCallback(() => setStepIndex(i => Math.max(0, i - 1)), [])
+  const back = useCallback(() => {
+    if (!active) return
+    const j = nextShown(active, stepIndex - 1, -1)
+    if (j >= 0) setStepIndex(j)
+  }, [active, stepIndex])
 
   // Leaving the route abandons the tour: its steps point at elements that are
   // no longer on screen, and following a user across a navigation would be
@@ -115,7 +123,13 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (narrow) return
     if (!available?.autoStart || seen.includes(available.id)) return
-    const id = setTimeout(() => setActiveId(prev => prev ?? available.id), 700)
+    const id = setTimeout(() => {
+      setActiveId(prev => {
+        if (prev) return prev
+        setStepIndex(firstStep(available))
+        return available.id
+      })
+    }, 700)
     return () => clearTimeout(id)
   }, [available, seen, narrow])
 

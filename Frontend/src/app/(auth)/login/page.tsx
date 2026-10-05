@@ -4,14 +4,15 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authLogin, authResendVerification, isApiError } from '@/lib/api'
 import { setAuth, isAuthenticated } from '@/lib/auth'
-import { Eye, EyeOff, AlertTriangle, ArrowRight, MailCheck } from 'lucide-react'
+import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
+import { Eye, EyeOff, AlertTriangle, MailCheck } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
+import { SocialButtons, socialErrorText } from '@/components/auth/SocialButtons'
+import { SsoSignIn } from '@/components/auth/SsoSignIn'
 
-// Composition: the card sits left of centre and a touch above the optical
-// midline, leaving the open right-hand field for the beam to sweep into and
-// the lighthouse to occupy. The ambient canvas, wordmark and fixed shell all
-// come from (auth)/layout.tsx — this file renders only the card.
+// The split stage (wordmark, form column, the morning-list panel) comes from
+// (auth)/layout.tsx — this file renders only the form, centred in its column.
 
 function LoginPageContent() {
   const { t } = useLanguage()
@@ -23,10 +24,18 @@ function LoginPageContent() {
   const [password, setPassword] = useState('')
   const [showPw,   setShowPw]   = useState(false)
   const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
+  // A provider sign-in that was refused comes back here as `?oauth_error=<code>`
+  // (never with a token). Shown in the same box as a password error.
+  const oauthError = searchParams.get('oauth_error')
+  const [error,    setError]    = useState<string | null>(
+    oauthError ? socialErrorText(t, oauthError) : null,
+  )
   // A login refused for a verification reason is the one error the user cannot
   // fix by retyping something, so it gets an action instead of just a message.
   const [canResend,  setCanResend]  = useState(false)
+  // Their company made single sign-on mandatory: the password form refused, so
+  // the company option opens by itself with the address already typed.
+  const [ssoRequired, setSsoRequired] = useState(false)
   const [resending,  setResending]  = useState(false)
   const [resentNote, setResentNote] = useState<string | null>(null)
 
@@ -60,6 +69,7 @@ function LoginPageContent() {
     e.preventDefault()
     setError(null)
     setCanResend(false)
+    setSsoRequired(false)
     setResentNote(null)
     setLoading(true)
     try {
@@ -71,10 +81,13 @@ function LoginPageContent() {
         role:      res.user.role,
         tenant_id: res.user.tenant_id,
       })
+      // Every sign-in opens the app with its entrance (AppIntro).
+      try { sessionStorage.removeItem(INTRO_SEEN_KEY) } catch { /* storage blocked */ }
       router.replace(destination)
     } catch (err: unknown) {
       setError(authErrorText(err, 'auth.login_failed'))
       setCanResend(isApiError(err) && VERIFICATION_CODES.includes(err.code))
+      setSsoRequired(isApiError(err) && err.code === 'sso_required')
     } finally {
       setLoading(false)
     }
@@ -89,48 +102,29 @@ function LoginPageContent() {
   // keeps the browser's own pseudo-classes in the same cascade as ours.
 
   return (
-    <div className="auth-shell" style={{
-      height: '100%', display: 'flex', alignItems: 'center',
-      // Deliberately asymmetric on desktop: the card sits left of centre so the
-      // illustrated half of the layout reads as the other half of a composition.
-      // On a phone there is no other half, so globals.css evens this out — an
-      // off-centre card on a 390px screen just looks like a mistake.
-      paddingLeft: "clamp(28px, 10vw, 150px)", paddingRight: "clamp(28px, 6vw, 64px)",
-      paddingBottom: '3vh',   // optical centring — sits a touch above true middle
-    }}>
-      <div style={{ width: '100%', maxWidth: 392 }}>
+    <div className="auth-shell">
+      <div style={{ width: '100%', maxWidth: 380 }}>
 
-        <div className="auth-enter" style={{
-          // Solid white with a real border. A translucent card over a pale
-          // background just looks washed out — the crispness IS the premium
-          // signal here, not the transparency.
-          background: '#fff',
-          border: '1px solid rgba(9,9,11,0.09)',
-          borderRadius: 20,
-          padding: '38px 36px',
-          // Contact hairline, close ambient pool, wide soft cast.
-          boxShadow:
-            '0 1px 2px rgba(9,9,11,0.04),' +
-            '0 12px 28px -14px rgba(9,9,11,0.14),' +
-            '0 44px 80px -36px rgba(9,9,11,0.16)',
-          animation: 'auth-fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both',
-        }}>
+        {/* No card: on a plain white column the form itself is the surface. */}
+        <div className="auth-enter" style={{ animation: 'auth-fade-in 0.5s ease-out both' }}>
 
           <div style={{ marginBottom: 30 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.032em', lineHeight: 1.15 }}>
+            <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 24, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
               {t('auth.login_title')}
             </h1>
-            <p style={{ fontSize: 14, color: '#71717a', margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: 0, lineHeight: 1.5 }}>
               {t('auth.login_subtitle')}
             </p>
           </div>
 
+          <SocialButtons intent="login" />
+
           {error && (
-            <div style={{
+            <div role="alert" style={{
               display: 'flex', flexDirection: 'column', gap: 8,
               padding: '10px 12px', borderRadius: 10, marginBottom: 20,
-              background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)',
-              fontSize: 13, color: '#dc2626',
+              background: 'rgba(185,74,74,0.04)', border: '1px solid rgba(185,74,74,0.15)',
+              fontSize: 13, color: '#B94A4A',
               animation: 'auth-fade-up 0.35s ease-out both',
             }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -143,7 +137,7 @@ function LoginPageContent() {
                   style={{
                     all: 'unset', alignSelf: 'flex-start', cursor: resending ? 'wait' : 'pointer',
                     display: 'flex', alignItems: 'center', gap: 6,
-                    fontSize: 12.5, fontWeight: 600, color: '#0a0a0a',
+                    fontSize: 12.5, fontWeight: 600, color: 'var(--a-ink)',
                     textDecoration: 'underline', textUnderlineOffset: 3,
                   }}
                 >
@@ -152,7 +146,7 @@ function LoginPageContent() {
                 </button>
               )}
               {resentNote && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: '#52525b' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: 'var(--a-muted)' }}>
                   <MailCheck size={13} style={{ flexShrink: 0 }} />
                   {resentNote}
                 </div>
@@ -163,21 +157,21 @@ function LoginPageContent() {
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.10s both' }}>
-              <label htmlFor="login-email" style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: '#52525b' }}>
+              <label htmlFor="login-email" style={{ display: 'block', marginBottom: 7, fontSize: 12, fontWeight: 500, color: 'var(--a-muted)' }}>
                 {t('auth.email_label')}
               </label>
               <input
                 id="login-email" name="email" className="auth-input"
                 type="email" value={email} required autoComplete="email"
                 onChange={e => setEmail(e.target.value)}
-                placeholder="you@company.com"
+                placeholder={t('auth.ph_email')}
               />
             </div>
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.16s both' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
-                <label htmlFor="login-password" style={{ fontSize: 12, fontWeight: 500, color: '#52525b' }}>{t('auth.password_label')}</label>
-                <Link href="/forgot-password" className="auth-link" style={{ fontSize: 12, color: '#71717a', textDecoration: 'none' }}>
+                <label htmlFor="login-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)' }}>{t('auth.password_label')}</label>
+                <Link href="/forgot-password" className="auth-link" style={{ fontSize: 12, color: 'var(--a-muted)', textDecoration: 'none' }}>
                   {t('auth.forgot_password')}
                 </Link>
               </div>
@@ -202,16 +196,14 @@ function LoginPageContent() {
               type="submit" disabled={loading} className="auth-submit auth-enter"
               style={{
                 width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
-                background: loading ? '#a1a1aa' : '#0a0a0a',
-                color: '#fff', fontSize: 14, fontWeight: 600,
+                background: loading ? 'var(--a-dim)' : 'var(--a-cta-bg)',
+                color: 'var(--a-cta-fg)', fontSize: 14, fontWeight: 600,
                 cursor: loading ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
                 marginTop: 8,
                 transition: 'transform 0.22s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s ease',
                 animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.22s both',
               }}
-              onMouseEnter={e => { if (!loading) { const b = e.currentTarget as HTMLButtonElement; b.style.transform = 'translateY(-1.5px)'; b.style.boxShadow = '0 10px 22px -10px rgba(9,9,11,0.45)' } }}
-              onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.transform = 'translateY(0)'; b.style.boxShadow = 'none' }}
             >
               {loading ? (
                 <>
@@ -223,18 +215,20 @@ function LoginPageContent() {
                   {t('auth.signing_in')}
                 </>
               ) : (
-                <>{t('auth.login_title')} <ArrowRight size={13} /></>
+                t('auth.login_title')
               )}
             </button>
           </form>
+
+          <SsoSignIn initialEmail={email} forceOpen={ssoRequired} />
         </div>
 
         <p className="auth-enter" style={{
-          marginTop: 22, marginLeft: 2, fontSize: 13, color: '#a1a1aa',
+          marginTop: 28, fontSize: 13.5, color: 'var(--a-muted)',
           animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.3s both',
         }}>
           {t('auth.no_account')}{' '}
-          <Link href="/signup" className="auth-link" style={{ color: '#0a0a0a', textDecoration: 'none', fontWeight: 600 }}>
+          <Link href="/signup" className="auth-link" style={{ color: 'var(--a-ink)', textDecoration: 'none', fontWeight: 600 }}>
             {t('auth.request_access')}
           </Link>
         </p>

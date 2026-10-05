@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Users, Plus, Search, RefreshCw, Trash2, Edit2, ShieldCheck,
+  Users, Plus, Search, RefreshCw, Trash2, Edit2,
   CheckCircle2, XCircle, AlertTriangle, Clock, ChevronDown,
   X, Eye, EyeOff, Mail,
 } from 'lucide-react'
@@ -9,43 +9,28 @@ import { getUser } from '@/lib/auth'
 import {
   listAdminUsers, createAdminUser, updateAdminUser,
   deleteAdminUser, setUserStatus,
-  getUserPermissions, setUserPermissions,
-  resendVerification,
+  resendVerification, listWarehouses,
   type AdminUser,
 } from '@/lib/api'
+import type { Warehouse } from '@/lib/types'
+import { WarehouseScope } from '@/components/users/WarehouseScope'
+import { SsoSettings } from '@/components/users/SsoSettings'
 import Card from '@/components/ui/Card'
 import { thStyle } from '@/components/ui/Table'
 import Input, { Field, Select } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
+import UsersMobile from './UsersMobile'
+import { EmptyState } from '@/components/ui/States'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const ROLES = ['admin', 'analyst', 'viewer']
 
-/**
- * The per-user permission checkboxes are hidden, because they grant nothing.
- *
- * `user_permissions` rows are written by `set_user_permissions` and read back
- * by `get_user_permissions`, and that is the whole story: no endpoint and no
- * frontend gate ever consults them. Authorisation is decided entirely by role
- * — `require_analyst_or_above` / `require_admin`. So an admin could untick
- * "manage inventory" for someone and that person would keep managing
- * inventory, which is the worst kind of security control: one that reports
- * success and does nothing.
- *
- * The modal and its API calls are left intact underneath. Flip this to true
- * once the backend actually enforces the rows.
- */
-const PER_USER_PERMISSIONS_ENABLED = false
-
-const PERMISSION_GROUPS: { labelKey: string; perms: string[] }[] = [
-  { labelKey: 'users.group_forecasting', perms: ['view_forecasts', 'run_training', 'manage_sessions', 'export_data'] },
-  { labelKey: 'users.group_inventory',   perms: ['view_inventory', 'manage_inventory'] },
-  { labelKey: 'users.group_ai_analyst',  perms: ['view_analysts', 'run_analysts'] },
-  { labelKey: 'users.group_data',        perms: ['view_data_sources', 'manage_data_sources'] },
-  { labelKey: 'users.group_admin',       perms: ['view_users', 'manage_users'] },
-]
+// Authorisation is by role only (admin / analyst / viewer). Per-user
+// permission checkboxes existed here once and were removed (2026-10-02,
+// owner's decision): they were saved but nothing enforced them.
 
 const PERM_LABEL_KEY: Record<string, string> = {
   view_forecasts:      'users.perm_view_forecasts',
@@ -63,10 +48,10 @@ const PERM_LABEL_KEY: Record<string, string> = {
 }
 
 const STATUS_META: Record<string, { labelKey: string; color: string; bg: string }> = {
-  active:               { labelKey: 'users.status_active',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
-  pending_confirmation: { labelKey: 'users.status_pending',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+  active:               { labelKey: 'users.status_active',    color: '#2E8B62', bg: 'rgba(46,139,98,0.1)'  },
+  pending_confirmation: { labelKey: 'users.status_pending',   color: '#B7791F', bg: 'rgba(183,121,31,0.1)' },
   inactive:             { labelKey: 'users.status_inactive',  color: 'var(--dim)', bg: 'rgba(100,116,139,0.1)'},
-  suspended:            { labelKey: 'users.status_suspended', color: '#ef4444', bg: 'rgba(239,68,68,0.1)'  },
+  suspended:            { labelKey: 'users.status_suspended', color: '#C0504D', bg: 'rgba(192,80,77,0.1)'  },
 }
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -95,7 +80,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function RoleBadge({ role }: { role: string }) {
   const { t } = useLanguage()
-  const color = role === 'admin' ? 'var(--accent)' : role === 'analyst' ? '#06b6d4' : 'var(--muted)'
+  const color = role === 'admin' ? 'var(--accent)' : role === 'analyst' ? '#3E8E9B' : 'var(--muted)'
   return (
     <span style={{
       display: 'inline-block', padding: '2px 8px', borderRadius: 99,
@@ -208,8 +193,8 @@ function UserFormModal({
         <div style={{
           display: 'flex', gap: 8, alignItems: 'center',
           padding: '9px 12px', borderRadius: 8, marginBottom: 16,
-          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-          fontSize: 12, color: '#ef4444',
+          background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+          fontSize: 12, color: '#C0504D',
         }}>
           <AlertTriangle size={12} /> {error}
         </div>
@@ -229,7 +214,7 @@ function UserFormModal({
           />
         </Field>
         <Field
-          label={<>{t('users.email_address')} {isCreate && <span style={{ color: '#ef4444' }}>*</span>}</>}
+          label={<>{t('users.email_address')} {isCreate && <span style={{ color: '#C0504D' }}>*</span>}</>}
           htmlFor="user-email"
           labelStyle={MODAL_LABEL_STYLE}
         >
@@ -240,7 +225,7 @@ function UserFormModal({
             placeholder={t('users.email_placeholder')}
           />
           {!isCreate && email !== target?.email && (
-            <p style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+            <p style={{ fontSize: 11, color: '#B7791F', marginTop: 4 }}>
               {t('users.email_reverify')}
             </p>
           )}
@@ -322,10 +307,10 @@ function DeleteModal({
       <div style={{ textAlign: 'center' }}>
         <div style={{
           width: 48, height: 48, borderRadius: 12, margin: '0 auto 16px',
-          background: 'rgba(239,68,68,0.1)',
+          background: 'rgba(192,80,77,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Trash2 size={20} color="#ef4444" />
+          <Trash2 size={20} color="#C0504D" />
         </div>
         <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>
           {t('users.delete_user_q')}
@@ -340,8 +325,8 @@ function DeleteModal({
         {error && (
           <div style={{
             padding: '9px 12px', borderRadius: 8, marginBottom: 14,
-            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-            fontSize: 12, color: '#ef4444',
+            background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+            fontSize: 12, color: '#C0504D',
           }}>
             {error}
           </div>
@@ -355,7 +340,7 @@ function DeleteModal({
           </button>
           <button onClick={handleDelete} disabled={loading} style={{
             padding: '8px 20px', borderRadius: 7, border: 'none',
-            background: loading ? '#7f1d1d' : '#ef4444', color: '#fff',
+            background: loading ? '#7f1d1d' : '#C0504D', color: '#fff',
             fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
@@ -364,120 +349,6 @@ function DeleteModal({
           </button>
         </div>
       </div>
-    </Modal>
-  )
-}
-
-// ── Permissions Modal ─────────────────────────────────────────────────────────
-
-function PermissionsModal({
-  user: target,
-  onClose,
-}: {
-  user: AdminUser
-  onClose: () => void
-}) {
-  const { t } = useLanguage()
-  const [perms,   setPerms]   = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [saving,  setSaving]  = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
-
-  useEffect(() => {
-    getUserPermissions(target.id)
-      .then(res => { setPerms(res.permissions); setLoading(false) })
-      .catch(() => { setError(t('users.perms_load_failed')); setLoading(false) })
-  }, [target.id, t])
-
-  function toggle(perm: string) {
-    setPerms(prev => prev.includes(perm) ? prev.filter(p => p !== perm) : [...prev, perm])
-  }
-
-  async function handleSave() {
-    setSaving(true)
-    setError(null)
-    try {
-      await setUserPermissions(target.id, perms)
-      onClose()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('users.perms_save_failed'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Modal onClose={onClose}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: '0 0 2px' }}>
-            {t('users.permissions')}
-          </h2>
-          <p style={{ fontSize: 11, color: 'var(--dim)', margin: 0 }}>
-            {target.full_name || target.email} · <span>{roleLabel(t, target.role)}</span>
-          </p>
-        </div>
-        <button onClick={onClose} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)' }}>
-          <X size={16} aria-hidden="true" />
-        </button>
-      </div>
-
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: 24, color: 'var(--dim)', fontSize: 13 }}>{t('users.loading_generic')}</div>
-      ) : (
-        <>
-          {error && (
-            <div style={{
-              padding: '9px 12px', borderRadius: 8, marginBottom: 12,
-              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-              fontSize: 12, color: '#ef4444',
-            }}>
-              {error}
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {PERMISSION_GROUPS.map(group => (
-              <div key={group.labelKey}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-                  {t(group.labelKey)}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {group.perms.map(perm => (
-                    <label key={perm} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        name={`perm-${perm}`}
-                        checked={perms.includes(perm)}
-                        onChange={() => toggle(perm)}
-                        style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }}
-                      />
-                      <span style={{ fontSize: 13, color: 'var(--text)' }}>{t(PERM_LABEL_KEY[perm] ?? perm)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
-            <button onClick={onClose} style={{
-              padding: '8px 16px', borderRadius: 7, border: '1px solid var(--border)',
-              background: 'transparent', color: 'var(--muted)', fontSize: 13, cursor: 'pointer',
-            }}>
-              {t('common.cancel')}
-            </button>
-            <button onClick={handleSave} disabled={saving} style={{
-              padding: '8px 20px', borderRadius: 7, border: 'none',
-              background: saving ? 'color-mix(in srgb, var(--accent) 70%, black)' : 'var(--accent)', color: '#fff',
-              fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-              {saving && <Spinner />}
-              {saving ? t('users.saving') : t('users.save_permissions')}
-            </button>
-          </div>
-        </>
-      )}
     </Modal>
   )
 }
@@ -501,7 +372,7 @@ function ResendButton({ userId, email }: { userId: string; email: string }) {
     }
   }
 
-  const color = state === 'sent' ? '#22c55e' : state === 'error' ? '#ef4444' : '#f59e0b'
+  const color = state === 'sent' ? '#2E8B62' : state === 'error' ? '#C0504D' : '#B7791F'
   const title = state === 'sent' ? `${t('users.resend_sent_prefix')} ${email}` : state === 'error' ? t('users.resend_failed') : t('users.resend_title')
 
   return (
@@ -574,8 +445,8 @@ function StatusDropdown({
       {error && (
         <div style={{
           position: 'absolute', top: '100%', right: 0, marginTop: 4,
-          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-          borderRadius: 6, padding: '4px 8px', fontSize: 11, color: '#ef4444',
+          background: 'rgba(192,80,77,0.1)', border: '1px solid rgba(192,80,77,0.3)',
+          borderRadius: 6, padding: '4px 8px', fontSize: 11, color: '#C0504D',
           whiteSpace: 'nowrap', zIndex: 10,
         }}>
           {error}
@@ -616,6 +487,7 @@ function StatusDropdown({
 
 export default function UsersPage() {
   const { t, lang } = useLanguage()
+  const narrow = useIsNarrow()
   const currentUser = getUser()
 
   const [users,        setUsers]        = useState<AdminUser[]>([])
@@ -630,8 +502,17 @@ export default function UsersPage() {
   const [showCreate, setShowCreate]     = useState(false)
   const [editUser,   setEditUser]       = useState<AdminUser | null>(null)
   const [deleteUser, setDeleteUser]     = useState<AdminUser | null>(null)
-  const [permsUser,  setPermsUser]      = useState<AdminUser | null>(null)
   const [loadError,  setLoadError]      = useState<string | null>(null)
+  // The "Bodegas" control appears only when there is something to choose from.
+  const [warehouses, setWarehouses]     = useState<Warehouse[]>([])
+
+  useEffect(() => {
+    let alive = true
+    listWarehouses()
+      .then(w => { if (alive) setWarehouses(w) })
+      .catch(() => { if (alive) setWarehouses([]) })
+    return () => { alive = false }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -651,9 +532,23 @@ export default function UsersPage() {
   if (currentUser?.role !== 'admin') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 12 }}>
-        <XCircle size={32} color="#ef4444" />
+        <XCircle size={32} color="#C0504D" />
         <p style={{ fontSize: 14, color: 'var(--dim)' }}>{t('users.no_permission')}</p>
       </div>
+    )
+  }
+
+  // Phones get a list of cards with every action in a sheet — see UsersMobile.
+  if (narrow) {
+    return (
+      <UsersMobile
+        users={users} total={total} loading={loading} loadError={loadError}
+        search={search} setSearch={setSearch}
+        filterStatus={filterStatus} setFilterStatus={setFilterStatus}
+        filterRole={filterRole} setFilterRole={setFilterRole}
+        offset={offset} setOffset={setOffset} limit={limit}
+        load={load} currentUser={currentUser}
+      />
     )
   }
 
@@ -664,23 +559,10 @@ export default function UsersPage() {
     <div style={{ padding: '28px 32px', maxWidth: 1100, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10,
-            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Users size={18} color="var(--accent)" />
-          </div>
-          <div>
-            <h1 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', margin: 0, letterSpacing: '-0.02em' }}>
-              {t('users.title')}
-            </h1>
-            <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>
-              {total} {total !== 1 ? t('users.user_plural') : t('users.user_singular')} {t('users.in_workspace')}
-            </p>
-          </div>
-        </div>
+        {/* The top bar already says "Usuarios": here only the count. */}
+        <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>
+          {total} {total !== 1 ? t('users.user_plural') : t('users.user_singular')} {t('users.in_workspace')}
+        </p>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={load}
@@ -707,6 +589,20 @@ export default function UsersPage() {
           </button>
         </div>
       </div>
+
+      {/* Alone in the workspace: one step, not a table with one row. */}
+      {!loading && total === 1 && users.length === 1 && users[0].id === currentUser?.id
+        && !search && !filterStatus && !filterRole && (
+        <div style={{ marginBottom: 16 }}>
+          <EmptyState
+            compact
+            icon={<Users size={22} />}
+            title={t('users.alone_title')}
+            body={t('users.alone_body')}
+            actions={[{ label: t('users.create_user'), icon: <Plus size={14} />, onClick: () => setShowCreate(true) }]}
+          />
+        </div>
+      )}
 
       {/* Filters */}
       <div data-tour="users.filters" style={{
@@ -754,8 +650,8 @@ export default function UsersPage() {
       {loadError && (
         <div style={{
           marginBottom: 12, padding: '10px 16px', borderRadius: 8,
-          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-          color: '#ef4444', fontSize: 13,
+          background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+          color: '#C0504D', fontSize: 13,
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <AlertTriangle size={14} />
@@ -807,6 +703,9 @@ export default function UsersPage() {
                 )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{u.email}</div>
+              {warehouses.length >= 2 && (
+                <WarehouseScope user={u} warehouses={warehouses} onChanged={load} />
+              )}
             </div>
             <div data-tour={idx === 0 ? 'users.status' : undefined}><StatusBadge status={u.status} /></div>
             <div data-tour={idx === 0 ? 'users.role' : undefined}><RoleBadge role={u.role} /></div>
@@ -816,17 +715,6 @@ export default function UsersPage() {
               <StatusDropdown user={u} currentUser={currentUser} onChanged={load} />
               {u.status === 'pending_confirmation' && (
                 <ResendButton userId={u.id} email={u.email} />
-              )}
-              {PER_USER_PERMISSIONS_ENABLED && (
-                <button
-                  onClick={() => setPermsUser(u)}
-                  data-tour={idx === 0 ? 'users.permissions' : undefined}
-                  title={t('users.permissions_title')}
-                  aria-label={t('users.permissions_title')}
-                  style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)', padding: 5 }}
-                >
-                  <ShieldCheck size={14} aria-hidden="true" />
-                </button>
               )}
               <button
                 onClick={() => setEditUser(u)}
@@ -876,6 +764,8 @@ export default function UsersPage() {
         </div>
       )}
 
+      <SsoSettings />
+
       {/* Modals */}
       {showCreate && (
         <UserFormModal user={null} onClose={() => setShowCreate(false)} onSaved={load} />
@@ -885,9 +775,6 @@ export default function UsersPage() {
       )}
       {deleteUser && (
         <DeleteModal user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={load} />
-      )}
-      {PER_USER_PERMISSIONS_ENABLED && permsUser && (
-        <PermissionsModal user={permsUser} onClose={() => setPermsUser(null)} />
       )}
     </div>
   )

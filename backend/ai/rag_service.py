@@ -1,5 +1,5 @@
 """
-RAG service — Voyage AI embeddings + Pinecone vector store + Anthropic generation.
+RAG service — Voyage AI embeddings + Pinecone vector store + DeepSeek generation.
 
 Multi-tenant security model:
   Namespace  = tenant_id          → physical wall between companies (Pinecone)
@@ -26,6 +26,23 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from backend.ai.style_rules import MONEY_WORDING_RULE
+from backend.service_config.resolver import effective, fingerprint
+
+# The fields both RAG surfaces are built from. Shared with `document_indexer`
+# so the two cannot disagree about what "the RAG credentials" are.
+RAG_FIELDS = (
+    "voyageai_api_key",
+    "pinecone_api_key",
+    "pinecone_index",
+    "pinecone_environment",
+)
+
+
+def rag_fingerprint() -> tuple:
+    """Snapshot of the credentials a cached Voyage/Pinecone client was built from."""
+    return fingerprint(*RAG_FIELDS)
+
 log = logging.getLogger(__name__)
 
 EMBED_MODEL   = "voyage-3"
@@ -51,7 +68,7 @@ Guidelines:
 - If the context does not contain enough information to answer, say so explicitly.
 - When comparing models, rank them by WAPE (lower is better) unless asked otherwise.
 - Always close with one concrete, actionable recommendation.
-"""
+""" + MONEY_WORDING_RULE + "\n"
 
 _OFF_TOPIC_REPLY = (
     "I can only answer questions about the forecast results, model accuracy, "
@@ -79,25 +96,41 @@ class RAGService:
         self._index  = None
         self._anthro = None
         self._ready: Optional[bool] = None  # None = not yet checked
+        self._fingerprint: tuple | None = None
 
     # ──────────────────────────────────────────────────────────────────
     # Init
     # ──────────────────────────────────────────────────────────────────
 
     def _init(self) -> bool:
-        if self._ready is not None:
+        # The verdict is cached, but the CONFIGURATION it was reached from can
+        # change under a running process now that credentials are pastable from
+        # the panel. Caching "disabled" forever would mean a key entered at
+        # 10:05 does nothing until somebody restarts the API — a fix that looks
+        # like a bug. Re-initialising only when the fingerprint moves keeps the
+        # cache doing its job on the hot path.
+        fingerprint = rag_fingerprint()
+        if self._ready is not None and fingerprint == self._fingerprint:
             return self._ready
+        self._fingerprint = fingerprint
+        self._voyage = None
+        self._index = None
+        self._anthro = None
 
-        from backend.config import settings
+        # Named `cfg`, not `settings`: this is the RESOLVED view, which layers a
+        # value pasted into the panel over the environment. A local called
+        # `settings` here reads as the singleton and would invite somebody to
+        # "fix" it back into one that cannot be reconfigured without a restart.
+        cfg = effective()
 
         missing = []
-        if not settings.voyageai_api_key:
+        if not cfg.voyageai_api_key:
             missing.append("VOYAGEAI_API_KEY")
-        if not settings.pinecone_api_key:
+        if not cfg.pinecone_api_key:
             missing.append("PINECONE_API_KEY")
-        if not settings.pinecone_index:
+        if not cfg.pinecone_index:
             missing.append("PINECONE_INDEX")
-        # Generation now runs on the local LLM (Ollama) — no Anthropic key required.
+        # Generation runs on DeepSeek, the one backend behind get_local_llm_client().
         if missing:
             log.warning("RAG disabled — missing env vars: %s", ", ".join(missing))
             self._ready = False
@@ -105,7 +138,7 @@ class RAGService:
 
         try:
             import voyageai
-            self._voyage = voyageai.Client(api_key=settings.voyageai_api_key)
+            self._voyage = voyageai.Client(api_key=cfg.voyageai_api_key)
         except ImportError:
             log.warning("RAG disabled — install voyageai: pip install voyageai")
             self._ready = False
@@ -113,8 +146,8 @@ class RAGService:
 
         try:
             from pinecone import Pinecone
-            pc          = Pinecone(api_key=settings.pinecone_api_key)
-            self._index = pc.Index(settings.pinecone_index)
+            pc          = Pinecone(api_key=cfg.pinecone_api_key)
+            self._index = pc.Index(cfg.pinecone_index)
         except ImportError:
             log.warning("RAG disabled — install pinecone: pip install pinecone")
             self._ready = False
@@ -126,16 +159,20 @@ class RAGService:
 
         try:
             # _anthro is the text-generation client. It is now the local LLM
-            # (Ollama) drop-in, which exposes the same messages.create() surface.
+            # DeepSeek client, which exposes the same messages.create() surface.
             from backend.ai.local_llm import get_local_llm_client
-            self._anthro = get_local_llm_client(timeout=60.0)
+            # Same budget as the chat endpoint: 60s sat ABOVE the frontend
+            # proxy's ~30s ceiling, so a slow model could only ever produce a
+            # bare 500 with no code and no explanation.
+            from backend.api.v1.chats import LLM_BUDGET_S
+            self._anthro = get_local_llm_client(timeout=LLM_BUDGET_S)
         except Exception as exc:
             log.warning("RAG disabled — local LLM client init error: %s", exc)
             self._ready = False
             return False
 
         log.info("RAG service initialised (voyage=%s, pinecone index=%s)",
-                 EMBED_MODEL, settings.pinecone_index)
+                 EMBED_MODEL, cfg.pinecone_index)
         self._ready = True
         return True
 
@@ -269,6 +306,12 @@ class RAGService:
             ), {"chunk_type": "sku_metrics", "sku": sku}))
 
         # ── 4. Inventory recommendations ────────────────────────────
+        # NOTE: same caveat as `_fallback`'s context — these are the engine's
+        # training-time numbers, computed without stock levels, so the risk and
+        # coverage figures here describe demand, not the customer's position.
+        # Only reached when Pinecone indexing runs (it does not in this
+        # deployment); if it is ever turned on, this should read the semáforo
+        # too, or the indexed chunks will contradict every screen.
         for rec_item in (result.get("inventory", {}) or {}).get("recommendations") or []:
             sku    = str(rec_item.get("sku", ""))
             risk   = (rec_item.get("stockout_risk") or 0) * 100
@@ -543,7 +586,7 @@ class RAGService:
         messages.append({"role": "user", "content": user_content})
 
         response = self._anthro.messages.create(
-            model="claude-sonnet-4-6",
+            model="deepseek-chat",
             max_tokens=MAX_TOKENS,
             system=_SYSTEM_PROMPT,
             messages=messages,
@@ -678,9 +721,55 @@ class RAGService:
         except Exception as db_exc:
             log.warning("_fallback: DB unavailable (%s) — continuing without context", db_exc)
 
+        # The inventory context is the SEMÁFORO, not the training result.
+        #
+        # `result["inventory"]["recommendations"]` is what the engine computed at
+        # TRAINING time, from the demand forecast alone — it never saw a stock
+        # level, so every SKU carries a ~100% stockout risk and zero coverage by
+        # construction. Fed to the assistant, it answered "100% of your products
+        # are critical, coverage is zero" to a tenant whose own inventory screen
+        # said 20 OK, 8 overstocked and 4 at risk. Confident, specific, and
+        # wrong — the worst combination an assistant can produce.
+        #
+        # `get_inventory_status` is the same call `/inventario` and the morning
+        # briefing make: actual stock against the forecast, in the tenant's
+        # active planning period. One question, one source.
+        inventory_ctx: list = []
+        try:
+            from backend.inventory.service import get_inventory_status
+            from backend.sessions import planning_service
+            # The ACTIVE session, not the chat's.
+            #
+            # A chat can be attached to any session — this tenant has a weekly
+            # one and a daily one — while every inventory screen reads the
+            # active session at the tenant's planning grain. Reading a weekly
+            # session's per-period demand as if it were daily collapses coverage
+            # to near zero, and the assistant then reported 33 products in
+            # PEDIR_YA to a user whose screen said 4. The chat's session governs
+            # forecasts and model metrics; inventory has exactly one answer in
+            # this product, and it is the one on the screen.
+            inv_session = planning_service.resolve_active_session(tenant_id) or session_id
+            period = planning_service.get_planning(tenant_id).get("period", "daily")
+            rows = get_inventory_status(tenant_id, inv_session, period=period) or []
+            inventory_ctx = [
+                {
+                    "sku": r.get("sku"),
+                    "name": r.get("display_name"),
+                    "signal": r.get("signal"),
+                    "current_stock": r.get("current_stock"),
+                    "coverage_days": r.get("coverage_days"),
+                    "recommended_qty": r.get("recommended"),
+                    "daily_demand": r.get("daily_demand"),
+                    "lead_time_days": r.get("lead_time_days"),
+                }
+                for r in rows[:40]
+            ]
+        except Exception as inv_exc:
+            log.warning("_fallback: inventory status unavailable (%s)", inv_exc)
+
         context: dict = {
             "metrics_summary": result.get("metrics", {}).get("by_model", {}),
-            "inventory":       result.get("inventory", {}).get("recommendations", [])[:20],
+            "inventory":       inventory_ctx,
             "data_quality":    result.get("data_quality", {}),
             "routing":         result.get("routing", {}),
         }
@@ -704,8 +793,21 @@ class RAGService:
         )
 
         try:
-            resp = self._anthro.messages.create(
-                model="claude-sonnet-4-6",
+            # The client is built HERE, not read off `self`. `_anthro` is only
+            # assigned inside `init()`, and `init()` returns early when Voyage
+            # or Pinecone are unconfigured — which is the normal state of this
+            # deployment, and precisely when this no-RAG fallback is the path
+            # being taken. So the fallback dereferenced None and answered
+            # "'NoneType' object has no attribute 'messages'" at the user, in a
+            # chat bubble. A fallback that needs the initialisation it exists to
+            # do without is not a fallback.
+            client = self._anthro
+            if client is None:
+                from backend.ai.local_llm import get_local_llm_client
+                from backend.api.v1.chats import LLM_BUDGET_S
+                client = get_local_llm_client(timeout=LLM_BUDGET_S)
+            resp = client.messages.create(
+                model="deepseek-chat",
                 max_tokens=MAX_TOKENS,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],

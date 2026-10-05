@@ -84,6 +84,14 @@ export function activityActionLabel(t: Translate, action: string): string {
   const key = `enum.activity_${action.replace(/[.-]/g, '_')}`
   const label = t(key)
   if (label !== key) return label
+  // The event registry's actions (backend/activity/events.py: "purchase.
+  // order_generated", "account.user_invited", …) are already translated for
+  // /actividad under `events.action.<action>`. Without this lookup Mi cuenta's
+  // log printed them humanized in English ("Purchase order generated") on a
+  // Spanish screen.
+  const eventKey = `events.action.${action}`
+  const eventLabel = t(eventKey)
+  if (eventLabel !== eventKey) return eventLabel
   const words = action.replace(/[._-]/g, ' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
@@ -101,3 +109,29 @@ export const modelDescription = (
   const label = t(key)
   return label === key ? backendDescription : label
 }
+
+/**
+ * Country name for an IANA timezone ('America/Mexico_City' → 'México').
+ *
+ * `/tenant/timezone` ships an English `label` because backend logic may not
+ * hold Spanish copy, so the localized name lives here. `backendLabel` is the
+ * fallback for a zone added to the API before this catalogue, which beats
+ * printing `timezone.zone.America/...` at the user.
+ */
+export const timezoneLabel = (
+  t: Translate, zone: string, backendLabel?: string,
+) => {
+  const key = `timezone.zone.${zone}`
+  const label = t(key)
+  return label === key ? (backendLabel || zone) : label
+}
+
+/**
+ * finished_good / semi_finished / component / raw_material / packaging / service
+ *
+ * `GET /inventory/product-types` used to ship the Spanish label with the key,
+ * which is backend-authored copy on a screen that renders in two languages.
+ * The vocabulary is the backend's; the wording is this catalogue's.
+ */
+export const productTypeLabel = (t: Translate, v: string | null | undefined) =>
+  lookup(t, 'product_type', v)

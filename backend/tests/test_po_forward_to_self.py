@@ -1,5 +1,5 @@
 """PENDIENTES #1: the PO is delivered to the BUYER's own WhatsApp so they
-forward it to the supplier — no Faro↔supplier integration needed. The endpoint
+forward it to the supplier — no StockAI↔supplier integration needed. The endpoint
 always returns the text and a wa.me link so the flow works with no Twilio and
 no number on file."""
 
@@ -81,7 +81,10 @@ class TestSendToMe:
         assert data["sent"] is True and data["has_number"] is True
 
         send.assert_called_once()
-        to_number, body, _media = send.call_args[0]
+        # Four positional arguments since 2026-09-13: the fourth is the tenant
+        # scope, so a tenant that pasted its own Twilio sender messages its own
+        # people from it.
+        to_number, body, _media, _tenant = send.call_args[0]
         assert to_number == "+50670000001"
         assert "Distribuidora Sur" in body and "Aceite 1L" in body
         # The same text the buyer sees is the one that got sent.

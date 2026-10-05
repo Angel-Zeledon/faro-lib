@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Deploy/update Faro on the server. Run from the repo's deploy/ directory.
+# Deploy/update StockAI on the server. Run from the repo's deploy/ directory.
 #   ./deploy.sh              # bundled Postgres (single-VPS default)
 #   ./deploy.sh external-db  # managed Postgres (DATABASE_URL in .env)
 set -eu

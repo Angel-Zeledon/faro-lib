@@ -13,6 +13,8 @@ import logging
 import numpy as np
 from forecasting_core.evaluation.metrics import evaluate_all
 
+from forecasting_core.pipelines.progress import ticking
+
 log = logging.getLogger(__name__)
 
 WINDOW = 14  # default lookback window
@@ -126,6 +128,7 @@ def run_lstm_core(
     window: int = WINDOW,
     epochs: int = 50,
     patience: int = 5,
+    on_unit=None,
 ):
     """
     Train an LSTM per SKU and return evaluation metrics (+ future forecast).
@@ -161,7 +164,7 @@ def run_lstm_core(
     results = {}
     src = df.groupby(group) if group else [(None, df)]
 
-    for sku, g in src:
+    for sku, g in ticking(src, on_unit):
         g = g.sort_values(dt).reset_index(drop=True)
         series = g[target].astype(float).values
 
@@ -206,8 +209,25 @@ def run_lstm_core(
             ).flatten()
 
             result = evaluate_all(y_te_real, preds_real)
+            # See models/ets.py for the full rationale: `cost_horizon` is
+            # windowed to `min(horizon, len(y_te_real))` so LSTM is asked the
+            # same h-step question as every other family, while
+            # mae/rmse/wape/bias/mape/smape/cost keep covering the whole
+            # held-out test set — a separate, still-useful question. (LSTM's
+            # test set here is itself scored one true-history window at a
+            # time rather than by a genuine autoregressive rollout — a
+            # different, still-open gap from the one this fix closes; see
+            # `_lstm_mc_forecast` below for the actual recursive forecast,
+            # which is never evaluated against ground truth.)
+            result["cost_horizon"] = None
+            result["horizon_steps"] = None
 
             if horizon > 0:
+                h_steps = min(horizon, len(y_te_real))
+                result["cost_horizon"] = evaluate_all(
+                    y_te_real[:h_steps], preds_real[:h_steps]
+                )["cost"]
+                result["horizon_steps"] = h_steps
                 last_window = scaled[-window:]
                 p10, p50, p90 = _lstm_mc_forecast(model, scaler, last_window, horizon)
                 result["forecast"] = p50

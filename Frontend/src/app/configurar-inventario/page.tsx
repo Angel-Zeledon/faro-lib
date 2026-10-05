@@ -15,22 +15,26 @@
 import { useCallback, useState } from 'react'
 
 import SetupGapsPanel from '@/components/inventory/SetupGapsPanel'
+import SignalThresholdsPanel from '@/components/inventory/SignalThresholdsPanel'
+import ServiceLevelClassesPanel from '@/components/inventory/ServiceLevelClassesPanel'
 import StockImportWizard from '@/components/inventory/StockImportWizard'
 import { useSetupCopy } from '@/i18n/useSetupCopy'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 export default function InventorySetupPage() {
   const c = useSetupCopy()
+  // Phone: the shell already pads the screen; a second 26px gutter left the
+  // panels 250px wide. The compact header carries the title.
+  const narrow = useIsNarrow()
   // Bumping the key remounts the gaps panel after an import, so the money bar
   // reflects the rows that just landed instead of the state before them.
   const [version, setVersion] = useState(0)
   const refresh = useCallback(() => setVersion(v => v + 1), [])
 
   return (
-    <div style={{ padding: '22px 26px', maxWidth: 1180, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
-        {c('setupStock.page.title')}
-      </h1>
-      <p style={{ fontSize: 13, color: 'var(--dim)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+    <div style={{ padding: narrow ? 0 : '22px 26px', maxWidth: 1180, margin: '0 auto' }}>
+      {/* The top bar / phone header already carries the title. */}
+      <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 12px', lineHeight: 1.5 }}>
         {c('setupStock.page.subtitle')}
       </p>
 
@@ -41,7 +45,7 @@ export default function InventorySetupPage() {
           at all. */}
       <p style={{
         fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.7,
-        margin: '0 0 18px', padding: '11px 13px', maxWidth: 760,
+        margin: narrow ? '0 0 14px' : '0 0 18px', padding: '11px 13px', maxWidth: 760,
         background: 'var(--surface-2)', border: '1px solid var(--border)',
         borderRadius: 9,
       }}>
@@ -57,6 +61,12 @@ export default function InventorySetupPage() {
         <div data-tour="setup.gaps">
           <SetupGapsPanel key={version} onChanged={refresh} />
         </div>
+        {/* The semáforo's own rules: when it says "order now" and when it
+            says "you have too much", as multiples of the supplier's time. */}
+        <SignalThresholdsPanel />
+        {/* Suggested service level per ABC class: read here, applied only
+            by the person, class by class. */}
+        <ServiceLevelClassesPanel />
       </div>
     </div>
   )

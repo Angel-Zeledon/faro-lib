@@ -39,6 +39,13 @@ def detect_leakage(
                     "If you sort by date after splitting, future data may leak into training.",
                     error_id="UNSORTED_DATES",
                     severity="warning",
+                    # The column name only existed inside the English sentence, so
+                    # a Spanish UI had to print that sentence verbatim to tell the
+                    # user WHICH column. Carrying it in `context` — the way
+                    # SKUTrainingError already does with sku/model — lets the
+                    # frontend build the line in the reader's language. The
+                    # message is unchanged: this is additive.
+                    context={"column": dt_col},
                     suggestions=["Sort the DataFrame by date before any train/test split."],
                 ))
         except Exception:

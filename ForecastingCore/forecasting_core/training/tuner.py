@@ -5,7 +5,7 @@ Uses walk-forward CV as the objective to prevent look-ahead bias.
 
 Example:
     tuner = HyperparamTuner("lightgbm", n_trials=30)
-    best_params = tuner.tune(X_train, y_train, splitter)
+    best_params = tuner.tune(X_train, y_train)
     # best_params: {"n_estimators": 450, "learning_rate": 0.04, ...}
 """
 
@@ -16,6 +16,9 @@ from typing import Dict, Any
 
 import numpy as np
 import pandas as pd
+
+from forecasting_core.evaluation.metrics import asymmetric_cost, DEFAULT_STOCKOUT_MULTIPLIER
+from forecasting_core.training.trainer import WalkForwardSplitter
 
 log = logging.getLogger(__name__)
 
@@ -86,11 +89,27 @@ class HyperparamTuner:
     """
     Optuna-based hyperparameter tuner for walk-forward time-series CV.
 
+    The objective is `asymmetric_cost`, not MAE: the champion each SKU ends up
+    planned from is picked by `CHAMPION_METRIC_ORDER`, which leads with
+    `cost_horizon` — the same asymmetric cost, because a stockout costs more
+    than a surplus of the same size. A tuner minimising MAE cannot tell those
+    two errors apart, so it can hand back hyperparameters that lose the
+    selection it was supposedly tuning for.
+
+    The walk-forward split is `forecasting_core.training.trainer.
+    WalkForwardSplitter` — the same splitter `Trainer` uses, not a private
+    copy — so the `gap` it accepts means the same thing here: buckets withheld
+    between a training window and the window it is scored on, because a
+    gap-less split measures an easier problem than production ever asks.
+
     Args:
-        model_name:  One of the keys in SEARCH_SPACES ("lightgbm", "xgboost").
-        n_trials:    Number of Optuna trials (default 30).
-        timeout:     Maximum wall time in seconds (default 300 = 5 min).
-        cv_splits:   Walk-forward splits used in the objective (default 3).
+        model_name:           One of the keys in SEARCH_SPACES ("lightgbm", "xgboost").
+        n_trials:             Number of Optuna trials (default 30).
+        timeout:              Maximum wall time in seconds (default 300 = 5 min).
+        cv_splits:            Walk-forward splits used in the objective (default 3).
+        gap:                  Buckets withheld before each test window (default 0 — off).
+        stockout_multiplier:  How much worse a shortfall is than a surplus of the
+                              same size (default DEFAULT_STOCKOUT_MULTIPLIER).
     """
 
     def __init__(
@@ -99,11 +118,20 @@ class HyperparamTuner:
         n_trials: int = 30,
         timeout: int = 300,
         cv_splits: int = 3,
+        gap: int = 0,
+        stockout_multiplier: float = DEFAULT_STOCKOUT_MULTIPLIER,
+        fixed_params: Dict[str, Any] = None,
     ):
-        self.model_name = model_name
-        self.n_trials   = n_trials
-        self.timeout    = timeout
-        self.cv_splits  = cv_splits
+        # Held constant in every trial and overriding any sampled value — the
+        # count objective (tweedie/poisson) of an intermittent series. The
+        # search tunes the trees; the score stays the asymmetric cost.
+        self.fixed_params         = dict(fixed_params or {})
+        self.model_name           = model_name
+        self.n_trials             = n_trials
+        self.timeout              = timeout
+        self.cv_splits            = cv_splits
+        self.gap                  = max(0, int(gap))
+        self.stockout_multiplier  = stockout_multiplier
 
     # ------------------------------------------------------------------
     # Public API
@@ -135,25 +163,14 @@ class HyperparamTuner:
             log.debug(f"No search space for '{self.model_name}' — skipping tuning")
             return {}
 
-        from forecasting_core.evaluation.metrics import mae as mae_fn
-
-        splits = self._wfv_splits(len(X))
+        splits = self._make_splits(len(X))
         if not splits:
             log.debug("Not enough data for CV in tuner — skipping")
             return {}
 
         def objective(trial):
             params = _suggest(trial, self.model_name)
-            fold_maes = []
-            for tr_idx, te_idx in splits:
-                try:
-                    m = _make_model(self.model_name, params)
-                    m.fit(X.iloc[tr_idx], y.iloc[tr_idx])
-                    preds = m.predict(X.iloc[te_idx])
-                    fold_maes.append(mae_fn(y.iloc[te_idx].values, preds))
-                except Exception:
-                    fold_maes.append(float("inf"))
-            return float(np.mean(fold_maes))
+            return self._fold_cost(params, X, y, splits)
 
         try:
             study = optuna.create_study(direction="minimize")
@@ -166,7 +183,7 @@ class HyperparamTuner:
             )
             best = study.best_params
             log.info(
-                f"Tuner [{self.model_name}]: best MAE={study.best_value:.4f} "
+                f"Tuner [{self.model_name}]: best cost={study.best_value:.4f} "
                 f"after {len(study.trials)} trials — {best}"
             )
             return best
@@ -178,21 +195,38 @@ class HyperparamTuner:
     # Internal
     # ------------------------------------------------------------------
 
-    def _wfv_splits(self, n: int):
-        """Lightweight expanding-window splits for tuning objective."""
-        min_train = max(2, int(n * 0.5))
-        remaining = n - min_train
-        if remaining < self.cv_splits:
-            return []
-        fold_size = remaining // (self.cv_splits + 1)
-        splits = []
-        for i in range(1, self.cv_splits + 1):
-            te = min_train + (i - 1) * fold_size
-            te_end = te + fold_size
-            if te_end > n:
-                break
-            tr_idx, te_idx = np.arange(te), np.arange(te, te_end)
-            if len(te_idx) == 0:
-                continue
-            splits.append((tr_idx, te_idx))
-        return splits
+    def _make_splits(self, n: int):
+        """
+        Walk-forward splits for the tuning objective — the same splitter and
+        the same gap-backoff `Trainer._wfv` uses, so the folds the tuner scores
+        on shrink exactly the way production training's folds do.
+        """
+        splitter = WalkForwardSplitter(self.cv_splits, min_train_ratio=0.5, gap=self.gap)
+        gap = splitter.effective_gap(n)
+        if gap != splitter.gap:
+            log.info(
+                f"Tuner [{self.model_name}]: walk-forward gap reduced {splitter.gap}→{gap} "
+                f"— {n} rows cannot fund the full horizon"
+            )
+            splitter = WalkForwardSplitter(self.cv_splits, min_train_ratio=0.5, gap=gap)
+        return splitter.split(n)
+
+    def _fold_cost(self, params: Dict[str, Any], X: pd.DataFrame, y: pd.Series, splits) -> float:
+        """
+        Mean asymmetric cost across folds for one hyperparameter set — the
+        value `objective()` hands to Optuna. Exposed as its own method so the
+        objective can be exercised directly in tests without depending on
+        Optuna's trial order to land on a particular parameter set.
+        """
+        fold_costs = []
+        for tr_idx, te_idx in splits:
+            try:
+                m = _make_model(self.model_name, {**params, **self.fixed_params})
+                m.fit(X.iloc[tr_idx], y.iloc[tr_idx])
+                preds = m.predict(X.iloc[te_idx])
+                fold_costs.append(
+                    asymmetric_cost(y.iloc[te_idx].values, preds, self.stockout_multiplier)
+                )
+            except Exception:
+                fold_costs.append(float("inf"))
+        return float(np.mean(fold_costs))

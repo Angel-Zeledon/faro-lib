@@ -4,10 +4,10 @@ type Variant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'muted'
 
 const STYLES: Record<Variant, { bg: string; color: string }> = {
   default: { bg: 'var(--accent-dim)',           color: 'var(--accent)' },
-  success: { bg: 'rgba(34,197,94,0.12)',         color: '#22c55e' },
-  warning: { bg: 'rgba(245,158,11,0.12)',        color: '#f59e0b' },
-  danger:  { bg: 'rgba(239,68,68,0.12)',         color: '#ef4444' },
-  info:    { bg: 'rgba(14,165,233,0.12)',         color: '#0ea5e9' },
+  success: { bg: 'rgba(46,139,98,0.12)',         color: '#2E8B62' },
+  warning: { bg: 'rgba(183,121,31,0.12)',        color: '#B7791F' },
+  danger:  { bg: 'rgba(192,80,77,0.12)',         color: '#C0504D' },
+  info:    { bg: 'rgba(14,165,233,0.12)',         color: '#3F86AB' },
   muted:   { bg: 'rgba(100,116,139,0.12)',        color: 'var(--dim)' },
 }
 

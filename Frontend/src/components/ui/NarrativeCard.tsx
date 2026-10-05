@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Sparkles, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, ExternalLink } from 'lucide-react'
+import { FileText, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { Markdown } from '@/components/ui/Markdown'
 
 type Urgency = 'critical' | 'warning' | 'ok'
 
@@ -13,61 +15,16 @@ const URGENCY_CFG: Record<Urgency, {
   border: string; bg: string; icon: React.ElementType; iconColor: string
   labelKey: string; labelFallback: string
 }> = {
-  critical: { border: 'rgba(239,68,68,0.3)',  bg: 'rgba(239,68,68,0.04)',  icon: AlertTriangle, iconColor: '#ef4444', labelKey: 'narrative.urgency_critical', labelFallback: 'Needs attention' },
-  warning:  { border: 'rgba(245,158,11,0.3)', bg: 'rgba(245,158,11,0.04)', icon: Clock,         iconColor: '#f59e0b', labelKey: 'narrative.urgency_warning',  labelFallback: 'Review this week' },
-  ok:       { border: 'rgba(34,197,94,0.3)',  bg: 'rgba(34,197,94,0.04)',  icon: CheckCircle2,  iconColor: '#22c55e', labelKey: 'narrative.urgency_ok',       labelFallback: 'Under control' },
+  critical: { border: 'rgba(192,80,77,0.3)',  bg: 'rgba(192,80,77,0.04)',  icon: AlertTriangle, iconColor: '#C0504D', labelKey: 'narrative.urgency_critical', labelFallback: 'Needs attention' },
+  warning:  { border: 'rgba(183,121,31,0.3)', bg: 'rgba(183,121,31,0.04)', icon: Clock,         iconColor: '#B7791F', labelKey: 'narrative.urgency_warning',  labelFallback: 'Review this week' },
+  ok:       { border: 'rgba(46,139,98,0.3)',  bg: 'rgba(46,139,98,0.04)',  icon: CheckCircle2,  iconColor: '#2E8B62', labelKey: 'narrative.urgency_ok',       labelFallback: 'Under control' },
 }
 
-// Simple markdown: bold (**text**), bullets (- text), headers (**Title**)
+// Narratives mark a section title as a line that is entirely **bold**; the
+// shared renderer shows those as its quiet small-caps h4.
 function RenderNarrative({ text }: { text: string }) {
-  const lines = text.split('\n')
-  return (
-    <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text)' }}>
-      {lines.map((line, i) => {
-        if (!line.trim()) return <div key={i} style={{ height: 6 }} />
-
-        // Header line starting with ** and ending with **
-        if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
-          return (
-            <div
-              key={i}
-              style={{
-                fontWeight: 700,
-                marginTop: 12,
-                marginBottom: 4,
-                fontSize: 12,
-                textTransform: 'uppercase' as const,
-                letterSpacing: '0.05em',
-                color: 'var(--muted)',
-              }}
-            >
-              {line.replace(/\*\*/g, '')}
-            </div>
-          )
-        }
-
-        // Bullet line
-        if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) {
-          const content = line.replace(/^[-•]\s*/, '')
-          return (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
-              <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--dim)', flexShrink: 0, marginTop: 7 }} />
-              <span>{renderInline(content)}</span>
-            </div>
-          )
-        }
-
-        return <p key={i} style={{ margin: '4px 0' }}>{renderInline(line)}</p>
-      })}
-    </div>
-  )
-}
-
-function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/)
-  return parts.map((p, i) =>
-    p.startsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : p
-  )
+  const source = text.replace(/^[ \t]*\*\*([^*\n]+)\*\*[ \t]*$/gm, '#### $1')
+  return <Markdown text={source} small />
 }
 
 interface NarrativeCardProps {
@@ -79,6 +36,9 @@ interface NarrativeCardProps {
   fallback?:      boolean
   analytistLink?: string  // link to open analyst with context
   compact?:       boolean // shorter display
+  /** Neutral surface: no urgency tint on the card, a muted chip. The urgency
+   *  stays readable as a small status dot — colour only on the marker itself. */
+  plain?:         boolean
   onRefresh?:     () => void
 }
 
@@ -86,12 +46,18 @@ export default function NarrativeCard({
   title,
   narrative, keyPoints = [], urgency = 'ok',
   loading = false, fallback = false,
-  analytistLink, compact = false, onRefresh,
+  analytistLink, compact = false, plain = false, onRefresh,
 }: NarrativeCardProps) {
   const { t } = useLanguage()
+  // Its two footer buttons are 20px tall on desktop; 44px on a phone.
+  const narrow = useIsNarrow()
+  const tap: React.CSSProperties = narrow
+    ? { minHeight: 44, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', padding: '0 12px', fontSize: 13, borderRadius: 10 }
+    : {}
   const [expanded, setExpanded] = useState(!compact)
   const [visible,  setVisible]  = useState(false)
-  const cfg  = URGENCY_CFG[urgency]
+  const base = URGENCY_CFG[urgency]
+  const cfg  = plain ? { ...base, border: 'var(--border)', bg: 'var(--surface)' } : base
   const Icon = cfg.icon
 
   /** `t` echoes the key back when the catalog has no entry — show the English
@@ -101,7 +67,7 @@ export default function NarrativeCard({
     return rendered === key ? fallbackText : rendered
   }
 
-  const cardTitle = title ?? copy('narrative.title', 'Faro analysis')
+  const cardTitle = title ?? copy('narrative.title', 'StockAI analysis')
 
   useEffect(() => {
     if (narrative && !loading) {
@@ -129,16 +95,17 @@ export default function NarrativeCard({
       >
         <div style={{
           width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-          background: 'color-mix(in srgb, var(--accent) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
+          background: plain ? 'transparent' : 'color-mix(in srgb, var(--accent) 12%, transparent)',
+          border: plain ? '1px solid var(--border)' : '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Sparkles size={13} color="var(--accent)" />
+          <FileText size={13} color="var(--accent)" />
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{cardTitle}</div>
           {!loading && !expanded && keyPoints.length > 0 && (
-            <div style={{ fontSize: 11, color: cfg.iconColor, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+            <div style={{ fontSize: 11, color: plain ? 'var(--muted)' : cfg.iconColor, marginTop: 1, overflow: 'hidden', overflowWrap: 'anywhere', }}>
               {keyPoints[0]}
             </div>
           )}
@@ -152,6 +119,12 @@ export default function NarrativeCard({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {!loading && (
+            plain ? (
+              <span style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.iconColor }} />
+                {copy(cfg.labelKey, cfg.labelFallback)}
+              </span>
+            ) : (
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
               background: cfg.iconColor + '18', color: cfg.iconColor,
@@ -159,6 +132,7 @@ export default function NarrativeCard({
             }}>
               <Icon size={9} /> {copy(cfg.labelKey, cfg.labelFallback)}
             </span>
+            )
           )}
           {fallback && !loading && (
             <span style={{ fontSize: 9, color: 'var(--dim)', padding: '1px 6px', borderRadius: 10, border: '1px solid var(--border)' }}>{copy('narrative.rules_badge', 'rules')}</span>
@@ -180,16 +154,16 @@ export default function NarrativeCard({
           <RenderNarrative text={narrative} />
 
           {/* Footer */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 10, borderTop: `1px solid ${cfg.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 10, borderTop: `1px solid ${cfg.border}`, ...(narrow ? { flexWrap: 'wrap', gap: 10 } : {}) }}>
             <div style={{ fontSize: 10, color: 'var(--dim)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Sparkles size={9} color="var(--dim)" />
+              <FileText size={9} color="var(--dim)" />
               {fallback
                 ? copy('narrative.footer_rules', 'Rule-based analysis')
-                : copy('narrative.footer_ai', 'Generated by Faro AI · Grounded in your data')}
+                : copy('narrative.footer_ai', 'Generated by StockAI · Grounded in your data')}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {onRefresh && (
-                <button onClick={e => { e.stopPropagation(); onRefresh() }} style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--dim)', padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)' }}>
+                <button onClick={e => { e.stopPropagation(); onRefresh() }} style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--dim)', padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)', ...tap }}>
                   {copy('narrative.refresh', 'Refresh')}
                 </button>
               )}
@@ -198,8 +172,9 @@ export default function NarrativeCard({
                   display: 'flex', alignItems: 'center', gap: 4,
                   fontSize: 11, color: 'var(--accent)', textDecoration: 'none',
                   padding: '2px 8px', borderRadius: 5,
-                  border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
-                  background: 'color-mix(in srgb, var(--accent) 6%, transparent)',
+                  border: plain ? '1px solid var(--border)' : '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+                  background: plain ? 'transparent' : 'color-mix(in srgb, var(--accent) 6%, transparent)',
+                  ...tap,
                 }}>
                   <ExternalLink size={9} aria-hidden="true" /> {t('narrative.ask_analyst')}
                 </Link>

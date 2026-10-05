@@ -1,12 +1,53 @@
 import type { Metadata, Viewport } from 'next'
+import { Inter, Space_Grotesk } from 'next/font/google'
 import './globals.css'
 import ConditionalShell from '@/components/layout/ConditionalShell'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { LanguageProvider } from '@/contexts/LanguageContext'
+import { SITE_URL } from '@/lib/siteUrls'
 
+/**
+ * Rendered on the server, where the user's language is unknowable — it lives
+ * in this browser's localStorage. So these are the *default* language's
+ * strings (Spanish, matching `LanguageProvider`'s initial state), which is
+ * also what a crawler in the primary market should see. `LanguageContext`
+ * corrects the title and description after hydration for an English user;
+ * the two must be kept in step with `app.title` / `app.description` in
+ * `i18n/translations.ts`.
+ */
 export const metadata: Metadata = {
-  title: 'Faro — Inventario Inteligente',
+  // Resolves every relative URL in page metadata (og:image, canonical) against
+  // the landing's public origin — see lib/siteUrls.ts.
+  metadataBase: new URL(SITE_URL),
+  title: 'StockAI — Inventario Inteligente',
   description: 'Plataforma de inventario inteligente para distribuidores y mayoristas',
+  applicationName: 'StockAI',
+  // The link preview of EVERY route that does not set its own (the app and its
+  // sign-in form included). Without these a chat or social app that unfurls
+  // `app.stockai.es` has no image to show and falls back to whatever icon it
+  // cached the first time it saw the site, which is how an old logo outlives a
+  // rebrand. Pages with their own `openGraph` (the landing) replace this whole.
+  openGraph: {
+    type: 'website',
+    siteName: 'StockAI',
+    title: 'StockAI — Qué pedir hoy, cuánto y a qué proveedor',
+    description: 'Compras de inventario para distribuidores y mayoristas de Latinoamérica.',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StockAI' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'StockAI — Qué pedir hoy, cuánto y a qué proveedor',
+    images: ['/og-image.png'],
+  },
+  // Every route but the landing is the signed-in app or a sign-in form, so the
+  // default is to stay out of search results; app/page.tsx opts back in.
+  // robots.ts says the same thing to crawlers that read robots.txt first.
+  robots: { index: false, follow: false },
+  // Google Search Console's "HTML tag" ownership proof. Set at build time
+  // (NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION); unset, no tag is rendered.
+  ...(process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION } }
+    : {}),
 }
 
 /**
@@ -19,6 +60,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // The installed app's title bar and the phone's status bar (manifest.ts).
+  themeColor: '#0C3A40',
+  // Lets the page reach the screen edges on notched phones so the mobile tab
+  // bar and header can pad themselves with env(safe-area-inset-*) instead of
+  // leaving browser-painted bands (components/mobile/MobileTabBar.tsx).
+  viewportFit: 'cover',
 }
 
 /**
@@ -33,11 +80,31 @@ export const viewport: Viewport = {
  * Silently falls back to the light default if localStorage throws, which it
  * does in some privacy modes.
  */
-const NO_FLASH = `try{document.documentElement.setAttribute('data-theme',localStorage.getItem('theme')||'light')}catch(e){}`
+/** The wordmark's face (`components/brand/Wordmark.tsx`) — self-hosted by
+ *  Next at build time, so no request leaves for Google at runtime. */
+const brandFont = Space_Grotesk({
+  subsets: ['latin'],
+  weight: ['600', '700'],
+  variable: '--font-brand',
+  display: 'swap',
+})
+
+/** The reading face of message text (`.msg-prose` in globals.css) — AI replies,
+ *  narrative cards, the inbox. Variable, so one file covers every weight, with
+ *  latin-ext for Spanish accents. Self-hosted by Next at build time like the
+ *  wordmark face. Scoped to messages on purpose: the rest of the app still
+ *  renders in the system face (see the report on a global switch). */
+const textFont = Inter({
+  subsets: ['latin', 'latin-ext'],
+  variable: '--font-text',
+  display: 'swap',
+})
+
+const NO_FLASH =`try{document.documentElement.setAttribute('data-theme',localStorage.getItem('theme')||'light')}catch(e){}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="es" className={`${brandFont.variable} ${textFont.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
       </head>

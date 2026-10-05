@@ -4,10 +4,11 @@
  * Design rules this file encodes:
  *
  *  · A step points at a REAL element, found by `data-tour`. It never invents a
- *    position. If the anchor is absent — the screen is empty, the feature is
- *    gated, the markup moved — the step renders as a centred panel rather than
- *    highlighting the wrong thing. That is what keeps a tour from quietly
- *    lying after a refactor.
+ *    position. If the anchor is absent or not visible — the screen is empty,
+ *    the feature is off for this account, a disclosure is closed, the markup
+ *    moved — the step is SKIPPED (see anchors.ts) rather than shown pointing at
+ *    nothing or highlighting the wrong thing. That is what keeps a tour from
+ *    quietly lying after a refactor.
  *  · A tour never blocks. It can be dismissed at any step and never demands
  *    completion before the user may act.
  *  · Each step answers WHY the thing exists and what a wrong choice costs, not
@@ -34,6 +35,9 @@ export interface TourStep {
   /** Copy key, resolved against this tour's own `es` / `en` maps. */
   title: string
   body: string
+  /** Optional picture for the step (semáforo legend, example table, flow…),
+   *  from the shared ExplainerVisual registry. Shown above the body. */
+  visual?: 'semaforo' | 'sales_table' | 'column_map' | 'pipeline'
 }
 
 export interface TourCopy {

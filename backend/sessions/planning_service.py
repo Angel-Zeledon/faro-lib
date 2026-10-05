@@ -44,6 +44,7 @@ def _newest_family_id(tenant_id: str) -> Optional[str]:
     row = query_one(
         """SELECT family_id FROM sessions
            WHERE tenant_id = %s AND family_id IS NOT NULL
+             AND archived_at IS NULL AND NOT is_backtest
            ORDER BY created_at DESC LIMIT 1""",
         (tenant_id,))
     return row["family_id"] if row else None
@@ -56,7 +57,8 @@ def _available_periods(tenant_id: str, family_id: Optional[str]) -> list[str]:
         return ["daily"]
     rows = query(
         """SELECT DISTINCT granularity FROM sessions
-           WHERE tenant_id = %s AND family_id = %s AND granularity IS NOT NULL""",
+           WHERE tenant_id = %s AND family_id = %s AND granularity IS NOT NULL
+             AND archived_at IS NULL""",
         (tenant_id, family_id))
     grains = {r["granularity"] for r in rows}
     out = [g for g in _PERIOD_ORDER if g in grains]
@@ -123,6 +125,37 @@ def get_planning(tenant_id: str) -> dict:
                 stored.get("period") if reason == REASON_UNAVAILABLE else None)}
 
 
+def horizon_preview(tenant_id: str, horizon_days: Optional[int]) -> dict:
+    """What a launch with `horizon_days` would train per grain, and whether the
+    tenant's buying need (lead time + review period) raises it. The wizard shows
+    this BEFORE the run so the extension is never a surprise; it uses the same
+    two functions `launch_training_family` does, so preview and run agree.
+
+    `need` is None when nothing is declared (no stock rows, only default lead
+    times) — the wizard then says nothing and the horizon is untouched.
+    """
+    from backend.sessions import family_service as fam
+    from backend.sessions import horizon_need
+
+    need = horizon_need.tenant_need(tenant_id)
+    by_grain: dict[str, dict] = {}
+    for grain in _PERIOD_ORDER:
+        spec = {"granularity": grain,
+                "horizon": fam._horizon_steps(grain, horizon_days)}
+        configured = spec["horizon"]
+        fam._extend_for_need(spec, need)
+        by_grain[grain] = {
+            "configured_steps": configured,
+            "steps": spec["horizon"],
+            "extended": spec["horizon"] != configured,
+        }
+    return {
+        "need": need,
+        "ceiling_days": horizon_need.HORIZON_CEILING_DAYS,
+        "by_grain": by_grain,
+    }
+
+
 def set_planning(tenant_id: str, period: str, horizon: int) -> dict:
     """Validate + persist the active planning setting. Raises an ``AppError``
     (422) on an unavailable period or an out-of-reach horizon — an admin reads
@@ -182,7 +215,7 @@ def resolve_active_session(tenant_id: str) -> Optional[str]:
         row = query_one(
             """SELECT id AS session_id FROM sessions
                WHERE tenant_id = %s AND family_id = %s AND granularity = %s
-                 AND status = 'COMPLETED'
+                 AND status = 'COMPLETED' AND archived_at IS NULL AND NOT is_backtest
                ORDER BY updated_at DESC LIMIT 1""",
             (tenant_id, family_id, period))
         if row:

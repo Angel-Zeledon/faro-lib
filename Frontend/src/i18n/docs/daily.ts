@@ -1,0 +1,623 @@
+// Help center — "Uso diario" / "Everyday use": the screens a buyer opens every
+// day. Labels are quoted from Frontend/src/i18n/translations.ts in each
+// language; behaviour was checked against backend/inventory/ (reception,
+// cancel, payment and transfer services) and the /compras, /pedidos,
+// /inventario, /proveedores and /mensajes screens.
+import type { DocSectionContent } from '@/i18n/docs/types'
+import type { DocPageIdOf } from '@/i18n/docs/tree'
+
+export const DAILY: DocSectionContent<DocPageIdOf<'uso-diario'>> = {
+  es: {
+    // ── Panel de compras ───────────────────────────────────────────────────
+    'uso-diario/panel-de-compras': {
+      title: 'Panel de compras',
+      description:
+        'La pantalla con la que empiezas el día: qué pedir hoy, qué puede esperar a esta semana, cuánto y a qué proveedor. Apruebas línea por línea y guardas la orden de compra.',
+      blocks: [
+        { t: 'p', text: 'El [Panel de compras](app:/compras) junta el pronóstico de demanda con el stock que tienes registrado y te entrega una lista corta de decisiones. Es también la pantalla con la que abre la app instalada en el celular.' },
+        { t: 'shot', key: 'panel', alt: 'Panel de compras con los indicadores del día, la lista «Urgente — actúa hoy» y el carrito de la orden de compra' },
+        { t: 'h2', id: 'top-of-screen', text: 'Lo que ves arriba' },
+        { t: 'ul', items: [
+          'El saludo con cuántas acciones tienes pendientes hoy, la fecha y la **«Actualización en uso»**: el nombre de la carga de ventas con la que se calculó todo lo que ves.',
+          'Si tu stock o tus ventas llevan muchos días sin actualizarse aparece **«El semáforo está desactualizado»**. Mientras tanto la pantalla no muestra luz verde: prefiere decirte que no ve a decirte que todo está bien sin saberlo.',
+          'Si parte del cálculo usa valores que nunca nos diste (el tiempo de entrega de 15 días, el nivel de servicio de 95 %, la compra mínima de 1), aparece **«Estas recomendaciones usan N supuestos nuestros — revísalos»** con un enlace a lo que conviene configurar primero.',
+          'Los avisos de proveedores: los que están **tardando más de lo habitual** y los pedidos cuya llegada ya se pasó de fecha (**«¿Llegaron estos pedidos?»**), con el botón **«Registrar llegada»**.',
+        ] },
+        { t: 'h3', id: 'indicators', text: 'Los cuatro indicadores' },
+        { t: 'dl', items: [
+          ['Productos vigilados', 'Cuántos productos cubre la actualización en uso.'],
+          ['Riesgo hoy', 'Cuántos productos están en **Pedir YA**.'],
+          ['Esta semana', 'Cuántos productos están en **Pedir pronto**.'],
+          ['Valor en bodega', 'Stock actual por costo unitario, sumado. Si no registraste ningún costo, muestra «—»: el valor es desconocido, no cero.'],
+        ] },
+        { t: 'note', tone: 'warn', title: 'Un cero que no significa «sin riesgo»', text: 'Si ningún producto tiene stock registrado, las cifras no dicen «no hay riesgo» sino «no sabemos», y la pantalla lo escribe así. Los productos sin conteo quedan fuera de las sugerencias de compra: el bloque «Faltan N producto(s) por contar» te lleva a registrarlos.' },
+        { t: 'p', text: 'Debajo va el **«Resumen ejecutivo del día»**, un párrafo que explica la situación en palabras. Si tienes dos o más bodegas, antes de las compras aparecen las sugerencias de traslado: mover stock entre bodegas no cuesta una compra, así que se propone primero (ver [Bodegas y traslados](/docs/uso-diario/bodegas-y-traslados)).' },
+        { t: 'h2', id: 'cards', text: 'Las tarjetas: «Urgente — actúa hoy» y «Esta semana»' },
+        { t: 'p', text: '«Urgente — actúa hoy» lista los productos en **Pedir YA** y «Esta semana» los que están en **Pedir pronto**. Cada tarjeta trae el producto, su señal, el motivo, el proveedor y la cantidad sugerida junto a **«Pedir:»**. Si lo que ya viene en camino cubre la necesidad, la tarjeta lo dice («Cubierto por lo que ya viene en camino») en vez de pedirte comprar dos veces; y si el producto ya está en una orden, lleva la marca «Pedido en {orden}».' },
+        { t: 'dl', items: [
+          ['Pedir:', 'La cantidad sugerida. Haz clic sobre el número y escribe otra; la línea queda marcada como modificada.'],
+          ['Proveedor:', 'Desplegable para mandar esa línea a otro proveedor antes de guardar la orden.'],
+          ['Aprobar / Rechazar', 'Aprobar mete la línea al carrito. Rechazar la saca y queda registrado que no seguiste la recomendación. **Deshacer** y **Restaurar** revierten cada una.'],
+          ['Ver por qué', 'Abre el desglose: cobertura actual, demanda diaria pronosticada, tiempo de entrega del proveedor (y si es aprendido de sus entregas reales o configurado por ti), nivel de servicio, costo unitario, compra mínima, stock actual y punto de reorden. Los valores que nadie configuró llevan la etiqueta «estimado».'],
+        ] },
+        { t: 'p', text: 'Para entender la regla que pone a cada producto en su color, lee [El semáforo](/docs/conceptos/semaforo) y [Punto de reorden](/docs/conceptos/punto-de-reorden).' },
+        { t: 'h2', id: 'cart', text: 'El carrito y la orden de compra' },
+        { t: 'p', text: 'Al aprobar la primera línea aparece abajo el carrito: cuántos productos aprobaste, el total (los que no tienen costo quedan fuera del total y se cuentan aparte) y **«Este pedido protege … en ventas con … en margen»**, calculado solo con las líneas que tienen precio de venta y costo. Junto al carrito pueden aparecer dos paneles:' },
+        { t: 'ul', items: [
+          '**«Te conviene subir la cantidad»**: cuando un proveedor tiene [escalas de precio](/docs/uso-diario/proveedores#price-breaks) y pedir más compensa lo que cuesta mantener el extra. **«Subir cantidad»** cambia la cantidad *y* el precio unitario de la línea, así que el ahorro llega a la orden, al PDF del proveedor y al calendario de pagos.',
+          '**«Caja — cuentas por pagar»**: lo que te vence esta semana según los términos de pago de tus proveedores, y si la compra recomendada cabe en la caja disponible que escribas.',
+        ] },
+        { t: 'steps', items: [
+          'Revisa las tarjetas y ajusta cantidades o proveedores donde haga falta.',
+          'Pulsa **«Aprobar»** en lo que vas a pedir y **«Rechazar»** en lo que no.',
+          'Si tienes varias bodegas, elige la de destino en **«Entregar en»**.',
+          'Pulsa **«Descargar orden de compra»**. El botón cambia a «Guardando la orden…» y no acepta un segundo toque mientras guarda.',
+          'Al terminar verás «Orden {número} guardada»: los productos ya cuentan como en camino y el archivo se descarga para que se lo mandes al proveedor. El enlace «Ver pedidos» te lleva a [Pedidos](/docs/uso-diario/pedidos).',
+          'En el panel **«Orden de compra generada»**, pulsa **«Enviar a proveedores ahora»** si quieres que StockAI se la mande por correo o WhatsApp, o hazlo después desde Pedidos.',
+        ] },
+        { t: 'note', tone: 'info', title: 'Un carrito, una orden', text: 'Si la conexión falla y vuelves a pulsar el botón con el mismo carrito, StockAI no crea una segunda orden: responde «Esta orden ya estaba guardada; no se creó otra.». Cada envío lleva una clave única que el servidor recuerda.' },
+        { t: 'h2', id: 'below', text: 'Más abajo en la pantalla' },
+        { t: 'dl', items: [
+          ['Compras y transferencias sugeridas', 'El plan del optimizador: qué comprar y qué mover para cubrir el horizonte al menor costo total. Sus cantidades pueden diferir de las tarjetas: las tarjetas responden «pídelo hoy» y el plan cubre desde que llega cada pedido hasta el final. **«Convertir en OC»** vuelve una línea en orden de compra.'],
+          ['Anticípate — picos de demanda próximos', 'Picos que el pronóstico ve antes de que el semáforo se ponga rojo.'],
+          ['Cambios en demanda', 'Productos cuya venta real corre por encima o por debajo del pronóstico.'],
+          ['Recomendaciones del sistema', 'Frases con una acción sugerida por producto, como emitir una orden urgente o pausar el próximo pedido.'],
+          ['Oportunidades de capital', 'Cuánto dinero tienes en productos con cobertura excesiva y cuáles son.'],
+        ] },
+        { t: 'note', tone: 'info', title: 'Según tu rol', text: 'Un usuario de solo lectura ve todas las recomendaciones pero no puede aprobarlas ni guardar órdenes. Ver [Usuarios y roles](/docs/administracion/usuarios-y-roles).' },
+      ],
+    },
+
+    // ── Pedidos ────────────────────────────────────────────────────────────
+    'uso-diario/pedidos': {
+      title: 'Pedidos',
+      description:
+        'Todas tus órdenes de compra: enviarlas al proveedor, registrar lo que llega (parcial o completo), marcarlas como pagadas, cancelarlas y deshacer lo que registraste por error.',
+      blocks: [
+        { t: 'p', text: 'En [Pedidos](app:/pedidos) («Órdenes generadas y registro de llegadas») vive cada orden que guardaste desde el Panel de compras, desde Inventario o a mano. Registrar la llegada no es papeleo: es lo que sube tu stock y lo que le enseña a StockAI cuánto tarda de verdad cada proveedor.' },
+        { t: 'shot', key: 'pedidos', alt: 'Pantalla Pedidos con la tabla de órdenes, su estado de recepción y los botones para registrar la llegada y enviar' },
+        { t: 'h2', id: 'list', text: 'La lista de órdenes' },
+        { t: 'p', text: 'Arriba a la derecha está el contador **«N por recibir»** y el botón **«Nueva orden»**. Cada fila trae **Orden**, **Fecha y hora**, **SKUs en la orden**, **Urgentes** (líneas que venían en Pedir YA), **Próximos** (en Pedir pronto), **Unidades totales**, **Valor total** («—» si las líneas no traían costo) y **Recepción**. El filtro **«Pago»** muestra Todas, Sin pagar, Pagadas o Canceladas. Si tienes dos o más bodegas, la pantalla tiene dos pestañas: «Órdenes de compra» y «Transferencias».' },
+        { t: 'h3', id: 'reception-states', text: 'Estados de recepción' },
+        { t: 'dl', items: [
+          ['En camino', 'Todavía no registraste nada. Es también el estado de una orden a la que nunca se le registró llegada: la falta de registro no prueba que haya llegado.'],
+          ['Parcial', 'Llegó una parte. La orden conserva el botón para registrar el resto.'],
+          ['Recibida', 'Llegó todo lo pedido.'],
+          ['No llegó', 'Marcaste que la entrega no ocurrió. No es un estado final ni una cancelación: la orden sigue «por recibir» y puedes registrar la mercadería si llega después.'],
+        ] },
+        { t: 'p', text: 'Mientras una orden esté En camino, Parcial o No llegó, sus unidades pendientes cuentan como [en camino](/docs/conceptos/en-camino) y se restan de lo que el Panel te sugiere pedir.' },
+        { t: 'h2', id: 'receive', text: 'Registrar la llegada' },
+        { t: 'steps', items: [
+          'Pulsa **«Registrar llegada»** en la fila de la orden.',
+          'La ventana muestra cada producto con **Pedido**, **Recibido antes** y **Llega ahora**; este último viene precargado con lo que falta.',
+          'Si llegó todo, pulsa **«Llegó todo completo»**. Si llegó una parte, corrige «Llega ahora» línea por línea (deja en cero lo que no llegó) y pulsa **«Guardar cantidades»**.',
+          'El stock de cada producto sube en la bodega de destino y la orden pasa a Recibida o Parcial.',
+        ] },
+        { t: 'note', tone: 'info', title: 'Cómo aprende el tiempo de entrega', text: 'Cuando una orden queda **Recibida**, StockAI anota cuántos días pasaron desde la orden hasta la llegada de las últimas unidades. Con 3 entregas registradas de un proveedor, ese promedio reemplaza el tiempo de entrega configurado. Una orden que nunca se completa no enseña nada. Más en [Tiempo de entrega aprendido](/docs/conceptos/tiempo-de-entrega-aprendido).' },
+        { t: 'h2', id: 'send', text: 'Enviar la orden a tus proveedores' },
+        { t: 'p', text: '**«Enviar pedido»** manda la orden en PDF, por correo o WhatsApp, a cada proveedor de sus líneas. Antes de enviar te muestra a quién se enviará y quién **«Se omitirá por falta de email/WhatsApp»**, y recién entonces pide confirmación. Si alguno quedó fuera verás «Enviado parcialmente — revisa los proveedores omitidos»; si nadie tenía contacto, «No se pudo enviar — ningún proveedor tiene datos de contacto». Enviar requiere que hayas verificado tu correo.' },
+        { t: 'p', text: 'Para los proveedores omitidos, o si prefieres mandarlo tú: **«Enviarme por WhatsApp»** te lo manda a tu número, **«Abrir en WhatsApp»** abre WhatsApp con el mensaje listo y **«Copiar mensaje»** lo deja en el portapapeles. Completa el email o el WhatsApp en la ficha del [proveedor](/docs/uso-diario/proveedores) para que la próxima vez salga solo.' },
+        { t: 'h2', id: 'paid-cancel', text: 'Pagada, cancelada y reabierta' },
+        { t: 'dl', items: [
+          ['Marcar como pagada', 'Solo en una orden ya enviada. La orden sale del calendario de pagos y lleva la marca «Pagada». **«Desmarcar pago»** la devuelve a deuda con su fecha de vencimiento original.'],
+          ['Cancelar orden', 'Solo mientras no haya llegado nada (En camino o No llegó) y no esté pagada; si está pagada, primero desmarca el pago. Sus unidades dejan de contar como en camino —el Panel puede volver a pedirlas— y sale de las recepciones atrasadas y del calendario de pagos. Si ya se la enviaste al proveedor, avísale tú: StockAI no le escribe.'],
+          ['Reabrir orden', 'Deshace la cancelación: vuelve a contar como en camino, en recepciones pendientes y en el calendario de pagos. Una orden cancelada no se puede recibir, enviar ni marcar como pagada hasta que la reabras.'],
+        ] },
+        { t: 'h2', id: 'undo', text: 'Deshacer lo que registraste por error' },
+        { t: 'dl', items: [
+          ['Deshacer recepción', 'Deshace toda la recepción registrada de la orden, no solo la última entrega: las unidades vuelven a salir de tu bodega, la orden queda otra vez pendiente y se borra lo que esa recepción le enseñó sobre el tiempo de entrega del proveedor. Si ya vendiste parte de esas unidades, StockAI lo rechaza y te dice qué producto y qué bodega no alcanzan.'],
+          ['Deshacer envío', 'Marca la orden como no enviada y la saca del calendario de pagos. Sigue contando como en camino. El correo o WhatsApp que ya salió no se recupera: esto solo corrige lo que StockAI tiene anotado. No se puede después de una recepción ni con la orden pagada.'],
+        ] },
+        { t: 'note', tone: 'warn', title: 'Una orden guardada no se borra', text: 'No existe «eliminar orden». Si la generaste por error, cancélala: así deja de contar como en camino y queda el registro de lo que pasó.' },
+        { t: 'h2', id: 'manual-order', text: 'Crear una orden a mano' },
+        { t: 'steps', items: [
+          'Pulsa **«Nueva orden»**.',
+          'Elige el proveedor y, si tienes varias bodegas, la **«Bodega de destino»**.',
+          'Escribe SKU, cantidad y —si lo tienes— el costo unitario de cada línea; **«Agregar producto»** suma líneas.',
+          'Pulsa **«Crear orden»**. No necesita ningún pronóstico, y la orden se recibe igual que las demás.',
+        ] },
+        { t: 'note', tone: 'info', title: 'Según tu rol', text: 'Recibir, enviar, marcar pagada, cancelar, deshacer y crear órdenes requieren rol de analista o administrador. Un usuario de solo lectura ve la lista pero no esos botones.' },
+      ],
+    },
+
+    // ── Inventario ─────────────────────────────────────────────────────────
+    'uso-diario/inventario': {
+      title: 'Inventario',
+      description:
+        'La lista completa de tus productos con su señal, cuánto pedir y de dónde sale ese número; el lugar donde corriges stock, proveedor, costo y tiempo de entrega, y las vistas que miran tu dinero.',
+      blocks: [
+        { t: 'p', text: '[Inventario](app:/inventario) es el semáforo completo, producto por producto. Lo que corriges aquí —stock, proveedor, tiempo de entrega, costo, precio de venta, compra mínima— se ve de inmediato en el Panel de compras.' },
+        { t: 'shot', key: 'inventory', alt: 'Pantalla Inventario con las tarjetas de señales arriba y la tabla de productos con su cobertura y cantidad a pedir' },
+        { t: 'h2', id: 'cards', text: 'Tarjetas que también filtran' },
+        { t: 'p', text: 'Arriba hay una frase de situación en lenguaje llano y una fila de tarjetas —**Total SKUs**, **Pedir YA**, **Pedir pronto**, **OK**, **Sobrestock** y **Valor inventario**—. Al hacer clic en una de señal, la tabla muestra solo esa señal. Si algunos productos que subiste quedaron fuera del pronóstico, un aviso los lista con el motivo (por ejemplo, menos historia de la necesaria).' },
+        { t: 'h2', id: 'views', text: 'Las vistas' },
+        { t: 'p', text: 'El selector de vistas cambia lo que muestra la pantalla:' },
+        { t: 'dl', items: [
+          ['Tabla', 'La vista completa, con todas las columnas.'],
+          ['Simple', 'Lo mismo reducido a producto, señal, cantidad a pedir y proveedor.'],
+          ['Proveedor', 'Productos agrupados por proveedor, con cuántos urgentes y próximos tiene cada uno.'],
+          ['Actualizar stock', 'Tabla editable de stock, días de entrega y proveedor para corregir muchos productos y guardar de una vez. Solo para quien puede editar.'],
+          ['Dinero parado', 'Productos cuyo stock lleva mucho sin bajar, ordenados por cuánto dinero representan. Un producto sin costo no cuenta como cero: dice «Sin costo» y va al final. No necesita pronóstico.'],
+          ['Costos al alza', 'Tus proveedores ordenados por cuánto subieron sus precios, según lo que de verdad pagaste en cada recepción.'],
+          ['Margen que se achica', 'Tus productos ordenados por cuántos puntos de margen perdieron, con el precio de venta de hoy y el costo de entonces.'],
+          ['Pronóstico en dinero', 'Lo que el pronóstico espera que vendas, multiplicado por tu precio y tu costo de hoy: ventas y margen proyectados.'],
+          ['Costo de ignorar', 'Qué pasó después de cada alerta: si pediste a tiempo, si probablemente te quedaste sin stock o si no se puede saber con lo que tienes registrado.'],
+        ] },
+        { t: 'note', tone: 'info', title: 'Precios de hoy, costos de entonces', text: 'StockAI guarda el historial de tus costos (cada recepción) pero solo tu precio de venta de hoy. Por eso «Margen que se achica» solo puede señalar una subida de costo —nunca una baja de precio— y «Costo de ignorar» y «Pronóstico en dinero» valoran con el precio actual.' },
+        { t: 'h2', id: 'table', text: 'La tabla' },
+        { t: 'dl', items: [
+          ['Señal', 'Pedir YA, Pedir pronto, OK, Sobrestock o Sin datos. La regla está en [El semáforo](/docs/conceptos/semaforo).'],
+          ['SKU / Nombre', 'El código, el nombre y, en letra pequeña, el proveedor.'],
+          ['Stock', 'Unidades en bodega hoy.'],
+          ['Tendencia', 'Cómo se movió tu stock en los últimos 14 días.'],
+          ['Días cobertura', 'Cuánto aguanta tu stock al ritmo pronosticado.'],
+          ['Venta hasta que llegue', 'Cuánto esperas vender mientras esperas que llegue tu pedido.'],
+          ['Cantidad a pedir', 'Lo que deberías pedir hoy. Se puede editar con un clic, pero ese número solo se usa al bajar «Exportar OC (editada)»: no cambia el producto.'],
+          ['Entrega (días)', 'El tiempo de entrega que se está usando, y de dónde sale: configurado, aprendido o estimado.'],
+          ['MOQ', 'Compra mínima. Nunca te sugerimos menos; por encima pedimos lo que hace falta, no un múltiplo de caja.'],
+          ['ABC-XYZ', 'A/B/C es importancia en ingresos; X/Y/Z, qué tan predecible es la demanda. AZ es el caso más delicado.'],
+          ['Valor bodega', 'Stock por costo unitario. Solo aparece si registraste el costo.'],
+        ] },
+        { t: 'p', text: 'La flecha ▶ al inicio de la fila (**«Ver el cálculo»**) abre la resta paso a paso: ventas diarias promedio × días de entrega, + colchón de seguridad, − stock actual, − lo que ya viene en camino, y el ajuste a la compra mínima. Debajo, «Por qué cambió» dice si el cambio respecto a la vez anterior vino del pronóstico o de algo de tu negocio, como tu stock, tu tiempo de entrega o un evento.' },
+        { t: 'p', text: 'Los iconos al final de la fila abren el **simulador** (deslizadores de tiempo de entrega, variación de demanda y stock extra; no guarda nada) y el **editor del producto**, donde cambias nombre, categoría, stock, proveedor, tiempo de entrega, compra mínima, costo, precio de venta y nivel de servicio.' },
+        { t: 'h2', id: 'toolbar', text: 'Descargar, importar y registrar salidas' },
+        { t: 'dl', items: [
+          ['Descargar', 'Un menú con **Plantilla** (CSV vacío con las columnas correctas), **Exportar OC** (la orden que calcula StockAI), **Exportar OC (editada)** (con tus cantidades editadas en la tabla) y **Resumen ejecutivo (PDF)**. Las dos exportaciones de OC registran la orden en Pedidos.'],
+          ['Más acciones', 'Un menú con **Actualizar**, **Importar stock (CSV)** y **Registrar salida**. Las dos últimas solo para quien puede editar.'],
+          ['Registrar salida', 'Descuenta unidades que salieron por algo distinto a una venta —rotura o daño, vencimiento, consumo propio, obsequio o muestra—. El stock baja de inmediato y el costo se acumula en el resumen de mermas.'],
+        ] },
+        { t: 'p', text: 'Para cargar todo tu stock de una vez desde el archivo de tu sistema, el camino más cómodo es [Configurar inventario](/docs/primeros-pasos/configurar-inventario), que reconoce las columnas por ti.' },
+        { t: 'h2', id: 'events', text: 'Eventos y temporadas' },
+        { t: 'p', text: 'Al pie de la pantalla, **«Eventos y temporadas»** registra temporadas altas —Black Friday, Semana Santa, fin de año— con un multiplicador de demanda y, si quieres, un SKU o una categoría. No es un ejercicio: en cuanto guardas el evento cambia la cantidad a pedir de los productos que le tocan. El efecto es proporcional a cuántos días de su tiempo de entrega caen dentro del evento, así que un evento de una semana mueve mucho menos a un proveedor de 30 días que a uno de 5. Varios eventos sobre el mismo producto se combinan.' },
+        { t: 'h2', id: 'warehouses', text: 'Si tienes varias bodegas' },
+        { t: 'p', text: 'Con dos o más bodegas aparece un selector («Todas» o una bodega); al elegir una, la tabla muestra el semáforo de esa bodega con sugerencias de traslado. Ver [Bodegas y traslados](/docs/uso-diario/bodegas-y-traslados).' },
+        { t: 'note', tone: 'warn', title: '«Sin datos» no es un error', text: 'Es un producto al que le falta el stock o el pronóstico. Queda fuera de las recomendaciones porque cuánto pedir depende justamente de cuánto te queda. Ver [Sin datos](/docs/solucion-de-problemas/sin-datos).' },
+      ],
+    },
+
+    // ── Bodegas y traslados ────────────────────────────────────────────────
+    'uso-diario/bodegas-y-traslados': {
+      title: 'Bodegas y traslados',
+      description:
+        'Cómo crear bodegas, repartir la demanda entre ellas y mover stock de una a otra antes de comprar, con su envío, su llegada y lo que pasa si algo se pierde en el camino.',
+      blocks: [
+        { t: 'p', text: 'Toda cuenta empieza con una bodega, la **principal**: ahí entran las órdenes cuando no eliges destino. Si manejas más de una, StockAI calcula el semáforo de cada bodega y te propone mover stock de donde sobra a donde falta antes de comprar.' },
+        { t: 'h2', id: 'create', text: 'Crear una bodega' },
+        { t: 'p', text: 'En [Inventario](app:/inventario), con una sola bodega verás un botón discreto **«Agregar bodega»**. Con dos o más aparece la fila de bodegas y, a su lado, el menú **«Configurar bodegas»** con tres entradas: **«Reparto de demanda»**, **«Rutas de traslado»** y **«Agregar bodega»**. Crear y configurar bodegas requiere rol de analista o administrador.' },
+        { t: 'note', tone: 'info', title: 'Límite del plan', text: 'El plan gratis admite 1 bodega; el plan completo, 2; el corporativo no tiene tope. Al intentar crear una más de las que admite tu plan se abre el cuadro para escribirnos. Ver [Límites del plan](/docs/administracion/limites-del-plan).' },
+        { t: 'h3', id: 'demand-split', text: 'Reparto de demanda' },
+        { t: 'p', text: '«¿Qué % de la venta sale de cada bodega?». Mientras no lo definas, StockAI asigna toda la demanda a la bodega principal y te lo recuerda. Una bodega que dejes sin porcentaje no recibe demanda y sale de la planificación; el editor te dice cuáles quedarían así antes de guardar.' },
+        { t: 'h3', id: 'lanes', text: 'Rutas de traslado' },
+        { t: 'p', text: 'Para cada par de bodegas puedes indicar cuántos días tarda y cuánto cuesta mover stock (costo por unidad y costo fijo). El optimizador del Panel de compras usa esos datos para decidir si conviene trasladar o comprar.' },
+        { t: 'h2', id: 'suggestions', text: 'Sugerencias de traslado' },
+        { t: 'p', text: 'En el [Panel de compras](/docs/uso-diario/panel-de-compras), antes de las compras, aparece «{n} se resuelven moviendo stock, sin comprar»: otra bodega tiene excedente de esos productos. Cada línea dice cuánto mover, de dónde a dónde y con cuánta cobertura queda la bodega de origen. En Inventario, al mirar una bodega, la fila puede proponer «Transferir N desde X» o «Mover N desde X y comprar las otras M».' },
+        { t: 'steps', items: [
+          'Pulsa **«Crear transferencia»** en la sugerencia.',
+          'La transferencia nace **En tránsito**: la bodega de origen pierde las unidades en ese momento.',
+          'Las unidades cuentan como en camino para la bodega de destino (no para la de origen), así que su semáforo no vuelve a pedirlas.',
+          'Cuando lleguen, registra la llegada en Pedidos, pestaña **«Transferencias»**.',
+        ] },
+        { t: 'h2', id: 'transfer-states', text: 'Estados y acciones de una transferencia' },
+        { t: 'dl', items: [
+          ['En tránsito', 'Salió de origen y no ha llegado nada. Se puede **«Cancelar transferencia»**: el stock regresa a la bodega de origen.'],
+          ['Parcial', 'Llegó una parte. Las llegadas parciales se suman. Si el resto no va a llegar, **«Cerrar con faltante»** registra las unidades pendientes como merma (pérdida en tránsito).'],
+          ['Recibida', 'Llegó todo.'],
+          ['Cancelada', 'Se canceló antes de recibir nada; el stock volvió a origen.'],
+          ['Cerrada con faltante', 'Se cerró con unidades perdidas en el camino, ya registradas como merma.'],
+        ] },
+        { t: 'p', text: 'Para registrar la llegada pulsa **«Registrar llegada»** y elige **«Llegó todo»** o **«Registrar cantidades»**.' },
+        { t: 'note', tone: 'info', title: 'Dónde está la pestaña', text: 'Las pestañas «Órdenes de compra» y «Transferencias» de Pedidos solo aparecen cuando tienes dos o más bodegas.' },
+        { t: 'h2', id: 'po-destination', text: 'Órdenes de compra con destino' },
+        { t: 'p', text: 'Con varias bodegas, el carrito del Panel de compras pregunta **«Entregar en»** y la orden manual pide **«Bodega de destino»**. Al registrar la llegada, el stock sube en esa bodega. Al importar stock por CSV, las filas entran en la bodega que estés mirando, salvo que el archivo traiga su propia columna de bodega.' },
+      ],
+    },
+
+    // ── Proveedores ────────────────────────────────────────────────────────
+    'uso-diario/proveedores': {
+      title: 'Proveedores y scorecard',
+      nav: 'Proveedores',
+      description:
+        'Registra a quién le compras para poder enviarle órdenes; StockAI aprende su tiempo de entrega real de tus recepciones y mide lo que promete contra lo que cumple.',
+      blocks: [
+        { t: 'p', text: 'Un proveedor es quien te vende cada producto. Registrarlo en [Proveedores](app:/proveedores) es lo que convierte una alerta de stock en una orden que se puede enviar, y lo que permite medirlo después.' },
+        { t: 'shot', key: 'proveedores', alt: 'Pantalla Proveedores con la tabla de proveedores, su tiempo de entrega, variabilidad y columna de aprendizaje' },
+        { t: 'h2', id: 'form', text: 'La ficha del proveedor' },
+        { t: 'p', text: 'Pulsa **«Agregar proveedor»**. Solo el nombre es obligatorio; escríbelo exactamente como lo usas en tus productos (se compara sin distinguir mayúsculas).' },
+        { t: 'dl', items: [
+          ['Nombre', 'La llave que une productos, recepciones y scorecard.'],
+          ['Email (para enviar OC)', 'A dónde salen las órdenes de compra desde StockAI.'],
+          ['Teléfono / WhatsApp', 'Contacto. Con WhatsApp, las órdenes también pueden salir por ahí. Sin email ni WhatsApp, el envío de órdenes omite a este proveedor.'],
+          ['Términos de pago', 'Contado, 15 días, 30 días, 60 días, 90 días u Otro. Alimentan el calendario de caja del Panel de compras.'],
+          ['Tiempo de entrega (días)', 'Días desde el pedido hasta la llegada. Si lo dejas vacío, se asumen 15 días. Se aplica a todos sus productos que no tengan uno propio.'],
+          ['Variabilidad (días)', 'Cuánto puede variar ese tiempo: si dice 15 pero a veces llega en 18, pon 3. Viene en 3. A más variabilidad, más [stock de seguridad](/docs/conceptos/stock-de-seguridad).'],
+          ['Frecuencia de pedido (días)', 'Cada cuánto le haces pedidos. Si pides cada semana, pon 7. Vacío significa que pides sin frecuencia fija. Hace que la cantidad sugerida alcance hasta que pueda llegar tu siguiente pedido.'],
+          ['Notas', 'Texto libre para ti.'],
+        ] },
+        { t: 'h3', id: 'payment-terms', text: 'Cómo se leen los términos de pago' },
+        { t: 'p', text: 'El calendario de caja interpreta el texto: «contado», «contra entrega», «anticipo», «prepago» y «COD» son 0 días; «N meses» son N × 30; «quincenal» son 15; y en textos como «30 días» o «net 30» se toma el primer número. Lo que no se entiende —cuotas como «2x30» o «30/60/90», rangos como «30-45 días», «a convenir»— queda como término desconocido y se reporta así, en vez de inventar un número.' },
+        { t: 'h2', id: 'learning', text: 'La columna «Aprendizaje»' },
+        { t: 'p', text: 'Dice en qué va StockAI con cada proveedor: todavía sin entregas, «Llevo n de 3 entregas registradas…», «Aprendí de n entregas: tardan X días en promedio, y ese es el número con el que planifico», o el caso en que todas las entregas llegaron el mismo día del pedido y no dicen nada. Con 3 recepciones completas, el tiempo aprendido manda sobre el configurado. Ver [Tiempo de entrega aprendido](/docs/conceptos/tiempo-de-entrega-aprendido).' },
+        { t: 'h2', id: 'price-breaks', text: 'Escalas de precio' },
+        { t: 'p', text: 'El icono de etiqueta de cada fila despliega **«Escalas de precio»**: a partir de una **Cantidad mínima**, cada unidad cuesta el **Precio unitario** indicado, por SKU. Pulsa **«Agregar escala»** por cada peldaño. En el Panel de compras, cuando pedir más compensa el costo de mantener el extra sin dejarte en sobrestock, aparece «Te conviene subir la cantidad», y «Subir cantidad» aplica la cantidad y el precio a la orden.' },
+        { t: 'h2', id: 'scorecard', text: 'Scorecard de proveedores' },
+        { t: 'p', text: 'El botón **«Scorecard»** abre la comparación entre lo que cada proveedor promete y lo que cumple, armada solo con las recepciones que registraste: un proveedor sin llegadas registradas no tiene fila.' },
+        { t: 'shot', key: 'scorecard', alt: 'Scorecard de proveedores con recepciones, tiempo de entrega real contra declarado, porcentaje a tiempo y fill rate' },
+        { t: 'dl', items: [
+          ['Recepciones', 'Cuántas llegadas suyas llevas registradas: el tamaño de muestra de la fila.'],
+          ['Tiempo de entrega real', 'El rango observado, del mínimo al máximo; nunca un promedio que esconda la dispersión.'],
+          ['Declarado', 'El tiempo de entrega de su ficha. Un guion si nadie lo llenó: los 15 días que StockAI supone no son una promesa del proveedor.'],
+          ['Tendencia', 'Si su tiempo reciente se salió de su propio rango normal. Muestra los días de desvío, «Estable» o «Aún no».'],
+          ['% A tiempo', 'Entregas cuyo tiempo real fue menor o igual al declarado. Vacío sin tiempo declarado. Verde desde 70 %, ámbar desde 40 %.'],
+          ['% Fill rate', 'Cuánto de lo pedido llegó, con tope en 100 %: un exceso no es un mérito.'],
+          ['Valor comprado', 'Lo que le has comprado, sumando las líneas con costo. Un guion si ninguna lo traía; «≥» delante si solo algunas.'],
+          ['Última recepción', 'La fecha de la llegada más reciente.'],
+        ] },
+        { t: 'note', tone: 'info', title: 'Más estricto para acusar que para ajustar', text: 'Bastan 3 recepciones para aprender un tiempo de entrega, pero la columna «Tendencia» exige al menos 6 (2 recientes y 4 de base) antes de señalar a un proveedor por venir tarde. Cuando alguno se desvía, el Panel y Pedidos muestran «Proveedores tardando más de lo habitual».' },
+      ],
+    },
+
+    // ── Mensajes ───────────────────────────────────────────────────────────
+    'uso-diario/mensajes': {
+      title: 'Mensajes',
+      description:
+        'Conversaciones uno a uno con las personas de tu empresa, dentro de StockAI, para coordinar lo que pasa alrededor de una compra sin salir a otra aplicación.',
+      blocks: [
+        { t: 'p', text: '[Mensajes](app:/mensajes) sirve para «ya confirmé con el proveedor» o «esa cantidad la bajé a la mitad», con el contexto a la mano. No hay grupos ni canales: solo conversaciones de una persona con otra, siempre dentro de tu misma empresa.' },
+        { t: 'shot', key: 'mensajes', alt: 'Pantalla Mensajes con la lista de conversaciones a la izquierda y un hilo abierto a la derecha' },
+        { t: 'h2', id: 'layout', text: 'Cómo está organizada' },
+        { t: 'ul', items: [
+          'A la izquierda, el título con **«N en tu equipo»**, el buscador **«Buscar persona…»** y tus conversaciones, de la más reciente a la más vieja, con la hora y una vista previa del último mensaje.',
+          'Una conversación con mensajes sin leer va en negrita con un contador a la derecha.',
+          'A la derecha, el hilo abierto: tus mensajes alineados a la derecha, los de la otra persona a la izquierda, cada uno con su hora. Sin conversación elegida dice «Elige una conversación».',
+          'En la barra superior de la app, un sobre muestra el total de mensajes sin leer («99+» pasado de noventa y nueve) y te trae aquí desde cualquier pantalla.',
+        ] },
+        { t: 'h2', id: 'write', text: 'Escribirle a alguien' },
+        { t: 'steps', items: [
+          'Escribe su nombre o su correo en «Buscar persona…».',
+          'Búscalo bajo **«Escribirle por primera vez»**, que solo aparece mientras buscas.',
+          'Haz clic en su nombre: el hilo se abre con «Este es el inicio de la conversación».',
+          'Escribe en «Escribe un mensaje…» y pulsa Enter. Cada mensaje admite hasta 4.000 caracteres.',
+        ] },
+        { t: 'p', text: 'Al abrir una conversación, lo que te habían enviado queda marcado como leído y el contador desaparece, también el del sobre.' },
+        { t: 'h2', id: 'notify', text: 'Aviso cuando te escriben' },
+        { t: 'p', text: 'En [Mi cuenta](/docs/administracion/mi-cuenta), sección **«Mensajes del equipo»**, el interruptor **«Recibir aviso cuando te escriban»** te avisa por WhatsApp al número vinculado (o por SMS si WhatsApp no está disponible) cuando te escriben y no estás en StockAI. Viene apagado y necesita tu número de WhatsApp vinculado primero, algo que se hace en el plan completo.' },
+        { t: 'note', tone: 'info', title: 'Detalles que conviene saber', text: 'La lista se actualiza sola cada 15 segundos y el hilo abierto cada 5, así que un mensaje nuevo puede tardar unos segundos en aparecer. No hay «escribiendo…» ni confirmación de lectura. Los usuarios de solo lectura también pueden escribir y recibir mensajes: el límite es la empresa, no el rol.' },
+      ],
+    },
+
+    // ── Alertas diarias ────────────────────────────────────────────────────
+    'uso-diario/alertas-diarias': {
+      title: 'Alertas diarias y resúmenes',
+      nav: 'Alertas diarias',
+      description:
+        'Lo que StockAI te manda sin que abras la app: el aviso diario de productos en riesgo, los proveedores que se atrasan, el recordatorio de datos viejos y el resumen del mes.',
+      blocks: [
+        { t: 'p', text: 'StockAI revisa tu inventario todos los días a las **8:00 UTC** (las 2:00 en Costa Rica) y avisa a quien puede actuar. Si el servidor estaba apagado a esa hora, la revisión se hace en cuanto vuelve, sin saltarse el día.' },
+        { t: 'h2', id: 'what', text: 'Qué se envía' },
+        { t: 'dl', items: [
+          ['Aviso de quiebre', 'Solo si hay productos en **Pedir YA** o **Pedir pronto**. El correo trae SKU, nombre, señal, cobertura, cuánto pedir y proveedor, con un botón para abrir el inventario. Un día sin productos en riesgo no llega nada.'],
+          ['Proveedores que se atrasan', 'Cuando un proveedor está tardando más que su propio historial. Se envía aunque el stock se vea sano, que es justo cuando importa.'],
+          ['Datos desactualizados', 'Un recordatorio cuando tu archivo de ventas o tu stock lleva demasiado tiempo sin actualizarse y el semáforo ya no puede confirmar cuánto te queda.'],
+          ['Resumen mensual', 'El primer día de cada mes, el recuento del mes que cerró (órdenes, adopción, sobrestock). No se envía si ese mes no hubo órdenes o falta historial. Es el mismo que ves en [Impacto](/docs/analisis/impacto).'],
+        ] },
+        { t: 'h2', id: 'who', text: 'Quién lo recibe' },
+        { t: 'ul', items: [
+          '**Por correo**: todos los administradores y analistas de la empresa. Los usuarios de solo lectura no, porque el aviso es una llamada a actuar.',
+          '**Por WhatsApp** (en el plan completo): los administradores y analistas que tengan un número en **«WhatsApp (alertas de inventario)»** en [Mi cuenta](/docs/administracion/mi-cuenta). Con varias bodegas, el mensaje suma cuántos traslados se sugieren.',
+        ] },
+        { t: 'note', tone: 'info', title: 'Cómo dejar de recibirlo', text: 'No hay un interruptor para el correo: cada administrador y analista lo recibe. Para dejar de recibirlo por WhatsApp (plan completo), deja vacío el campo de WhatsApp en Mi cuenta. El interruptor «Recibir aviso cuando te escriban» es para [Mensajes](/docs/uso-diario/mensajes), no para estas alertas.' },
+        { t: 'p', text: 'El correo sale por el canal configurado en la instalación, o por el de tu empresa si lo configuraste en «Mis canales» de [Instalación](/docs/administracion/instalacion). Sin correo ni WhatsApp configurados, los envíos no salen: ver [Correo](/docs/integraciones/correo) y [WhatsApp](/docs/integraciones/whatsapp).' },
+        { t: 'h2', id: 'bell', text: 'La campana y «Qué ha pasado»' },
+        { t: 'p', text: 'Cada envío —el que salió y el que falló— queda registrado. La campana de la barra superior junta lo importante (lo crítico y lo que pide atención, incluidos los envíos fallidos y los entrenamientos que terminaron o fallaron), y la pantalla [Qué ha pasado](/docs/analisis/actividad) guarda el historial completo, filtrable por tema e importancia, para cualquier rol.' },
+        { t: 'note', tone: 'warn', title: 'Si un día no te llegó nada', text: 'Revisa primero «Qué ha pasado»: si el envío falló, ahí aparece con el motivo. Si no hay nada, lo más probable es que ese día no hubiera productos en Pedir YA ni Pedir pronto.' },
+      ],
+    },
+  },
+
+  en: {
+    // ── Purchasing panel ───────────────────────────────────────────────────
+    'uso-diario/panel-de-compras': {
+      title: 'Purchasing Panel',
+      description:
+        'The screen you start the day with: what to order today, what can wait until this week, how much and from which supplier. You approve line by line and save the purchase order.',
+      blocks: [
+        { t: 'p', text: 'The [Purchasing Panel](app:/compras) combines the demand forecast with the stock you have on file and hands you a short list of decisions. It is also the screen the installed phone app opens on.' },
+        { t: 'shot', key: 'panel', alt: 'Purchasing Panel with the day’s indicators, the "Urgent — act today" list and the purchase-order cart' },
+        { t: 'h2', id: 'top-of-screen', text: 'What you see at the top' },
+        { t: 'ul', items: [
+          'The greeting with how many actions are pending today, the date and the **"Update in use"**: the name of the sales upload everything on screen was computed from.',
+          'If your stock or sales have gone many days without an update, **"The signal is out of date"** appears. Until then the screen shows no green: it would rather say it cannot see than say everything is fine without knowing.',
+          'If part of the calculation uses values you never gave us (the 15-day lead time, the 95% service level, the minimum order of 1), you see **"These recommendations use N assumptions of ours — review them"** with a link to what to set up first.',
+          'Supplier notices: suppliers **taking longer than usual**, and orders whose arrival date has passed (**"Did these orders arrive?"**), with a **"Record arrival"** button.',
+        ] },
+        { t: 'h3', id: 'indicators', text: 'The four indicators' },
+        { t: 'dl', items: [
+          ['Products watched', 'How many products the update in use covers.'],
+          ['Risk today', 'How many products are at **Order NOW**.'],
+          ['This week', 'How many products are at **Order soon**.'],
+          ['Warehouse value', 'Current stock times unit cost, summed. With no cost on file it shows "—": the value is unknown, not zero.'],
+        ] },
+        { t: 'note', tone: 'warn', title: 'A zero that does not mean "no risk"', text: 'If no product has stock on file, the figures do not say "no risk" — they say "we do not know", and the screen says so. Products with no count are left out of the purchase suggestions; the "N product(s) still need counting" block takes you to record them.' },
+        { t: 'p', text: 'Below comes the **"Executive summary of the day"**, a paragraph that explains the situation in words. With two or more warehouses, transfer suggestions appear before the purchases: moving stock between warehouses avoids a purchase, so it is offered first (see [Warehouses and transfers](/docs/uso-diario/bodegas-y-traslados)).' },
+        { t: 'h2', id: 'cards', text: 'The cards: "Urgent — act today" and "This week"' },
+        { t: 'p', text: '"Urgent — act today" lists the products at **Order NOW** and "This week" those at **Order soon**. Each card carries the product, its signal, the reason, the supplier and the suggested quantity next to **"Order:"**. If what is already on the way covers the need, the card says so ("Covered by what is already on the way") instead of having you buy twice; if the product is already on an order, it is marked "Ordered on {order}".' },
+        { t: 'dl', items: [
+          ['Order:', 'The suggested quantity. Click the number and type another; the line is marked as modified.'],
+          ['Supplier:', 'A dropdown to send that line to a different supplier before saving the order.'],
+          ['Approve / Reject', 'Approve puts the line in the cart. Reject takes it out and records that you did not follow the recommendation. **Undo** and **Restore** reverse each one.'],
+          ['Why?', 'Opens the breakdown: current coverage, forecasted daily demand, supplier lead time (and whether it was learned from their real deliveries or configured by you), service level, unit cost, minimum order, current stock and reorder point. Values nobody configured are tagged "estimated".'],
+        ] },
+        { t: 'p', text: 'For the rule that gives each product its colour, read [The stock signal](/docs/conceptos/semaforo) and [Reorder point](/docs/conceptos/punto-de-reorden).' },
+        { t: 'h2', id: 'cart', text: 'The cart and the purchase order' },
+        { t: 'p', text: 'When you approve the first line, the cart appears at the bottom: how many products you approved, the total (lines with no cost are left out of the total and counted separately) and **"This order protects … in sales with … in margin"**, computed only from lines with a sale price and a cost. Two panels can appear next to the cart:' },
+        { t: 'ul', items: [
+          '**"Worth increasing the quantity"**: when a supplier has [price breaks](/docs/uso-diario/proveedores#price-breaks) and ordering more pays for the cost of holding the extra. **"Increase quantity"** changes the line’s quantity *and* unit price, so the saving reaches the order, the supplier PDF and the payments calendar.',
+          '**"Cash — accounts payable"**: what falls due this week under your suppliers’ payment terms, and whether the recommended purchase fits the cash you type in.',
+        ] },
+        { t: 'steps', items: [
+          'Review the cards and adjust quantities or suppliers where needed.',
+          'Press **"Approve"** on what you will order and **"Reject"** on what you will not.',
+          'With several warehouses, pick the destination under **"Deliver to"**.',
+          'Press **"Download purchase order"**. The button changes to "Saving the order…" and ignores a second tap while it saves.',
+          'When it finishes you see "Order {number} saved": the products already count as on the way and the file downloads so you can send it to the supplier. The "View orders" link takes you to [Orders](/docs/uso-diario/pedidos).',
+          'In the **"Purchase order generated"** panel, press **"Send to suppliers now"** if you want StockAI to email or WhatsApp it, or do it later from Orders.',
+        ] },
+        { t: 'note', tone: 'info', title: 'One cart, one order', text: 'If the connection drops and you press the button again with the same cart, StockAI does not create a second order: it answers "This order was already saved; no second one was created.". Each submission carries a unique key the server remembers.' },
+        { t: 'h2', id: 'below', text: 'Further down the screen' },
+        { t: 'dl', items: [
+          ['Suggested purchases and transfers', 'The optimizer’s plan: what to buy and what to move to cover the horizon at the lowest total cost. Its quantities can differ from the cards: the cards answer "order it today", the plan covers from each order’s arrival to the end. **"Convert to PO"** turns a line into a purchase order.'],
+          ['Get ahead — upcoming demand peaks', 'Peaks the forecast sees before the signal turns red.'],
+          ['Demand changes', 'Products whose real sales are running above or below the forecast.'],
+          ['System recommendations', 'One sentence per product with a suggested action, such as issuing an urgent order or pausing the next one.'],
+          ['Capital opportunities', 'How much money sits in products with excessive coverage, and which ones.'],
+        ] },
+        { t: 'note', tone: 'info', title: 'Depending on your role', text: 'A read-only user sees every recommendation but cannot approve them or save orders. See [Users and roles](/docs/administracion/usuarios-y-roles).' },
+      ],
+    },
+
+    // ── Orders ─────────────────────────────────────────────────────────────
+    'uso-diario/pedidos': {
+      title: 'Orders',
+      description:
+        'All your purchase orders: send them to the supplier, record what arrives (partially or in full), mark them as paid, cancel them and undo what you recorded by mistake.',
+      blocks: [
+        { t: 'p', text: '[Orders](app:/pedidos) ("Generated orders and reception tracking") holds every order you saved from the Purchasing Panel, from Inventory or by hand. Recording an arrival is not paperwork: it is what raises your stock and what teaches StockAI how long each supplier really takes.' },
+        { t: 'shot', key: 'pedidos', alt: 'Orders screen with the table of orders, their reception status and the buttons to record arrival and send' },
+        { t: 'h2', id: 'list', text: 'The list of orders' },
+        { t: 'p', text: 'At the top right are the **"N awaiting reception"** counter and the **"New order"** button. Each row shows **Order**, **Date & time**, **SKUs in order**, **Urgent** (lines that were at Order NOW), **Upcoming** (at Order soon), **Total units**, **Total value** ("—" when the lines had no cost) and **Reception**. The **"Payment"** filter shows All, Unpaid, Paid or Cancelled. With two or more warehouses the screen has two tabs: "Purchase orders" and "Transfers".' },
+        { t: 'h3', id: 'reception-states', text: 'Reception states' },
+        { t: 'dl', items: [
+          ['On the way', 'Nothing recorded yet. It is also the state of an order whose arrival was never recorded: the absence of a record does not prove it arrived.'],
+          ['Partial', 'Part of it arrived. The order keeps the button to record the rest.'],
+          ['Received', 'Everything ordered arrived.'],
+          ['Did not arrive', 'You marked that the delivery did not happen. It is neither final nor a cancellation: the order is still awaiting reception and you can record the goods if they turn up later.'],
+        ] },
+        { t: 'p', text: 'While an order is On the way, Partial or Did not arrive, its outstanding units count as [on the way](/docs/conceptos/en-camino) and are subtracted from what the Panel suggests you order.' },
+        { t: 'h2', id: 'receive', text: 'Recording an arrival' },
+        { t: 'steps', items: [
+          'Press **"Log arrival"** on the order’s row.',
+          'The window lists each product with **Ordered**, **Received before** and **Arriving now**; the last one is prefilled with what is outstanding.',
+          'If everything arrived, press **"Everything arrived"**. If part arrived, correct "Arriving now" line by line (leave what did not arrive at zero) and press **"Save quantities"**.',
+          'Each product’s stock rises in the destination warehouse and the order moves to Received or Partial.',
+        ] },
+        { t: 'note', tone: 'info', title: 'How the lead time is learned', text: 'When an order becomes **Received**, StockAI records how many days passed from the order to the arrival of its last units. Once a supplier has 3 recorded deliveries, that average replaces the configured lead time. An order that never completes teaches nothing. More in [Learned lead time](/docs/conceptos/tiempo-de-entrega-aprendido).' },
+        { t: 'h2', id: 'send', text: 'Sending the order to your suppliers' },
+        { t: 'p', text: '**"Send order"** sends the order as a PDF, by email or WhatsApp, to each supplier on its lines. Before sending it shows who will receive it and who **"Will be skipped (no email/WhatsApp on file)"**, and only then asks you to confirm. If someone was left out you see "Partially sent — check skipped suppliers"; if nobody had contact details, "Could not send — no supplier has contact info on file". Sending requires a verified email address.' },
+        { t: 'p', text: 'For skipped suppliers, or if you prefer to send it yourself: **"Send to my WhatsApp"** sends it to your own number, **"Open in WhatsApp"** opens WhatsApp with the message ready and **"Copy message"** puts it on the clipboard. Fill in the email or WhatsApp on the [supplier’s card](/docs/uso-diario/proveedores) so it goes out on its own next time.' },
+        { t: 'h2', id: 'paid-cancel', text: 'Paid, cancelled and reopened' },
+        { t: 'dl', items: [
+          ['Mark as paid', 'Only on an order that has been sent. The order leaves the payments calendar and carries the "Paid" badge. **"Unmark paid"** turns it back into a debt with its original due date.'],
+          ['Cancel order', 'Only while nothing has arrived (On the way or Did not arrive) and it is not paid; if it is paid, unmark the payment first. Its units stop counting as on the way — the Panel may suggest them again — and it leaves the overdue receptions and the payments calendar. If you already sent it to the supplier, tell them yourself: StockAI does not write to them.'],
+          ['Reopen order', 'Undoes the cancellation: it counts again as on the way, in pending receptions and in the payments calendar. A cancelled order cannot be received, sent or marked as paid until you reopen it.'],
+        ] },
+        { t: 'h2', id: 'undo', text: 'Undoing what you recorded by mistake' },
+        { t: 'dl', items: [
+          ['Undo reception', 'Undoes the order’s whole recorded reception, not just the last delivery: the units leave your warehouse again, the order is pending again, and what that reception taught StockAI about the supplier’s lead time is erased. If you already sold some of those units, StockAI refuses and names the product and warehouse that fall short.'],
+          ['Undo send', 'Marks the order as not sent and takes it out of the payments calendar. It still counts as on the way. The email or WhatsApp already sent cannot be recalled: this only corrects what StockAI has on record. Not possible after a reception or while the order is paid.'],
+        ] },
+        { t: 'note', tone: 'warn', title: 'A saved order is not deleted', text: 'There is no "delete order". If you created one by mistake, cancel it: it stops counting as on the way and the record of what happened stays.' },
+        { t: 'h2', id: 'manual-order', text: 'Creating an order by hand' },
+        { t: 'steps', items: [
+          'Press **"New order"**.',
+          'Pick the supplier and, with several warehouses, the **"Destination warehouse"**.',
+          'Type the SKU, quantity and — if you have it — the unit cost of each line; **"Add product"** adds lines.',
+          'Press **"Create order"**. It needs no forecast, and it is received like any other order.',
+        ] },
+        { t: 'note', tone: 'info', title: 'Depending on your role', text: 'Receiving, sending, marking paid, cancelling, undoing and creating orders require the analyst or admin role. A read-only user sees the list but not those buttons.' },
+      ],
+    },
+
+    // ── Inventory ──────────────────────────────────────────────────────────
+    'uso-diario/inventario': {
+      title: 'Inventory',
+      description:
+        'The full list of your products with their signal, how much to order and where that number comes from; where you correct stock, supplier, cost and lead time, and the views that look at your money.',
+      blocks: [
+        { t: 'p', text: '[Inventory](app:/inventario) is the full stock signal, product by product. Whatever you correct here — stock, supplier, lead time, cost, sale price, minimum order — shows up immediately on the Purchasing Panel.' },
+        { t: 'shot', key: 'inventory', alt: 'Inventory screen with the signal cards at the top and the product table with coverage and quantity to order' },
+        { t: 'h2', id: 'cards', text: 'Cards that also filter' },
+        { t: 'p', text: 'At the top there is a plain-language status sentence and a row of cards — **Total SKUs**, **Order NOW**, **Order soon**, **OK**, **Overstock** and **Inventory value**. Click a signal card and the table shows only that signal. If some products you uploaded were left out of the forecast, a notice lists them with the reason (for example, less history than required).' },
+        { t: 'h2', id: 'views', text: 'The views' },
+        { t: 'p', text: 'The view selector changes what the screen shows:' },
+        { t: 'dl', items: [
+          ['Table', 'The full view, with every column.'],
+          ['Simple', 'The same, reduced to product, signal, quantity to order and supplier.'],
+          ['Provider', 'Products grouped by supplier, with how many urgent and upcoming each one has.'],
+          ['Update stock', 'An editable table of stock, lead days and supplier to correct many products and save them at once. Only for users who can edit.'],
+          ['Money not moving', 'Products whose stock has not gone down in a long time, ranked by how much money they represent. A product with no cost does not count as zero: it says it has no cost and goes last. Needs no forecast.'],
+          ['Rising costs', 'Your suppliers ranked by how much their prices went up, based on what you actually paid on each reception.'],
+          ['Shrinking margin', 'Your products ranked by how many points of margin they lost, using today’s sale price and the cost at the time.'],
+          ['Forecast in money', 'What the forecast expects you to sell, times today’s price and cost: projected sales and margin.'],
+          ['Cost of ignoring', 'What happened after each alert: whether you ordered in time, probably ran out of stock, or whether it cannot be told from what you have on record.'],
+        ] },
+        { t: 'note', tone: 'info', title: 'Today’s prices, past costs', text: 'StockAI keeps the history of your costs (every reception) but only today’s sale price. That is why "Shrinking margin" can only point at a cost increase — never a price cut — and "Cost of ignoring" and "Forecast in money" value things at the current price.' },
+        { t: 'h2', id: 'table', text: 'The table' },
+        { t: 'dl', items: [
+          ['Signal', 'Order NOW, Order soon, OK, Overstock or No data. The rule is in [The stock signal](/docs/conceptos/semaforo).'],
+          ['SKU / Name', 'The code, the name and, in small print, the supplier.'],
+          ['Stock', 'Units in the warehouse today.'],
+          ['Trend', 'How your stock moved over the last 14 days.'],
+          ['Days of coverage', 'How long your stock lasts at the forecast pace.'],
+          ['Sales until arrival', 'How much you expect to sell while you wait for your order.'],
+          ['Qty to order', 'What you should order today. It can be edited with a click, but that number is only used when you download "Export PO (edited)": it does not change the product.'],
+          ['Delivery (days)', 'The lead time in use, and where it comes from: configured, learned or estimated.'],
+          ['MOQ', 'Minimum order. We never suggest less; above it we order what is needed, not a case multiple.'],
+          ['ABC-XYZ', 'A/B/C is revenue importance; X/Y/Z, how predictable demand is. AZ is the most delicate case.'],
+          ['Warehouse value', 'Stock times unit cost. Only shown when you recorded the cost.'],
+        ] },
+        { t: 'p', text: 'The ▶ arrow at the start of the row (**"Show calculation"**) opens the step-by-step subtraction: average daily sales × lead days, + safety cushion, − current stock, − what is already on the way, and the adjustment to the minimum order. Below it, "Why it changed" says whether the change since last time came from the forecast or from something in your business, such as your stock, your lead time or an event.' },
+        { t: 'p', text: 'The icons at the end of the row open the **simulator** (sliders for lead time, demand change and extra stock; it saves nothing) and the **product editor**, where you change name, category, stock, supplier, lead time, minimum order, cost, sale price and service level.' },
+        { t: 'h2', id: 'toolbar', text: 'Downloading, importing and logging stock-outs' },
+        { t: 'dl', items: [
+          ['Download', 'A menu with **Template** (an empty CSV with the right columns), **Export PO** (the order StockAI computes), **Export PO (edited)** (with the quantities you edited in the table) and **Executive summary (PDF)**. Both PO exports record the order in Orders.'],
+          ['More actions', 'A menu with **Refresh**, **Import stock (CSV)** and **Log stock-out**. The last two only for users who can edit.'],
+          ['Log stock-out', 'Takes out units that left for a reason other than a sale — breakage or damage, expiry, own use, gift or sample. Stock drops immediately and the cost adds up in the shrinkage summary.'],
+        ] },
+        { t: 'p', text: 'To load all your stock at once from your system’s file, the easiest route is [Set up inventory](/docs/primeros-pasos/configurar-inventario), which recognises the columns for you.' },
+        { t: 'h2', id: 'events', text: 'Events and seasons' },
+        { t: 'p', text: 'At the foot of the screen, **"Events and seasons"** records peak seasons — Black Friday, Easter week, year end — with a demand multiplier and, optionally, a SKU or a category. It is not an exercise: as soon as you save the event, the quantity to order changes for the products it touches. The effect is proportional to how many days of their lead time fall inside the event, so a one-week event moves a 30-day supplier far less than a 5-day one. Several events on the same product combine.' },
+        { t: 'h2', id: 'warehouses', text: 'If you have several warehouses' },
+        { t: 'p', text: 'With two or more warehouses a selector appears ("All" or one warehouse); pick one and the table shows that warehouse’s signal with transfer suggestions. See [Warehouses and transfers](/docs/uso-diario/bodegas-y-traslados).' },
+        { t: 'note', tone: 'warn', title: '"No data" is not an error', text: 'It is a product missing its stock or its forecast. It stays out of the recommendations because how much to order depends precisely on how much you have left. See [No data](/docs/solucion-de-problemas/sin-datos).' },
+      ],
+    },
+
+    // ── Warehouses and transfers ───────────────────────────────────────────
+    'uso-diario/bodegas-y-traslados': {
+      title: 'Warehouses and transfers',
+      description:
+        'How to create warehouses, split demand between them and move stock from one to another before buying, with its dispatch, its arrival and what happens if something is lost on the way.',
+      blocks: [
+        { t: 'p', text: 'Every account starts with one warehouse, the **main** one (`principal`): orders land there when you pick no destination. If you run more than one, StockAI computes each warehouse’s signal and suggests moving stock from where it is spare to where it is short before buying.' },
+        { t: 'h2', id: 'create', text: 'Creating a warehouse' },
+        { t: 'p', text: 'In [Inventory](app:/inventario), with a single warehouse you see a discreet **"Add warehouse"** button. With two or more, the warehouse row appears and, next to it, the **"Warehouse setup"** menu with three entries: **"Demand split"**, **"Transfer lanes"** and **"Add warehouse"**. Creating and configuring warehouses requires the analyst or admin role.' },
+        { t: 'note', tone: 'info', title: 'Plan limit', text: 'The free plan allows 1 warehouse; the Full plan, 2; the Corporate plan has no ceiling. Trying to create one more than your plan allows opens the dialog to write to us. See [Plan limits](/docs/administracion/limites-del-plan).' },
+        { t: 'h3', id: 'demand-split', text: 'Demand split' },
+        { t: 'p', text: 'What share of sales leaves from each warehouse. Until you set it, StockAI assigns all demand to the main warehouse and reminds you. A warehouse left without a percentage receives no demand and drops out of planning; the editor tells you which ones would before you save.' },
+        { t: 'h3', id: 'lanes', text: 'Transfer lanes' },
+        { t: 'p', text: 'For each pair of warehouses you can state how many days a move takes and what it costs (per unit and fixed). The Purchasing Panel’s optimizer uses them to decide whether transferring or buying is cheaper.' },
+        { t: 'h2', id: 'suggestions', text: 'Transfer suggestions' },
+        { t: 'p', text: 'On the [Purchasing Panel](/docs/uso-diario/panel-de-compras), before the purchases, you see how many products can be solved by moving stock instead of buying: another warehouse has a surplus of them. Each line says how much to move, from where to where and how much coverage the origin keeps. In Inventory, when looking at one warehouse, the row can offer to transfer N from another warehouse, or to move N and buy the rest.' },
+        { t: 'steps', items: [
+          'Press **"Create transfer"** on the suggestion.',
+          'The transfer starts **In transit**: the origin warehouse loses the units at that moment.',
+          'The units count as on the way for the destination warehouse (not the origin), so its signal does not ask for them again.',
+          'When they arrive, record the arrival in Orders, **"Transfers"** tab.',
+        ] },
+        { t: 'h2', id: 'transfer-states', text: 'Transfer states and actions' },
+        { t: 'dl', items: [
+          ['In transit', 'It left the origin and nothing has arrived. You can **"Cancel transfer"**: the stock goes back to the origin warehouse.'],
+          ['Partial', 'Part of it arrived. Partial arrivals add up. If the rest will not arrive, **"Close with loss"** records the outstanding units as shrinkage (lost in transit).'],
+          ['Received', 'Everything arrived.'],
+          ['Cancelled', 'Cancelled before anything was received; the stock went back to the origin.'],
+          ['Closed with loss', 'Closed with units lost on the way, already recorded as shrinkage.'],
+        ] },
+        { t: 'p', text: 'To record the arrival press **"Record arrival"** and choose **"Everything arrived"** or **"Record quantities"**.' },
+        { t: 'note', tone: 'info', title: 'Where the tab is', text: 'The "Purchase orders" and "Transfers" tabs in Orders only appear when you have two or more warehouses.' },
+        { t: 'h2', id: 'po-destination', text: 'Purchase orders with a destination' },
+        { t: 'p', text: 'With several warehouses, the Purchasing Panel’s cart asks **"Deliver to"** and the manual order asks for a **"Destination warehouse"**. When you record the arrival, the stock rises in that warehouse. When you import stock by CSV, rows go into the warehouse you are looking at, unless the file carries its own warehouse column.' },
+      ],
+    },
+
+    // ── Suppliers ──────────────────────────────────────────────────────────
+    'uso-diario/proveedores': {
+      title: 'Suppliers and scorecard',
+      nav: 'Suppliers',
+      description:
+        'Record who you buy from so you can send them orders; StockAI learns their real lead time from your receptions and measures what they promise against what they deliver.',
+      blocks: [
+        { t: 'p', text: 'A supplier is whoever sells you each product. Recording them under [Suppliers](app:/proveedores) is what turns a stock alert into an order you can send, and what lets you measure them later.' },
+        { t: 'shot', key: 'proveedores', alt: 'Suppliers screen with the supplier table, their lead time, variability and learning column' },
+        { t: 'h2', id: 'form', text: 'The supplier card' },
+        { t: 'p', text: 'Press **"Add supplier"**. Only the name is required; type it exactly as you use it on your products (it is matched ignoring capitalisation).' },
+        { t: 'dl', items: [
+          ['Name', 'The key that ties products, receptions and the scorecard together.'],
+          ['Email (to send PO)', 'Where purchase orders go out to from StockAI.'],
+          ['Phone / WhatsApp', 'Contact details. With WhatsApp, orders can go out there too. With no email and no WhatsApp, sending orders skips this supplier.'],
+          ['Payment terms', 'Contado, 15 días, 30 días, 60 días, 90 días or Otro (the options are written in Spanish in both languages). They feed the Purchasing Panel’s cash calendar.'],
+          ['Lead time (days)', 'Days from order to arrival. Leave it empty and 15 days are assumed. It applies to every product of theirs without its own.'],
+          ['Variability (days)', 'How much that time can vary: if it says 15 but sometimes arrives in 18, put 3. It starts at 3. More variability means more [safety stock](/docs/conceptos/stock-de-seguridad).'],
+          ['Order frequency (days)', 'How often you order from them. If you order weekly, put 7. Empty means you order without a fixed rhythm. It makes the suggested quantity last until your next order can arrive.'],
+          ['Notes', 'Free text for you.'],
+        ] },
+        { t: 'h3', id: 'payment-terms', text: 'How payment terms are read' },
+        { t: 'p', text: 'The cash calendar interprets the text: "contado", "contra entrega", "anticipo", "prepago" and "COD" mean 0 days; "N meses" means N × 30; "quincenal" means 15; and in text like "30 días" or "net 30" the first number is taken. What is not understood — instalments like "2x30" or "30/60/90", ranges like "30-45 días", "a convenir" — stays as an unknown term and is reported as such, rather than filled with an invented number.' },
+        { t: 'h2', id: 'learning', text: 'The "Learning" column' },
+        { t: 'p', text: 'It says where StockAI stands with each supplier: no deliveries yet, "n of 3 deliveries recorded…", "Learned from n deliveries: X days on average — that is the number we plan with", or the case where every delivery arrived the same day it was ordered and says nothing. With 3 completed receptions, the learned time takes over from the configured one. See [Learned lead time](/docs/conceptos/tiempo-de-entrega-aprendido).' },
+        { t: 'h2', id: 'price-breaks', text: 'Price breaks' },
+        { t: 'p', text: 'The tag icon on each row expands **"Price breaks"**: from a **Min. quantity** on, each unit costs the given **Unit price**, per SKU. Press **"Add tier"** for each rung. On the Purchasing Panel, when ordering more pays for the cost of holding the extra without leaving you overstocked, "Worth increasing the quantity" appears, and "Increase quantity" applies both quantity and price to the order.' },
+        { t: 'h2', id: 'scorecard', text: 'Supplier scorecard' },
+        { t: 'p', text: 'The **"Scorecard"** button opens the comparison between what each supplier promises and what they deliver, built only from the receptions you recorded: a supplier with no recorded arrival has no row.' },
+        { t: 'shot', key: 'scorecard', alt: 'Supplier scorecard with receptions, real versus declared lead time, on-time percentage and fill rate' },
+        { t: 'dl', items: [
+          ['Receptions', 'How many of their arrivals you have recorded: the sample size behind the row.'],
+          ['Real lead time', 'The observed range, minimum to maximum; never an average that hides the spread.'],
+          ['Declared', 'The lead time on their card. A dash if nobody filled it in: the 15 days StockAI assumes are not a promise from the supplier.'],
+          ['Trend', 'Whether their recent lead time stepped outside their own normal range. Shows the days of drift, "Stable" or "Not yet".'],
+          ['% On time', 'Deliveries whose real time was at or below the declared one. Blank with no declared time. Green from 70%, amber from 40%.'],
+          ['% Fill rate', 'How much of what you ordered arrived, capped at 100%: an excess is not a merit.'],
+          ['Purchased value', 'What you bought from them, summing lines with a cost. A dash if none had one; "≥" in front if only some did.'],
+          ['Last reception', 'The date of the most recent arrival.'],
+        ] },
+        { t: 'note', tone: 'info', title: 'Stricter about accusing than adjusting', text: '3 receptions are enough to learn a lead time, but the "Trend" column needs at least 6 (2 recent and 4 baseline) before it flags a supplier for running late. When one drifts, the Panel and Orders show "Suppliers taking longer than usual".' },
+      ],
+    },
+
+    // ── Messages ───────────────────────────────────────────────────────────
+    'uso-diario/mensajes': {
+      title: 'Messages',
+      description:
+        'One-to-one conversations with the people in your company, inside StockAI, to coordinate what happens around a purchase without leaving for another app.',
+      blocks: [
+        { t: 'p', text: '[Messages](app:/mensajes) is for "I confirmed with the supplier" or "I cut that quantity in half", with the context at hand. There are no groups or channels: only conversations between two people, always inside your own company.' },
+        { t: 'shot', key: 'mensajes', alt: 'Messages screen with the conversation list on the left and an open thread on the right' },
+        { t: 'h2', id: 'layout', text: 'How it is laid out' },
+        { t: 'ul', items: [
+          'On the left, the title with **"N on your team"**, the **"Search for a person…"** box and your conversations, newest first, with the time and a preview of the last message.',
+          'A conversation with unread messages is shown in bold with a counter on the right.',
+          'On the right, the open thread: your messages aligned right, the other person’s left, each with its time. With no conversation picked it says "Pick a conversation".',
+          'In the app’s top bar, an envelope shows the total of unread messages ("99+" past ninety-nine) and brings you here from any screen.',
+        ] },
+        { t: 'h2', id: 'write', text: 'Writing to someone' },
+        { t: 'steps', items: [
+          'Type their name or email into "Search for a person…".',
+          'Find them under **"Write to them for the first time"**, which only appears while you search.',
+          'Click their name: the thread opens with "This is the start of the conversation".',
+          'Type into "Write a message…" and press Enter. Each message takes up to 4,000 characters.',
+        ] },
+        { t: 'p', text: 'When you open a conversation, what they sent you is marked as read and the counter disappears, the envelope’s too.' },
+        { t: 'h2', id: 'notify', text: 'A heads-up when someone writes' },
+        { t: 'p', text: 'In [My account](/docs/administracion/mi-cuenta), **"Team messages"** section, the **"Get a heads-up when someone writes to you"** switch notifies you by WhatsApp on your linked number (or by SMS if WhatsApp is unavailable) when someone writes while you are not in StockAI. It starts off and needs your WhatsApp number linked first, which is done on the Full plan.' },
+        { t: 'note', tone: 'info', title: 'Details worth knowing', text: 'The list refreshes by itself every 15 seconds and the open thread every 5, so a new message can take a few seconds to show. There is no "typing…" and no read receipt. Read-only users can also send and receive messages: the boundary is the company, not the role.' },
+      ],
+    },
+
+    // ── Daily alerts ───────────────────────────────────────────────────────
+    'uso-diario/alertas-diarias': {
+      title: 'Daily alerts and summaries',
+      nav: 'Daily alerts',
+      description:
+        'What StockAI sends you without opening the app: the daily notice of products at risk, suppliers running late, the stale-data reminder and the monthly recap.',
+      blocks: [
+        { t: 'p', text: 'StockAI checks your inventory every day at **8:00 UTC** (2:00 in Costa Rica) and notifies whoever can act. If the server was down at that time, the check runs as soon as it is back, without skipping the day.' },
+        { t: 'h2', id: 'what', text: 'What is sent' },
+        { t: 'dl', items: [
+          ['Stockout notice', 'Only when products are at **Order NOW** or **Order soon**. The email lists SKU, name, signal, coverage, how much to order and supplier, with a button to open the inventory. A day with no products at risk sends nothing.'],
+          ['Suppliers running late', 'When a supplier is taking longer than their own history. Sent even when stock looks healthy, which is exactly when it matters.'],
+          ['Stale data', 'A reminder when your sales file or your stock has gone too long without an update and the signal can no longer confirm how much you have left.'],
+          ['Monthly recap', 'On the first day of each month, the summary of the month that closed (orders, adoption, overstock). Not sent if that month had no orders or history is missing. It is the same one you see in [Impact](/docs/analisis/impacto).'],
+        ] },
+        { t: 'h2', id: 'who', text: 'Who receives it' },
+        { t: 'ul', items: [
+          '**By email**: every admin and analyst in the company. Read-only users do not, because the notice is a call to act.',
+          '**By WhatsApp** (on the Full plan): admins and analysts with a number under **"WhatsApp (inventory alerts)"** in [My account](/docs/administracion/mi-cuenta). With several warehouses, the message adds how many transfers are suggested.',
+        ] },
+        { t: 'note', tone: 'info', title: 'How to stop receiving it', text: 'There is no switch for the email: every admin and analyst receives it. To stop it on WhatsApp (Full plan), leave the WhatsApp field in My account empty. The "Get a heads-up when someone writes to you" switch is for [Messages](/docs/uso-diario/mensajes), not for these alerts.' },
+        { t: 'p', text: 'Email goes out through the installation’s channel, or your company’s if you set one under "My channels" in [Installation](/docs/administracion/instalacion). With no email or WhatsApp configured, nothing goes out: see [Email](/docs/integraciones/correo) and [WhatsApp](/docs/integraciones/whatsapp).' },
+        { t: 'h2', id: 'bell', text: 'The bell and "What happened"' },
+        { t: 'p', text: 'Every send — the ones that went out and the ones that failed — is recorded. The bell in the top bar gathers what matters (critical items and those needing attention, including failed sends and trainings that finished or failed), and the [What happened](/docs/analisis/actividad) screen keeps the full history, filterable by topic and importance, for every role.' },
+        { t: 'note', tone: 'warn', title: 'If nothing arrived one day', text: 'Check "What happened" first: if the send failed, it is there with the reason. If there is nothing, most likely no products were at Order NOW or Order soon that day.' },
+      ],
+    },
+  },
+}

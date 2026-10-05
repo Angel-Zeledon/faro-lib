@@ -1,4 +1,4 @@
-# Faro frontend — production Next.js standalone build.
+# StockAI frontend — production Next.js standalone build.
 # Build context is the Frontend/ directory:
 #   docker build --build-arg BACKEND_URL=http://api:8010 Frontend/
 #
@@ -14,12 +14,26 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /app
 ARG BACKEND_URL=http://api:8010
+# The app's public origin when the landing lives on another domain (see
+# src/lib/siteUrls.ts). Empty = single domain, links stay relative.
+ARG NEXT_PUBLIC_APP_URL=
+# The landing's own public origin, for canonical URLs, the sitemap and the
+# preview image search engines and chat apps fetch (src/lib/siteUrls.ts).
+ARG NEXT_PUBLIC_SITE_URL=
+# Google Search Console's verification token (the content="" of the HTML-tag
+# method). Optional; empty renders no tag. See src/app/layout.tsx.
+ARG NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=
 ENV BACKEND_URL=$BACKEND_URL \
+    NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
+    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
+    NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=$NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# One id for the whole build (see next.config.mjs): the running app compares it
+# with the one an open tab was loaded with and reloads when a deploy replaced it.
+RUN export BUILD_ID="$(date +%s)" && npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app

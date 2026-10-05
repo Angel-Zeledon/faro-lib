@@ -27,11 +27,22 @@ export function transferReasonText(
       Math.round(days) === 1 ? 'hoy.reason_day_unit_singular' : 'hoy.reason_days_unit',
     ),
   }
-  return Object.entries(params).reduce(
-    (text, [key, value]) =>
+  const text = Object.entries(params).reduce(
+    (acc, [key, value]) =>
       value == null
-        ? text
-        : text.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value)),
+        ? acc
+        : acc.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value)),
     template,
   )
+
+  // An unconfigured pair resolves to transfer_lane_service's fallback — 1 day,
+  // zero cost, which its own comment calls "deliberately optimistic". Those are
+  // the numbers the sentence above just quoted, and the optimistic default is
+  // exactly the one that wins a transfer-vs-buy comparison. Saying so is the
+  // difference between a measurement and an assumption.
+  if (reason.params?.lane_is_default) {
+    const note = t('transfers.lane_is_default_note')
+    if (note && note !== 'transfers.lane_is_default_note') return `${text} ${note}`
+  }
+  return text
 }

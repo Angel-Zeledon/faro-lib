@@ -18,20 +18,28 @@ import type { POLogEntry, SupplierContactHealthRow } from '@/lib/types'
 export const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', amber: '#f59e0b', green: '#22c55e', indigo: 'var(--accent)',
+  red: '#C0504D', amber: '#B7791F', green: '#2E8B62', indigo: 'var(--accent)',
 }
 
 // ── Is this order still waiting for goods? ───────────────────────────────────
 // 'pending' is also the answer for an order with no reception row at all: the
 // absence of a reception is not evidence the shipment arrived.
-export const OPEN_RECEPTION_STATUSES: readonly string[] = ['pending', 'partial']
+// Mirrors `reception_service.RECEIVABLE_STATES`. 'not_received' belongs here:
+// "nothing arrived today" is a statement about a delivery that did not happen,
+// not about an order that never will. Leaving it out put an order the buyer had
+// just reported as undelivered into the "already recorded" pile — so the screen
+// asserted the ARRIVAL of goods it had itself been told did not arrive, and the
+// only way back to it was re-creating the order.
+export const OPEN_RECEPTION_STATUSES: readonly string[] = ['pending', 'partial', 'not_received']
 
 export function receptionStatus(entry: POLogEntry): string {
   return entry.reception_status ?? 'pending'
 }
 
+// A cancelled order is not waiting for anything — the same rule the server's
+// "on the way" (`get_incoming_detail`) and overdue list apply.
 export function isAwaitingReception(entry: POLogEntry): boolean {
-  return OPEN_RECEPTION_STATUSES.includes(receptionStatus(entry))
+  return !entry.cancelled_at && OPEN_RECEPTION_STATUSES.includes(receptionStatus(entry))
 }
 
 export function countAwaitingReception(entries: POLogEntry[]): number {

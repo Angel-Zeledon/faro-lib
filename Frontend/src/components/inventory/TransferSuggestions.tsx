@@ -17,11 +17,15 @@ import { ArrowLeftRight } from 'lucide-react'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', green: '#22c55e',
+  text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', green: '#2E8B62',
 }
 
-export function TransferSuggestions({ suggestions }: {
+export function TransferSuggestions({ suggestions, canApprove }: {
   suggestions: WarehouseStatusItem[]
+  /** False for a viewer: approving POSTs a transfer, which their role is
+   *  refused. The suggestion itself still shows — knowing the stock is in the
+   *  wrong warehouse is worth reading whoever you are. */
+  canApprove: boolean
 }) {
   const { t } = useLanguage()
   const [busyKey, setBusyKey] = useState<string | null>(null)
@@ -90,7 +94,7 @@ export function TransferSuggestions({ suggestions }: {
               <span style={{ fontSize: 12, fontWeight: 700, color: C.green }}>
                 {t('hoy.transfers_done')}
               </span>
-            ) : (
+            ) : !canApprove ? null : (
               <button onClick={() => approve(row)} disabled={busyKey === key}
                       style={{ all: 'unset', cursor: 'pointer', padding: '6px 14px',
                                borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 12%, transparent)',

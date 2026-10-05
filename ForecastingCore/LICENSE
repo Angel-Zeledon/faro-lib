@@ -1,21 +1,33 @@
-MIT License
+StockAI — Proprietary Software Licence
 
-Copyright (c) 2026 Angel Zeledon
+Copyright (c) 2026 [NOMBRE DEL LICENCIANTE]. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software, including its source code, object code, documentation and
+related materials (the "Software"), is proprietary and confidential. It is
+licensed, not sold.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+No right to use, copy, modify, host, distribute, sublicense or sell the
+Software, in whole or in part, is granted except under a written licence
+agreement signed with the licensor. Where such an agreement exists, the
+licensee's rights are exactly those set out in it and in the Source Code
+Licence terms published at:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+    https://stockai.es/licencia
+
+If the agreement and those terms differ, the signed agreement prevails.
+Any use outside those rights is prohibited.
+
+Third-party open-source components included with or required by the Software
+remain under their own licences; see THIRD_PARTY_NOTICES.md at the root of
+the StockAI repository. Nothing in this
+notice limits the rights those licences grant for those components.
+
+Note on earlier versions: copies of this Software that were distributed under
+the MIT License before this notice took effect remain under the MIT License
+for the people who received them, for those copies only. This notice applies
+to every version distributed from the date it was added onward.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXCEPT AS
+EXPRESSLY STATED IN A SIGNED LICENCE AGREEMENT.
+
+Contact: contacto@stockai.es

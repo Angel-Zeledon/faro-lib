@@ -10,8 +10,8 @@ Recipient numbers come from users.whatsapp_number (E.164, e.g. +573001234567).
 
 import logging
 
-from backend.config import settings
-from backend.notifications.locale import render_es
+from backend.notifications.locale import coverage_short, render_es
+from backend.service_config.resolver import effective
 
 log = logging.getLogger(__name__)
 
@@ -19,27 +19,45 @@ log = logging.getLogger(__name__)
 _ALERT_MAX_CRITICAL_LINES = 5
 
 
-def is_configured() -> bool:
+def is_configured(tenant_id: str | None = None) -> bool:
+    """True when this scope can actually send.
+
+    `tenant_id` asks the question for a tenant that pasted its OWN Twilio
+    sender: the instance may have no channel at all and this tenant still be
+    able to message its own people, and answering "not configured" there would
+    hide a channel that works.
+    """
+    cfg = effective(tenant_id)
     return bool(
-        settings.twilio_account_sid
-        and settings.twilio_auth_token
-        and settings.twilio_whatsapp_from
+        cfg.twilio_account_sid
+        and cfg.twilio_auth_token
+        and cfg.twilio_whatsapp_from
     )
 
 
-def failure_reason() -> str:
+def failure_reason(tenant_id: str | None = None) -> str:
     """Stable code for why a send failed — mirrors email.failure_reason()."""
-    return "transport_error" if is_configured() else "not_configured"
+    if tenant_id:
+        from backend.entitlements.service import tenant_has_feature
+        if not tenant_has_feature(tenant_id, "whatsapp_bot"):
+            # Only the plan-gated sends can fail for this reason; the others
+            # never ask this question with a locked tenant.
+            return "plan_feature_locked"
+    return "transport_error" if is_configured(tenant_id) else "not_configured"
 
 
-def _transport_send(to_number: str, body: str, media_url: str | None) -> str | None:
+def _transport_send(
+    to_number: str, body: str, media_url: str | None,
+    tenant_id: str | None = None,
+) -> str | None:
     """Raw Twilio HTTP call. Raises on failure. Independently testable.
     Returns the Twilio message SID so callers can confirm delivery later."""
     import httpx
 
-    sid = settings.twilio_account_sid
+    cfg = effective(tenant_id)
+    sid = cfg.twilio_account_sid
     data = {
-        "From": settings.twilio_whatsapp_from,
+        "From": cfg.twilio_whatsapp_from,
         "To": f"whatsapp:{to_number}",
         "Body": body,
     }
@@ -48,7 +66,7 @@ def _transport_send(to_number: str, body: str, media_url: str | None) -> str | N
 
     resp = httpx.post(
         f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-        auth=(sid, settings.twilio_auth_token),
+        auth=(sid, cfg.twilio_auth_token),
         data=data,
         timeout=15,
     )
@@ -56,20 +74,35 @@ def _transport_send(to_number: str, body: str, media_url: str | None) -> str | N
     return resp.json().get("sid")
 
 
-def send_whatsapp(to_number: str, body: str, media_url: str | None = None) -> bool:
+def send_whatsapp(
+    to_number: str, body: str, media_url: str | None = None,
+    tenant_id: str | None = None,
+    plan_gated: bool = False,
+) -> bool:
     """
     Send a WhatsApp text (optionally with a media attachment, e.g. a PDF URL
     Twilio will fetch and deliver) to +E164 number. Returns True on success.
     Never raises — alerting must not break the caller's loop.
+
+    `plan_gated=True` is for the bot and its alerts (daily/manual stock
+    alerts, freshness warnings): a tenant whose plan lacks `whatsapp_bot` gets
+    nothing sent — logged and False, not an error. Messages that are not the
+    bot (supplier purchase orders, verification codes, the locked-plan reply
+    itself) leave it False.
     """
-    if not is_configured():
+    if plan_gated and tenant_id:
+        from backend.entitlements.service import tenant_has_feature
+        if not tenant_has_feature(tenant_id, "whatsapp_bot"):
+            log.info("[whatsapp] skipped: plan has no whatsapp_bot tenant=%s", tenant_id)
+            return False
+    if not is_configured(tenant_id):
         log.warning("Twilio not configured — WhatsApp not sent to %s", to_number)
         return False
     if not to_number:
         return False
 
     try:
-        _send(to_number, body, media_url)
+        _send(to_number, body, media_url, tenant_id)
         log.info("WhatsApp sent → %s", to_number)
         return True
     except Exception as exc:
@@ -77,23 +110,27 @@ def send_whatsapp(to_number: str, body: str, media_url: str | None = None) -> bo
         return False
 
 
-def _send(to_number: str, body: str, media_url: str | None) -> str | None:
+def _send(
+    to_number: str, body: str, media_url: str | None,
+    tenant_id: str | None = None,
+) -> str | None:
     # Thin wrapper so tests (conftest) can patch the single `_send` entrypoint
     # while the dispatch logic in _transport_send stays independently testable —
     # same convention as notifications/email.py.
-    return _transport_send(to_number, body, media_url)
+    return _transport_send(to_number, body, media_url, tenant_id)
 
 
-def fetch_message_status(message_sid: str) -> str | None:
+def fetch_message_status(message_sid: str, tenant_id: str | None = None) -> str | None:
     """Current Twilio delivery status of a sent message ('delivered', 'failed',
     'undelivered', …), or None when the lookup itself fails."""
     import httpx
 
-    sid = settings.twilio_account_sid
+    cfg = effective(tenant_id)
+    sid = cfg.twilio_account_sid
     try:
         resp = httpx.get(
             f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages/{message_sid}.json",
-            auth=(sid, settings.twilio_auth_token),
+            auth=(sid, cfg.twilio_auth_token),
             timeout=15,
         )
         resp.raise_for_status()
@@ -103,7 +140,10 @@ def fetch_message_status(message_sid: str) -> str | None:
         return None
 
 
-def send_whatsapp_and_confirm(to_number: str, body: str, wait_seconds: float = 8.0) -> bool:
+def send_whatsapp_and_confirm(
+    to_number: str, body: str, wait_seconds: float = 8.0,
+    tenant_id: str | None = None,
+) -> bool:
     """
     Send a WhatsApp text and confirm Twilio actually delivered it.
 
@@ -114,10 +154,10 @@ def send_whatsapp_and_confirm(to_number: str, body: str, wait_seconds: float = 8
     the caller fall back to another channel. Blocking — call it from a
     background task, never inline in a request. Never raises.
     """
-    if not is_configured() or not to_number:
+    if not is_configured(tenant_id) or not to_number:
         return False
     try:
-        message_sid = _send(to_number, body, None)
+        message_sid = _send(to_number, body, None, tenant_id)
     except Exception as exc:
         log.error("WhatsApp send failed to %s: %s", to_number, exc)
         return False
@@ -128,7 +168,7 @@ def send_whatsapp_and_confirm(to_number: str, body: str, wait_seconds: float = 8
 
     import time
     time.sleep(wait_seconds)
-    status = fetch_message_status(message_sid)
+    status = fetch_message_status(message_sid, tenant_id)
     if status in ("failed", "undelivered"):
         log.warning("WhatsApp %s to %s not delivered (status=%s)", message_sid, to_number, status)
         return False
@@ -141,6 +181,8 @@ def build_inventory_alert_text(
     warning_items: list[dict],
     inventory_url: str,
     transfer_count: int = 0,
+    period: str = "daily",
+    scope_warehouses: list[str] | None = None,
 ) -> str:
     """
     Compact daily-alert message: WhatsApp favours short, scannable text.
@@ -149,8 +191,20 @@ def build_inventory_alert_text(
     trimmed to _ALERT_MAX_CRITICAL_LINES, so "y N más" states how many SKUs are
     really hidden. Passing a pre-sliced list made it say "y 5 más" while 37
     products were about to run out.
+
+    `period`: the tenant's planning grain. `coverage_days` does NOT carry days
+    for a period-trained session — a weekly session's coverage_days of 3 means
+    3 WEEKS (inventory/service.py says so outright). The email digest was fixed
+    for this and this one was not, and the function had no `period` parameter
+    at all, so no caller COULD have passed it: the 08:00 email said "4 semanas"
+    while the WhatsApp sent in the same loop iteration, off the same list, said
+    "4d". A buyer reading the channel with the highest open rate in LatAm was
+    told to order emergency stock they did not need.
     """
     lines: list[str] = []
+    if scope_warehouses:
+        # A user limited to some warehouses: say whose rows these are.
+        lines.append(render_es("digest_scope_whatsapp", warehouses=", ".join(scope_warehouses)))
     n_crit = len(critical_items)
     if n_crit:
         lines.append(render_es(
@@ -159,8 +213,7 @@ def build_inventory_alert_text(
         ))
         for i in critical_items[:_ALERT_MAX_CRITICAL_LINES]:
             days = i.get("coverage_days")
-            # "d" is the language-neutral day symbol, not copy.
-            days_str = f"{days:.0f}d" if days is not None else "—"
+            days_str = coverage_short(days, period) if days is not None else "—"
             qty = i.get("recommended_qty")
             qty_str = render_es("alert_whatsapp_order_qty", qty=f"{qty:,.0f}") if qty else ""
             lines.append(f"  • {i.get('display_name') or i.get('sku')} ({days_str}{qty_str})")
@@ -184,6 +237,8 @@ def build_freshness_reminder_text(
     sales_age_days: int | None,
     stock_age_days: int | None,
     upload_url: str,
+    silent_warehouses: list[dict] | None = None,
+    scope_warehouses: list[str] | None = None,
 ) -> str:
     """
     Data-freshness reminder for the highest open-rate channel in LatAm.
@@ -193,10 +248,15 @@ def build_freshness_reminder_text(
     itself with an age that is not part of the problem.
     """
     lines: list[str] = []
+    if scope_warehouses:
+        lines.append(render_es("digest_scope_whatsapp", warehouses=", ".join(scope_warehouses)))
     if sales_age_days is not None:
         lines.append(render_es("freshness_whatsapp_sales", days=sales_age_days))
     if stock_age_days is not None:
         lines.append(render_es("freshness_whatsapp_stock", days=stock_age_days))
+    if silent_warehouses:
+        listed = ", ".join(f'{w["name"]} ({int(w["days"])} d)' for w in silent_warehouses)
+        lines.append(render_es("freshness_whatsapp_warehouses", list=listed))
     lines.append(render_es("freshness_whatsapp_cta", url=upload_url))
     return "\n".join(lines)
 

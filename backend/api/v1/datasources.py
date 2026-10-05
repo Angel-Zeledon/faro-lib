@@ -1,9 +1,10 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
+from backend import audit
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.datasources import service as svc
 from backend.datasources.service import SQL_ENGINES
@@ -152,6 +153,7 @@ def get_source(
 
 @router.post("/file")
 async def create_file_source(
+    request: Request,
     file: UploadFile = File(...),
     name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
@@ -161,6 +163,8 @@ async def create_file_source(
         src = await svc.create_file_source(
             user.tenant_id, user.user_id, file, name=name, description=description
         )
+        audit.note(request, target_id=src.get("id"), label=src.get("name"),
+                   after={"rows": src.get("row_count"), "size_bytes": src.get("size_bytes")})
         return ok(src)
     except ValueError as e:
         raise _service_error(e)
@@ -171,6 +175,7 @@ async def create_file_source(
 @router.post("/sql")
 def create_sql_source(
     body: CreateSqlSourceRequest,
+    request: Request,
     # A viewer must not be able to point the company at a database of their
     # choosing, or store credentials under the tenant's name.
     user: CurrentUser = Depends(require_analyst_or_above),
@@ -188,6 +193,10 @@ def create_sql_source(
             engine=body.engine,
             description=body.description,
         )
+        # Host and database name only: the password never leaves the service.
+        audit.note(request, target_id=src.get("id"), label=body.name,
+                   after={"engine": body.engine, "host": body.host,
+                          "database": body.database})
         return ok(src)
     except ValueError as e:
         raise _service_error(e)
@@ -239,7 +248,10 @@ def update_sql_config(
 @router.post("/{source_id}/test-connection")
 def test_connection(
     source_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    # Not a read: the probe stores its verdict in `datasets.connection_status`,
+    # which gates execute-query and materialize for everybody. A viewer must not
+    # be able to flip it (nor to make the server open connections on demand).
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
     result = svc.test_sql_connection(user.tenant_id, source_id)
@@ -248,18 +260,29 @@ def test_connection(
 
 # ── Execute SQL query ──────────────────────────────────────────────────────────
 
+# Both routes below run CALLER-WRITTEN SQL on the customer's own database. They
+# only read (sql_guard + a read-only transaction), but choosing what to read out
+# of a company's ERP is not a viewer's call, and a `read` API key acts as a
+# viewer: analyst-or-above, which for a key means a `write`-scope key.
+
 @router.post("/{source_id}/execute-query")
 def execute_query(
     source_id: str,
     body: ExecuteQueryRequest,
-    user: CurrentUser = Depends(get_current_user),
+    request: Request,
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    from backend.datasources.sql_guard import statement_hash
     _ds_or_404(user.tenant_id, source_id)
     try:
         result = svc.execute_sql_query(user.tenant_id, source_id, body.sql, limit=body.limit)
-        return ok(result)
     except ValueError as e:
         raise _service_error(e)
+    # The trail records WHICH statement ran (a hash, not the text — a query
+    # can name customers) and how much came back.
+    audit.note(request, after={"statement_sha256": statement_hash(body.sql),
+                               "rows": result.get("row_count")})
+    return ok(result)
 
 
 # ── Materialize SQL query into a CSV dataset ──────────────────────────────────
@@ -268,16 +291,22 @@ def execute_query(
 def materialize_source(
     source_id: str,
     body: MaterializeRequest,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    _ds_or_404(user.tenant_id, source_id)
+    from backend.datasources.sql_guard import statement_hash
+    src = _ds_or_404(user.tenant_id, source_id)
     try:
         dataset = svc.materialize_sql_source(
             user.tenant_id, user.user_id, source_id, sql=body.sql, name=body.name
         )
-        return ok(dataset)
     except ValueError as e:
         raise _service_error(e)
+    ran = (body.sql or src.get("saved_query") or "").strip()
+    audit.note(request, label=src.get("name"),
+               after={"statement_sha256": statement_hash(ran),
+                      "rows": dataset.get("row_count"), "dataset_id": dataset.get("id")})
+    return ok(dataset)
 
 
 # ── Export SQL query result as Excel ───────────────────────────────────────────
@@ -286,15 +315,21 @@ def materialize_source(
 def export_query(
     source_id: str,
     body: MaterializeRequest,
-    user: CurrentUser = Depends(get_current_user),
+    request: Request,
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     from fastapi.responses import Response
 
-    _ds_or_404(user.tenant_id, source_id)
+    from backend.datasources.sql_guard import statement_hash
+
+    src = _ds_or_404(user.tenant_id, source_id)
     try:
-        content = svc.export_sql_query_xlsx(user.tenant_id, source_id, sql=body.sql)
+        content, rows = svc.export_sql_query_xlsx(user.tenant_id, source_id, sql=body.sql)
     except ValueError as e:
         raise _service_error(e)
+    ran = (body.sql or src.get("saved_query") or "").strip()
+    audit.note(request, label=src.get("name"),
+               after={"statement_sha256": statement_hash(ran), "rows": rows})
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -311,7 +346,10 @@ def save_query(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
-    src = svc.save_sql_query(user.tenant_id, source_id, body.sql)
+    try:
+        src = svc.save_sql_query(user.tenant_id, source_id, body.sql)
+    except ValueError as e:
+        raise _service_error(e)
     return ok(src)
 
 
@@ -369,10 +407,14 @@ def save_as_new(
 def rename_source(
     source_id: str,
     body: RenameSourceRequest,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    _ds_or_404(user.tenant_id, source_id)
+    before = _ds_or_404(user.tenant_id, source_id)
     src = svc.rename_source(user.tenant_id, source_id, body.name, description=body.description)
+    audit.note(request, label=src.get("name"),
+               before={"name": before.get("name"), "description": before.get("description")},
+               after={"name": src.get("name"), "description": src.get("description")})
     return ok(src)
 
 
@@ -381,10 +423,14 @@ def rename_source(
 @router.delete("/{source_id}")
 def delete_source(
     source_id: str,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     import psycopg2
-    _ds_or_404(user.tenant_id, source_id)
+    src = _ds_or_404(user.tenant_id, source_id)
+    audit.note(request, label=src.get("name"),
+               before={"name": src.get("name"), "rows": src.get("row_count"),
+                       "size_bytes": src.get("size_bytes")})
     try:
         svc.delete_source(user.tenant_id, source_id)
     except psycopg2.errors.ForeignKeyViolation:
@@ -393,10 +439,30 @@ def delete_source(
             "Cannot delete: this data source is still referenced by one or more sessions.",
             status_code=409,
         )
+    from backend.activity.service import log_action
+    log_action(user.tenant_id, user.user_id, "dataset.delete", resource=source_id,
+               context={"name": src.get("name"), "filename": src.get("original_filename")})
     return ok({"deleted": source_id})
 
 
 # ── Statistical analysis ───────────────────────────────────────────────────────
+
+def _check_iso_dates(**dates: Optional[str]) -> None:
+    """Reject a date filter that is not YYYY-MM-DD with a 422 instead of the
+    500 pandas' parser error used to become."""
+    from datetime import date as _date
+    for field, value in dates.items():
+        if not value:
+            continue
+        try:
+            _date.fromisoformat(value[:10])
+        except ValueError:
+            raise AppError(
+                "date_invalid_iso",
+                f"{field} must be an ISO date (YYYY-MM-DD)",
+                params={"field": field},
+            )
+
 
 @router.get("/{source_id}/analyze")
 def analyze_source(
@@ -427,6 +493,7 @@ def analyze_source(
     if sc and sc not in df.columns:
         sc = None
 
+    _check_iso_dates(date_from=date_from, date_to=date_to)
     from backend.dataframes.series import filter_dataframe_by_date
     df = filter_dataframe_by_date(df, dc, date_from, date_to)
 
@@ -434,6 +501,10 @@ def analyze_source(
         from forecasting_core.analysis.analyzer import TimeSeriesAnalyzer
         analyzer = TimeSeriesAnalyzer(df, date_col=dc, target_col=tc, group_col=sc or None)
         summary_df = analyzer.summary()
+    except (ValueError, TypeError) as e:
+        # A column that exists but holds the wrong kind of data (text as the
+        # target, numbers as the date): the caller's mapping, not a server fault.
+        raise AppError("analysis_failed", f"Analysis failed: {e}", status_code=422)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
@@ -476,6 +547,20 @@ def analyze_sku(
     except ValueError as e:
         raise _service_error(e)
 
+    # The names arrive as query text. A name that is not a column (the audit
+    # sent a date, "2026-10-01") surfaced from deep in pandas as KeyError and was
+    # reported as a 500 "Analysis failed: '2026-10-01'" — a caller mistake, so it
+    # is a 400 that names the column, like the sibling /analyze route.
+    for col in (date_col, target_col, sku_col):
+        if col and col not in df.columns:
+            raise AppError(
+                "upload_column_missing",
+                f"Column '{col}' not found in the data source",
+                status_code=400,
+                params={"column": col, "columns": ", ".join(map(str, df.columns))},
+            )
+    _check_iso_dates(date_from=date_from, date_to=date_to)
+
     try:
         from backend.dataframes.series import filter_dataframe_by_date
         df = filter_dataframe_by_date(df, date_col, date_from, date_to)
@@ -483,6 +568,10 @@ def analyze_sku(
         analyzer = TimeSeriesAnalyzer(df, date_col=date_col, target_col=target_col, group_col=sku_col or None)
         sku_arg = sku_id if sku_col else None
         report = analyzer.analyze(sku_arg)
+    except (ValueError, TypeError) as e:
+        # A column that exists but holds the wrong kind of data (text as the
+        # target, numbers as the date): the caller's mapping, not a server fault.
+        raise AppError("analysis_failed", f"Analysis failed: {e}", status_code=422)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 

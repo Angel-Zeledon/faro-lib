@@ -14,6 +14,7 @@ import logging
 
 from fastapi import APIRouter, Depends
 
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.notifications import freshness_service
 from backend.schemas.common import ok
@@ -31,4 +32,18 @@ def get_data_freshness(user: CurrentUser = Depends(get_current_user)):
     a viewer who cannot see that the numbers are two months old is exactly the
     person the feature exists for.
     """
-    return ok(freshness_service.get_tenant_freshness(user.tenant_id))
+    data = freshness_service.get_tenant_freshness(user.tenant_id)
+    if wscope.is_scoped(user):
+        # Which warehouses went quiet is a fact about the warehouses the caller
+        # may see; the others are not named.
+        block = data.get("warehouses") or {}
+        items = wscope.filter_rows(user, block.get("items") or [], key="name")
+        data["warehouses"] = {
+            **block, "items": items, "multi": len(items) > 1,
+            "lagging": [i["name"] for i in items if i.get("lagging")],
+        }
+        data["warn"] = bool(
+            data.get("degraded_by") or (data.get("sales") or {}).get("state") == "stale"
+            or (data.get("stock") or {}).get("state") == "stale"
+            or data["warehouses"]["lagging"])
+    return ok(data)

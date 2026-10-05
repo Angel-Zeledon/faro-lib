@@ -6,6 +6,9 @@ import { authSignup } from '@/lib/api'
 import { Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
+import TermsSentence from '@/components/legal/TermsSentence'
+import PhoneInput from '@/components/ui/PhoneInput'
+import { SocialButtons, socialErrorText } from '@/components/auth/SocialButtons'
 
 // Composition, deliberately NOT a mirror of /login: this screen carries more
 // fields, so the heading is lifted OUT of the card and set as an editorial
@@ -22,7 +25,7 @@ function PasswordStrength({ password }: { password: string }) {
     { label: t('auth.pw_check_special'),   ok: /[^A-Za-z0-9]/.test(password) },
   ]
   const score = checks.filter(c => c.ok).length
-  const color = score < 2 ? '#dc2626' : score < 4 ? '#d97706' : '#16a34a'
+  const color = score < 2 ? '#B94A4A' : score < 4 ? '#A8701C' : '#2F855A'
 
   if (!password) return null
   return (
@@ -40,7 +43,7 @@ function PasswordStrength({ password }: { password: string }) {
         {checks.map(({ label, ok }) => (
           <div key={label} style={{
             display: 'flex', gap: 5, alignItems: 'center', fontSize: 11,
-            color: ok ? '#16a34a' : '#a1a1aa', transition: 'color 0.25s ease',
+            color: ok ? '#2F855A' : 'var(--a-dim)', transition: 'color 0.25s ease',
           }}>
             <CheckCircle2 size={10} />
             {label}
@@ -65,9 +68,17 @@ function SignupPageContent() {
   const [form, setForm] = useState({
     email: '', password: '', full_name: '', tenant_name: '', whatsapp_number: '',
   })
+  // Unticked by default, and never ticked for the person: acceptance only
+  // counts if they gave it. The backend refuses a signup without it.
+  const [accepted, setAccepted] = useState(false)
+  const [termsMissing, setTermsMissing] = useState(false)
   const [showPw,  setShowPw]  = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
+  // A refused provider sign-in comes back as `?oauth_error=<code>`.
+  const oauthError = searchParams.get('oauth_error')
+  const [error,   setError]   = useState<string | null>(
+    oauthError ? socialErrorText(t, oauthError) : null,
+  )
   const [done,    setDone]    = useState(false)
   // Set only when the backend tells us the verification mail did NOT leave.
   // Then the link goes on screen — sending someone to check an inbox we know
@@ -87,6 +98,13 @@ function SignupPageContent() {
       setError(t('auth.whatsapp_invalid'))
       return
     }
+    if (!accepted) {
+      // Said next to the box, not in the banner at the top of the form: on a
+      // phone that banner is a screen away from the button just tapped.
+      setTermsMissing(true)
+      document.getElementById('signup-terms')?.focus()
+      return
+    }
     setLoading(true)
     try {
       const res = await authSignup({
@@ -95,6 +113,7 @@ function SignupPageContent() {
         full_name:       form.full_name || undefined,
         tenant_name:     form.tenant_name,
         whatsapp_number: phone,
+        accept_terms:    accepted,
       })
       setVerifyUrl(res.email_sent ? null : (res.verify_url ?? null))
       setDone(true)
@@ -113,65 +132,67 @@ function SignupPageContent() {
   // autofilled field therefore erased its own background and left Chrome's
   // wash showing through. Letting the cascade decide is the fix.
 
-  const cardStyle: React.CSSProperties = {
-    background: '#fff',
-    border: '1px solid rgba(9,9,11,0.09)',
-    borderRadius: 20,
-    padding: '32px 36px',
-    boxShadow:
-      '0 1px 2px rgba(9,9,11,0.04),' +
-      '0 12px 28px -14px rgba(9,9,11,0.14),' +
-      '0 44px 80px -36px rgba(9,9,11,0.16)',
-  }
+  // No card: the split layout's white column is the surface (see /login).
+  const cardStyle: React.CSSProperties = {}
 
   return (
-    <div className="auth-shell" style={{
-      height: '100%', display: 'flex', alignItems: 'center',
-      // See /login: the offset is a desktop composition, evened out on phones.
-      paddingLeft: 'clamp(28px, 13vw, 200px)', paddingRight: 'clamp(28px, 6vw, 64px)',
-      paddingBottom: '2vh',
-    }}>
-      <div style={{ width: '100%', maxWidth: 452 }}>
+    <div className="auth-shell">
+      <div style={{ width: '100%', maxWidth: 440 }}>
 
         {done ? (
           <div className="auth-enter" style={{ ...cardStyle, animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both' }}>
             <div style={{
-              width: 42, height: 42, borderRadius: '50%', background: '#0a0a0a',
+              width: 42, height: 42, borderRadius: '50%', background: 'var(--a-cta-bg)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
             }}>
-              <CheckCircle2 size={21} color="#fff" strokeWidth={2} />
+              <CheckCircle2 size={21} color="var(--a-cta-fg)" strokeWidth={2} />
             </div>
-            <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
+            <h1 style={{ fontSize: 20, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
               {verifyUrl ? t('auth.verify_link_onscreen_title') : t('auth.check_email_title')}
             </h1>
             {verifyUrl ? (
               <>
-                <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 16px', lineHeight: 1.6 }}>
+                <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: '0 0 16px', lineHeight: 1.6 }}>
                   {t('auth.verify_link_onscreen_body')}
                 </p>
+                {/* The action is a button; the raw link (a long signed token)
+                    is only the fallback, small and muted. */}
                 <a
                   href={verifyUrl}
+                  className="auth-submit"
                   style={{
-                    display: 'block', wordBreak: 'break-all', marginBottom: 22,
-                    padding: '11px 13px', borderRadius: 10,
-                    background: 'rgba(9,9,11,0.035)', border: '1px solid rgba(9,9,11,0.09)',
-                    fontSize: 12.5, color: '#0a0a0a', fontFamily: 'ui-monospace, monospace',
-                    textDecoration: 'none', lineHeight: 1.45,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '13px 24px', marginBottom: 14, borderRadius: 11,
+                    background: 'var(--a-cta-bg)', color: 'var(--a-cta-fg)',
+                    fontSize: 14, fontWeight: 600, textDecoration: 'none',
                   }}
                 >
-                  {verifyUrl}
+                  {t('auth.verify_link_cta')}
                 </a>
+                <p style={{ fontSize: 12, color: 'var(--a-dim)', margin: '0 0 6px', lineHeight: 1.5 }}>
+                  {t('auth.verify_link_fallback')}
+                </p>
+                <div style={{
+                  wordBreak: 'break-all', marginBottom: 22, userSelect: 'all',
+                  maxHeight: 64, overflow: 'auto',
+                  padding: '8px 11px', borderRadius: 10,
+                  background: 'var(--a-field, rgba(9,9,11,0.035))', border: '1px solid var(--a-line, rgba(9,9,11,0.09))',
+                  fontSize: 11.5, color: 'var(--a-muted)', fontFamily: 'ui-monospace, monospace',
+                  lineHeight: 1.45,
+                }}>
+                  {verifyUrl}
+                </div>
               </>
             ) : (
-              <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 26px', lineHeight: 1.6 }}>
-                {t('auth.check_email_sent_to')} <strong style={{ color: '#0a0a0a', fontWeight: 600 }}>{form.email}</strong>.
+              <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: '0 0 26px', lineHeight: 1.6 }}>
+                {t('auth.check_email_sent_to')} <strong style={{ color: 'var(--a-ink)', fontWeight: 600 }}>{form.email}</strong>.
                 {' '}{t('auth.check_email_click')}
                 {wantsDemo && ` ${t('auth.check_email_demo_hint')}`}
               </p>
             )}
             <Link href={loginHref} className="auth-submit" style={{
               display: 'inline-flex', alignItems: 'center', padding: '11.5px 24px',
-              background: '#0a0a0a', color: '#fff', borderRadius: 11,
+              background: 'var(--a-cta-bg)', color: 'var(--a-cta-fg)', borderRadius: 11,
               fontSize: 13.5, fontWeight: 600, textDecoration: 'none',
             }}>
               {t('auth.go_to_login')}
@@ -184,11 +205,11 @@ function SignupPageContent() {
               marginBottom: 26, paddingLeft: 2,
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both',
             }}>
-              <h1 style={{ fontSize: 26, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
+              <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 24, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
                 {t('auth.signup_title')}
               </h1>
-              <p style={{ fontSize: 14.5, color: '#71717a', margin: 0, lineHeight: 1.55 }}>
-                Faro — Inventario Inteligente
+              <p style={{ fontSize: 14.5, color: 'var(--a-muted)', margin: 0, lineHeight: 1.55 }}>
+                {t('auth.signup_tagline')}
               </p>
             </div>
 
@@ -196,12 +217,16 @@ function SignupPageContent() {
               ...cardStyle,
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) 0.08s both',
             }}>
+              {/* Social sign-in: renders nothing unless the installation
+                  enabled a provider. Above the form, additive. */}
+              <SocialButtons intent="signup" />
+
               {error && (
                 <div style={{
                   display: 'flex', gap: 8, alignItems: 'center',
                   padding: '10px 12px', borderRadius: 10, marginBottom: 20,
-                  background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)',
-                  fontSize: 13, color: '#dc2626',
+                  background: 'rgba(185,74,74,0.04)', border: '1px solid rgba(185,74,74,0.15)',
+                  fontSize: 13, color: '#B94A4A',
                   animation: 'auth-fade-up 0.35s ease-out both',
                 }}>
                   <AlertTriangle size={13} style={{ flexShrink: 0 }} />
@@ -215,63 +240,61 @@ function SignupPageContent() {
                   animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.14s both',
                 }}>
                   <div className="auth-field">
-                    <label htmlFor="signup-full-name" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
+                    <label htmlFor="signup-full-name" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
                       {t('auth.full_name_label')}
                     </label>
                     <input
                       id="signup-full-name" name="full_name"
                       type="text" value={form.full_name}
                       onChange={e => set('full_name', e.target.value)}
-                      placeholder="Jane Smith"
+                      placeholder={t('auth.ph_full_name')}
                       className="auth-input"
                     />
                   </div>
                   <div className="auth-field">
-                    <label htmlFor="signup-company" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
-                      {t('auth.company_label')} <span style={{ color: '#dc2626' }}>*</span>
+                    <label htmlFor="signup-company" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
+                      {t('auth.company_label')} <span style={{ color: '#B94A4A' }}>*</span>
                     </label>
                     <input
                       id="signup-company" name="tenant_name"
                       type="text" value={form.tenant_name} required
                       onChange={e => set('tenant_name', e.target.value)}
-                      placeholder="Acme Corp"
+                      placeholder={t('auth.ph_company')}
                       className="auth-input"
                     />
                   </div>
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.19s both' }}>
-                  <label htmlFor="signup-email" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
-                    {t('auth.email_label')} <span style={{ color: '#dc2626' }}>*</span>
+                  <label htmlFor="signup-email" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
+                    {t('auth.email_label')} <span style={{ color: '#B94A4A' }}>*</span>
                   </label>
                   <input
                     id="signup-email" name="email"
                     type="email" value={form.email} required
                     onChange={e => set('email', e.target.value)}
-                    placeholder="you@company.com"
+                    placeholder={t('auth.ph_email')}
                     className="auth-input"
                   />
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.215s both' }}>
-                  <label htmlFor="signup-whatsapp" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
-                    {t('auth.whatsapp_label')} <span style={{ color: '#dc2626' }}>*</span>
+                  <label htmlFor="signup-whatsapp" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
+                    {t('auth.whatsapp_label')} <span style={{ color: '#B94A4A' }}>*</span>
                   </label>
-                  <input
-                    id="signup-whatsapp" name="whatsapp_number"
-                    type="tel" value={form.whatsapp_number} required
-                    onChange={e => set('whatsapp_number', e.target.value)}
-                    placeholder="+50688887777"
-                    className="auth-input"
+                  <PhoneInput
+                    id="signup-whatsapp" name="whatsapp_number" variant="auth"
+                    value={form.whatsapp_number} required
+                    onChange={v => set('whatsapp_number', v)}
                   />
-                  <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#71717a', lineHeight: 1.45 }}>
+                  <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--a-muted)', lineHeight: 1.45 }}>
                     {t('auth.whatsapp_hint')}
                   </p>
                 </div>
 
                 <div className="auth-field" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.24s both' }}>
-                  <label htmlFor="signup-password" style={{ fontSize: 12, fontWeight: 500, color: '#52525b', display: 'block', marginBottom: 6 }}>
-                    {t('auth.password_label')} <span style={{ color: '#dc2626' }}>*</span>
+                  <label htmlFor="signup-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--a-muted)', display: 'block', marginBottom: 6 }}>
+                    {t('auth.password_label')} <span style={{ color: '#B94A4A' }}>*</span>
                   </label>
                   <div style={{ position: 'relative' }}>
                     <input
@@ -292,11 +315,45 @@ function SignupPageContent() {
                   <PasswordStrength password={form.password} />
                 </div>
 
+                <label
+                  htmlFor="signup-terms"
+                  style={{
+                    display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+                    fontSize: 13, color: 'var(--a-muted)', lineHeight: 1.5, minHeight: 44,
+                    animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.265s both',
+                  }}
+                >
+                  <input
+                    id="signup-terms" name="accept_terms" type="checkbox"
+                    checked={accepted}
+                    onChange={e => { setAccepted(e.target.checked); if (e.target.checked) setTermsMissing(false) }}
+                    aria-required="true"
+                    aria-invalid={termsMissing || undefined}
+                    aria-describedby={termsMissing ? 'signup-terms-error' : undefined}
+                    style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: '#0F766E', cursor: 'pointer' }}
+                  />
+                  <span>
+                    <TermsSentence
+                      templateKey="auth.terms_accept"
+                      linkStyle={{ color: 'var(--a-ink)', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3 }}
+                    />
+                  </span>
+                </label>
+                {termsMissing && (
+                  <p id="signup-terms-error" role="alert" style={{
+                    display: 'flex', gap: 6, alignItems: 'flex-start', margin: '-8px 0 0',
+                    fontSize: 12.5, color: '#B94A4A', lineHeight: 1.45,
+                  }}>
+                    <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+                    {t('errors.terms_not_accepted')}
+                  </p>
+                )}
+
                 <button
                   type="submit" disabled={loading} className="auth-submit"
                   style={{
                     width: '100%', padding: '12.5px', borderRadius: 11, border: 'none',
-                    background: loading ? '#a1a1aa' : '#0a0a0a', color: '#fff',
+                    background: loading ? 'var(--a-dim)' : 'var(--a-cta-bg)', color: 'var(--a-cta-fg)',
                     fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
                     marginTop: 6,
                     transition: 'transform 0.22s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s ease',
@@ -311,11 +368,11 @@ function SignupPageContent() {
             </div>
 
             <p className="auth-enter" style={{
-              marginTop: 20, marginLeft: 2, fontSize: 13, color: '#a1a1aa',
+              marginTop: 20, marginLeft: 2, fontSize: 13, color: 'var(--a-dim)',
               animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.35s both',
             }}>
               {t('auth.have_account')}{' '}
-              <Link href="/login" className="auth-link" style={{ color: '#0a0a0a', textDecoration: 'none', fontWeight: 600 }}>
+              <Link href="/login" className="auth-link" style={{ color: 'var(--a-ink)', textDecoration: 'none', fontWeight: 600 }}>
                 {t('auth.login_title')}
               </Link>
             </p>

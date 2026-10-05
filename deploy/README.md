@@ -1,4 +1,4 @@
-# Deploying Faro
+# Deploying StockAI
 
 Single-VPS production deployment with Docker Compose. Target: a 4 vCPU / 8 GB
 Linux box (Hetzner CPX31-class). Containers: Caddy (TLS) → Next.js frontend →
@@ -36,7 +36,7 @@ The stack is pre-wired for the three ways it will need to grow, in order:
 3. **More workers.** The job queue claims with `FOR UPDATE SKIP LOCKED`, so
    extra claim-only workers are safe:
    `docker compose -f docker-compose.prod.yml --profile scale up -d --scale worker-extra=2`.
-   The cron loops (daily alert emails, monthly snapshots, integration sync)
+   The cron loops (daily alert emails, monthly snapshots)
    run **only** in the primary `worker` (`SCHEDULER_ENABLED=true` exactly
    once) — turning them on in a second instance duplicates every daily email.
 
@@ -45,8 +45,47 @@ The stack is pre-wired for the three ways it will need to grow, in order:
 The bundled Postgres needs an external backup. On the host's crontab:
 
 ```sh
-# Nightly dump, 30-day retention, e.g. synced to B2/R2 with rclone afterwards
+# Nightly dump. Production (stockai.es) runs /opt/stockai-ops/backup.sh with a
+# 14-day retention — the figure the privacy policy and DPA state; keep them in step.
 0 3 * * * docker exec faro-db-1 pg_dump -U faro faro | gzip > /var/backups/faro-$(date +\%F).sql.gz
+```
+
+**The database dump is not enough.** The `storage` volume holds the uploaded
+datasets, the model artifacts, the documents — and, if you left
+`INTEGRATIONS_SECRET_KEY` empty, `instance_secret.key`, which is the only thing
+that can decrypt the credentials stored in that database. A restore with the
+dump alone comes back with every stored credential unreadable: the log says the
+key changed, the panel reports those services as not configured, and the
+credentials have to be entered again — the rows survive and mean nothing.
+
+```sh
+# The other half of the backup
+0 4 * * * docker run --rm -v faro_storage:/s -v /var/backups:/b alpine tar czf /b/faro-storage-$(date +\%F).tar.gz -C /s .
+```
+
+**Check the volume name first.** Compose prefixes volumes with the project
+name — the directory name unless you set one — so the volume may be
+`deploy_storage`, not `faro_storage`. Against a name that does not exist,
+`docker run -v` **creates an empty volume and tars that**: the command
+succeeds, the archive is about a hundred bytes, and nothing says so.
+
+```sh
+docker volume ls | grep storage
+# and after each run, refuse to trust an archive that small:
+[ "$(stat -c%s /var/backups/faro-storage-$(date +%F).tar.gz)" -gt 10000 ]   || echo "STORAGE BACKUP IS EMPTY — CHECK THE VOLUME NAME"
+```
+
+Restoring is its own runbook, written by doing it: **[`RESTORE.md`](RESTORE.md)**.
+The repository copy of the nightly script (with a success marker the status
+panel reads) is `ops/backup.sh`, and `scripts/restore_drill.py` rehearses the
+restore monthly; both are described at the end of `RESTORE.md`.
+
+Or take the key out of the equation: put a Fernet key in
+`INTEGRATIONS_SECRET_KEY` in `deploy/.env` and it never touches the volume.
+That is the better answer if your secrets already live in a manager.
+
+```sh
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 ## Notes that save an afternoon
@@ -58,6 +97,30 @@ The bundled Postgres needs an external backup. On the host's crontab:
   for the API's healthcheck. An empty database bootstraps itself.
 - `ENVIRONMENT=production` makes the server refuse to boot with
   `TESTING_MODE=true` — that refusal is a feature, not a bug to work around.
-- AI features: set `ANTHROPIC_API_KEY` (Haiku tier). Do NOT run Ollama on this
-  box — a local model needs more RAM than the entire rest of the stack.
+  It matters more since 2026-08-22: `TESTING_MODE` also bypasses **every plan
+  limit**, so a production boot with it on would hand the free tier away.
+- **Your own tenant starts on the free tier.** New tenants default to
+  `tier = 'free'` (100 SKUs, 2 users, 1 warehouse, and no API, MCP or
+  WhatsApp bot). The grandfathering
+  migration only promotes tenants that existed before 2026-08-22, and a fresh
+  production database has none — so the first account you create for yourself
+  is capped like a customer's. Flip it once, by hand:
+
+  ```sh
+  docker exec -it faro-db-1 psql -U faro -d faro     -c "UPDATE tenants SET tier = 'paid' WHERE slug = '<your-slug>';"
+  ```
+
+  That single UPDATE is the entire billing system, by design.
+- **AI features: `DEEPSEEK_API_KEY` is required, and there is no fallback.**
+  DeepSeek is the only backend as of 2026-08-23 — Anthropic and the local
+  Ollama shim were removed. With the key unset, the narrative, the analyst, the
+  chat and the data-quality diagnosis all raise `LLMNotConfigured` and degrade
+  to their rule-based text, which is honest but is not the product you are
+  selling. (Running a local model on this box was never viable anyway: it needs
+  more RAM than the entire rest of the stack.)
 - Logs: `docker compose -f docker-compose.prod.yml logs -f api worker`.
+- **Caddy does not see an edited Caddyfile until it is recreated.** The file is
+  bind-mounted, and replacing it (git pull, tar extract) gives it a new inode
+  the running container never sees: new routes answer with the old config. After
+  any change to `Caddyfile*`:
+  `docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.

@@ -257,7 +257,27 @@ class TestWarehouseEndpoints:
         )
         assert row is not None
         assert row["name"] == name
-        assert row["is_default"] is False
+
+        # The FIRST warehouse a tenant gets is their default; later ones are
+        # not. Before this, every row stayed is_default = false and "which is
+        # the default" fell through to name precedence — an answer that MOVES
+        # when a warehouse is renamed.
+        count = query_one(
+            "SELECT COUNT(*) AS n FROM warehouses WHERE tenant_id=%s", (tid,),
+        )["n"]
+        assert row["is_default"] is (count == 1), (
+            f"tenant has {count} warehouse(s); is_default={row['is_default']}")
+
+        second = client.post(
+            "/api/v1/inventory/warehouses",
+            json={"name": _warehouse()},
+            headers=analyst_headers,
+        )
+        assert second.status_code == 201
+        assert query_one(
+            "SELECT is_default FROM warehouses WHERE tenant_id=%s AND name=%s",
+            (tid, second.json()["data"]["name"]),
+        )["is_default"] is False, "a second warehouse must not steal the default"
 
     def test_list_returns_created_warehouses(self, client, analyst_headers, test_tenant):
         name = _warehouse()

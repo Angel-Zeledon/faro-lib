@@ -4,6 +4,7 @@ import { Clock, Package, Upload } from 'lucide-react'
 import type { SessionInfo } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useDataFreshness } from '@/hooks/useDataFreshness'
+import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 const STALE_DAYS = 14
 
@@ -27,6 +28,8 @@ export default function DataFreshness({ currentSession, loading }: {
 }) {
   const { t, lang } = useLanguage()
   const { freshness } = useDataFreshness()
+  // The upload link is 18px tall on desktop; a 44px target on a phone.
+  const narrow = useIsNarrow()
 
   if (loading) {
     return (
@@ -58,7 +61,7 @@ export default function DataFreshness({ currentSession, loading }: {
   const stockState = freshness?.stock.state ?? 'unknown'
   const stockLate  = stockState === 'stale' || stockState === 'blind'
 
-  const amber = '#f59e0b'
+  const amber = '#B7791F'
   const accent = salesLate ? amber : 'var(--dim)'
 
   return (
@@ -68,8 +71,8 @@ export default function DataFreshness({ currentSession, loading }: {
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '5px 10px', borderRadius: 8, fontSize: 12,
-          background: salesLate ? 'rgba(245,158,11,0.07)' : 'var(--surface-2)',
-          border: `1px solid ${salesLate ? 'rgba(245,158,11,0.35)' : 'var(--border)'}`,
+          background: salesLate ? 'rgba(183,121,31,0.07)' : 'var(--surface-2)',
+          border: `1px solid ${salesLate ? 'rgba(183,121,31,0.35)' : 'var(--border)'}`,
         }}
       >
         <Clock size={12} color={accent} />
@@ -81,7 +84,9 @@ export default function DataFreshness({ currentSession, loading }: {
         <span style={{ color: 'var(--border)' }}>|</span>
         <Link href="/ventas" style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
+          ...(narrow ? { minHeight: 44 } : {}),
           color: 'var(--accent)', fontWeight: 600, textDecoration: 'none',
+          ...(narrow ? { minHeight: 44, margin: '-12px 0' } : {}),
         }}>
           <Upload size={11} /> {t('freshness.upload_new')}
         </Link>
@@ -98,8 +103,8 @@ export default function DataFreshness({ currentSession, loading }: {
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '5px 10px', borderRadius: 8, fontSize: 12,
             textDecoration: 'none',
-            background: 'rgba(245,158,11,0.07)',
-            border: `1px solid rgba(245,158,11,${stockState === 'blind' ? '0.5' : '0.35'})`,
+            background: 'rgba(183,121,31,0.07)',
+            border: `1px solid rgba(183,121,31,${stockState === 'blind' ? '0.5' : '0.35'})`,
             color: amber, fontWeight: 600,
           }}
         >
@@ -107,6 +112,26 @@ export default function DataFreshness({ currentSession, loading }: {
           {t('freshness.stock_age', { days: stockDays })}
         </Link>
       )}
+
+      {/* Per-warehouse silence: one chip per warehouse that stopped reporting
+          while the others kept going (the backend only lists those). */}
+      {(freshness?.warehouses?.items ?? []).filter(w => w.lagging && w.silent_days != null).map(w => (
+        <Link
+          key={w.name}
+          href="/inventario"
+          data-testid="warehouse-silent"
+          title={t('freshness.warehouse_silent_title', { days: w.silent_days ?? 0 })}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '5px 10px', borderRadius: 8, fontSize: 12, textDecoration: 'none',
+            background: 'rgba(183,121,31,0.07)', border: '1px solid rgba(183,121,31,0.35)',
+            color: amber, fontWeight: 600, maxWidth: '100%',
+          }}
+        >
+          <Package size={12} color={amber} />
+          {t('freshness.warehouse_silent', { name: w.name, days: w.silent_days ?? 0 })}
+        </Link>
+      ))}
     </div>
   )
 }

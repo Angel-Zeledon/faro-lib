@@ -1,6 +1,7 @@
 """
 Tests for the 2026-07-04 security-audit fixes
-(docs/auditoria_integral_faro_2026-07-04.md, findings #2, #3, #6).
+(findings #2, #3 and #6 of the 2026-07-04 audit — doc retired in the 2026-08-11
+cleanup, still in git history. These tests ARE what survives of it.)
 
 Covers:
 - DB-backed auth rate limiting (survives process restarts, shared across workers)

@@ -1,34 +1,36 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
-import { getPOHistory, getSupplierContactHealth, getSupplierLeadTimeAlerts } from '@/lib/api'
-import type { POLogEntry, SupplierContactHealthRow, SupplierLeadTimeAlert } from '@/lib/types'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { getPOHistoryPage } from '@/lib/api'
+import type { POLogEntry } from '@/lib/types'
+import { useAttention } from '@/hooks/useAttention'
 import { POHistoryTable, ReceptionModal } from '@/components/po/POHistory'
 import { ManualPOModal } from '@/components/po/ManualPOModal'
 import { TransfersPanel } from '@/components/po/TransfersPanel'
+import BulkImportButton from '@/components/inventory/BulkImportButton'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
-import {
-  SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
-} from '@/components/suppliers/SupplierHealthBanners'
 import { EmptyState, ErrorState, LoadingState, SkeletonTable } from '@/components/ui/States'
 import { ClipboardList, Plus, ShoppingCart } from 'lucide-react'
 import Card from '@/components/ui/Card'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
-// Which orders are still waiting for goods, and which suppliers are worth
-// warning about, live in ./shared so the phone card list below cannot answer
-// either question differently from this table.
-import { countAwaitingReception, suppliersOnOpenOrders } from './shared'
 import PedidosMobile from './PedidosMobile'
+import { ApprovalInbox } from '@/components/po/POApproval'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
-  text: 'var(--text)', dim: 'var(--dim)', amber: '#f59e0b',
+  text: 'var(--text)', dim: 'var(--dim)', amber: '#B7791F',
 }
 
 export default function OrdersPage() {
   const { t } = useLanguage()
   const [history,     setHistory]     = useState<POLogEntry[]>([])
+  // The history is filtered and paged by the server (`/inventory/po-history/page`):
+  // it used to be the newest 50 filtered in the browser, so the 51st order was
+  // unreachable and "unpaid" only searched what happened to be loaded.
+  const [total,       setTotal]       = useState(0)
+  const [awaiting,    setAwaiting]    = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [loading,     setLoading]     = useState(true)
   // Holds the raw error so ErrorState can classify it by kind rather than
   // rendering a pre-flattened string.
@@ -36,26 +38,59 @@ export default function OrdersPage() {
   const [receivingPO, setReceivingPO] = useState<string | null>(null)
   const [creatingPO,  setCreatingPO]  = useState(false)
   const canCreate = getUser()?.role !== 'viewer'
-  const [contactHealth,  setContactHealth]  = useState<SupplierContactHealthRow[]>([])
-  const [leadTimeAlerts, setLeadTimeAlerts] = useState<SupplierLeadTimeAlert[]>([])
+  // What is waiting on the buyer is shown as a chip inside the order's row (and
+  // in the bell / nav count), never as a banner above the table.
+  const { overdue, contactHealth, reload: reloadAttention } = useAttention()
+  const overdueById = Object.fromEntries(overdue.map(o => [o.po_log_id, o]))
   // Multi-warehouse (feature 5.4): transfers tab, visible only with 2+ warehouses.
   const { multi: multiWarehouse } = useWarehouses()
   const [tab, setTab] = useState<'orders' | 'transfers'>('orders')
+  // Paid / unpaid / cancelled filter (math audit O3, PO cancellation).
+  // Applied to the table only: the pending-arrival counter in the header
+  // answers a different question and must not change with it.
+  const [paidFilter, setPaidFilter] = useState<'all' | 'unpaid' | 'paid' | 'cancelled'>('all')
   // Phone or desktop. Declared with the other hooks so the hook order is stable
   // whichever tree ends up rendering (see the fork below).
   const isNarrow = useIsNarrow()
+  // The approver's inbox is reached from the bell / an email link
+  // (`/pedidos?view=approvals&po=...`): read once after mount, never in render.
+  const [approvalLink, setApprovalLink] = useState<{ open: boolean; po: string | null }>({ open: false, po: null })
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('view') === 'approvals') setApprovalLink({ open: true, po: q.get('po') })
+  }, [])
+  const inbox = (
+    <ApprovalInbox alwaysShow={approvalLink.open} focusId={approvalLink.po}
+                   onChanged={() => { load(); reloadAttention() }} />
+  )
 
   // `silent: true` — this screen renders the failure itself as a full ErrorState,
   // so the interceptor's toast would say the same thing twice.
-  const load = useCallback(async (initial = false) => {
+  const loadedRef = useRef(0)
+  const load = useCallback(async (initial = false, append = false) => {
     if (initial) setLoading(true)
+    if (append) setLoadingMore(true)
     setError(null)
-    try { setHistory(await getPOHistory(50, { silent: true })) }
-    catch (e: unknown) { setError(e) }
-    finally { if (initial) setLoading(false) }
-  }, [])
+    try {
+      const page = await getPOHistoryPage(
+        { limit: PAGE, offset: append ? loadedRef.current : 0, status: paidFilter },
+        { silent: true })
+      setTotal(page.total)
+      setAwaiting(page.awaiting_reception)
+      setHistory(prev => {
+        const next = append ? [...prev, ...page.items] : page.items
+        loadedRef.current = next.length
+        return next
+      })
+    }
+    catch (e: unknown) { if (!append) setError(e) }
+    finally { if (initial) setLoading(false); setLoadingMore(false) }
+  }, [paidFilter])
 
-  useEffect(() => { load(true) }, [load])
+  // Only the very first load shows the skeleton; changing the filter keeps the
+  // bar (and the rows) on screen while the server answers.
+  const firstLoad = useRef(true)
+  useEffect(() => { load(firstLoad.current); firstLoad.current = false }, [load])
 
   // Opened from the command palette (Ctrl-K → "Nueva orden"): the modal is
   // local state here, so the intent can only travel in the URL. Read once and
@@ -67,18 +102,13 @@ export default function OrdersPage() {
     if (canCreate) setCreatingPO(true)
   }, [canCreate])
 
-  // Supplier health signals (features 2.5 / 3.3) — server-computed.
-  useEffect(() => {
-    getSupplierContactHealth().then(setContactHealth).catch(() => {})
-    getSupplierLeadTimeAlerts().then(setLeadTimeAlerts).catch(() => {})
-  }, [])
-
-  const pendingCount = countAwaitingReception(history)
-
-  // On this screen there is no cart, so relevance is exactly "named on an
-  // order that is still open" — those are the orders that still need to
-  // reach the supplier.
-  const relevantContactHealth = suppliersOnOpenOrders(contactHealth)
+  // Counted by the server over every open order, not over the loaded page: the
+  // header badge answers a different question than the table's filter.
+  const pendingCount = awaiting
+  // "Unpaid" means an order that is owed: sent, not marked paid and not
+  // cancelled. A draft was never invoiced, so it is neither. The filter itself
+  // is applied by the server; what is loaded is already what the table shows.
+  const visibleHistory = history
 
   // ── Phone: a card list, not this table ────────────────────────────────────
   // Recording a delivery is done standing at the pallet. Everything above this
@@ -91,27 +121,36 @@ export default function OrdersPage() {
   if (isNarrow) {
     return (
       <>
+        <div style={{ margin: '0 0 12px' }}>{inbox}</div>
         <PedidosMobile
           loading={loading}
           error={error}
           onRetry={() => load(true)}
           entries={history}
-          contactHealth={relevantContactHealth}
-          leadTimeAlerts={leadTimeAlerts}
+          suppliersWithoutContact={contactHealth.map(r => r.supplier)}
+          overdueById={overdueById}
           onReceive={setReceivingPO}
+          onChanged={() => { load(); reloadAttention() }}
+          canEdit={canCreate}
+          onCreate={() => setCreatingPO(true)}
           multiWarehouse={multiWarehouse}
-          tab={tab}
-          onTab={setTab}
           transfers={<TransfersPanel />}
         />
-        {/* The same modal the desktop table opens. Reception writes stock and
-            teaches the supplier's real lead time — one implementation of that
-            mutation, or the two screens could record different things. */}
+        {/* The same reception form the desktop table opens (a bottom sheet on
+            a phone). Reception writes stock and teaches the supplier's real
+            lead time — one implementation of that mutation, or the two screens
+            could record different things. */}
         {receivingPO && (
           <ReceptionModal
             poId={receivingPO}
             onClose={() => setReceivingPO(null)}
-            onSaved={() => { setReceivingPO(null); load() }}
+            onSaved={() => { setReceivingPO(null); load(); reloadAttention() }}
+          />
+        )}
+        {creatingPO && (
+          <ManualPOModal
+            onClose={() => setCreatingPO(false)}
+            onSaved={() => { setCreatingPO(false); load() }}
           />
         )}
       </>
@@ -123,32 +162,23 @@ export default function OrdersPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
+      {inbox}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 9,
-            background: 'var(--accent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <ClipboardList size={17} color="#fff" strokeWidth={2.5} />
-          </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
-              {t('orders.page_title')}
-            </h1>
-            <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t('orders.page_subtitle')}</p>
-          </div>
-        </div>
+        {/* The top bar / phone header already names the screen: only what it
+            is for. */}
+        <p style={{ margin: 0, fontSize: 12, color: C.dim, flex: '1 1 200px', minWidth: 0 }}>{t('orders.page_subtitle')}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {pendingCount > 0 && (
             <span data-tour="pedidos.pending" style={{
               fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
-              background: 'rgba(245,158,11,0.1)', color: C.amber,
+              background: 'rgba(183,121,31,0.1)', color: C.amber,
             }}>
               {pendingCount} {t('orders.pending_suffix')}
             </span>
           )}
+          <BulkImportButton kind="orders" onImported={() => load()} />
           {canCreate && (
             <button
               data-tour="pedidos.manual"
@@ -178,10 +208,6 @@ export default function OrdersPage() {
 
       {tab === 'transfers' && multiWarehouse ? <TransfersPanel /> : (
       <>
-      {/* Supplier health (2.5) and lead-time deviation (3.3) */}
-      <SupplierContactHealthBanner rows={relevantContactHealth} />
-      <SupplierLeadTimeAlertBanner alerts={leadTimeAlerts} />
-
       {/* The three states: loading -> error -> empty -> data. */}
       {loading ? (
         <Card padding={8}>
@@ -191,7 +217,7 @@ export default function OrdersPage() {
         </Card>
       ) : error ? (
         <ErrorState error={error} onRetry={() => load(true)} />
-      ) : history.length === 0 ? (
+      ) : history.length === 0 && paidFilter === 'all' ? (
         <EmptyState
           icon={<ClipboardList size={22} />}
           title={t('orders.empty_title')}
@@ -204,22 +230,58 @@ export default function OrdersPage() {
           actions={[{ label: t('orders.go_to_hoy'), href: '/compras', icon: <ShoppingCart size={14} /> }]}
         />
       ) : (
+        <>
+        <div role="group" aria-label={t('po.paid_filter_label')}
+             style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11.5, color: C.dim, marginRight: 4 }}>{t('po.paid_filter_label')}:</span>
+          {(['all', 'unpaid', 'paid', 'cancelled'] as const).map(f => (
+            <button key={f} aria-pressed={paidFilter === f} onClick={() => setPaidFilter(f)}
+                    style={tabStyle(paidFilter === f)}>
+              {t(`po.paid_filter_${f}`)}
+            </button>
+          ))}
+        </div>
+        {visibleHistory.length === 0 ? (
+          <Card padding={16}>
+            <p style={{ margin: 0, fontSize: 12.5, color: C.dim }}>{t('po.paid_filter_empty')}</p>
+          </Card>
+        ) : (
         // The skeleton above already has the shape of this table, so fading the
         // rows in reads as the placeholder becoming the data, not as a blink.
         <Card data-tour="pedidos.table" className="page-enter" padding={0} overflow="hidden">
           <POHistoryTable
-            entries={history}
+            entries={visibleHistory}
             onReceive={setReceivingPO}
+            // Reloads after an undo or a payment change. It was never passed,
+            // so an un-send or un-receive left the row showing the old state
+            // until the page was reloaded by hand.
+            onUndone={() => { load(); reloadAttention() }}
             suppliersWithoutContact={contactHealth.map(r => r.supplier)}
+            overdueById={overdueById}
           />
         </Card>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: C.dim }}>
+            {t('list.showing', { shown: history.length, total })}
+          </span>
+          {history.length < total && (
+            <button type="button" disabled={loadingMore} onClick={() => load(false, true)}
+                    style={{ all: 'unset', cursor: loadingMore ? 'default' : 'pointer', fontSize: 12,
+                             color: 'var(--accent)', opacity: loadingMore ? 0.5 : 1 }}>
+              {loadingMore ? t('common.loading') : t('list.load_more')}
+            </button>
+          )}
+        </div>
+        </>
       )}
 
       {receivingPO && (
         <ReceptionModal
           poId={receivingPO}
           onClose={() => setReceivingPO(null)}
-          onSaved={() => { setReceivingPO(null); load() }}
+          onSaved={() => { setReceivingPO(null); load(); reloadAttention() }}
         />
       )}
 
@@ -234,6 +296,8 @@ export default function OrdersPage() {
     </div>
   )
 }
+
+const PAGE = 50
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
   all: 'unset', cursor: 'pointer', padding: '5px 12px', borderRadius: 7,

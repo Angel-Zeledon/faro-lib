@@ -16,6 +16,8 @@ Returns the same interface as all other stat models:
 import logging
 import numpy as np
 
+from forecasting_core.pipelines.progress import ticking
+
 log = logging.getLogger(__name__)
 
 
@@ -43,6 +45,7 @@ def run_sarimax_core(
     order=(1, 1, 1),
     seasonal_order=None,
     horizon: int = 0,
+    on_unit=None,
 ):
     """
     Train a SARIMAX model per SKU.
@@ -84,7 +87,7 @@ def run_sarimax_core(
     results = {}
     src = df.groupby(group) if group else [(None, df)]
 
-    for sku, g in src:
+    for sku, g in ticking(src, on_unit):
         g = g.sort_values(dt).reset_index(drop=True)
         series = g[target].astype(float)
 
@@ -118,9 +121,23 @@ def run_sarimax_core(
                 exog=exog_test,
             )
             from forecasting_core.evaluation.metrics import evaluate_all
-            result = evaluate_all(series.iloc[cut:].values, fc_test.values)
+            test_actual = series.iloc[cut:].values
+            test_pred = fc_test.values
+            result = evaluate_all(test_actual, test_pred)
+            # See models/ets.py for the full rationale: `cost_horizon` is
+            # windowed to `min(horizon, len(test))` so SARIMAX is asked the
+            # same h-step question as every other family, while
+            # mae/rmse/wape/bias/mape/smape/cost keep covering the whole
+            # held-out tail — a separate, still-useful question.
+            result["cost_horizon"] = None
+            result["horizon_steps"] = None
 
             if horizon > 0:
+                h_steps = min(horizon, len(test_actual))
+                result["cost_horizon"] = evaluate_all(
+                    test_actual[:h_steps], test_pred[:h_steps]
+                )["cost"]
+                result["horizon_steps"] = h_steps
                 # Re-fit on full series for future forecast
                 exog_full = g[exog_cols].values if exog_cols else None
                 with warnings.catch_warnings():

@@ -748,6 +748,8 @@ class ForecastEngine:
         self._fitted_models  = results.fitted_models
         self._stat_forecasts = results.stat_forecasts
         self._run_metadata   = results.metadata or {}
+        self._demand_risk    = results.demand_risk or {}
+        self._policy_backtest = results.policy_backtest or {}
 
         # Apply hierarchical reconciliation if configured
         hierarchy_cfg = self._config.to_dict().get("hierarchy", {})
@@ -756,7 +758,20 @@ class ForecastEngine:
                 from forecasting_core.hierarchy import HierarchicalReconciler
                 reconciler = HierarchicalReconciler(levels=hierarchy_cfg["levels"])
                 method = hierarchy_cfg.get("reconciliation", "bottom_up")
-                if method == "top_down" and self._df is not None:
+                if method == "mint":
+                    # Residuals per leaf let MinT weight the levels by how
+                    # reliable each one has proven; without them it degrades to
+                    # the OLS projection, which is still coherent.
+                    residuals = {
+                        str(entry.get("sku")): entry.get("residuals")
+                        for entry in (self._fitted_models or {}).values()
+                        if entry.get("residuals") is not None
+                    }
+                    self._forecast_df = reconciler.mint(
+                        self._forecast_df, residuals=residuals,
+                        date_col="date", value_col="forecast",
+                    )
+                elif method == "top_down" and self._df is not None:
                     self._forecast_df = reconciler.top_down(
                         self._forecast_df, self._df,
                         date_col="date", value_col="forecast",
@@ -798,6 +813,37 @@ class ForecastEngine:
             "validation":  meta.get("validation_findings") or [],
             "corrections": meta.get("corrections") or [],
         }
+
+    def get_demand_risk(self) -> dict:
+        """
+        Per-SKU cumulative demand uncertainty, for the inventory layer.
+
+        {sku: {model, quantiles, cumulative_offsets: {L: {q: units}}}} — add the
+        offset to the summed point forecast over L buckets to get that quantile
+        of total lead-time demand. Empty for runs with no rolling-origin
+        backtest; the consumer must fall back rather than assume it is there.
+
+        Used by:
+            - API: the reorder point in backend/inventory/service.py
+        """
+        return getattr(self, "_demand_risk", {}) or {}
+
+    def get_policy_backtest(self) -> dict:
+        """
+        What the forecast would have done to the warehouse.
+
+        {"summary": {fill_rate, stockouts_avoided, avg_inventory, ...},
+         "by_sku": {sku: {...}}} — the purchasing outcome simulated over real
+        past demand, against the same policy driven by a naive forecast.
+
+        Empty when no model in the run produced a rolling-origin backtest;
+        `summary.n_series` states how many series it actually covers, so the
+        headline is never mistaken for the whole catalogue.
+
+        Used by:
+            - API: GET /sessions/{id}/results
+        """
+        return getattr(self, "_policy_backtest", {}) or {}
 
     def get_metrics(self) -> dict:
         """
@@ -930,6 +976,42 @@ class ForecastEngine:
         if self._forecast_df is None:
             return pd.DataFrame(columns=["sku", "model", "date", "forecast", "p90_lo", "p90_hi", "step"])
         return self._forecast_df.reset_index(drop=True)
+
+    def export_artifacts(self):
+        """
+        Serialise the trained models into a versioned, content-hashed
+        ``ArtifactSet`` (see ``forecasting_core.reforecast``). JSON + native
+        model formats, no pickle. The caller decides where the bytes live.
+        """
+        self._require_trained()
+        from forecasting_core.reforecast import build_artifact_set
+        return build_artifact_set(self)
+
+    def reforecast(self, artifacts, horizon: Optional[int] = None, **options):
+        """
+        Forecast from persisted models over the history loaded into this engine
+        (``load_data``), WITHOUT refitting. Mirrors the state ``train()`` leaves
+        behind, so ``get_metrics`` / ``get_forecast`` / ``get_inventory_report``
+        read the re-forecast as they would a trained run.
+
+        Raises ``forecasting_core.reforecast.ReforecastRefused`` (with a stable
+        ``code``) when the artifacts cannot answer for this data.
+        """
+        self._require_data()
+        self._ensure_config()
+        from forecasting_core.reforecast import reforecast as _reforecast
+        result = _reforecast(artifacts, self._df, self._config, horizon, **options)
+        self._metrics_df = result.metrics_df
+        self._forecast_df = result.forecast_df
+        self._inventory_df = result.inventory_df
+        self._fitted_models = result.fitted_models
+        self._stat_forecasts = {}
+        self._run_id = f"reforecast_{result.parent_run_id}"
+        self._run_metadata = result.run_metadata
+        self._demand_risk = result.demand_risk
+        self._policy_backtest = result.policy_backtest
+        self._transformer = None
+        return result
 
     def get_inventory_report(self) -> dict:
         """

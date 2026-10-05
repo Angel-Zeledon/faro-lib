@@ -33,6 +33,7 @@ from backend.schemas.auth import (
 from backend.schemas.common import ok
 from backend.tenants.service import create_tenant, delete_empty_tenant
 from backend.users import service as user_svc
+from backend.users.terms import TERMS_VERSION
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ def _hash_code(code: str) -> str:
 
 # A 6-digit OTP has 10^6 combinations; keeping the window short and burning the
 # code after a few wrong guesses is what makes brute force infeasible.
-_OTP_EXPIRE_MINUTES = 15
+from backend.config import OTP_EXPIRE_MINUTES as _OTP_EXPIRE_MINUTES
 _OTP_MAX_ATTEMPTS   = 5
 
 
@@ -134,6 +135,15 @@ def _issue_reset_otp(user_id: str, tenant_id: str) -> str:
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(body: SignupRequest):
+    # First, before anything is created: an account nobody agreed to the terms
+    # of is not one we should hold data for.
+    if body.accept_terms is not True:
+        raise AppError(
+            "terms_not_accepted",
+            "You must accept the Terms of Service and the Privacy Policy to create an account.",
+            status_code=400,
+        )
+
     _reject_weak_password(body.password)
 
     if _lookup_email(body.email):
@@ -174,6 +184,7 @@ async def signup(body: SignupRequest):
             role="admin",
             full_name=body.full_name,
             whatsapp_number=phone,
+            terms_version=TERMS_VERSION,
         )
     except Exception as exc:
         delete_empty_tenant(tenant["id"])
@@ -289,9 +300,32 @@ async def login(body: LoginRequest):
         # distinguishing them would make login an account-enumeration oracle.
         raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
 
+    # A company that made single sign-on mandatory for this address's domain has
+    # no password door. Refused BEFORE the password is looked at, so a correct
+    # one proves nothing and the answer does not depend on it; the same fact is
+    # public at /auth/sso/discover, so this reveals nothing new.
+    from backend.auth.sso import service as sso_service
+    if sso_service.enforced_for(entry["tenant_id"], body.email):
+        raise AppError(
+            "sso_required",
+            "Your company requires signing in with its identity provider.",
+            status_code=403,
+        )
+
     user = user_svc.verify_credentials(entry["tenant_id"], body.email, body.password)
     if not user:
         raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
+
+    # A trial account between its end and the hourly reaper. After the
+    # password matched, so it says nothing to somebody guessing addresses.
+    from backend.tenants.service import get_tenant
+    from backend.trial.service import is_expired_trial
+    if is_expired_trial(get_tenant(entry["tenant_id"])):
+        raise AppError(
+            "trial_account_expired",
+            "This trial account has ended. Start a new one from the home page.",
+            status_code=403,
+        )
 
     # An unverified address no longer blocks the login. It travels in the token
     # instead (`email_verified` claim), and backend/auth/guards.py demands
@@ -348,6 +382,14 @@ async def refresh(body: RefreshRequest):
     if not user:
         raise AppError(
             "refresh_token_invalid", "Invalid or expired refresh token", status_code=401,
+        )
+    from backend.tenants.service import get_tenant
+    from backend.trial.service import is_expired_trial
+    if is_expired_trial(get_tenant(user["tenant_id"])):
+        raise AppError(
+            "trial_account_expired",
+            "This trial account has ended. Start a new one from the home page.",
+            status_code=401,
         )
 
     # Re-read from the row, not from the old token: a user who verifies mid
@@ -425,10 +467,40 @@ async def reset_password(body: ResetPasswordRequest):
     if payload.get("purpose") != "password_reset":
         raise AppError("reset_token_invalid", "Invalid token", status_code=400)
 
+    # One reset per token. The OTP that buys this token is burned on use
+    # (`pw_change_codes.used`), but the token itself was a plain signed JWT with
+    # nothing marking it spent — so it kept working for its full 15 minutes.
+    # Walked 2026-08-10: replaying the very same token after a completed reset
+    # returned 200 and changed the password a second time, locking the real
+    # owner out of the account they had just recovered.
+    #
+    # It matters more than a generic replay because this token travels in the
+    # URL of /reset-password: it survives in browser history, in a shared
+    # screen, in whatever logs a proxy keeps.
+    #
+    # The blocklist `/logout` already uses is exactly the right store, and the
+    # token already carries a `jti` — no new machinery.
+    from backend.auth.blocklist import is_revoked, revoke
+
+    jti = payload.get("jti")
+    if jti and is_revoked(jti):
+        raise AppError("reset_token_invalid", "This reset link was already used",
+                       status_code=400)
+
+    # Deliberately BEFORE the burn: a password rejected for being weak must
+    # leave the token usable, or the user's first typo costs them the link.
     _reject_weak_password(body.new_password)
 
     user_svc.update_password(payload["tenant_id"], payload["sub"], body.new_password)
-    return ok({"message": "Password updated. All sessions have been revoked."})
+    if jti and payload.get("exp"):
+        revoke(jti, datetime.fromtimestamp(payload["exp"], tz=timezone.utc))
+    # This claim is now true, and was not until 2026-08-10. `update_password`
+    # used to delete refresh tokens only, so a session could not be RENEWED
+    # while an access token already in someone's hands kept full write access
+    # for the rest of its 15 minutes — measured, not theorised. It now also
+    # stamps `users.sessions_invalid_before`, which guards.py refuses tokens
+    # against, so an intruder's live token dies with this call.
+    return ok({"message": "Password updated. All sessions have been signed out."})
 
 
 @router.post("/logout")

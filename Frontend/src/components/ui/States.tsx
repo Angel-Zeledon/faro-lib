@@ -14,17 +14,19 @@
  *   ErrorState — a legible reason (derived from ApiError.kind, so the copy for
  *     "no permission" is written once) plus a retry affordance.
  */
+import { useFeedback } from '@/components/feedback/context'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { RefreshCw, AlertTriangle, Lock, SearchX, WifiOff, ServerCrash } from 'lucide-react'
-import { isApiError, type ApiErrorKind, type FieldError } from '@/lib/api'
+import { isApiError, type ApiErrorKind } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { translations, type TranslationKey } from '@/i18n/translations'
+import { type TranslationKey } from '@/i18n/translations'
+import { translateErrorParts } from '@/lib/errorMessage'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
   text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
-  red: '#ef4444', indigo: 'var(--accent)',
+  red: '#C0504D', indigo: 'var(--accent)',
 }
 
 /* ── Error copy ────────────────────────────────────────────────────────────── */
@@ -51,56 +53,24 @@ const ERROR_COPY: Record<ApiErrorKind | 'unknown', {
 }
 
 /**
- * The human, localized reason for an error. When the backend sent a stable
- * `error_code`, render `errors.<code>` (interpolating the `params` it sent) so
- * the user reads Spanish while the backend stayed English. Falls back to the
- * backend's English `detail` when there is no code, or the code has no i18n
- * mapping yet (e.g. a backend deployed ahead of the frontend). Non-ApiError
- * values fall back to their message. Single source of truth for the toast
- * bridge and the ErrorState/InlineError components.
+ * The human, localized reason for an error — never the backend's English and
+ * never a raw code. Resolution lives in `lib/errorMessage.ts` (catalogue code →
+ * Pydantic field rule → generic sentence per HTTP class). A plain `Error` is a
+ * message a screen already composed (usually from `ApiError.message`), so it
+ * passes through. Single source of truth for the toast bridge and the
+ * ErrorState/InlineError components.
  */
 export function useErrorDetail() {
-  const { t } = useLanguage()
+  const { lang } = useLanguage()
   return (err: unknown): string => {
-    if (isApiError(err) && err.code) {
-      const key = `errors.${err.code}`
-      if (key in translations.es) return t(key, err.params)
+    if (isApiError(err)) {
+      return translateErrorParts(
+        { status: err.status, code: err.code, params: err.params, fieldErrors: err.fieldErrors },
+        lang,
+      )
     }
-    // A 422 arrives as Pydantic's own English ("qty: Input should be less than
-    // or equal to 1000000000"). Rebuild it from the machine-readable
-    // type + ctx so the user reads their own language.
-    if (isApiError(err) && err.fieldErrors.length) {
-      const sentences = err.fieldErrors.map(fe => fieldErrorText(fe, t))
-      if (sentences.some(Boolean)) return sentences.filter(Boolean).join(' ')
-    }
-    return isApiError(err) ? err.detail : err instanceof Error ? err.message : ''
+    return err instanceof Error ? err.message : ''
   }
-}
-
-/**
- * One Pydantic field failure as a sentence in the active language.
- *
- * `errors.validation.<pydantic_type>` holds the rule copy (interpolating the
- * bounds Pydantic ships in `ctx`), and `errors.field.<name>` gives the field a
- * human name. Either lookup may miss — a new Pydantic rule or a field nobody
- * has named yet — and the fallbacks degrade to the backend's English rather
- * than to silence, because a rough message beats no message.
- */
-function fieldErrorText(
-  fe: FieldError, t: (k: string, p?: Record<string, unknown>) => string,
-): string {
-  const ruleKey = `errors.validation.${fe.type}`
-  if (!(ruleKey in translations.es)) return fe.field ? `${fe.field}: ${fe.msg}` : fe.msg
-
-  const fieldKey = `errors.field.${fe.field}`
-  const named = fe.field ? fieldKey in translations.es : false
-  const fieldName = named ? t(fieldKey) : fe.field
-  const rule = t(ruleKey, fe.ctx)
-  if (!fieldName) return rule
-  // Named fields read as a sentence ("El multiplicador no puede ser mayor que
-  // 10."); a raw API field name still needs the colon to look deliberate
-  // ("some_flag: no es válido.").
-  return named ? `${fieldName} ${rule}` : `${fieldName}: ${rule}`
 }
 
 /**
@@ -284,17 +254,20 @@ export function ErrorState({ error, onRetry, compact }: {
   const copy = ERROR_COPY[kind]
   const detail = errorDetail(error)
   const showRetry = Boolean(onRetry) && copy.retryable
+  const reportBug = useFeedback()
+  // Only failures on our side are worth a report; the rest say what to do.
+  const reportable = kind === 'server' || kind === 'unknown'
 
   return (
     <div role="alert" style={{
-      background: C.surface, border: '1px solid rgba(239,68,68,0.28)', borderRadius: 12,
+      background: C.surface, border: '1px solid rgba(192,80,77,0.28)', borderRadius: 12,
       padding: compact ? '20px 22px' : '36px 32px',
       maxWidth: 520, margin: '0 auto', width: '100%', textAlign: 'center',
     }}>
       <div style={{
         width: 44, height: 44, borderRadius: 12, margin: '0 auto 14px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(239,68,68,0.1)', color: C.red,
+        background: 'rgba(192,80,77,0.1)', color: C.red,
       }}>
         {copy.icon}
       </div>
@@ -327,6 +300,20 @@ export function ErrorState({ error, onRetry, compact }: {
           <RefreshCw size={13} /> {t('states.retry')}
         </button>
       )}
+
+      {reportable && (
+        <div style={{ marginTop: 12 }}>
+          <button
+            onClick={() => reportBug({ code: (error as { code?: string })?.code || undefined, detail: detail || t(copy.body) })}
+            style={{
+              all: 'unset', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: C.muted,
+              textDecoration: 'underline', textUnderlineOffset: 3,
+            }}
+          >
+            {t('feedback.action')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -349,7 +336,7 @@ export function InlineError({ error, onRetry, onDismiss }: {
   return (
     <div role="alert" style={{
       display: 'flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 8,
-      background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)',
+      background: 'rgba(192,80,77,0.07)', border: '1px solid rgba(192,80,77,0.2)',
       fontSize: 13, color: C.text,
     }}>
       <AlertTriangle size={14} color={C.red} style={{ flexShrink: 0 }} />

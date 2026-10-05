@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { authResetPassword } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
-import { Zap, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
+import { BrandMark } from '@/components/brand/BrandMark'
 
 function ResetPasswordForm() {
   const { t }    = useLanguage()
@@ -46,12 +47,8 @@ function ResetPasswordForm() {
   return (
     <div style={{ width: '100%', maxWidth: 400, padding: '0 20px' }}>
       <div style={{ textAlign: 'center', marginBottom: 28 }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 11, margin: '0 auto 10px',
-          background: 'linear-gradient(135deg, var(--accent), var(--accent))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Zap size={20} color="#fff" strokeWidth={2.5} />
+        <div style={{ marginBottom: 10 }}>
+          <BrandMark size={40} />
         </div>
         <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px' }}>
           {t('auth.set_new_password_title')}
@@ -61,7 +58,7 @@ function ResetPasswordForm() {
       <div style={{ background: 'var(--surface)', border: '1px solid var(--surface)', borderRadius: 14, padding: '24px 28px' }}>
         {done ? (
           <div style={{ textAlign: 'center' }}>
-            <CheckCircle2 size={32} color="#22c55e" style={{ margin: '0 auto 12px' }} />
+            <CheckCircle2 size={32} color="#2E8B62" style={{ margin: '0 auto 12px' }} />
             <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
               {t('auth.pw_updated')} {t('auth.redirecting_login')}
             </p>
@@ -69,7 +66,7 @@ function ResetPasswordForm() {
         ) : (
           <>
             {!token && (
-              <div style={{ fontSize: 13, color: '#ef4444', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, color: '#C0504D', marginBottom: 16 }}>
                 {t('auth.reset_token_missing')}{' '}
                 <Link href="/forgot-password" style={{ color: 'var(--accent)' }}>{t('auth.reset_request_new_link')}</Link>.
               </div>
@@ -78,8 +75,8 @@ function ResetPasswordForm() {
               <div style={{
                 display: 'flex', gap: 8, alignItems: 'center',
                 padding: '10px 14px', borderRadius: 8, marginBottom: 16,
-                background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-                fontSize: 13, color: '#ef4444',
+                background: 'rgba(192,80,77,0.08)', border: '1px solid rgba(192,80,77,0.2)',
+                fontSize: 13, color: '#C0504D',
               }}>
                 <AlertTriangle size={14} /> {error}
               </div>
@@ -99,7 +96,8 @@ function ResetPasswordForm() {
                     onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
                     onBlur={e => (e.target.style.borderColor = 'var(--surface)')}
                   />
-                  <button type="button" onClick={() => setShowPw(v => !v)} style={{
+                  <button type="button" className="auth-eye" onClick={() => setShowPw(v => !v)}
+                    aria-label={showPw ? t('auth.hide_password') : t('auth.show_password')} style={{
                     all: 'unset', position: 'absolute', right: 10, top: '50%',
                     transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--dim)',
                   }}>
@@ -116,9 +114,9 @@ function ResetPasswordForm() {
                   type={showPw ? 'text' : 'password'} required value={pw2}
                   onChange={e => setPw2(e.target.value)}
                   placeholder={t('auth.confirm_password_placeholder')}
-                  style={{ ...inputStyle, borderColor: pw2 && pw !== pw2 ? '#ef4444' : 'var(--surface)' }}
-                  onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : 'var(--accent)')}
-                  onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#ef4444' : 'var(--surface)')}
+                  style={{ ...inputStyle, borderColor: pw2 && pw !== pw2 ? '#C0504D' : 'var(--surface)' }}
+                  onFocus={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#C0504D' : 'var(--accent)')}
+                  onBlur={e => (e.target.style.borderColor = pw2 && pw !== pw2 ? '#C0504D' : 'var(--surface)')}
                 />
               </div>
               <button

@@ -3,7 +3,7 @@ Supplier health: contact-data completeness (feature 2.5) and lead-time
 deviation detection (feature 3.3).
 
 Both answer the same underlying question — "which supplier is about to cost
-me something?" — from data Faro already owns:
+me something?" — from data StockAI already owns:
 
   2.5  `POST /inventory/po/{id}/send` silently skips any supplier with no
        email and no whatsapp on file (and any supplier name that has no
@@ -46,8 +46,12 @@ _SEND_BLOCKING_REASONS = {
 # PO line statuses that were actually ordered (mirrors reception_service._ORDERED)
 _ORDERED = ("approved", "modified")
 
-# PO header states that still have something to send / receive
-_OPEN_PO_STATES = ("pending", "partial")
+# PO header states that still have something to send / receive.
+# `not_received` belongs here: it records "nothing arrived on the day I looked",
+# which is a LATE order, not a closed one. Treating it as terminal dropped the
+# order out of every open-PO count at the exact moment the supplier was most
+# obviously failing to deliver.
+_OPEN_PO_STATES = ("pending", "partial", "not_received")
 
 
 def get_contact_health(tenant_id: str) -> list[dict]:
@@ -112,6 +116,7 @@ def get_contact_health(tenant_id: str) -> list[dict]:
               AND poi.status IN %s
               AND COALESCE(TRIM(poi.supplier), '') <> ''
               AND pol.reception_status IN %s
+              AND pol.cancelled_at IS NULL
             GROUP BY LOWER(TRIM(poi.supplier))""",
         (tenant_id, _ORDERED, _OPEN_PO_STATES),
     )
@@ -227,15 +232,21 @@ def get_lead_time_deviations(tenant_id: str) -> list[dict]:
     directly; non-alerting suppliers are omitted, not returned with a false
     flag, so a truthiness check on the list is meaningful):
 
-        supplier              supplier name
-        lead_time_historico    baseline median, days
-        lead_time_reciente     recent median, days
-        deviation_days        recent - baseline (always > 0 here)
-        z_score                robust one-sided z
-        sigma                  robust sigma actually used (after the floor)
-        n_baseline / n_reciente
-        severidad              'alta' when z >= 2 * Z_THRESHOLD else 'media'
-        mensaje                ready-to-show Spanish sentence
+        supplier                supplier name
+        lead_time_historical    baseline median, days
+        lead_time_recent        recent median, days
+        deviation_days          recent - baseline (always > 0 here)
+        z_score                 robust one-sided z
+        sigma                   robust sigma actually used (after the floor)
+        n_baseline / n_recent
+        severity                'high' when z >= 2 * Z_THRESHOLD else 'medium'
+        message                 English fallback sentence
+        message_code / message_params
+                                what the frontend renders in the reader's
+                                language. The sentence used to exist only as
+                                Spanish built here, so /proveedores/scorecard
+                                showed "Acme está tardando 12 días, no 7" with
+                                the rest of the page in English.
     """
     rows = query(
         """SELECT supplier, lead_time_days, observed_at
@@ -247,12 +258,29 @@ def get_lead_time_deviations(tenant_id: str) -> list[dict]:
     if not rows:
         return []
 
+    # Grouped case-insensitively, like every other consumer of this table
+    # (get_supplier_scorecard, service.get_learned_lead_times,
+    # get_supplier_observation_counts and _effective_lead_time all group by
+    # LOWER(supplier)). This grouped by the RAW spelling while the query
+    # normalised only for ORDERING, and receive_po stores whichever spelling
+    # that PO carried — so 8 receptions from Acme split 5/3 across "Acme" and
+    # "ACME" produced two series, neither reaching MIN_BASELINE + MIN_RECENT.
+    # The supplier's lead time had doubled and neither the banner nor the 8:00
+    # email fired: a supplier whose history was SPLIT looked exactly like a
+    # supplier with too little history.
+    #
+    # The display name is the first spelling seen in the (already ordered)
+    # rows, so the alert is keyed the same way the scorecard keys its row.
     by_supplier: dict[str, list[dict]] = {}
+    display_name: dict[str, str] = {}
     for r in rows:
-        by_supplier.setdefault(r["supplier"], []).append(r)
+        key = (r["supplier"] or "").casefold()
+        by_supplier.setdefault(key, []).append(r)
+        display_name.setdefault(key, r["supplier"])
 
     out: list[dict] = []
-    for supplier, obs in by_supplier.items():
+    for key, obs in by_supplier.items():
+        supplier = display_name[key]
         alert = _evaluate_supplier(supplier, [float(o["lead_time_days"]) for o in obs])
         if alert:
             out.append(alert)
@@ -293,20 +321,21 @@ def _evaluate_supplier(supplier: str, series: list[float]) -> Optional[dict]:
     if z < Z_THRESHOLD:
         return None
 
+    recent_s, baseline_s = _fmt_days(recent_median), _fmt_days(baseline_median)
     return {
-        "supplier":           supplier,
-        "lead_time_historico": round(baseline_median, 1),
-        "lead_time_reciente":  round(recent_median, 1),
-        "deviation_days":     round(delta, 1),
-        "z_score":             round(z, 2),
-        "sigma":               round(sigma, 2),
-        "n_baseline":          len(baseline),
-        "n_reciente":          len(recent),
-        "severidad":           "alta" if z >= 2 * Z_THRESHOLD else "media",
-        "mensaje": (
-            f"{supplier} está tardando {_fmt_days(recent_median)} días, "
-            f"no {_fmt_days(baseline_median)}"
-        ),
+        "supplier":             supplier,
+        "lead_time_historical": round(baseline_median, 1),
+        "lead_time_recent":     round(recent_median, 1),
+        "deviation_days":       round(delta, 1),
+        "z_score":              round(z, 2),
+        "sigma":                round(sigma, 2),
+        "n_baseline":           len(baseline),
+        "n_recent":             len(recent),
+        "severity":             "high" if z >= 2 * Z_THRESHOLD else "medium",
+        "message":              f"{supplier} is taking {recent_s} days, not {baseline_s}",
+        "message_code":         "supplier_taking_longer",
+        "message_params":       {"supplier": supplier, "recent": recent_s,
+                                 "historical": baseline_s},
     }
 
 
@@ -349,10 +378,16 @@ def run_daily_supplier_lead_time_alerts() -> None:
             app_url = getattr(settings, "frontend_url", "http://localhost:3000")
             scorecard_url = f"{app_url}/inventory/suppliers/scorecard"
 
-            for r in get_tenant_alert_recipients(tid):
+            # Active users only (the helper's default). Warehouse-scoped users
+            # are included on purpose: this alert is supplier-level lead-time
+            # drift — no stock, no warehouse names — the same figures the
+            # supplier scorecard shows them on screen (allow-listed in
+            # test_warehouse_scope_coverage.py for that reason).
+            for r in get_tenant_alert_recipients(tid, include_scoped=True):
                 if not r.get("email"):
                     continue
                 delivered = send_supplier_lead_time_alert_email(
+                    tenant_id=tid,
                     to=r["email"], deviations=deviations, scorecard_url=scorecard_url,
                 )
                 if not delivered:
@@ -363,7 +398,13 @@ def run_daily_supplier_lead_time_alerts() -> None:
                         "channel": "email",
                         "recipient": r["email"],
                         "suppliers": len(deviations),
-                        **({} if delivered else {"reason": email_mod.failure_reason()}),
+                        # Scoped to the tenant, like the send two lines up.
+                        # `failure_reason()` with no tenant asks the INSTANCE
+                        # config, so a tenant running its own Resend key was
+                        # told "no transport configured" when the real cause was
+                        # the credential they own and can fix — and the mirror
+                        # case reported "transport_error" and never named it.
+                        **({} if delivered else {"reason": email_mod.failure_reason(tid)}),
                     },
                 )
         except Exception as e:

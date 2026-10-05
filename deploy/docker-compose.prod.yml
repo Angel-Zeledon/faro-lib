@@ -1,4 +1,4 @@
-# Faro — production stack.
+# StockAI — production stack.
 #
 #   cd deploy
 #   cp .env.example .env        # fill in secrets
@@ -25,8 +25,12 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in deploy/.env}
+      # Only read by Caddyfile.split (landing on its own domain).
+      LANDING_DOMAIN: ${LANDING_DOMAIN:-}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # CADDYFILE=Caddyfile.split serves the landing on LANDING_DOMAIN and the
+      # app on DOMAIN; the default serves everything on DOMAIN.
+      - ./${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -37,6 +41,14 @@ services:
       context: ../Frontend
       args:
         BACKEND_URL: http://api:8010
+        # Set with CADDYFILE=Caddyfile.split so the landing's sign-in links
+        # leave for the app's origin, e.g. https://app.stockai.es
+        NEXT_PUBLIC_APP_URL: ${APP_URL:-}
+        # The landing's public origin (https://stockai.es, or https://DOMAIN
+        # when landing and app share one): canonical URL, sitemap, preview image.
+        NEXT_PUBLIC_SITE_URL: ${SITE_URL:-}
+        # Search Console HTML-tag token; empty renders no tag.
+        NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION: ${GOOGLE_SITE_VERIFICATION:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO/dev/null", "http://127.0.0.1:5000/"]
@@ -62,8 +74,14 @@ services:
       WORKER_ENABLED: "false"
       SCHEDULER_ENABLED: "false"
       STORAGE_PATH: /app/storage
+      # Where deploy/ops/backup.sh leaves its success marker, seen read-only
+      # through the mount below. Until a backup writes it the installation
+      # status panel says "unknown", never "ok".
+      BACKUP_STATUS_PATH: /backups/last_success.json
+      BACKUP_DIR: /backups
     volumes:
       - storage:/app/storage
+      - ${BACKUP_HOST_DIR:-/var/backups}:/backups:ro
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=4)"]
@@ -78,11 +96,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2.0"
+          cpus: "${API_CPUS:-2.0}"
           memory: 2G
 
   # The training + cron instance. WORKER_ID is FIXED so its orphaned RUNNING
   # jobs are still recognized after the container is recreated on deploy.
+  # WORKER_CPUS / API_CPUS: Docker refuses a limit above the host's core count,
+  # so a 2-vCPU box must lower them in deploy/.env (e.g. 1.5 and 1.0).
   worker:
     image: faro-backend
     restart: unless-stopped
@@ -105,7 +125,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "3.0"
+          cpus: "${WORKER_CPUS:-3.0}"
           memory: 5G
 
   # Claim-only extra workers: docker compose --profile scale up -d --scale worker-extra=2
@@ -129,7 +149,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "3.0"
+          cpus: "${WORKER_CPUS:-3.0}"
           memory: 5G
 
   # Bundled Postgres — for the single-VPS deployment. To move to a managed

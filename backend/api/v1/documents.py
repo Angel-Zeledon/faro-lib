@@ -28,13 +28,10 @@ from backend.auth.guards import (
     CurrentUser, get_current_user, require_analyst_or_above,
 )
 from backend.db.connection import execute, query, query_one
-from backend.entitlements.guards import require_feature
-from backend.entitlements.plans import Feature
 from backend.schemas.common import ok
 
 router = APIRouter(
     tags=["documents"],
-    dependencies=[Depends(require_feature(Feature.DOCUMENTS_RAG))],
 )
 log = logging.getLogger(__name__)
 
@@ -126,8 +123,13 @@ def _index_in_background(
         log.error("Document indexing failed (doc=%s): %s", doc_id, exc, exc_info=True)
         try:
             _set_status(doc_id, tenant_id, "FAILED", error=str(exc)[:500])
-        except Exception:
-            pass
+        except Exception as status_exc:
+            # The status write is the ONLY thing the user can see — indexing runs
+            # in the background. Losing it leaves the document sitting on
+            # "procesando" forever with nothing anywhere saying why, so the log
+            # line has to name that outcome instead of swallowing it.
+            log.error("Document %s failed AND could not be marked FAILED — it will "
+                      "stay 'processing' in the UI: %s", doc_id, status_exc)
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────

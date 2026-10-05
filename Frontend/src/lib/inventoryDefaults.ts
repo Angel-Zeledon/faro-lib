@@ -1,4 +1,4 @@
-// The planning values Faro assumes when the tenant has configured nothing, and
+// The planning values StockAI assumes when the tenant has configured nothing, and
 // the vocabulary that says WHERE a value came from.
 //
 // Mirror of `backend/inventory/defaults.py` — that module is the authority; the
@@ -30,7 +30,7 @@ export type ValueSource = 'user' | 'file' | 'supplier_rule' | 'learned' | 'defau
 /** Which level of the SKU > supplier > category > global cascade won. */
 export type RuleScope = 'supplier' | 'category' | 'global'
 
-/** True when the number on screen is Faro's assumption, not the tenant's data.
+/** True when the number on screen is StockAI's assumption, not the tenant's data.
  *  Anything unknown is treated as assumed on purpose: claiming authorship we
  *  cannot prove is the exact failure this whole change exists to fix. */
 export function isAssumed(source: ValueSource | null | undefined): boolean {

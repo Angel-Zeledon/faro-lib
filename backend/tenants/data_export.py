@@ -46,7 +46,8 @@ log = logging.getLogger(__name__)
 _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("users", "users",
      "id, tenant_id, email, full_name, role, email_verified, status, "
-     "last_login_at, pending_email, whatsapp_number, created_at, updated_at"),
+     "last_login_at, pending_email, whatsapp_number, terms_accepted_at, "
+     "terms_version, created_at, updated_at"),
     ("datasets", "datasets", "*"),
     ("sessions", "sessions", "*"),
     ("session_configs", "session_configs", "*"),
@@ -60,6 +61,9 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("inventory_po_log", "inventory_po_log", "*"),
     ("inventory_po_items", "inventory_po_items", "*"),
     ("inventory_shrinkage", "inventory_shrinkage", "*"),
+    ("stock_counts", "stock_counts", "*"),
+    ("stock_count_lines", "stock_count_lines", "*"),
+    ("stock_adjustments", "stock_adjustments", "*"),
     ("inventory_overstock_snapshots", "inventory_overstock_snapshots", "*"),
     ("inventory_roi_email_log", "inventory_roi_email_log", "*"),
     ("suppliers", "suppliers", "*"),
@@ -69,18 +73,41 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("bom_items", "bom_items", "*"),
     ("warehouses", "warehouses", "*"),
     ("documents", "documents", "*"),
+    # What the person typed on the feedback dialog. The screenshot FILES travel
+    # in the zip too (feedback_screenshots/), see build_export_zip.
+    ("feedback_reports", "feedback_reports", "*"),
     ("chats", "chats", "*"),
     ("chat_messages", "chat_messages", "*"),
     ("accuracy_snapshots", "accuracy_snapshots", "*"),
     ("forecast_overrides", "forecast_overrides", "*"),
+    ("forecast_adjustments", "forecast_adjustments", "*"),
+    ("committed_demand", "committed_demand", "*"),
+    ("supply_contracts", "supply_contracts", "*"),
+    ("demand_plan_versions", "demand_plan_versions", "*"),
+    ("demand_plan_version_events", "demand_plan_version_events", "*"),
+    ("spike_edits", "spike_edits", "*"),
+    ("spike_edit_applications", "spike_edit_applications", "*"),
+    ("sku_analogies", "sku_analogies", "*"),
+    ("po_approval_rules", "po_approval_rules", "*"),
+    ("po_approvals", "po_approvals", "*"),
     ("scheduled_jobs", "scheduled_jobs", "*"),
+    ("schedule_runs", "schedule_runs", "*"),
+    ("session_manifests", "session_manifests", "*"),
+    ("session_accuracy_tracking", "session_accuracy_tracking", "*"),
+    # The address token is a credential: only who may send, never the token.
+    ("inbound_email_addresses", "inbound_email_addresses",
+     "tenant_id, allowed_senders, created_at, rotated_at"),
+    ("inbound_email_messages", "inbound_email_messages", "*"),
     # key_hash / secret are never exported — only metadata about the key/hook.
     ("api_keys", "api_keys", "id, tenant_id, name, last_used, created_at"),
+    # Calls per key per day: what a call-based bill is computed from.
+    ("api_usage_daily", "api_usage_daily", "*"),
     ("webhooks", "webhooks", "id, tenant_id, url, events, created_at"),
     ("user_permissions", "user_permissions", "*"),
-    # credentials is never exported — only connection metadata.
-    ("integration_connections", "integration_connections",
-     "id, tenant_id, provider, status, last_sync_at, last_error, created_at"),
+    # Which sign-in providers each person linked. Who they are at Google /
+    # Microsoft / Apple is the person's data, so it travels with the export.
+    ("user_identities", "user_identities",
+     "id, user_id, tenant_id, provider, subject, email, created_at, last_used_at"),
 ]
 
 # Deliberately NOT exported: pure security/credential artifacts, not "the
@@ -126,6 +153,23 @@ def build_export_zip(tenant_id: str) -> bytes:
             zf.writestr(f"{stem}.json", _dump(rows))
             manifest["tables"][stem] = len(rows)
 
+        # The screenshots are the tenant's data like any uploaded file: they
+        # travel with the export, under the report id that names them.
+        shots = 0
+        for row in query(
+            "SELECT screenshot_path FROM feedback_reports "
+            "WHERE tenant_id = %s AND screenshot_path IS NOT NULL", (tenant_id,),
+        ):
+            try:
+                from backend.feedback.service import screenshot_abspath
+                f = screenshot_abspath(tenant_id, row["screenshot_path"])
+                if f.is_file():
+                    zf.write(f, f"feedback_screenshots/{f.name}")
+                    shots += 1
+            except (OSError, ValueError) as exc:
+                log.warning("export: skipped a feedback screenshot: %s", exc)
+        manifest["feedback_screenshots"] = shots
+
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
 
     return buf.getvalue()
@@ -139,9 +183,37 @@ def build_export_zip(tenant_id: str) -> bytes:
 # explicitly, children-before-parents so no live FK constraint is ever
 # tripped (see module docstring for the verification against migrations.py).
 _DELETE_ORDER: list[str] = [
+    # Both added 2026-09-13. They DO carry `REFERENCES tenants(id) ON DELETE
+    # CASCADE`, so their rows were already going with the tenant — the
+    # behavioural test proves it. They are listed anyway because this list is
+    # the reviewable answer to "what belongs to a tenant", and a table that is
+    # only cleaned by a cascade is one `ON DELETE` clause away from being
+    # forgotten for real. The guard that names them is doing its job.
+    "service_config",
+    "training_run_metrics",
+    # Added with the SSO and persisted-model work. All three carry
+    # `REFERENCES tenants(id) ON DELETE CASCADE`, so the rows already left with
+    # the tenant; listed because this list is the reviewable answer to "what
+    # belongs to a tenant".
+    "sso_domains",
+    "sso_providers",
+    "model_artifacts",
+    "upgrade_requests",
     "whatsapp_conversations",
     "chat_messages",
     "chats",
+    "po_approvals",
+    "po_approval_rules",
+    "forecast_adjustments",
+    "committed_demand",
+    "supply_contracts",
+    # Demand plan versions are permanent (immutable rows); only whole-tenant
+    # erasure removes them. Events first: they reference their version.
+    "demand_plan_version_events",
+    "demand_plan_versions",
+    "spike_edit_applications",
+    "spike_edits",
+    "sku_analogies",
     "inventory_po_items",
     "supplier_lead_time_obs",
     "inventory_po_log",
@@ -151,29 +223,54 @@ _DELETE_ORDER: list[str] = [
     "inventory_event_multipliers",
     "inventory_events",
     "bom_items",
+    "inventory_transfer_items",
+    "inventory_transfer_log",
+    "transfer_lanes",
     "warehouses",
+    "stock_defaults",
     "inventory_stock",
+    "inventory_status_snapshot",
+    "inventory_status_snapshot_meta",
     "inventory_snapshots",
+    "inventory_recommendation_log",
+    "stock_count_ops",
+    "stock_count_lines",
+    "stock_counts",
+    "stock_adjustments",
     "inventory_shrinkage",
     "inventory_overstock_snapshots",
     "inventory_roi_email_log",
     "accuracy_snapshots",
     "forecast_overrides",
     "scheduled_jobs",
+    "schedule_runs",
+    "session_manifests",
+    "session_accuracy_tracking",
+    "inbound_email_messages",
+    "inbound_email_addresses",
     "webhooks",
+    "api_usage_daily",
     "api_keys",
     "documents",
+    "feedback_reports",
     "user_permissions",
-    "integration_connections",
+    "user_identities",
     "refresh_tokens",
     "pw_change_codes",
     "training_logs",
     "session_results",
     "session_configs",
+    "report_runs",
+    "scenarios",
     "jobs",
     "sessions",
     "datasets",
+    "direct_messages",
+    "activity_logs",
+    "user_preferences",
     "users",
+    # The trigger ledger goes last: deleting any table above appends to it.
+    "status_input_bumps",
 ]
 
 # storage/<category>/<tenant_id>/... — see backend/storage/paths.py. Every
@@ -181,7 +278,7 @@ _DELETE_ORDER: list[str] = [
 # single rmtree per category instead of one helper per file type.
 _STORAGE_CATEGORIES = (
     "tenants", "users", "sessions", "datasets", "jobs", "artifacts",
-    "pos", "documents", "logs",
+    "pos", "documents", "logs", "feedback",
 )
 
 

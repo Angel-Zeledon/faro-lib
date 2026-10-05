@@ -205,9 +205,9 @@ def _black_friday(year: int):
 
 
 # ── Costa Rica specific builders ────────────────────────────────────────────
-# CR no es Colombia con otro name: el aguinaldo es uno solo (diciembre, no
-# there is no June bonus), Mother's Day is fixed on 15 August, and the school
-# lectivo arranca en febrero — no a finales de enero.
+# Costa Rica is not Colombia under another name: there is ONE aguinaldo
+# (December; no June bonus), Mother's Day is fixed on 15 August, and the school
+# year starts in February rather than at the end of January.
 
 def _cr_aguinaldo(year: int):
     # Law 2412: paid within the first 20 days of December. It is the
@@ -322,6 +322,249 @@ CATALOG: list[CatalogEvent] = [
                  "Repunte quincenal de consumo tras el pago de nómina de fin de mes.",
                  _payday_month_end),
 ]
+
+# ── More LatAm countries (2026-10) ───────────────────────────────────────────
+# Every entry below ships with a NEUTRAL multiplier (1.0): the calendar dates
+# are facts (fixed or rule-based), but nobody has measured what each event does
+# to demand in these markets, and an invented x1.8 is worse than no number.
+# The user (or a future per-tenant learning step) raises it; until then the
+# event is visible in the calendar and the simulator but moves no decision.
+# The CO / CR entries above predate this rule and keep their original
+# starting estimates.
+#
+# Left out ON PURPOSE because the date has no rule we can compute offline:
+# Mexico's Buen Fin and Hot Sale, Chile's CyberDay and Peru's CyberWow (their
+# organisers announce the window every year), Ecuador's school start (differs
+# by region: Sierra in September, Costa in April/May) and Uruguay (not
+# covered). Wrong dates are worse than missing ones.
+
+_NEUTRAL = 1.0
+_NEUTRAL_NOTE = (
+    " Multiplicador neutro (x1.0): StockAI aún no tiene una medición propia "
+    "para este evento; ajústalo con tu historial."
+)
+
+
+def last_weekday_of_month(year: int, month: int, weekday: int) -> date:
+    """Last `weekday` (0=Monday … 6=Sunday) of the month."""
+    last_day = calendar.monthrange(year, month)[1]
+    d = date(year, month, last_day)
+    return d - timedelta(days=(d.weekday() - weekday) % 7)
+
+
+def _lead_up_to(day_of: Callable[[int], date], days_before: int):
+    """Builder for a gift date: the buying week up to and including the day."""
+    def build(year: int):
+        d = day_of(year)
+        yield ("", "", d - timedelta(days=days_before), d)
+    return build
+
+
+def _fixed_window(m1: int, d1: int, m2: int, d2: int):
+    """Builder for a fixed calendar window (inclusive)."""
+    def build(year: int):
+        yield ("", "", date(year, m1, d1), date(year, m2, d2))
+    return build
+
+
+def _fixed_days(days: list[tuple[int, int]], span: int):
+    """Builder for several fixed single days, each `span` days long (suffix m<MM>)."""
+    def build(year: int):
+        for m, d in days:
+            yield (f"m{m:02d}", "", date(year, m, d), date(year, m, d) + timedelta(days=span - 1))
+    return build
+
+
+def _carnival(year: int):
+    # Saturday before Carnival Monday through Carnival Tuesday: Easter -50 .. -47
+    # (Ash Wednesday is Easter -46).
+    e = easter_sunday(year)
+    yield ("", "", e - timedelta(days=50), e - timedelta(days=47))
+
+
+def _third_sunday(month: int):
+    return lambda y: nth_weekday_of_month(y, month, weekday=6, n=3)
+
+
+def _second_sunday(month: int):
+    return lambda y: nth_weekday_of_month(y, month, weekday=6, n=2)
+
+
+def _last_sunday(month: int):
+    return lambda y: last_weekday_of_month(y, month, weekday=6)
+
+
+def _fixed_day(month: int, day: int):
+    return lambda y: date(y, month, day)
+
+
+def _neutral(country: str, suffix: str, name: str, notes: str, builder) -> CatalogEvent:
+    """One neutral catalog entry; the builder's empty names are filled with `name`."""
+    def named(year: int):
+        for sfx, own_name, start, end in builder(year):
+            if own_name:
+                label = own_name
+            elif sfx:
+                label = f"{name} ({_MONTH_ABBR_ES[int(sfx[1:])]})"
+            else:
+                label = name
+            yield (sfx, label, start, end)
+    return CatalogEvent(f"{country.lower()}_{suffix}", name, country, _NEUTRAL,
+                        notes + _NEUTRAL_NOTE, named)
+
+
+def _common(country: str) -> list[CatalogEvent]:
+    return [
+        _neutral(country, "semana_santa", "Semana Santa",
+                 "Fecha móvil atada al Domingo de Pascua (Domingo de Ramos a Domingo de Pascua).",
+                 _semana_santa),
+        _neutral(country, "black_friday", "Black Friday",
+                 "Viernes siguiente al cuarto jueves de noviembre, extendido hasta el Cyber Monday.",
+                 _black_friday),
+        _neutral(country, "navidad", "Navidad",
+                 "Temporada navideña del 1 al 24 de diciembre.", _navidad),
+    ]
+
+
+def _fortnight(country: str) -> list[CatalogEvent]:
+    return [
+        _neutral(country, "quincena_15", "Quincenas (pago 15)",
+                 "Repunte quincenal de consumo tras el pago del 15.", _payday_15),
+        _neutral(country, "quincena_30", "Quincenas (pago fin de mes)",
+                 "Repunte quincenal de consumo tras el pago de fin de mes.", _payday_month_end),
+    ]
+
+
+def _mothers(country: str, day_of, rule: str) -> CatalogEvent:
+    return _neutral(country, "dia_madre", "Día de la Madre", rule,
+                    _lead_up_to(day_of, 6))
+
+
+def _fathers(country: str, day_of, rule: str) -> CatalogEvent:
+    return _neutral(country, "dia_padre", "Día del Padre", rule,
+                    _lead_up_to(day_of, 5))
+
+
+_MX = [
+    *_common("MX"), *_fortnight("MX"),
+    _mothers("MX", _fixed_day(5, 10), "10 de mayo, fecha fija."),
+    _fathers("MX", _third_sunday(6), "Tercer domingo de junio."),
+    _neutral("MX", "reyes", "Día de Reyes", "1 al 6 de enero: juguetes y rosca de reyes.",
+             _fixed_window(1, 1, 1, 6)),
+    _neutral("MX", "regreso_a_clases", "Regreso a clases",
+             "El ciclo escolar de la SEP arranca a finales de agosto: útiles y uniformes se "
+             "compran de principios de agosto a la primera semana de septiembre.",
+             _fixed_window(8, 1, 9, 5)),
+    _neutral("MX", "fiestas_patrias", "Fiestas patrias", "Del 10 al 16 de septiembre.",
+             _fixed_window(9, 10, 9, 16)),
+    _neutral("MX", "dia_muertos", "Día de Muertos", "Del 28 de octubre al 2 de noviembre.",
+             _fixed_window(10, 28, 11, 2)),
+    _neutral("MX", "aguinaldo", "Aguinaldo",
+             "Por ley se paga a más tardar el 20 de diciembre.", _fixed_window(12, 1, 12, 20)),
+]
+
+_PE = [
+    *_common("PE"),
+    _mothers("PE", _second_sunday(5), "Segundo domingo de mayo."),
+    _fathers("PE", _third_sunday(6), "Tercer domingo de junio."),
+    _neutral("PE", "gratificacion_julio", "Gratificación de julio",
+             "Se paga a más tardar el 15 de julio.", _fixed_window(7, 1, 7, 15)),
+    _neutral("PE", "fiestas_patrias", "Fiestas patrias", "Del 24 al 29 de julio.",
+             _fixed_window(7, 24, 7, 29)),
+    _neutral("PE", "temporada_escolar", "Temporada escolar",
+             "El año escolar inicia en marzo: útiles y uniformes en febrero y primera "
+             "quincena de marzo.", _fixed_window(2, 1, 3, 15)),
+    _neutral("PE", "gratificacion_diciembre", "Gratificación de diciembre",
+             "Se paga a más tardar el 15 de diciembre.", _fixed_window(12, 1, 12, 15)),
+]
+
+_CL = [
+    *_common("CL"),
+    _mothers("CL", _second_sunday(5), "Segundo domingo de mayo."),
+    _fathers("CL", _third_sunday(6), "Tercer domingo de junio."),
+    _neutral("CL", "temporada_escolar", "Temporada escolar",
+             "El año escolar inicia a comienzos de marzo: útiles y uniformes en febrero y "
+             "la primera semana de marzo.", _fixed_window(2, 1, 3, 10)),
+    _neutral("CL", "fiestas_patrias", "Fiestas patrias (Dieciocho)", "Del 12 al 19 de septiembre.",
+             _fixed_window(9, 12, 9, 19)),
+]
+
+_AR = [
+    *_common("AR"),
+    _neutral("AR", "carnaval", "Carnaval",
+             "Fecha móvil atada a la Pascua (lunes y martes de Carnaval, con el sábado previo).",
+             _carnival),
+    _fathers("AR", _third_sunday(6), "Tercer domingo de junio."),
+    _neutral("AR", "aguinaldo_junio", "Aguinaldo de junio",
+             "Primera cuota del SAC: vence el 30 de junio.", _fixed_window(6, 15, 6, 30)),
+    _neutral("AR", "dia_nino", "Día del Niño",
+             "Tercer domingo de agosto.", _lead_up_to(_third_sunday(8), 6)),
+    _mothers("AR", _third_sunday(10), "Tercer domingo de octubre (no es en mayo)."),
+    _neutral("AR", "aguinaldo_diciembre", "Aguinaldo de diciembre",
+             "Segunda cuota del SAC: vence el 18 de diciembre.", _fixed_window(12, 1, 12, 18)),
+    _neutral("AR", "temporada_escolar", "Temporada escolar",
+             "El ciclo lectivo inicia entre fines de febrero y principios de marzo según la "
+             "provincia: útiles y guardapolvos se compran en febrero.",
+             _fixed_window(2, 1, 3, 10)),
+]
+
+_EC = [
+    *_common("EC"),
+    _neutral("EC", "carnaval", "Carnaval",
+             "Fecha móvil atada a la Pascua (lunes y martes de Carnaval, con el sábado previo).",
+             _carnival),
+    _mothers("EC", _second_sunday(5), "Segundo domingo de mayo."),
+    _fathers("EC", _third_sunday(6), "Tercer domingo de junio."),
+    _neutral("EC", "decimocuarto_costa", "Decimocuarto sueldo (Costa y Galápagos)",
+             "Se paga a más tardar el 15 de marzo.", _fixed_window(3, 1, 3, 15)),
+    _neutral("EC", "decimocuarto_sierra", "Decimocuarto sueldo (Sierra y Oriente)",
+             "Se paga a más tardar el 15 de agosto.", _fixed_window(8, 1, 8, 15)),
+    _neutral("EC", "decimotercero", "Decimotercer sueldo",
+             "Se paga a más tardar el 24 de diciembre.", _fixed_window(12, 1, 12, 24)),
+]
+
+_GT = [
+    *_common("GT"), *_fortnight("GT"),
+    _neutral("GT", "temporada_escolar", "Temporada escolar",
+             "El ciclo escolar inicia a mediados de enero: útiles y uniformes a inicios de enero.",
+             _fixed_window(1, 2, 1, 20)),
+    _mothers("GT", _fixed_day(5, 10), "10 de mayo, fecha fija."),
+    _fathers("GT", _fixed_day(6, 17), "17 de junio, fecha fija."),
+    _neutral("GT", "bono_14", "Bono 14",
+             "Se paga en la primera quincena de julio.", _fixed_window(7, 1, 7, 15)),
+    _neutral("GT", "fiestas_patrias", "Fiestas patrias", "Del 10 al 15 de septiembre.",
+             _fixed_window(9, 10, 9, 15)),
+    _neutral("GT", "aguinaldo", "Aguinaldo",
+             "El 50% se paga en la primera quincena de diciembre.", _fixed_window(12, 1, 12, 15)),
+]
+
+_PA = [
+    *_common("PA"), *_fortnight("PA"),
+    _neutral("PA", "carnaval", "Carnaval",
+             "Fecha móvil atada a la Pascua (lunes y martes de Carnaval, con el sábado previo).",
+             _carnival),
+    _neutral("PA", "temporada_escolar", "Temporada escolar",
+             "El año escolar inicia a comienzos de marzo: útiles y uniformes desde mediados "
+             "de febrero.", _fixed_window(2, 15, 3, 10)),
+    _neutral("PA", "decimotercer_mes", "Decimotercer mes",
+             "Se paga en tres partidas: 15 de abril, 15 de agosto y 15 de diciembre.",
+             _fixed_days([(4, 15), (8, 15), (12, 15)], span=3)),
+    _mothers("PA", _fixed_day(12, 8), "8 de diciembre, fecha fija."),
+]
+
+_DO = [
+    *_common("DO"), *_fortnight("DO"),
+    _mothers("DO", _last_sunday(5), "Último domingo de mayo."),
+    _fathers("DO", _last_sunday(7), "Último domingo de julio."),
+    _neutral("DO", "temporada_escolar", "Temporada escolar",
+             "El año escolar inicia a fines de agosto: útiles y uniformes durante agosto.",
+             _fixed_window(8, 1, 8, 31)),
+    _neutral("DO", "regalia_pascual", "Regalía pascual (salario de Navidad)",
+             "Se paga a más tardar el 20 de diciembre.", _fixed_window(12, 1, 12, 20)),
+]
+
+for _group in (_MX, _PE, _CL, _AR, _EC, _GT, _PA, _DO):
+    CATALOG.extend(_group)
 
 SUPPORTED_COUNTRIES = sorted({e.country for e in CATALOG})
 

@@ -10,7 +10,7 @@ Example:
         "columns": {"target": "sales", "date": "date", "group_keys": ["sku", "store"]},
         "features": {"lags": [1, 7, 14], "rolling": [7, 14]},
         "models": {"lightgbm": {"n_estimators": 300}},
-        "training": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 3},
+        "training": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 8},
         "forecast": {"horizon": 14},
     })
 """
@@ -74,6 +74,12 @@ class ColumnsConfig:
     date: str = ""
     group_keys: List[str] = field(default_factory=lambda: ["sku", "store"])
     exogenous: List[str] = field(default_factory=list)
+    # End-of-bucket stock, used to tell "sold none" from "had none to sell".
+    # MUST stay empty unless the user actually mapped an inventory column: the
+    # canonical schema broadcasts inventory=0 into unmapped sessions, and
+    # reading that as a permanent stockout would flag every row as censored.
+    # See data/censoring.py.
+    inventory: str = ""
 
 
 
@@ -86,13 +92,27 @@ class FeaturesConfig:
     ewm_spans: List[int] = field(default_factory=list)
     fourier_periods: List[int] = field(default_factory=list)  # e.g. [7, 30, 365]
     fourier_K: int = 2  # harmonics per period
+    # ISO country code for the holiday calendar. The product sells across LatAm;
+    # a Colombian holiday table is the wrong calendar for a distributor in
+    # Mexico or Peru, and the holidays are among the strongest demand signals a
+    # daily series has. The default is Costa Rica, the anchor market (owner's
+    # decision, 2026-09-30; it was "CO" before). Kept in step with
+    # `features.calendar.DEFAULT_COUNTRY`.
+    holiday_country: str = "CR"
 
 
 @dataclass
 class TrainingConfig:
     train_ratio: float = 0.8
     walk_forward: bool = True
-    wfv_splits: int = 3
+    # Eight, not three. The cushion the product promises a service level on is
+    # calibrated from the residuals these folds produce, and three origins
+    # starve it: measured end to end through the real pipeline at L=15, the
+    # published band delivered 83.3% against a nominal 95% at three folds and
+    # 96.7% at eight, with nothing else changed (docs/stability.md 17b). The
+    # extra fold fits are affordable because removing the separate p10/p50/p90
+    # quantile models freed 58% of ML training time.
+    wfv_splits: int = 8
     min_history: int = 20
     seasonal_period: int = 7
     tuning: bool = False
@@ -137,6 +157,23 @@ class ModelRoutingConfig:
     thresholds: RoutingThresholdsConfig = field(default_factory=RoutingThresholdsConfig)
 
 
+@dataclass
+class HierarchyConfig:
+    """
+    Reconciliation across aggregation levels, coarsest first.
+
+    This field has to exist for the feature to exist. `ForecastEngine.train()`
+    reads `config["hierarchy"]` to decide whether to reconcile, and SessionConfig
+    had no such field — `to_dict()` never produced the key, the condition was
+    never true, and the whole reconciler was unreachable from any real session.
+
+    levels:         e.g. ["category", "sku"], coarsest to finest. Empty = off.
+    reconciliation: "bottom_up" | "top_down" | "mint".
+    """
+    levels: List[str] = field(default_factory=list)
+    reconciliation: str = "bottom_up"
+
+
 # ---------------------------------------------------------------------------
 # Main SessionConfig
 # ---------------------------------------------------------------------------
@@ -172,6 +209,7 @@ class SessionConfig:
     business: BusinessConfig = field(default_factory=BusinessConfig)
     routing: ModelRoutingConfig = field(default_factory=ModelRoutingConfig)
     granularity: GranularityConfig = field(default_factory=GranularityConfig)
+    hierarchy: HierarchyConfig = field(default_factory=HierarchyConfig)
 
     # ------------------------------------------------------------------
     # Constructors
@@ -222,6 +260,12 @@ class SessionConfig:
                 strategy=gd.get("strategy", "native"),
                 target_freq=gd.get("target_freq"),
             )
+        if "hierarchy" in d:
+            hd = d["hierarchy"] or {}
+            cfg.hierarchy = HierarchyConfig(
+                levels=list(hd.get("levels") or []),
+                reconciliation=hd.get("reconciliation", "bottom_up"),
+            )
         cfg.validate()
         return cfg
 
@@ -259,6 +303,14 @@ class SessionConfig:
             raise ConfigError("columns.group_keys must be a non-empty list")
         if not self.models:
             raise ConfigError("At least one model must be defined in models")
+        # The opt-in count objective for intermittent series: a bad value fails
+        # HERE, before a job runs, instead of silently training the default.
+        from forecasting_core.models.factory import intermittent_objective_spec
+        for name, params in self.models.items():
+            try:
+                intermittent_objective_spec(name, params if isinstance(params, dict) else {})
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
         if not 0 < self.training.train_ratio < 1:
             raise ConfigError("training.train_ratio must be between 0 and 1")
         if self.forecast.horizon < 1:
@@ -279,7 +331,7 @@ class SessionConfig:
             "training": {
                 "train_ratio":    {"type": "float",   "default": 0.8,   "min": 0.5, "max": 0.95, "label": "Train ratio"},
                 "walk_forward":   {"type": "bool",    "default": True,              "label": "Walk-forward validation"},
-                "wfv_splits":     {"type": "int",     "default": 3,     "min": 1,   "label": "WFV splits"},
+                "wfv_splits":     {"type": "int",     "default": 8,     "min": 1,   "label": "WFV splits"},
                 "min_history":    {"type": "int",     "default": 20,    "min": 5,   "label": "Min history rows"},
                 "seasonal_period":{"type": "int",     "default": 7,     "min": 2,   "label": "Seasonal period"},
                 "tuning":         {"type": "bool",    "default": False,             "label": "Hyperparameter tuning (Optuna)"},
@@ -311,7 +363,8 @@ class SessionConfig:
                 },
             },
             "available_models": [
-                "lightgbm", "xgboost", "arima", "sarimax", "prophet", "ets", "croston", "lstm"
+                "lightgbm", "xgboost", "arima", "sarimax", "prophet", "ets", "croston",
+                "tsb", "lstm"
             ],
             "transforms": {
                 "auto_apply": {"type": "bool", "default": False, "label": "Auto-apply suggestions"},

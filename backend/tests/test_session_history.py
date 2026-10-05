@@ -186,11 +186,11 @@ class TestSessionDeletePermissionPair:
         row = query_one("SELECT id FROM sessions WHERE id = %s", (sid,))
         assert row is not None, "Viewer got 403 but the session row was deleted"
 
-    def test_analyst_delete_succeeds_and_row_gone(
+    def test_analyst_delete_archives_and_row_survives(
         self, client, auth_headers, analyst_headers,
     ):
         sid = _create_session(client, auth_headers, f"AnalystDel-{uuid4().hex[:6]}")
         r = client.delete(f"/api/v1/sessions/{sid}", headers=analyst_headers)
         assert r.status_code == 204
-        row = query_one("SELECT id FROM sessions WHERE id = %s", (sid,))
-        assert row is None, "204 was returned but the session row still exists"
+        row = query_one("SELECT id, archived_at FROM sessions WHERE id = %s", (sid,))
+        assert row is not None and row["archived_at"] is not None,             "204 must archive the session, never erase it"
