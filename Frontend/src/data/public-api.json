@@ -2,8 +2,8 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 241,
-  "read": 150,
+  "total": 248,
+  "read": 157,
   "write": 91
  },
  "limits": {
@@ -747,6 +747,526 @@
       {
        "status": 422,
        "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "bi-datasets",
+   "endpoints": [
+    {
+     "id": "get-datasets-accuracy",
+     "method": "GET",
+     "path": "/datasets/accuracy",
+     "tag": "bi-datasets",
+     "scope": "read",
+     "summary": "Accuracy Dataset",
+     "description": "WAPE and bias of each SKU's champion model.",
+     "parameters": [
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "default": "json",
+        "description": "json (default) or csv: UTF-8 with BOM, invariant numbers and ISO dates"
+       },
+       "example": "json"
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "1-based page number"
+       },
+       "example": 1
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 1000,
+        "description": "Rows per page"
+       },
+       "example": 1000
+      },
+      {
+       "name": "session_id",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 100,
+        "description": "Completed session; defaults to the active one"
+       },
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-datasets-committed-demand",
+     "method": "GET",
+     "path": "/datasets/committed-demand",
+     "tag": "bi-datasets",
+     "scope": "read",
+     "summary": "Committed Demand Dataset",
+     "description": "Customer orders placed ahead of time, with their delivery date, probability, status and risk.",
+     "parameters": [
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "default": "json",
+        "description": "json (default) or csv: UTF-8 with BOM, invariant numbers and ISO dates"
+       },
+       "example": "json"
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "1-based page number"
+       },
+       "example": 1
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 1000,
+        "description": "Rows per page"
+       },
+       "example": 1000
+      },
+      {
+       "name": "updated_since",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "format": "date-time",
+        "description": "ISO 8601 (URL-encode a +offset, or use Z); commitments changed at or after it"
+       },
+       "example": "2026-10-01T08:00:00Z"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-datasets-forecast-points",
+     "method": "GET",
+     "path": "/datasets/forecast-points",
+     "tag": "bi-datasets",
+     "scope": "read",
+     "summary": "Forecast Points Dataset",
+     "description": "The champion forecast per SKU per period, with its band.",
+     "parameters": [
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "default": "json",
+        "description": "json (default) or csv: UTF-8 with BOM, invariant numbers and ISO dates"
+       },
+       "example": "json"
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "1-based page number"
+       },
+       "example": 1
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 1000,
+        "description": "Rows per page"
+       },
+       "example": 1000
+      },
+      {
+       "name": "session_id",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 100,
+        "description": "Completed session; defaults to the active one"
+       },
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-datasets-inventory-status",
+     "method": "GET",
+     "path": "/datasets/inventory-status",
+     "tag": "bi-datasets",
+     "scope": "read",
+     "summary": "Inventory Status Dataset",
+     "description": "One row per SKU and warehouse: signal, stock, incoming, coverage, reorder point, recommended quantity, forecast source and money at risk.",
+     "parameters": [
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "default": "json",
+        "description": "json (default) or csv: UTF-8 with BOM, invariant numbers and ISO dates"
+       },
+       "example": "json"
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "1-based page number"
+       },
+       "example": 1
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 1000,
+        "description": "Rows per page"
+       },
+       "example": 1000
+      },
+      {
+       "name": "session_id",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 100,
+        "description": "Completed session; defaults to the active one"
+       },
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-datasets-purchase-order-lines",
+     "method": "GET",
+     "path": "/datasets/purchase-order-lines",
+     "tag": "bi-datasets",
+     "scope": "read",
+     "summary": "Purchase Order Lines Dataset",
+     "description": "Every purchase order line with order, supplier, state, dates, quantity, cost and received quantity.",
+     "parameters": [
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "default": "json",
+        "description": "json (default) or csv: UTF-8 with BOM, invariant numbers and ISO dates"
+       },
+       "example": "json"
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "1-based page number"
+       },
+       "example": 1
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 1000,
+        "description": "Rows per page"
+       },
+       "example": 1000
+      },
+      {
+       "name": "updated_since",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "format": "date-time",
+        "description": "ISO 8601 (URL-encode a +offset, or use Z); rows whose order changed at or after it"
+       },
+       "example": "2026-10-01T08:00:00Z"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-datasets-receptions",
+     "method": "GET",
+     "path": "/datasets/receptions",
+     "tag": "bi-datasets",
+     "scope": "read",
+     "summary": "Receptions Dataset",
+     "description": "Purchase order lines with units received, and when.",
+     "parameters": [
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "default": "json",
+        "description": "json (default) or csv: UTF-8 with BOM, invariant numbers and ISO dates"
+       },
+       "example": "json"
+      },
+      {
+       "name": "page",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "1-based page number"
+       },
+       "example": 1
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 1000,
+        "description": "Rows per page"
+       },
+       "example": 1000
+      },
+      {
+       "name": "updated_since",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "format": "date-time",
+        "description": "ISO 8601 (URL-encode a +offset, or use Z); lines received at or after it"
+       },
+       "example": "2026-10-01T08:00:00Z"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-datasets-schema",
+     "method": "GET",
+     "path": "/datasets/schema",
+     "tag": "bi-datasets",
+     "scope": "read",
+     "summary": "Datasets Schema",
+     "description": "Every dataset's columns, types, sort and parameters: the contract a report binds to.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
       },
       {
        "status": 429,
