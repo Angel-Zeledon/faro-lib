@@ -180,9 +180,9 @@ export default function HoyMobile(props: HoyMobileProps) {
       {/* ── Greeting ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: '0 0 3px', lineHeight: 1.25 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: '0 0 3px', lineHeight: 1.25 }}>
             {t('hoy.greeting_good_morning')}{firstName ? `, ${firstName}` : ''}.
-          </h1>
+          </h2>
           <p style={{ fontSize: 13, color: C.dim, margin: 0, lineHeight: 1.45 }}>
             {briefing
               ? <>
@@ -220,7 +220,7 @@ export default function HoyMobile(props: HoyMobileProps) {
 
       {loading && (
         <LoadingState label={t('hoy.loading_label')}>
-          <SkeletonCards count={4} height={110} />
+          <SkeletonCards count={3} height={110} stacked />
         </LoadingState>
       )}
 

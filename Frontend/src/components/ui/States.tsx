@@ -120,9 +120,15 @@ export function SkeletonTable({ rows = 6, columns = 5 }: { rows?: number; column
 }
 
 /** Placeholder shaped like a row of KPI cards. */
-export function SkeletonCards({ count = 4, height = 74 }: { count?: number; height?: number }) {
+export function SkeletonCards({ count = 4, height = 74, stacked = false, columns }: {
+  count?: number; height?: number
+  /** Fixed column count (a phone's 2x2 KPI grid); defaults to one column per card. */
+  columns?: number
+  /** One card per row: the shape of a phone card list, where four columns would be slivers. */
+  stacked?: boolean
+}) {
   return (
-    <div role="status" aria-busy="true" style={{ display: 'grid', gridTemplateColumns: `repeat(${count}, 1fr)`, gap: 12 }}>
+    <div role="status" aria-busy="true" style={{ display: 'grid', gridTemplateColumns: stacked ? '1fr' : `repeat(${columns ?? count}, 1fr)`, gap: 12 }}>
       {Array.from({ length: count }, (_, i) => <Skeleton key={i} height={height} radius={10} />)}
     </div>
   )
@@ -252,7 +258,9 @@ export function ErrorState({ error, onRetry, compact }: {
   const errorDetail = useErrorDetail()
   const kind = errorKindOf(error)
   const copy = ERROR_COPY[kind]
-  const detail = errorDetail(error)
+  // The generic server message restates the title; a detail that only repeats it adds nothing.
+  const rawDetail = errorDetail(error)
+  const detail = rawDetail && rawDetail.trim().toLowerCase().startsWith(t(copy.title).trim().toLowerCase()) ? '' : rawDetail
   const showRetry = Boolean(onRetry) && copy.retryable
   const reportBug = useFeedback()
   // Only failures on our side are worth a report; the rest say what to do.
@@ -275,7 +283,7 @@ export function ErrorState({ error, onRetry, compact }: {
       <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 7 }}>
         {t(copy.title)}
       </div>
-      <p style={{ fontSize: 13, color: C.muted, margin: '0 0 6px', lineHeight: 1.6 }}>
+      <p style={{ fontSize: 13, color: C.muted, margin: detail ? '0 0 6px' : '0 0 18px', lineHeight: 1.6 }}>
         {t(copy.body)}
       </p>
 

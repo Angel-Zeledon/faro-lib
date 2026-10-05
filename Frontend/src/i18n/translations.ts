@@ -2458,6 +2458,8 @@ export const translations = {
     // Inter-warehouse transfer suggestions (feature 5.4)
     'hoy.transfers_title': '{n} se resuelven moviendo stock, sin comprar',
     'hoy.transfers_sub': 'Otra bodega tiene excedente de estos productos — transferir evita la compra.',
+    'hoy.transfers_show_more': 'Ver {n} más',
+    'hoy.transfers_show_fewer': 'Ver menos',
     'hoy.transfers_line': 'Mover {qty} desde {from} a {to} — {from} queda con {days} {unit} de cobertura.',
     'hoy.transfers_line_ample': 'Mover {qty} desde {from} a {to} — a {from} le queda cobertura de sobra.',
     'hoy.transfers_approve': 'Crear transferencia',
@@ -3859,6 +3861,7 @@ export const translations = {
     'suppliers.table_payment_terms':   'Términos de pago',
     'suppliers.table_email':           'Email',
     'suppliers.table_contact':         'Teléfono / WhatsApp',
+    'suppliers.table_contact_column': 'Contacto',
     'suppliers.table_actions':         'Acciones',
     'suppliers.row_edit':              'Editar',
     'suppliers.row_delete':            'Eliminar',
@@ -8480,6 +8483,8 @@ export const translations = {
     // Inter-warehouse transfer suggestions (feature 5.4)
     'hoy.transfers_title': '{n} can be solved by moving stock, no purchase needed',
     'hoy.transfers_sub': 'Another warehouse holds surplus of these products — transferring avoids the purchase.',
+    'hoy.transfers_show_more': 'Show {n} more',
+    'hoy.transfers_show_fewer': 'Show fewer',
     'hoy.transfers_line': 'Move {qty} from {from} to {to} — {from} keeps {days} {unit} of coverage.',
     'hoy.transfers_line_ample': 'Move {qty} from {from} to {to} — {from} keeps ample coverage.',
     'hoy.transfers_approve': 'Create transfer',
@@ -9846,6 +9851,7 @@ export const translations = {
     'suppliers.table_payment_terms':   'Payment terms',
     'suppliers.table_email':           'Email',
     'suppliers.table_contact':         'Phone / WhatsApp',
+    'suppliers.table_contact_column': 'Contact',
     'suppliers.table_actions':         'Actions',
     'suppliers.row_edit':              'Edit',
     'suppliers.row_delete':            'Delete',

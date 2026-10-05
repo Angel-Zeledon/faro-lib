@@ -5,7 +5,7 @@ import type { POLogEntry, POItemLine, OverdueReception, POApprovalBadge } from '
 import AttentionChip from '@/components/layout/AttentionChip'
 import Spinner from '@/components/ui/Spinner'
 import { useErrorDetail } from '@/components/ui/States'
-import { Truck, X, Send } from 'lucide-react'
+import { Truck, X, Send, ChevronDown } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { formatMoney } from '@/lib/currency'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
@@ -441,6 +441,32 @@ export function SendPOButton({ poLogId, suppliersWithoutContact, onSent, approva
   )
 }
 
+/** Disclosure for the secondary actions of an order row. */
+function MoreRowActions({ children }: { children: React.ReactNode }) {
+  const { t } = useLanguage()
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        style={{
+          all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3,
+          padding: '3px 8px', borderRadius: 7, fontSize: 11, fontWeight: 600, color: C.dim,
+          border: `1px solid ${C.border}`, whiteSpace: 'nowrap',
+        }}
+      >
+        {t('mobile.more_actions')}
+        <ChevronDown size={11} aria-hidden="true" style={{ transform: open ? 'rotate(180deg)' : undefined }} />
+      </button>
+      {open && (
+        <span style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+          {children}
+        </span>
+      )}
+    </>
+  )
+}
+
 export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutContact = [], overdueById = {} }: {
   entries: POLogEntry[]
   /** Open orders past their expected arrival, by id: a calm chip in the row. */
@@ -482,7 +508,7 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
           <tr style={{ background: C.card }}>
             {columns.map(h => (
               <th key={h} style={{
-                padding: '9px 14px', textAlign: 'left', whiteSpace: 'nowrap',
+                padding: '9px 14px', textAlign: 'left', verticalAlign: 'bottom', lineHeight: 1.3,
                 color: C.dim, fontWeight: 600, fontSize: 10,
                 borderBottom: `1px solid ${C.border}`,
                 textTransform: 'uppercase', letterSpacing: '0.06em',
@@ -496,10 +522,10 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
               background: idx % 2 === 0 ? C.surface : C.card,
               borderBottom: `1px solid ${C.border}`,
             }}>
-              <td style={{ padding: '11px 14px', color: C.text, fontFamily: 'monospace', fontWeight: 600 }}>
+              <td style={{ padding: '11px 14px', color: C.text, fontFamily: 'monospace', fontWeight: 600, whiteSpace: 'nowrap' }}>
                 {formatPoNumber(entry.po_number)}
               </td>
-              <td style={{ padding: '11px 14px', color: C.text, fontVariantNumeric: 'tabular-nums' }}>
+              <td style={{ padding: '11px 14px', color: C.text, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                 {fmtDateTime(entry.generated_at, lang)}
               </td>
               <td style={{ padding: '11px 14px', fontWeight: 600, color: C.text }}>
@@ -527,7 +553,7 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
               <td style={{ padding: '11px 14px', color: entry.total_value ? C.green : C.dim, fontFamily: 'monospace', fontWeight: entry.total_value ? 600 : 400 }}>
                 {entry.total_value != null ? formatMoney(entry.total_value) : '—'}
               </td>
-              <td style={{ padding: '11px 14px', whiteSpace: 'nowrap' }}>
+              <td style={{ padding: '11px 14px', minWidth: 280 }}>
                 {(() => {
                   const status = entry.reception_status || 'pending'
                   const badge = RECEPTION_LABEL[status] || RECEPTION_LABEL.pending
@@ -537,7 +563,7 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                   // (the server refuses each of those too).
                   if (entry.cancelled_at) {
                     return (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                         <CancelledBadge cancelledAt={entry.cancelled_at} />
                         <CancelPOActions poLogId={entry.id} receptionStatus={status}
                                          paidAt={entry.paid_at} cancelledAt={entry.cancelled_at}
@@ -546,9 +572,9 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                     )
                   }
                   return (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
                       <span style={{
-                        padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                        padding: '2px 9px', whiteSpace: 'nowrap', borderRadius: 20, fontSize: 11, fontWeight: 700,
                         background: badge.bg, color: badge.color,
                       }}>
                         {t(badge.labelKey)}
@@ -575,29 +601,34 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                       <ApprovalChip approval={entry.approval} />
                       <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact}
                                     approval={entry.approval} onSent={onUndone} />
-                      <ForwardPOActions poLogId={entry.id} approval={entry.approval} />
-                      {/* A paid order cannot be un-sent (the server refuses:
-                          the invoice is evidence it reached the supplier), so
-                          the undo is not offered until the payment is unmarked. */}
-                      <UndoPOActions
-                        poLogId={entry.id}
-                        receptionStatus={status}
-                        sent={Boolean(entry.sent_at) && !entry.paid_at}
-                        onDone={onUndone}
-                      />
-                      <PaidPOActions
-                        poLogId={entry.id}
-                        sent={Boolean(entry.sent_at)}
-                        paidAt={entry.paid_at}
-                        onChanged={onUndone}
-                      />
-                      <CancelPOActions
-                        poLogId={entry.id}
-                        receptionStatus={status}
-                        paidAt={entry.paid_at}
-                        cancelledAt={entry.cancelled_at}
-                        onChanged={onUndone}
-                      />
+                      {/* The everyday actions (receive, send) stay beside the
+                          status; the rest is one tap away so a row is one line
+                          tall instead of a stack of eight buttons. */}
+                      <MoreRowActions>
+                        <ForwardPOActions poLogId={entry.id} approval={entry.approval} />
+                        {/* A paid order cannot be un-sent (the server refuses:
+                            the invoice is evidence it reached the supplier), so
+                            the undo is not offered until the payment is unmarked. */}
+                        <UndoPOActions
+                          poLogId={entry.id}
+                          receptionStatus={status}
+                          sent={Boolean(entry.sent_at) && !entry.paid_at}
+                          onDone={onUndone}
+                        />
+                        <PaidPOActions
+                          poLogId={entry.id}
+                          sent={Boolean(entry.sent_at)}
+                          paidAt={entry.paid_at}
+                          onChanged={onUndone}
+                        />
+                        <CancelPOActions
+                          poLogId={entry.id}
+                          receptionStatus={status}
+                          paidAt={entry.paid_at}
+                          cancelledAt={entry.cancelled_at}
+                          onChanged={onUndone}
+                        />
+                      </MoreRowActions>
                     </span>
                   )
                 })()}

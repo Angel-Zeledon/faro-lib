@@ -436,7 +436,7 @@ function SupplierSheet({ supplier, onClose, onEdit, onDelete, missingContact, sl
           </div>
           {(s.email || s.phone || s.whatsapp) && (
             <div>
-              <div style={factLabel}>{t('suppliers.table_contact')}</div>
+              <div style={factLabel}>{t('suppliers.table_contact_column')}</div>
               {s.email && <a href={`mailto:${s.email}`} style={linkS}><Mail size={16} aria-hidden="true" />{s.email}</a>}
               {s.phone && <a href={`tel:${s.phone.replace(/\s+/g, '')}`} style={linkS}><Phone size={16} aria-hidden="true" />{s.phone}</a>}
               {s.whatsapp && <a href={`https://wa.me/${s.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" style={linkS}><MessageCircle size={16} aria-hidden="true" />{s.whatsapp}</a>}
@@ -502,21 +502,24 @@ function SupplierRow({
         {/* What the lead-time learning is waiting for. A default nobody chose
             stops being silent the moment the screen says when it will stop
             being a default. */}
-        <Td size="lg" divider={false} data-tour={first ? 'sup.learning' : undefined} style={{ fontSize: 11, lineHeight: 1.5, minWidth: 230 }}>
+        <Td size="lg" divider={false} data-tour={first ? 'sup.learning' : undefined} style={{ fontSize: 11, lineHeight: 1.5, minWidth: 150 }}>
           <LeadTimeLearning supplier={supplier} />
         </Td>
         <Td size="lg" divider={false} style={{ color: C.muted }}>
           {supplier.payment_terms || <span style={{ color: C.dim }}>—</span>}
         </Td>
+        {/* One contact column: the email on top, phone / WhatsApp under it, so
+            the actions column stays inside the card at laptop widths. */}
         <Td size="lg" divider={false} data-tour={first ? 'sup.contact' : undefined} style={{ color: C.muted }}>
           {supplier.email
-            ? <a href={`mailto:${supplier.email}`} style={{ color: C.indigo, textDecoration: 'none' }}>{supplier.email}</a>
-            : <span style={{ color: C.dim }}>—</span>}
-        </Td>
-        <Td size="lg" divider={false} style={{ color: C.muted }}>
-          {supplier.phone || supplier.whatsapp
-            ? <>{supplier.phone || ''}{supplier.phone && supplier.whatsapp ? ' / ' : ''}{supplier.whatsapp || ''}</>
-            : <span style={{ color: C.dim }}>—</span>}
+            ? <a href={`mailto:${supplier.email}`} style={{ color: C.indigo, textDecoration: 'none', whiteSpace: 'nowrap' }}>{supplier.email}</a>
+            : null}
+          {(supplier.phone || supplier.whatsapp) && (
+            <div style={{ fontSize: 11, color: C.dim, marginTop: supplier.email ? 2 : 0, whiteSpace: 'nowrap' }}>
+              {supplier.phone || ''}{supplier.phone && supplier.whatsapp ? ' / ' : ''}{supplier.whatsapp || ''}
+            </div>
+          )}
+          {!supplier.email && !supplier.phone && !supplier.whatsapp && <span style={{ color: C.dim }}>—</span>}
         </Td>
         <Td size="lg" divider={false}>
           <div style={{ display: 'flex', gap: 4 }}>
@@ -558,7 +561,7 @@ function SupplierRow({
       </tr>
       {expanded && (
         <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-          <td colSpan={8} style={{ padding: '0 16px 14px' }}>
+          <td colSpan={7} style={{ padding: '0 16px 14px' }}>
             <PriceBreakManager supplier={supplier} />
           </td>
         </tr>
@@ -803,14 +806,14 @@ function SuppliersPageInner() {
       {/* Search + count: shown whenever there is anything to search. The count is
           the server's, over every match, not the rows on this page. */}
       {!loadError && (total > 0 || debouncedSearch || search) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: narrow ? 'wrap' : 'nowrap' }}>
           <input
             type="search" name="supplier_search" value={search}
             onChange={e => setSearch(e.target.value)}
             aria-label={t('suppliers.search_aria')}
             placeholder={t('suppliers.search_placeholder')}
             style={{
-              flex: 1, minWidth: 0, maxWidth: narrow ? undefined : 360, background: C.surface,
+              flex: narrow ? '1 1 100%' : 1, minWidth: 0, maxWidth: narrow ? undefined : 360, background: C.surface,
               border: `1px solid ${C.border}`, borderRadius: narrow ? 10 : 7,
               padding: '6px 12px', fontSize: narrow ? 16 : 12, color: C.text, outline: 'none',
               ...(narrow ? { minHeight: 44, boxSizing: 'border-box' } : {}),
@@ -899,8 +902,7 @@ function SuppliersPageInner() {
                      tOr(t, 'suppliers.table_learning_tip',
                        'StockAI learns each supplier’s real lead time from the receptions you record, and replaces the configured value once there is enough evidence.')],
                     [t('suppliers.table_payment_terms'), ''],
-                    [t('suppliers.table_email'), ''],
-                    [t('suppliers.table_contact'), ''],
+                    [t('suppliers.table_contact_column'), ''],
                     [t('suppliers.table_actions'), ''],
                   ].map(([label, tip]) => (
                     <Th key={label} size="lg">
