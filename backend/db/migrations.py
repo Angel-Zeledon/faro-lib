@@ -2029,6 +2029,8 @@ _MIGRATIONS += _MODEL_ARTIFACTS
 # PO approval workflow + forecast adjustments (own module, see its header).
 from backend.inventory.approval_migrations import MIGRATIONS as _APPROVALS  # noqa: E402
 _MIGRATIONS += _APPROVALS
+from backend.inventory.committed_demand_migrations import MIGRATIONS as _COMMITTED  # noqa: E402
+_MIGRATIONS += _COMMITTED
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
@@ -2049,6 +2051,9 @@ STATUS_INPUT_TABLES = (
     "supplier_lead_time_obs", "suppliers", "sku_suppliers", "stock_defaults",
     "inventory_events", "inventory_event_multipliers", "inventory_snapshots",
     "session_results",
+    # The two ledgers that move demand beside the forecast. A manual adjustment was
+    # missing here, so a new one left the cached status stale until it expired.
+    "forecast_adjustments", "committed_demand",
 )
 
 

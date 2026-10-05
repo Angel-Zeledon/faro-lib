@@ -1015,6 +1015,50 @@ export interface InventoryCalcExplanation {
   // A person's manual adjustment of this product's forecast that moved the
   // number: who, how much, why. Empty when none applies.
   adjustments_applied?: AppliedAdjustment[]
+  // Customer orders placed ahead of time that were added on top of the
+  // forecast for this product. Empty when none applies.
+  committed_applied?: CommittedApplied[]
+}
+
+/** One entry of `committed_applied` on a recommendation row. */
+export interface CommittedApplied {
+  commitment_id: string
+  customer: string | null
+  delivery_date: string
+  quantity: number
+  probability: number
+  units: number
+  scope: string
+  overdue: boolean
+}
+
+export type CommittedDemandStatus = 'open' | 'fulfilled' | 'cancelled'
+
+/** A customer order placed ahead of time (committed demand). */
+export interface CommittedDemand {
+  id: string
+  sku: string
+  warehouse_id: string | null
+  delivery_date: string
+  quantity: number
+  customer: string | null
+  /** 0-1 on the wire; the UI shows it as a percentage. */
+  probability: number
+  on_top_of_base: boolean
+  status: CommittedDemandStatus
+  note: string | null
+  overdue: boolean
+}
+
+export interface CommittedDemandInput {
+  sku: string
+  delivery_date: string
+  quantity: number
+  customer?: string | null
+  probability?: number
+  warehouse_id?: string | null
+  on_top_of_base?: boolean
+  note?: string | null
 }
 
 /** One declared event whose window overlapped this sku's lead-time window,

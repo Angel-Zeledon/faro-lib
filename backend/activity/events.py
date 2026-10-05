@@ -110,6 +110,20 @@ EVENTS: dict[str, EventSpec] = {
     ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
+    # Customer orders placed ahead of time, entered by a person. They move the
+    # purchase recommendation, so who entered or closed one is recorded.
+    "committed_demand.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("sku", "quantity", "delivery_date", "customer"),
+    ),
+    "committed_demand.imported": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("rows",),
+    ),
+    "committed_demand.changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("sku", "status"),
+    ),
     "purchase.order_generated": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("reference", "lines", "value", "suppliers"),
