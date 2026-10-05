@@ -120,7 +120,12 @@ class HyperparamTuner:
         cv_splits: int = 3,
         gap: int = 0,
         stockout_multiplier: float = DEFAULT_STOCKOUT_MULTIPLIER,
+        fixed_params: Dict[str, Any] = None,
     ):
+        # Held constant in every trial and overriding any sampled value — the
+        # count objective (tweedie/poisson) of an intermittent series. The
+        # search tunes the trees; the score stays the asymmetric cost.
+        self.fixed_params         = dict(fixed_params or {})
         self.model_name           = model_name
         self.n_trials             = n_trials
         self.timeout              = timeout
@@ -216,7 +221,7 @@ class HyperparamTuner:
         fold_costs = []
         for tr_idx, te_idx in splits:
             try:
-                m = _make_model(self.model_name, params)
+                m = _make_model(self.model_name, {**params, **self.fixed_params})
                 m.fit(X.iloc[tr_idx], y.iloc[tr_idx])
                 preds = m.predict(X.iloc[te_idx])
                 fold_costs.append(

@@ -52,12 +52,12 @@ def test_list_models_no_auth(client):
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert isinstance(data, list)
-    assert len(data) == 9
+    assert len(data) == 10
     names = {m["name"] for m in data}
     # `global_lgbm` is fitted ONCE across the whole catalogue rather than once
     # per SKU, which is why it is its own category below.
     assert {"global_lgbm", "lightgbm", "xgboost", "prophet", "arima", "sarimax",
-            "ets", "croston", "lstm"} == names
+            "ets", "croston", "tsb", "lstm"} == names
     for m in data:
         assert "name"        in m
         assert "category"    in m

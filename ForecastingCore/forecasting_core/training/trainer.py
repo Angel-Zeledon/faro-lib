@@ -178,8 +178,15 @@ class Trainer:
         gap: int = 0,
         horizon: int = 0,
         features_cfg=None,
+        intermittent_objectives: Optional[Dict[str, dict]] = None,
     ):
         self.train_ratio    = train_ratio
+        # {model_name: estimator kwargs} — the OPTIONAL count objective
+        # (tweedie / poisson) a model switches to on an intermittent or lumpy
+        # series. Built by `ModelFactory.intermittent_objectives()`; empty by
+        # default, and empty means every model trains exactly as before. See
+        # `_intermittent_overrides`.
+        self.intermittent_objectives = dict(intermittent_objectives or {})
         self.walk_forward   = walk_forward
         self.wfv_splits     = wfv_splits
         self.tuning         = tuning
@@ -425,11 +432,80 @@ class Trainer:
         # each other's state — give this group its own private copies.
         group_models = {name: copy.deepcopy(m) for name, m in trainable.items()}
 
-        if self.walk_forward:
-            return self._wfv(X, y, group_models, sku_val, store_val, dates)
-        return self._simple(X, y, group_models, sku_val, store_val, dates)
+        overrides, decisions = self._intermittent_overrides(y, group_models, sku_val)
+        for name, kw in overrides.items():
+            group_models[name].set_params(**kw)
 
-    def _wfv(self, X, y, models, sku_val, store_val=DEFAULT_STORE, dates=None):
+        if self.walk_forward:
+            results = self._wfv(X, y, group_models, sku_val, store_val, dates, overrides)
+        else:
+            results = self._simple(X, y, group_models, sku_val, store_val, dates, overrides)
+        # Say which objective each opted-in model actually trained with on this
+        # series — including when it was asked for and NOT applied — so a run
+        # configured for tweedie can never be mistaken for one that used it.
+        for entry in results.values():
+            d = decisions.get(str(entry.get("model")))
+            if d is not None:
+                entry["intermittent_objective"] = dict(d)
+        return results
+
+    # Syntetos-Boylan average-demand-interval cut-off: at or above it a series
+    # is intermittent or lumpy (benchmarks/metrics.py uses the same 1.32).
+    INTERMITTENT_ADI = 1.32
+
+    def _intermittent_overrides(self, y: pd.Series, models: dict, sku_val):
+        """
+        Which opted-in models switch to their count objective on this group.
+
+        Decided ONCE per group, on the TRAINING portion only (the part before
+        the evaluation cutoff), so the graded model, the folds, the tuner and
+        the served model are all the same kind of model, and the decision does
+        not peek at the window it is scored on.
+
+        Applied only when the series is intermittent or lumpy (ADI >= 1.32)
+        and its target is non-negative: tweedie and poisson are defined for
+        y >= 0, and both libraries refuse (or silently misfit) a negative
+        label. Returns (overrides {name: kwargs}, decisions {name: record}).
+        """
+        if not self.intermittent_objectives:
+            return {}, {}
+        cut = int(len(y) * self.train_ratio)
+        head = y.iloc[:cut] if 0 < cut < len(y) else y
+        arr = head.to_numpy(dtype=float)
+        arr = arr[np.isfinite(arr)]
+        n_pos = int(np.count_nonzero(arr > 0))
+        adi = (len(arr) / n_pos) if n_pos else float("inf")
+        if (y.to_numpy(dtype=float) < 0).any():
+            reason = "negative_target"
+        elif n_pos == 0:
+            reason = "no_demand"
+        elif adi < self.INTERMITTENT_ADI:
+            reason = "not_intermittent"
+        else:
+            reason = None
+        overrides: Dict[str, dict] = {}
+        decisions: Dict[str, dict] = {}
+        for name, kw in self.intermittent_objectives.items():
+            if name not in models:
+                continue
+            applied = reason is None
+            if applied:
+                overrides[name] = dict(kw)
+            elif reason == "negative_target":
+                log.warning(f"SKU {sku_val} | {name} | {kw.get('objective')} objective "
+                            "not applied: the target has negative values")
+            decisions[name] = {
+                "requested": kw.get("objective"),
+                "applied": applied,
+                "objective": kw.get("objective") if applied else "default",
+                "reason": reason,
+                "adi": round(adi, 3) if np.isfinite(adi) else None,
+            }
+        return overrides, decisions
+
+    def _wfv(self, X, y, models, sku_val, store_val=DEFAULT_STORE, dates=None,
+             overrides=None):
+        overrides = overrides or {}
         splitter = WalkForwardSplitter(self.wfv_splits, self.train_ratio / 2, self.gap)
         # A long horizon on a short series can starve every fold; back the gap
         # off rather than collapsing to a single split (see effective_gap).
@@ -442,7 +518,7 @@ class Trainer:
             splitter = WalkForwardSplitter(self.wfv_splits, self.train_ratio / 2, gap)
         splits = splitter.split(len(X))
         if not splits:
-            return self._simple(X, y, models, sku_val, store_val, dates)
+            return self._simple(X, y, models, sku_val, store_val, dates, overrides)
 
         fold_metrics  = {n: [] for n in models}
         oof_residuals = {n: [] for n in models}   # validation-set residuals per fold
@@ -489,14 +565,15 @@ class Trainer:
             avg = {k: float(np.mean([f[k] for f in folds])) for k in folds[0]}
 
             # Optional hyperparameter tuning before final fit
-            best_params = self._maybe_tune(name, train_X, train_y)
+            fixed = overrides.get(name)
+            best_params = self._maybe_tune(name, train_X, train_y, fixed)
 
             # The GRADED model: fitted on the training portion only, because the
             # h-step evaluation below scores it on what comes after.
             graded_model = None
             residuals = np.array([])
             try:
-                graded = self._make_final(name, models[name], best_params)
+                graded = self._make_final(name, models[name], best_params, fixed)
                 graded.fit(train_X, train_y)
                 # Use OOF (out-of-fold) residuals for honest prediction intervals;
                 # fall back to in-sample if no OOF residuals were collected.
@@ -512,7 +589,7 @@ class Trainer:
                 graded_model, feature_names, y, cut, dates, sku_val, name,
             )
             fitted_model, shap_importance = self._serving_model(
-                name, models[name], best_params, X, y, sku_val, graded_model,
+                name, models[name], best_params, X, y, sku_val, graded_model, fixed,
             )
 
             results[f"{name}_{sk}"] = {
@@ -532,7 +609,9 @@ class Trainer:
             }
         return results
 
-    def _simple(self, X, y, models, sku_val, store_val=DEFAULT_STORE, dates=None):
+    def _simple(self, X, y, models, sku_val, store_val=DEFAULT_STORE, dates=None,
+                overrides=None):
+        overrides = overrides or {}
         cut = int(len(X) * self.train_ratio)
         if cut < 2 or cut >= len(X):
             return {}
@@ -550,8 +629,9 @@ class Trainer:
 
         for name, model in models.items():
             try:
-                best_params = self._maybe_tune(name, train_X, train_y)
-                graded = self._make_final(name, model, best_params)
+                fixed = overrides.get(name)
+                best_params = self._maybe_tune(name, train_X, train_y, fixed)
+                graded = self._make_final(name, model, best_params, fixed)
                 graded.fit(train_X, train_y)
                 preds     = graded.predict(X.iloc[cut:])
                 metrics   = evaluate_all(y.iloc[cut:].values, preds)
@@ -560,7 +640,7 @@ class Trainer:
                     graded, feature_names, y, cut, dates, sku_val, name,
                 )
                 fitted_model, shap_importance = self._serving_model(
-                    name, model, best_params, X, y, sku_val, graded,
+                    name, model, best_params, X, y, sku_val, graded, fixed,
                 )
                 results[f"{name}_{sk}"] = {
                     **metrics, "sku": sku_val, "store": store_val, "model": name, "n": len(X),
@@ -583,7 +663,7 @@ class Trainer:
     # ------------------------------------------------------------------
 
     def _serving_model(self, name, base_model, best_params, X, y, sku_val,
-                       graded_model):
+                       graded_model, fixed=None):
         """
         Refit on EVERY observation, and return the model inference will use.
 
@@ -615,7 +695,7 @@ class Trainer:
         from forecasting_core.explainability import compute_shap
 
         try:
-            serving = self._make_final(name, base_model, best_params)
+            serving = self._make_final(name, base_model, best_params, fixed)
             serving.fit(X, y)
         except Exception as e:
             log.warning(
@@ -903,20 +983,30 @@ class Trainer:
     # Tuning helpers
     # ------------------------------------------------------------------
 
-    def _maybe_tune(self, model_name: str, X_train, y_train) -> dict:
-        """Run Optuna tuning if enabled and model is supported. Returns best params or {}."""
+    def _maybe_tune(self, model_name: str, X_train, y_train, fixed: Optional[dict] = None) -> dict:
+        """Run Optuna tuning if enabled and model is supported. Returns best params or {}.
+
+        `fixed` (the intermittent count objective, when this group uses one) is
+        held constant in every trial: the search explores the trees, the
+        tuner's own objective stays the asymmetric cost, and the winner is a
+        tweedie model if a tweedie model is what will be served."""
         if not self.tuning:
             return {}
         from forecasting_core.training.tuner import HyperparamTuner, SEARCH_SPACES
         if model_name not in SEARCH_SPACES:
             return {}
         log.info(f"Tuning {model_name} ({self.tuning_trials} trials)...")
-        tuner = HyperparamTuner(model_name, n_trials=self.tuning_trials)
+        tuner = HyperparamTuner(model_name, n_trials=self.tuning_trials, fixed_params=fixed)
         return tuner.tune(X_train, y_train)
 
-    def _make_final(self, model_name: str, base_model, best_params: dict):
-        """Create the final model: deepcopy base if no tuning, new instance if tuned."""
+    def _make_final(self, model_name: str, base_model, best_params: dict,
+                    fixed: Optional[dict] = None):
+        """Create the final model: deepcopy base if no tuning, new instance if tuned.
+
+        A tuned instance is built from the tuned params alone (unchanged
+        behaviour), plus `fixed` — without it, tuning would silently swap a
+        tweedie model back to L2 for the model that is graded and served."""
         if best_params:
             from forecasting_core.training.tuner import _make_model
-            return _make_model(model_name, best_params)
+            return _make_model(model_name, {**best_params, **(fixed or {})})
         return copy.deepcopy(base_model)
