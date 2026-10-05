@@ -22,9 +22,9 @@ const D = DEVELOPERS.es
 
 export const metadata = subpageMetadata(
   PATH,
-  'API de StockAI — Documentación para desarrolladores',
-  'Conecta tu ERP, POS o sistema propio a StockAI: autenticación con API key, claves de lectura y ' +
-  'escritura, límites, cobro por llamada y la referencia completa de endpoints con ejemplos curl.',
+  'StockAI API para desarrolladores: documentación y ejemplos',
+  'Conecta tu ERP, POS o sistema propio a StockAI: API key de lectura o escritura, límites de uso ' +
+  'y la referencia completa de endpoints con ejemplos curl.',
 )
 
 export default function Page() {

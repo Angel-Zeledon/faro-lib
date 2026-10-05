@@ -12,7 +12,7 @@ import { LEGAL_HUB_PATH, LEGAL_PATHS, type LegalKey } from '@/components/landing
 
 export function legalMetadata(key: LegalKey) {
   const doc = LEGAL.es.docs[key]
-  return subpageMetadata(LEGAL_PATHS[key], `${doc.title} — StockAI`, doc.intro)
+  return subpageMetadata(LEGAL_PATHS[key], `StockAI | ${doc.title}`, doc.intro)
 }
 
 export function LegalStructuredData({ doc: key }: { doc: LegalKey }) {
@@ -46,7 +46,7 @@ export function LegalStructuredData({ doc: key }: { doc: LegalKey }) {
 // The /legal hub: the same head, from the catalogue's `hub` copy.
 export function legalHubMetadata() {
   const hub = LEGAL.es.hub
-  return subpageMetadata(LEGAL_HUB_PATH, `${hub.title} — StockAI`, hub.intro)
+  return subpageMetadata(LEGAL_HUB_PATH, `StockAI | ${hub.title}`, hub.intro)
 }
 
 export function LegalHubStructuredData() {

@@ -29,7 +29,7 @@ export function generateMetadata({ params }: { params: { slug: string[] } }): Me
   const id = resolve(params.slug)
   if (!id) return {}
   const page = DOCS.es[id]
-  return subpageMetadata(docHref(id), `${page.title} — Centro de ayuda de StockAI`, page.description)
+  return subpageMetadata(docHref(id), `StockAI ayuda: ${page.title}`, page.description)
 }
 
 export default function Page({ params }: { params: { slug: string[] } }) {

@@ -6,9 +6,9 @@ import { subpageMetadata } from '@/components/landing/subpageMetadata'
 // visitor's language and theme), so its search metadata lives here.
 export const metadata = subpageMetadata(
   '/precios',
-  'Precios de StockAI — Plan gratis para siempre, sin tarjeta',
+  'StockAI precios: plan gratis para siempre, sin tarjeta',
   'StockAI es gratis para siempre y con todas las funciones: 100 productos, 2 usuarios y 1 bodega. ' +
-  '¿Te queda corto? Escríbenos y lo ampliamos, sin tarjeta ni checkout.',
+  '¿Poco? Escríbenos y lo ampliamos, sin tarjeta ni checkout.',
 )
 
 export default function Page() {
