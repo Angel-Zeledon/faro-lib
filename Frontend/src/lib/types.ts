@@ -176,7 +176,7 @@ export interface RunWarningSample {
 
 export interface RunWarningGroup {
   code:     string
-  severity: 'error' | 'warning'
+  severity: 'error' | 'warning' | 'info'
   layer:    string
   count:    number
   samples:  RunWarningSample[]
@@ -1674,6 +1674,31 @@ export interface POApprovalPendingItem {
 export type AdjustmentReason =
   'promotion' | 'price_change' | 'new_customer' | 'lost_customer' | 'seasonality'
   | 'supply_issue' | 'market_news' | 'data_error' | 'other'
+export type SpikeEditReason =
+  'one_off_order' | 'promotion' | 'backlog_catch_up' | 'data_error' | 'external_event' | 'other'
+/** A past period a person marked as a one-off ("exclude from the baseline"). */
+export interface SpikeEdit {
+  id: string
+  dataset_id: string
+  sku: string
+  start_date: string
+  end_date: string
+  reason_code: SpikeEditReason
+  reason_note: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  reverted_by: string | null
+  reverted_at: string | null
+  /** What THIS session's run did with the mark; null = the run predates it. */
+  applied: {
+    status: 'applied' | 'no_match' | 'no_baseline'
+    points_treated: number
+    original_total: number
+    replacement_total: number
+    applied_at: string
+  } | null
+}
 export interface ForecastAdjustment {
   id: string
   session_id: string

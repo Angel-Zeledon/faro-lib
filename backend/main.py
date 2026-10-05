@@ -387,6 +387,8 @@ from backend.api.v1 import forecast_adjustments as forecast_adjustments_router  
 app.include_router(forecast_adjustments_router.router, prefix=_PREFIX)
 from backend.api.v1 import committed_demand as committed_demand_router  # noqa: E402
 app.include_router(committed_demand_router.router, prefix=_PREFIX)
+from backend.api.v1 import spike_edits as spike_edits_router  # noqa: E402
+app.include_router(spike_edits_router.router, prefix=_PREFIX)
 app.include_router(scenarios_router.router, prefix=_PREFIX)
 app.include_router(ai_insights.router,     prefix=_PREFIX)
 app.include_router(demo.router,            prefix=_PREFIX)

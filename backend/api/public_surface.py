@@ -76,6 +76,7 @@ INTERNAL_TAGS: dict[str, str] = {
     # that person, and "who approved this" must name one.
     "inventory-approvals": "purchase-order approval rules and decisions belong to the people who hold that authority",
     "committed-demand": "a commitment is a customer order a person entered; it moves purchase decisions, so it is recorded under a person's name",
+    "spike-edits": "excluding a past spike is a person's judgement about their history, recorded under their name",
     "forecast-adjustments": "a forecast adjustment is a person's judgement, recorded under their name and graded per person",
     "trial": "unauthenticated trial signup",
     "inbound-email": "the tenant's private sales-by-e-mail address is a credential, and its allow-list is edited by an administrator on the Datos screen",
