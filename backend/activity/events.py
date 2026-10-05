@@ -108,6 +108,16 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=INFO,
         detail_keys=("sku", "adjustment", "adjustment_reason"),
     ),
+    # A person marked a past period of a product as a one-off (excluded from the
+    # baseline at the next training), or undid that mark.
+    "forecast.spike_excluded": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "period", "spike_reason"),
+    ),
+    "forecast.spike_restored": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "period", "spike_reason"),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     # Customer orders placed ahead of time, entered by a person. They move the

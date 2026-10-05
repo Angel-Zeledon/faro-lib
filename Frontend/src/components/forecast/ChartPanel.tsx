@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
-import { getSkuIntelligence } from '@/lib/api'
+import { getSkuIntelligence, getSpikeEdits } from '@/lib/api'
+import SpikeEditsPanel from './SpikeEditsPanel'
 import type {
   MetricRow, QualityReport, SkuIntelligenceData, ForecastPoint,
-  InventoryStatusItem, CoverageUnit,
+  InventoryStatusItem, CoverageUnit, SpikeEdit, SpikeEditReason,
 } from '@/lib/types'
 import { downloadWorkbook } from '@/lib/excel'
 import Spinner from '@/components/ui/Spinner'
@@ -316,6 +317,9 @@ export function buildChartOption(
    *  tooltip stays inside the chart, and a one-finger drag scrubs the tooltip
    *  instead of panning (pinch still zooms) — so the page keeps scrolling. */
   compact = false,
+  /** Periods a person marked as one-offs; shaded so the chart says what the
+   *  next training will leave out of the baseline. Dates are on the axis. */
+  excludedRanges: { start: string; end: string }[] = [],
 ) {
   const { historical, forecast } = data
 
@@ -453,7 +457,7 @@ export function buildChartOption(
     }
   }
 
-  if (gaps.length > 0) {
+  if (gaps.length > 0 || excludedRanges.length > 0) {
     histSeries['markArea'] = {
       silent: true,
       itemStyle: {
@@ -463,7 +467,22 @@ export function buildChartOption(
         borderType: 'dashed',
       },
       label: { show: false },
-      data: gaps.map(g => [{ xAxis: g.start }, { xAxis: g.end }]),
+      data: [
+        ...gaps.map(g => [{ xAxis: g.start }, { xAxis: g.end }]),
+        // A one-off a person excluded: a distinct, cooler shade with a label.
+        ...excludedRanges.map(r => [
+          {
+            xAxis: r.start,
+            name: t('spike.chart_label'),
+            label: { show: true, position: 'insideTop', color: dim, fontSize: 10 },
+            itemStyle: {
+              color: isDark ? 'rgba(148,163,184,0.18)' : 'rgba(100,116,139,0.14)',
+              borderColor: 'rgba(100,116,139,0.55)', borderWidth: 1, borderType: 'solid',
+            },
+          },
+          { xAxis: r.end },
+        ]),
+      ],
     }
   }
   series.push(histSeries)
@@ -1020,6 +1039,31 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
     return detectOutliers(data.historical)
   }, [data])
 
+  // One-off periods people marked for this product (append-only on the server;
+  // undone ones are not listed). A failed load just shows none: the chart
+  // itself must never depend on it.
+  const [spikeEdits, setSpikeEdits] = useState<SpikeEdit[]>([])
+  const [spikeReasons, setSpikeReasons] = useState<SpikeEditReason[]>([])
+  const loadSpikeEdits = useCallback(() => {
+    getSpikeEdits(sessionId, sku)
+      .then(r => { setSpikeEdits(r.items ?? []); setSpikeReasons(r.reasons ?? []) })
+      .catch(() => setSpikeEdits([]))
+  }, [sessionId, sku])
+  useEffect(() => { loadSpikeEdits() }, [loadSpikeEdits])
+
+  // Snap each marked period to the axis dates the chart actually has (a weekly
+  // view has no "Tuesday"); a period with no point in this view draws nothing.
+  const excludedRanges = useMemo(() => {
+    if (!data?.historical.length) return []
+    const dates = data.historical.map(p => p.date)
+    return spikeEdits.flatMap(e => {
+      const inside = dates.filter(d => d >= e.start_date && d <= e.end_date)
+      return inside.length ? [{ start: inside[0], end: inside[inside.length - 1] }] : []
+    })
+  }, [data, spikeEdits])
+  const outlierDates = useMemo(
+    () => (data ? outliers.map(i => data.historical[i].date) : []), [data, outliers])
+
   const overlayList = useMemo<ModelOverlay[]>(() =>
     selModels.slice(1)
       .map(m => ({ model: m, color: overlayColor(m), forecast: overlays[m]?.forecast ?? [] }))
@@ -1032,8 +1076,8 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
 
   const option = useMemo(() => {
     if (!data || buyer) return {}
-    return buildChartOption(data, chartType, showBand && singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow)
-  }, [data, buyer, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow])
+    return buildChartOption(data, chartType, showBand && singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow, excludedRanges)
+  }, [data, buyer, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow, excludedRanges])
 
   if (loading && !data) return (
     <div style={{ flex: 1, padding: '16px', minHeight: 360 }} role="status" aria-busy="true">
@@ -1334,6 +1378,10 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
           </span>
         )}
       </div>
+      <SpikeEditsPanel
+        sessionId={sessionId} sku={sku} edits={spikeEdits} reasons={spikeReasons}
+        outlierDates={outlierDates} onChanged={loadSpikeEdits}
+      />
     </div>
   )
 }

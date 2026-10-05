@@ -129,6 +129,8 @@ LEGACY: dict[str, tuple[str, str]] = {
     "purchase.approval_approved":       ("purchase_order", "purchase_order.approval_approved"),
     "purchase.approval_rejected":       ("purchase_order", "purchase_order.approval_rejected"),
     "forecast.adjusted":               ("forecast_adjustment", "forecast_adjustment.created"),
+    "forecast.spike_excluded":         ("spike_edit", "spike_edit.created"),
+    "forecast.spike_restored":         ("spike_edit", "spike_edit.reverted"),
     "committed_demand.created":        ("committed_demand", "committed_demand.created"),
     "committed_demand.imported":       ("committed_demand", "committed_demand.imported"),
     "committed_demand.changed":        ("committed_demand", "committed_demand.changed"),

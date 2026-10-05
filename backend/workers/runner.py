@@ -681,6 +681,62 @@ def _apply_outlier_treatment(
     return df
 
 
+# ── Manual spike exclusions ───────────────────────────────────────────────
+
+def _apply_spike_edits(
+    df: "pd.DataFrame",
+    date_col: str,
+    target_col: str,
+    group_cols: list,
+    tenant_id: str,
+    session_id: str,
+    dataset_id: "str | None",
+    notes: "list | None" = None,
+) -> "pd.DataFrame":
+    """Apply the periods a person marked as one-offs (the `spike_edits` ledger).
+
+    The uploaded file is never touched: this edits the in-memory copy the engine
+    trains on, replacing each excluded observation by the median of its
+    neighbours (`forecasting_core.data.spike_edits`). With no marks on the
+    dataset nothing happens at all, so a tenant that never used the feature gets
+    exactly the data it always did.
+
+    What it did is recorded twice: per mark in `spike_edit_applications` (the
+    lineage the SKU view reads) and per product as a run finding, so the results
+    screen says that people's edits sit behind this forecast. A mark that matched
+    no data is reported too, never swallowed.
+    """
+    if not dataset_id:
+        return df
+    try:
+        from backend.inventory import spike_edit_service
+        marks = spike_edit_service.active_for_dataset(tenant_id, dataset_id)
+        if not marks:
+            return df
+        from forecasting_core.data.spike_edits import (
+            STATUS_APPLIED, apply_spike_exclusions, summarize_by_sku,
+        )
+        df, report = apply_spike_exclusions(df, date_col, target_col, group_cols, marks)
+        spike_edit_service.record_applications(tenant_id, session_id, report)
+    except Exception as e:
+        # The ledger holds what a person decided about their own history; a run
+        # that quietly ignored it would train on the very spike they removed.
+        log.warning(f"Spike exclusions failed for session={session_id}: {e}")
+        _note(notes, "PREP_SPIKE_EDITS_FAILED", "warning")
+        return df
+    for entry in summarize_by_sku(report):
+        if entry["points_treated"] > 0:
+            _note(notes, "PREP_SPIKE_EDITS_APPLIED", "info",
+                  sku=entry["sku"], n_points=entry["points_treated"],
+                  n_marks=entry["exclusions"],
+                  original_total=round(entry["original_total"], 2),
+                  replacement_total=round(entry["replacement_total"], 2))
+        if entry["unmatched"] > 0:
+            _note(notes, "PREP_SPIKE_EDITS_UNMATCHED", "warning",
+                  sku=entry["sku"], n_marks=entry["unmatched"])
+    return df
+
+
 # ── Remediations the user picked at the gate ───────────────────────────────
 #
 # Every option `forecasting_core.data.gate` offers is applied by exactly one of
@@ -1693,6 +1749,16 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             if remediations.get("cumulative_demand") == "cumulative_to_periodic":
                 engine._df = _decumulate(
                     engine._df, date_col, target_col, group_cols, prep_notes)
+            # 10b — periods a person marked as one-offs. After the numbers are
+            # clean and one row per period, and BEFORE the canonical aliases are
+            # copied below, so the inventory sync reads the same history the
+            # model trains on.
+            engine._df = _apply_spike_edits(
+                engine._df, date_col, target_col, group_cols,
+                tenant_id, session_id,
+                (get_session(tenant_id, session_id) or {}).get("dataset_id"),
+                prep_notes,
+            )
 
         # For canonical_v1 sessions: enrich the DataFrame with canonical column
         # aliases + defaults (adds 'sku', 'date', 'demand', 'store', etc.).

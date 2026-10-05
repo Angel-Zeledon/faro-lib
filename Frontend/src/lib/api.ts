@@ -1491,6 +1491,16 @@ export const createForecastAdjustment = (sessionId: string, body: {
   sku: string; start_date: string; end_date: string; mode: 'percent' | 'absolute'
   value: number; reason_code: import('./types').AdjustmentReason; reason_note?: string
 }) => request<import('./types').ForecastAdjustment>('POST', `/sessions/${sessionId}/adjustments`, body)
+// ── Spike exclusions (past one-offs removed from the baseline at the next training)
+export const getSpikeEdits = (sessionId: string, sku?: string) =>
+  request<{ reasons: import('./types').SpikeEditReason[]; items: import('./types').SpikeEdit[] }>(
+    'GET', `/sessions/${sessionId}/spike-edits${sku ? `?sku=${encodeURIComponent(sku)}` : ''}`)
+export const createSpikeEdit = (sessionId: string, body: {
+  sku: string; start_date: string; end_date: string
+  reason_code: import('./types').SpikeEditReason; reason_note?: string
+}) => request<import('./types').SpikeEdit>('POST', `/sessions/${sessionId}/spike-edits`, body)
+export const revertSpikeEdit = (spikeEditId: string) =>
+  request<import('./types').SpikeEdit>('POST', `/spike-edits/${spikeEditId}/revert`, {})
 // ── Committed demand (customer orders placed ahead of time) ─────────────────
 export const getCommittedDemand = (opts?: { sku?: string; status?: import('./types').CommittedDemandStatus; limit?: number }) => {
   const q = new URLSearchParams()
