@@ -1333,7 +1333,6 @@ function ShrinkageModal({ sessionId, warehouses, defaultWarehouse, onClose, onSa
 }
 
 // ── LatAm calendar catalog (feature 3.4) ─────────────────────────────────────
-const COUNTRY_NAMES: Record<string, string> = { CR: 'Costa Rica', CO: 'Colombia' }
 // The catalog is seeded into the DB (not a frontend array): this only
 // shows its state and switches each event on/off.
 function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
@@ -1341,6 +1340,8 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
  const narrow = useIsNarrow()
  const [entries, setEntries] = useState<CalendarCatalogEntry[] | null>(null)
  const [countries, setCountries] = useState<string[]>([])
+ // Reuses the country names of the training wizard; an unmapped code shows itself.
+ const countryLabel = (c: string) => { const k = `qs.country_${c}`; const v = t(k); return v === k ? c : v }
  const [country, setCountry] = useState('')   // '' = default del backend (CR)
  const [busy, setBusy] = useState<string | null>(null)
  const [err, setErr] = useState('')
@@ -1396,7 +1397,7 @@ function CalendarCatalogPanel({ onSeeded }: { onSeeded: () => void }) {
         style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 5, color: C.text, fontSize: 11, padding: '2px 5px',
          ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, marginTop: 6 } : {}) }}
        >
-        {countries.map(c => <option key={c} value={c}>{COUNTRY_NAMES[c] ?? c}</option>)}
+        {countries.map(c => <option key={c} value={c}>{countryLabel(c)}</option>)}
        </select>
       </>
      )}

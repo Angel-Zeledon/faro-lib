@@ -3271,7 +3271,7 @@ export const translations = {
     'transfers.reason_transfer_donor_would_run_short': 'En {from_warehouse} hay {donor_stock} unidades, pero solo le alcanzan para {donor_coverage_days} días y prestarlas la dejaría por debajo del mínimo de {min_coverage_days} días. Por eso conviene comprar.',
     'transfers.reason_transfer_donation_too_small': 'Desde {from_warehouse} solo se pueden mover {qty} de las {need} unidades que faltan, así que el traslado por sí solo no resuelve el faltante.',
     // Calendario comercial precargado (feature 3.4)
-    'inventory.calendar_intro': 'Eventos comerciales de Costa Rica que StockAI ya conoce. Actívalos para que aparezcan en tus alertas y en el simulador.',
+    'inventory.calendar_intro': 'Eventos comerciales del país elegido que StockAI ya conoce. Actívalos para que aparezcan en tus alertas y en el simulador.',
     // Multiplicador por producto + explicación (feature 3.4)
     'inventory.mult_base_label': 'Multiplicador del evento:',
     'inventory.mult_from_catalog': 'estimación inicial del calendario de StockAI.',
@@ -8041,7 +8041,7 @@ export const translations = {
     'transfers.reason_transfer_more_expensive': 'Better to buy from the supplier: transferring {qty} units from {from_warehouse} costs more than buying them.',
     'transfers.reason_transfer_donor_would_run_short': '{from_warehouse} holds {donor_stock} units, but that is only {donor_coverage_days} days of its own demand and lending would drop it below the {min_coverage_days}-day floor. Buying is the right call.',
     'transfers.reason_transfer_donation_too_small': '{from_warehouse} can only spare {qty} of the {need} units missing, so a transfer alone would not close the gap.',
-    'inventory.calendar_intro': 'Commercial events in Costa Rica that StockAI already knows. Switch them on to see them in your alerts and in the simulator.',
+    'inventory.calendar_intro': 'Commercial events for the chosen country that StockAI already knows. Switch them on to see them in your alerts and in the simulator.',
     'inventory.mult_base_label': 'Event multiplier:',
     'inventory.mult_from_catalog': "StockAI's initial calendar estimate.",
     'inventory.mult_from_user': 'you set this.',
