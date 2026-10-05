@@ -6,7 +6,7 @@
 import Link from 'next/link'
 import { Fragment } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { GUIDES } from '@/i18n/landingGuides'
+import { GUIDES, type GuideCallout } from '@/i18n/landingGuides'
 import { Section, H2, Check } from '@/components/landing/primitives'
 import { ContentShell } from '@/components/landing/ContentPages'
 import { GUIDE_PATHS, type GuideKey } from '@/components/landing/contentPaths'
@@ -29,6 +29,20 @@ function RichText({ text }: { text: string }) {
   return <>{out.map((n, i) => <Fragment key={i}>{n}</Fragment>)}</>
 }
 
+// A boxed formula, worked example or takeaway (typed in i18n/landingGuides.ts).
+// The label names the box for assistive tech; the lines are a list so a
+// calculation reads one step at a time.
+function Callout({ c }: { c: GuideCallout }) {
+  return (
+    <aside className={`gd-callout is-${c.kind}`} aria-label={c.label}>
+      <p className="gd-callout-label" aria-hidden>{c.label}</p>
+      <ul className="gd-callout-lines">
+        {c.lines.map(line => <li key={line}>{line}</li>)}
+      </ul>
+    </aside>
+  )
+}
+
 export function GuidePage({ guide }: { guide: GuideKey }) {
   const { lang } = useLanguage()
   const G = GUIDES[lang]
@@ -45,7 +59,17 @@ export function GuidePage({ guide }: { guide: GuideKey }) {
           <div className="gd-grid">
             <div className="gd-head"><H2>{s.h}</H2></div>
             <div className="gd-body">
-              {s.p.map(p => <p key={p} className="cp-prose"><RichText text={p} /></p>)}
+              {(() => {
+                const boxes = g.callouts.filter(c => c.section === i)
+                const out: React.ReactNode[] = []
+                s.p.forEach((p, pi) => {
+                  boxes.filter(c => c.after === pi).forEach(c => out.push(<Callout key={c.label + pi} c={c} />))
+                  out.push(<p key={p} className="cp-prose"><RichText text={p} /></p>)
+                })
+                // A box that comes after every paragraph (or a section with none).
+                boxes.filter(c => c.after >= s.p.length).forEach(c => out.push(<Callout key={c.label + 'end'} c={c} />))
+                return out
+              })()}
               {s.list && (
                 <ul className="cp-list">
                   {s.list.map(item => <li key={item}><Check /><span><RichText text={item} /></span></li>)}

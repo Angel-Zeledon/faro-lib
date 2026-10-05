@@ -288,7 +288,7 @@ export const ENGINE_CSS = `
 .em-models { font-size: 13.5px; color: var(--lp-body); line-height: 1.55; }
 .em-note { font-size: 13.5px; color: var(--lp-body); line-height: 1.65; margin: 16px 0 0; max-width: 62ch; }
 .em-always { grid-template-columns: 1fr !important; }
-.em-bottom { margin-top: 64px; padding: 32px 36px; border-radius: 16px; border: 1px solid var(--lp-accent-bd); background: linear-gradient(135deg, var(--lp-accent-bg), transparent 70%); }
+.em-bottom { margin-top: 64px; padding: 32px 36px; border-radius: 14px; border: 1px solid var(--lp-accent-bd); background: linear-gradient(135deg, var(--lp-accent-bg), transparent 70%); }
 .em-p { font-size: 15.5px; color: var(--lp-body); line-height: 1.72; margin: 0 0 14px; max-width: 68ch; }
 .em-points { list-style: disc; margin: 0; padding-left: 18px; font-size: 14px; color: var(--lp-body); line-height: 1.65; max-width: 68ch; }
 .em-points li + li { margin-top: 6px; }
