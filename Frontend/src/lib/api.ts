@@ -5,6 +5,7 @@ import type {
   ForecastSeries, DataHealthReport,
   Chat, ChatMessage, MessagesPage, ChatSourceType,
   DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
+  SqlSslMode, ConnectionProbe, ParsedConnectionString, SchemaTables, SchemaColumns,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
   CalendarCatalogResponse, CalendarSeedResult, EventMultiplier,
@@ -828,25 +829,43 @@ export const getDataSource = (id: string) =>
 export const createFileSource = (fd: FormData) =>
   request<DataSource>('POST', '/data-sources/file', fd)
 
-export const createSqlSource = (body: {
-  name: string; description?: string
-  host: string; port: number; database: string
-  username: string; password: string; engine: SqlEngine
-}) => request<DataSource>('POST', '/data-sources/sql', body)
+/** Connection fields shared by create and edit. Every field is optional on an
+ *  edit (omitted = keep the stored value; the password is required again only
+ *  when engine, host or port change). */
+export interface SqlConnectionBody {
+  host?: string; port?: number; database?: string
+  username?: string; password?: string; engine?: SqlEngine
+  ssl_mode?: SqlSslMode; ssl_ca?: string
+  connect_timeout_s?: number; statement_timeout_s?: number
+  connection_string?: string
+}
+
+export const createSqlSource = (body: SqlConnectionBody & { name: string; description?: string }) =>
+  request<DataSource>('POST', '/data-sources/sql', body)
+
+export const parseConnectionString = (connection_string: string) =>
+  // Shown inline next to the field it is about, so no toast as well.
+  request<ParsedConnectionString>('POST', '/data-sources/sql/parse', { connection_string }, { silent: true })
 
 export const replaceFileSource = (id: string, fd: FormData) =>
   request<DataSource>('POST', `/data-sources/${id}/file`, fd)
 
-export const updateSqlConfig = (id: string, body: {
-  host: string; port: number; database: string
-  username: string; password?: string; engine: SqlEngine
-}) => request<DataSource>('PATCH', `/data-sources/${id}/sql-config`, body)
+export const updateSqlConfig = (id: string, body: SqlConnectionBody & { clear_ssl_ca?: boolean }) =>
+  request<DataSource>('PATCH', `/data-sources/${id}/sql-config`, body)
 
 export const testSqlConnection = (id: string) =>
-  request<{ ok: boolean; status: string; error?: string }>('POST', `/data-sources/${id}/test-connection`)
+  request<ConnectionProbe>('POST', `/data-sources/${id}/test-connection`)
 
-export const executeSqlQuery = (id: string, sql: string, limit = 500) =>
-  request<SqlQueryResult>('POST', `/data-sources/${id}/execute-query`, { sql, limit })
+export const executeSqlQuery = (id: string, sql: string, limit = 500, offset = 0) =>
+  request<SqlQueryResult>('POST', `/data-sources/${id}/execute-query`, { sql, limit, offset })
+
+export const getSqlSchema = (id: string, refresh = false) =>
+  request<SchemaTables>('GET', `/data-sources/${id}/schema${refresh ? '?refresh=true' : ''}`, undefined, { silent: true })
+
+export const getSqlTableColumns = (id: string, schema: string | null, table: string) =>
+  request<SchemaColumns>('GET',
+    `/data-sources/${id}/schema/columns?table=${encodeURIComponent(table)}&schema=${encodeURIComponent(schema ?? '')}`,
+    undefined, { silent: true })
 
 export const saveSqlQuery = (id: string, sql: string) =>
   request<DataSource>('PATCH', `/data-sources/${id}/query`, { sql })
@@ -855,7 +874,10 @@ export const materializeSqlSource = (id: string, body: { sql?: string; name?: st
   request<DataSource>('POST', `/data-sources/${id}/materialize`, body)
 
 export const exportSqlQueryXlsx = (id: string, sql: string, filename: string) =>
-  downloadBlobPost(`/data-sources/${id}/export-query`, { sql }, filename)
+  downloadBlobPost(`/data-sources/${id}/export-query`, { sql, format: 'xlsx' }, filename)
+
+export const exportSqlQueryCsv = (id: string, sql: string, filename: string) =>
+  downloadBlobPost(`/data-sources/${id}/export-query`, { sql, format: 'csv' }, filename)
 
 export const getDataSourcePreview = (id: string, rows = 100, sheet?: string) =>
   request<DataPreview>('GET', `/data-sources/${id}/preview?rows=${rows}${sheet ? `&sheet=${encodeURIComponent(sheet)}` : ''}`)

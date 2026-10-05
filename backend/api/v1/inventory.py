@@ -149,7 +149,19 @@ def lookup_stock(
     """Resolve a scanned code to a SKU (barcode first, then SKU). Declared before
     `/stock/{sku}`, which would otherwise take 'lookup' for a SKU."""
     from backend.inventory import stock_count_service as count_svc
-    return ok(count_svc.lookup(user.tenant_id, code, warehouse))
+    if not wscope.is_scoped(user):
+        return ok(count_svc.lookup(user.tenant_id, code, warehouse))
+    # A scoped caller. A named warehouse must be theirs; the quantity returned
+    # is then that warehouse's alone, and the product is still identified from
+    # the catalogue (scanning an item that has never been stocked here is how
+    # it gets counted in). Without a warehouse the quantity would be a sum, so
+    # it is summed over THEIR warehouses only, and a code held only elsewhere
+    # is not found - as on GET /stock/{sku}.
+    if (warehouse or "").strip():
+        wscope.require_in_scope(user, wh_svc.resolve_canonical_name(user.tenant_id, warehouse))
+        return ok(count_svc.lookup(user.tenant_id, code, warehouse))
+    return ok(count_svc.lookup(user.tenant_id, code, None,
+                               visible=lambda w: wscope.in_scope(user, w)))
 
 
 @router.get("/stock/{sku}")

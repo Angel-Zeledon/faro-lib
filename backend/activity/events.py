@@ -238,6 +238,16 @@ EVENTS: dict[str, EventSpec] = {
         detail_keys=("filename", "email"),
     ),
 
+    # ── Connected databases (SQL data sources) ──────────────────────────────
+    # A scheduled retraining could not read its connected database, so it did
+    # not train (rather than train on stale data). Critical: the forecast the
+    # buyer reads tomorrow is the old one, and the only other trace was a row
+    # in the schedule's history nobody opens.
+    "data.sql_refresh_failed": EventSpec(
+        kind="data", severity=CRITICAL,
+        detail_keys=("source_name",),
+    ),
+
     # ── Data the tenant put in ───────────────────────────────────────────────
     "data.stock_imported": EventSpec(
         kind="data", severity=INFO,
@@ -399,6 +409,9 @@ REASONS: tuple[str, ...] = (
     "inbound_file_too_large",
     "inbound_duplicate_file",
     "inbound_no_usable_attachment",
+    # connected databases: the scheduled refresh could not read the source;
+    # `reason_params.error_code` names the failure for the screen to explain
+    "sql_source_refresh_failed",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

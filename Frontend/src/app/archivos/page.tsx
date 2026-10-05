@@ -3,12 +3,12 @@ import { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react'
 import {
  listDataSources, createFileSource, createSqlSource, replaceFileSource,
  updateSqlConfig, testSqlConnection, executeSqlQuery, saveSqlQuery, materializeSqlSource,
- exportSqlQueryXlsx,
+ exportSqlQueryXlsx, exportSqlQueryCsv,
  getDataSourcePreview, getDataSource, renameDataSource, deleteDataSource,
  analyzeDataSource, analyzeSkuDetail, getEditableTable, saveDatasetAsNew,
 } from '@/lib/api'
 import type {
- DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
+ DataSource, DataPreview, EditableTable, SqlQueryResult, ConnectionProbe,
  AnalysisResult, AnalysisSummaryRow, SkuDetailResult, OutlierPoint,
 } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
@@ -33,6 +33,9 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { MobileList, MobileCard, MobileTabs, useMobileHeader } from '@/components/mobile'
 import StickyActionBar from '@/components/mobile/StickyActionBar'
 import { getUser } from '@/lib/auth'
+import SqlConnectionForm from '@/components/datasources/SqlConnectionForm'
+import ConnectionTestResult from '@/components/datasources/ConnectionTestResult'
+import SchemaBrowser from '@/components/datasources/SchemaBrowser'
 
 /** Phone: rows of a result set as cards, `PAGE` at a time. A spreadsheet of
  *  arbitrary width cannot be read at 360px; one record per card can. */
@@ -417,103 +420,9 @@ function DropZone({ onFile, compact }: { onFile: (f: File) => void; compact?: bo
  )
 }
 
-// ── SQL Connection Form ───────────────────────────────────────────────────────
-interface SqlFormData {
- name: string; description: string; engine: SqlEngine
- host: string; port: string; database: string; username: string; password: string
-}
-const SQL_DEFAULTS: SqlFormData = {
- name: '', description: '', engine: 'postgresql',
- host: 'localhost', port: '5432', database: '', username: '', password: '',
-}
-const ENGINE_PORTS: Record<string, string> = {
- postgresql: '5432', mysql: '3306', mssql: '1433', oracle: '1521',
-}
-
-function SqlForm({ initial, onSave, onCancel, saving, isEdit }:
- { initial?: Partial<SqlFormData>; onSave: (d: SqlFormData) => void; onCancel?: () => void; saving?: boolean; isEdit?: boolean }
-) {
- const { t } = useLanguage()
- // Phone: every connection field on its own row.
- const narrow = useIsNarrow()
- const cols2 = narrow ? 'minmax(0, 1fr)' : '1fr 1fr'
- const cols3 = narrow ? 'minmax(0, 1fr)' : '1fr 1fr 1fr'
- const uid = useId()
- const fid = (k: keyof SqlFormData) => `sql-${k}-${uid}`
- const [form, setForm] = useState<SqlFormData>({ ...SQL_DEFAULTS, ...initial })
- const set = (k: keyof SqlFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
- setForm(f => ({ ...f, [k]: e.target.value }))
-
- return (
- <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
- {!isEdit && (
- <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
- <div>
- <FieldLabel htmlFor={fid('name')}>{t('data.field_source_name')} *</FieldLabel>
- <Input id={fid('name')} name="name" size="lg" tone="surface" border="strong" value={form.name} onChange={set('name')} placeholder={t('data.field_source_name_ph')} />
- </div>
- <div>
- <FieldLabel htmlFor={fid('description')}>{t('data.field_description')}</FieldLabel>
- <Input id={fid('description')} name="description" size="lg" tone="surface" border="strong" value={form.description} onChange={set('description')} placeholder={t('data.field_optional_ph')} />
- </div>
- </div>
- )}
- <div style={{ display: 'grid', gridTemplateColumns: cols3, gap: 12 }}>
- <div>
- <FieldLabel htmlFor={fid('engine')}>{t('data.field_engine')} *</FieldLabel>
- <Select id={fid('engine')} name="engine" size="lg" tone="surface" border="strong" value={form.engine} onChange={e => {
- const eng = e.target.value as SqlEngine
- setForm(f => ({ ...f, engine: eng, port: ENGINE_PORTS[eng] || f.port }))
- }}>
- {['postgresql', 'mysql', 'mssql', 'oracle'].map(e => (
- <option key={e} value={e}>{e}</option>
- ))}
- </Select>
- </div>
- <div>
- <FieldLabel htmlFor={fid('host')}>{t('data.field_host')} *</FieldLabel>
- <Input id={fid('host')} name="host" size="lg" tone="surface" border="strong" value={form.host} onChange={set('host')} placeholder="localhost" />
- </div>
- <div>
- <FieldLabel htmlFor={fid('port')}>{t('data.field_port')} *</FieldLabel>
- <Input id={fid('port')} name="port" size="lg" tone="surface" border="strong" value={form.port} onChange={set('port')} type="number" inputMode="numeric" />
- </div>
- </div>
- <div style={{ display: 'grid', gridTemplateColumns: cols3, gap: 12 }}>
- <div>
- <FieldLabel htmlFor={fid('database')}>{t('data.field_database')} *</FieldLabel>
- <Input id={fid('database')} name="database" size="lg" tone="surface" border="strong" value={form.database} onChange={set('database')} placeholder={t('data.field_database_ph')} />
- </div>
- <div>
- <FieldLabel htmlFor={fid('username')}>{t('data.field_username')} *</FieldLabel>
- <Input id={fid('username')} name="username" size="lg" tone="surface" border="strong" value={form.username} onChange={set('username')} placeholder={t('data.field_username_ph')} />
- </div>
- <div>
- <FieldLabel htmlFor={fid('password')}>{t('data.field_password')} {isEdit && <span style={{ fontWeight: 400 }}>{t('data.field_password_keep')}</span>}</FieldLabel>
- <Input id={fid('password')} name="password" size="lg" tone="surface" border="strong" type="password" value={form.password} onChange={set('password')} placeholder="••••••••" />
- </div>
- </div>
- <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 2, ...(narrow ? { flexWrap: 'wrap' } : {}) }}>
- {onCancel && (
- <button className="btn" onClick={onCancel} style={{ padding: '9px 18px', borderRadius: 8,
- background: 'transparent', border: `1px solid ${C.border2}`, color: C.muted,
- fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
- {t('common.cancel')}
- </button>
- )}
- <button className="btn" onClick={() => onSave(form)} disabled={saving}
- style={{ padding: '9px 20px', borderRadius: 8, background: C.green,
- border: 'none', color: '#fff', fontWeight: 600, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer',
- opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
- {saving ? <Spinner size={14} /> : <Save size={14} />}
- {isEdit ? t('data.btn_save_changes') : t('data.btn_create_connection')}
- </button>
- </div>
- </div>
- )
-}
-
 // ── SQL Editor Panel ──────────────────────────────────────────────────────────
+const QUERY_PAGE = 500
+
 function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  source: DataSource
  onSaved: (s: DataSource) => void
@@ -525,21 +434,27 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  const narrow = useIsNarrow()
  const [sql, setSql] = useState(source.saved_query || '')
  const [result, setResult] = useState<SqlQueryResult | null>(null)
+ // The statement the visible page belongs to: paging re-runs THAT, not
+ // whatever has been typed since.
+ const [ranSql, setRanSql] = useState('')
  const [running, setRunning] = useState(false)
  const [saving, setSaving] = useState(false)
  const [materializing, setMaterializing] = useState(false)
- const [exporting, setExporting] = useState(false)
+ const [exporting, setExporting] = useState<'xlsx' | 'csv' | null>(null)
  const [err, setErr] = useState<string | null>(null)
+ const [showSchema, setShowSchema] = useState(!narrow)
+ const editorRef = useRef<HTMLTextAreaElement>(null)
 
- const run = async () => {
- if (!sql.trim()) return
+ const runPage = async (statement: string, offset: number) => {
+ if (!statement.trim()) return
  setRunning(true); setErr(null)
  try {
- const r = await executeSqlQuery(source.id, sql)
- setResult(r)
+ const r = await executeSqlQuery(source.id, statement, QUERY_PAGE, offset)
+ setResult(r); setRanSql(statement)
  } catch (e: unknown) { setErr(errorDetail(e)) }
  finally { setRunning(false) }
  }
+ const run = () => runPage(sql, 0)
 
  const save = async () => {
  if (!sql.trim()) return
@@ -551,14 +466,15 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  finally { setSaving(false) }
  }
 
- // Download the FULL query result (not the preview) as an .xlsx workbook.
- const exportXlsx = async () => {
+ // Download the FULL query result (not the visible page).
+ const exportAs = async (format: 'xlsx' | 'csv') => {
  if (!sql.trim() || exporting) return
- setExporting(true); setErr(null)
+ setExporting(format); setErr(null)
  try {
- await exportSqlQueryXlsx(source.id, sql, `${source.name}.xlsx`)
+ if (format === 'csv') await exportSqlQueryCsv(source.id, sql, `${source.name}.csv`)
+ else await exportSqlQueryXlsx(source.id, sql, `${source.name}.xlsx`)
  } catch (e: unknown) { setErr(errorDetail(e)) }
- finally { setExporting(false) }
+ finally { setExporting(null) }
  }
 
  // Snapshot the FULL query result (not the preview) as a CSV dataset; from
@@ -580,8 +496,25 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  finally { setMaterializing(false) }
  }
 
- return (
- <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+ // A table picked in the browser replaces the editor's text with its
+ // server-quoted SELECT and runs it: one click from "what is in there?" to rows.
+ const insertFromSchema = (statement: string) => {
+ setSql(statement)
+ if (narrow) setShowSchema(false)
+ editorRef.current?.focus()
+ runPage(statement, 0)
+ }
+
+ const offset = result?.offset ?? 0
+ const hasMore = result?.has_more ?? result?.truncated ?? false
+ const pager: React.CSSProperties = {
+ padding: '5px 10px', borderRadius: 7, background: 'transparent', border: `1px solid ${C.border2}`,
+ color: C.muted, fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4,
+ ...(narrow ? { minHeight: 44 } : {}),
+ }
+
+ const editor = (
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
  {/* The editor is one framed object — toolbar welded to the code surface by a
      shared border — instead of a floating label, a floating button row and a
      boxed textarea. That frame is what makes it read as a query pane rather
@@ -596,23 +529,32 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  textTransform: 'uppercase', letterSpacing: '0.06em' }}>
  <Terminal size={12} aria-hidden="true" /> {t('data.sql_editor_label')}
  </span>
- <div style={{ display: 'flex', gap: 8 }}>
+ <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+ <button className="btn" type="button" onClick={() => setShowSchema(v => !v)} aria-expanded={showSchema}
+ style={{ padding: '6px 12px', borderRadius: 7, background: 'transparent',
+ border: `1px solid ${C.border2}`, color: C.muted, cursor: 'pointer',
+ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
+ ...(narrow ? { minHeight: 44 } : {}) }}>
+ <Table2 size={12} aria-hidden="true" /> {showSchema ? t('data.schema.hide') : t('data.schema.show')}
+ </button>
  <button className="btn" onClick={save} disabled={saving || !sql.trim()}
  style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent',
  border: `1px solid ${C.border2}`, color: C.muted, cursor: 'pointer',
- display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600 }}>
+ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
+ ...(narrow ? { minHeight: 44 } : {}) }}>
  {saving ? <Spinner size={12} /> : <Save size={12} />} {t('data.btn_save_query')}
  </button>
  <button className="btn" onClick={run} disabled={running || !sql.trim()}
  style={{ padding: '6px 16px', borderRadius: 7, background: C.green,
  border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
- opacity: running || !sql.trim() ? 0.6 : 1 }}>
+ opacity: running || !sql.trim() ? 0.6 : 1, ...(narrow ? { minHeight: 44 } : {}) }}>
  {running ? <Spinner size={12} /> : <Play size={12} />} {t('data.btn_run')}
  </button>
  </div>
  </div>
  <textarea
+ ref={editorRef}
  name="sql_query"
  aria-label={t('data.sql_editor_label')}
  value={sql}
@@ -637,35 +579,60 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
      whole point: the columns you pick here are the ones StockAI BRINGS, and the
      table on the other end is never altered. Without saying so, the absence
      looks like a missing feature rather than a deliberate boundary. */}
- <p style={{ margin: '8px 2px 0', fontSize: 11, color: C.muted, lineHeight: 1.6 }}>
+ <p style={{ margin: '-6px 2px 0', fontSize: 11, color: C.muted, lineHeight: 1.6 }}>
  {t('data.sql_readonly_note')}
  </p>
-                 {/* A database error is the server talking, so it keeps the code voice. */}
+ {/* A database error is the server talking, so it keeps the code voice. */}
  {err && (
- <div style={{ ...errorBlock, fontFamily: MONO, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+ <div role="alert" style={{ ...errorBlock, fontFamily: MONO, lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
  {err}
  </div>
  )}
  {result && (
- <div>
- {/* Result-set status line: the row count is the fact, so it reads as a
-     figure in the code voice; the two exports stay where they were. */}
- <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: narrow ? 'wrap' : undefined }}>
+ <div style={{ minWidth: 0 }}>
+ {/* Result-set status line: which rows these are, whether more exist, how
+     long it took; then the pager and the full-result actions. */}
+ <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
  <Table2 size={13} color={C.muted} aria-hidden="true" />
  <span style={{ color: C.text, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
- {result.row_count}
+ {result.row_count === 0
+ ? `0 ${t('data.rows_plural')}`
+ : t('data.query.page', { from: (offset + 1).toLocaleString(), to: (offset + result.row_count).toLocaleString() })}
  </span>
  <span style={{ color: C.muted, fontSize: 12 }}>
- {result.row_count === 1 ? t('data.rows_singular') : t('data.rows_plural')}{result.truncated ? ` ${t('data.truncated_suffix')}` : ''}
+ {hasMore ? `· ${t('data.query.more_available')}` : ''}
+ {typeof result.elapsed_ms === 'number' ? ` · ${t('data.query.elapsed', { ms: result.elapsed_ms })}` : ''}
  </span>
- <button className="btn" onClick={exportXlsx} disabled={exporting}
+ {(offset > 0 || hasMore) && (
+ <span style={{ display: 'inline-flex', gap: 6 }}>
+ <button type="button" className="btn" style={{ ...pager, cursor: offset > 0 && !running ? 'pointer' : 'default', opacity: offset > 0 ? 1 : 0.5 }}
+ disabled={offset === 0 || running} onClick={() => runPage(ranSql, Math.max(0, offset - QUERY_PAGE))}>
+ <ChevronUp size={12} aria-hidden="true" style={{ transform: 'rotate(-90deg)' }} /> {t('data.query.prev')}
+ </button>
+ <button type="button" className="btn" style={{ ...pager, cursor: hasMore && !running ? 'pointer' : 'default', opacity: hasMore ? 1 : 0.5 }}
+ disabled={!hasMore || running} onClick={() => runPage(ranSql, offset + QUERY_PAGE)}>
+ {t('data.query.next')} <ChevronDown size={12} aria-hidden="true" style={{ transform: 'rotate(-90deg)' }} />
+ </button>
+ </span>
+ )}
+ <span style={{ marginLeft: narrow ? 0 : 'auto', display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
+ <button className="btn" onClick={() => exportAs('xlsx')} disabled={!!exporting}
  title={t('data.btn_export_xlsx_hint')}
- style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 7,
+ style={{ padding: '6px 14px', borderRadius: 7,
  background: 'transparent', border: `1px solid ${C.border2}`, color: C.muted,
  fontWeight: 600, cursor: exporting ? 'default' : 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
- opacity: exporting ? 0.6 : 1 }}>
- {exporting ? <Spinner size={12} /> : <FileSpreadsheet size={12} />} {t('data.btn_export_xlsx')}
+ opacity: exporting ? 0.6 : 1, ...(narrow ? { minHeight: 44 } : {}) }}>
+ {exporting === 'xlsx' ? <Spinner size={12} /> : <FileSpreadsheet size={12} />} {t('data.btn_export_xlsx')}
+ </button>
+ <button className="btn" onClick={() => exportAs('csv')} disabled={!!exporting}
+ title={t('data.btn_export_csv_hint')}
+ style={{ padding: '6px 14px', borderRadius: 7,
+ background: 'transparent', border: `1px solid ${C.border2}`, color: C.muted,
+ fontWeight: 600, cursor: exporting ? 'default' : 'pointer',
+ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
+ opacity: exporting ? 0.6 : 1, ...(narrow ? { minHeight: 44 } : {}) }}>
+ {exporting === 'csv' ? <Spinner size={12} /> : <FileSpreadsheet size={12} />} {t('data.btn_export_csv')}
  </button>
  <button className="btn" onClick={materialize} disabled={materializing}
  title={t('data.btn_materialize_hint')}
@@ -673,13 +640,31 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
  background: C.greenDim, border: `1px solid ${alpha(C.green, 45)}`, color: C.green,
  fontWeight: 600, cursor: materializing ? 'default' : 'pointer',
  display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
- opacity: materializing ? 0.6 : 1 }}>
+ opacity: materializing ? 0.6 : 1, ...(narrow ? { minHeight: 44 } : {}) }}>
  {materializing ? <Spinner size={12} /> : <Database size={12} />} {t('data.btn_materialize')}
  </button>
+ </span>
  </div>
  <DataGrid columns={result.columns} rows={result.rows} />
  </div>
  )}
+ </div>
+ )
+
+ if (!showSchema) return editor
+ // Desktop: tables on the left, editor on the right. Phone: the browser stacks
+ // above the editor and closes itself once a table is picked.
+ return narrow ? (
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+ <SchemaBrowser sourceId={source.id} onInsert={insertFromSchema} compact />
+ {editor}
+ </div>
+ ) : (
+ <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 260px) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
+ <div style={{ position: 'sticky', top: 0, height: 'min(70vh, 640px)' }}>
+ <SchemaBrowser sourceId={source.id} onInsert={insertFromSchema} />
+ </div>
+ {editor}
  </div>
  )
 }
@@ -1581,7 +1566,11 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  const [previewErr, setPreviewErr] = useState<string | null>(null)
  const [activeSheet, setActiveSheet] = useState<string | undefined>()
  const [testing, setTesting] = useState(false)
- const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+ const [testResult, setTestResult] = useState<ConnectionProbe | null>(null)
+ const [testErr, setTestErr] = useState<string | null>(null)
+ const [savingConn, setSavingConn] = useState(false)
+ const [connErr, setConnErr] = useState<string | null>(null)
+ const errorDetail = useErrorDetail()
  const [editName, setEditName] = useState(false)
  const [newName, setNewName] = useState(source.name)
  const [savingName, setSavingName] = useState(false)
@@ -1598,6 +1587,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  setTab(isSql ? 'sql-editor' : 'preview')
  setPreview(null)
  setTestResult(null)
+ setTestErr(null)
  setEditSql(false)
  setNewName(source.name)
  }, [source.id])
@@ -1618,12 +1608,16 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  }, [tab, isSql, loadPreview])
 
  const testConn = async () => {
- setTesting(true); setTestResult(null)
+ setTesting(true); setTestResult(null); setTestErr(null)
  try {
  const r = await testSqlConnection(source.id)
  setTestResult(r)
- if (r.ok) onUpdated({ ...source, connection_status: 'connected' })
- } catch (e: any) { setTestResult({ ok: false, error: e.message }) }
+ // The server stored the verdict (and the stage summary) on the source:
+ // a FAILED test turns its badge red too. The old code only ever updated
+ // the badge on success, so a broken connection kept saying "connected".
+ try { onUpdated(await getDataSource(source.id)) }
+ catch { onUpdated({ ...source, connection_status: r.ok ? 'connected' : 'error' }) }
+ } catch (e: unknown) { setTestErr(errorDetail(e)) }
  finally { setTesting(false) }
  }
 
@@ -1744,11 +1738,12 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  </div>
  </div>
  <div style={{ display: 'flex', gap: 8, flexShrink: 0, ...(narrow ? { width: '100%' } : {}) }}>
- {isSql && (
+ {isSql && getUser()?.role !== 'viewer' && (
  <button className="btn" onClick={testConn} disabled={testing}
  style={{ padding: '7px 14px', borderRadius: 8, background: C.blueDim,
- border: `1px solid ${alpha(C.blue, 40)}`, color: C.blue, cursor: 'pointer',
- display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600 }}>
+ border: `1px solid ${alpha(C.blue, 40)}`, color: C.blue, cursor: testing ? 'default' : 'pointer',
+ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
+ ...(narrow ? { minHeight: 44, flex: 1, justifyContent: 'center' } : {}) }}>
  {testing ? <Spinner size={12} /> : <Link2 size={12} />}
  {t('data.btn_test_connection')}
  </button>
@@ -1779,7 +1774,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  { label: t('data.stat_size'), value: fmt(source.size_bytes) },
  { label: t('data.stat_rows'), value: source.row_count?.toLocaleString() ?? '—' },
  { label: t('data.stat_columns'), value: source.column_count?.toLocaleString() ?? '—' },
- { label: t('data.stat_type'), value: source.file_type || source.sql_config?.engine || '—' },
+ { label: t('data.stat_type'), value: source.sql_config?.engine ? t(`data.conn.engine_${source.sql_config.engine}`) : (source.file_type || '—') },
  ].map((s, i) => (
  <div key={s.label} style={narrow
  ? { paddingLeft: i % 2 === 0 ? 0 : 14, borderLeft: i % 2 === 0 ? 'none' : `1px solid ${C.border}`, minWidth: 0 }
@@ -1790,23 +1785,14 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  ))}
  </div>
 
- {/* Test result. Both outcomes sit on `--surface` with a coloured left rule:
-     `--danger` on its own tint is 4.1:1, which an outcome message cannot
-     afford. Success is 4.8:1 on the tint and would have passed, but the two
-     states share a shape so they read as the same control answering. */}
- {testResult && (
- <div style={{
- marginBottom: 12, padding: '9px 14px', borderRadius: 8,
- background: C.surface,
- border: `1px solid ${alpha(testResult.ok ? C.green : C.red, 35)}`,
- borderLeft: `3px solid ${testResult.ok ? C.green : C.red}`,
- color: testResult.ok ? C.green : C.red, fontSize: 12.5, lineHeight: 1.55,
- display: 'flex', alignItems: 'center', gap: 7,
- }}>
- {testResult.ok
- ? <CheckCircle2 size={14} aria-hidden="true" style={{ flexShrink: 0 }} />
- : <XCircle size={14} aria-hidden="true" style={{ flexShrink: 0 }} />}
- {testResult.ok ? t('data.connection_successful') : `${t('data.connection_failed')}: ${testResult.error}`}
+ {/* The staged test: one row per layer, so "it failed" always says WHERE.
+     Running, the panel says so in place (the button alone used to be the
+     only sign anything was happening). */}
+ {isSql && (testing || testResult || testErr) && (
+ <div style={{ marginBottom: 12 }}>
+ {testErr
+ ? <div role="alert" style={errorBlock}>{testErr}</div>
+ : <ConnectionTestResult probe={testResult} running={testing} />}
  </div>
  )}
 
@@ -1930,16 +1916,25 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  source.connection_status !== 'connected' ? (
                  // The headline moves to `--text` with the amber left in the icon:
  // `--warning` at 14px is 3.2:1 on the light surface.
- <div style={{ textAlign: 'center', padding: '48px 0' }}>
- <AlertTriangle size={30} color={C.amber} style={{ marginBottom: 14 }} aria-hidden="true" />
- <p style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{t('data.connection_not_established')}</p>
- <p style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{t('data.test_connection_first')}</p>
+ <div style={{ padding: '32px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+ <AlertTriangle size={30} color={C.amber} style={{ marginBottom: 10 }} aria-hidden="true" />
+ <p style={{ color: C.text, fontWeight: 700, fontSize: 14, margin: 0 }}>{t('data.connection_not_established')}</p>
+ <p style={{ color: C.muted, fontSize: 13, margin: '4px 0 0', textAlign: 'center' }}>{t('data.test_connection_first')}</p>
+ {getUser()?.role !== 'viewer' && (
  <button className="btn" onClick={testConn} disabled={testing}
  style={{ marginTop: 16, padding: '9px 20px', borderRadius: 8, background: C.green,
  border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer',
- display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+ display: 'inline-flex', alignItems: 'center', gap: 6, ...(narrow ? { minHeight: 48 } : {}) }}>
  {testing ? <Spinner size={14} /> : <Link2 size={14} />} {t('data.btn_test_connection')}
  </button>
+ )}
+ {/* Why it is not connected, from the last test the server kept — so the
+     person who opens this tomorrow does not have to re-run it to find out. */}
+ {!testResult && !testing && source.sql_config?.last_test && (
+ <div style={{ marginTop: 18, width: '100%', maxWidth: 640, textAlign: 'left' }}>
+ <ConnectionTestResult probe={source.sql_config.last_test} />
+ </div>
+ )}
  </div>
  ) : getUser()?.role === 'viewer' ? (
  // Running SQL on the company's database is analyst-or-above on the
@@ -1971,32 +1966,43 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
 
  {/* Edit SQL config tab */}
  {tab === 'connection' && isSql && (
- <div>
- <p style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>
+ getUser()?.role === 'viewer' ? (
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+ <p style={{ color: C.muted, fontSize: 13, margin: 0 }}>{t('data.sql_editor_viewer_note')}</p>
+ {source.sql_config?.last_test && <ConnectionTestResult probe={source.sql_config.last_test} />}
+ </div>
+ ) : (
+ <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 860 }}>
+ <p style={{ color: C.muted, fontSize: 13, margin: 0 }}>
  {t('data.update_connection_hint')}
  </p>
- <SqlForm
- isEdit
- initial={{
- engine: source.sql_config?.engine,
- host: source.sql_config?.host,
- port: source.sql_config?.port?.toString(),
- database: source.sql_config?.database,
- username: source.sql_config?.username,
- }}
- onSave={async form => {
+ {!testResult && !testing && source.sql_config?.last_test && (
+ <ConnectionTestResult probe={source.sql_config.last_test} />
+ )}
+ {connErr && <div role="alert" style={errorBlock}>{connErr}</div>}
+ <SqlConnectionForm
+ key={`${source.id}:${source.updated_at ?? ''}`}
+ mode="edit"
+ source={source}
+ saving={savingConn}
+ onSubmit={async ({ body }) => {
+ setSavingConn(true); setConnErr(null)
  try {
- const updated = await updateSqlConfig(source.id, {
- engine: form.engine, host: form.host, port: Number(form.port),
- database: form.database, username: form.username,
- password: form.password || undefined,
- })
- onUpdated(updated)
+ onUpdated(await updateSqlConfig(source.id, body))
  setTestResult(null)
- } catch (e: any) { addToast(t('data.sql_config_save_failed'), e.message, 'error') }
+ // Saving resets the status to "pending": test right away, so the
+ // answer to "did my change work?" is on screen without another click.
+ await testConn()
+ } catch (e: unknown) {
+ // Inline, above the form it is about (the request interceptor's toast
+ // disappears; this stays while the person fixes the field).
+ setConnErr(`${t('data.sql_config_save_failed')}: ${errorDetail(e)}`)
+ }
+ finally { setSavingConn(false) }
  }}
  />
  </div>
+ )
  )}
  </div>
  </div>
@@ -2010,6 +2016,7 @@ function NewSourcePanel({ onCreated, onCancel }:
  const { t } = useLanguage()
  // Phone: the screen's own header carries the title and the way back.
  const narrow = useIsNarrow()
+ const errorDetail = useErrorDetail()
  const [mode, setMode] = useState<'file' | 'sql'>('file')
  const [busy, setBusy] = useState(false)
  const [err, setErr] = useState<string | null>(null)
@@ -2130,18 +2137,21 @@ function NewSourcePanel({ onCreated, onCancel }:
  </button>
  </div>
  {err && <div style={errorBlock}>{err}</div>}
- <SqlForm
+ <SqlConnectionForm
+ mode="create"
  saving={busy}
  onCancel={onCancel}
- onSave={async form => {
+ onSubmit={async ({ name, description, body }) => {
  setBusy(true); setErr(null)
  try {
- onCreated(await createSqlSource({
- name: form.name, description: form.description || undefined,
- host: form.host, port: Number(form.port), database: form.database,
- username: form.username, password: form.password, engine: form.engine,
- }))
- } catch (e: any) { setErr(e.message) }
+ const created = await createSqlSource({ ...body, name: name ?? '', description })
+ // A new connection is "pending" until tested. Test it now, so the
+ // screen that opens next already says whether it works and why not.
+ try { await testSqlConnection(created.id) } catch { /* shown on the source */ }
+ let fresh = created
+ try { fresh = await getDataSource(created.id) } catch { /* keep the created row */ }
+ onCreated(fresh)
+ } catch (e: unknown) { setErr(errorDetail(e)) }
  finally { setBusy(false) }
  }}
  />

@@ -111,7 +111,10 @@ DOCS: dict[tuple[str, str], tuple[str, str]] = {
         "Uploads a CSV/Excel file (multipart) as a new data source."),
     ("POST", "/data-sources/sql"): (
         "Create a SQL data source",
-        "Registers a database connection as a data source."),
+        "Registers a database connection as a data source. Fields may come from a pasted `connection_string` (URL, JDBC, ADO.NET or libpq form); typed fields win. `ssl_mode` is disable, prefer, require, verify-ca or verify-full; `ssl_ca` is the server's CA certificate (PEM), stored encrypted like the password. Private and link-local hosts are refused unless the installation allows them (`data_source_host_not_allowed`)."),
+    ("POST", "/data-sources/sql/parse"): (
+        "Parse a connection string",
+        "Reads a connection string into engine, host, port, database, user and TLS mode. The password is never returned, only `has_password`."),
     ("DELETE", "/data-sources/{source_id}"): (
         "Delete a data source",
         "Removes the data source."),
@@ -132,10 +135,10 @@ DOCS: dict[tuple[str, str], tuple[str, str]] = {
         "Columns and rows of the source, for editing and saving as a new source."),
     ("POST", "/data-sources/{source_id}/execute-query"): (
         "Run a SQL query against a SQL source",
-        "Executes ONE read statement (SELECT or WITH ... SELECT) on the customer's database, inside a read-only transaction that is always rolled back, and returns up to `limit` rows. Needs a `write`-scope key: it runs caller-written SQL on the customer's database. Anything else is refused with `sql_multiple_statements`, `sql_not_a_select`, `sql_forbidden_keyword`, `sql_forbidden_function` or `sql_unsupported_syntax`."),
+        "Executes ONE read statement (SELECT or WITH ... SELECT) on the customer's database, inside a read-only transaction that is always rolled back, and returns up to `limit` rows starting at `offset`, with `has_more`. Needs a `write`-scope key: it runs caller-written SQL on the customer's database. Anything else is refused with `sql_multiple_statements`, `sql_not_a_select`, `sql_forbidden_keyword`, `sql_forbidden_function` or `sql_unsupported_syntax`."),
     ("POST", "/data-sources/{source_id}/export-query"): (
-        "Export a SQL query as Excel",
-        "Runs the query (same read-only rules as execute-query) and returns the result as an .xlsx file. Needs a `write`-scope key."),
+        "Export a SQL query as Excel or CSV",
+        "Runs the query (same read-only rules as execute-query) and returns the FULL result as an .xlsx (default) or .csv file, refusing rather than truncating past the row ceiling. Needs a `write`-scope key."),
     ("POST", "/data-sources/{source_id}/file"): (
         "Replace a data source's file",
         "Uploads a new file (multipart) IN PLACE: the source keeps its id and column mapping, so the next training run needs no reconfiguration. The nightly-export endpoint."),
@@ -153,10 +156,16 @@ DOCS: dict[tuple[str, str], tuple[str, str]] = {
         "Creates a new data source from edited columns and rows."),
     ("PATCH", "/data-sources/{source_id}/sql-config"): (
         "Update a SQL source's connection",
-        "Changes host, port, database, user, engine or password of a SQL source."),
+        "Changes any connection field of a SQL source. Omitted fields keep their stored value, the password included, except when the engine, host or port changes: then the password must be sent again (`data_source_password_required`)."),
     ("POST", "/data-sources/{source_id}/test-connection"): (
         "Test a SQL source's connection",
-        "Connects to the database with the stored settings and reports whether it worked."),
+        "Runs a staged test (dns, tcp, tls, auth, privileges, select, tables) and reports each stage as ok, warning, failed or skipped with a code. Warns when the login can write, with the least-privilege GRANT statements."),
+    ("GET", "/data-sources/{source_id}/schema"): (
+        "List a SQL source's tables",
+        "Tables and views the connection can read, with row estimates and a safely quoted preview statement for each. Cached for a few minutes; `refresh=true` re-reads."),
+    ("GET", "/data-sources/{source_id}/schema/columns"): (
+        "List a table's columns",
+        "Column names, types and nullability of one table of a SQL source."),
 
     # ── datasets ────────────────────────────────────────────────────────────
     ("GET", "/datasets"): (

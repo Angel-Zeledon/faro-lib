@@ -185,6 +185,16 @@ class Settings(BaseSettings):
     # Row ceiling when snapshotting a SQL query into a CSV dataset. Exceeding it
     # is a refusal, never a silent truncation.
     sql_materialize_max_rows: int = 500_000
+    # SQL data sources make THIS server open connections to addresses a tenant
+    # typed. Off: loopback, RFC 1918, CGNAT and IPv6 unique-local addresses are
+    # refused (the hosted product must never reach its own network). A
+    # self-hosted installation whose ERP database is on its LAN turns it on.
+    # Link-local / cloud-metadata addresses are refused either way.
+    sql_sources_allow_private_hosts: bool = False
+    # Connections one tenant may hold open to its databases at the same time
+    # (tests, queries, exports, refreshes). The next waits briefly, then is
+    # refused with a clear message instead of piling onto a customer's ERP.
+    sql_sources_max_concurrent_per_tenant: int = 4
     # Relative worsening of a session's realised WAPE over its training-time WAPE
     # at which the one in-app "forecast is degrading" alert is raised (percent).
     accuracy_degradation_threshold_pct: float = 25.0

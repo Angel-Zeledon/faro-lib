@@ -27,7 +27,7 @@ either every selected adjustment lands, or none does.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from backend.db.connection import query, query_one
 from backend.errors import AppError
@@ -44,25 +44,35 @@ _EPS = 1e-9
 
 # ── Barcode / SKU lookup ──────────────────────────────────────────────────────
 
-def lookup(tenant_id: str, code: str, warehouse: Optional[str] = None) -> dict:
+def lookup(
+    tenant_id: str, code: str, warehouse: Optional[str] = None,
+    visible: Optional[Callable[[Optional[str]], bool]] = None,
+) -> dict:
     """Resolve a scanned code to one SKU: barcode first, then SKU, exact before
     case-insensitive. Tenant-scoped. Raises 404 when nothing matches and 409
     when the best match is ambiguous (two SKUs share the barcode) — picking one
-    silently would count units against the wrong product."""
+    silently would count units against the wrong product.
+
+    `visible` (None = every warehouse) restricts which stock rows exist for the
+    caller: a user limited to some warehouses gets the quantity over THEIR
+    warehouses only, and a code held only elsewhere is not found."""
     from backend.inventory import warehouse_service as wh_svc
 
     cleaned = (code or "").strip()
     if not cleaned:
         raise AppError("lookup_code_required", "A code is required", status_code=422)
 
-    rows = query(
+    def _seen(rows: list[dict]) -> list[dict]:
+        return rows if visible is None else [r for r in rows if visible(r["warehouse"])]
+
+    rows = _seen(query(
         """SELECT sku, warehouse, display_name, barcode, unit_of_measure, unit_cost,
                   current_stock, category
            FROM inventory_stock
            WHERE tenant_id = %s
              AND (barcode = %s OR sku = %s OR LOWER(barcode) = LOWER(%s) OR LOWER(sku) = LOWER(%s))""",
         (tenant_id, cleaned, cleaned, cleaned, cleaned),
-    )
+    ))
 
     def rank(r: dict) -> tuple[int, str]:
         if r["barcode"] == cleaned:
@@ -88,12 +98,12 @@ def lookup(tenant_id: str, code: str, warehouse: Optional[str] = None) -> dict:
         )
     sku = skus[0]
     matched_by = rank(winners[0])[1]
-    sku_rows = query(
+    sku_rows = _seen(query(
         """SELECT sku, warehouse, display_name, barcode, unit_of_measure, unit_cost,
                   current_stock, category
            FROM inventory_stock WHERE tenant_id = %s AND sku = %s ORDER BY warehouse""",
         (tenant_id, sku),
-    )
+    ))
     wh_name = wh_svc.resolve_canonical_name(tenant_id, warehouse) if warehouse else None
     here = next((r for r in sku_rows if r["warehouse"] == wh_name), None) if wh_name else None
     base = here or sku_rows[0]

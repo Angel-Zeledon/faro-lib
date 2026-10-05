@@ -638,12 +638,106 @@ export type DataSourceType = 'file' | 'sql'
 export type ConnectionStatus = 'connected' | 'pending' | 'error'
 export type SqlEngine = 'postgresql' | 'mysql' | 'mssql' | 'oracle'
 
+export type SqlSslMode = 'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full'
+
+/** What the server keeps about an uploaded CA certificate (the PEM itself is
+ *  stored encrypted and never sent back). */
+export interface SqlCaInfo {
+  subject:            string
+  expires:            string
+  fingerprint_sha256: string
+  count:              number
+}
+
+export type ProbeStageName = 'dns' | 'tcp' | 'tls' | 'auth' | 'privileges' | 'select' | 'tables'
+export type ProbeStatus = 'ok' | 'warning' | 'failed' | 'skipped'
+
+export interface ProbeStage {
+  stage:        ProbeStageName
+  status:       ProbeStatus
+  code?:        string
+  params?:      Record<string, unknown>
+  detail?:      Record<string, unknown>
+  duration_ms?: number
+}
+
+/** The staged connection test (POST /data-sources/{id}/test-connection). */
+export interface ConnectionProbe {
+  ok:                boolean
+  status:            'connected' | 'error'
+  stages:            ProbeStage[]
+  failed_stage:      ProbeStageName | null
+  error:             string | null
+  tested_at:         string
+  write_access:      { can_write: boolean; privileges: string[]; superuser: boolean } | null
+  grant_sql:         string[] | null
+  tables_sample:     string[]
+  table_count:       number | null
+  tables_truncated?: boolean
+  server_version:    string | null
+  read_only_session: boolean | null
+}
+
+/** The summary of the last test kept on the source (no details, no SQL). */
+export interface StoredProbe {
+  ok:             boolean
+  tested_at:      string
+  failed_stage:   ProbeStageName | null
+  error:          string | null
+  stages:         ProbeStage[]
+  can_write:      boolean | null
+  table_count:    number | null
+  server_version: string | null
+}
+
 export interface SqlConfig {
-  host:     string
-  port:     number
-  database: string
-  username: string
-  engine:   SqlEngine
+  host:                string
+  port:                number
+  database:            string
+  username:            string
+  engine:              SqlEngine
+  ssl_mode?:           SqlSslMode
+  has_password?:       boolean
+  has_ssl_ca?:         boolean
+  ssl_ca?:             SqlCaInfo | null
+  connect_timeout_s?:  number
+  statement_timeout_s?: number
+  last_test?:          StoredProbe | null
+}
+
+/** Fields of a parsed connection string (the password only as a flag). */
+export interface ParsedConnectionString {
+  engine?:      SqlEngine
+  host?:        string
+  port?:        number
+  database?:    string
+  username?:    string
+  ssl_mode?:    SqlSslMode
+  has_password: boolean
+}
+
+export interface SchemaTable {
+  schema:       string | null
+  name:         string
+  kind:         'table' | 'view'
+  row_estimate: number | null
+  select_sql:   string | null
+}
+
+export interface SchemaTables {
+  tables:    SchemaTable[]
+  truncated: boolean
+  cap:       number
+  cached_at: string
+}
+
+export interface SchemaColumns {
+  schema:     string
+  table:      string
+  truncated:  boolean
+  columns:    { name: string; type: string; nullable: boolean }[]
+  cached_at:  string
+  select_sql: string | null
 }
 
 export interface DataSource {
@@ -681,10 +775,14 @@ export interface EditableTable {
 }
 
 export interface SqlQueryResult {
-  columns:   string[]
-  rows:      Record<string, unknown>[]
-  row_count: number
-  truncated: boolean
+  columns:     string[]
+  rows:        Record<string, unknown>[]
+  row_count:   number
+  truncated:   boolean
+  offset?:     number
+  limit?:      number
+  has_more?:   boolean
+  elapsed_ms?: number
 }
 
 // ── Forecast Series (ECharts) ─────────────────────────────────────────────────

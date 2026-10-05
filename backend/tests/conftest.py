@@ -170,6 +170,19 @@ def _testing_mode_is_declared_not_inherited():
 
 
 @pytest.fixture(autouse=True)
+def _sql_sources_may_reach_the_local_test_database():
+    """The SQL data-source tests point a "customer database" at the test
+    Postgres on 127.0.0.1 — a loopback address the SSRF policy refuses by
+    default. Pinned on here (and declared, not inherited from .env); the
+    tests of the policy itself turn it off."""
+    from backend.config import settings
+    original = settings.sql_sources_allow_private_hosts
+    settings.sql_sources_allow_private_hosts = True
+    yield
+    settings.sql_sources_allow_private_hosts = original
+
+
+@pytest.fixture(autouse=True)
 def _forget_the_generated_encryption_key():
     """Drop the process-cached Fernet key between tests.
 

@@ -153,6 +153,43 @@ def _sql_parent(tenant_id: str, dataset_id: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+# Failures that mean the CONNECTION is broken (not the query): the source's
+# badge turns to "error" so the data screen says so too, not only the bell.
+_CONNECTION_FAILURES = frozenset({
+    "data_source_dns_failed", "data_source_host_unreachable", "data_source_connect_timeout",
+    "data_source_tls_failed", "data_source_auth_failed", "data_source_host_rejected",
+    "data_source_database_not_found", "data_source_credentials_unreadable",
+    "data_source_host_not_allowed", "data_source_host_forbidden", "data_source_driver_missing",
+    "data_source_connect_failed",
+    "data_source_not_connected",
+})
+
+
+def _report_refresh_failure(tenant_id: str, user_id: str, parent: dict, exc: Exception) -> None:
+    """Put a failed SQL refresh where the tenant looks: the bell (a critical
+    activity event naming the source and the failure's code) and, when the
+    connection itself is broken, the source's status. Never raises — the
+    schedule's own failure must still be recorded by the caller."""
+    code = getattr(exc, "code", None) or "data_source_connect_failed"
+    try:
+        from backend.activity.events import record_event
+        record_event(
+            tenant_id, user_id, "data.sql_refresh_failed", resource=parent.get("id"),
+            details={"source_name": parent.get("name")},
+            reason="sql_source_refresh_failed",
+            reason_params={"source_name": parent.get("name"), "error_code": code},
+            status="error",
+        )
+        if code in _CONNECTION_FAILURES:
+            execute(
+                "UPDATE datasets SET connection_status='error', updated_at=NOW() "
+                "WHERE id=%s AND tenant_id=%s",
+                (parent.get("id"), tenant_id),
+            )
+    except Exception:  # noqa: BLE001
+        log.exception("retrain: could not report the refresh failure of %s", parent.get("id"))
+
+
 def _current_dataset(
     tenant_id: str, schedule_id: str, template: dict, user_id: str,
 ) -> tuple[str, Optional[str]]:
@@ -181,6 +218,7 @@ def _current_dataset(
         )
     except Exception as exc:
         exc._schedule_run_reason = REASON_SOURCE_REFRESH_FAILED  # type: ignore[attr-defined]
+        _report_refresh_failure(tenant_id, user_id, parent, exc)
         raise
     fresh_id = fresh["id"]
     execute(
