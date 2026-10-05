@@ -1,4 +1,4 @@
-"""Optional sign-in with Google, Apple and Facebook.
+"""Optional sign-in with Google, Microsoft and Apple.
 
 Off unless the instance operator enables it (`SOCIAL_LOGIN_ENABLED` plus a
 provider's credentials, in /instalacion or the environment). `providers.py`

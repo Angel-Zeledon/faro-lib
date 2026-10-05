@@ -95,7 +95,7 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("webhooks", "webhooks", "id, tenant_id, url, events, created_at"),
     ("user_permissions", "user_permissions", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
-    # Apple / Facebook is the person's data, so it travels with the export.
+    # Microsoft / Apple is the person's data, so it travels with the export.
     ("user_identities", "user_identities",
      "id, user_id, tenant_id, provider, subject, email, created_at, last_used_at"),
 ]

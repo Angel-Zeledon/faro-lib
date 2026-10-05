@@ -218,15 +218,15 @@ class Settings(BaseSettings):
     pinecone_environment: str = ""
     pinecone_index: str = ""
 
-    # Social sign-in (Google, Apple, Facebook). OFF unless the instance operator
+    # Social sign-in (Google, Microsoft, Apple). OFF unless the instance operator
     # turns the master switch on AND fills a provider's credentials — a source
     # install shows exactly the email + password form it always did. Read only
     # through `service_config.resolver.effective()`; see backend/auth/social/.
     social_login_enabled: bool = False
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
-    facebook_oauth_app_id: str = ""
-    facebook_oauth_app_secret: str = ""
+    microsoft_oauth_client_id: str = ""
+    microsoft_oauth_client_secret: str = ""
     apple_oauth_service_id: str = ""
     apple_oauth_team_id: str = ""
     apple_oauth_key_id: str = ""

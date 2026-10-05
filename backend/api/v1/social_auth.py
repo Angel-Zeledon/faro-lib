@@ -1,4 +1,4 @@
-"""Social sign-in routes: Google, Apple, Facebook.
+"""Social sign-in routes: Google, Microsoft, Apple.
 
 All of them sit under `/auth` (tag `auth`, which an API key can never reach)
 and every one of them answers "off" until the instance operator enables a
@@ -6,7 +6,7 @@ provider — see `backend/auth/social/providers.enabled_providers`.
 
     GET    /auth/providers                   which buttons to draw (public)
     GET    /auth/oauth/{provider}/start      302 to the provider (public)
-    GET    /auth/oauth/{provider}/callback   provider comes back (Google, Facebook)
+    GET    /auth/oauth/{provider}/callback   provider comes back (Google, Microsoft)
     POST   /auth/oauth/{provider}/callback   provider comes back (Apple, form_post)
     POST   /auth/oauth/exchange              one-time code -> our own tokens
     GET    /auth/identities                  the signed-in person's linked providers

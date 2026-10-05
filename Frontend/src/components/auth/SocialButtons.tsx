@@ -1,6 +1,6 @@
 'use client'
 /**
- * "Continue with Google / Apple / Facebook" — only for the providers this
+ * "Continue with Google / Microsoft / Apple" — only for the providers this
  * installation enabled.
  *
  * Renders NOTHING until `/auth/providers` answers, and nothing at all when it
@@ -9,8 +9,7 @@
  * login and signup screens look exactly as they did before this existed.
  *
  * Each button follows its brand's published guidelines: Google's four-colour
- * "G" on white (or #131314 in dark), Apple's logo in black/white, Facebook's
- * "f" on #1877F2. The label is the provider's own wording, "Continue with …".
+ * "G" on white (or #131314 in dark), Microsoft's four-square mark on white (or #2F2F2F in dark), Apple's logo in black/white. The label is the provider's own wording, "Continue with …".
  *
  * Clicking navigates the whole window to the backend's /start route — the
  * provider's page must take over, and the flow comes back through
@@ -34,18 +33,21 @@ function GoogleLogo() {
   )
 }
 
-function AppleLogo({ color }: { color: string }) {
+function MicrosoftLogo() {
   return (
-    <svg width="16" height="19" viewBox="0 0 814 1000" aria-hidden="true">
-      <path fill={color} d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 99.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z" />
+    <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
     </svg>
   )
 }
 
-function FacebookLogo() {
+function AppleLogo({ color }: { color: string }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#ffffff" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z" />
+    <svg width="16" height="19" viewBox="0 0 814 1000" aria-hidden="true">
+      <path fill={color} d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 99.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z" />
     </svg>
   )
 }
@@ -58,12 +60,15 @@ function brand(provider: SocialProvider, dark: boolean): BrandStyle {
       ? { bg: '#131314', fg: '#E3E3E3', border: '#8E918F', logo: <GoogleLogo /> }
       : { bg: '#FFFFFF', fg: '#1F1F1F', border: '#747775', logo: <GoogleLogo /> }
   }
-  if (provider === 'apple') {
+  if (provider === 'microsoft') {
     return dark
-      ? { bg: '#FFFFFF', fg: '#000000', border: '#FFFFFF', logo: <AppleLogo color="#000000" /> }
-      : { bg: '#000000', fg: '#FFFFFF', border: '#000000', logo: <AppleLogo color="#FFFFFF" /> }
+      ? { bg: '#2F2F2F', fg: '#FFFFFF', border: '#8C8C8C', logo: <MicrosoftLogo /> }
+      : { bg: '#FFFFFF', fg: '#5E5E5E', border: '#8C8C8C', logo: <MicrosoftLogo /> }
   }
-  return { bg: '#1877F2', fg: '#FFFFFF', border: '#1877F2', logo: <FacebookLogo /> }
+  // Apple: the last provider, so it is the fall-through.
+  return dark
+    ? { bg: '#FFFFFF', fg: '#000000', border: '#FFFFFF', logo: <AppleLogo color="#000000" /> }
+    : { bg: '#000000', fg: '#FFFFFF', border: '#000000', logo: <AppleLogo color="#FFFFFF" /> }
 }
 
 export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {

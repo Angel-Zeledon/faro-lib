@@ -195,35 +195,35 @@ Empty channels are HIDDEN rather than shown broken: a button opening an empty wa
 
 Writable from the panel: `CONTACT_WHATSAPP`, `CONTACT_EMAIL`, `UPGRADE_NOTIFY_EMAIL`.
 
-## `social_login` - Sign in with Google, Apple or Facebook, next to email + password.
+## `social_login` - Sign in with Google, Microsoft or Apple, next to email + password.
 
 *Kind:* external service. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* yes.
 
-**What is lost without it:** The 'Continue with Google / Apple / Facebook' buttons disappear from the login and signup screens; email + password keeps working exactly as before. People who only ever signed in with a provider must use 'forgot password' to set one. Off by default — a source install shows only the email form until the operator configures a provider AND turns SOCIAL_LOGIN_ENABLED on.
+**What is lost without it:** The 'Continue with Google / Microsoft / Apple' buttons disappear from the login and signup screens; email + password keeps working exactly as before. People who only ever signed in with a provider must use 'forgot password' to set one. Off by default — a source install shows only the email form until the operator configures a provider AND turns SOCIAL_LOGIN_ENABLED on.
 
-**Any one of these is enough:** `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` **or** `FACEBOOK_OAUTH_APP_ID` + `FACEBOOK_OAUTH_APP_SECRET` **or** `APPLE_OAUTH_SERVICE_ID` + `APPLE_OAUTH_TEAM_ID` + `APPLE_OAUTH_KEY_ID` + `APPLE_OAUTH_PRIVATE_KEY`
+**Any one of these is enough:** `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` **or** `MICROSOFT_OAUTH_CLIENT_ID` + `MICROSOFT_OAUTH_CLIENT_SECRET` **or** `APPLE_OAUTH_SERVICE_ID` + `APPLE_OAUTH_TEAM_ID` + `APPLE_OAUTH_KEY_ID` + `APPLE_OAUTH_PRIVATE_KEY`
 
 Each provider shows its button only when the master switch is on AND every one of its fields is set; a half-filled provider is never offered. Every provider console asks for the redirect (callback) URL, which is built from FRONTEND_URL:
 
     <FRONTEND_URL>/api/v1/auth/oauth/google/callback
-    <FRONTEND_URL>/api/v1/auth/oauth/facebook/callback
+    <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback
     <FRONTEND_URL>/api/v1/auth/oauth/apple/callback
 
-Step-by-step console instructions: `docs/social-login.md`. An existing account is linked only through an email address the PROVIDER says it verified; when the local account had never verified that address, its password is removed on linking, because whoever chose it never proved they own the mailbox.
+Step-by-step console instructions: `docs/social-login.md`. An existing account is linked only through an email address the PROVIDER says it verified; when the local account had never verified that address, its password is removed on linking, because whoever chose it never proved they own the mailbox. Microsoft does not verify the `email` claim of work or school accounts, so there an address counts as verified only when Microsoft sends `xms_edov` (add it as an optional ID-token claim in the app registration) or `email_verified`; personal Microsoft accounts (outlook.com, hotmail.com, ...) are accepted because Microsoft verifies those addresses itself. Without that proof a Microsoft sign-in cannot create or link an account, only sign in an identity linked earlier.
 
 | Variable | Default | Notes | What it does |
 |---|---|---|---|
 | `SOCIAL_LOGIN_ENABLED` | `false` | - | Master switch. False hides every social button without deleting the credentials below, so the feature can be paused and resumed. |
 | `GOOGLE_OAUTH_CLIENT_ID` | - | - | OAuth client ID of a 'Web application' client in Google Cloud Console. Authorized redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/google/callback. |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | - | secret | Client secret of that Google OAuth client. Without it (or the ID) the Google button is not shown. |
-| `FACEBOOK_OAUTH_APP_ID` | - | - | App ID of a Meta app with the Facebook Login product. Valid OAuth redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/facebook/callback. |
-| `FACEBOOK_OAUTH_APP_SECRET` | - | secret | App secret of that Meta app. Also signs every Graph API call (appsecret_proof). Without it the Facebook button is not shown. |
+| `MICROSOFT_OAUTH_CLIENT_ID` | - | - | Application (client) ID of a Microsoft Entra app registration whose supported account types are 'Accounts in any organizational directory and personal Microsoft accounts'. Web redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback. Add the optional ID-token claim `xms_edov`, or work and school accounts cannot create or link accounts. |
+| `MICROSOFT_OAUTH_CLIENT_SECRET` | - | secret | Client secret VALUE (not the secret ID) of that app registration. It expires (24 months at most): renew it before then or the Microsoft button starts failing. Without it (or the ID) the Microsoft button is not shown. |
 | `APPLE_OAUTH_SERVICE_ID` | - | - | Identifier of the Sign in with Apple SERVICES ID (not the App ID). Return URL: <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Apple only accepts https return URLs. |
 | `APPLE_OAUTH_TEAM_ID` | - | - | 10-character Apple Developer Team ID; the issuer of the client secret this server signs for every Apple sign-in. |
 | `APPLE_OAUTH_KEY_ID` | - | - | Key ID of the Sign in with Apple private key (.p8). |
 | `APPLE_OAUTH_PRIVATE_KEY` | - | secret | Contents of the .p8 key file, BEGIN/END lines included. Pasted on one line is fine; the line breaks are restored. Without it Apple cannot be asked for a token and its button is not shown. |
 
-Writable from the panel: `SOCIAL_LOGIN_ENABLED`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `FACEBOOK_OAUTH_APP_ID`, `FACEBOOK_OAUTH_APP_SECRET`, `APPLE_OAUTH_SERVICE_ID`, `APPLE_OAUTH_TEAM_ID`, `APPLE_OAUTH_KEY_ID`, `APPLE_OAUTH_PRIVATE_KEY`.
+Writable from the panel: `SOCIAL_LOGIN_ENABLED`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`, `APPLE_OAUTH_SERVICE_ID`, `APPLE_OAUTH_TEAM_ID`, `APPLE_OAUTH_KEY_ID`, `APPLE_OAUTH_PRIVATE_KEY`.
 
 ## `inbound_email` - Receive sales files forwarded by e-mail to a private per-account address.
 
