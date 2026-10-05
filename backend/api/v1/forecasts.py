@@ -525,7 +525,7 @@ def get_forecast_series(
 
 
 def _champion_model(
-    sku: str, sku_metrics: list[dict], available_models: list[str],
+    sku: str, metrics_rows: list[dict], available_models: list[str],
 ) -> Optional[str]:
     """The model this SKU's purchases are computed from, if we can draw it.
 
@@ -538,11 +538,14 @@ def _champion_model(
     error: metrics can exist for a model whose series was never persisted, and
     naming a curve we cannot draw would be worse than falling back.
     """
-    if not sku_metrics or not available_models:
+    if not metrics_rows or not available_models:
         return None
     from backend.inventory.service import best_model_by_sku
 
-    champion = best_model_by_sku(sku_metrics).get(sku)
+    # The WHOLE session's rows, not this SKU's: a near-tie is settled by each
+    # model's record across every SKU, so one SKU's rows alone would pick a
+    # different champion than the orders and the accuracy figure use.
+    champion = best_model_by_sku(metrics_rows).get(sku)
     return champion if champion in available_models else None
 
 
@@ -578,7 +581,7 @@ def get_sku_intelligence(
     # 24.6%, and the screen showed both numbers without ever saying they belong
     # to different models. `best_model_by_sku` is the same authority the
     # semáforo and the accuracy figure use, so all three now describe one model.
-    chosen_model = model or _champion_model(sku, sku_metrics, available_models) \
+    chosen_model = model or _champion_model(sku, metrics_rows, available_models) \
         or next(iter(sku_forecasts.keys()), None)
 
     forecast_raw: list = []
@@ -667,6 +670,7 @@ def get_forecast_total(
         rows_by_sku.setdefault(r.get("sku"), []).append(r)
 
     from backend.inventory.service import best_model_by_sku
+    champions = best_model_by_sku(metrics_rows)
     from backend.utils.temporal_agg import (
         _FREQ_ORDER, detect_frequency, available_granularities as _avail_gran,
         aggregate_historical, aggregate_forecast,
@@ -680,7 +684,7 @@ def get_forecast_total(
         if not isinstance(models, dict) or not models:
             continue
         sku_rows = rows_by_sku.get(sku, [])
-        champion = best_model_by_sku(sku_rows).get(sku) if sku_rows else None
+        champion = champions.get(sku) if sku_rows else None
         if champion not in models:
             champion = next(iter(models.keys()))
         raw = models.get(champion)

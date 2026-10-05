@@ -4459,19 +4459,29 @@ def best_model_by_sku(rows: list[dict]) -> dict[str, str]:
 
     Baselines are excluded: they exist to be beaten, and buying from a naive
     forecast because it happened to win would be a bug, not a fallback.
+
+    A lead under 10% on one validation window is inside the noise, so a near-tie
+    is settled by each model's record over every SKU (see `champion.py`).
     """
     metric = _champion_metric(rows)
-    best: dict[str, tuple[float, str]] = {}
+    scores: dict[str, dict[str, float]] = {}
     for r in rows:
         if r.get("type") == "baseline":
             continue
         score, model = r.get(metric), r.get("model")
         if score is None or not model:
             continue
-        sku = str(r.get("sku"))
-        if sku not in best or float(score) < best[sku][0]:
-            best[sku] = (float(score), str(model))
-    return {sku: model for sku, (_s, model) in best.items()}
+        per_model = scores.setdefault(str(r.get("sku")), {})
+        m = str(model)
+        if m not in per_model or float(score) < per_model[m]:
+            per_model[m] = float(score)
+    # The engine's own rule, not a copy: a near-tie goes to the model with the
+    # better record across the whole session (forecasting_core.evaluation.champion).
+    # `rows` must therefore be the session's WHOLE metrics table; a caller that
+    # passes one SKU's rows gets the plain minimum and can disagree with the
+    # catalogue-wide decision.
+    from forecasting_core.evaluation.champion import select_champions
+    return select_champions(scores)
 
 
 # A WAPE at or above this is the engine's `sum|e| / (0 + 1e-8)` — a validation

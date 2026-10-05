@@ -25,6 +25,7 @@ from typing import Callable, Dict, List, Optional
 
 from forecasting_core.aggregation.rollup import aggregate_by_sku, aggregate_by_store
 from forecasting_core.evaluation.metrics import CHAMPION_METRIC_ORDER
+from forecasting_core.evaluation.champion import select_champions
 
 log = logging.getLogger(__name__)
 
@@ -906,6 +907,27 @@ class Pipeline:
             return champions
 
         has_type = "type" in metrics_df.columns
+
+        # Candidate scores per SKU, baselines already out of the race (see the
+        # note below). The choice itself is the noise-aware rule shared with the
+        # benchmark runner: among models within a tolerance of a SKU's best
+        # cost, prefer the one with the best record across all SKUs, because a
+        # tiny lead on one validation window is mostly luck. It only ever picks
+        # among models that have a score for that SKU.
+        scores: Dict = {}
+        for sku_val, grp in metrics_df.groupby("sku"):
+            valid = grp.dropna(subset=[metric])
+            cands = valid[valid["type"] != "baseline"] if has_type else valid
+            if cands.empty:
+                continue
+            per_model: Dict[str, float] = {}
+            for model, value in zip(cands["model"], cands[metric]):
+                value = float(value)
+                if model not in per_model or value < per_model[model]:
+                    per_model[model] = value
+            scores[sku_val] = per_model
+        chosen = select_champions(scores)
+
         for sku_val, grp in metrics_df.groupby("sku"):
             valid = grp.dropna(subset=[metric])
             if valid.empty:
@@ -926,7 +948,9 @@ class Pipeline:
             if candidates.empty:
                 continue
 
-            champion = candidates.loc[candidates[metric].idxmin(), "model"]
+            champion = chosen.get(sku_val)
+            if champion is None:
+                champion = candidates.loc[candidates[metric].idxmin(), "model"]
             champions[norm_sku(sku_val)] = champion
             # Kept for `_demand_risk`: only the champion's band may survive
             # into the payload, because the champion is the model the purchase

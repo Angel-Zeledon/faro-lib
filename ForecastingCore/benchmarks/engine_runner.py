@@ -41,7 +41,8 @@ def build_config(horizon: int, season: int, models: List[str]) -> dict:
     }
 
 
-def _champions(metrics_rows: list) -> Dict[str, str]:
+def _val_scores(metrics_rows: list) -> Dict[str, Dict[str, float]]:
+    """{sku: {model: validation cost}} on the champion metric, baselines out."""
     from forecasting_core.evaluation.metrics import CHAMPION_METRIC_ORDER
     if not metrics_rows:
         return {}
@@ -54,10 +55,19 @@ def _champions(metrics_rows: list) -> Dict[str, str]:
     if "type" in m.columns:
         m = m[m["type"] != "baseline"]
     m = m.dropna(subset=[metric])
-    out = {}
-    for sku, g in m.groupby("sku"):
-        out[str(sku)] = str(g.loc[g[metric].idxmin(), "model"])
+    out: Dict[str, Dict[str, float]] = {}
+    for sku, model, v in zip(m["sku"], m["model"], m[metric]):
+        out.setdefault(str(sku), {})[str(model)] = float(v)
     return out
+
+
+def _champions(metrics_rows: list, noise_aware: bool = True) -> Dict[str, str]:
+    """Same call the engine makes (Pipeline._select_champions)."""
+    scores = _val_scores(metrics_rows)
+    if noise_aware:
+        from forecasting_core.evaluation.champion import select_champions
+        return select_champions(scores)
+    return {s: min(v, key=v.get) for s, v in scores.items()}
 
 
 def run_engine(train_df: pd.DataFrame, horizon: int, season: int,
@@ -95,8 +105,13 @@ def run_engine(train_df: pd.DataFrame, horizon: int, season: int,
                 "point": np.maximum(0.0, g["forecast"].to_numpy(dtype=float)),
                 "q": q,
             }
-    champion = _champions(metrics.get("rows") or [])
+    rows_m = metrics.get("rows") or []
+    champion = _champions(rows_m)
     champion = {s: m for s, m in champion.items() if s in forecasts and m in forecasts[s]}
+    champion_plain = _champions(rows_m, noise_aware=False)
+    champion_plain = {s: m for s, m in champion_plain.items() if s in forecasts and m in forecasts[s]}
     produced = set(forecasts)
     failed = sorted(set(train_df["sku"].astype(str).unique()) - produced)
-    return {"forecasts": forecasts, "champion": champion, "failed": failed, "error": None}
+    return {"forecasts": forecasts, "champion": champion,
+            "champion_plain": champion_plain, "val_scores": _val_scores(rows_m),
+            "failed": failed, "error": None}
