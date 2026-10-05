@@ -2187,6 +2187,11 @@ def _compute_inventory_status(
     # whole tenant, applied beside the events below and always named on the row.
     from backend.inventory import forecast_adjustment_service as _fa_svc
     adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
+    # Orders customers placed ahead of time: units inside the protection interval
+    # are added on top of the forecast and named on the row. Empty for a tenant
+    # that recorded none, which leaves every number below exactly as it was.
+    from backend.inventory import committed_demand_service as _cd_svc
+    committed_by_sku = _cd_svc.active_by_sku(tenant_id)
 
     # Per-SKU views of the incoming maps, built ONCE. The loop used to scan
     # every (sku, warehouse) key for every SKU — quadratic in the catalogue.
@@ -2242,6 +2247,7 @@ def _compute_inventory_status(
         has_forecast = bool(model_forecasts)
         has_stock    = stock is not None and current_stock is not None
         adjustments_applied: list[dict] = []
+        committed_applied: list[dict] = []
 
         _sl_val, service_level_source, service_level_rule_scope = _sd_svc.resolve_field(
             "service_level", stock, rule_index, supplier=supplier, category=category,
@@ -2301,6 +2307,16 @@ def _compute_inventory_status(
             adj_mult, adjustments_applied = _fa_svc.demand_multiplier(
                 adjustments_by_sku.get(sku), today, lead_time)
             avg_daily_eff = avg_daily * event_mult * adj_mult
+            # Committed customer orders due inside the protection interval, as an
+            # extra rate that adds exactly their units over that interval (see
+            # committed_demand_service). Only evaluated when the SKU has any.
+            if committed_by_sku.get(sku):
+                _rp_days = _resolve_review_period_days(supplier, review_period_map)
+                _committed_units, committed_applied = _cd_svc.committed_units(
+                    committed_by_sku[sku], today, lead_time + _rp_days)
+                avg_daily_eff += _cd_svc.extra_rate(
+                    _committed_units,
+                    lt_periods + _lead_time_in_periods(_rp_days, period))
             coverage_days = current_stock / avg_daily_eff if avg_daily_eff > 0 else 9999.0
             # The measured band belongs to ONE model's forecast. Pairing it with
             # a different model's point forecast would mix a global model's
@@ -2407,6 +2423,9 @@ def _compute_inventory_status(
                 # Manual forecast adjustments that moved this number: who, by
                 # how much, why. Empty when none apply.
                 "adjustments_applied": adjustments_applied,
+                # Customer orders placed ahead of time that moved this number:
+                # who, when, how many units. Empty when none apply.
+                "committed_applied": committed_applied,
             }
             if recommended <= 0:
                 # Enough stock: keep the numbers (the what-if simulator needs
@@ -2541,6 +2560,7 @@ def _compute_inventory_status(
             "signal_thresholds":  sku_thresholds,
             "recommended_qty": recommended,
             "adjustments_applied": adjustments_applied,
+            "committed_applied": committed_applied,
             # Already on its way: open POs + transfers in transit. Exposed so
             # the UI can say "N units arriving (OC-000123)" instead of leaving
             # the buyer to wonder why the quantity dropped.
@@ -2866,6 +2886,22 @@ def get_inventory_status_by_warehouse(
                 adj_mult, adjustments_applied = _fa_svc.demand_multiplier(
                     adjustments_by_sku.get(sku), today, lead_time)
                 avg_daily_eff = avg_daily * event_mult * adj_mult
+                # Committed customer orders, scoped to THIS warehouse: ones naming
+                # it count in full, unassigned ones by its share of the SKU's
+                # demand. In store mode every store has its own forecast and
+                # share is 1.0, so an unassigned order is NOT repeated in each
+                # store (that would count it once per store): it only counts
+                # where a warehouse is named, and in the company-wide view.
+                committed_applied = []
+                if committed_by_sku.get(sku):
+                    _rp_days = _resolve_review_period_days(supplier, review_period_map)
+                    _committed_units, committed_applied = _cd_svc.committed_units(
+                        committed_by_sku[sku], today, lead_time + _rp_days,
+                        warehouse_id=wh,
+                        share=0.0 if demand_mode == "store" else share)
+                    avg_daily_eff += _cd_svc.extra_rate(
+                        _committed_units,
+                        lt_periods + _lead_time_in_periods(_rp_days, period))
                 sku_risk = demand_risk.get(sku)
                 if sku_risk and sku_risk.get("model") != best_model.get(sku):
                     sku_risk = None
@@ -2911,6 +2947,7 @@ def get_inventory_status_by_warehouse(
                 reorder_point = None
                 events_applied = []
                 adjustments_applied = []
+                committed_applied = []
 
             items.append({
                 "sku": sku,
@@ -2941,6 +2978,7 @@ def get_inventory_status_by_warehouse(
                 # just on the aggregate row. Empty when none apply.
                 "events_applied": events_applied,
                 "adjustments_applied": adjustments_applied,
+                "committed_applied": committed_applied,
                 "recommended_qty": recommended,
                 # Already on its way: open POs + transfers in transit. Exposed so
                 # the UI can say "N units arriving (OC-000123)" instead of

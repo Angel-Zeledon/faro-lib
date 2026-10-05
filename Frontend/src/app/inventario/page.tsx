@@ -60,6 +60,7 @@ import {
  X, Save, Package, Info, Layers, List, FileText, Calendar, Plus, PencilLine, Truck, Sliders,
  PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft, ScanLine, SlidersHorizontal,
 } from 'lucide-react'
+import CommittedDemandPanel from '@/components/inventory/CommittedDemandPanel'
 import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -561,6 +562,25 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  <div key={a.adjustment_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text }}>
  <SlidersHorizontal size={12} color={C.indigo} aria-hidden="true" />
  <span>{adjustmentLine(t, a)}</span>
+ </div>
+ ))}
+ </div>
+ )}
+ {exp.committed_applied && exp.committed_applied.length > 0 && (
+ <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+ {exp.committed_applied.map(c => (
+ <div key={c.commitment_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text, flexWrap: 'wrap' }}>
+ <Calendar size={12} color={C.indigo} aria-hidden="true" />
+ <span>
+ {t('inventory.why_committed', {
+ customer: c.customer || t('committed.customer_unknown'),
+ date: c.delivery_date,
+ units: Number(c.units.toFixed(1)).toLocaleString(),
+ })}
+ </span>
+ {c.overdue && (
+ <span style={{ fontSize: 10, fontWeight: 600, color: C.indigo }}>({t('committed.overdue')})</span>
+ )}
  </div>
  ))}
  </div>
@@ -2091,7 +2111,7 @@ export default function InventoryPage() {
   return () => clearTimeout(h)
  }, [search])
  const [sort, setSort] = useState<SortState | null>(null)
- const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored'>(() =>
+ const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored' | 'committed'>(() =>
  typeof window !== 'undefined' && localStorage.getItem('adv') === '1' ? 'table' : 'simple'
  )
  // Where "Back to inventory" returns to: the last everyday view you were on.
@@ -2222,7 +2242,7 @@ export default function InventoryPage() {
  }, [])
 
  const wantsStatus = !!sessionId && viewMode !== 'capital' && viewMode !== 'inflation'
-  && viewMode !== 'erosion' && viewMode !== 'money' && viewMode !== 'ignored'
+  && viewMode !== 'erosion' && viewMode !== 'money' && viewMode !== 'ignored' && viewMode !== 'committed'
 
  useEffect(() => {
  if (!wantsStatus) return
@@ -2710,12 +2730,13 @@ export default function InventoryPage() {
   ['table', t('inventory.tab_all')],
   ['provider', t('inventory.tab_supplier')],
  ]
- const analysisViews: ['capital' | 'inflation' | 'erosion' | 'money' | 'ignored', React.ReactNode, string][] = [
+ const analysisViews: ['capital' | 'inflation' | 'erosion' | 'money' | 'ignored' | 'committed', React.ReactNode, string][] = [
   ['capital', <TrendingDown key="c" size={12} />, t('inventory.view_dead_capital')],
   ['inflation', <TrendingUp key="i" size={12} />, t('inventory.view_cost_inflation')],
   ['erosion', <TrendingDown key="e" size={12} />, t('inventory.view_margin_erosion')],
   ['money', <DollarSign key="m" size={12} />, t('inventory.view_forecast_money')],
   ['ignored', <AlertTriangle key="g" size={12} />, t('inventory.view_cost_of_ignoring')],
+  ['committed', <Calendar key="d" size={12} />, t('committed.title')],
  ]
  const isAnalysisView = analysisViews.some(([m]) => m === viewMode)
  const isSecondaryView = isAnalysisView || viewMode === 'update'
@@ -4120,6 +4141,12 @@ export default function InventoryPage() {
     <Pagination page={forecastMoneyPaged.page} pageCount={forecastMoneyPaged.pageCount} offset={forecastMoneyPaged.offset} total={forecastMoneyPaged.total} rowsOnPage={forecastMoneyPaged.rows.length} onPage={setForecastMoneyPage} label="SKU" />
    </>
   )}
+ </div>
+
+ ) : viewMode === 'committed' ? (
+ /* ── Committed demand: one component for desktop and phone ── */
+ <div style={{ padding: narrow ? 0 : undefined }}>
+  <CommittedDemandPanel />
  </div>
 
  ) : viewMode === 'ignored' && narrow ? (

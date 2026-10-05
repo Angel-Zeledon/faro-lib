@@ -1491,6 +1491,25 @@ export const createForecastAdjustment = (sessionId: string, body: {
   sku: string; start_date: string; end_date: string; mode: 'percent' | 'absolute'
   value: number; reason_code: import('./types').AdjustmentReason; reason_note?: string
 }) => request<import('./types').ForecastAdjustment>('POST', `/sessions/${sessionId}/adjustments`, body)
+// ── Committed demand (customer orders placed ahead of time) ─────────────────
+export const getCommittedDemand = (opts?: { sku?: string; status?: import('./types').CommittedDemandStatus; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.status) q.set('status', opts.status)
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[] }>(
+    'GET', `/committed-demand${qs ? `?${qs}` : ''}`)
+}
+export const createCommittedDemand = (body: import('./types').CommittedDemandInput) =>
+  request<import('./types').CommittedDemand>('POST', '/committed-demand', body)
+export const bulkCreateCommittedDemand = (rows: import('./types').CommittedDemandInput[]) =>
+  request<{ created: number }>('POST', '/committed-demand/bulk', { rows })
+export const updateCommittedDemand = (id: string, body: Partial<import('./types').CommittedDemandInput>) =>
+  request<import('./types').CommittedDemand>('PATCH', `/committed-demand/${encodeURIComponent(id)}`, body)
+export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
+  request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
+
 export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =>
   request<import('./types').AdjustmentValueAdded>(
     'GET', `/sessions/${sessionId}/adjustments/value-added`, undefined, opts)
