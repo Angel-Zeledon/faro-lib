@@ -1795,6 +1795,9 @@ export interface ValueAddedGroup {
   adjusted_error: number
   base_wape: number | null
   adjusted_wape: number | null
+  /** Signed direction over the graded points: + = ran high (over-forecast). */
+  base_bias?: number | null
+  adjusted_bias?: number | null
   /** + = the adjusted forecast's error was that much SMALLER than the model's. */
   improvement_pct: number | null
   better_points: number
@@ -1942,6 +1945,9 @@ export interface SupplierScorecardRow {
   lead_time_real_min:   number | null
   lead_time_real_max:   number | null
   lead_time_real_avg:   number | null
+  /** Observed tail of the lead times (display only, null below the sample floor). */
+  lead_time_p80_days?:  number | null
+  lead_time_p95_days?:  number | null
   lead_time_declarado:  number | null
   deviation_days:      number | null
   on_time_rate:         number | null

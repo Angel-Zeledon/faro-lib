@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Target } from 'lucide-react'
+import BiasWords from '@/components/precision/BiasWords'
 import { getForecastVsActual, getSessionLibrary, startBacktest } from '@/lib/api'
 import type { ComparisonCandidate, ForecastVsActual, OverlapReading, RealizedPoint } from '@/lib/api'
 import { getUser } from '@/lib/auth'
@@ -358,6 +359,12 @@ function PrecisionInner() {
                 </button>
               )}
             </div>
+            {chosenSku && (
+              <div data-testid="precision-sku-bias" style={{ fontSize: 12.5, color: 'var(--dim)', marginBottom: 10, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                <span>{t('precision.m_wape')}: <strong style={{ color: 'var(--text)' }}>{pct(chosenSku.wape)}</strong></span>
+                <span>{t('precision.m_bias')}: <strong><BiasWords bias={chosenSku.bias} /></strong></span>
+              </div>
+            )}
             <CompareChart series={chartSeries} labels={{ forecast: t('precision.legend_forecast'), actual: t('precision.legend_actual') }} />
           </Card>
 
@@ -385,7 +392,7 @@ function PrecisionInner() {
                       <td style={{ padding: '8px 12px' }}>{fmtNum(s.total_forecast, { maximumFractionDigits: 0 })}</td>
                       <td style={{ padding: '8px 12px' }}>{fmtNum(s.total_actual, { maximumFractionDigits: 0 })}</td>
                       <td style={{ padding: '8px 12px' }}>{pct(s.wape)}</td>
-                      <td style={{ padding: '8px 12px' }}>{pct(s.bias, true)}</td>
+                      <td style={{ padding: '8px 12px' }}>{pct(s.bias, true)}<div style={{ fontSize: 11 }}><BiasWords bias={s.bias} /></div></td>
                       <td style={{ padding: '8px 16px' }}>{s.n_points}</td>
                     </tr>
                   ))}

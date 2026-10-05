@@ -20,6 +20,7 @@ The verdict is a stable code plus numbers; the frontend renders the sentence.
 
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Optional, Sequence, Tuple
 
 # Verdict thresholds on the pooled WAPE.
@@ -35,6 +36,23 @@ def _safe_div(a: float, b: float) -> Optional[float]:
     return None if b == 0 else a / b
 
 
+def forecast_bias(points: Sequence[Tuple[float, float]]) -> Optional[float]:
+    """Signed forecast bias over ``(forecast, actual)`` pairs:
+    ``(sum(forecast) - sum(actual)) / sum(actual)``.
+
+    Positive = over-forecast, negative = under-forecast. ``None`` when it is
+    undefined: no usable pair, or no realised volume (zero demand). Non-finite
+    pairs (NaN / inf) are ignored rather than allowed to poison the sums.
+    """
+    import math
+
+    usable = [(f, a) for f, a in points if math.isfinite(f) and math.isfinite(a)]
+    if not usable:
+        return None
+    sum_a = sum(a for _, a in usable)
+    return _safe_div(sum(f for f, _ in usable) - sum_a, sum_a)
+
+
 def _metrics(points: Sequence[Tuple[float, float]]) -> dict:
     """points: (forecast, actual) pairs."""
     n = len(points)
@@ -46,7 +64,7 @@ def _metrics(points: Sequence[Tuple[float, float]]) -> dict:
         "n_points": n,
         "wape": _safe_div(abs_err, sum_a),
         "mape": (sum(apes) / len(apes)) if apes else None,
-        "bias": _safe_div(sum_f - sum_a, sum_a),
+        "bias": forecast_bias(points),
         "total_forecast": sum_f,
         "total_actual": sum_a,
     }
@@ -107,7 +125,7 @@ def compare_forecast_to_actuals(
             if f is None:
                 continue
             a = act.get(date)
-            if a is None:
+            if a is None or not math.isfinite(float(a)) or not math.isfinite(float(f)):
                 skipped += 1
                 continue
             pts.append({"date": date, "forecast": float(f), "actual": float(a)})
@@ -170,7 +188,8 @@ def forecast_value_added(points: Sequence[dict]) -> dict:
     n = len(points)
     if n == 0:
         return {"n_points": 0, "base_error": 0.0, "adjusted_error": 0.0, "actual_total": 0.0,
-                "base_wape": None, "adjusted_wape": None, "improvement_pct": None,
+                "base_wape": None, "adjusted_wape": None,
+                "base_bias": None, "adjusted_bias": None, "improvement_pct": None,
                 "better_points": 0, "worse_points": 0, "verdict": "no_data"}
     base_err = sum(abs(float(p["base"]) - float(p["actual"])) for p in points)
     adj_err = sum(abs(float(p["adjusted"]) - float(p["actual"])) for p in points)
@@ -181,6 +200,10 @@ def forecast_value_added(points: Sequence[dict]) -> dict:
     worse = sum(1 for p in points
                 if abs(float(p["adjusted"]) - float(p["actual"]))
                 > abs(float(p["base"]) - float(p["actual"])))
+    # Signed direction of each forecast over the same points: positive = ran
+    # high. Additive to the error figures above; nothing else reads from it.
+    base_bias = _safe_div(sum(float(p["base"]) for p in points) - total, total)
+    adjusted_bias = _safe_div(sum(float(p["adjusted"]) for p in points) - total, total)
     improvement = None if base_err <= 0 else (base_err - adj_err) / base_err * 100.0
     if n < FVA_MIN_POINTS:
         verdict = "too_little"
@@ -196,6 +219,7 @@ def forecast_value_added(points: Sequence[dict]) -> dict:
         "n_points": n, "base_error": base_err, "adjusted_error": adj_err,
         "actual_total": total,
         "base_wape": _safe_div(base_err, total), "adjusted_wape": _safe_div(adj_err, total),
+        "base_bias": base_bias, "adjusted_bias": adjusted_bias,
         "improvement_pct": improvement, "better_points": better, "worse_points": worse,
         "verdict": verdict,
     }
