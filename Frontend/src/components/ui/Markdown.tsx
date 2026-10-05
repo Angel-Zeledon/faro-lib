@@ -75,7 +75,7 @@ function renderList(items: ListItem[], from: number, depth: number, key: string)
   return [<Tag key={key} start={ordered ? items[from].start : undefined}>{lis}</Tag>, i]
 }
 
-export function Markdown({ text, large = false }: { text: string; large?: boolean }) {
+export function Markdown({ text, large = false, small = false }: { text: string; large?: boolean; small?: boolean }) {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const blocks: React.ReactNode[] = []
   let i = 0
@@ -171,5 +171,5 @@ export function Markdown({ text, large = false }: { text: string; large?: boolea
       </p>,
     )
   }
-  return <div className={`msg-prose${large ? ' msg-prose-lg' : ''}`}>{blocks}</div>
+  return <div className={`msg-prose${large ? ' msg-prose-lg' : ''}${small ? ' msg-prose-sm' : ''}`}>{blocks}</div>
 }

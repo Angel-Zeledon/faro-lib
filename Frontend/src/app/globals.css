@@ -1283,6 +1283,9 @@ input[type="password"]::-ms-clear { display: none; }
   -moz-osx-font-smoothing: grayscale;
 }
 .msg-prose-lg { --msg-size: 16px; }
+/* Narrative cards sit among 11–12px interface text; the assistant's 15px read
+   as oversized there. Headings are in em, so they scale with this. */
+.msg-prose-sm { --msg-size: 13px; line-height: 1.55; }
 /* Typed text (user bubbles, inbox): keeps the sender's own line breaks. */
 .msg-prose.msg-plain { white-space: pre-wrap; max-width: none; line-height: 1.5; color: inherit; }
 

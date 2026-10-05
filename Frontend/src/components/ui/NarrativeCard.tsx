@@ -24,7 +24,7 @@ const URGENCY_CFG: Record<Urgency, {
 // shared renderer shows those as its quiet small-caps h4.
 function RenderNarrative({ text }: { text: string }) {
   const source = text.replace(/^[ \t]*\*\*([^*\n]+)\*\*[ \t]*$/gm, '#### $1')
-  return <Markdown text={source} />
+  return <Markdown text={source} small />
 }
 
 interface NarrativeCardProps {
