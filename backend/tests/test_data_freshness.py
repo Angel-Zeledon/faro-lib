@@ -621,8 +621,13 @@ class _MovingClock:
 
 
 def _wire_loop_calls(monkeypatch) -> list[str]:
-    """Point the loop's three daily jobs at a list recording call order."""
+    """Point the loop's daily jobs at a list recording call order. The contract
+    materialisation runs first so the stockout digest already sees today's
+    contract releases."""
     calls: list[str] = []
+    monkeypatch.setattr(
+        "backend.inventory.supply_contract_service.run_daily_contract_materialisation",
+        lambda: calls.append("contracts"))
     monkeypatch.setattr(
         "backend.inventory.service.run_daily_inventory_alerts",
         lambda: calls.append("stockout"))
@@ -665,7 +670,7 @@ class TestReminderRunsInTheDailyLoop:
         with pytest.raises(_StopLoop):
             worker._inventory_alert_loop()
 
-        assert calls == ["stockout", "supplier_lead_time", "freshness"]
+        assert calls == ["contracts", "stockout", "supplier_lead_time", "freshness"]
         assert len(slept) == 1, "a sleep happened before the catch-up jobs ran"
 
     def test_normal_path_sleeps_then_runs_the_jobs_once(
@@ -697,7 +702,7 @@ class TestReminderRunsInTheDailyLoop:
         with pytest.raises(_StopLoop):
             worker._inventory_alert_loop()
 
-        assert calls == ["stockout", "supplier_lead_time", "freshness"]
+        assert calls == ["contracts", "stockout", "supplier_lead_time", "freshness"]
         # First sleep carries the loop from 06:00 to 08:00 and runs the jobs;
         # the second is the wait for tomorrow that ends the test — never a
         # THIRD call, which would mean the jobs ran twice.
@@ -723,6 +728,9 @@ class TestReminderRunsInTheDailyLoop:
             raise RuntimeError("stockout digest exploded")
 
         calls: list[str] = []
+        # The contract pass failing must not cancel anything after it either.
+        monkeypatch.setattr(
+            "backend.inventory.supply_contract_service.run_daily_contract_materialisation", _boom)
         monkeypatch.setattr("backend.inventory.service.run_daily_inventory_alerts", _boom)
         monkeypatch.setattr(
             "backend.inventory.supplier_health_service.run_daily_supplier_lead_time_alerts",
@@ -791,7 +799,7 @@ class TestLoopIsIdempotentPerBoundary:
 
         # The catch-up pass ran the jobs once. Without the guard this would
         # read ["stockout", "supplier_lead_time", "freshness"] TWICE over.
-        assert calls == ["stockout", "supplier_lead_time", "freshness"]
+        assert calls == ["contracts", "stockout", "supplier_lead_time", "freshness"]
         # And it kept sleeping rather than busy-looping: each skipped repeat
         # still went through a real, hours-long `time.sleep` call — not a
         # tight spin of zero-second sleeps.
@@ -826,8 +834,8 @@ class TestLoopIsIdempotentPerBoundary:
             worker._inventory_alert_loop()
 
         assert calls == [
-            "stockout", "supplier_lead_time", "freshness",
-            "stockout", "supplier_lead_time", "freshness",
+            "contracts", "stockout", "supplier_lead_time", "freshness",
+            "contracts", "stockout", "supplier_lead_time", "freshness",
         ]
         assert loop_state.last_boundary(loop_state.INVENTORY_ALERTS) == datetime(
             2026, 1, 16, 8, 0, tzinfo=timezone.utc)

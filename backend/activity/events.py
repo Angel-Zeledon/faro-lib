@@ -144,6 +144,20 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("sku", "status"),
     ),
+    # Blanket contracts: every save is a new revision, so the feed names who
+    # created, revised, activated, closed or cancelled one.
+    "supply_contract.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
+    ),
+    "supply_contract.revised": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
+    ),
+    "supply_contract.status_changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
+    ),
     "purchase.order_generated": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("reference", "lines", "value", "suppliers"),

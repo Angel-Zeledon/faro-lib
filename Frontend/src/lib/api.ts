@@ -1539,6 +1539,22 @@ export const updateCommittedDemand = (id: string, body: Partial<import('./types'
   request<import('./types').CommittedDemand>('PATCH', `/committed-demand/${encodeURIComponent(id)}`, body)
 export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
   request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
+// ── Blanket supply contracts (their releases become committed demand) ───────
+export const getSupplyContracts = () =>
+  request<{ statuses: import('./types').SupplyContractStatus[]; items: import('./types').SupplyContract[] }>('GET', '/supply-contracts')
+export const getSupplyContract = (rootId: string) =>
+  request<import('./types').SupplyContract>('GET', `/supply-contracts/${encodeURIComponent(rootId)}`)
+export const previewSupplyContract = (terms: import('./types').SupplyContractTerms) =>
+  request<{ releases: { sku: string; date: string; quantity: number }[]; lines: { sku: string; total_quantity: number }[] }>(
+    'POST', '/supply-contracts/preview', terms)
+export const createSupplyContract = (terms: import('./types').SupplyContractTerms, status: 'draft' | 'active') =>
+  request<import('./types').SupplyContract>('POST', '/supply-contracts', { ...terms, status })
+export const reviseSupplyContract = (rootId: string, terms: import('./types').SupplyContractTerms, expectedRevision: number) =>
+  request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/revisions`,
+    { ...terms, expected_revision: expectedRevision })
+export const setSupplyContractStatus = (rootId: string, status: 'active' | 'closed' | 'cancelled', expectedRevision: number) =>
+  request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/status`,
+    { status, expected_revision: expectedRevision })
 
 export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =>
   request<import('./types').AdjustmentValueAdded>(

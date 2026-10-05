@@ -276,7 +276,8 @@ def _next_daily_run(now: datetime, hour: int) -> datetime:
 
 
 def _inventory_alert_loop() -> None:
-    """Fires inventory stockout alerts, then supplier lead-time deviation
+    """Materialises the blanket-contract releases entering the horizon, then
+    fires inventory stockout alerts, then supplier lead-time deviation
     alerts (feature 3.3), then data-freshness reminders, daily at 8:00 AM UTC.
     The three run independently: a supplier drifting late matters most while
     stock still looks healthy, which is exactly when the stockout digest sends
@@ -335,6 +336,16 @@ def _inventory_alert_loop() -> None:
                 boundary.isoformat(), already_done.isoformat(),
             )
             continue
+        try:
+            # First, so the stockout digest below already plans against the
+            # contract releases that entered the horizon today. Idempotent
+            # (one live commitment per release), so a catch-up re-run is safe.
+            from backend.inventory.supply_contract_service import (
+                run_daily_contract_materialisation,
+            )
+            run_daily_contract_materialisation()
+        except Exception as e:
+            log.error("Contract materialisation error: %s", e, exc_info=True)
         try:
             from backend.inventory.service import run_daily_inventory_alerts
             run_daily_inventory_alerts()
