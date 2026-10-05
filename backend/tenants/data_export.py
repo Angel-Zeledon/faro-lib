@@ -186,6 +186,8 @@ _DELETE_ORDER: list[str] = [
     "warehouses",
     "stock_defaults",
     "inventory_stock",
+    "inventory_status_snapshot",
+    "inventory_status_snapshot_meta",
     "inventory_snapshots",
     "inventory_recommendation_log",
     "stock_count_ops",
@@ -223,6 +225,8 @@ _DELETE_ORDER: list[str] = [
     "activity_logs",
     "user_preferences",
     "users",
+    # The trigger ledger goes last: deleting any table above appends to it.
+    "status_input_bumps",
 ]
 
 # storage/<category>/<tenant_id>/... — see backend/storage/paths.py. Every

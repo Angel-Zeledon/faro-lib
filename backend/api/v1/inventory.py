@@ -14,7 +14,7 @@ import io
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Request, Response, UploadFile, File
@@ -35,6 +35,7 @@ from backend.config import settings
 from backend.errors import AppError
 from backend.sessions import planning_service
 from backend.inventory import service as svc
+from backend.inventory import status_snapshot
 from backend.inventory import supplier_service as sup_svc
 from backend.inventory import bom_service as bom_svc
 from backend.inventory import warehouse_service as wh_svc
@@ -951,6 +952,42 @@ def inventory_status(
 
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
 
+    # The aggregate view is served from the persisted snapshot (SQL filtering,
+    # sorting and paging; recomputed only when an input changed — see
+    # backend/inventory/status_snapshot.py). None means the snapshot could not
+    # be trusted or built, and the live computation below answers instead.
+    if not by_warehouse:
+        snap = status_snapshot.read_status(
+            user.tenant_id, session_id, service_level, period,
+            signal=signal, supplier=supplier, skus=skus, q=q,
+            sort=sort, order=order, limit=limit, offset=offset,
+        )
+        if snap is not None:
+            page = None
+            if limit is not None:
+                page = {"limit": limit, "offset": offset, "total": snap["total"], "sort": sort}
+                if order:
+                    page["order"] = order
+            return ok({
+                "period": period,
+                "coverage_unit": _COVERAGE_UNIT.get(period, "day"),
+                "items": snap["items"],
+                "page": page,
+                "excluded_skus": svc.get_excluded_skus(user.tenant_id, session_id),
+                "summary": {
+                    "total_skus":    snap["total"],
+                    "order_now":     snap["counts"]["order_now"],
+                    "order_soon":    snap["counts"]["order_soon"],
+                    "ok":            snap["counts"]["ok"],
+                    "without_stock": snap["counts"]["without_stock"],
+                    "with_forecast": snap["counts"]["with_forecast"],
+                    "overstock":     snap["counts"]["overstock"],
+                    "sin_datos":     snap["counts"]["sin_datos"],
+                    "total_inventory_value": round(snap["total_value"], 2),
+                },
+                "computed_at": snap["computed_at"],
+            })
+
     # Both views share the source-then-filter shape; only the response
     # envelope differs.
     if by_warehouse:
@@ -1021,6 +1058,7 @@ def inventory_status(
             "sin_datos":     sum(1 for i in items if i["signal"] == "SIN_DATOS"),
             "total_inventory_value": round(total_value, 2),
         },
+        "computed_at": datetime.now(timezone.utc).isoformat(),
     })
 
 

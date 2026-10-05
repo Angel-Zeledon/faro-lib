@@ -2031,6 +2031,113 @@ from backend.inventory.approval_migrations import MIGRATIONS as _APPROVALS  # no
 _MIGRATIONS += _APPROVALS
 
 
+# ── Inventory status snapshot (docs/status-performance.md) ───────────────────
+#
+# `status_input_bumps` is an insert-only ledger of "something the status
+# computation reads just changed for this tenant". Statement-level triggers on
+# every table that computation reads append one row per affected tenant, so the
+# invalidation lives in the database and cannot be bypassed by a code path that
+# forgets to call an invalidator (raw SQL, scripts, endpoints written later).
+# Insert-only on purpose: a counter row per tenant would make every writer of
+# that tenant queue behind one row lock until commit.
+#
+# `inventory_status_snapshot` holds the computed rows; `..._meta` says which
+# generation is current and what inputs it was computed from.
+STATUS_INPUT_TABLES = (
+    "inventory_stock", "warehouses", "inventory_po_items", "inventory_po_log",
+    "inventory_transfer_items", "inventory_transfer_log",
+    "supplier_lead_time_obs", "suppliers", "sku_suppliers", "stock_defaults",
+    "inventory_events", "inventory_event_multipliers", "inventory_snapshots",
+    "session_results",
+)
+
+
+def _status_trigger_migrations() -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for table in STATUS_INPUT_TABLES:
+        for op, ref in (("INSERT", "NEW"), ("UPDATE", "NEW"), ("DELETE", "OLD")):
+            trig = f"status_bump_{table}_{op.lower()}"
+            out.append((
+                f"create_{trig}",
+                f"""DO $$
+                BEGIN
+                  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = '{trig}') THEN
+                    CREATE TRIGGER {trig}
+                      AFTER {op} ON {table}
+                      REFERENCING {ref} TABLE AS changed
+                      FOR EACH STATEMENT EXECUTE FUNCTION status_inputs_bump();
+                  END IF;
+                END $$""",
+            ))
+    return out
+
+
+_STATUS_SNAPSHOT = [
+    ("create_status_input_bumps",
+     """CREATE TABLE IF NOT EXISTS status_input_bumps (
+         id         BIGSERIAL PRIMARY KEY,
+         tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         source     TEXT NOT NULL,
+         at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_status_input_bumps_idx",
+     "CREATE INDEX IF NOT EXISTS status_input_bumps_tenant_idx "
+     "ON status_input_bumps (tenant_id, id DESC)"),
+    ("create_status_inputs_bump_fn",
+     """CREATE OR REPLACE FUNCTION status_inputs_bump() RETURNS trigger AS $$
+        BEGIN
+          -- The EXISTS guard keeps a tenant's own deletion (whose cascade
+          -- fires these triggers after the tenants row is gone) from tripping
+          -- the foreign key.
+          INSERT INTO status_input_bumps (tenant_id, source)
+          SELECT DISTINCT c.tenant_id, TG_TABLE_NAME
+            FROM changed c
+           WHERE EXISTS (SELECT 1 FROM tenants t WHERE t.id = c.tenant_id);
+          RETURN NULL;
+        END;
+        $$ LANGUAGE plpgsql"""),
+    ("create_inventory_status_snapshot_meta",
+     """CREATE TABLE IF NOT EXISTS inventory_status_snapshot_meta (
+         tenant_id      TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         session_id     TEXT NOT NULL,
+         period         TEXT NOT NULL,
+         service_level  DOUBLE PRECISION NOT NULL,
+         generation     BIGINT NOT NULL,
+         inputs_version BIGINT NOT NULL,
+         code_hash      TEXT NOT NULL,
+         computed_on    DATE NOT NULL,
+         computed_at    TIMESTAMPTZ NOT NULL,
+         n_rows         INT NOT NULL,
+         PRIMARY KEY (tenant_id, session_id, period, service_level)
+     )"""),
+    ("create_inventory_status_snapshot",
+     """CREATE TABLE IF NOT EXISTS inventory_status_snapshot (
+         tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         session_id      TEXT NOT NULL,
+         period          TEXT NOT NULL,
+         service_level   DOUBLE PRECISION NOT NULL,
+         generation      BIGINT NOT NULL,
+         sku             TEXT NOT NULL,
+         urgency_pos     INT NOT NULL,
+         signal          TEXT NOT NULL,
+         supplier_lc     TEXT NOT NULL,
+         search_text     TEXT NOT NULL,
+         has_stock       BOOLEAN NOT NULL,
+         has_forecast    BOOLEAN NOT NULL,
+         inventory_value DOUBLE PRECISION,
+         sort_keys       JSONB NOT NULL,
+         item            JSONB NOT NULL,
+         computed_at     TIMESTAMPTZ NOT NULL,
+         PRIMARY KEY (tenant_id, session_id, period, service_level, generation, sku)
+     )"""),
+    ("create_inventory_status_snapshot_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_status_snapshot_order_idx "
+     "ON inventory_status_snapshot "
+     "(tenant_id, session_id, period, service_level, generation, urgency_pos)"),
+] + _status_trigger_migrations()
+_MIGRATIONS += _STATUS_SNAPSHOT
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.

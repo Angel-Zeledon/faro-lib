@@ -972,6 +972,66 @@ def get_stock_history(
             for at, level in tenant_wide_history(tenant_id, sku, since)]
 
 
+def get_stock_history_batch(
+    tenant_id: str, skus: list[str], days: int = 14,
+) -> dict[str, list[dict]]:
+    """`get_stock_history(tenant_id, sku, days)` (tenant-wide reading) for MANY
+    SKUs in three queries instead of three per SKU.
+
+    The status pass used to call the single-SKU reader once per row: at 2,500
+    SKUs that was 7,500 round trips and ~80% of the request. The per-SKU
+    arithmetic is the very same `tenant_wide_daily_levels`, only fed from
+    grouped rows, so each SKU's series is identical to the one-at-a-time answer
+    (the equality is asserted in test_status_snapshot.py).
+    """
+    from datetime import timezone
+    if not skus:
+        return {}
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    wanted = list(dict.fromkeys(skus))
+
+    rows_by_sku: dict[str, list[dict]] = {}
+    for r in query(
+        """SELECT sku, warehouse, current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = ANY(%s) AND recorded_at >= %s
+             AND warehouse IS NOT NULL
+           ORDER BY recorded_at ASC""",
+        (tenant_id, wanted, since),
+    ):
+        rows_by_sku.setdefault(r["sku"], []).append(r)
+
+    opening_by_sku: dict[str, dict[str, float]] = {}
+    for r in query(
+        """SELECT DISTINCT ON (sku, warehouse) sku, warehouse, current_stock
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = ANY(%s) AND recorded_at < %s
+             AND warehouse IS NOT NULL
+           ORDER BY sku, warehouse, recorded_at DESC""",
+        (tenant_id, wanted, since),
+    ):
+        opening_by_sku.setdefault(r["sku"], {})[r["warehouse"]] = float(r["current_stock"])
+
+    legacy_by_sku: dict[str, list[dict]] = {}
+    for r in query(
+        """SELECT sku, current_stock, recorded_at
+           FROM inventory_snapshots
+           WHERE tenant_id = %s AND sku = ANY(%s) AND recorded_at >= %s
+             AND warehouse IS NULL""",
+        (tenant_id, wanted, since),
+    ):
+        legacy_by_sku.setdefault(r["sku"], []).append(r)
+
+    out: dict[str, list[dict]] = {}
+    for sku in wanted:
+        points = tenant_wide_daily_levels(
+            rows_by_sku.get(sku, []), opening_by_sku.get(sku, {}),
+        ) + [(r["recorded_at"], float(r["current_stock"])) for r in legacy_by_sku.get(sku, [])]
+        points.sort(key=lambda p: p[0])
+        out[sku] = [{"stock": level, "date": at.isoformat()} for at, level in points]
+    return out
+
+
 def tenant_wide_history(
     tenant_id: str, sku: str, since: datetime,
 ) -> list[tuple[datetime, float]]:
@@ -2128,6 +2188,26 @@ def _compute_inventory_status(
     from backend.inventory import forecast_adjustment_service as _fa_svc
     adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
 
+    # Per-SKU views of the incoming maps, built ONCE. The loop used to scan
+    # every (sku, warehouse) key for every SKU — quadratic in the catalogue.
+    # Iteration order of the source dicts is preserved so the float sums and
+    # the order of the source lists are the same as before.
+    incoming_by_sku: dict[str, float] = {}
+    for (i_sku, _w), q in incoming_qty.items():
+        incoming_by_sku[i_sku] = incoming_by_sku.get(i_sku, 0) + q
+    incoming_sources_by_sku: dict[str, list] = {}
+    for (i_sku, _w), srcs in incoming_sources.items():
+        incoming_sources_by_sku.setdefault(i_sku, []).extend(srcs)
+
+    # Sparkline history for every SKU that has stock: three queries for the
+    # whole catalogue, not three per row.
+    history_by_sku: dict[str, list[dict]] = {}
+    try:
+        history_by_sku = get_stock_history_batch(
+            tenant_id, [k for k in all_skus if k in stock_map], days=14)
+    except Exception as e:
+        log.debug("stock history sparkline batch failed tenant=%s: %s", tenant_id, e)
+
     items: list[dict] = []
 
     for sku in all_skus:
@@ -2186,8 +2266,7 @@ def _compute_inventory_status(
         # Company-wide for this SKU: the aggregated row sums every warehouse's
         # stock, so it must sum every warehouse's incoming too. Hoisted above the
         # branch so a row without a forecast still reports what is on its way.
-        sku_incoming = sum(
-            q for (i_sku, _wh), q in incoming_qty.items() if i_sku == sku)
+        sku_incoming = incoming_by_sku.get(sku, 0)
 
         if has_forecast and has_stock:
             # Per-period demand: average over as many forecast buckets as the
@@ -2367,12 +2446,7 @@ def _compute_inventory_status(
             explanation_obj = None
 
         # Recent stock history (last 14 days, at most 10 points for sparkline)
-        history: list[dict] = []
-        if has_stock:
-            try:
-                history = get_stock_history(tenant_id, sku, days=14)[-10:]
-            except Exception as e:
-                log.debug("stock history sparkline failed sku=%s: %s", sku, e)
+        history: list[dict] = history_by_sku.get(sku, [])[-10:] if has_stock else []
 
         # "__all__" is the internal sentinel used when the dataset has no SKU/group
         # column (single-series session) — it must never surface unexplained as a SKU
@@ -2471,9 +2545,7 @@ def _compute_inventory_status(
             # the UI can say "N units arriving (OC-000123)" instead of leaving
             # the buyer to wonder why the quantity dropped.
             "incoming_qty": round(float(sku_incoming), 2),
-            "incoming_sources": [
-                src for (i_sku, _wh), srcs in incoming_sources.items()
-                if i_sku == sku for src in srcs],
+            "incoming_sources": list(incoming_sources_by_sku.get(sku, [])),
             "inventory_value":   inventory_value,
             "n_models":           len(model_forecasts),
             "xyz":               _classify_xyz(cv_by_sku.get(sku)),
