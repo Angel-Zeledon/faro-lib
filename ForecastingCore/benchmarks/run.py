@@ -112,6 +112,8 @@ def evaluate(ds: Dataset, origins: int, models: List[str], chunk: int,
                 if fs and champ:
                     c = fs[champ]
                     rec["champion"] = champ
+                    rec["champion_plain"] = res.get("champion_plain", {}).get(s)
+                    rec["val_scores"] = res.get("val_scores", {}).get(s)
                     rec["methods"]["engine"] = score_forecast(
                         y, c["point"], hist, season, quantiles=c["q"] or None)
                     for mname, mv in fs.items():
