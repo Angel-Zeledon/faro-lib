@@ -23,6 +23,7 @@ import {
 } from '@/components/mobile'
 import MobileFormScope from '@/components/mobile/MobileFormScope'
 import ApiKeysMobile from './ApiKeysMobile'
+import RunDurationsPanel from './RunDurationsPanel'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
 
@@ -833,6 +834,7 @@ export default function SettingsPage() {
             {ENABLED['api-keys']  && tab === 'api-keys'  && <ApiKeysTab />}
             {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
             {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
+            {ENABLED['schedules'] && tab === 'schedules' && <RunDurationsPanel />}
           </div>
         </div>
       </MobileFormScope>
@@ -887,6 +889,7 @@ export default function SettingsPage() {
         {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
         {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
       </Card>
+      {ENABLED['schedules'] && tab === 'schedules' && <RunDurationsPanel />}
     </div>
   )
 }

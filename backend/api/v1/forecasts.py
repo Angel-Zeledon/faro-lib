@@ -403,6 +403,23 @@ def get_forecast_vs_actual(
     return ok(forecast_vs_actual(user.tenant_id, s, dataset_id))
 
 
+@router.get("/sessions/{session_id}/accuracy-tracking")
+def get_accuracy_tracking(
+    session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """The latest automatic reading of how this forecast is doing against the
+    sales uploaded after it was made, next to its accuracy at training time.
+
+    Stored, not computed: it is refreshed whenever a sales file lands, so
+    opening the screen costs one row read. `null` until a file reaching the
+    forecast window has been uploaded. `status`: `degraded` / `stable` /
+    `too_little` (not enough compared points) / `no_baseline`."""
+    _require_completed(user.tenant_id, session_id)
+    from backend.forecast_check.tracking import get_tracking
+    return ok(get_tracking(user.tenant_id, session_id))
+
+
 class BacktestRequest(BaseModel):
     holdout_periods: int
     name: Optional[str] = None

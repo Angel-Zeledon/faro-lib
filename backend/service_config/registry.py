@@ -776,6 +776,17 @@ LIMITS = Service(
                 "dataset. Exceeding it is a refusal, never a truncation.",
             default="500000", example="500000",
         ),
+        ConfigField(
+            key="accuracy_degradation_threshold_pct",
+            env="ACCURACY_DEGRADATION_THRESHOLD_PCT", kind="float", editable=False,
+            doc="How much worse (in percent, relative) a session's forecast must "
+                "be doing against real sales than it did at training time before "
+                "the app raises its one 'forecast is degrading' alert. 25 means "
+                "a realised WAPE of 25% over the training WAPE (and at least 5 "
+                "points worse); it is a notification only, nothing retrains by "
+                "itself.",
+            default="25.0", example="25.0",
+        ),
     ),
 )
 

@@ -93,6 +93,14 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=WARNING,
         detail_keys=("session_id", "session_name", "issues"),
     ),
+    # Raised ONCE per degradation episode by the realised-accuracy tracker
+    # (forecast_check/tracking.py): the forecast is doing materially worse
+    # against sales that arrived after training than it did at training time.
+    # A notification only; nothing retrains by itself.
+    "forecast.accuracy_degraded": EventSpec(
+        kind="training", severity=WARNING,
+        detail_keys=("session_id", "session_name", "degradation_pct"),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     "purchase.order_generated": EventSpec(
@@ -247,6 +255,8 @@ REASONS: tuple[str, ...] = (
     "engine_error",
     "dataset_missing",
     "data_gate_blocked",
+    # the live forecast's error against real sales vs its training-time error
+    "realised_accuracy_below_training",
     # delivery
     "supplier_has_no_contact",
     "no_transport_configured",

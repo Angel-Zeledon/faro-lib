@@ -87,7 +87,7 @@ _MAX_ROWS = 400
 _DETAIL_KEYS: dict[str, tuple[str, ...]] = {
     "stockout_digest":    ("critical", "warning"),
     "supplier_lead_time": ("suppliers",),
-    "data_freshness":     ("sales_age_days", "stock_age_days"),
+    "data_freshness":     ("sales_age_days", "stock_age_days", "silent_warehouses"),
     "monthly_roi":        ("month",),
 }
 

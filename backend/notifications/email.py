@@ -597,15 +597,27 @@ def send_supplier_lead_time_alert_email(
         return False
 
 
+def _warehouse_list(silent_warehouses: list[dict]) -> str:
+    """'Norte (12 d), Sur (9 d)' - names are tenant data, so they are escaped."""
+    import html as _html
+    return ", ".join(
+        f'{_html.escape(str(w["name"]))} ({int(w["days"])} d)' for w in silent_warehouses)
+
+
 def send_data_freshness_reminder_email(
     to: str,
     sales_age_days: int | None,
     stock_age_days: int | None,
     upload_url: str,
     tenant_id: str | None = None,
+    silent_warehouses: list[dict] | None = None,
 ) -> bool:
     """
     The reminder that reaches a buyer who stopped opening the app.
+
+    `silent_warehouses` ([{name, days}]) names the warehouses that stopped
+    reporting while the others kept going; empty/None leaves the message as it
+    was.
 
     Sent by `notifications.freshness_service.run_daily_freshness_reminders`.
     `stock_age_days` is passed only when the stock clock is what triggered the
@@ -624,6 +636,12 @@ def send_data_freshness_reminder_email(
             f'{render_es("freshness_email_stock", days=stock_age_days)}</p>'
         )
 
+    if silent_warehouses:
+        blocks.append(
+            f'<p style="color:{_DIM};margin:0 0 14px;">'
+            f'{render_es("freshness_email_warehouses", list=_warehouse_list(silent_warehouses))}</p>'
+        )
+
     html = _base_html(
         render_es("freshness_email_title"),
         f"""
@@ -637,11 +655,12 @@ def send_data_freshness_reminder_email(
         </p>
         """,
     )
-    subject = (
-        render_es("freshness_email_subject", days=sales_age_days)
-        if sales_age_days is not None
-        else render_es("freshness_email_subject_stock", days=stock_age_days)
-    )
+    if sales_age_days is not None:
+        subject = render_es("freshness_email_subject", days=sales_age_days)
+    elif stock_age_days is not None:
+        subject = render_es("freshness_email_subject_stock", days=stock_age_days)
+    else:
+        subject = render_es("freshness_email_subject_warehouses")
     try:
         _send(to, subject, html, tenant_id=tenant_id)
         return True

@@ -77,6 +77,7 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("scheduled_jobs", "scheduled_jobs", "*"),
     ("schedule_runs", "schedule_runs", "*"),
     ("session_manifests", "session_manifests", "*"),
+    ("session_accuracy_tracking", "session_accuracy_tracking", "*"),
     # key_hash / secret are never exported — only metadata about the key/hook.
     ("api_keys", "api_keys", "id, tenant_id, name, last_used, created_at"),
     # Calls per key per day: what a call-based bill is computed from.
@@ -182,6 +183,7 @@ _DELETE_ORDER: list[str] = [
     "scheduled_jobs",
     "schedule_runs",
     "session_manifests",
+    "session_accuracy_tracking",
     "webhooks",
     "api_usage_daily",
     "api_keys",

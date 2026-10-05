@@ -181,3 +181,102 @@ def describe_overlap(
     out["overlap_from"], out["overlap_to"] = lo.isoformat(), hi.isoformat()
     out["relation"] = "covers" if (df <= ff and dl >= ft) else "partial"
     return out
+
+# ── Is the live forecast holding up against its training-time accuracy? ──────
+#
+# The question behind "retrain?": the forecast was graded at training time (a
+# validation WAPE per series) and is now being graded against what really sold.
+# Both numbers are volume-weighted WAPEs so they can be compared like for like:
+# the training figures are re-weighted by the volume that was actually sold.
+#
+# `DriftDetector.performance_decay` (monitoring/drift.py) asks the same question
+# of MAE history, but WAPE is a ratio, its +1e-8 guard turns a near-zero
+# baseline into an astronomic "degradation", and it has no notion of how many
+# points were compared. The rule below is the same relative comparison with
+# those three guards.
+
+# Relative worsening (percent) at which the forecast counts as degraded.
+DEGRADATION_THRESHOLD_PCT = 25.0
+# The worsening must also be at least this many WAPE points (0.05 = 5 pp):
+# 0.04 -> 0.06 is +50% relative and still an excellent forecast.
+DEGRADATION_MIN_ABS_INCREASE = 0.05
+# Compared (series, period) points needed before the rule may say anything.
+DEGRADATION_MIN_POINTS = 10
+# A training WAPE this large is the engine's `sum|e| / (0 + 1e-8)` on a
+# validation window with no demand: not an error rate, so it is not a baseline.
+_WAPE_UNDEFINED = 1e6
+
+
+def training_wape_by_series(
+    rows: Sequence[dict], champions: Dict[str, str],
+) -> Dict[str, float]:
+    """``{series: validation WAPE of the model it is bought from}``.
+
+    ``rows`` are the engine's per-(series, model) metric rows; ``champions``
+    maps each series to the model the product actually uses. Baseline rows are
+    ignored, and so is a WAPE that measures nothing: exactly 0 with MAE 0 (no
+    demand in the window, 0/0), non-finite, or the epsilon artefact above.
+    """
+    import math
+
+    out: Dict[str, float] = {}
+    for r in rows:
+        if r.get("type") == "baseline":
+            continue
+        wape, sku = r.get("wape"), r.get("sku")
+        if wape is None or sku is None or champions.get(str(sku)) != r.get("model"):
+            continue
+        wape = float(wape)
+        if wape == 0.0 and float(r.get("mae") or 0.0) == 0.0:
+            continue
+        if not math.isfinite(wape) or wape >= _WAPE_UNDEFINED:
+            continue
+        out[str(sku)] = wape
+    return out
+
+
+def baseline_wape(
+    training_wape: Dict[str, float], actual_volume: Dict[str, float],
+) -> Optional[float]:
+    """The training-time WAPE restated over the series now being compared,
+    weighted by their realised volume (``None`` when nothing overlaps or no
+    volume was sold). Volume-weighting makes it the same statistic as the
+    pooled realised WAPE, so the two can be subtracted."""
+    shared = [k for k in training_wape if actual_volume.get(k, 0.0) > 0]
+    total = sum(actual_volume[k] for k in shared)
+    if not shared or total <= 0:
+        return None
+    return sum(training_wape[k] * actual_volume[k] for k in shared) / total
+
+
+def assess_degradation(
+    baseline: Optional[float],
+    realised: Optional[float],
+    n_points: int,
+    threshold_pct: float = DEGRADATION_THRESHOLD_PCT,
+    min_points: int = DEGRADATION_MIN_POINTS,
+    min_abs_increase: float = DEGRADATION_MIN_ABS_INCREASE,
+) -> dict:
+    """Is the realised WAPE materially worse than the training-time one?
+
+    ``status``: ``no_baseline`` (nothing to compare with), ``too_little`` (fewer
+    than ``min_points`` compared points), ``degraded`` or ``stable``. The numbers
+    are always returned when they exist; ``degradation_pct`` is negative when the
+    forecast is doing better than it did at training.
+    """
+    out = {
+        "status": "no_baseline", "baseline_wape": baseline, "realised_wape": realised,
+        "degradation_pct": None, "threshold_pct": float(threshold_pct),
+        "n_points": int(n_points),
+    }
+    if baseline is None or realised is None or baseline <= 0:
+        return out
+    pct = (realised - baseline) / baseline * 100.0
+    out["degradation_pct"] = round(pct, 2)
+    if n_points < min_points:
+        out["status"] = "too_little"
+    elif pct >= threshold_pct and (realised - baseline) >= min_abs_increase:
+        out["status"] = "degraded"
+    else:
+        out["status"] = "stable"
+    return out

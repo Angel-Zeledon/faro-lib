@@ -1135,6 +1135,27 @@ def _generate_forecast_series(engine, config: dict) -> dict:
 
 # ── Excluded-SKU transparency ──────────────────────────────────────────────
 
+def _store_data_through(df, col_cfg: dict) -> dict:
+    """{store: ISO date of its newest sales row}, empty when no store is mapped.
+
+    Stored on the training result so per-warehouse freshness ("this warehouse
+    has not reported sales in N days") is one small JSON read, not a re-read of
+    the sales file on every page view. Diagnostics only: never fails a run.
+    """
+    try:
+        import pandas as pd
+        keys = _group_cols(col_cfg)
+        date_col = col_cfg.get("date")
+        if df is None or len(keys) < 2 or keys[1] not in df.columns or date_col not in df.columns:
+            return {}
+        newest = pd.to_datetime(df[date_col], errors="coerce").groupby(df[keys[1]]).max()
+        return {str(store): ts.date().isoformat()
+                for store, ts in newest.items() if pd.notna(ts)}
+    except Exception as e:  # noqa: BLE001 - freshness detail, not worth a failed run
+        log.warning(f"Per-store data-through computation failed (non-fatal): {e}")
+        return {}
+
+
 def _compute_excluded_skus(df, group_col, forecasts: dict, min_history: int) -> list[dict]:
     """
     SKUs that were uploaded but did NOT make it into the forecast — so the UI can
@@ -1693,6 +1714,9 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             "data_quality": dq_report,
             "warnings": _collect_run_warnings(engine, prep_notes),
             "config": config,
+            # Newest sales date per store/warehouse (empty without a store
+            # column): the read side of per-warehouse freshness.
+            "store_data_through": _store_data_through(engine._df, col_cfg),
         }
         session_store.set_training_result(tenant_id, session_id, result_payload)
 

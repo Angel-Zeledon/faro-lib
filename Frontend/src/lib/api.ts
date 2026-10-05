@@ -721,6 +721,42 @@ export const getForecastVsActual = (sessionId: string, datasetId?: string) =>
     `/sessions/${sessionId}/forecast-vs-actual${datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : ''}`,
   )
 
+/** The latest automatic reading of how a session's forecast is doing against
+ *  sales uploaded after it was made (null until a file reaches its window). */
+export interface AccuracyTracking {
+  session_id:      string
+  dataset_id:      string | null
+  status:          'degraded' | 'stable' | 'too_little' | 'no_baseline'
+  baseline_wape:   number | null
+  realised_wape:   number | null
+  degradation_pct: number | null
+  bias:            number | null
+  threshold_pct:   number | null
+  n_points:        number
+  n_skus:          number
+  compared_from:   string | null
+  compared_to:     string | null
+  alerted_at:      string | null
+  computed_at:     string
+}
+
+export const getAccuracyTracking = (sessionId: string) =>
+  request<AccuracyTracking | null>('GET', `/sessions/${sessionId}/accuracy-tracking`)
+
+export interface RunDurationSummary {
+  runs: number; median_seconds: number; p95_seconds: number; max_seconds: number
+}
+export interface RunDurations {
+  window_runs: number; limit: number
+  completed_runs: number; failed_runs: number; untimed_runs: number
+  overall: RunDurationSummary | null
+  by_size: Array<RunDurationSummary & { min_series: number; max_series: number | null }>
+  by_granularity: Array<RunDurationSummary & { granularity: string }>
+}
+
+export const getRunDurations = (limit?: number) =>
+  request<RunDurations>('GET', `/training/run-durations${limit ? `?limit=${limit}` : ''}`)
+
 /** Train a back-test: the same setup on a copy of the data without its last
  *  periods. The new run's forecast then covers the periods that were held out. */
 export const startBacktest = (sessionId: string, holdoutPeriods: number, name?: string) =>
@@ -1864,9 +1900,31 @@ export interface StockFreshness extends FreshnessClock {
   updated_at:   string | null
 }
 
+/** When one warehouse last reported (newest stock update / newest sales date). */
+export interface WarehouseFreshness {
+  name:             string
+  tracked_skus:     number
+  stock_updated_at: string | null
+  stock_age_days:   number | null
+  sales_through:    string | null
+  sales_age_days:   number | null
+  silent_days:      number | null
+  state:            'unknown' | 'fresh' | 'stale'
+  /** Quiet for a full stale window while another warehouse is current. */
+  lagging:          boolean
+}
+
+export interface WarehousesFreshness {
+  multi:      boolean
+  stale_days: number
+  items:      WarehouseFreshness[]
+  lagging:    string[]
+}
+
 export interface DataFreshnessInfo {
   sales:       SalesFreshness
   stock:       StockFreshness
+  warehouses:  WarehousesFreshness
   semaphore:   'current' | 'degraded'
   degraded_by: Array<'stock' | 'sales'>
   warn:        boolean
