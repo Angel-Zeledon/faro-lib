@@ -55,17 +55,18 @@ Errors carry `detail`, and **some** also carry `error_code` and `error_params`
 at the top level, with no `data`. When `error_code` is there, branch on it and
 never on the text of `detail`: that is written for people and gets rewritten.
 
-It is worth knowing which ones do **not** carry it, because they are exactly the
-three you will meet while integrating:
+The ones you will meet while integrating:
 
 | Case | What actually arrives |
 |---|---|
-| `401` invalid or expired key | `detail` text only. No `error_code` |
-| `429` over the limit | `detail` text only. No `error_code`; use the `Retry-After` header |
+| `401` no credential | `error_code = "unauthenticated"` |
+| `401` invalid or expired key | `error_code = "api_key_invalid"` |
+| `404` unknown route / `405` wrong method | `error_code = "not_found"` / `"method_not_allowed"` |
+| `429` over the limit | `error_code = "rate_limited"`; use the `Retry-After` header |
 | `403` read-only key writing | `error_code = "role_not_permitted"` |
 | `409` session not trainable | `error_code = "session_not_trainable"` |
 
-For the first two, branch on the **HTTP status**, which is stable.
+The HTTP status is stable and equally safe to branch on.
 
 The fifth call is not optional even though it looks it: without it the order
 does not exist as far as StockAI is concerned, and it is where the learning of each

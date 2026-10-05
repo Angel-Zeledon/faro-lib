@@ -117,7 +117,9 @@ def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_a
     record_event(
         user.tenant_id, user.user_id, "account.api_key_created",
         resource=body.name, reason="changed_by_an_account_admin",
-        details={"key_name": body.name, "role": body.role, "scope": body.scope},
+        # `scope` maps 1:1 to `role` (SCOPE_ROLE), and the event declares only
+        # `role`; passing both logged "undeclared detail keys" on every mint.
+        details={"key_name": body.name, "role": body.role},
     )
     # The raw key is returned exactly once. Nothing stores it — not this
     # process, not the database — so a customer who loses it mints a new one.

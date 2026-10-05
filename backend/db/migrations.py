@@ -1912,6 +1912,16 @@ def _run_all(*, strict: bool = True) -> None:
     """
     failures: list[tuple[str, str, str]] = []  # (name, sqlstate, message)
 
+    # Two tables are created by their own services rather than by this list,
+    # yet later migrations ALTER them. The server pre-creates them at startup,
+    # so only a caller that runs migrations on its own (seed_demo, tooling) on
+    # a virgin database hit "relation user_preferences does not exist". Making
+    # run_all self-sufficient removes the hidden ordering requirement.
+    from backend.preferences.service import ensure_table as _ensure_prefs
+    from backend.activity.service import ensure_table as _ensure_activity
+    _ensure_prefs()
+    _ensure_activity()
+
     for name, sql in _MIGRATIONS:
         try:
             execute(sql)

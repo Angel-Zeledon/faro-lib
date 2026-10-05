@@ -3691,6 +3691,19 @@ def set_catalog_group_active(tenant_id: str, catalog_prefix: str, active: bool) 
 
 # ── PDF report ────────────────────────────────────────────────────────────────
 
+def _pdf_text(value) -> str:
+    """Escape user-supplied text for reportlab's Paragraph.
+
+    Paragraph parses its argument as XML-like markup, so a product named
+    "Tuerca <M8> & arandela" or a session id with "<" made the whole
+    document fail ("paraparser: syntax error") — a 500 for the one file the
+    buyer forwards. Every name, note or id from data goes through here;
+    only the template's own <b>/<font> tags stay as markup.
+    """
+    from xml.sax.saxutils import escape
+    return escape(str(value))
+
+
 def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float = 0.95,
                            period: str = "daily") -> bytes:
     """
@@ -3830,10 +3843,10 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
         row_styles = []
         for idx, item in enumerate(critical_items):
             sig_color = SIGNAL_COLORS.get(item["signal"], colors.grey)
-            sig_label = SIGNAL_LABELS.get(item["signal"], item["signal"])
+            sig_label = _pdf_text(SIGNAL_LABELS.get(item["signal"], item["signal"]))
             tdata.append([
-                Paragraph(item["sku"], CELL),
-                Paragraph(item.get("display_name") or "—", CELL),
+                Paragraph(_pdf_text(item["sku"]), CELL),
+                Paragraph(_pdf_text(item.get("display_name") or "—"), CELL),
                 Paragraph(sig_label, ParagraphStyle("sig", fontSize=8,
                           fontName="Helvetica-Bold", textColor=sig_color)),
                 Paragraph(f"{item['current_stock']:,.0f}" if item.get("current_stock") is not None else "—", CELL),
@@ -3843,7 +3856,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
                 Paragraph(format_coverage(item["coverage_days"], period) if item.get("coverage_days") is not None else "—", CELL),
                 Paragraph(f"<b>{item['recommended_qty']:,.0f}</b>" if item.get("recommended_qty") else "—",
                           ParagraphStyle("qty", fontSize=8, fontName="Helvetica-Bold", textColor=GREEN)),
-                Paragraph(item.get("supplier") or "—", CELL),
+                Paragraph(_pdf_text(item.get("supplier") or "—"), CELL),
             ])
             if idx % 2 == 0:
                 row_styles.append(("BACKGROUND", (0, idx+1), (-1, idx+1), colors.HexColor("#f8fafc")))
@@ -3877,12 +3890,12 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
         ]]
         for item in remaining[:30]:
             small_data.append([
-                Paragraph(item["sku"], CELL),
-                Paragraph(item.get("display_name") or "—", CELL),
+                Paragraph(_pdf_text(item["sku"]), CELL),
+                Paragraph(_pdf_text(item.get("display_name") or "—"), CELL),
                 Paragraph(SIGNAL_LABELS.get(item["signal"], "—"),
                           ParagraphStyle("s2", fontSize=8, textColor=SIGNAL_COLORS.get(item["signal"], colors.grey))),
                 Paragraph(coverage_short(item["coverage_days"], period) if item.get("coverage_days") is not None else "—", CELL),
-                Paragraph(item.get("abc_xyz") or "—", CELL),
+                Paragraph(_pdf_text(item.get("abc_xyz") or "—"), CELL),
             ])
         st = Table(small_data, colWidths=[3*cm, 5*cm, 3.2*cm, 3*cm, 2*cm])
         st.setStyle(TableStyle([
@@ -3899,7 +3912,7 @@ def generate_inventory_pdf(tenant_id: str, session_id: str, service_level: float
     story.append(Spacer(1, 12))
     story.append(HRFlowable(width="100%", thickness=0.5, color=BORDER))
     story.append(Paragraph(
-        render_es("inventory_pdf_footer", session=session_id[:8],
+        render_es("inventory_pdf_footer", session=_pdf_text(session_id[:8]),
                   level=f"{service_level*100:.0f}"),
         ParagraphStyle("footer", fontSize=7, textColor=colors.HexColor("#94a3b8"), alignment=TA_CENTER),
     ))

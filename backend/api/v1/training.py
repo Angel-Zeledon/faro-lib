@@ -1,7 +1,7 @@
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
@@ -111,7 +111,8 @@ def get_job(job_id: str, user: CurrentUser = Depends(get_current_user)):
 def get_job_logs(
     job_id: str,
     user: CurrentUser = Depends(get_current_user),
-    tail: int = 200,
+    # Bounded: a negative value reached SQL as `LIMIT -1` and answered 500.
+    tail: int = Query(200, ge=0, le=5000),
 ):
     job = job_service.get_job(user.tenant_id, job_id)
     if not job:

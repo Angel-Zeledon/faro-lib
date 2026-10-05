@@ -72,7 +72,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -84,7 +84,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -135,7 +135,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -147,7 +147,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -198,7 +198,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -210,7 +210,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -262,7 +262,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -274,7 +274,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -313,7 +313,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -325,7 +325,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -389,7 +389,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -401,7 +401,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -422,7 +422,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -430,7 +430,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -510,7 +510,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -522,7 +522,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -594,7 +594,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -606,7 +606,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -637,7 +637,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -649,7 +649,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -685,7 +685,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -697,7 +697,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -737,7 +737,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -749,7 +749,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -785,7 +785,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -797,7 +797,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -828,7 +828,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -840,7 +840,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -903,7 +903,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -915,7 +915,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -946,7 +946,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -958,7 +958,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -989,7 +989,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1001,7 +1001,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1076,7 +1076,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1088,7 +1088,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1240,7 +1240,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1252,7 +1252,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1283,7 +1283,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1295,7 +1295,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1377,7 +1377,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1389,7 +1389,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1479,7 +1479,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1491,7 +1491,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1583,7 +1583,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1595,7 +1595,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1626,7 +1626,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1638,7 +1638,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1701,7 +1701,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1713,7 +1713,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1744,7 +1744,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1756,7 +1756,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1908,7 +1908,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1920,7 +1920,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -1951,7 +1951,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -1963,7 +1963,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2053,7 +2053,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2065,7 +2065,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2096,7 +2096,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2108,7 +2108,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2161,7 +2161,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2173,7 +2173,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2204,7 +2204,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2216,7 +2216,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2308,7 +2308,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2320,7 +2320,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2351,7 +2351,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2363,7 +2363,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2410,7 +2410,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2422,7 +2422,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2464,7 +2464,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2476,7 +2476,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2507,7 +2507,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2519,7 +2519,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2550,7 +2550,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2562,7 +2562,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2593,7 +2593,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2605,7 +2605,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2652,7 +2652,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2664,7 +2664,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -2690,7 +2690,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2698,7 +2698,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -2748,7 +2748,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2760,7 +2760,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2811,7 +2811,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2823,7 +2823,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2905,7 +2905,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2917,7 +2917,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2948,7 +2948,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -2960,7 +2960,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -2991,7 +2991,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3003,7 +3003,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3057,7 +3057,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3069,7 +3069,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3154,7 +3154,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3166,7 +3166,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3260,7 +3260,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3272,7 +3272,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3303,7 +3303,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3315,7 +3315,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3371,7 +3371,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3383,7 +3383,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3438,7 +3438,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3450,7 +3450,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3497,7 +3497,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3509,7 +3509,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3564,7 +3564,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3576,7 +3576,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3628,7 +3628,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3640,7 +3640,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3687,7 +3687,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3699,7 +3699,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3776,7 +3776,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3788,7 +3788,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3868,7 +3868,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3880,7 +3880,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -3911,7 +3911,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3923,7 +3923,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -3973,7 +3973,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -3985,7 +3985,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4022,7 +4022,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4034,7 +4034,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4065,7 +4065,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4077,7 +4077,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -4103,7 +4103,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4111,7 +4111,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4148,7 +4148,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4160,7 +4160,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4191,7 +4191,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4203,7 +4203,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4234,7 +4234,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4246,7 +4246,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4277,7 +4277,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4289,7 +4289,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4320,7 +4320,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4332,7 +4332,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -4358,7 +4358,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4366,7 +4366,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -4392,7 +4392,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4400,7 +4400,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4421,7 +4421,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4429,7 +4429,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4472,7 +4472,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4484,7 +4484,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4515,7 +4515,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4527,7 +4527,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4581,7 +4581,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4593,7 +4593,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4624,7 +4624,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4636,7 +4636,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4686,7 +4686,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4698,7 +4698,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4745,7 +4745,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4757,7 +4757,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4788,7 +4788,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4800,7 +4800,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4850,7 +4850,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4862,7 +4862,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4902,7 +4902,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4914,7 +4914,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4955,7 +4955,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -4967,7 +4967,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -4998,7 +4998,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5010,7 +5010,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5041,7 +5041,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5053,7 +5053,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5084,7 +5084,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5096,7 +5096,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5173,7 +5173,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5185,7 +5185,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5247,7 +5247,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5259,7 +5259,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5290,7 +5290,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5302,7 +5302,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5378,7 +5378,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5390,7 +5390,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5421,7 +5421,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5433,7 +5433,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5474,7 +5474,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5486,7 +5486,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5517,7 +5517,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5529,7 +5529,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5560,7 +5560,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5572,7 +5572,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5612,7 +5612,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5624,7 +5624,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5692,7 +5692,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5704,7 +5704,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5735,7 +5735,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5747,7 +5747,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -5773,7 +5773,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5781,7 +5781,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -5817,7 +5817,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5829,7 +5829,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5860,7 +5860,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5872,7 +5872,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5903,7 +5903,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5915,7 +5915,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -5955,7 +5955,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -5967,7 +5967,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6038,7 +6038,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6050,7 +6050,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6115,7 +6115,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6127,7 +6127,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6171,7 +6171,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6183,7 +6183,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6217,7 +6217,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6229,7 +6229,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6335,7 +6335,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6347,7 +6347,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6378,7 +6378,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6390,7 +6390,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6425,7 +6425,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6437,7 +6437,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6458,7 +6458,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6466,7 +6466,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6531,7 +6531,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6543,7 +6543,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6576,7 +6576,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6588,7 +6588,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6639,7 +6639,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6651,7 +6651,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6698,7 +6698,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6710,7 +6710,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6784,7 +6784,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6796,7 +6796,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6830,7 +6830,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6842,7 +6842,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6873,7 +6873,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6885,7 +6885,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -6970,7 +6970,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -6982,7 +6982,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7013,7 +7013,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7025,7 +7025,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7091,7 +7091,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7103,7 +7103,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7143,7 +7143,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7155,7 +7155,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7187,7 +7187,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7199,7 +7199,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7343,7 +7343,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7355,7 +7355,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7403,7 +7403,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7415,7 +7415,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7459,7 +7459,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7471,7 +7471,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7513,7 +7513,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7525,7 +7525,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7624,7 +7624,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7636,7 +7636,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7670,7 +7670,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7682,7 +7682,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7748,7 +7748,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7760,7 +7760,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7804,7 +7804,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7816,7 +7816,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7860,7 +7860,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7872,7 +7872,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7904,7 +7904,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7916,7 +7916,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7937,7 +7937,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7945,7 +7945,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -7976,7 +7976,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -7988,7 +7988,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8064,7 +8064,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8076,7 +8076,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8107,7 +8107,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8119,7 +8119,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8159,7 +8159,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8171,7 +8171,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8247,7 +8247,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8259,7 +8259,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8290,7 +8290,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8302,7 +8302,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8323,7 +8323,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8331,7 +8331,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8374,7 +8374,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8386,7 +8386,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8429,7 +8429,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8441,7 +8441,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8462,7 +8462,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8470,7 +8470,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8514,7 +8514,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8526,7 +8526,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8560,7 +8560,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8572,7 +8572,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8642,7 +8642,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8654,7 +8654,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8697,7 +8697,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8709,7 +8709,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8780,7 +8780,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8792,7 +8792,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8813,7 +8813,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8821,7 +8821,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -8939,7 +8939,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -8951,7 +8951,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9015,7 +9015,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9027,7 +9027,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9048,7 +9048,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9056,7 +9056,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9122,7 +9122,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9134,7 +9134,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9165,7 +9165,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9177,7 +9177,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9208,7 +9208,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9220,7 +9220,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9364,7 +9364,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9376,7 +9376,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9519,7 +9519,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9531,7 +9531,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9583,7 +9583,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9595,7 +9595,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9644,7 +9644,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9656,7 +9656,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9687,7 +9687,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9699,7 +9699,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9739,7 +9739,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9751,7 +9751,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9839,7 +9839,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9851,7 +9851,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9886,7 +9886,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9898,7 +9898,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -9919,7 +9919,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -9927,7 +9927,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10028,7 +10028,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10040,7 +10040,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10061,7 +10061,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10069,7 +10069,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10120,7 +10120,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10132,7 +10132,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10176,7 +10176,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10188,7 +10188,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10220,7 +10220,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10232,7 +10232,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10253,7 +10253,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10261,7 +10261,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10317,7 +10317,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10329,7 +10329,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10350,7 +10350,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10358,7 +10358,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10389,7 +10389,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10401,7 +10401,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10511,7 +10511,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10523,7 +10523,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10592,7 +10592,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10604,7 +10604,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10635,7 +10635,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10647,7 +10647,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10668,7 +10668,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10676,7 +10676,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10707,7 +10707,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10719,7 +10719,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10797,7 +10797,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10809,7 +10809,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10840,7 +10840,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10852,7 +10852,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10883,7 +10883,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10895,7 +10895,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10952,7 +10952,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10964,7 +10964,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -10985,7 +10985,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -10993,7 +10993,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11038,7 +11038,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11050,7 +11050,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11092,7 +11092,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11104,7 +11104,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11125,7 +11125,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11133,7 +11133,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11202,7 +11202,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11214,7 +11214,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11264,7 +11264,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11276,7 +11276,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -11338,7 +11338,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11350,7 +11350,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11381,7 +11381,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11393,7 +11393,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -11429,7 +11429,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11441,7 +11441,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11472,7 +11472,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11484,7 +11484,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -11567,7 +11567,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11579,7 +11579,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -11605,7 +11605,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11613,7 +11613,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -11692,7 +11692,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11704,7 +11704,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11735,7 +11735,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11747,7 +11747,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11787,7 +11787,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11799,7 +11799,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -11835,7 +11835,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11847,7 +11847,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11878,7 +11878,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11890,7 +11890,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -11921,7 +11921,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -11933,7 +11933,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12072,7 +12072,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12084,7 +12084,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12235,7 +12235,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12247,7 +12247,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12299,7 +12299,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12311,7 +12311,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -12337,7 +12337,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12345,7 +12345,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12377,7 +12377,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12389,7 +12389,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12420,7 +12420,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12432,7 +12432,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12463,7 +12463,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12475,7 +12475,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12529,7 +12529,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12541,7 +12541,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -12601,7 +12601,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12613,7 +12613,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12672,7 +12672,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12684,7 +12684,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12813,7 +12813,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12825,7 +12825,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12856,7 +12856,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12868,7 +12868,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12899,7 +12899,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12911,7 +12911,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -12977,7 +12977,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -12989,7 +12989,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13020,7 +13020,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13032,7 +13032,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13063,7 +13063,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13075,7 +13075,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -13101,7 +13101,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13109,7 +13109,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -13135,7 +13135,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13143,7 +13143,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13174,7 +13174,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13186,7 +13186,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13217,7 +13217,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13229,7 +13229,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13257,6 +13257,8 @@
        "required": false,
        "schema": {
         "type": "integer",
+        "minimum": 0,
+        "maximum": 5000,
         "default": 200
        },
        "example": 200
@@ -13270,7 +13272,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13282,7 +13284,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13313,7 +13315,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13325,7 +13327,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13390,7 +13392,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13402,7 +13404,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13433,7 +13435,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13445,7 +13447,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
@@ -13471,7 +13473,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13479,7 +13481,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13527,7 +13529,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13539,7 +13541,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     },
@@ -13570,7 +13572,7 @@
      "errors": [
       {
        "status": 401,
-       "description": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`)."
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
       },
       {
        "status": 403,
@@ -13582,7 +13584,7 @@
       },
       {
        "status": 429,
-       "description": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds)."
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
       }
      ]
     }
