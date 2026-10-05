@@ -100,7 +100,8 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
   It matters more since 2026-08-22: `TESTING_MODE` also bypasses **every plan
   limit**, so a production boot with it on would hand the free tier away.
 - **Your own tenant starts on the free tier.** New tenants default to
-  `tier = 'free'` (100 SKUs, 2 users, 1 warehouse). The grandfathering
+  `tier = 'free'` (100 SKUs, 2 users, 1 warehouse, and no API, MCP or
+  WhatsApp bot). The grandfathering
   migration only promotes tenants that existed before 2026-08-22, and a fresh
   production database has none — so the first account you create for yourself
   is capped like a customer's. Flip it once, by hand:

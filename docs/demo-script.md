@@ -45,9 +45,11 @@ step carries a "what to say" line that names the business value.
 | Email | `demo@faro.app` |
 | Password | `demo1234` |
 
-The email is already verified. Every feature is available: there are no feature
-gates in this product — the tier decides how MUCH fits (SKUs, users,
-warehouses, saved forecasts), never what the product can do.
+The email is already verified. The demo tenant is seeded on the `paid` tier (the
+Full plan), so the API, MCP and the WhatsApp bot are available. Other than
+those three, there are no feature gates in this product — the tier decides how
+MUCH fits (SKUs, users, warehouses, saved forecasts), never what the rest of
+the product can do. A `free` or trial account has no API, MCP or WhatsApp bot.
 
 ### Reset and reseed before a demo
 

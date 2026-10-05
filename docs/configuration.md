@@ -98,7 +98,7 @@ A tenant override applies ONLY to mail addressed to that tenant's own people and
 
 Writable from the panel: `RESEND_API_KEY`, `EMAIL_FROM`, `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
 
-## `whatsapp` - WhatsApp via Twilio — daily alerts, supplier messages and the bot.
+## `whatsapp` - WhatsApp via Twilio — supplier messages on every plan; the daily alerts and the bot only for tenants on the Full or Corporate plan.
 
 *Kind:* external service. *Editable from the panel:* yes. *Per tenant:* yes. *Connection test:* yes.
 
@@ -177,11 +177,11 @@ Losing it means every stored secret must be re-entered. It belongs in your secre
 |---|---|---|---|
 | `INTEGRATIONS_SECRET_KEY` | - | required, secret, environment only | Fernet key encrypting every secret written from the configuration panel. Environment only. The name is historical and kept on purpose: renaming it would silently orphan every existing deployment's stored secrets. |
 
-## `contact` - How a customer reaches you to lift the free tier's ceilings.
+## `contact` - How a customer reaches you to lift a plan's ceilings or to turn on the API, MCP and the WhatsApp bot.
 
 *Kind:* external service. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* no.
 
-**What is lost without it:** The 'write to us' buttons disappear. A free tenant that hits a ceiling then has no way to ask for more room — which is the entire commercial surface of the product, since there is no checkout.
+**What is lost without it:** The 'write to us' buttons disappear. A tenant that hits a ceiling, or on the free plan wants the API, MCP or the bot, then has no way to ask for it — which is the entire commercial surface of the product, since there is no checkout.
 
 **Any one of these is enough:** `CONTACT_WHATSAPP` **or** `CONTACT_EMAIL`
 

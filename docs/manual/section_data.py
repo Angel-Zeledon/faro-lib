@@ -12,7 +12,7 @@
 #   backend/inventory/reception_service.py          _fill_rate cap, on_time_rate
 #   backend/inventory/supplier_health_service.py    MIN_RECENT / MIN_BASELINE / Z_THRESHOLD
 #   backend/datasets/service.py                     ALLOWED_EXTENSIONS
-#   backend/entitlements/plans.py                   free: 25 MB, 100 SKUs
+#   backend/entitlements/plans.py                   free: 25 MB, 100 SKUs; Full: 100 MB, 500 SKUs; corporate: 2000 MB
 #   Frontend/src/lib/inventoryDefaults.ts           DEFAULT_LEAD_TIME_DAYS = 15
 #
 # On-screen labels are quoted verbatim from Frontend/src/i18n/translations.ts
@@ -92,7 +92,7 @@ SECTION = {
                 ],
                 "gotchas": [
                     "Un producto con menos de 20 períodos de historia no se marca con un aviso: se elimina antes de entrenar. No tendrá pronóstico ni aparecerá en el semáforo, y por eso las opciones que borran filas te advierten cuántos productos pueden caer por debajo de ese mínimo.",
-                    "En el plan gratuito el archivo no puede pasar de 25 MB y el catálogo se topa en 100 productos; el plan pagado sube el archivo hasta 2000 MB y quita el tope de productos.",
+                    "En el plan gratuito el archivo no puede pasar de 25 MB y el catálogo se topa en 100 productos; el plan completo sube el archivo hasta 100 MB y el catálogo a 500 productos; el corporativo, hasta 2000 MB y sin tope de productos.",
                     "No existe un «continuar de todos modos». Si el control de datos encuentra algo sin arreglo posible, la única salida es corregir el mapeo de columnas arriba o subir otro archivo.",
                     "El país de feriados viene en Costa Rica, el mercado principal del producto. Si vendes en otro país, cámbialo antes de subir: se aplica a esa carga, no hacia atrás.",
                     "Si tu última carga terminada usaba columnas que siguen existiendo en el archivo nuevo, StockAI las reutiliza y te lo dice arriba. Si alguna desapareció, te nombra cuáles y vuelve a proponer el mapeo desde cero.",
@@ -369,7 +369,7 @@ SECTION = {
                 ],
                 "gotchas": [
                     "A product with fewer than 20 periods of history is not flagged with a warning: it is dropped before training. It gets no forecast and never appears in the traffic light, which is why the options that delete rows warn you how many products could fall below that minimum.",
-                    "On the free plan the file cannot exceed 25 MB and the catalogue is capped at 100 products; the paid plan raises the file to 2000 MB and removes the product cap.",
+                    "On the free plan the file cannot exceed 25 MB and the catalogue is capped at 100 products; the Full plan raises the file to 100 MB and the catalogue to 500 products; the Corporate plan, to 2000 MB with no product cap.",
                     "There is no \"continue anyway\". If the data check finds something with no possible fix, the only way out is correcting the column mapping above or uploading a different file.",
                     "The holiday country starts on Costa Rica, the product's main market. If you sell elsewhere, change it before uploading: it applies to that run, not retroactively.",
                     "If your last finished upload used columns that still exist in the new file, StockAI reuses them and says so at the top. If any went missing, it names which ones and proposes the mapping from scratch again.",

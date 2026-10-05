@@ -965,7 +965,7 @@ SECTION = {
                     "aparecer. No hay «escribiendo…» ni confirmación de lectura para quien "
                     "envía.",
                     "El aviso por WhatsApp viene apagado y necesita tu número vinculado en "
-                    "Mi cuenta. Además solo se dispara si no estás en la conversación: si "
+                    "Mi cuenta, algo que se hace en el plan completo. Además solo se dispara si no estás en la conversación: si "
                     "acabas de leer a esa persona, no te vuelve a avisar.",
                     "Los usuarios con rol de viewer también pueden escribir y recibir "
                     "mensajes. El límite aquí es la empresa, no el rol.",
@@ -1933,7 +1933,7 @@ SECTION = {
                     "show up. There is no “typing…” and no read receipt for "
                     "the sender.",
                     "The WhatsApp heads-up is off by default and needs your number linked in "
-                    "My account. It also only fires when you are away from the conversation: "
+                    "My account, which is done on the Full plan. It also only fires when you are away from the conversation: "
                     "if you have just read that person, you are not notified again.",
                     "Users with the viewer role can send and receive messages too. The "
                     "boundary here is the company, not the role.",

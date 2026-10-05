@@ -22,7 +22,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
           ['Usar el asistente y escribir mensajes al equipo', 'Sí', 'Sí', 'Sí'],
           ['Subir ventas, entrenar y editar inventario, proveedores y reglas del semáforo', 'Sí', 'Sí', 'No'],
           ['Generar, enviar, recibir, marcar pagada y cancelar órdenes de compra', 'Sí', 'Sí', 'No'],
-          ['Guardar escenarios, programar recálculos y crear llaves de API', 'Sí', 'Sí', 'No'],
+          ['Guardar escenarios, programar recálculos y crear llaves de API (en el plan completo)', 'Sí', 'Sí', 'No'],
           ['Crear, editar, suspender y eliminar usuarios', 'Sí', 'No', 'No'],
           ['Cambiar la moneda, la zona horaria y cada cuánto se calculan las compras', 'Sí', 'No', 'No'],
           ['Configurar los canales de la empresa en Instalación', 'Sí', 'No', 'No'],
@@ -59,7 +59,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
         { t: 'p', text: 'Cambiarle el correo a alguien lo obliga a verificar el nuevo.' },
 
         { t: 'h2', id: 'free-plan', text: 'En el plan gratis' },
-        { t: 'p', text: 'El plan gratis admite 2 usuarios: tú y una persona más. Al intentar crear el tercero se abre el cuadro «Llegaste al límite de tu plan gratis», que te da las formas de escribirnos. Ver [Límites del plan](/docs/administracion/limites-del-plan).' },
+        { t: 'p', text: 'El plan gratis admite 2 usuarios: tú y una persona más; el plan completo admite 3. Al intentar crear uno más se abre el cuadro «Llegaste al límite de tu plan», que te da las formas de escribirnos. Ver [Límites del plan](/docs/administracion/limites-del-plan).' },
       ],
     },
 
@@ -76,8 +76,8 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
           ['Perfil de Usuario', 'Tu «Nombre completo» se edita con el lápiz y se guarda ahí mismo. El correo, el rol y el estado de la cuenta se muestran pero no se editan aquí: el correo y el rol los cambia un administrador desde [Usuarios](/docs/administracion/usuarios-y-roles).'],
           ['Configuración de App', 'Idioma (Español / English) y tema (claro / oscuro). Se guardan en tu cuenta, así que te siguen a cualquier navegador donde inicies sesión.'],
           ['Seguridad', 'El cambio de contraseña, con un código de 6 dígitos que te enviamos al correo. Si tu instalación tiene activado el inicio con Google, Apple o Facebook, aquí también ves tus «Cuentas vinculadas» y puedes desvincularlas.'],
-          ['Vincular WhatsApp', 'Tu número verificado. Ahí te llegan las alertas de inventario por WhatsApp y desde ahí puedes [hablar con el asistente](/docs/asistente/asistente-por-whatsapp).'],
-          ['Mensajes del equipo', 'El interruptor «Recibir aviso cuando te escriban»: un aviso por WhatsApp (o SMS) cuando un compañero te escribe en Mensajes. Necesita tu número vinculado.'],
+          ['Vincular WhatsApp', 'Tu número verificado. En el plan completo, ahí te llegan las alertas de inventario por WhatsApp y desde ahí puedes [hablar con el asistente](/docs/asistente/asistente-por-whatsapp); en el plan gratis esta tarjeta se reemplaza por «Disponible en el plan completo» y no se vincula número.'],
+          ['Mensajes del equipo', 'El interruptor «Recibir aviso cuando te escriban»: un aviso por WhatsApp (o SMS) cuando un compañero te escribe en Mensajes. Necesita tu número vinculado, que se vincula en el plan completo.'],
           ['Legal', 'Enlaces a los términos, la privacidad y los demás documentos legales.'],
         ] },
 
@@ -110,7 +110,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
     'administracion/automatizacion': {
       title: 'Automatización',
       description:
-        'Que tus pronósticos se recalculen solos en un horario fijo, y las llaves de API con las que otro sistema lee o escribe en tu cuenta.',
+        'Que tus pronósticos se recalculen solos en un horario fijo, y las llaves de API con las que otro sistema lee o escribe en tu cuenta (en el plan completo).',
       blocks: [
         { t: 'p', text: '[Automatización](app:/automatizacion) tiene dos pestañas: «Tareas programadas», que es la que abre primero, y «API Keys». En el menú, la entrada la ven los administradores.' },
         { t: 'shot', key: 'automatizacion', alt: 'La pestaña de tareas programadas con el selector de sesión, la frecuencia y la próxima ejecución' },
@@ -153,7 +153,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
           ['Leer y escribir', 'Además sube archivos, encola entrenamientos y registra órdenes de compra, como un Analista.'],
           ['Revocar', 'Es inmediato: todo lo que usaba esa llave deja de funcionar en la siguiente llamada. Si perdiste una clave, crea otra y revoca la vieja.'],
         ] },
-        { t: 'p', text: 'Cada llave admite 120 llamadas por minuto. En el plan gratis cabe una sola llave, con 500 llamadas por día; en el plan completo no hay tope diario.' },
+        { t: 'p', text: 'Cada llave admite 120 llamadas por minuto. Las llaves de API vienen con el plan completo: ahí caben 3 llaves, con 2.000 llamadas por día cada una; en el plan corporativo no hay tope. En el plan gratis esta pestaña muestra una tarjeta «Disponible en el plan completo» en lugar de las llaves.' },
       ],
     },
 
@@ -209,31 +209,33 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
     },
 
     'administracion/limites-del-plan': {
-      title: 'Límites del plan gratis',
+      title: 'Límites de los planes',
       nav: 'Límites del plan',
       description:
-        'StockAI tiene dos planes y los dos traen todas las funciones. El gratis solo limita cuánto cabe; cuando te quedes corto, se amplía hablando con nosotros.',
+        'StockAI tiene tres planes. Los tres traen el mismo producto; solo el plan completo y el corporativo suman la API, el MCP y el bot de WhatsApp, y cada plan limita cuánto cabe. Para ampliar, se habla con nosotros.',
       blocks: [
-        { t: 'p', text: 'No hay funciones bloqueadas: el plan gratis y el plan completo tienen exactamente el mismo producto. Lo único que cambia es cuánto cabe.' },
+        { t: 'p', text: 'Todas las pantallas, el pronóstico y el asistente están en todos los planes. Hay tres cosas que vienen solo con el plan completo y el corporativo: la API (llaves `sk_live_`), el acceso por MCP y el bot de WhatsApp. En el plan gratis aparecen como una tarjeta «Disponible en el plan completo». Todo lo demás cambia solo en cuánto cabe.' },
 
         { t: 'h2', id: 'the-limits', text: 'Los techos' },
-        { t: 'table', head: ['', 'Plan gratis', 'Plan completo'], rows: [
-          ['Productos (SKUs)', '100', 'Sin límite'],
-          ['Usuarios', '2', 'Sin límite'],
-          ['Bodegas', '1', 'Sin límite'],
-          ['Pronósticos guardados', '3', 'Sin límite'],
-          ['Llaves de API', '1', 'Sin límite'],
-          ['Llamadas de API por día', '500', 'Sin límite'],
-          ['Tamaño de archivo', '25 MB', '2.000 MB'],
+        { t: 'table', head: ['', 'Plan gratis', 'Plan completo', 'Plan corporativo'], rows: [
+          ['Productos (SKUs)', '100', '500', 'Sin límite'],
+          ['Usuarios', '2', '3', 'Sin límite'],
+          ['Bodegas', '1', '2', 'Sin límite'],
+          ['Pronósticos guardados', '3', '20', 'Sin límite'],
+          ['API, MCP y bot de WhatsApp', 'No incluidos', 'Incluidos', 'Incluidos'],
+          ['Llaves de API', '0', '3', 'Sin límite'],
+          ['Llamadas de API por día, por llave', '0', '2.000', 'Sin límite'],
+          ['Tamaño de archivo', '25 MB', '100 MB', '2.000 MB'],
         ] },
-        { t: 'p', text: 'En los dos planes cada llave de API admite 120 llamadas por minuto, y una empresa puede tener hasta 8 entrenamientos corriendo a la vez. Esos dos no son techos de plan: son límites del servidor.' },
+        { t: 'p', text: 'El plan corporativo se cotiza a la medida: los techos se acuerdan en la cotización. En todos los planes con API cada llave admite 120 llamadas por minuto, y una empresa puede tener hasta 8 entrenamientos corriendo a la vez. Esos dos no son techos de plan: son límites del servidor.' },
 
         { t: 'h2', id: 'see-usage', text: 'Ver cuánto te queda' },
         { t: 'p', text: 'En [Mi cuenta](app:/mi-cuenta), la tarjeta «Uso y límites» muestra tu plan y una barra por Productos (SKUs), Usuarios, Bodegas, Pronósticos guardados y Llaves de API. Se pone ámbar desde el 80 % y roja al llegar al tope. El tamaño de archivo y las llamadas de API por día no tienen barra: se comprueban al subir el archivo y en cada llamada.' },
 
         { t: 'h2', id: 'at-the-limit', text: 'Qué pasa al llegar a un techo' },
-        { t: 'p', text: 'La acción que lo pasaría no se hace — por ejemplo, crear el tercer usuario o la segunda bodega — y se abre el cuadro «Llegaste al límite de tu plan gratis», que dice cuánto llevas de cuánto. Lo que ya tienes no se toca: nada se borra ni se apaga por estar en el techo.' },
+        { t: 'p', text: 'La acción que lo pasaría no se hace — por ejemplo, crear el tercer usuario en el plan gratis o la segunda bodega — y se abre el cuadro «Llegaste al límite de tu plan», que dice cuánto llevas de cuánto. Lo que ya tienes no se toca: nada se borra ni se apaga por estar en el techo.' },
         { t: 'p', text: 'Si el aviso llega como mensaje, dice: «Llegaste al límite de tu plan gratis: {actual} de {máximo}. Escríbenos para ampliarlo.»' },
+        { t: 'p', text: 'Usar la API, el MCP o el bot de WhatsApp sin tenerlos en tu plan tampoco se hace: la API responde con un error que dice «La API viene con el plan completo», y en la pantalla aparece la tarjeta «Disponible en el plan completo» con el botón «Escríbenos para activarlo».' },
 
         { t: 'h2', id: 'more-room', text: 'Pedir más espacio' },
         { t: 'p', text: 'No hay pantalla de compra ni pago con tarjeta. Pasar al plan completo es una conversación con nosotros:' },
@@ -245,7 +247,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
         { t: 'p', text: 'Los botones de WhatsApp y correo solo aparecen si la instalación tiene configurado su contacto comercial; el formulario está siempre.' },
 
         { t: 'h2', id: 'trial', text: 'Cuentas de prueba' },
-        { t: 'note', tone: 'info', title: 'Una cuenta de prueba tiene sus propios techos', text: 'La cuenta de prueba de 24 horas que se crea desde la página principal trae todo el producto con muy poco espacio: 30 productos, 1 usuario, 2 bodegas (para que puedas probar traslados), 2 pronósticos guardados, 1 llave de API con 100 llamadas por día, archivos de hasta 5 MB y un entrenamiento a la vez. Ver [Crear tu cuenta](/docs/primeros-pasos/crear-tu-cuenta).' },
+        { t: 'note', tone: 'info', title: 'Una cuenta de prueba tiene sus propios techos', text: 'La cuenta de prueba de 24 horas que se crea desde la página principal trae el producto con muy poco espacio: 30 productos, 1 usuario, 2 bodegas (para que puedas probar traslados), 2 pronósticos guardados, archivos de hasta 5 MB y un entrenamiento a la vez. No incluye la API, el MCP ni el bot de WhatsApp. Ver [Crear tu cuenta](/docs/primeros-pasos/crear-tu-cuenta).' },
       ],
     },
   },
@@ -265,7 +267,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
           ['Use the assistant and message the team', 'Yes', 'Yes', 'Yes'],
           ['Upload sales, train, and edit inventory, suppliers and signal rules', 'Yes', 'Yes', 'No'],
           ['Create, send, receive, mark paid and cancel purchase orders', 'Yes', 'Yes', 'No'],
-          ['Save scenarios, schedule recalculations and create API keys', 'Yes', 'Yes', 'No'],
+          ['Save scenarios, schedule recalculations and create API keys (on the Full plan)', 'Yes', 'Yes', 'No'],
           ['Create, edit, suspend and delete users', 'Yes', 'No', 'No'],
           ['Change the currency, the time zone and how often purchases are calculated', 'Yes', 'No', 'No'],
           ["Configure the company's channels under Installation", 'Yes', 'No', 'No'],
@@ -302,7 +304,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
         { t: 'p', text: "Changing someone's email makes them verify the new one." },
 
         { t: 'h2', id: 'free-plan', text: 'On the free plan' },
-        { t: 'p', text: 'The free plan allows 2 users: you and one more person. Trying to create the third opens the "You reached your free plan limit" dialog with the ways to reach us. See [Plan limits](/docs/administracion/limites-del-plan).' },
+        { t: 'p', text: 'The free plan allows 2 users: you and one more person; the Full plan allows 3. Trying to create one more opens the "You reached your plan limit" dialog with the ways to reach us. See [Plan limits](/docs/administracion/limites-del-plan).' },
       ],
     },
 
@@ -319,8 +321,8 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
           ['User Profile', 'Your "Full name" is edited with the pencil and saved in place. Email, role and account status are shown but not edited here: an administrator changes email and role under [Users](/docs/administracion/usuarios-y-roles).'],
           ['App Settings', 'Language (Español / English) and theme (light / dark). They are saved on your account, so they follow you to any browser you sign in on.'],
           ['Security', 'Changing your password, with a 6-digit code we email you. If your installation has sign-in with Google, Apple or Facebook turned on, this is also where you see your "Linked accounts" and can unlink them.'],
-          ['Link WhatsApp', 'Your verified number. Your WhatsApp inventory alerts arrive there, and from it you can [talk to the assistant](/docs/asistente/asistente-por-whatsapp).'],
-          ['Team messages', 'The "Get a heads-up when someone writes to you" switch: a WhatsApp (or SMS) notice when a colleague writes to you in Messages. It needs your number linked.'],
+          ['Link WhatsApp', 'Your verified number. On the Full plan, your WhatsApp inventory alerts arrive there and from it you can [talk to the assistant](/docs/asistente/asistente-por-whatsapp); on the free plan this card is replaced by "Available on the Full plan" and no number is linked.'],
+          ['Team messages', 'The "Get a heads-up when someone writes to you" switch: a WhatsApp (or SMS) notice when a colleague writes to you in Messages. It needs your number linked, which is done on the Full plan.'],
           ['Legal', 'Links to the terms, the privacy policy and the other legal documents.'],
         ] },
 
@@ -353,7 +355,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
     'administracion/automatizacion': {
       title: 'Automation',
       description:
-        'Have your forecasts recalculate themselves on a fixed schedule, and manage the API keys another system uses to read or write in your account.',
+        'Have your forecasts recalculate themselves on a fixed schedule, and manage the API keys another system uses to read or write in your account (on the Full plan).',
       blocks: [
         { t: 'p', text: '[Automation](app:/automatizacion) has two tabs: "Schedules", which opens first, and "API Keys". In the menu, administrators see the entry.' },
         { t: 'shot', key: 'automatizacion', alt: 'The schedules tab with the session picker, the frequency and the next run' },
@@ -396,7 +398,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
           ['Read and write', 'Also uploads files, queues trainings and logs purchase orders, like an Analyst.'],
           ['Revoke', 'Immediate: anything using that key stops working on its next call. If you lost a key, create another and revoke the old one.'],
         ] },
-        { t: 'p', text: 'Each key allows 120 calls per minute. The free plan holds a single key, with 500 calls per day; the full plan has no daily cap.' },
+        { t: 'p', text: 'Each key allows 120 calls per minute. API keys come with the Full plan: it holds 3 keys, with 2,000 calls per day each; the Corporate plan has no cap. On the free plan this tab shows an "Available on the Full plan" card instead of the keys.' },
       ],
     },
 
@@ -452,31 +454,33 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
     },
 
     'administracion/limites-del-plan': {
-      title: 'Free plan limits',
+      title: 'Plan limits',
       nav: 'Plan limits',
       description:
-        'StockAI has two plans and both include every feature. The free one only limits how much fits; when you outgrow it, it is lifted by talking to us.',
+        'StockAI has three plans. All of them carry the same product; only the Full and Corporate plans add the API, MCP and the WhatsApp bot, and each plan limits how much fits. To raise it, you talk to us.',
       blocks: [
-        { t: 'p', text: 'No feature is locked: the free plan and the full plan are exactly the same product. The only difference is how much fits.' },
+        { t: 'p', text: 'Every screen, the forecasting and the assistant are on every plan. Three things come only with the Full and Corporate plans: the API (`sk_live_` keys), MCP access and the WhatsApp bot. On the free plan they show up as an "Available on the Full plan" card. Everything else differs only in how much fits.' },
 
         { t: 'h2', id: 'the-limits', text: 'The ceilings' },
-        { t: 'table', head: ['', 'Free plan', 'Full plan'], rows: [
-          ['Products (SKUs)', '100', 'Unlimited'],
-          ['Users', '2', 'Unlimited'],
-          ['Warehouses', '1', 'Unlimited'],
-          ['Saved forecasts', '3', 'Unlimited'],
-          ['API keys', '1', 'Unlimited'],
-          ['API calls per day', '500', 'Unlimited'],
-          ['File size', '25 MB', '2,000 MB'],
+        { t: 'table', head: ['', 'Free plan', 'Full plan', 'Corporate plan'], rows: [
+          ['Products (SKUs)', '100', '500', 'Unlimited'],
+          ['Users', '2', '3', 'Unlimited'],
+          ['Warehouses', '1', '2', 'Unlimited'],
+          ['Saved forecasts', '3', '20', 'Unlimited'],
+          ['API, MCP and WhatsApp bot', 'Not included', 'Included', 'Included'],
+          ['API keys', '0', '3', 'Unlimited'],
+          ['API calls per day, per key', '0', '2,000', 'Unlimited'],
+          ['File size', '25 MB', '100 MB', '2,000 MB'],
         ] },
-        { t: 'p', text: 'On both plans each API key allows 120 calls per minute, and a company can have up to 8 trainings running at once. Those two are not plan ceilings: they are server limits.' },
+        { t: 'p', text: 'The Corporate plan is quoted case by case: the ceilings are agreed in the quote. On every plan that has the API, each key allows 120 calls per minute, and a company can have up to 8 trainings running at once. Those two are not plan ceilings: they are server limits.' },
 
         { t: 'h2', id: 'see-usage', text: 'See how much room is left' },
         { t: 'p', text: 'In [My account](app:/mi-cuenta), the "Usage and limits" card shows your plan and one bar each for Products (SKUs), Users, Warehouses, Saved forecasts and API keys. A bar turns amber from 80% and red at the ceiling. File size and daily API calls have no bar: they are checked when you upload a file and on every call.' },
 
         { t: 'h2', id: 'at-the-limit', text: 'What happens at a ceiling' },
-        { t: 'p', text: 'The action that would cross it does not happen — creating the third user or the second warehouse, for example — and the "You reached your free plan limit" dialog opens, saying how much you have used of how much. What you already have is untouched: nothing is deleted or switched off for being at the ceiling.' },
+        { t: 'p', text: 'The action that would cross it does not happen — creating the third user on the free plan or the second warehouse, for example — and the "You reached your plan limit" dialog opens, saying how much you have used of how much. What you already have is untouched: nothing is deleted or switched off for being at the ceiling.' },
         { t: 'p', text: 'When the notice arrives as a message, it reads: "You reached your free plan limit: {current} of {max}. Write to us to raise it."' },
+        { t: 'p', text: 'Using the API, MCP or the WhatsApp bot without having them in your plan does not work either: the API answers with an error saying "The API comes with the Full plan", and on screen you see the "Available on the Full plan" card with the "Write to us to turn it on" button.' },
 
         { t: 'h2', id: 'more-room', text: 'Ask for more room' },
         { t: 'p', text: 'There is no checkout and no card payment. Moving to the full plan is a conversation with us:' },
@@ -488,7 +492,7 @@ export const ADMIN: DocSectionContent<DocPageIdOf<'administracion'>> = {
         { t: 'p', text: 'The WhatsApp and email buttons only appear if the installation has its commercial contact configured; the form is always there.' },
 
         { t: 'h2', id: 'trial', text: 'Trial accounts' },
-        { t: 'note', tone: 'info', title: 'A trial account has its own ceilings', text: 'The 24-hour trial account created from the home page has the whole product with very little room: 30 products, 1 user, 2 warehouses (so you can try transfers), 2 saved forecasts, 1 API key with 100 calls per day, files up to 5 MB and one training at a time. See [Create your account](/docs/primeros-pasos/crear-tu-cuenta).' },
+        { t: 'note', tone: 'info', title: 'A trial account has its own ceilings', text: 'The 24-hour trial account created from the home page has the product with very little room: 30 products, 1 user, 2 warehouses (so you can try transfers), 2 saved forecasts, files up to 5 MB and one training at a time. It does not include the API, MCP or the WhatsApp bot. See [Create your account](/docs/primeros-pasos/crear-tu-cuenta).' },
       ],
     },
   },
