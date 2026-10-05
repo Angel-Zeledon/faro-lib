@@ -25,6 +25,7 @@ export type AlertKind =
   | 'data'                // stock the tenant imported, shrank or moved
   | 'limit'               // a plan ceiling stopped a write
   | 'account'             // users, roles and machine credentials
+  | 'billing'             // the plan's payment: activated, failed, lapsed
 
 /** Where the entry came from. A delivery is a fan-out with recipients; a
  *  system event happened once and carries its own severity and reason. */

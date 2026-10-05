@@ -4,7 +4,7 @@ import {
   TrendingUp, Package, MessagesSquare, Users, User,
   ShoppingCart, Truck, Upload, ClipboardList, History, Database,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
-  ScrollText, Settings, ScanLine, ClipboardCheck,
+  ScrollText, Settings, ScanLine, ClipboardCheck, CreditCard,
 } from 'lucide-react'
 import { has, UNKNOWN_FACTS, type TenantFacts } from '@/hooks/useTenantFacts'
 
@@ -64,6 +64,8 @@ export const SCREENS: Screen[] = [
 
   // ── Under Configuración (the /configuracion hub lists them) ────────────────
   { href: '/mi-cuenta',             labelKey: 'nav.account',         Icon: User,         parent: SETTINGS_HREF },
+  // The plan and its payment; where Stripe / PayPal send the buyer back to.
+  { href: '/facturacion',           labelKey: 'nav.billing',         Icon: CreditCard,   parent: SETTINGS_HREF },
   { href: '/usuarios',              labelKey: 'nav.users',           Icon: Users,        parent: SETTINGS_HREF, adminOnly: true },
   // "Subir mis ventas" and "mis archivos" are one errand; the two routes are
   // tabs of each other (components/layout/DataTabs.tsx).

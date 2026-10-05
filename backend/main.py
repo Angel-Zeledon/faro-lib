@@ -403,6 +403,9 @@ app.include_router(demo.router,            prefix=_PREFIX)
 from backend.api.v1 import trial as trial_router  # noqa: E402
 app.include_router(trial_router.router,    prefix=_PREFIX)
 app.include_router(entitlements.router,    prefix=_PREFIX)
+from backend.api.v1 import billing as billing_router  # noqa: E402
+app.include_router(billing_router.router, prefix=_PREFIX)
+app.include_router(billing_router.webhook_router, prefix=_PREFIX)
 from backend.api.v1 import currency as currency_router  # noqa: E402
 app.include_router(currency_router.router, prefix=_PREFIX)
 from backend.api.v1 import mcp as mcp_router  # noqa: E402

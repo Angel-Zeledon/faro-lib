@@ -348,6 +348,32 @@ EVENTS: dict[str, EventSpec] = {
     "account.warehouse_scope_changed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email", "warehouses"),
     ),
+
+    # ── Paying for the plan (backend/billing/) ───────────────────────────────
+    # Written by a VERIFIED provider webhook (or the hourly sweep applying what
+    # one already stored), with "system" as the actor: no person did these.
+    "billing.plan_activated": EventSpec(
+        kind="billing", severity=INFO,
+        detail_keys=("provider", "tier", "previous_tier"),
+    ),
+    # Critical: everything above the free ceilings stops accepting new rows
+    # (nothing is deleted), and the admin has to hear it from us first.
+    "billing.plan_downgraded": EventSpec(
+        kind="billing", severity=CRITICAL,
+        detail_keys=("provider", "tier", "previous_tier"),
+    ),
+    # A payment bounced. The plan stays until `grace_until`; this is the
+    # moment to fix the card, not after the downgrade.
+    "billing.payment_failed": EventSpec(
+        kind="billing", severity=WARNING,
+        detail_keys=("provider", "grace_until"),
+    ),
+    # Renewal set to stop, resumed, or another state change that did not move
+    # the tier (yet).
+    "billing.subscription_changed": EventSpec(
+        kind="billing", severity=INFO,
+        detail_keys=("provider", "status", "renews_at"),
+    ),
 }
 
 
@@ -401,6 +427,11 @@ REASONS: tuple[str, ...] = (
     "inbound_file_too_large",
     "inbound_duplicate_file",
     "inbound_no_usable_attachment",
+    # paying for the plan: the provider confirmed a payment, a subscription
+    # ran out (cancelled period over, grace over, expired), a charge bounced
+    "payment_confirmed_by_provider",
+    "subscription_lapsed",
+    "payment_failed_at_provider",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )
