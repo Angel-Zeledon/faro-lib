@@ -1,6 +1,6 @@
 'use client'
 /**
- * "Continue with Google / Microsoft / Apple / Facebook" — only for the providers this
+ * "Continue with Google / Microsoft / Apple" — only for the providers this
  * installation enabled.
  *
  * Renders NOTHING until `/auth/providers` answers, and nothing at all when it
@@ -9,8 +9,7 @@
  * login and signup screens look exactly as they did before this existed.
  *
  * Each button follows its brand's published guidelines: Google's four-colour
- * "G" on white (or #131314 in dark), Microsoft's four-square mark on white (or #2F2F2F in dark), Apple's logo in black/white, Facebook's
- * "f" on #1877F2. The label is the provider's own wording, "Continue with …".
+ * "G" on white (or #131314 in dark), Microsoft's four-square mark on white (or #2F2F2F in dark), Apple's logo in black/white. The label is the provider's own wording, "Continue with …".
  *
  * Clicking navigates the whole window to the backend's /start route — the
  * provider's page must take over, and the flow comes back through
@@ -53,14 +52,6 @@ function AppleLogo({ color }: { color: string }) {
   )
 }
 
-function FacebookLogo() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#ffffff" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z" />
-    </svg>
-  )
-}
-
 interface BrandStyle { bg: string; fg: string; border: string; logo: React.ReactNode }
 
 function brand(provider: SocialProvider, dark: boolean): BrandStyle {
@@ -74,12 +65,10 @@ function brand(provider: SocialProvider, dark: boolean): BrandStyle {
       ? { bg: '#2F2F2F', fg: '#FFFFFF', border: '#8C8C8C', logo: <MicrosoftLogo /> }
       : { bg: '#FFFFFF', fg: '#5E5E5E', border: '#8C8C8C', logo: <MicrosoftLogo /> }
   }
-  if (provider === 'apple') {
-    return dark
-      ? { bg: '#FFFFFF', fg: '#000000', border: '#FFFFFF', logo: <AppleLogo color="#000000" /> }
-      : { bg: '#000000', fg: '#FFFFFF', border: '#000000', logo: <AppleLogo color="#FFFFFF" /> }
-  }
-  return { bg: '#1877F2', fg: '#FFFFFF', border: '#1877F2', logo: <FacebookLogo /> }
+  // Apple: the last provider, so it is the fall-through.
+  return dark
+    ? { bg: '#FFFFFF', fg: '#000000', border: '#FFFFFF', logo: <AppleLogo color="#000000" /> }
+    : { bg: '#000000', fg: '#FFFFFF', border: '#000000', logo: <AppleLogo color="#FFFFFF" /> }
 }
 
 export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {

@@ -134,7 +134,7 @@ Do NOT run `npm run build` while `next dev` is running — it corrupts the dev s
   render `Frontend/src/data/public-api.json`, exported by
   `backend/scripts/export_public_api.py` (a test fails when it is stale).
   `PUBLIC_API_ONLY=true` prunes the app to the key-callable routes.
-- **Social login** (Google/Apple/Facebook, `backend/auth/social/`): OFF by
+- **Social login** (Google/Microsoft/Apple, `backend/auth/social/`): OFF by
   default — the source-code distribution shows only email+password. Enabled
   per installation by `SOCIAL_LOGIN_ENABLED` + each provider's credentials in
   /instalacion. Never make it on by default.

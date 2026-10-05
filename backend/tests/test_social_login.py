@@ -1,7 +1,7 @@
-"""Social sign-in (Google, Microsoft, Apple, Facebook) — backend/auth/social/.
+"""Social sign-in (Google, Microsoft, Apple) — backend/auth/social/.
 
 Every provider is faked with an `httpx.MockTransport`: the token endpoint, the
-JWKS and the Graph API answer from this file, and ID tokens are signed with a
+JWKS answer from this file, and ID tokens are signed with a
 key generated here. No test reaches a real provider.
 
 State is asserted in the database, not from the redirect alone: a sign-in that
@@ -61,7 +61,6 @@ class FakeProviders:
 
     def __init__(self):
         self.id_token: str | None = None
-        self.fb_me: dict = {}
         self.requests: list[httpx.Request] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -73,10 +72,6 @@ class FakeProviders:
         if url in (providers.GOOGLE_TOKEN_URL, providers.APPLE_TOKEN_URL,
                    providers.MICROSOFT_TOKEN_URL):
             return httpx.Response(200, json={"id_token": self.id_token, "access_token": "x"})
-        if url == providers.FACEBOOK_TOKEN_URL:
-            return httpx.Response(200, json={"access_token": "fb-access-token"})
-        if url == providers.FACEBOOK_ME_URL:
-            return httpx.Response(200, json=self.fb_me)
         return httpx.Response(404, json={"error": "unexpected url " + url})
 
 
@@ -103,7 +98,6 @@ def social_off(monkeypatch, client):
          social_login_enabled=False,
          google_oauth_client_id="", google_oauth_client_secret="",
          microsoft_oauth_client_id="", microsoft_oauth_client_secret="",
-         facebook_oauth_app_id="", facebook_oauth_app_secret="",
          apple_oauth_service_id="", apple_oauth_team_id="",
          apple_oauth_key_id="", apple_oauth_private_key="",
          frontend_url=FRONTEND)
@@ -120,7 +114,6 @@ def all_on(monkeypatch, social_off):
          google_oauth_client_secret="google-secret",
          microsoft_oauth_client_id="11111111-2222-3333-4444-555555555555",
          microsoft_oauth_client_secret="ms-secret",
-         facebook_oauth_app_id="fb-app-id", facebook_oauth_app_secret="fb-app-secret",
          apple_oauth_service_id="es.stockai.signin", apple_oauth_team_id="TEAM123456",
          apple_oauth_key_id="KEY1234567", apple_oauth_private_key=_APPLE_PEM)
 
@@ -200,15 +193,15 @@ class TestProvidersEndpoint:
         monkeypatch.setattr("backend.config.settings.social_login_enabled", False)
         assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == []
 
-    def test_all_four_when_configured_in_display_order(self, client, all_on):
+    def test_all_three_when_configured_in_display_order(self, client, all_on):
         assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == [
-            "google", "microsoft", "apple", "facebook",
+            "google", "microsoft", "apple",
         ]
 
     def test_a_half_configured_microsoft_is_not_offered(self, client, all_on, monkeypatch):
         monkeypatch.setattr("backend.config.settings.microsoft_oauth_client_secret", "")
         assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == [
-            "google", "apple", "facebook",
+            "google", "apple",
         ]
 
     def test_microsoft_alone_is_offered_without_the_others(self, client, social_off, monkeypatch):
@@ -217,14 +210,33 @@ class TestProvidersEndpoint:
              microsoft_oauth_client_secret="ms-secret")
         assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == ["microsoft"]
 
-    def test_a_half_configured_provider_is_not_offered(self, client, all_on, monkeypatch):
-        monkeypatch.setattr("backend.config.settings.facebook_oauth_app_secret", "")
+    def test_a_half_configured_google_is_not_offered(self, client, all_on, monkeypatch):
+        monkeypatch.setattr("backend.config.settings.google_oauth_client_secret", "")
+        assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == [
+            "microsoft", "apple",
+        ]
+
+    def test_facebook_is_gone(self, client, all_on):
+        """Owner's decision: exactly Google, Microsoft and Apple. A Facebook
+        provider must not be startable."""
+        assert providers.PROVIDERS == ("google", "microsoft", "apple")
         assert "facebook" not in client.get("/api/v1/auth/providers").json()["data"]["providers"]
+        before = query_one("SELECT COUNT(*) AS n FROM oauth_flows")["n"]
+        r = client.get("/api/v1/auth/oauth/facebook/start", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers["location"] == f"{FRONTEND}/login?oauth_error=social_provider_unavailable"
+        assert query_one("SELECT COUNT(*) AS n FROM oauth_flows")["n"] == before
+
+    def test_a_stored_facebook_override_from_an_old_install_is_ignored(self):
+        """No migration: the stale key is read back as plain text and nothing
+        asks for it any more, so nothing can crash on it."""
+        from backend.service_config import store
+        assert store.coerce("facebook_oauth_app_id", "123") == "123"
 
     def test_an_apple_key_that_does_not_parse_is_not_offered(self, client, all_on, monkeypatch):
         monkeypatch.setattr("backend.config.settings.apple_oauth_private_key", "not a key")
         assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == [
-            "google", "microsoft", "facebook",
+            "google", "microsoft",
         ]
 
     def test_an_apple_key_pasted_on_one_line_still_works(self, client, all_on, monkeypatch):
@@ -294,12 +306,6 @@ class TestStart:
         assert p["response_mode"] == "form_post"
         assert p["client_id"] == "es.stockai.signin"
         assert p["redirect_uri"] == f"{FRONTEND}/api/v1/auth/oauth/apple/callback"
-
-    def test_facebook_redirect(self, client, all_on):
-        loc, p, _ = _start(client, "facebook")
-        assert loc.startswith(providers.FACEBOOK_AUTH_URL + "?")
-        assert "email" in p["scope"]
-        assert p["code_challenge_method"] == "S256"
 
     def test_a_disabled_provider_sends_back_to_login_and_writes_nothing(self, client, social_off):
         before = query_one("SELECT COUNT(*) AS n FROM oauth_flows")["n"]
@@ -531,7 +537,8 @@ class TestGoogleCallback:
 
 # ── Microsoft ────────────────────────────────────────────────────────────────
 
-_MS_TID = "9188040d-6c67-4c5b-b112-36a304b66dad"   # the personal-accounts tenant
+_MS_TID = "72f988bf-86f1-41af-91ab-2d7cd011db47"   # some organisation's tenant
+_MS_CONSUMER_TID = providers.MICROSOFT_CONSUMER_TID  # personal Microsoft accounts
 
 
 def _ms_token(params, email, *, sub=None, tid=_MS_TID, iss=None, aud=None, nonce=None,
@@ -590,6 +597,23 @@ class TestMicrosoft:
         fake.id_token = _ms_token(p, email, edov="true")
         _handoff_code(_callback(client, "microsoft", p, b))
         assert query_one("SELECT 1 FROM users WHERE email = %s", (email,)) is not None
+
+    def test_a_personal_microsoft_account_is_verified_by_its_tenant(
+        self, client, all_on, fake, cleanup_emails,
+    ):
+        email = f"ms-{uuid4().hex[:8]}@outlook.com"
+        cleanup_emails.append(email)
+        _, p, b = _start(client, "microsoft", intent="signup")
+        fake.id_token = _ms_token(p, email, tid=_MS_CONSUMER_TID)   # no xms_edov
+        _handoff_code(_callback(client, "microsoft", p, b))
+        row = query_one("SELECT email_verified FROM users WHERE email = %s", (email,))
+        assert row is not None and row["email_verified"] is True
+
+    def test_the_consumer_tenant_is_taken_from_the_signed_tid_only(self):
+        """A claim naming the consumer tenant in some other field proves nothing."""
+        claims = {"email": "a@b.co", "tid": _MS_TID, "preferred_username": _MS_CONSUMER_TID}
+        assert providers._microsoft_email(claims) == ("a@b.co", False)
+        assert providers._microsoft_email({**claims, "tid": _MS_CONSUMER_TID}) == ("a@b.co", True)
 
     @pytest.mark.parametrize("claims", [
         {},                              # Microsoft's default: no proof at all
@@ -747,35 +771,6 @@ class TestMicrosoft:
         monkeypatch.setattr(providers, "_transport", httpx.MockTransport(
             lambda r: httpx.Response(401, json={"error": "invalid_client"})))
         assert providers.probe_provider("microsoft") == "auth_failed"
-
-
-# ── Facebook ─────────────────────────────────────────────────────────────────
-
-class TestFacebook:
-    def test_without_an_email_the_person_is_asked_to_use_another_method(
-        self, client, all_on, fake,
-    ):
-        _, p, binding = _start(client, "facebook")
-        fake.fb_me = {"id": f"fb-{uuid4().hex}", "name": "Phone Only"}
-        loc = _callback(client, "facebook", p, binding)
-        assert _error_of(loc) == "oauth_email_missing"
-        assert query_one(
-            "SELECT 1 FROM user_identities WHERE subject = %s", (fake.fb_me["id"],),
-        ) is None
-
-    def test_graph_calls_are_signed_with_appsecret_proof(
-        self, client, all_on, fake, cleanup_emails,
-    ):
-        email = f"fb-{uuid4().hex[:8]}@example.com"
-        cleanup_emails.append(email)
-        _, p, binding = _start(client, "facebook")
-        fake.fb_me = {"id": f"fb-{uuid4().hex}", "name": "Ana Pérez", "email": email}
-        _handoff_code(_callback(client, "facebook", p, binding))
-        me_req = next(r for r in fake.requests if str(r.url).startswith(providers.FACEBOOK_ME_URL))
-        q = parse_qs(urlparse(str(me_req.url)).query)
-        assert q["appsecret_proof"][0] == providers.appsecret_proof("fb-access-token", "fb-app-secret")
-        user = query_one("SELECT * FROM users WHERE email = %s", (email,))
-        assert user is not None and user["full_name"] == "Ana Pérez"
 
 
 # ── Apple ────────────────────────────────────────────────────────────────────

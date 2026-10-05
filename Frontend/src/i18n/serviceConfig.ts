@@ -40,7 +40,6 @@ export type FieldKey =
   | 'contact_whatsapp' | 'contact_email' | 'upgrade_notify_email'
   | 'social_login_enabled' | 'google_oauth_client_id' | 'google_oauth_client_secret'
   | 'microsoft_oauth_client_id' | 'microsoft_oauth_client_secret'
-  | 'facebook_oauth_app_id' | 'facebook_oauth_app_secret'
   | 'apple_oauth_service_id' | 'apple_oauth_team_id' | 'apple_oauth_key_id'
   | 'apple_oauth_private_key'
   | 'inbound_email_domain' | 'inbound_email_secret'
@@ -205,10 +204,10 @@ const es: ServiceConfigCopy = {
       note: 'Un canal vacío se OCULTA en vez de mostrarse roto: un botón que abre un enlace de WhatsApp en blanco es peor que ningún botón. Configura al menos uno.',
     },
     social_login: {
-      name: 'Inicio de sesión con Google, Microsoft, Apple y Facebook',
-      summary: 'Entrar con Google, Microsoft, Apple o Facebook, además de correo y contraseña.',
-      whatBreaks: 'Desaparecen los botones «Continuar con Google / Microsoft / Apple / Facebook» del inicio de sesión y del registro; correo y contraseña siguen funcionando igual. Quien solo entraba con un proveedor debe usar «¿Olvidaste tu contraseña?» para crear una. Viene apagado: una instalación nueva muestra solo el formulario de correo hasta que configuras un proveedor Y enciendes SOCIAL_LOGIN_ENABLED.',
-      note: 'Cada proveedor muestra su botón solo con el interruptor encendido y TODOS sus campos llenos; uno a medias nunca se ofrece. La URL de redirección que pide cada consola sale de FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/oauth/google/callback, <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback, <FRONTEND_URL>/api/v1/auth/oauth/facebook/callback y <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Paso a paso: docs/social-login.md. Una cuenta existente solo se vincula por un correo que el PROVEEDOR verificó; si aquí ese correo nunca se había verificado, se le quita la contraseña al vincular, porque quien la eligió nunca demostró ser dueño del buzón. Microsoft no verifica su campo de correo: solo cuenta como verificado si envía `xms_edov` (agrégalo como reclamación opcional del token de ID en el registro de la app) o `email_verified`; sin eso, Microsoft no puede crear ni vincular una cuenta, solo entrar a una identidad vinculada antes.',
+      name: 'Inicio de sesión con Google, Microsoft y Apple',
+      summary: 'Entrar con Google, Microsoft o Apple, además de correo y contraseña.',
+      whatBreaks: 'Desaparecen los botones «Continuar con Google / Microsoft / Apple» del inicio de sesión y del registro; correo y contraseña siguen funcionando igual. Quien solo entraba con un proveedor debe usar «¿Olvidaste tu contraseña?» para crear una. Viene apagado: una instalación nueva muestra solo el formulario de correo hasta que configuras un proveedor Y enciendes SOCIAL_LOGIN_ENABLED.',
+      note: 'Cada proveedor muestra su botón solo con el interruptor encendido y TODOS sus campos llenos; uno a medias nunca se ofrece. La URL de redirección que pide cada consola sale de FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/oauth/google/callback, <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback y <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Paso a paso: docs/social-login.md. Una cuenta existente solo se vincula por un correo que el PROVEEDOR verificó; si aquí ese correo nunca se había verificado, se le quita la contraseña al vincular, porque quien la eligió nunca demostró ser dueño del buzón. Microsoft no verifica el correo de las cuentas de trabajo o escuela: ahí solo cuenta como verificado si envía `xms_edov` (agrégalo como reclamación opcional del token de ID en el registro de la app) o `email_verified`; las cuentas personales de Microsoft (outlook.com, hotmail.com…) se aceptan porque Microsoft verifica esos correos. Sin esa prueba, Microsoft no puede crear ni vincular una cuenta, solo entrar a una identidad vinculada antes.',
     },
     inbound_email: {
       name: 'Ventas por correo',
@@ -288,10 +287,8 @@ const es: ServiceConfigCopy = {
     social_login_enabled: 'Interruptor general. En false oculta todos los botones sin borrar las credenciales de abajo, para pausar y reanudar la función.',
     google_oauth_client_id: 'ID de cliente OAuth de tipo «Aplicación web» en Google Cloud Console. URI de redirección autorizado: <FRONTEND_URL>/api/v1/auth/oauth/google/callback.',
     google_oauth_client_secret: 'Secreto de ese cliente OAuth de Google. Sin él (o sin el ID) no aparece el botón de Google.',
-    microsoft_oauth_client_id: 'ID de aplicación (cliente) de un registro de app en Microsoft Entra cuyos tipos de cuenta admitidos son «Cuentas en cualquier directorio organizativo y cuentas personales de Microsoft». URI de redirección web: <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback. Agrega la reclamación opcional del token de ID `xms_edov`, o Microsoft no podrá crear ni vincular cuentas.',
+    microsoft_oauth_client_id: 'ID de aplicación (cliente) de un registro de app en Microsoft Entra cuyos tipos de cuenta admitidos son «Cuentas en cualquier directorio organizativo y cuentas personales de Microsoft». URI de redirección web: <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback. Agrega la reclamación opcional del token de ID `xms_edov`, o las cuentas de trabajo y escuela no podrán crear ni vincular cuentas.',
     microsoft_oauth_client_secret: 'VALOR del secreto de cliente (no el ID del secreto) de ese registro de app. Vence (24 meses como máximo): renuévalo antes o el botón de Microsoft empieza a fallar. Sin él (o sin el ID) no aparece el botón de Microsoft.',
-    facebook_oauth_app_id: 'ID de una app de Meta con el producto Inicio de sesión con Facebook. URI de redirección OAuth válido: <FRONTEND_URL>/api/v1/auth/oauth/facebook/callback.',
-    facebook_oauth_app_secret: 'Clave secreta de esa app de Meta. También firma cada llamada a la Graph API (appsecret_proof). Sin ella no aparece el botón de Facebook.',
     apple_oauth_service_id: 'Identificador del SERVICES ID de Sign in with Apple (no el App ID). Return URL: <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Apple solo acepta URLs https.',
     apple_oauth_team_id: 'Team ID de 10 caracteres de Apple Developer; firma el client secret que este servidor genera en cada inicio de sesión con Apple.',
     apple_oauth_key_id: 'Key ID de la llave privada de Sign in with Apple (.p8).',
@@ -453,10 +450,10 @@ const en: ServiceConfigCopy = {
       note: 'An empty channel is HIDDEN rather than shown broken: a button opening a blank WhatsApp link is worse than no button. Configure at least one.',
     },
     social_login: {
-      name: 'Sign in with Google, Microsoft, Apple and Facebook',
-      summary: 'Sign in with Google, Microsoft, Apple or Facebook, next to email + password.',
-      whatBreaks: 'The "Continue with Google / Microsoft / Apple / Facebook" buttons disappear from the login and signup screens; email + password keeps working exactly as before. People who only signed in with a provider must use "Forgot password?" to set one. Off by default: a new install shows only the email form until you configure a provider AND turn SOCIAL_LOGIN_ENABLED on.',
-      note: 'Each provider shows its button only when the switch is on AND every one of its fields is set; a half-filled provider is never offered. The redirect URL each console asks for is built from FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/oauth/google/callback, <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback, <FRONTEND_URL>/api/v1/auth/oauth/facebook/callback and <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Step by step: docs/social-login.md. An existing account is linked only through an email the PROVIDER verified; if that email had never been verified here, its password is removed on linking, because whoever chose it never proved they own the mailbox. Microsoft does not verify its email claim: an address counts as verified only when Microsoft sends `xms_edov` (add it as an optional ID-token claim in the app registration) or `email_verified`; without it Microsoft sign-in cannot create or link an account, only sign in an identity linked earlier.',
+      name: 'Sign in with Google, Microsoft and Apple',
+      summary: 'Sign in with Google, Microsoft or Apple, next to email + password.',
+      whatBreaks: 'The "Continue with Google / Microsoft / Apple" buttons disappear from the login and signup screens; email + password keeps working exactly as before. People who only signed in with a provider must use "Forgot password?" to set one. Off by default: a new install shows only the email form until you configure a provider AND turn SOCIAL_LOGIN_ENABLED on.',
+      note: 'Each provider shows its button only when the switch is on AND every one of its fields is set; a half-filled provider is never offered. The redirect URL each console asks for is built from FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/oauth/google/callback, <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback and <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Step by step: docs/social-login.md. An existing account is linked only through an email the PROVIDER verified; if that email had never been verified here, its password is removed on linking, because whoever chose it never proved they own the mailbox. Microsoft does not verify the email claim of work or school accounts: there an address counts as verified only when Microsoft sends `xms_edov` (add it as an optional ID-token claim in the app registration) or `email_verified`; personal Microsoft accounts (outlook.com, hotmail.com...) are accepted because Microsoft verifies those addresses itself. Without that proof Microsoft sign-in cannot create or link an account, only sign in an identity linked earlier.',
     },
     inbound_email: {
       name: 'Sales by e-mail',
@@ -536,10 +533,8 @@ const en: ServiceConfigCopy = {
     social_login_enabled: 'Master switch. False hides every social button without deleting the credentials below, so the feature can be paused and resumed.',
     google_oauth_client_id: 'OAuth client ID of a "Web application" client in Google Cloud Console. Authorized redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/google/callback.',
     google_oauth_client_secret: 'Client secret of that Google OAuth client. Without it (or the ID) the Google button is not shown.',
-    microsoft_oauth_client_id: 'Application (client) ID of a Microsoft Entra app registration whose supported account types are "Accounts in any organizational directory and personal Microsoft accounts". Web redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback. Add the optional ID-token claim `xms_edov`, or Microsoft sign-in cannot create or link accounts.',
+    microsoft_oauth_client_id: 'Application (client) ID of a Microsoft Entra app registration whose supported account types are "Accounts in any organizational directory and personal Microsoft accounts". Web redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/microsoft/callback. Add the optional ID-token claim `xms_edov`, or work and school accounts cannot create or link accounts.',
     microsoft_oauth_client_secret: 'Client secret VALUE (not the secret ID) of that app registration. It expires (24 months at most): renew it before then or the Microsoft button starts failing. Without it (or the ID) the Microsoft button is not shown.',
-    facebook_oauth_app_id: 'App ID of a Meta app with the Facebook Login product. Valid OAuth redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/facebook/callback.',
-    facebook_oauth_app_secret: 'App secret of that Meta app. Also signs every Graph API call (appsecret_proof). Without it the Facebook button is not shown.',
     apple_oauth_service_id: 'Identifier of the Sign in with Apple SERVICES ID (not the App ID). Return URL: <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Apple only accepts https URLs.',
     apple_oauth_team_id: '10-character Apple Developer Team ID; the issuer of the client secret this server signs for every Apple sign-in.',
     apple_oauth_key_id: 'Key ID of the Sign in with Apple private key (.p8).',

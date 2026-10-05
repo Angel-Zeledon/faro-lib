@@ -1,6 +1,6 @@
 'use client'
 /**
- * Landing page after a Google / Microsoft / Apple / Facebook sign-in.
+ * Landing page after a Google / Microsoft / Apple sign-in.
  *
  * The backend redirects here with `#code=<one-time code>` — a fragment, so it
  * never reaches a server log — and this page trades it for the session with a

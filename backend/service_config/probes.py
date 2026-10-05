@@ -284,8 +284,7 @@ def probe_social_login(tenant_id: str | None = None) -> ProbeResult:
 
     Google, Microsoft and Apple get a deliberately bogus authorization code: a known
     client is answered `invalid_grant`, an unknown one `invalid_client`.
-    Facebook issues an app access token for a correct id/secret pair. Nobody
-    is signed in and nothing is sent to anyone. `extra.providers` carries the
+    Nobody is signed in and nothing is sent to anyone. `extra.providers` carries the
     per-provider verdict; the service is `ok` only if every configured one is.
     """
     from backend.auth.social import providers as social

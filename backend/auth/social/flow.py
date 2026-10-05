@@ -267,7 +267,7 @@ def resolve_account(identity: Identity, *, terms_accepted: bool) -> Resolution:
         return Resolution(existing, False, False, False)
 
     if not identity.email:
-        # Facebook accounts registered with a phone number have no address.
+        # Work/school Microsoft accounts often carry no `email` claim.
         raise SocialAuthError(
             "oauth_email_missing", f"{identity.provider} returned no email address",
         )

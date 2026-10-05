@@ -585,13 +585,12 @@ SOCIAL_LOGIN = Service(
     requires_any=(
         ("google_oauth_client_id", "google_oauth_client_secret"),
         ("microsoft_oauth_client_id", "microsoft_oauth_client_secret"),
-        ("facebook_oauth_app_id", "facebook_oauth_app_secret"),
         ("apple_oauth_service_id", "apple_oauth_team_id",
          "apple_oauth_key_id", "apple_oauth_private_key"),
     ),
-    summary="Sign in with Google, Microsoft, Apple or Facebook, next to email + password.",
+    summary="Sign in with Google, Microsoft or Apple, next to email + password.",
     what_breaks=(
-        "The 'Continue with Google / Microsoft / Apple / Facebook' buttons disappear from "
+        "The 'Continue with Google / Microsoft / Apple' buttons disappear from "
         "the login and signup screens; email + password keeps working exactly "
         "as before. People who only ever signed in with a provider must use "
         "'forgot password' to set one. Off by default — a source install shows "
@@ -605,17 +604,19 @@ SOCIAL_LOGIN = Service(
         "which is built from FRONTEND_URL:\n\n"
         f"    {_CALLBACK.format(provider='google')}\n"
         f"    {_CALLBACK.format(provider='microsoft')}\n"
-        f"    {_CALLBACK.format(provider='facebook')}\n"
         f"    {_CALLBACK.format(provider='apple')}\n\n"
         "Step-by-step console instructions: `docs/social-login.md`. An existing "
         "account is linked only through an email address the PROVIDER says it "
         "verified; when the local account had never verified that address, its "
         "password is removed on linking, because whoever chose it never proved "
-        "they own the mailbox. Microsoft does not verify its `email` claim, so "
-        "an address counts as verified only when Microsoft sends `xms_edov` "
-        "(add it as an optional ID-token claim in the app registration) or "
-        "`email_verified`; without it Microsoft sign-in cannot create or link "
-        "an account, only sign in an identity linked earlier."
+        "they own the mailbox. Microsoft does not verify the `email` claim of "
+        "work or school accounts, so there an address counts as verified only "
+        "when Microsoft sends `xms_edov` (add it as an optional ID-token claim "
+        "in the app registration) or `email_verified`; personal Microsoft "
+        "accounts (outlook.com, hotmail.com, ...) are accepted because "
+        "Microsoft verifies those addresses itself. Without that proof a "
+        "Microsoft sign-in cannot create or link an account, only sign in an "
+        "identity linked earlier."
     ),
     fields=(
         ConfigField(
@@ -644,8 +645,8 @@ SOCIAL_LOGIN = Service(
                 "whose supported account types are 'Accounts in any "
                 "organizational directory and personal Microsoft accounts'. "
                 "Web redirect URI: " + _CALLBACK.format(provider="microsoft")
-                + ". Add the optional ID-token claim `xms_edov`, or Microsoft "
-                "sign-in cannot create or link accounts.",
+                + ". Add the optional ID-token claim `xms_edov`, or work and "
+                "school accounts cannot create or link accounts.",
             example="00000000-0000-0000-0000-000000000000",
         ),
         ConfigField(
@@ -656,19 +657,6 @@ SOCIAL_LOGIN = Service(
                 "then or the Microsoft button starts failing. Without it (or "
                 "the ID) the Microsoft button is not shown.",
             example="abc8Q~...",
-        ),
-        ConfigField(
-            key="facebook_oauth_app_id", env="FACEBOOK_OAUTH_APP_ID",
-            doc="App ID of a Meta app with the Facebook Login product. Valid "
-                "OAuth redirect URI: " + _CALLBACK.format(provider="facebook") + ".",
-            example="123456789012345",
-        ),
-        ConfigField(
-            key="facebook_oauth_app_secret", env="FACEBOOK_OAUTH_APP_SECRET",
-            secret=True,
-            doc="App secret of that Meta app. Also signs every Graph API call "
-                "(appsecret_proof). Without it the Facebook button is not shown.",
-            example="0123456789abcdef0123456789abcdef",
         ),
         ConfigField(
             key="apple_oauth_service_id", env="APPLE_OAUTH_SERVICE_ID",
