@@ -47,6 +47,12 @@ def _row(tid, sid, sku):
     return {i["sku"]: i for i in inv_svc.get_inventory_status(tid, sid)}[sku]
 
 
+def _listed(tid, sid, sku):
+    """The status lists only SKUs forecast in the session (or with a commitment or
+    an analogy that can serve them): a stock-only product is not a row at all."""
+    return sku in {i["sku"] for i in inv_svc.get_inventory_status(tid, sid)}
+
+
 class TestAnalogyApi:
 
     def test_permission_pair_and_the_stored_row(self, client, viewer_headers, analyst_headers,
@@ -142,7 +148,9 @@ class TestStatusRow:
         inv_svc.upsert_stock(tid, ref, {"current_stock": 50.0, "lead_time_days": 20, "moq": 1.0})
         sid = _session(tid, {ref: _forecast(10.0)})
         row = _row(tid, sid, ref)
-        assert row["recommended_qty"] == 150.0
+        # 10/day * 20 days - 50 on hand = 150, plus the safety stock this fixture's
+        # q90 band (1.2x) yields: ceil(150 + 1.645 * sqrt(20) * 2/1.2816) = 162.
+        assert row["recommended_qty"] == 162.0
         assert row["forecast_source"] == "trained" and row["low_confidence"] is False
         assert row["analogy_applied"] == [] and row["analogy_retired"] is None
 
@@ -154,7 +162,7 @@ class TestStatusRow:
         inv_svc.upsert_stock(tid, new, {"current_stock": 50.0, "lead_time_days": 20, "moq": 1.0})
         sid = _session(tid, {ref_a: _forecast(10.0), ref_b: _forecast(20.0)})
         before = _row(tid, sid, ref_a)["recommended_qty"]
-        assert {i["sku"]: i for i in inv_svc.get_inventory_status(tid, sid)}[new]["signal"] == "SIN_DATOS"
+        assert not _listed(tid, sid, new)       # stock-only, no forecast, no analogy: no row
 
         a = svc.create(tid, "u1", new_sku=new, reference_skus=[ref_a, ref_b], scale_factor=2.0)
         row = _row(tid, sid, new)
@@ -179,9 +187,7 @@ class TestStatusRow:
         a = svc.create(tid, "u1", new_sku=new, reference_skus=[ref])
         assert _row(tid, sid, new)["forecast_source"] == "analogy"
         svc.revert(tid, a["id"], "u1")
-        row = _row(tid, sid, new)
-        assert row["signal"] == "SIN_DATOS" and row["forecast_source"] is None
-        assert row["analogy_applied"] == []
+        assert not _listed(tid, sid, new)       # back to no row, never a guessed number
 
     def test_references_without_forecast_are_named_and_the_row_stays_sin_datos(self, test_tenant):
         tid = test_tenant["id"]
@@ -231,8 +237,7 @@ class TestStatusRow:
         inv_svc.upsert_stock(tid, new, {"current_stock": 50.0, "lead_time_days": 20, "moq": 1.0})
         sid = _session(tid, {ref: _forecast(10.0)})
         svc.create(other_tid, "u1", new_sku=new, reference_skus=[ref])
-        row = _row(tid, sid, new)
-        assert row["signal"] == "SIN_DATOS" and row["forecast_source"] is None
+        assert not _listed(tid, sid, new)       # the other tenant's analogy planned nothing
 
 
 class TestTenantErasureAndExport:

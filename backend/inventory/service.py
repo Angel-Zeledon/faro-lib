@@ -2860,7 +2860,13 @@ def get_inventory_status_by_warehouse(
                 model_forecasts = sku_forecasts.get(sku, {})
                 share = shares.get(wh, 0.0)
             # Pairs with neither stock nor demand don't exist for this tenant.
-            if stock is None and (not model_forecasts or share == 0.0):
+            # A commitment that NAMES this warehouse keeps the pair alive: the
+            # customer order is real even where nobody records stock or demand
+            # (otherwise it vanished from the only view that names the warehouse).
+            _named_here = any(
+                c.get("warehouse_id") and c.get("warehouse_id") == wh_id_by_name.get(wh)
+                for c in committed_by_sku.get(sku, ()))
+            if stock is None and (not model_forecasts or share == 0.0) and not _named_here:
                 continue
 
             # Identical resolution to the aggregated view (see the primary map
