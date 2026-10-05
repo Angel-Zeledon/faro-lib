@@ -78,6 +78,10 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("schedule_runs", "schedule_runs", "*"),
     ("session_manifests", "session_manifests", "*"),
     ("session_accuracy_tracking", "session_accuracy_tracking", "*"),
+    # The address token is a credential: only who may send, never the token.
+    ("inbound_email_addresses", "inbound_email_addresses",
+     "tenant_id, allowed_senders, created_at, rotated_at"),
+    ("inbound_email_messages", "inbound_email_messages", "*"),
     # key_hash / secret are never exported — only metadata about the key/hook.
     ("api_keys", "api_keys", "id, tenant_id, name, last_used, created_at"),
     # Calls per key per day: what a call-based bill is computed from.
@@ -184,6 +188,8 @@ _DELETE_ORDER: list[str] = [
     "schedule_runs",
     "session_manifests",
     "session_accuracy_tracking",
+    "inbound_email_messages",
+    "inbound_email_addresses",
     "webhooks",
     "api_usage_daily",
     "api_keys",

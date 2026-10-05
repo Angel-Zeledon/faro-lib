@@ -213,6 +213,12 @@ class Settings(BaseSettings):
     apple_oauth_key_id: str = ""
     apple_oauth_private_key: str = ""
 
+    # Sales by e-mail (backend/inbound_email/). OFF until BOTH are set: the domain
+    # the per-tenant addresses live on, and the shared secret the mail provider's
+    # webhook is authenticated with. Environment only (see the registry).
+    inbound_email_domain: str = ""
+    inbound_email_secret: str = ""
+
     # Fernet key for every secret `/instalacion` stores. The name is
     # historical — renaming it would orphan every deployment's stored secrets.
     integrations_secret_key: str = ""

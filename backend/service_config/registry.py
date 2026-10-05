@@ -675,6 +675,44 @@ SOCIAL_LOGIN = Service(
 )
 
 
+INBOUND_EMAIL = Service(
+    key="inbound_email",
+    kind="deployment",
+    editable=False,
+    summary="Receive sales files forwarded by e-mail to a private per-account address.",
+    what_breaks=(
+        "The 'Sales by e-mail' card says this installation cannot receive e-mail "
+        "yet, and POST /api/v1/inbound/email answers a structured "
+        "`inbound_email_disabled` error. Everything else keeps working: files are "
+        "still uploaded by hand."
+    ),
+    docs_note=(
+        "Needs a mail provider that can forward inbound mail to a webhook "
+        "(Postmark, Mailgun, Resend or any relay) and an MX record for the "
+        "inbound domain. The webhook is authenticated by INBOUND_EMAIL_SECRET: "
+        "either an `X-StockAI-Signature` HMAC header or HTTP Basic auth whose "
+        "password is the secret. Step by step: `docs/inbound-email.md`."
+    ),
+    fields=(
+        ConfigField(
+            key="inbound_email_domain", env="INBOUND_EMAIL_DOMAIN",
+            required=True, editable=False,
+            doc="Domain the per-account addresses live on (sales+<token>@<domain>). "
+                "Its MX record must point at your inbound mail provider.",
+            example="in.example.com",
+        ),
+        ConfigField(
+            key="inbound_email_secret", env="INBOUND_EMAIL_SECRET",
+            required=True, secret=True, editable=False,
+            doc="Shared secret that authenticates the provider's webhook calls. "
+                "Use a long random string; changing it requires updating the "
+                "provider's webhook settings too.",
+            example="change-me-to-a-long-random-string",
+        ),
+    ),
+)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Deployment — reported, never editable from the panel. These decide the shape
 # of the deployment, and a running process cannot change its own shape.
@@ -828,6 +866,7 @@ SERVICES: tuple[Service, ...] = (
     SECRET_STORAGE,
     CONTACT,
     SOCIAL_LOGIN,
+    INBOUND_EMAIL,
     WORKER,
     LIMITS,
     API_SURFACE,

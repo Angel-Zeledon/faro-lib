@@ -78,6 +78,11 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("DELETE", "/inventory/signal-thresholds"):     _r("config.changed", "setting"),
     ("PUT", "/service-config/tenant/services/{service_key}"):    _r("config.changed", "setting", "service_key"),
     ("DELETE", "/service-config/tenant/services/{service_key}"): _r("config.changed", "setting", "service_key"),
+    # sales received by e-mail: the webhook writes its own row (the actor is the
+    # system, not a signed-in person); the two admin actions go through here.
+    ("POST", "/inbound/email"):                     _r("inbound_email.received", "dataset"),
+    ("POST", "/inbound-email/regenerate"):          _r("inbound_email.address_regenerated", "inbound_email"),
+    ("PUT", "/inbound-email/senders"):              _r("inbound_email.senders_changed", "inbound_email"),
     # integrations a person wires up
     ("POST", "/webhooks"):                          _r("webhook.created", "webhook"),
     ("DELETE", "/webhooks/{webhook_id}"):           _r("webhook.deleted", "webhook", "webhook_id"),

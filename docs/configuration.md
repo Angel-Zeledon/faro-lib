@@ -225,6 +225,21 @@ Step-by-step console instructions: `docs/social-login.md`. An existing account i
 
 Writable from the panel: `SOCIAL_LOGIN_ENABLED`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `FACEBOOK_OAUTH_APP_ID`, `FACEBOOK_OAUTH_APP_SECRET`, `APPLE_OAUTH_SERVICE_ID`, `APPLE_OAUTH_TEAM_ID`, `APPLE_OAUTH_KEY_ID`, `APPLE_OAUTH_PRIVATE_KEY`.
 
+## `inbound_email` - Receive sales files forwarded by e-mail to a private per-account address.
+
+*Kind:* deployment. *Editable from the panel:* no. *Per tenant:* no. *Connection test:* no.
+
+**What is lost without it:** The 'Sales by e-mail' card says this installation cannot receive e-mail yet, and POST /api/v1/inbound/email answers a structured `inbound_email_disabled` error. Everything else keeps working: files are still uploaded by hand.
+
+**Minimum to turn it on:** `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_SECRET`
+
+Needs a mail provider that can forward inbound mail to a webhook (Postmark, Mailgun, Resend or any relay) and an MX record for the inbound domain. The webhook is authenticated by INBOUND_EMAIL_SECRET: either an `X-StockAI-Signature` HMAC header or HTTP Basic auth whose password is the secret. Step by step: `docs/inbound-email.md`.
+
+| Variable | Default | Notes | What it does |
+|---|---|---|---|
+| `INBOUND_EMAIL_DOMAIN` | - | required, environment only | Domain the per-account addresses live on (sales+<token>@<domain>). Its MX record must point at your inbound mail provider. |
+| `INBOUND_EMAIL_SECRET` | - | required, secret, environment only | Shared secret that authenticates the provider's webhook calls. Use a long random string; changing it requires updating the provider's webhook settings too. |
+
 ## `worker` - Background training worker and the scheduled-job loops.
 
 *Kind:* deployment. *Editable from the panel:* no. *Per tenant:* no. *Connection test:* no.
