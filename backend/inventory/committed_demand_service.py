@@ -332,3 +332,223 @@ def extra_rate(units: float, protection_periods: float) -> float:
     if units <= 0 or protection_periods <= 0:
         return 0.0
     return units / float(protection_periods)
+
+
+# ── A commitment on a SKU with no forecast or no stock row ───────────────────
+
+def cover_without_forecast(commitments: Optional[list[dict]], today: date,
+                           lead_time_days: float, review_period_days: float,
+                           stock: Optional[float], incoming: float,
+                           moq: float = 1.0, warehouse_id: Optional[str] = None,
+                           share: float = 1.0) -> dict:
+    """What a SKU's open commitments need when the statistical forecast (or the
+    stock row) is missing, so the semaphore branch cannot run.
+
+    No forecast is invented: only the committed units inside the protection
+    interval are compared with what is on hand plus on its way, earliest date
+    first (the same allocation `allocate_risk` uses).
+
+    Returns `units`, `applied` (the `committed_units` entries), `shortfall`,
+    `signal` and `recommended`. `signal` is None when nothing needs ordering (the
+    caller keeps its own signal), `PEDIR_YA` when the first commitment the stock
+    cannot cover is due before a new order could arrive (inside the lead time or
+    already overdue), `PEDIR_PRONTO` otherwise. `stock_unknown` is true when no
+    stock figure exists: it is then counted as zero for the signal, but no
+    quantity is recommended, because how much to buy is a function of how much is
+    left and nobody told us.
+    """
+    window = float(lead_time_days) + max(0.0, float(review_period_days or 0.0))
+    units, applied = committed_units(commitments, today, window, warehouse_id, share)
+    out = {"units": round(units, 2), "applied": applied, "shortfall": 0.0,
+           "signal": None, "recommended": None, "stock_unknown": stock is None}
+    if units <= 0:
+        return out
+    available = max(0.0, float(stock or 0.0)) + max(0.0, float(incoming or 0.0))
+    shortfall = max(0.0, units - available)
+    if shortfall <= 1e-9:
+        return out
+    out["shortfall"] = round(shortfall, 2)
+    cutoff = today + timedelta(days=float(lead_time_days))
+    running, urgent = 0.0, False
+    for a in sorted(applied, key=lambda e: e["delivery_date"]):
+        running += a["units"]
+        if running > available + 1e-9:
+            urgent = date.fromisoformat(a["delivery_date"]) < cutoff
+            break
+    out["signal"] = "PEDIR_YA" if urgent else "PEDIR_PRONTO"
+    if stock is not None:
+        out["recommended"] = float(math.ceil(max(shortfall, float(moq or 0.0))))
+    return out
+
+
+def demand_buckets_by_warehouse(commitments: Optional[list[dict]], today: date,
+                                horizon_days: float, days_per_period: float,
+                                horizon_buckets: int, warehouses: list[str],
+                                shares: Optional[dict[str, float]],
+                                default_warehouse: str,
+                                warehouse_ids: Optional[dict[str, str]] = None,
+                                ) -> dict[str, list[float]]:
+    """Committed units laid into the optimizer's buckets, per warehouse.
+
+    Reuses `committed_units` for every rule about WHAT counts (window, scope,
+    probability, overdue), so the optimizer and the Panel cannot disagree. A
+    commitment lands in the bucket of its delivery date (overdue ones in bucket
+    0). `shares` is the demand split by warehouse; None means the forecast is
+    store-keyed, where an unassigned commitment goes to `default_warehouse`
+    instead of being repeated in every store. `warehouse_ids` maps a warehouse
+    NAME (what the optimizer works in) to the ID a commitment names it by.
+    """
+    out: dict[str, list[float]] = {}
+    if not commitments or horizon_buckets <= 0:
+        return out
+    today_ord = today.toordinal()
+
+    def _lay(wh: str, entries: list[dict]) -> None:
+        series = out.setdefault(wh, [0.0] * horizon_buckets)
+        for e in entries:
+            days = date.fromisoformat(e["delivery_date"]).toordinal() - today_ord
+            idx = max(0, int(days // days_per_period))
+            series[min(idx, horizon_buckets - 1)] += e["units"]
+
+    taken: set = set()
+    for wh in warehouses:
+        _, entries = committed_units(
+            commitments, today, horizon_days,
+            warehouse_id=(warehouse_ids or {}).get(wh, wh),
+            share=(shares or {}).get(wh, 0.0) if shares is not None else 0.0)
+        taken.update(e["commitment_id"] for e in entries if e["scope"] == "warehouse")
+        _lay(wh, entries)
+    if shares is None and default_warehouse in warehouses:
+        # Store mode: what no warehouse claimed and no store carries.
+        _, company = committed_units(commitments, today, horizon_days)
+        _lay(default_warehouse,
+             [e for e in company if e["scope"] == "company" and e["commitment_id"] not in taken])
+    return out
+
+
+# ── Commitments at risk ──────────────────────────────────────────────────────
+
+def allocate_risk(commitments: list[dict], stock: Optional[float],
+                  arrivals: list[tuple[Optional[date], float]],
+                  lead_time_days: float, today: date) -> dict:
+    """Which of one SKU's open commitments the supply on hand will not cover.
+
+    `commitments`: the SKU's open commitments (`id`, `delivery_date` as a date,
+    `quantity`, `probability`). `arrivals`: units on their way as (date, units);
+    a date of None counts as already available. Supply at a delivery date is
+    stock + every arrival up to that date. Allocation is earliest date first:
+    commitment i is short by `min(units_i, max(0, cumulative demand through i -
+    supply at its date))`. A commitment already overdue is judged as of today.
+
+    Units are `quantity x probability`, the same expected units the purchase
+    recommendation plans on. It is a COMPANY-wide check: stock and arrivals are
+    summed across warehouses and a commitment's warehouse is ignored.
+
+    With `stock` None (no stock row) nothing can be said: every entry is
+    `{"at_risk": None, ...}` rather than a guess.
+
+    Returns {commitment_id: {at_risk, shortfall, covered_units,
+    latest_safe_order_date, order_date_passed}}.
+    """
+    out: dict = {}
+    ordered = sorted(commitments, key=lambda c: c["delivery_date"])
+    if stock is None:
+        for c in ordered:
+            out[c["id"]] = {"at_risk": None, "shortfall": None, "covered_units": None,
+                            "latest_safe_order_date": None, "order_date_passed": None}
+        return out
+    base = max(0.0, float(stock))
+    cumulative = 0.0
+    lead = int(math.ceil(max(0.0, float(lead_time_days))))
+    for c in ordered:
+        units = float(c["quantity"]) * float(c["probability"])
+        cumulative += units
+        as_of = max(c["delivery_date"], today)
+        supply = base + sum(max(0.0, float(q)) for d, q in arrivals if d is None or d <= as_of)
+        short = min(units, max(0.0, cumulative - supply))
+        at_risk = short > 1e-9
+        safe = c["delivery_date"] - timedelta(days=lead)
+        out[c["id"]] = {
+            "at_risk": at_risk,
+            "shortfall": round(short, 2) if at_risk else 0.0,
+            "covered_units": round(units - short, 2),
+            "latest_safe_order_date": safe.isoformat() if at_risk else None,
+            "order_date_passed": (safe < today) if at_risk else False,
+        }
+    return out
+
+
+def summarize_by_customer(items: list[dict]) -> list[dict]:
+    """One line per customer over the OPEN items: how many commitments, how many
+    at risk, how many with no verdict (no stock row), units short and the
+    earliest safe order date among the at-risk ones. Customers with nothing at
+    risk are kept so a buyer sees who is fully covered; items with no customer
+    group under None."""
+    groups: dict = {}
+    for it in items:
+        if it.get("status") != "open":
+            continue
+        g = groups.setdefault(it.get("customer") or None, {
+            "customer": it.get("customer") or None, "open": 0, "at_risk": 0,
+            "unknown": 0, "shortfall": 0.0, "first_safe_order_date": None})
+        g["open"] += 1
+        if it.get("at_risk") is None:
+            g["unknown"] += 1
+        elif it["at_risk"]:
+            g["at_risk"] += 1
+            g["shortfall"] = round(g["shortfall"] + float(it.get("shortfall") or 0), 2)
+            safe = it.get("latest_safe_order_date")
+            if safe and (g["first_safe_order_date"] is None or safe < g["first_safe_order_date"]):
+                g["first_safe_order_date"] = safe
+    return sorted(groups.values(), key=lambda g: (-g["at_risk"], -g["shortfall"],
+                                                  g["customer"] or "~"))
+
+
+def annotate_risk(tenant_id: str, items: list[dict]) -> list[dict]:
+    """Add the risk verdict to `list_for_tenant` items, in place. Only OPEN items
+    get one; closed ones carry `at_risk: None`. Reads stock, open purchase
+    orders / transfers and the lead-time cascade ONCE for the tenant (the same
+    resolvers the Panel and /planning use), never per SKU.
+
+    Arrival dates: an open purchase order carries no promised date in this
+    product, so it is assumed to land within the SKU's lead time from today (it
+    was already placed, so that is the latest it should arrive); a transfer in
+    transit counts as available now.
+    """
+    for i in items:
+        i.update({"at_risk": None, "shortfall": None, "covered_units": None,
+                  "latest_safe_order_date": None, "order_date_passed": None})
+    open_items = [i for i in items if i.get("status") == "open"]
+    if not open_items:
+        return items
+    from backend.inventory.defaults import DEFAULT_LEAD_TIME_DAYS
+    from backend.inventory.optimizer_service import resolve_planning_inputs
+    from backend.inventory.service import get_incoming_detail, list_stock
+
+    today = date.today()
+    stock_rows = list_stock(tenant_id)
+    stock: dict[str, float] = {}
+    for r in stock_rows:
+        if r.get("sku") and r.get("current_stock") is not None:
+            stock[r["sku"]] = stock.get(r["sku"], 0.0) + float(r["current_stock"])
+    planning = resolve_planning_inputs(tenant_id, stock_rows)
+    incoming: dict[str, list[dict]] = {}
+    for d in get_incoming_detail(tenant_id):
+        incoming.setdefault(d["sku"], []).append(d)
+
+    by_sku: dict[str, list[dict]] = {}
+    for i in open_items:
+        by_sku.setdefault(i["sku"], []).append(i)
+    for sku, rows in by_sku.items():
+        lead = float((planning.get(sku) or {}).get("lead_time_days") or DEFAULT_LEAD_TIME_DAYS)
+        arrivals = [
+            (today + timedelta(days=int(math.ceil(lead))) if d["kind"] == "po" else None,
+             float(d["qty"]))
+            for d in incoming.get(sku, [])]
+        verdicts = allocate_risk(
+            [{"id": r["id"], "delivery_date": date.fromisoformat(r["delivery_date"]),
+              "quantity": r["quantity"], "probability": r["probability"]} for r in rows],
+            stock.get(sku), arrivals, lead, today)
+        for r in rows:
+            r.update(verdicts[r["id"]])
+    return items

@@ -21,6 +21,7 @@ from backend.inventory.defaults import (
     SOURCE_LEARNED,
     SOURCE_USER,
 )
+from backend.inventory import abc_xyz as _abc_xyz
 from backend.inventory import signal_thresholds as _sig_th
 
 log = logging.getLogger(__name__)
@@ -1106,49 +1107,21 @@ def tenant_wide_daily_levels(
 # ── ABC-XYZ classification ────────────────────────────────────────────────────
 
 def _classify_xyz(cv: Optional[float]) -> str:
-    """
-    X = low variability (predictable), Y = moderate, Z = high (erratic).
-    Uses coefficient of variation from the series analysis.
-    """
-    if cv is None:
-        return "?"
-    if cv < 0.5:
-        return "X"
-    if cv < 1.0:
-        return "Y"
-    return "Z"
+    """X = predictable, Y = moderate, Z = erratic — from the engine's per-series
+    CV. The cut-offs live in `abc_xyz.py`, the one definition."""
+    return _abc_xyz.classify_xyz(cv)
 
 
 def _classify_abc(items: list[dict]) -> dict[str, str]:
+    """A = top 80% cumulative value, B = next 15%, C = rest.
+
+    Value proxy = daily_demand * unit_cost (or just daily_demand if no cost).
+    The math is `abc_xyz.classify_abc`, pure and tested on its own.
     """
-    A = top 80% cumulative revenue proxy, B = next 15%, C = rest.
-    Revenue proxy = daily_demand * unit_cost (or just daily_demand if no cost).
-    """
-    scored = []
-    for item in items:
-        demand = item.get("daily_demand") or 0.0
-        cost   = item.get("unit_cost") or 1.0
-        scored.append((item["sku"], demand * cost))
-
-    scored.sort(key=lambda x: x[1], reverse=True)
-    total = sum(v for _, v in scored)
-
-    if total == 0:
-        return {sku: "C" for sku, _ in scored}
-
-    result: dict[str, str] = {}
-    cumulative = 0.0
-    for sku, val in scored:
-        # Assign tier based on cumulative BEFORE adding this item,
-        # so a single dominant SKU (e.g. 99% revenue) gets classified as A not C.
-        if cumulative < 0.80:
-            result[sku] = "A"
-        elif cumulative < 0.95:
-            result[sku] = "B"
-        else:
-            result[sku] = "C"
-        cumulative += val / total
-    return result
+    return _abc_xyz.classify_abc(
+        (item["sku"], (item.get("daily_demand") or 0.0) * (item.get("unit_cost") or 1.0))
+        for item in items
+    )
 
 
 # ── Signal calculation ────────────────────────────────────────────────────────
@@ -2113,7 +2086,38 @@ def _compute_inventory_status(
     # SKUs to display — only of the stock fields to enrich a SKU already present
     # in the active session's forecasts. Otherwise, stale/unrelated SKUs from
     # past sessions leak into sessions that never uploaded them.
-    all_skus = sorted(forecasts.keys())
+    # A SKU with an open commitment is listed even with no forecast of its own
+    # (a new product a customer already ordered): it never reached the loop, so
+    # the commitment was invisible. No forecast is invented for it below.
+    from backend.inventory import committed_demand_service as _cd_all
+    _committed_skus = _cd_all.active_by_sku(tenant_id)
+    all_skus = sorted(set(forecasts.keys()) | set(_committed_skus.keys()))
+
+    # Forecast by analogy: a product the engine could not train (too little
+    # history) can be planned from the products a person said it sells like.
+    # Empty for a tenant that defined none, which leaves every row as it was.
+    # A failure here must not take the status screen down, but it is logged and
+    # the products stay SIN_DATOS exactly as before (never a guessed number).
+    analogy_serving: dict = {}
+    analogy_retired: dict = {}
+    analogy_unavailable: dict = {}
+    try:
+        from backend.inventory import analogy_service as _an_svc
+        _analogies = _an_svc.active_by_sku(tenant_id)
+        if _analogies:
+            analogy_serving, analogy_retired, analogy_unavailable = \
+                _an_svc.plan_analogies(_analogies, forecasts, best_model)
+            if analogy_retired and signal_threshold_patch is None:
+                # First time the trained model is seen to have taken over: say
+                # so on the ledger, once.
+                _an_svc.mark_superseded(
+                    tenant_id,
+                    [a["id"] for a in analogy_retired.values() if not a.get("superseded_at")],
+                    session_id)
+            all_skus = sorted(set(all_skus) | set(analogy_serving) | set(analogy_unavailable))
+    except Exception:
+        log.exception("forecast by analogy skipped for tenant=%s", tenant_id)
+        analogy_serving, analogy_retired, analogy_unavailable = {}, {}, {}
 
     # Real lead times learned from recorded receptions, one query for the whole
     # tenant (never per SKU inside the loop).
@@ -2191,7 +2195,7 @@ def _compute_inventory_status(
     # are added on top of the forecast and named on the row. Empty for a tenant
     # that recorded none, which leaves every number below exactly as it was.
     from backend.inventory import committed_demand_service as _cd_svc
-    committed_by_sku = _cd_svc.active_by_sku(tenant_id)
+    committed_by_sku = _committed_skus
 
     # Per-SKU views of the incoming maps, built ONCE. The loop used to scan
     # every (sku, warehouse) key for every SKU — quadratic in the catalogue.
@@ -2218,6 +2222,15 @@ def _compute_inventory_status(
     for sku in all_skus:
         stock = stock_map.get(sku)
         model_forecasts = forecasts.get(sku, {})
+        # Where this row's demand comes from. A trained model, or - only while
+        # there is none - the analogy a person defined (never presented as a
+        # trained forecast: the row says so and is low confidence).
+        forecast_source = "trained" if model_forecasts else None
+        analogy_applied: list[dict] = []
+        if not model_forecasts and sku in analogy_serving:
+            model_forecasts = analogy_serving[sku]["model_forecasts"]
+            forecast_source = "analogy"
+            analogy_applied = [analogy_serving[sku]["applied"]]
 
         primary           = primary_suppliers.get(sku) or {}
         supplier          = (stock.get("supplier") if stock else None) or primary.get("supplier_name")
@@ -2246,8 +2259,16 @@ def _compute_inventory_status(
 
         has_forecast = bool(model_forecasts)
         has_stock    = stock is not None and current_stock is not None
+        analogy_note = analogy_unavailable.get(sku)
+        if analogy_applied and not has_stock:
+            # The semaphore cannot run without a stock figure, so the analogy
+            # moved nothing on this row: say so instead of claiming it applied.
+            analogy_note = {"analogy_id": analogy_applied[0]["analogy_id"],
+                            "references_missing": [], "reason": "no_stock"}
+            analogy_applied, forecast_source = [], None
         adjustments_applied: list[dict] = []
         committed_applied: list[dict] = []
+        committed_only: Optional[dict] = None
 
         _sl_val, service_level_source, service_level_rule_scope = _sd_svc.resolve_field(
             "service_level", stock, rule_index, supplier=supplier, category=category,
@@ -2426,6 +2447,9 @@ def _compute_inventory_status(
                 # Customer orders placed ahead of time that moved this number:
                 # who, when, how many units. Empty when none apply.
                 "committed_applied": committed_applied,
+                # An analogy stood in for the model: named here so the
+                # breakdown never reads as a trained forecast. Empty otherwise.
+                "analogy_applied": analogy_applied,
             }
             if recommended <= 0:
                 # Enough stock: keep the numbers (the what-if simulator needs
@@ -2463,6 +2487,20 @@ def _compute_inventory_status(
             calc_explanation = None
             reorder_point = None
             explanation_obj = None
+            # No forecast or no stock row: the semaphore cannot run, but a
+            # commitment must not vanish with it. Show its units and, when the
+            # stock plus incoming does not cover it, say an order is needed.
+            # No forecast is invented (see committed_demand_service).
+            if committed_by_sku.get(sku):
+                _cover = _cd_svc.cover_without_forecast(
+                    committed_by_sku[sku], today, lead_time,
+                    _resolve_review_period_days(supplier, review_period_map),
+                    current_stock if has_stock else None, sku_incoming, moq)
+                committed_applied = _cover["applied"]
+                committed_only = _cover
+                if _cover["signal"]:
+                    signal = _cover["signal"]
+                    recommended = _cover["recommended"]
 
         # Recent stock history (last 14 days, at most 10 points for sparkline)
         history: list[dict] = history_by_sku.get(sku, [])[-10:] if has_stock else []
@@ -2561,6 +2599,20 @@ def _compute_inventory_status(
             "recommended_qty": recommended,
             "adjustments_applied": adjustments_applied,
             "committed_applied": committed_applied,
+            # Where the demand came from: "trained" (a model fitted on this
+            # product), "analogy" (a person's "it sells like A and B"; never a
+            # trained forecast) or None (no forecast). `analogy_applied` names
+            # the references, factor and band widening; `analogy_retired` says a
+            # trained model has since taken over; `analogy_unavailable` that an
+            # analogy exists but none of its references has a forecast.
+            "forecast_source": forecast_source,
+            "low_confidence": forecast_source == "analogy",
+            "analogy_applied": analogy_applied,
+            "analogy_retired": ({"analogy_id": analogy_retired[sku]["id"],
+                                 "retired_at": (analogy_retired[sku].get("superseded_at")
+                                               or date.today().isoformat())}
+                                if sku in analogy_retired else None),
+            "analogy_unavailable": analogy_note,
             # Already on its way: open POs + transfers in transit. Exposed so
             # the UI can say "N units arriving (OC-000123)" instead of leaving
             # the buyer to wonder why the quantity dropped.
@@ -2573,6 +2625,14 @@ def _compute_inventory_status(
             "calc_explanation":  calc_explanation,
             "demand_trend_pct":  None,  # populated by morning_briefing; None by default in status
         })
+        if committed_only is not None:
+            # This row's signal came from its commitments alone (no forecast or
+            # no stock row). Named so no screen mistakes it for the semaphore's
+            # verdict: how many units no stock covers, and whether the stock
+            # figure was missing (then counted as zero and no quantity given).
+            items[-1]["committed_only"] = True
+            items[-1]["committed_shortfall"] = committed_only["shortfall"]
+            items[-1]["committed_stock_unknown"] = committed_only["stock_unknown"]
 
     # ABC classification across all items (needs demand info so done after building list)
     abc_map = _classify_abc(items)
@@ -2721,8 +2781,10 @@ def get_inventory_status_by_warehouse(
         incoming_qty = sum_incoming(_incoming_detail)
         incoming_sources = incoming_sources_by_key(_incoming_detail)
 
-    warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
-                  or [wh_svc.DEFAULT_WAREHOUSE])
+    _wh_rows = wh_svc.list_warehouses(tenant_id)
+    warehouses = [w["name"] for w in _wh_rows] or [wh_svc.DEFAULT_WAREHOUSE]
+    # A commitment names its warehouse by ID; this view works in names.
+    wh_id_by_name = {w["name"]: str(w["id"]) for w in _wh_rows}
     store_names = stores_in(forecasts)
     wh_by_lower = {w.lower().strip(): w for w in warehouses}
 
@@ -2779,12 +2841,13 @@ def get_inventory_status_by_warehouse(
     # whole tenant, applied beside the events below and always named on the row.
     from backend.inventory import forecast_adjustment_service as _fa_svc
     adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
-    # Committed customer orders, same source as the company-wide view. A
-    # commitment names a warehouse by its ID while this loop walks names, so the
-    # name is translated once here.
+    # Customer orders placed ahead of time, same ledger and rules as the
+    # aggregated view. (This function used the names below without ever defining
+    # them: every warehouse row with a forecast and stock raised NameError.)
     from backend.inventory import committed_demand_service as _cd_svc
     committed_by_sku = _cd_svc.active_by_sku(tenant_id)
-    wh_id_by_name = {w["name"]: w["id"] for w in wh_svc.list_warehouses(tenant_id)}
+    # A SKU with a commitment is listed even with no forecast of its own.
+    all_skus = sorted(set(all_skus) | set(committed_by_sku))
 
     items: list[dict] = []
     for sku in all_skus:
@@ -2797,7 +2860,13 @@ def get_inventory_status_by_warehouse(
                 model_forecasts = sku_forecasts.get(sku, {})
                 share = shares.get(wh, 0.0)
             # Pairs with neither stock nor demand don't exist for this tenant.
-            if stock is None and (not model_forecasts or share == 0.0):
+            # A commitment that NAMES this warehouse keeps the pair alive: the
+            # customer order is real even where nobody records stock or demand
+            # (otherwise it vanished from the only view that names the warehouse).
+            _named_here = any(
+                c.get("warehouse_id") and c.get("warehouse_id") == wh_id_by_name.get(wh)
+                for c in committed_by_sku.get(sku, ()))
+            if stock is None and (not model_forecasts or share == 0.0) and not _named_here:
                 continue
 
             # Identical resolution to the aggregated view (see the primary map
@@ -2829,6 +2898,7 @@ def get_inventory_status_by_warehouse(
             # has units on the way, and the buyer needs to see them before they
             # order more into a warehouse that already has a truck coming.
             wh_incoming = incoming_qty.get((sku, wh), 0.0)
+            committed_only = None
 
             if model_forecasts and share > 0.0 and not stock_unknown_here:
                 _sl_val, sl_source, _ = _sd_svc.resolve_field(
@@ -2954,10 +3024,26 @@ def get_inventory_status_by_warehouse(
                 events_applied = []
                 adjustments_applied = []
                 committed_applied = []
+                committed_only = None
+                # No demand of its own here, or no stock figure: the commitments
+                # still count and can still say an order is needed.
+                if committed_by_sku.get(sku):
+                    committed_only = _cd_svc.cover_without_forecast(
+                        committed_by_sku[sku], today, lead_time,
+                        _resolve_review_period_days(supplier, review_period_map),
+                        (current_stock if stock is not None and not stock_unknown_here
+                         else None),
+                        wh_incoming, moq, warehouse_id=wh_id_by_name.get(wh, wh),
+                        share=0.0 if demand_mode == "store" else share)
+                    committed_applied = committed_only["applied"]
+                    if committed_only["signal"]:
+                        signal = committed_only["signal"]
+                        recommended = committed_only["recommended"]
 
             items.append({
                 "sku": sku,
                 "warehouse": wh,
+                "warehouse_id": wh_id_by_name.get(wh),
                 "display_name": stock.get("display_name") if stock else None,
                 "supplier": supplier,
                 "current_stock": current_stock if stock else None,
@@ -3005,6 +3091,10 @@ def get_inventory_status_by_warehouse(
                               if stock and stock.get("unit_cost") is not None else None),
                 "service_level_caveat": service_level_caveats.get(sku),
             })
+            if committed_only is not None:
+                items[-1]["committed_only"] = True
+                items[-1]["committed_shortfall"] = committed_only["shortfall"]
+                items[-1]["committed_stock_unknown"] = committed_only["stock_unknown"]
 
     if lanes is None:
         from backend.inventory import transfer_lane_service as lane_svc
@@ -4631,8 +4721,28 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         else:
             item['demand_trend_pct'] = None
 
-    risks      = [i for i in items if i['signal'] == 'PEDIR_YA']
-    warnings   = [i for i in items if i['signal'] == 'PEDIR_PRONTO']
+    # Money at risk ("what to order first"): annotation + ordering only, the
+    # signals and quantities are untouched. Rows with no price/cost carry None
+    # and sort after valued ones in their previous order.
+    from backend.inventory import money_at_risk as _mar
+    for item in items:
+        if item['signal'] not in ('PEDIR_YA', 'PEDIR_PRONTO'):
+            continue
+        stock_now = item.get('current_stock')
+        stocked_out = bool(item.get('has_stock')) and stock_now is not None and stock_now <= 0
+        amount, basis = _mar.money_at_risk(
+            item.get('daily_demand'),
+            _lead_time_in_periods(item.get('lead_time_days') or 0, period),
+            item.get('coverage_days'),
+            item.get('sale_price'),
+            item.get('unit_cost'),
+            in_stockout=stocked_out,
+        )
+        item['money_at_risk'] = amount
+        item['money_at_risk_basis'] = basis
+
+    risks      = _mar.sort_by_money_at_risk(i for i in items if i['signal'] == 'PEDIR_YA')
+    warnings   = _mar.sort_by_money_at_risk(i for i in items if i['signal'] == 'PEDIR_PRONTO')
     overstocked = sorted(
         [i for i in items if i['signal'] == 'SOBRESTOCK' and i.get('inventory_value')],
         key=lambda x: x.get('inventory_value') or 0,
@@ -4979,7 +5089,7 @@ def run_daily_inventory_alerts() -> None:
                 number = (r.get("whatsapp_number") or "").strip()
                 if not number:
                     continue
-                delivered = send_whatsapp(number, text, tenant_id=tid)
+                delivered = send_whatsapp(number, text, tenant_id=tid, plan_gated=True)
                 if not delivered:
                     log.warning("alert whatsapp not delivered to=%s", number)
                 record_notification_delivery(

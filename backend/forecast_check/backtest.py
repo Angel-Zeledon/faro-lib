@@ -152,7 +152,10 @@ def launch_backtest(
         family = fam.launch_training_family(
             tenant_id, run_id, user_id,
             user_horizon_days=holdout_periods * fam.DAYS_PER_PERIOD[grain],
-            user_granularity=grain)
+            user_granularity=grain,
+            # The horizon of a back-test is the held-out span it is graded on,
+            # not a purchase window; stretching it would grade a longer tail.
+            extend_for_buying_need=False)
     except Exception:
         # Never delete: the session is archived so the ceiling slot is freed and
         # the attempt stays in the library for whoever needs to see why.

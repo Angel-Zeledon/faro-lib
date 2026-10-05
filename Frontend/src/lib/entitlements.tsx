@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { getEntitlements, type Entitlements } from "./api";
+import { getEntitlements, type Entitlements, type PlanFeature } from "./api";
 
 type Ctx = {
   ent: Entitlements | null;
@@ -11,11 +11,10 @@ type Ctx = {
   refresh: () => Promise<void>;
 };
 
-// This used to carry `has(feature)`, and it failed CLOSED on purpose: a dropped
-// /entitlements call must not hand a tenant a navigation full of things the
-// backend would then refuse. Both tiers include every feature now, so there is
-// nothing left to hide — what this carries is *how much*: the tier, the
-// ceilings, the usage against them, and the channels to ask for more.
+// Navigation is never hidden by plan. What this carries is *how much* (the
+// tier, the ceilings, the usage) and, since 2026-10-05, which of the three
+// machine-facing channels the plan includes (`useFeature`), so a screen can
+// show them locked with a way to ask, instead of letting a call fail.
 //
 // It still fails closed in the way that matters. With no answer, `ent` is null
 // and the UI shows no limits at all rather than inventing generous ones.
@@ -49,6 +48,18 @@ export function EntitlementsProvider({ children }: { children: React.ReactNode }
 }
 
 export const useEntitlements = () => useContext(EntitlementsContext);
+
+/**
+ * Whether the plan includes a machine-facing channel (API, MCP, WhatsApp bot).
+ * `locked` is true ONLY when the backend said so explicitly: with no answer yet,
+ * a dropped call or an older backend, nothing is drawn locked — the backend
+ * still refuses the call (`plan_feature_locked`) and the error bridge handles
+ * that. A paid or corporate tenant therefore never sees a locked state flash.
+ */
+export function useFeature(feature: PlanFeature): { locked: boolean } {
+  const { ent } = useEntitlements();
+  return { locked: ent?.features?.[feature] === false };
+}
 
 /** The limits a user can see themselves approaching, in the order they hit them. */
 export const LIMIT_KEYS = [

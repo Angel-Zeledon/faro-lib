@@ -587,3 +587,118 @@ class TestApplicationToTheRecommendation:
         assert named, "the named warehouse must show the commitment"
         assert all(r["warehouse_id"] == north for r in named)
         assert all(a["scope"] == "warehouse" for r in named for a in r["committed_applied"])
+
+
+# ── DB: SKUs the semaphore cannot judge, the optimizer and the at-risk verdict ──
+# (written without a database to run against: run them before relying on them)
+
+class TestCommitmentOnASkuTheSemaphoreCannotJudge:
+
+    def test_no_forecast_but_stock_row_shows_units_and_says_order(self, test_tenant):
+        tid = test_tenant["id"]
+        sku = f"CD-{uuid4().hex[:6]}"
+        sid = _flat_session(tid, f"CD-other-{uuid4().hex[:4]}")   # a session that never forecast `sku`
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 20.0, "lead_time_days": 20, "moq": 1.0})
+        c = _commit(tid, sku, days=10, quantity=100, customer="Big Corp")
+        row = _row(tid, sid, sku)
+        assert row["has_forecast"] is False and row["daily_demand"] is None
+        assert row["committed_only"] is True
+        assert row["signal"] == "PEDIR_YA"               # due inside the 20-day lead time
+        assert row["committed_shortfall"] == 80.0 and row["recommended_qty"] == 80.0
+        assert [a["commitment_id"] for a in row["committed_applied"]] == [c["id"]]
+
+    def test_covered_commitment_keeps_sin_datos_but_still_names_it(self, test_tenant):
+        tid = test_tenant["id"]
+        sku = f"CD-{uuid4().hex[:6]}"
+        sid = _flat_session(tid, f"CD-other-{uuid4().hex[:4]}")
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 500.0, "lead_time_days": 20, "moq": 1.0})
+        _commit(tid, sku, days=10, quantity=100)
+        row = _row(tid, sid, sku)
+        assert row["signal"] == "SIN_DATOS" and row["recommended_qty"] is None
+        assert len(row["committed_applied"]) == 1
+
+    def test_no_stock_row_signals_but_gives_no_quantity(self, test_tenant):
+        tid = test_tenant["id"]
+        sku = f"CD-{uuid4().hex[:6]}"
+        sid = _flat_session(tid, sku)                     # forecast, no commitment yet
+        # a SKU with a forecast but no stock row
+        session_store.set_forecasts(tid, sid, {sku: {"lightgbm": {"forecast": [
+            {"date": (date.today() + timedelta(days=i)).isoformat(), "value": 5.0}
+            for i in range(30)]}}})
+        from backend.db.connection import execute
+        execute("DELETE FROM inventory_stock WHERE tenant_id = %s AND sku = %s", (tid, sku))
+        _commit(tid, sku, days=10, quantity=100)
+        row = _row(tid, sid, sku)
+        assert row["has_stock"] is False and row["committed_stock_unknown"] is True
+        assert row["signal"] == "PEDIR_YA" and row["recommended_qty"] is None
+        assert len(row["committed_applied"]) == 1
+
+    def test_without_commitments_nothing_new_appears(self, test_tenant):
+        tid = test_tenant["id"]
+        sku = f"CD-{uuid4().hex[:6]}"
+        sid = _flat_session(tid, sku)
+        row = _row(tid, sid, sku)
+        assert "committed_only" not in row
+
+
+class TestOptimizerSeesCommitments:
+
+    def test_a_commitment_inside_the_horizon_is_demand_in_its_bucket(self, test_tenant):
+        from backend.inventory import optimizer_service as opt_svc
+        tid = test_tenant["id"]
+        sku = f"CD-{uuid4().hex[:6]}"
+        sid = _flat_session(tid, sku, per_day=0.0, lead_time=3, stock=10.0)
+        base = opt_svc.build_optimization_input(tid, sid, horizon_days=30)
+        _commit(tid, sku, days=6, quantity=200)
+        after = opt_svc.build_optimization_input(tid, sid, horizon_days=30)
+        key = next(k for k in after.demand if k[0] == sku)
+        assert sum(after.demand[key]) - sum(base.demand[key]) == pytest.approx(200.0)
+        assert after.demand[key][6] - base.demand[key][6] == pytest.approx(200.0)
+
+    def test_lead_time_beyond_the_horizon_equals_the_panels_quantity(self, test_tenant):
+        from backend.inventory import optimizer_service as opt_svc
+        tid = test_tenant["id"]
+        sku = f"CD-{uuid4().hex[:6]}"
+        sid = _flat_session(tid, sku, lead_time=60, stock=50.0)
+        _commit(tid, sku, days=30, quantity=100)
+        panel = _row(tid, sid, sku)["recommended_qty"]
+        inp = opt_svc.build_optimization_input(tid, sid, horizon_days=14)
+        line = next(l for l in inp.panel_lines if l["sku"] == sku)
+        assert line["qty"] == int(math.ceil(panel))
+
+
+class TestAtRiskVerdictEndpoint:
+
+    def test_get_carries_the_verdict_and_the_customer_summary(
+            self, client, analyst_headers, registered_user):
+        tid = registered_user["tenant"]["id"]
+        sku = f"CD-{uuid4().hex[:6]}"
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 60.0, "lead_time_days": 10, "moq": 1.0})
+        _commit(tid, sku, days=30, quantity=100, customer="Big Corp")
+        _commit(tid, sku, days=60, quantity=100, customer="Other")
+        body = client.get(URL, headers=analyst_headers).json()["data"]
+        by_cust = {g["customer"]: g for g in body["by_customer"]}
+        assert by_cust["Big Corp"]["at_risk"] == 1 and by_cust["Big Corp"]["shortfall"] == 40.0
+        assert by_cust["Other"]["shortfall"] == 100.0
+        first = next(i for i in body["items"] if i["customer"] == "Big Corp")
+        assert first["at_risk"] is True and first["shortfall"] == 40.0
+        assert first["latest_safe_order_date"] == (date.today() + timedelta(days=20)).isoformat()
+
+    def test_a_sku_with_no_stock_row_has_no_verdict(self, client, analyst_headers, registered_user):
+        tid = registered_user["tenant"]["id"]
+        _commit(tid, f"CD-{uuid4().hex[:6]}", days=30, quantity=10)
+        item = client.get(URL, headers=analyst_headers).json()["data"]["items"][0]
+        assert item["at_risk"] is None and item["shortfall"] is None
+
+    def test_an_open_po_arriving_within_lead_time_covers_a_later_commitment(
+            self, client, analyst_headers, registered_user, monkeypatch):
+        tid = registered_user["tenant"]["id"]
+        sku = f"CD-{uuid4().hex[:6]}"
+        inv_svc.upsert_stock(tid, sku, {"current_stock": 0.0, "lead_time_days": 10, "moq": 1.0})
+        monkeypatch.setattr(inv_svc, "get_incoming_detail", lambda t: [
+            {"sku": sku, "warehouse": "principal", "qty": 100.0, "kind": "po",
+             "reference": "OC-1", "source_id": "x"}])
+        _commit(tid, sku, days=30, quantity=100)
+        item = client.get(URL, headers=analyst_headers).json()["data"]["items"][0]
+        assert item["at_risk"] is False
+

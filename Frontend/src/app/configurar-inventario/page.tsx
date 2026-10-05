@@ -16,6 +16,7 @@ import { useCallback, useState } from 'react'
 
 import SetupGapsPanel from '@/components/inventory/SetupGapsPanel'
 import SignalThresholdsPanel from '@/components/inventory/SignalThresholdsPanel'
+import ServiceLevelClassesPanel from '@/components/inventory/ServiceLevelClassesPanel'
 import StockImportWizard from '@/components/inventory/StockImportWizard'
 import { useSetupCopy } from '@/i18n/useSetupCopy'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -63,6 +64,9 @@ export default function InventorySetupPage() {
         {/* The semáforo's own rules: when it says "order now" and when it
             says "you have too much", as multiples of the supplier's time. */}
         <SignalThresholdsPanel />
+        {/* Suggested service level per ABC class: read here, applied only
+            by the person, class by class. */}
+        <ServiceLevelClassesPanel />
       </div>
     </div>
   )

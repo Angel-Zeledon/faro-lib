@@ -105,7 +105,7 @@ const es: LegalCopy = {
       intro: 'Las reglas para usar StockAI: qué te damos, qué te pedimos, cómo funcionan los planes y hasta dónde llega nuestra responsabilidad.',
       summary: [
         'StockAI te ayuda a decidir qué comprar. **La decisión de compra es tuya**, y también sus consecuencias.',
-        'El plan gratis es para siempre y trae todas las funciones, con límites de tamaño. El plan pagado se acuerda conversando con nosotros.',
+        'El plan gratis es para siempre y trae el motor completo, con límites de tamaño y sin API, MCP ni bot de WhatsApp. El plan pagado se acuerda conversando con nosotros.',
         'Tus datos son tuyos. Solo los usamos para darte el servicio.',
         'No hay un acuerdo de disponibilidad (SLA) salvo que lo firmemos por separado.',
       ],
@@ -145,18 +145,19 @@ const es: LegalCopy = {
           id: 'plans',
           title: 'Planes y precio',
           blocks: [
-            'Hay dos planes, y **los dos traen todas las funciones**. Lo único que cambia es cuánto cabe.',
+            'Hay dos planes, y los dos traen el motor completo; **la API, el servidor MCP y el bot de WhatsApp empiezan en el plan pagado**, que además tiene límites más amplios. Un plan corporativo, con los topes levantados, se cotiza aparte.',
             {
               table: {
                 head: ['Límite', 'Plan gratis', 'Plan pagado'],
                 rows: [
-                  ['Productos (SKUs)', '100', 'Sin límite'],
-                  ['Usuarios', '2', 'Sin límite'],
-                  ['Bodegas', '1', 'Sin límite'],
-                  ['Pronósticos guardados', '3', 'Sin límite'],
-                  ['Claves de API', '1', 'Sin límite'],
-                  ['Llamadas a la API por día', '500', 'Sin límite diario'],
-                  ['Tamaño de cada archivo', '25 MB', '2 GB'],
+                  ['Productos (SKUs)', '100', '500'],
+                  ['Usuarios', '2', '3'],
+                  ['Bodegas', '1', '2'],
+                  ['Pronósticos guardados', '3', '20'],
+                  ['API, servidor MCP y bot de WhatsApp', 'No incluidos', 'Incluidos'],
+                  ['Claves de API', 'No incluida', '3'],
+                  ['Llamadas a la API por día, por clave', 'No incluida', '2.000'],
+                  ['Tamaño de cada archivo', '25 MB', '100 MB'],
                 ],
               },
             },
@@ -195,7 +196,7 @@ const es: LegalCopy = {
             'Un administrador puede crear claves de API (empiezan por `sk_live_`) de lectura o de escritura. La clave completa se muestra una sola vez; nosotros guardamos solo una huella de ella. Guárdala como una contraseña: lo que se haga con tu clave cuenta como hecho por tu cuenta.',
             {
               list: [
-                'Cada clave puede hacer hasta 120 llamadas por minuto. En el plan gratis, además, hasta 500 llamadas por día.',
+                'Cada clave puede hacer hasta 120 llamadas por minuto. En el plan pagado, además, hasta 2.000 llamadas por día por clave; el plan gratis no incluye la API.',
                 'En el plan pagado la API se cobra por llamada, según el precio que acordemos. Contamos las llamadas que llegan a un endpoint, por día y por clave; las rechazadas no cuentan.',
                 'El servidor MCP para asistentes de IA solo lee: no puede crear, cambiar ni borrar nada.',
                 'Podemos revocar una clave que se use contra estos términos o que ponga en riesgo el servicio.',
@@ -635,7 +636,7 @@ const en: LegalCopy = {
       intro: 'The rules for using StockAI: what we give you, what we ask of you, how the plans work and how far our liability goes.',
       summary: [
         'StockAI helps you decide what to buy. **The purchasing decision is yours**, and so are its consequences.',
-        'The free plan is forever and includes every feature, with size limits. The paid plan is agreed by talking to us.',
+        'The free plan is forever and includes the whole engine, with size limits and no API, MCP or WhatsApp bot. The paid plan is agreed by talking to us.',
         'Your data is yours. We only use it to provide the service.',
         'There is no service-level agreement (SLA) unless we sign one separately.',
       ],
@@ -675,18 +676,19 @@ const en: LegalCopy = {
           id: 'plans',
           title: 'Plans and price',
           blocks: [
-            'There are two plans, and **both include every feature**. The only difference is how much fits.',
+            'There are two plans, and both include the whole engine; **the API, the MCP server and the WhatsApp bot start on the paid plan**, which also has wider limits. A corporate plan, with the ceilings lifted, is quoted separately.',
             {
               table: {
                 head: ['Limit', 'Free plan', 'Paid plan'],
                 rows: [
-                  ['Products (SKUs)', '100', 'Unlimited'],
-                  ['Users', '2', 'Unlimited'],
-                  ['Warehouses', '1', 'Unlimited'],
-                  ['Saved forecasts', '3', 'Unlimited'],
-                  ['API keys', '1', 'Unlimited'],
-                  ['API calls per day', '500', 'No daily limit'],
-                  ['Size of each file', '25 MB', '2 GB'],
+                  ['Products (SKUs)', '100', '500'],
+                  ['Users', '2', '3'],
+                  ['Warehouses', '1', '2'],
+                  ['Saved forecasts', '3', '20'],
+                  ['API, MCP server and WhatsApp bot', 'Not included', 'Included'],
+                  ['API keys', 'Not included', '3'],
+                  ['API calls per day, per key', 'Not included', '2,000'],
+                  ['Size of each file', '25 MB', '100 MB'],
                 ],
               },
             },
@@ -725,7 +727,7 @@ const en: LegalCopy = {
             'An administrator can create read or write API keys (they start with `sk_live_`). The full key is shown only once; we keep only a fingerprint of it. Store it like a password: whatever is done with your key counts as done by your account.',
             {
               list: [
-                'Each key can make up to 120 calls per minute. On the free plan, also up to 500 calls per day.',
+                'Each key can make up to 120 calls per minute. On the paid plan, also up to 2,000 calls per day per key; the free plan does not include the API.',
                 'On the paid plan the API is billed per call, at the price we agree. We count calls that reach an endpoint, by day and by key; refused calls do not count.',
                 'The MCP server for AI assistants only reads: it cannot create, change or delete anything.',
                 'We may revoke a key used against these terms or that puts the service at risk.',

@@ -16,6 +16,7 @@ import { isMobileReady } from '@/components/mobile/DesktopOnlyNotice'
 import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/lib/inventoryDefaults'
 import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat, CoverageUnit, IncomingSource } from '@/lib/types'
 import { incomingText } from '@/lib/incomingCopy'
+import { formatMoney } from '@/lib/currency'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { SIGNAL_STYLES } from '@/components/ui/SignalBadge'
 import type { InventorySignal } from '@/lib/types'
@@ -110,6 +111,12 @@ export interface ActionItem {
  explanation_code:   string | null
  explanation_params: Record<string, unknown> | null
  unit_margin:  number | null   // null = SKU sin price o sin cost
+ // Sales value a delay puts at risk (backend money_at_risk.py). null = value
+ // unknown; absent on a backend older than the feature.
+ money_at_risk?:       number | null
+ money_at_risk_basis?: 'price' | 'cost' | 'unknown'
+ // The line with the largest amount at risk in the whole list.
+ order_first?:         boolean
  reason:         string
  status:         ActionStatus
  /** PO number (OC-000123) once the line was ordered from this screen. */
@@ -375,6 +382,39 @@ export function IncomingNote({ item }: { item: ActionItem }) {
   }}>
    <Truck size={13} aria-hidden="true" style={{ flexShrink: 0 }} />
    <span>{text}</span>
+  </div>
+ )
+}
+
+// ── Money at risk: what waiting costs, and which line to order first ─────────
+// The amount and its basis come from the backend (money_at_risk.py); this only
+// words them. No value on file reads "value unknown" — never a zero.
+export function MoneyAtRiskNote({ item }: { item: ActionItem }) {
+ const { t } = useLanguage()
+ if (item.status === 'ordered') return null
+ const basis = item.money_at_risk_basis
+ if (basis == null) return null // an older backend: say nothing rather than guess
+ const amount = item.money_at_risk
+ const known = amount != null && basis !== 'unknown'
+ return (
+  <div style={{
+   display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6,
+   fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere',
+  }}>
+   {item.order_first && (
+    <span style={{
+     display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 20,
+     fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase',
+     color: 'var(--accent)', border: '1px solid var(--accent)',
+    }}>
+     {t('hoy.order_first_badge')}
+    </span>
+   )}
+   <span>
+    {known
+     ? `${t('hoy.money_at_risk_label')}: ${formatMoney(amount)} (${t(basis === 'price' ? 'hoy.money_at_risk_basis_price' : 'hoy.money_at_risk_basis_cost')})`
+     : t('hoy.money_at_risk_unknown')}
+   </span>
   </div>
  )
 }

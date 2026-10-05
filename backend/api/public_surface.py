@@ -54,6 +54,7 @@ EXPOSED_TAGS: frozenset[str] = frozenset({
 # ── Tags a key never reaches, and why ────────────────────────────────────────
 INTERNAL_TAGS: dict[str, str] = {
     "inventory-signal-thresholds": "the traffic-light cut-offs move every recommendation the tenant sees; a person changes them on the rules panel, with its preview",
+    "inventory-service-level-classes": "applying a suggested service level rewrites planning values on many SKUs at once; a person reads the suggestion and accepts it class by class",
     "auth": "login, signup and session tokens: a machine holds a key, it never logs in",
     "users": "user and password management belongs to people, not to a credential",
     "preferences": "per-person UI preferences; a key is not a person",
@@ -76,6 +77,8 @@ INTERNAL_TAGS: dict[str, str] = {
     # that person, and "who approved this" must name one.
     "inventory-approvals": "purchase-order approval rules and decisions belong to the people who hold that authority",
     "committed-demand": "a commitment is a customer order a person entered; it moves purchase decisions, so it is recorded under a person's name",
+    "spike-edits": "excluding a past spike is a person's judgement about their history, recorded under their name",
+    "sku-analogies": "an analogy is a person's judgement that a new product sells like others, recorded under their name",
     "forecast-adjustments": "a forecast adjustment is a person's judgement, recorded under their name and graded per person",
     "trial": "unauthenticated trial signup",
     "inbound-email": "the tenant's private sales-by-e-mail address is a credential, and its allow-list is edited by an administrator on the Datos screen",
@@ -92,6 +95,9 @@ INTERNAL_ROUTES: dict[tuple[str, str], str] = {
         "mails the signed-in person; a key has no inbox",
     ("POST", "/alerts/read"):
         "marks alerts read for the signed-in person",
+    ("GET", "/planning/horizon-need"):
+        "a wizard-only preview of what the next launch would train; the launch "
+        "response and the session's forecast_cfg carry the same facts",
     ("POST", "/entitlements/upgrade-request"):
         "a person asking to talk to us about limits; it names who to answer",
 }

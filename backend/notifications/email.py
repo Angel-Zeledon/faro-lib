@@ -1086,7 +1086,7 @@ def send_upgrade_request_email(
         <p style="color:{_DIM};margin:0 0 20px;">Hit the limit: <strong style="color:{_TEXT};">{limit_key or "—"}</strong></p>
         <p style="color:{_TEXT};margin:0 0 8px;white-space:pre-wrap;">{message or "(no message)"}</p>
         <p style="color:{_DIM};font-size:12px;">
-          Move them over with: UPDATE tenants SET tier = 'paid' WHERE id = '{tenant_id}';
+          Move them over with: UPDATE tenants SET tier = 'paid' (or 'corporate') WHERE id = '{tenant_id}';
         </p>
         """,
     )

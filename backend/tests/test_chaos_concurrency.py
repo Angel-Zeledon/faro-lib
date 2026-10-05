@@ -236,12 +236,13 @@ def test_the_session_ceiling_holds_under_simultaneous_creates(
 def test_the_api_key_ceiling_holds_under_simultaneous_creates(
     monkeypatch, make_tenant_user_headers, client,
 ):
-    """The free tier's single machine credential. Two clicks on "create key"
-    must not both read "0 keys" — a second credential nobody meant to issue is
-    a second thing to revoke when it leaks."""
+    """A single machine credential. Two clicks on "create key" must not both
+    read "0 keys" — a second credential nobody meant to issue is a second thing
+    to revoke when it leaks. Paid tier (the API is paid-only) narrowed to one."""
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     headers, tenant_id = make_tenant_user_headers(role="analyst", return_tenant_id=True)
-    _set_tier(tenant_id, "free")     # max_api_keys = 1
+    _set_tier(tenant_id, "paid")
+    _set_quota(tenant_id, {"max_api_keys": 1})
 
     _fire(
         lambda i: client.post("/api/v1/api-keys",

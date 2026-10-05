@@ -87,7 +87,16 @@ function ScorecardTable({ rows, alerts }: {
                     >
                       {t('scorecard.lead_time_says_nothing')}
                     </span>
-                  ) : fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
+                  ) : (
+                    <>
+                      {fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
+                      {row.lead_time_p95_days != null && (
+                        <div style={{ color: C.dim, fontSize: 11 }}>
+                          {t('scorecard.lead_time_tail', { p80: row.lead_time_p80_days ?? row.lead_time_p95_days, p95: row.lead_time_p95_days })}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </Td>
                 <Td size="lg" divider={false} mono style={{ color: C.muted }}>
                   {row.lead_time_declarado != null ? `${row.lead_time_declarado}d` : '—'}
@@ -232,7 +241,12 @@ function ScorecardCards({ rows, alerts }: {
               <div><div style={label}>{t('scorecard.col_real_lead_time')}</div>
                 <div style={{ ...value, color: row.lead_time_unusable ? C.dim : C.text }}>
                   {row.lead_time_unusable ? t('scorecard.lead_time_says_nothing') : fmtRange(row.lead_time_real_min, row.lead_time_real_max)}
-                </div></div>
+                </div>
+                {!row.lead_time_unusable && row.lead_time_p95_days != null && (
+                  <div style={{ color: C.dim, fontSize: 11 }}>
+                    {t('scorecard.lead_time_tail', { p80: row.lead_time_p80_days ?? row.lead_time_p95_days, p95: row.lead_time_p95_days })}
+                  </div>
+                )}</div>
               <div><div style={label}>{t('scorecard.col_declared')}</div>
                 <div style={{ ...value, color: C.muted }}>{row.lead_time_declarado != null ? `${row.lead_time_declarado}d` : '—'}</div></div>
               <div><div style={label}>{t('scorecard.col_receptions')}</div>

@@ -166,6 +166,18 @@ class AccountData:
             {},
         ) or {}
 
+    @cached_property
+    def committed_demand(self) -> dict:
+        """Open customer commitments with their at-risk verdict and the
+        by-customer roll-up: what the commitments screen shows."""
+        from backend.api.v1 import committed_demand as committed_router
+        return self._safe(
+            "committed_demand",
+            lambda: _data(committed_router.list_commitments(
+                sku=None, status="open", limit=500, user=self.user)),
+            {},
+        ) or {}
+
     # ── Purchase orders and suppliers ────────────────────────────────────────
 
     @cached_property

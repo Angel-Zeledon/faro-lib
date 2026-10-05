@@ -4888,3 +4888,33 @@ open transaction on the shared database.
   cut, nothing more.
 - **The full backend suite.** Only targeted files were run, on the shared DB, as
   instructed. All of them pass.
+
+## Salesperson confirmation of commitments over WhatsApp: design note (2026-10-05, not built)
+
+Nothing is sent to anyone: the commitments-at-risk signal is read-only. Before the
+product asks a salesperson to confirm a commitment by WhatsApp, these have to be
+settled. This is the backlog item and the reasons it is parked.
+
+- **Consent.** The person messaged is a salesperson of the tenant, not a user of
+  StockAI, and their number is personal data the tenant typed in. Each contact needs
+  a recorded opt-in (who asked, when, which channel), a stop word that is honoured
+  at once, and the tenant's own statement that it may contact them. WhatsApp business
+  messages outside the 24-hour window also need an approved template, so the
+  wording below is fixed text, not free prose.
+- **Content, minimum.** One commitment per message: the customer, the SKU, the units,
+  the delivery date and the question "still valid? reply 1 yes, 2 changed, 3
+  cancelled". No prices, no stock levels and no other customers' names: the
+  recipient can only see what concerns their own order. Spanish and English both
+  come from the backend locale catalog (the recipient's language, not the buyer's).
+- **What a reply may do.** A reply never edits the ledger on its own: it is stored as
+  a suggestion that an analyst accepts on /inventario (the same rule as the
+  assistant: a message cannot hold a confirmation or an undo token). Silence is not
+  a confirmation and never closes or cancels a commitment.
+- **Identity.** A reply is matched to a commitment only by the one-time code the
+  message carried; a number alone is not proof that the sender owns that customer.
+- **Frequency.** At most one reminder per commitment per interval, none for closed
+  commitments, and none for ones the at-risk signal says are covered.
+- **Audit and erasure.** Every message and reply is logged under the commitment, and
+  whole-tenant erasure removes them with the rest.
+- **Open question for the owner.** Whether the salesperson or the customer is the
+  right recipient, and who pays the per-message cost (there is no billing).

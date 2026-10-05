@@ -79,6 +79,9 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("forecast_overrides", "forecast_overrides", "*"),
     ("forecast_adjustments", "forecast_adjustments", "*"),
     ("committed_demand", "committed_demand", "*"),
+    ("spike_edits", "spike_edits", "*"),
+    ("spike_edit_applications", "spike_edit_applications", "*"),
+    ("sku_analogies", "sku_analogies", "*"),
     ("po_approval_rules", "po_approval_rules", "*"),
     ("po_approvals", "po_approvals", "*"),
     ("scheduled_jobs", "scheduled_jobs", "*"),
@@ -165,6 +168,13 @@ _DELETE_ORDER: list[str] = [
     # forgotten for real. The guard that names them is doing its job.
     "service_config",
     "training_run_metrics",
+    # Added with the SSO and persisted-model work. All three carry
+    # `REFERENCES tenants(id) ON DELETE CASCADE`, so the rows already left with
+    # the tenant; listed because this list is the reviewable answer to "what
+    # belongs to a tenant".
+    "sso_domains",
+    "sso_providers",
+    "model_artifacts",
     "upgrade_requests",
     "whatsapp_conversations",
     "chat_messages",
@@ -173,6 +183,9 @@ _DELETE_ORDER: list[str] = [
     "po_approval_rules",
     "forecast_adjustments",
     "committed_demand",
+    "spike_edit_applications",
+    "spike_edits",
+    "sku_analogies",
     "inventory_po_items",
     "supplier_lead_time_obs",
     "inventory_po_log",

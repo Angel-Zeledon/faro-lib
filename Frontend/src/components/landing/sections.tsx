@@ -230,7 +230,7 @@ export function PricingSection({ calcHref = '/precios#calculadora', showCorporat
  </div>
 
  {/* The corporate band (owner, 2026-10-05): a position for large accounts,
-     quoted in a conversation. Same features as every plan; the only way in is
+     quoted in a conversation. It has everything the Full plan has, with the ceilings lifted; the only way in is
      the existing contact links — no checkout, no plan comparison. */}
  {showCorporate && (
  <div data-reveal className="lp-card corp-card">

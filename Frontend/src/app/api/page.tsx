@@ -38,6 +38,8 @@ import { useResponseExample } from '@/lib/useResponseExamples'
 import { getUser } from '@/lib/auth'
 import type { ApiKeyUsage } from '@/lib/types'
 import { useUpgradePrompt } from '@/components/limits/UpgradeDialog'
+import FeatureLocked from '@/components/limits/FeatureLocked'
+import { useFeature } from '@/lib/entitlements'
 import '@/components/mobile/mobileForms.css'
 
 const MONO = "ui-monospace, 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, 'Liberation Mono', monospace"
@@ -888,6 +890,8 @@ function EndpointCard({ endpoint, token, baseUrl }: { endpoint: Endpoint; token:
 }
 
 export default function ApiDocsPage() {
+  const apiLocked = useFeature('api').locked
+  const mcpLocked = useFeature('mcp').locked
   const { t } = useLanguage()
   const narrow = useIsNarrow()
   // React state only, never localStorage. The raw key exists nowhere else — the
@@ -1143,7 +1147,10 @@ export default function ApiDocsPage() {
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
-          <UsagePanel narrow={narrow} />
+          {/* The reference stays readable on every plan; what a plan without the
+              API or MCP loses is the keys, so say it once, calmly, up top. */}
+          {apiLocked && <FeatureLocked feature="api" />}
+          {!apiLocked && <UsagePanel narrow={narrow} />}
           <div style={{
             display: 'grid',
             gridTemplateColumns: narrow ? '1fr' : 'repeat(3, minmax(0,1fr))',
@@ -1162,6 +1169,7 @@ export default function ApiDocsPage() {
           </div>
 
           {ENDPOINTS.map(ep => <EndpointCard key={ep.id} endpoint={ep} token={token} baseUrl={baseUrl} />)}
+          {mcpLocked && <FeatureLocked feature="mcp" />}
           <McpSection baseUrl={baseUrl} narrow={narrow} />
           <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.7 }}>
             {t('apidocs.footer_promise')}{' '}

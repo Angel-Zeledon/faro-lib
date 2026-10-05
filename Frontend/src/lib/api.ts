@@ -13,7 +13,7 @@ import type {
   CostOfIgnoringResponse, WhyChangedResponse,
   ShrinkageReason, ShrinkageRecord,
   Warehouse, WarehouseStatusResponse, Transfer, TransferLane,
-  PlanningState, PlanningPeriod, MeUser,
+  PlanningState, PlanningPeriod, MeUser, HorizonPreview,
   SignalThresholdFactors, SignalThresholdScope, SignalThresholdRule,
   SignalThresholdsState, SignalThresholdsPreview,
 } from './types'
@@ -1217,6 +1217,15 @@ export const previewSignalThresholds = (
   opts?: RequestOpts,
 ) => request<SignalThresholdsPreview>('POST', '/inventory/signal-thresholds/preview', body, opts)
 
+// ── Suggested service level per ABC class ────────────────────────────────────
+// Read-only description, then one POST per class the person accepts. Nothing
+// changes unless that POST is made (analyst or admin).
+export const getServiceLevelClasses = (opts?: RequestOpts) =>
+  request<import('./types').ServiceLevelClassesState>('GET', '/inventory/service-level-classes', undefined, opts)
+
+export const applyServiceLevelClass = (abc: import('./types').AbcClass) =>
+  request<import('./types').ServiceLevelClassApplied>('POST', '/inventory/service-level-classes/apply', { abc })
+
 export const getInventoryStatus =(sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
   request<InventoryStatusResponse>(
     'GET',
@@ -1239,6 +1248,7 @@ export const getInventoryStatusPage = (
   if (params.order) qs.set('order', params.order)
   if (params.q && params.q.trim()) qs.set('q', params.q.trim())
   if (params.signal) qs.set('signal', params.signal)
+  if (params.abc) qs.set('abc', params.abc)
   if (params.skus?.length) qs.set('skus', params.skus.join(','))
   return request<InventoryStatusResponse>('GET', `/inventory/status?${qs.toString()}`, undefined, opts)
 }
@@ -1491,6 +1501,26 @@ export const createForecastAdjustment = (sessionId: string, body: {
   sku: string; start_date: string; end_date: string; mode: 'percent' | 'absolute'
   value: number; reason_code: import('./types').AdjustmentReason; reason_note?: string
 }) => request<import('./types').ForecastAdjustment>('POST', `/sessions/${sessionId}/adjustments`, body)
+// ── Spike exclusions (past one-offs removed from the baseline at the next training)
+export const getSpikeEdits = (sessionId: string, sku?: string) =>
+  request<{ reasons: import('./types').SpikeEditReason[]; items: import('./types').SpikeEdit[] }>(
+    'GET', `/sessions/${sessionId}/spike-edits${sku ? `?sku=${encodeURIComponent(sku)}` : ''}`)
+export const createSpikeEdit = (sessionId: string, body: {
+  sku: string; start_date: string; end_date: string
+  reason_code: import('./types').SpikeEditReason; reason_note?: string
+}) => request<import('./types').SpikeEdit>('POST', `/sessions/${sessionId}/spike-edits`, body)
+export const revertSpikeEdit = (spikeEditId: string) =>
+  request<import('./types').SpikeEdit>('POST', `/spike-edits/${spikeEditId}/revert`, {})
+// ── Forecast by analogy (a new product sells like others) ───────────────────
+export const getSkuAnalogies = () =>
+  request<{ limits: import('./types').AnalogyLimits; items: import('./types').SkuAnalogy[] }>(
+    'GET', '/sku-analogies')
+export const createSkuAnalogy = (body: {
+  new_sku: string; reference_skus: string[]; scale_factor: number
+  start_date?: string; note?: string
+}) => request<import('./types').SkuAnalogy>('POST', '/sku-analogies', body)
+export const revertSkuAnalogy = (analogyId: string) =>
+  request<import('./types').SkuAnalogy>('POST', `/sku-analogies/${analogyId}/revert`, {})
 // ── Committed demand (customer orders placed ahead of time) ─────────────────
 export const getCommittedDemand = (opts?: { sku?: string; status?: import('./types').CommittedDemandStatus; limit?: number }) => {
   const q = new URLSearchParams()
@@ -1498,7 +1528,7 @@ export const getCommittedDemand = (opts?: { sku?: string; status?: import('./typ
   if (opts?.status) q.set('status', opts.status)
   if (opts?.limit) q.set('limit', String(opts.limit))
   const qs = q.toString()
-  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[] }>(
+  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[] }>(
     'GET', `/committed-demand${qs ? `?${qs}` : ''}`)
 }
 export const createCommittedDemand = (body: import('./types').CommittedDemandInput) =>
@@ -1993,10 +2023,16 @@ export const getSuggestedQuestions = (profile = 'distributor', hasInventory = tr
  * the channels the deployment actually configured; an empty string means that
  * button is not shown at all.
  */
+export type PlanFeature = 'api' | 'mcp' | 'whatsapp_bot'
+
 export interface Entitlements {
-  tier: 'free' | 'paid' | 'demo'
+  tier: 'free' | 'paid' | 'corporate' | 'demo'
   trial: { state: string; ends_at: string | null }
   limits: Record<string, number | null>
+  /** Which machine-facing channels this plan includes. The free and demo tiers
+   *  do not include them; the screens show them locked, never hidden. A backend
+   *  that predates the field sends nothing, and the UI treats that as "open". */
+  features?: Partial<Record<PlanFeature, boolean>>
   usage: Record<string, number>
   contact: { whatsapp: string; email: string }
   read_only: boolean
@@ -2016,6 +2052,8 @@ export const getPlanning = () =>
   request<PlanningState>('GET', '/planning')
 export const setPlanning = (period: PlanningPeriod, horizon: number) =>
   request<PlanningState>('PUT', '/planning', { period, horizon })
+export const getHorizonNeed = (horizonDays: number) =>
+  request<HorizonPreview>('GET', `/planning/horizon-need?horizon_days=${horizonDays}`)
 
 // ── What-if scenarios (PENDIENTES #7) ────────────────────────────────────────
 // `previewScenario` runs inline rules without saving them (the builder's live

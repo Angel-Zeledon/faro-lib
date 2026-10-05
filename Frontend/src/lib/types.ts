@@ -176,7 +176,7 @@ export interface RunWarningSample {
 
 export interface RunWarningGroup {
   code:     string
-  severity: 'error' | 'warning'
+  severity: 'error' | 'warning' | 'info'
   layer:    string
   count:    number
   samples:  RunWarningSample[]
@@ -1018,6 +1018,8 @@ export interface InventoryCalcExplanation {
   // Customer orders placed ahead of time that were added on top of the
   // forecast for this product. Empty when none applies.
   committed_applied?: CommittedApplied[]
+  // Set when a person's analogy stood in for a trained model on this product.
+  analogy_applied?: AnalogyApplied[]
 }
 
 /** One entry of `committed_applied` on a recommendation row. */
@@ -1048,6 +1050,23 @@ export interface CommittedDemand {
   status: CommittedDemandStatus
   note: string | null
   overdue: boolean
+  /** Open items only. null = no verdict (closed, or no stock row for the SKU). */
+  at_risk?: boolean | null
+  shortfall?: number | null
+  covered_units?: number | null
+  latest_safe_order_date?: string | null
+  /** The latest safe order date is already behind us. */
+  order_date_passed?: boolean | null
+}
+
+/** One line of the "by customer" summary of open commitments. */
+export interface CommittedDemandCustomer {
+  customer: string | null
+  open: number
+  at_risk: number
+  unknown: number
+  shortfall: number
+  first_safe_order_date: string | null
 }
 
 export interface CommittedDemandInput {
@@ -1292,6 +1311,26 @@ export interface InventoryStatusItem extends InventoryStock {
    *  say "426 on the way (OC-000001, OC-000002)". `reference` is the order
    *  number for a PO and the origin warehouse for a transfer. */
   incoming_sources?:    IncomingSource[]
+  /** Customer orders placed ahead of time that count for this row. Set even when
+   *  the row has no forecast or no stock row. */
+  committed_applied?:   CommittedApplied[]
+  /** Where the demand came from: a model fitted on this product, a person's
+   *  analogy (never a trained forecast), or none. */
+  forecast_source?:     'trained' | 'analogy' | null
+  /** True for an analogy row: show it as a soft estimate. */
+  low_confidence?:      boolean
+  analogy_applied?:     AnalogyApplied[]
+  /** A trained model has since taken over from an analogy. */
+  analogy_retired?:     { analogy_id: string; retired_at: string } | null
+  /** An analogy exists but did not apply (no reference forecast, or no stock). */
+  analogy_unavailable?: { analogy_id: string; references_missing: string[]; reason?: string } | null
+  /** True when this row's signal came from its commitments alone (no forecast
+   *  or no stock row). `committed_shortfall` = units no stock plus incoming
+   *  covers; `committed_stock_unknown` = no stock figure, counted as zero and
+   *  no quantity recommended. */
+  committed_only?:          boolean
+  committed_shortfall?:     number
+  committed_stock_unknown?: boolean
   inventory_value:     number | null
   n_models:             number
   abc:                  string
@@ -1494,8 +1533,41 @@ export interface InventoryStatusPageParams {
   order?: 'asc' | 'desc'
   q?: string
   signal?: string
+  /** ABC class (value ranking of the whole catalogue). */
+  abc?: AbcClass
   /** Exact SKUs to look up (names of a known few rows). */
   skus?: string[]
+}
+
+export type AbcClass = 'A' | 'B' | 'C'
+
+/** One ABC class in the "service level by class" suggestion. */
+export interface ServiceLevelClassRow {
+  abc: AbcClass
+  skus: number
+  /** Share of the catalogue's demand value, 0..1. */
+  value_share: number
+  /** Mean service level the class plans on today (null when it has no SKUs). */
+  current_service_level: number | null
+  suggested_service_level: number
+  /** SKUs a click would change (unconfigured, and not already at the suggestion). */
+  would_change: number
+  /** SKUs whose level someone already set: left alone. */
+  owned: number
+}
+
+export type ServiceLevelClassesState =
+  | { available: false; reason: string }
+  | { available: true; session_id: string; classes: ServiceLevelClassRow[];
+      cutoffs: { a: number; b: number; x: number; y: number } }
+
+export interface ServiceLevelClassApplied {
+  abc: AbcClass
+  service_level: number
+  updated: number
+  kept_own_level: number
+  without_stock_row: number
+  skus: string[]
 }
 
 export interface SuppliersPageResponse {
@@ -1674,6 +1746,63 @@ export interface POApprovalPendingItem {
 export type AdjustmentReason =
   'promotion' | 'price_change' | 'new_customer' | 'lost_customer' | 'seasonality'
   | 'supply_issue' | 'market_news' | 'data_error' | 'other'
+export type SpikeEditReason =
+  'one_off_order' | 'promotion' | 'backlog_catch_up' | 'data_error' | 'external_event' | 'other'
+/** A past period a person marked as a one-off ("exclude from the baseline"). */
+export interface SpikeEdit {
+  id: string
+  dataset_id: string
+  sku: string
+  start_date: string
+  end_date: string
+  reason_code: SpikeEditReason
+  reason_note: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  reverted_by: string | null
+  reverted_at: string | null
+  /** What THIS session's run did with the mark; null = the run predates it. */
+  applied: {
+    status: 'applied' | 'no_match' | 'no_baseline'
+    points_treated: number
+    original_total: number
+    replacement_total: number
+    applied_at: string
+  } | null
+}
+/** A person's "this new product sells like these" (forecast by analogy). */
+export interface SkuAnalogy {
+  id: string
+  new_sku: string
+  reference_skus: string[]
+  scale_factor: number
+  start_date: string | null
+  note: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  reverted_at: string | null
+  /** Set once, when a trained model took over and the analogy stopped applying. */
+  superseded_at: string | null
+}
+export interface AnalogyLimits {
+  min_references: number; max_references: number; min_scale: number; max_scale: number
+}
+/** `analogy_applied` on a status row: what stood in for a trained model. */
+export interface AnalogyApplied {
+  analogy_id: string
+  references: string[]
+  references_missing: string[]
+  scale_factor: number
+  start_date: string | null
+  alignment: 'calendar' | 'since_start'
+  band_widen_factor: number
+  min_relative_sigma: number
+  note: string | null
+  created_by_name: string | null
+  created_at: string | null
+}
 export interface ForecastAdjustment {
   id: string
   session_id: string
@@ -1710,6 +1839,9 @@ export interface ValueAddedGroup {
   adjusted_error: number
   base_wape: number | null
   adjusted_wape: number | null
+  /** Signed direction over the graded points: + = ran high (over-forecast). */
+  base_bias?: number | null
+  adjusted_bias?: number | null
   /** + = the adjusted forecast's error was that much SMALLER than the model's. */
   improvement_pct: number | null
   better_points: number
@@ -1857,6 +1989,9 @@ export interface SupplierScorecardRow {
   lead_time_real_min:   number | null
   lead_time_real_max:   number | null
   lead_time_real_avg:   number | null
+  /** Observed tail of the lead times (display only, null below the sample floor). */
+  lead_time_p80_days?:  number | null
+  lead_time_p95_days?:  number | null
   lead_time_declarado:  number | null
   deviation_days:      number | null
   on_time_rate:         number | null
@@ -2591,6 +2726,23 @@ export interface PlanningState {
   period_reason:     PlanningPeriodReason
   // Only set when an explicit pick could not be honored.
   requested_period:  PlanningPeriod | null
+}
+
+// The horizon the tenant's buying need (lead time + review period) asks for.
+// `need` is null when nothing is declared: the horizon is then untouched.
+export interface HorizonNeed {
+  need_days:          number   // with the safety margin, clamped to the ceiling
+  required_days:      number   // lead time + review period, no margin
+  lead_time_days:     number
+  review_period_days: number
+  supplier:           string | null
+  sku:                string
+  capped:             boolean
+}
+export interface HorizonPreview {
+  need:         HorizonNeed | null
+  ceiling_days: number
+  by_grain: Record<PlanningPeriod, { configured_steps: number; steps: number; extended: boolean }>
 }
 
 // ── What-if scenarios (PENDIENTES #7) ────────────────────────────────────────

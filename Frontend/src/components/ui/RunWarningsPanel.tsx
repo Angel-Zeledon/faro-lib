@@ -73,7 +73,8 @@ function Group({ group }: { group: RunWarningGroup }) {
   const [open, setOpen] = useState(false)
 
   const isError = group.severity === 'error'
-  const accent  = isError ? '#B94A4A' : '#A8701C'
+  // An applied one-off exclusion is a record of what people chose, not a problem.
+  const accent  = isError ? '#B94A4A' : group.severity === 'info' ? '#4B6B73' : '#A8701C'
   const title   = codeText(group.code, 'title', group.samples[0]?.message || group.code)
   const what    = codeText(group.code, 'what')
   const fix     = codeText(group.code, 'fix')

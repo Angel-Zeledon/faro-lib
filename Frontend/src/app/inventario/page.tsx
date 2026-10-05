@@ -15,7 +15,7 @@ import {
  ApiError,
 } from '@/lib/api'
 import type {
- InventoryStatusItem, InventorySignal,
+ InventoryStatusItem, InventorySignal, AbcClass,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadCapitalResponse, ExcludedSku,
  EventSimulationResult, POLineDecision, ShrinkageReason, CalendarCatalogEntry, CoverageUnit,
  EventMultiplier,
@@ -61,6 +61,7 @@ import {
  PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft, ScanLine, SlidersHorizontal,
 } from 'lucide-react'
 import CommittedDemandPanel from '@/components/inventory/CommittedDemandPanel'
+import AnalogyPanel from '@/components/inventory/AnalogyPanel'
 import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -562,6 +563,20 @@ function CalcExplainer({ exp, moq }: { exp: InventoryCalcExplanation; moq: numbe
  <div key={a.adjustment_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text }}>
  <SlidersHorizontal size={12} color={C.indigo} aria-hidden="true" />
  <span>{adjustmentLine(t, a)}</span>
+ </div>
+ ))}
+ </div>
+ )}
+ {exp.analogy_applied && exp.analogy_applied.length > 0 && (
+ <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+ {exp.analogy_applied.map(a => (
+ <div key={a.analogy_id} style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+ <span style={{ fontWeight: 700, color: C.indigo }}>{t('analogy.badge')}. </span>
+ {t('analogy.why', {
+  refs: a.references.join(', '), factor: String(a.scale_factor),
+  name: a.created_by_name || '—', widen: String(a.band_widen_factor),
+ })}
+ {a.references_missing.length > 0 && <> {t('analogy.why_missing', { refs: a.references_missing.join(', ') })}</>}
  </div>
  ))}
  </div>
@@ -2103,6 +2118,8 @@ export default function InventoryPage() {
  // pre-flattened string.
  const [error, setError] = useState<unknown>(null)
  const [signalFilter, setSignalFilter] = useState<InventorySignal | ''>('')
+ // ABC class (value ranking): a second, independent server-side filter.
+ const [abcFilter, setAbcFilter] = useState<AbcClass | ''>('')
  const [search, setSearch] = useState('')
  // Typing filters on the server; one request per pause, not per keystroke.
  const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -2213,7 +2230,7 @@ export default function InventoryPage() {
   : viewMode === 'provider' ? { sort: 'supplier_urgency' }
   : viewMode === 'table' && sort ? { sort: (sort.key === 'sku' ? 'name' : sort.key) as InventoryStatusSort, order: sort.dir }
   : { sort: 'urgency' }
- const queryKey = [sessionId, signalFilter, debouncedSearch, serverSort.sort, serverSort.order ?? ''].join('|')
+ const queryKey = [sessionId, signalFilter, abcFilter, debouncedSearch, serverSort.sort, serverSort.order ?? ''].join('|')
  const [pageState, setPageState] = useState({ key: '', page: 1 })
  const page = pageState.key === queryKey ? pageState.page : 1
  const setPage = useCallback((p: number) => setPageState({ key: queryKey, page: p }), [queryKey])
@@ -2267,14 +2284,14 @@ export default function InventoryPage() {
  const seq = ++fetchSeq.current
  if (full) { setLoading(true) } else { setFetching(true) }
  setError(null)
- const filtered = !!(signalFilter || debouncedSearch.trim())
+ const filtered = !!(signalFilter || abcFilter || debouncedSearch.trim())
  void (async () => {
   try {
    // `silent: true` — the failure is rendered as a full ErrorState below, so the
    // interceptor's toast would say the same thing twice.
    const res = withSingleSeriesLabel(await getInventoryStatusPage(sid, {
     limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, signal: signalFilter || undefined,
-    q: debouncedSearch, ...serverSort,
+    abc: abcFilter || undefined, q: debouncedSearch, ...serverSort,
    }, 0.95, { silent: true }), t)
    if (seq !== fetchSeq.current) return
    // The KPI row describes the whole catalogue. A response for an unfiltered
@@ -3033,6 +3050,12 @@ export default function InventoryPage() {
   : { padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10, background: C.card }}>
  <input data-tour="inv.search" type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, minWidth: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none', ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, boxSizing: 'border-box' } : {}) }} />
  {search && <button onClick={() => setSearch('')} aria-label={t('inventory.search_clear')} title={t('inventory.search_clear')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', ...(narrow ? { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' } : {}) }}><X size={narrow ? 18 : 13} aria-hidden="true" /></button>}
+ <select data-testid="inv-abc-filter" aria-label={t('inventory.abc_filter')} title={t('inventory.tip_abc_xyz')} value={abcFilter} onChange={e => setAbcFilter(e.target.value as AbcClass | '')} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 8px', fontSize: 12, color: C.text, ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10 } : {}) }}>
+ <option value="">{t('inventory.abc_filter_all')}</option>
+ <option value="A">{t('inventory.abc_filter_class', { abc: 'A' })}</option>
+ <option value="B">{t('inventory.abc_filter_class', { abc: 'B' })}</option>
+ <option value="C">{t('inventory.abc_filter_class', { abc: 'C' })}</option>
+ </select>
  <span style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }} aria-live="polite">{pageTotal.toLocaleString(localeFor(lang))} SKU{pageTotal !== 1 ? 's' : ''}</span>
  </div>}
 
@@ -3077,7 +3100,7 @@ export default function InventoryPage() {
  /* Two very different emptinesses: a filter that matched nothing (clear it)
     versus a session with no stock loaded (go load it). */
  <div style={{ padding: '32px 24px' }}>
- {signalFilter || search ? (
+ {signalFilter || abcFilter || search ? (
  <EmptyState
  compact
  icon={<Search size={20} />}
@@ -3086,7 +3109,7 @@ export default function InventoryPage() {
  actions={[{
  label: t('inventory.empty_filtered_cta'),
  variant: 'secondary',
- onClick: () => { setSignalFilter(''); setSearch('') },
+ onClick: () => { setSignalFilter(''); setAbcFilter(''); setSearch('') },
  }]}
  />
  ) : (
@@ -4158,8 +4181,10 @@ export default function InventoryPage() {
 
  ) : viewMode === 'committed' ? (
  /* ── Committed demand: one component for desktop and phone ── */
- <div style={{ padding: narrow ? 0 : undefined }}>
+ <div style={{ padding: narrow ? 0 : undefined, display: 'flex', flexDirection: 'column', gap: 16 }}>
   <CommittedDemandPanel />
+  {/* Forecast by analogy: a new product with no history plans from products it sells like. */}
+  <AnalogyPanel onChanged={() => { if (sessionId) load(sessionId) }} />
  </div>
 
  ) : viewMode === 'ignored' && narrow ? (
@@ -4558,6 +4583,32 @@ export default function InventoryPage() {
  <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{item.sku}</div>
  {item.display_name && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{item.display_name}</div>}
  {item.supplier && <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>{item.supplier}</div>}
+ {item.forecast_source === 'analogy' && (
+ <div style={{ fontSize: 10.5, fontWeight: 600, color: C.indigo, marginTop: 2 }} title={t('analogy.badge_tip')}>
+ {t('analogy.badge')} · {t('analogy.badge_tip')}
+ </div>
+ )}
+ {item.analogy_unavailable && (
+ <div style={{ fontSize: 10.5, color: C.dim, marginTop: 2 }}>
+ {item.analogy_unavailable.reason === 'no_stock'
+  ? t('analogy.unavailable_no_stock')
+  : t('analogy.unavailable_refs', { refs: item.analogy_unavailable.references_missing.join(', ') })}
+ </div>
+ )}
+ {item.analogy_retired && (
+ <div style={{ fontSize: 10.5, color: C.dim, marginTop: 2 }}>
+ {t('analogy.retired', { date: item.analogy_retired.retired_at.slice(0, 10) })}
+ </div>
+ )}
+ {item.committed_only && (
+ <div style={{ fontSize: 10.5, color: C.indigo, marginTop: 2 }}>
+ {t('inventory.committed_only_line', {
+ units: Number((item.committed_applied ?? []).reduce((s, c) => s + c.units, 0).toFixed(1)).toLocaleString(),
+ shortfall: Number((item.committed_shortfall ?? 0).toFixed(1)).toLocaleString(),
+ })}
+ {item.committed_stock_unknown && <> · {t('inventory.committed_only_unknown')}</>}
+ </div>
+ )}
  </th>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  {item.has_stock ? <span style={{ fontWeight: 600 }}>{fmt(item.current_stock, 0)}</span> : <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.no_record')}</span>}

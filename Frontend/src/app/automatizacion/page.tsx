@@ -23,6 +23,7 @@ import {
   MobileList, MobileCard, MobileSection, MobileTabs, StickyActionBar,
 } from '@/components/mobile'
 import MobileFormScope from '@/components/mobile/MobileFormScope'
+import { FeatureGate } from '@/components/limits/FeatureLocked'
 import ApiKeysMobile from './ApiKeysMobile'
 import RunDurationsPanel from './RunDurationsPanel'
 
@@ -846,7 +847,7 @@ export default function SettingsPage() {
             />
           )}
           <div key={tab} className="page-enter" data-tour={`settings.${tab}`}>
-            {ENABLED['api-keys']  && tab === 'api-keys'  && <ApiKeysTab />}
+            {ENABLED['api-keys']  && tab === 'api-keys'  && <FeatureGate feature="api"><ApiKeysTab /></FeatureGate>}
             {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
             {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
             {ENABLED['schedules'] && tab === 'schedules' && <RunDurationsPanel />}
@@ -900,7 +901,7 @@ export default function SettingsPage() {
           left there is no tab bar, and an anchor that only exists when the bar
           is drawn left the tour pointing at nothing. */}
       <Card tone="inset" padding="20px 24px" data-tour={`settings.${tab}`}>
-        {ENABLED['api-keys']  && tab === 'api-keys'  && <ApiKeysTab />}
+        {ENABLED['api-keys']  && tab === 'api-keys'  && <FeatureGate feature="api"><ApiKeysTab /></FeatureGate>}
         {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
         {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
       </Card>

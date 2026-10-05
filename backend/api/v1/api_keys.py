@@ -103,10 +103,16 @@ def _key_warehouse_scope(user: CurrentUser, requested: list[str] | None) -> list
 
 @router.post("")
 def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_analyst_or_above)):
-    # How many machine credentials this tenant may hold. The free tier gets one
-    # — enough for the nightly ERP push it is meant to run — and minting a
-    # second is the moment to talk to us, not a silent extra.
-    from backend.entitlements.service import enforce_limit, limit_guard
+    # How many machine credentials this tenant may hold (the plan's
+    # `max_api_keys`; a tier with the API but a short ceiling is told to talk to
+    # us rather than getting a silent extra).
+    from backend.entitlements.service import (
+        enforce_limit, ensure_feature, limit_guard,
+    )
+
+    # API access is a paid feature (2026-10-05): refused before anything is
+    # minted or counted, with the structured `plan_feature_locked` 403.
+    ensure_feature(user.tenant_id, "api")
 
     raw = KEY_PREFIX + secrets.token_urlsafe(32)
     key_wh_scope = _key_warehouse_scope(user, body.warehouse_ids)

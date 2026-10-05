@@ -1,4 +1,16 @@
-"""The limits a tenant runs under. One product, two ceilings.
+"""The limits and entitlements a tenant runs under.
+
+**2026-10-05 owner decision (supersedes the "every tenant gets every feature"
+rule below):** three things are paid-only — API access (`sk_live_*` keys), MCP
+access and the WhatsApp bot. Everything else is still on every tier. They are
+the boolean fields `api_access` / `mcp_access` / `whatsapp_bot` on `PlanDef`;
+`free` and `demo` have none, `paid` (the "Full" plan, with LIMITED ceilings)
+and `corporate` (every commercial ceiling lifted) have all three. The single
+check is `entitlements.service.ensure_feature`, which raises the structured
+403 `plan_feature_locked`. The historical text that follows describes the
+older, simpler model; read it with that exception in mind.
+
+One product, two ceilings (historical).
 
 StockAI shipped three tiers once — starter / professional / enterprise — each with
 its own feature set, and a good part of the product was spent telling people
@@ -29,6 +41,7 @@ from dataclasses import dataclass
 
 FREE = "free"
 PAID = "paid"
+CORPORATE = "corporate"
 DEMO = "demo"
 
 
@@ -42,6 +55,25 @@ class PlanDef:
     max_api_calls_per_day: int | None
     max_concurrent_jobs: int | None
     max_dataset_size_mb: int | None
+    # Paid-only features (booleans, never None). Deliberately the LAST fields:
+    # `service._LIMIT_FIELDS` is every field up to here, so these never leak
+    # into the `limits` map the frontend already reads.
+    api_access: bool = False
+    mcp_access: bool = False
+    whatsapp_bot: bool = False
+
+
+# The feature keys, as they appear in `plan_feature_locked` params and in the
+# `features` map of GET /entitlements. Value: the PlanDef field that decides it.
+FEATURE_FIELDS: dict[str, str] = {
+    "api": "api_access",
+    "mcp": "mcp_access",
+    "whatsapp_bot": "whatsapp_bot",
+}
+
+# The cheapest tier that includes every feature above (error param
+# `required_plan`).
+FEATURE_REQUIRED_PLAN = PAID
 
 
 # Infrastructure ceilings — the same on both tiers, because they are not for
@@ -61,16 +93,37 @@ PLANS: dict[str, PlanDef] = {
         # reason to exist, need a second one.
         max_locations=1,
         max_sessions=3,
-        max_api_keys=1,
-        # A nightly ERP push and the polling around it fits in 500. A live
-        # integration that reads all day does not.
-        max_api_calls_per_day=500,
+        # No API on the free tier (api_access False below), so no keys and no
+        # calls: the ceilings say the same thing the entitlement does.
+        max_api_keys=0,
+        max_api_calls_per_day=0,
         max_concurrent_jobs=_MAX_CONCURRENT_JOBS,
         # 25 MB is roughly 4 years of daily sales over 100 SKUs — the history
         # that fits the SKU ceiling above, and no more.
         max_dataset_size_mb=25,
     ),
+    # The "Full" plan: first tier with API + MCP + the WhatsApp bot, and still
+    # LIMITED. Proposed numbers, easy to edit. A mid-size distributor fits in
+    # 500 SKUs; three seats and two warehouses are a small team with a second
+    # site; twenty saved runs is a year of monthly retrains for a few
+    # variants; 3 keys is ERP + BI + an AI client; 2000 calls/day per key is a
+    # nightly push plus polling every minute during business hours; 100 MB is
+    # ~5 years of daily sales over 500 SKUs. Past this is `corporate`.
     PAID: PlanDef(
+        max_skus=500,
+        max_users=3,
+        max_locations=2,
+        max_sessions=20,
+        max_api_keys=3,
+        max_api_calls_per_day=2000,
+        max_concurrent_jobs=_MAX_CONCURRENT_JOBS,
+        max_dataset_size_mb=100,
+        api_access=True,
+        mcp_access=True,
+        whatsapp_bot=True,
+    ),
+    # Every commercial ceiling lifted (the old `paid`). Infrastructure stays.
+    CORPORATE: PlanDef(
         max_skus=None,
         max_users=None,
         max_locations=None,
@@ -78,10 +131,13 @@ PLANS: dict[str, PlanDef] = {
         max_api_keys=None,
         max_api_calls_per_day=None,
         max_concurrent_jobs=_MAX_CONCURRENT_JOBS,
-        # The one number still bounded on a paying customer's own data, and it
+        # The one number still bounded on a customer's own data, and it
         # stays because an upload is read into memory before it is anything
         # else. For scale: 3 years of daily sales over 5.000 SKUs is ~200 MB.
         max_dataset_size_mb=2000,
+        api_access=True,
+        mcp_access=True,
+        whatsapp_bot=True,
     ),
     DEMO: PlanDef(
         # Room to walk every screen once, and nothing more. The bundled demo
@@ -94,8 +150,9 @@ PLANS: dict[str, PlanDef] = {
         max_locations=2,
         # The seeded run plus one upload of their own.
         max_sessions=2,
-        max_api_keys=1,
-        max_api_calls_per_day=100,
+        # A throwaway account has no API, MCP or bot (all False by default).
+        max_api_keys=0,
+        max_api_calls_per_day=0,
         # Lower than the infrastructure ceiling: a burst of visitors must not
         # take every worker thread from the tenants who run on this server.
         max_concurrent_jobs=1,

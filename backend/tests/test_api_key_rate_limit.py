@@ -20,6 +20,7 @@ from backend.db.connection import execute, query_one
 
 @pytest.fixture
 def live_key(test_tenant, auth_headers, client):
+    execute("UPDATE tenants SET tier = 'paid' WHERE id = %s", (test_tenant["id"],))
     """A real key on a plan that may use one.
 
     The plan upgrade is not decoration: with `testing_mode` off the guard checks

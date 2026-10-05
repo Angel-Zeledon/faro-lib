@@ -108,6 +108,26 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=INFO,
         detail_keys=("sku", "adjustment", "adjustment_reason"),
     ),
+    # A person marked a past period of a product as a one-off (excluded from the
+    # baseline at the next training), or undid that mark.
+    "forecast.spike_excluded": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "period", "spike_reason"),
+    ),
+    "forecast.spike_restored": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "period", "spike_reason"),
+    ),
+    # A person said a new product will sell like others (forecast by analogy),
+    # or undid that statement.
+    "forecast.analogy_defined": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "references"),
+    ),
+    "forecast.analogy_reverted": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "references"),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     # Customer orders placed ahead of time, entered by a person. They move the

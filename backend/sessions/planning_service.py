@@ -125,6 +125,37 @@ def get_planning(tenant_id: str) -> dict:
                 stored.get("period") if reason == REASON_UNAVAILABLE else None)}
 
 
+def horizon_preview(tenant_id: str, horizon_days: Optional[int]) -> dict:
+    """What a launch with `horizon_days` would train per grain, and whether the
+    tenant's buying need (lead time + review period) raises it. The wizard shows
+    this BEFORE the run so the extension is never a surprise; it uses the same
+    two functions `launch_training_family` does, so preview and run agree.
+
+    `need` is None when nothing is declared (no stock rows, only default lead
+    times) — the wizard then says nothing and the horizon is untouched.
+    """
+    from backend.sessions import family_service as fam
+    from backend.sessions import horizon_need
+
+    need = horizon_need.tenant_need(tenant_id)
+    by_grain: dict[str, dict] = {}
+    for grain in _PERIOD_ORDER:
+        spec = {"granularity": grain,
+                "horizon": fam._horizon_steps(grain, horizon_days)}
+        configured = spec["horizon"]
+        fam._extend_for_need(spec, need)
+        by_grain[grain] = {
+            "configured_steps": configured,
+            "steps": spec["horizon"],
+            "extended": spec["horizon"] != configured,
+        }
+    return {
+        "need": need,
+        "ceiling_days": horizon_need.HORIZON_CEILING_DAYS,
+        "by_grain": by_grain,
+    }
+
+
 def set_planning(tenant_id: str, period: str, horizon: int) -> dict:
     """Validate + persist the active planning setting. Raises an ``AppError``
     (422) on an unavailable period or an out-of-reach horizon — an admin reads

@@ -10,9 +10,10 @@ import Button from '@/components/ui/Button'
 /**
  * The one commercial surface in StockAI.
  *
- * There is no checkout and no feature gate: both tiers ship every screen. When
- * a free tenant runs out of room, this is what they get — what they hit, the
- * fact that nothing is locked, and three ways to reach us. It is opened from
+ * There is no checkout. Every screen ships on every plan; what a plan decides is
+ * how much fits and whether the API, MCP and WhatsApp bot are included. When a
+ * tenant hits a ceiling or one of those three, this is what they get — what
+ * they hit and three ways to reach us. It is opened from
  * two places: automatically by `ApiErrorBridge` when the backend answers
  * PLAN_LIMIT_REACHED, and by hand from the usage panel in Mi cuenta.
  *
@@ -21,7 +22,7 @@ import Button from '@/components/ui/Button'
  * not want to leave the page, and it still ends up as a row we read by hand.
  */
 
-type OpenFn = (limitKey?: string | null) => void
+type OpenFn = (limitKey?: string | null, feature?: string | null) => void
 
 const UpgradeContext = createContext<OpenFn>(() => {})
 
@@ -29,22 +30,26 @@ export const useUpgradePrompt = (): OpenFn => useContext(UpgradeContext)
 
 export function UpgradeProvider({ children }: { children: React.ReactNode }) {
   const [limitKey, setLimitKey] = useState<string | null | undefined>(undefined)
+  const [feature, setFeature] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
 
-  const show = useCallback<OpenFn>((key) => {
+  const show = useCallback<OpenFn>((key, feat) => {
     setLimitKey(key ?? null)
+    setFeature(feat ?? null)
     setOpen(true)
   }, [])
 
   return (
     <UpgradeContext.Provider value={show}>
       {children}
-      {open && <UpgradePanel limitKey={limitKey ?? null} onClose={() => setOpen(false)} />}
+      {open && <UpgradePanel limitKey={limitKey ?? null} feature={feature} onClose={() => setOpen(false)} />}
     </UpgradeContext.Provider>
   )
 }
 
-function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose: () => void }) {
+function UpgradePanel({ limitKey, feature, onClose }: {
+  limitKey: string | null; feature: string | null; onClose: () => void
+}) {
   const { t } = useLanguage()
   const { ent } = useEntitlements()
   const [message, setMessage] = useState('')
@@ -92,7 +97,9 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
   async function submit() {
     setState('sending')
     try {
-      await requestUpgrade({ limit_key: limitKey, message, contact })
+      await requestUpgrade({
+        limit_key: feature ? `feature:${feature}` : limitKey, message, contact,
+      })
       setState('sent')
     } catch {
       // The api layer already toasted the failure; this line is what keeps the
@@ -106,7 +113,7 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={t(trial ? 'trial.dialog.title' : 'limits.dialog.title')}
+      aria-label={t(trial ? 'trial.dialog.title' : feature ? 'limits.feature.title' : 'limits.dialog.title')}
       className="modal-backdrop-enter"
       style={{
         position: 'fixed', inset: 0, zIndex: 10000,
@@ -127,8 +134,16 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
         }}
       >
         <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
-          {t(trial ? 'trial.dialog.title' : 'limits.dialog.title')}
+          {t(trial ? 'trial.dialog.title' : feature ? 'limits.feature.title' : 'limits.dialog.title')}
         </h3>
+
+        {feature && (
+          <p style={{
+            margin: '0 0 10px', fontSize: 13.5, fontWeight: 600, color: 'var(--text)',
+          }}>
+            {t('limits.feature.locked_line', { name: t(`limits.feature.name.${feature}`) })}
+          </p>
+        )}
 
         {limitKey && limit != null && used != null && (
           <p style={{
@@ -141,7 +156,7 @@ function UpgradePanel({ limitKey, onClose }: { limitKey: string | null; onClose:
         )}
 
         <p style={{ margin: '0 0 18px', fontSize: 13, lineHeight: 1.6, color: 'var(--dim)' }}>
-          {t(trial ? 'trial.dialog.explain' : 'limits.dialog.explain')}
+          {t(trial ? 'trial.dialog.explain' : feature ? 'limits.feature.explain' : 'limits.dialog.explain')}
         </p>
 
         <ContactButtons whatsapp={whatsapp} email={email} t={t} />

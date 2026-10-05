@@ -941,6 +941,9 @@ def inventory_status(
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     signal: Optional[str] = Query(default=None, description="Filter by signal: PEDIR_YA, PEDIR_PRONTO, OK, SOBRESTOCK, SIN_DATOS"),
     supplier: Optional[str] = Query(default=None),
+    abc: Optional[str] = Query(
+        default=None, pattern="^[AaBbCc]$",
+        description="Filter by ABC class (A, B or C), the value ranking of the whole catalogue"),
     by_warehouse: bool = Query(default=False, description="Per-(sku, warehouse) rows with network transfer suggestions"),
     limit: Optional[int] = Query(
         default=None, ge=1, le=500,
@@ -974,6 +977,7 @@ def inventory_status(
     if isinstance(order, _QueryDefault): order = None
     if isinstance(q, _QueryDefault): q = None
     if isinstance(skus, _QueryDefault): skus = None
+    if isinstance(abc, _QueryDefault): abc = None
     if not session_id:
         session_id = planning_service.resolve_active_session(user.tenant_id)
         if not session_id:
@@ -996,7 +1000,7 @@ def inventory_status(
         snap = status_snapshot.read_status(
             user.tenant_id, session_id, service_level, period,
             signal=signal, supplier=supplier, skus=skus, q=q,
-            sort=sort, order=order, limit=limit, offset=offset,
+            sort=sort, order=order, limit=limit, offset=offset, abc=abc,
         )
         if snap is not None:
             page = None
@@ -1043,6 +1047,9 @@ def inventory_status(
 
     if supplier:
         items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
+
+    if abc:
+        items = [i for i in items if i.get("abc") == abc.upper()]
 
     if skus and skus.strip():
         wanted = {x.strip() for x in skus.split(",") if x.strip()}
@@ -3074,7 +3081,7 @@ def send_alert_now(
     if numbers:
         text = build_inventory_alert_text(critical, warning, inventory_url,
                                           period=period)
-        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text, tenant_id=user.tenant_id))
+        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text, tenant_id=user.tenant_id, plan_gated=True))
 
     # The point of a test fire is to prove the channel works, so its outcome is
     # recorded like a real send instead of only being echoed in the response.

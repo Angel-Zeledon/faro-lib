@@ -10,9 +10,10 @@
   "per_minute_per_key": 120,
   "window_seconds": 60,
   "per_day_per_key": {
-   "demo": 100,
-   "free": 500,
-   "paid": null
+   "demo": 0,
+   "free": 0,
+   "paid": 2000,
+   "corporate": null
   }
  },
  "tags": [
@@ -9061,6 +9062,16 @@
         "type": "string"
        },
        "example": "Distribuidora Andina"
+      },
+      {
+       "name": "abc",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "description": "Filter by ABC class (A, B or C), the value ranking of the whole catalogue"
+       },
+       "example": "<abc>"
       },
       {
        "name": "by_warehouse",

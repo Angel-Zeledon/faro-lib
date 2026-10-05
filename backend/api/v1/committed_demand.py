@@ -59,9 +59,14 @@ def list_commitments(
     limit: int = Query(default=500, ge=1, le=2000),
     user: CurrentUser = Depends(get_current_user),
 ):
+    items = svc.list_for_tenant(user.tenant_id, sku=sku, status=status, limit=limit)
+    # Each open item carries its at-risk verdict (stock + incoming against all
+    # open commitments due up to its date); `by_customer` rolls it up.
+    svc.annotate_risk(user.tenant_id, items)
     return ok({
         "statuses": list(svc.STATUSES),
-        "items": svc.list_for_tenant(user.tenant_id, sku=sku, status=status, limit=limit),
+        "items": items,
+        "by_customer": svc.summarize_by_customer(items),
     })
 
 

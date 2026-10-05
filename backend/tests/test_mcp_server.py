@@ -51,8 +51,12 @@ def call(client, headers, tool: str, arguments: dict | None = None):
 
 
 @pytest.fixture
-def key_headers(client, auth_headers):
-    """A key minted through the endpoint the screen calls, like a customer's."""
+def key_headers(client, auth_headers, test_tenant):
+    """A key minted through the endpoint the screen calls, like a customer's.
+    On the paid tier: API and MCP are paid-only, and a few tests here turn
+    testing_mode off, which makes the plan check real."""
+    from backend.db.connection import execute
+    execute("UPDATE tenants SET tier = 'paid' WHERE id = %s", (test_tenant["id"],))
     r = client.post("/api/v1/api-keys",
                     json={"name": "claude-desktop-test", "role": "analyst"},
                     headers=auth_headers)
@@ -61,7 +65,9 @@ def key_headers(client, auth_headers):
 
 
 @pytest.fixture
-def viewer_key_headers(client, auth_headers):
+def viewer_key_headers(client, auth_headers, test_tenant):
+    from backend.db.connection import execute
+    execute("UPDATE tenants SET tier = 'paid' WHERE id = %s", (test_tenant["id"],))
     r = client.post("/api/v1/api-keys",
                     json={"name": "claude-readonly-test", "role": "viewer"},
                     headers=auth_headers)

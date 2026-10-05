@@ -61,7 +61,7 @@ import { fmtNum } from '@/lib/numberLocale'
 import { StaleLine, useTabFold } from './folds'
 import {
   C, AllClear, StatusMark, SourceBadge, provenanceText, summarizeAssumptions,
-  tOr, type ActionItem, IncomingNote, OrderedNote,
+  tOr, type ActionItem, IncomingNote, MoneyAtRiskNote, OrderedNote,
 } from './shared'
 
 // Thumb-sized: 44px is the smallest control a finger hits reliably. Every
@@ -564,6 +564,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
               figure stays in the "why" sheet. */}
           {item.reason}
         </div>
+        <MoneyAtRiskNote item={item} />
         <IncomingNote item={item} />
         <OrderedNote item={item} />
         {(noContact || lateAlert) && item.supplier && (
