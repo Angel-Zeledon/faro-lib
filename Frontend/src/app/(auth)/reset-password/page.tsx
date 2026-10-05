@@ -6,7 +6,7 @@ import { authResetPassword } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 import { Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
-import { Wordmark } from '@/components/brand/Wordmark'
+import { BrandMark } from '@/components/brand/BrandMark'
 
 function ResetPasswordForm() {
   const { t }    = useLanguage()
@@ -48,7 +48,7 @@ function ResetPasswordForm() {
     <div style={{ width: '100%', maxWidth: 400, padding: '0 20px' }}>
       <div style={{ textAlign: 'center', marginBottom: 28 }}>
         <div style={{ marginBottom: 10 }}>
-          <Wordmark size={26} />
+          <BrandMark size={40} />
         </div>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px' }}>
           {t('auth.set_new_password_title')}

@@ -6,7 +6,7 @@ import { authResendVerification, authVerifyEmail } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
-import { Wordmark } from '@/components/brand/Wordmark'
+import { BrandMark } from '@/components/brand/BrandMark'
 
 function VerifyEmailContent() {
   const { t } = useLanguage()
@@ -55,7 +55,7 @@ function VerifyEmailContent() {
         borderRadius: 14, padding: '40px 28px',
       }}>
         <div style={{ marginBottom: 16 }}>
-          <Wordmark size={26} />
+          <BrandMark size={40} />
         </div>
 
         {status === 'loading' && (

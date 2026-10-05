@@ -1,7 +1,7 @@
 'use client'
 import { usePathname } from 'next/navigation'
 import { Moon, Sun } from 'lucide-react'
-import { Wordmark } from '@/components/brand/Wordmark'
+import { BrandMark } from '@/components/brand/BrandMark'
 import { AuthPanel } from '@/components/auth/AuthPanel'
 import { TipsPanel } from '@/components/auth/TipsPanel'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -56,7 +56,7 @@ function AuthStage({ children }: { children: React.ReactNode }) {
     <div className="auth-split">
       <div className="auth-split-form">
         <header className="auth-split-head">
-          <Wordmark size={21} color="var(--a-ink)" accent="var(--a-accent)" />
+          <BrandMark size={36} />
           <div className="auth-split-tools">
             <button
               type="button" className="auth-tool"

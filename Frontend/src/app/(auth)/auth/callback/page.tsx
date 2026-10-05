@@ -15,7 +15,7 @@ import { Loader2, XCircle } from 'lucide-react'
 import { exchangeSocialCode } from '@/lib/api'
 import { setAuth } from '@/lib/auth'
 import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
-import { Wordmark } from '@/components/brand/Wordmark'
+import { BrandMark } from '@/components/brand/BrandMark'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 
@@ -61,7 +61,7 @@ export default function SocialCallbackPage() {
         borderRadius: 14, padding: '40px 28px',
       }}>
         <div style={{ marginBottom: 18 }}>
-          <Wordmark size={26} />
+          <BrandMark size={40} />
         </div>
         {error ? (
           <>

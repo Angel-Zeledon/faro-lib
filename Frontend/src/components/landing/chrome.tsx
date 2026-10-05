@@ -18,7 +18,7 @@ import { LANDING } from '@/i18n/landing'
 import { LEGAL } from '@/i18n/legal'
 import { DOCS_CHROME } from '@/i18n/docs/chrome'
 import { LEGAL_HUB_PATH, LEGAL_ORDER, LEGAL_PATHS } from '@/components/landing/legalPaths'
-import { Wordmark } from '@/components/brand/Wordmark'
+import { BrandMark } from '@/components/brand/BrandMark'
 import { T } from '@/components/landing/theme'
 import { CONTACT_EMAIL, CONTACT_PHONE_HREF, CONTACT_PHONE_LABEL } from '@/components/landing/contact'
 
@@ -110,7 +110,7 @@ export function Nav(props: ChromeProps) {
  <header>
  <nav aria-label={L.nav.ariaLabel} className={`nav-shell${scrolled || menuOpen ? ' is-scrolled' : ''}`}>
  <a href={props.onHome ? '#top' : '/'} aria-label="StockAI" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
- <Wordmark size={22} color={T.text} accent={T.accent} />
+ <BrandMark size={36} />
  </a>
  <div className="nav-links">
  {NAV_LINKS.map(([href, label]) => (
@@ -173,7 +173,7 @@ export function Footer(props: ChromeProps) {
  <div className="footer-grid" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 1fr 1fr', gap: 40, marginBottom: 40 }}>
  <div>
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
- <Wordmark size={20} color={T.text} accent={T.accent} />
+ <BrandMark size={30} />
  </div>
  <p style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.6, margin: 0, maxWidth: 34 + 'ch' }}>
  {L.footer.tagline}

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { Wordmark } from '@/components/brand/Wordmark'
+import { BrandMark } from '@/components/brand/BrandMark'
 import { TIPS, randomTipIndex } from '@/lib/tips'
 
 /**
@@ -56,7 +56,7 @@ export default function AppIntro() {
   return (
     <div className="app-intro" aria-hidden="true">
       <div className="app-intro-mark">
-        <Wordmark size={44} color="#fff" accent="#5EEAD4" />
+        <BrandMark size={96} outline />
       </div>
       <div className="app-intro-bar"><span /></div>
       <p className="app-intro-tip">{t(`tips.${tip.n}.body`)}</p>
