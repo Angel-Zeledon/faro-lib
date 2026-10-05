@@ -9063,6 +9063,16 @@
        "example": "Distribuidora Andina"
       },
       {
+       "name": "abc",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "description": "Filter by ABC class (A, B or C), the value ranking of the whole catalogue"
+       },
+       "example": "<abc>"
+      },
+      {
        "name": "by_warehouse",
        "in": "query",
        "required": false,
