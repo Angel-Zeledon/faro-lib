@@ -389,6 +389,8 @@ from backend.api.v1 import forecast_adjustments as forecast_adjustments_router  
 app.include_router(forecast_adjustments_router.router, prefix=_PREFIX)
 from backend.api.v1 import committed_demand as committed_demand_router  # noqa: E402
 app.include_router(committed_demand_router.router, prefix=_PREFIX)
+from backend.api.v1 import supply_contracts as supply_contracts_router  # noqa: E402
+app.include_router(supply_contracts_router.router, prefix=_PREFIX)
 from backend.api.v1 import spike_edits as spike_edits_router  # noqa: E402
 app.include_router(spike_edits_router.router, prefix=_PREFIX)
 from backend.api.v1 import sku_analogies as sku_analogies_router  # noqa: E402

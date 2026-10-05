@@ -2031,6 +2031,9 @@ from backend.inventory.approval_migrations import MIGRATIONS as _APPROVALS  # no
 _MIGRATIONS += _APPROVALS
 from backend.inventory.committed_demand_migrations import MIGRATIONS as _COMMITTED  # noqa: E402
 _MIGRATIONS += _COMMITTED
+# Blanket supply contracts: after committed demand, whose table they extend.
+from backend.inventory.supply_contract_migrations import MIGRATIONS as _SUPPLY_CONTRACTS  # noqa: E402
+_MIGRATIONS += _SUPPLY_CONTRACTS
 from backend.inventory.spike_edit_migrations import MIGRATIONS as _SPIKE_EDITS  # noqa: E402
 _MIGRATIONS += _SPIKE_EDITS
 from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  # noqa: E402

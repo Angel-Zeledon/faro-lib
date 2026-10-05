@@ -1057,6 +1057,88 @@ export interface CommittedDemand {
   latest_safe_order_date?: string | null
   /** The latest safe order date is already behind us. */
   order_date_passed?: boolean | null
+  /** 'contract' when a blanket contract's release materialised it. */
+  source?: 'manual' | 'contract'
+  contract_root_id?: string | null
+  contract_release_date?: string | null
+}
+
+export type SupplyContractStatus = 'draft' | 'active' | 'closed' | 'cancelled'
+export type SupplyContractScheduleKind = 'monthly' | 'weekly' | 'explicit'
+
+export interface SupplyContractLine {
+  sku: string
+  /** Optional on input for an explicit schedule: its releases define it. */
+  total_quantity: number | null
+  unit_price: number | null
+}
+
+export interface SupplyContractReleaseInput {
+  sku?: string | null
+  date: string
+  quantity: number | null
+}
+
+export interface SupplyContractTerms {
+  customer: string
+  reference?: string | null
+  lines: SupplyContractLine[]
+  period_start: string
+  period_end: string
+  schedule_kind: SupplyContractScheduleKind
+  releases?: SupplyContractReleaseInput[] | null
+  tolerance_pct: number
+  warehouse_id?: string | null
+  on_top_of_base: boolean
+  note?: string | null
+}
+
+/** fulfilled / open / cancelled come from the release's commitment;
+ *  missing = should already be a commitment and is not; scheduled = further out. */
+export type SupplyContractReleaseState = 'fulfilled' | 'open' | 'cancelled' | 'missing' | 'scheduled'
+
+export interface SupplyContractRelease {
+  sku: string
+  date: string
+  quantity: number
+  state: SupplyContractReleaseState
+  overdue: boolean
+}
+
+export interface SupplyContractProgress {
+  scheduled_total: number
+  due_to_date: number
+  delivered: number
+  remaining: number
+  progress_pct: number | null
+  behind_schedule: boolean
+  /** null = nothing due yet, so there is no pace to project from. */
+  projected_delivered: number | null
+  projected_shortfall: number | null
+  shortfall_beyond_tolerance: boolean | null
+  overdue_count: number
+  overdue_units: number
+  unmaterialised_due: number
+  next_release: SupplyContractRelease | null
+  lines: { sku: string; scheduled: number; due_to_date: number; delivered: number; remaining: number; behind_schedule: boolean }[]
+  releases: SupplyContractRelease[]
+}
+
+export interface SupplyContract extends SupplyContractTerms {
+  id: string
+  root_id: string
+  revision: number
+  status: SupplyContractStatus
+  warehouse_name: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  horizon_days: number
+  period_ended: boolean
+  progress: SupplyContractProgress
+  revisions?: { id: string; revision: number; status: SupplyContractStatus; created_by_name: string | null; created_at: string }[]
+  materialised?: number
+  withdrawn?: number
 }
 
 /** One line of the "by customer" summary of open commitments. */

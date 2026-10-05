@@ -62,6 +62,7 @@ import {
 } from 'lucide-react'
 import CommittedDemandPanel from '@/components/inventory/CommittedDemandPanel'
 import AnalogyPanel from '@/components/inventory/AnalogyPanel'
+import SupplyContractsPanel from '@/components/inventory/SupplyContractsPanel'
 import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -2136,6 +2137,9 @@ export default function InventoryPage() {
  useEffect(() => {
   if (viewMode === 'simple' || viewMode === 'table' || viewMode === 'provider') lastPrimaryView.current = viewMode
  }, [viewMode])
+ // Bumped when a contract or a contract's commitment changes, so the two
+ // committed-demand panels (contracts and commitments) re-read each other.
+ const [commitmentsVersion, setCommitmentsVersion] = useState(0)
  const [expandedSku, setExpandedSku] = useState<string | null>(null)
  // Phone only: the SKU whose detail sheet is open (the desktop expands a row).
  const [detailSku, setDetailSku] = useState<string | null>(null)
@@ -4182,7 +4186,9 @@ export default function InventoryPage() {
  ) : viewMode === 'committed' ? (
  /* ── Committed demand: one component for desktop and phone ── */
  <div style={{ padding: narrow ? 0 : undefined, display: 'flex', flexDirection: 'column', gap: 16 }}>
-  <CommittedDemandPanel />
+  <CommittedDemandPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
+  {/* Blanket contracts: their releases become the commitments listed above. */}
+  <SupplyContractsPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
   {/* Forecast by analogy: a new product with no history plans from products it sells like. */}
   <AnalogyPanel onChanged={() => { if (sessionId) load(sessionId) }} />
  </div>
