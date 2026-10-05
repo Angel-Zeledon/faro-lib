@@ -2113,7 +2113,12 @@ def _compute_inventory_status(
     # SKUs to display — only of the stock fields to enrich a SKU already present
     # in the active session's forecasts. Otherwise, stale/unrelated SKUs from
     # past sessions leak into sessions that never uploaded them.
-    all_skus = sorted(forecasts.keys())
+    # A SKU with an open commitment is listed even with no forecast of its own
+    # (a new product a customer already ordered): it never reached the loop, so
+    # the commitment was invisible. No forecast is invented for it below.
+    from backend.inventory import committed_demand_service as _cd_all
+    _committed_skus = _cd_all.active_by_sku(tenant_id)
+    all_skus = sorted(set(forecasts.keys()) | set(_committed_skus.keys()))
 
     # Real lead times learned from recorded receptions, one query for the whole
     # tenant (never per SKU inside the loop).
@@ -2191,7 +2196,7 @@ def _compute_inventory_status(
     # are added on top of the forecast and named on the row. Empty for a tenant
     # that recorded none, which leaves every number below exactly as it was.
     from backend.inventory import committed_demand_service as _cd_svc
-    committed_by_sku = _cd_svc.active_by_sku(tenant_id)
+    committed_by_sku = _committed_skus
 
     # Per-SKU views of the incoming maps, built ONCE. The loop used to scan
     # every (sku, warehouse) key for every SKU — quadratic in the catalogue.
@@ -2248,6 +2253,7 @@ def _compute_inventory_status(
         has_stock    = stock is not None and current_stock is not None
         adjustments_applied: list[dict] = []
         committed_applied: list[dict] = []
+        committed_only: Optional[dict] = None
 
         _sl_val, service_level_source, service_level_rule_scope = _sd_svc.resolve_field(
             "service_level", stock, rule_index, supplier=supplier, category=category,
@@ -2463,6 +2469,20 @@ def _compute_inventory_status(
             calc_explanation = None
             reorder_point = None
             explanation_obj = None
+            # No forecast or no stock row: the semaphore cannot run, but a
+            # commitment must not vanish with it. Show its units and, when the
+            # stock plus incoming does not cover it, say an order is needed.
+            # No forecast is invented (see committed_demand_service).
+            if committed_by_sku.get(sku):
+                _cover = _cd_svc.cover_without_forecast(
+                    committed_by_sku[sku], today, lead_time,
+                    _resolve_review_period_days(supplier, review_period_map),
+                    current_stock if has_stock else None, sku_incoming, moq)
+                committed_applied = _cover["applied"]
+                committed_only = _cover
+                if _cover["signal"]:
+                    signal = _cover["signal"]
+                    recommended = _cover["recommended"]
 
         # Recent stock history (last 14 days, at most 10 points for sparkline)
         history: list[dict] = history_by_sku.get(sku, [])[-10:] if has_stock else []
@@ -2573,6 +2593,14 @@ def _compute_inventory_status(
             "calc_explanation":  calc_explanation,
             "demand_trend_pct":  None,  # populated by morning_briefing; None by default in status
         })
+        if committed_only is not None:
+            # This row's signal came from its commitments alone (no forecast or
+            # no stock row). Named so no screen mistakes it for the semaphore's
+            # verdict: how many units no stock covers, and whether the stock
+            # figure was missing (then counted as zero and no quantity given).
+            items[-1]["committed_only"] = True
+            items[-1]["committed_shortfall"] = committed_only["shortfall"]
+            items[-1]["committed_stock_unknown"] = committed_only["stock_unknown"]
 
     # ABC classification across all items (needs demand info so done after building list)
     abc_map = _classify_abc(items)
@@ -2721,8 +2749,10 @@ def get_inventory_status_by_warehouse(
         incoming_qty = sum_incoming(_incoming_detail)
         incoming_sources = incoming_sources_by_key(_incoming_detail)
 
-    warehouses = ([w["name"] for w in wh_svc.list_warehouses(tenant_id)]
-                  or [wh_svc.DEFAULT_WAREHOUSE])
+    _wh_rows = wh_svc.list_warehouses(tenant_id)
+    warehouses = [w["name"] for w in _wh_rows] or [wh_svc.DEFAULT_WAREHOUSE]
+    # A commitment names its warehouse by ID; this view works in names.
+    wh_id_by_name = {w["name"]: str(w["id"]) for w in _wh_rows}
     store_names = stores_in(forecasts)
     wh_by_lower = {w.lower().strip(): w for w in warehouses}
 
@@ -2779,6 +2809,13 @@ def get_inventory_status_by_warehouse(
     # whole tenant, applied beside the events below and always named on the row.
     from backend.inventory import forecast_adjustment_service as _fa_svc
     adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
+    # Customer orders placed ahead of time, same ledger and rules as the
+    # aggregated view. (This function used the names below without ever defining
+    # them: every warehouse row with a forecast and stock raised NameError.)
+    from backend.inventory import committed_demand_service as _cd_svc
+    committed_by_sku = _cd_svc.active_by_sku(tenant_id)
+    # A SKU with a commitment is listed even with no forecast of its own.
+    all_skus = sorted(set(all_skus) | set(committed_by_sku))
 
     items: list[dict] = []
     for sku in all_skus:
@@ -2823,6 +2860,7 @@ def get_inventory_status_by_warehouse(
             # has units on the way, and the buyer needs to see them before they
             # order more into a warehouse that already has a truck coming.
             wh_incoming = incoming_qty.get((sku, wh), 0.0)
+            committed_only = None
 
             if model_forecasts and share > 0.0 and not stock_unknown_here:
                 _sl_val, sl_source, _ = _sd_svc.resolve_field(
@@ -2897,7 +2935,7 @@ def get_inventory_status_by_warehouse(
                     _rp_days = _resolve_review_period_days(supplier, review_period_map)
                     _committed_units, committed_applied = _cd_svc.committed_units(
                         committed_by_sku[sku], today, lead_time + _rp_days,
-                        warehouse_id=wh,
+                        warehouse_id=wh_id_by_name.get(wh, wh),
                         share=0.0 if demand_mode == "store" else share)
                     avg_daily_eff += _cd_svc.extra_rate(
                         _committed_units,
@@ -2948,10 +2986,26 @@ def get_inventory_status_by_warehouse(
                 events_applied = []
                 adjustments_applied = []
                 committed_applied = []
+                committed_only = None
+                # No demand of its own here, or no stock figure: the commitments
+                # still count and can still say an order is needed.
+                if committed_by_sku.get(sku):
+                    committed_only = _cd_svc.cover_without_forecast(
+                        committed_by_sku[sku], today, lead_time,
+                        _resolve_review_period_days(supplier, review_period_map),
+                        (current_stock if stock is not None and not stock_unknown_here
+                         else None),
+                        wh_incoming, moq, warehouse_id=wh_id_by_name.get(wh, wh),
+                        share=0.0 if demand_mode == "store" else share)
+                    committed_applied = committed_only["applied"]
+                    if committed_only["signal"]:
+                        signal = committed_only["signal"]
+                        recommended = committed_only["recommended"]
 
             items.append({
                 "sku": sku,
                 "warehouse": wh,
+                "warehouse_id": wh_id_by_name.get(wh),
                 "display_name": stock.get("display_name") if stock else None,
                 "supplier": supplier,
                 "current_stock": current_stock if stock else None,
@@ -2999,6 +3053,10 @@ def get_inventory_status_by_warehouse(
                               if stock and stock.get("unit_cost") is not None else None),
                 "service_level_caveat": service_level_caveats.get(sku),
             })
+            if committed_only is not None:
+                items[-1]["committed_only"] = True
+                items[-1]["committed_shortfall"] = committed_only["shortfall"]
+                items[-1]["committed_stock_unknown"] = committed_only["stock_unknown"]
 
     if lanes is None:
         from backend.inventory import transfer_lane_service as lane_svc

@@ -276,6 +276,38 @@ def get_purchase_order(data: AccountData, args: dict) -> dict:
     }
 
 
+def list_committed_demand(data: AccountData, args: dict) -> dict:
+    ledger = data.committed_demand  # the read happens here, so `missing` is filled below
+    if "committed_demand" in data.missing:
+        return {"error": "Customer commitments could not be read right now. "
+                         "Tell the user they are unavailable; do not say there are none."}
+    limit = _clamp(args.get("limit"), 15, 1, 40)
+    customer = _norm(args.get("customer"))
+    sku = _norm(args.get("sku"))
+    items = list(ledger.get("items") or [])
+    if customer:
+        items = [i for i in items if customer in _norm(i.get("customer"))]
+    if sku:
+        items = [i for i in items if sku == _norm(i.get("sku"))]
+    if args.get("at_risk_only"):
+        items = [i for i in items if i.get("at_risk")]
+    keep = ("sku", "customer", "delivery_date", "quantity", "probability", "warehouse_id",
+            "overdue", "at_risk", "shortfall", "latest_safe_order_date", "order_date_passed",
+            "on_top_of_base")
+    out: dict[str, Any] = {
+        "total_matching": len(items),
+        "items": [{k: i.get(k) for k in keep if k in i} for i in items[:limit]],
+        "by_customer": list(ledger.get("by_customer") or [])[:15],
+        "note": ("at_risk=null means the product has no stock recorded, so nobody can say "
+                 "whether it is covered. shortfall is units short after stock and incoming, "
+                 "earliest delivery date first."),
+    }
+    if not items:
+        out["note"] = ("No open commitment matches." if (customer or sku or args.get("at_risk_only"))
+                       else "No open customer commitments are recorded.")
+    return out
+
+
 def get_recent_activity(data: AccountData, args: dict) -> dict:
     limit = _clamp(args.get("limit"), 10, 1, 30)
     return {"items": [{"when": str(a.get("created_at") or "")[:16], "action": a.get("action"),
@@ -336,6 +368,17 @@ TOOLS: tuple[Tool, ...] = (
          {"type": "object", "properties": {"reference": {"type": "string"}},
           "required": ["reference"], "additionalProperties": False},
          get_purchase_order),
+    Tool("list_committed_demand",
+         "Open customer commitments (orders placed months or years ahead): which ones the "
+         "stock plus incoming will NOT cover, how many units short, and the latest safe date "
+         "to order. Optionally filter by customer, SKU or only the ones at risk.",
+         {"type": "object", "properties": {
+             "customer": {"type": "string"},
+             "sku": {"type": "string"},
+             "at_risk_only": {"type": "boolean"},
+             "limit": {"type": "integer", "minimum": 1, "maximum": 40}},
+          "additionalProperties": False},
+         list_committed_demand),
     Tool("get_recent_activity",
          "What this user did recently in StockAI (uploads, orders, receptions, alerts).",
          {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 30}},

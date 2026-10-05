@@ -1048,6 +1048,23 @@ export interface CommittedDemand {
   status: CommittedDemandStatus
   note: string | null
   overdue: boolean
+  /** Open items only. null = no verdict (closed, or no stock row for the SKU). */
+  at_risk?: boolean | null
+  shortfall?: number | null
+  covered_units?: number | null
+  latest_safe_order_date?: string | null
+  /** The latest safe order date is already behind us. */
+  order_date_passed?: boolean | null
+}
+
+/** One line of the "by customer" summary of open commitments. */
+export interface CommittedDemandCustomer {
+  customer: string | null
+  open: number
+  at_risk: number
+  unknown: number
+  shortfall: number
+  first_safe_order_date: string | null
 }
 
 export interface CommittedDemandInput {
@@ -1292,6 +1309,16 @@ export interface InventoryStatusItem extends InventoryStock {
    *  say "426 on the way (OC-000001, OC-000002)". `reference` is the order
    *  number for a PO and the origin warehouse for a transfer. */
   incoming_sources?:    IncomingSource[]
+  /** Customer orders placed ahead of time that count for this row. Set even when
+   *  the row has no forecast or no stock row. */
+  committed_applied?:   CommittedApplied[]
+  /** True when this row's signal came from its commitments alone (no forecast
+   *  or no stock row). `committed_shortfall` = units no stock plus incoming
+   *  covers; `committed_stock_unknown` = no stock figure, counted as zero and
+   *  no quantity recommended. */
+  committed_only?:          boolean
+  committed_shortfall?:     number
+  committed_stock_unknown?: boolean
   inventory_value:     number | null
   n_models:             number
   abc:                  string
