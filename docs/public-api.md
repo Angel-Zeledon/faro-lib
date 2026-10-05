@@ -11,6 +11,11 @@
 > `write` (analyst). Every key call that reaches an endpoint is metered per day
 > in `api_usage_daily`; `GET /api/v1/api-keys/usage` (admin, JWT) reports it.
 > The walkthrough below — the nightly ERP job — is still the shortest path.
+>
+> **2026-10-05 — the API and MCP are paid features.** They come with the Full
+> and Corporate plans (see `backend/entitlements/plans.py` and CLAUDE.md);
+> statements below about the tier ("everyone", "no tier leaves it out") are
+> corrected inline where they appeared.
 
 ## In short
 
@@ -79,9 +84,11 @@ doing nothing else is the simplest integration that works.
 
 **Base URL:** `https://<your-instance>/api/v1`
 **Authentication:** `Authorization: Bearer sk_live_…`
-**Limit:** 120 calls per minute per key, the same for everyone. Over it: `429`
-with `Retry-After`.
-**Included:** always. There is no tier that leaves it out.
+**Limit:** 120 calls per minute per key on every plan that has the API (see
+"Limits" for the daily ceiling). Over it: `429` with `Retry-After`.
+**Included:** on the Full and Corporate plans (since 2026-10-05). The free plan
+and trial accounts have no API keys, and a key of a tenant without the plan is
+refused with `plan_feature_locked`.
 **For an AI client:** the same key also works at `POST /api/v1/mcp` — see
 "Connecting an AI client" below.
 
@@ -155,7 +162,9 @@ Three things worth knowing before you integrate:
 
 ## Limits
 
-The ceiling is **per key**, and there is one: **120 calls per minute**.
+The ceilings are **per key**. Every key: **120 calls per minute**. On the Full
+plan there is also a daily one, **2,000 calls per day per key** (3 keys per
+tenant); the Corporate plan has no daily cap.
 
 Over it: `429` with `Retry-After: 60`, and the message names the ceiling. The
 120 are sized for an integration's real work — a nightly push and the polling

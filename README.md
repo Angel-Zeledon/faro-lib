@@ -199,10 +199,13 @@ touch them.
 
 ## Commercial model in the code
 
-There is no checkout and no payment integration. Two tiers — `free` and `paid`
-— ship **every feature**; the tier only decides how much fits (SKUs, users,
-warehouses, saved forecasts, API keys, upload size). A tenant becomes `paid`
-because somebody talked to the owner and the column was set:
+There is no checkout and no payment integration. Tiers `free`, `paid` (the
+Full plan: 500 SKUs, 3 users, 2 warehouses, 20 saved forecasts, 3 API keys,
+2,000 API calls a day per key, 100 MB uploads) and `corporate` (every ceiling
+lifted, quoted case by case) ship the same product, except that **API access,
+MCP and the WhatsApp bot come only with `paid` and `corporate`**; the tier
+otherwise decides how much fits. A tenant becomes `paid` because somebody
+talked to the owner and the column was set:
 
 ```sql
 UPDATE tenants SET tier = 'paid' WHERE slug = 'their-slug';

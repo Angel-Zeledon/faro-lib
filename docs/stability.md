@@ -1,6 +1,11 @@
 # Stability — what is left before the app has no bugs
 
 **Created:** 2026-08-11
+
+> **Note 2026-10-05.** Older entries below that say "two tiers, every feature on
+> both" or give the free plan's ceilings describe the product at the time they
+> were written; the current plans (API/MCP/WhatsApp bot paid-only, Full plan
+> limited, corporate) are in CLAUDE.md and `backend/entitlements/plans.py`.
 **Rule that governs it:** CLAUDE.md, "Priority: stability over scope". Nothing
 here is a feature. If fixing something on this list **needs** a new capability —
 an endpoint, a field, a screen, a toggle — it is flagged and asked about before

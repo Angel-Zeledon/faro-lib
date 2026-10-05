@@ -71,7 +71,7 @@ SECTION = {
                     "Un producto necesita al menos 20 periodos de historia para entrar al pronóstico. Los que no llegan quedan fuera del cálculo: no aparecen con un pronóstico malo, simplemente no aparecen.",
                     "Sin stock o sin costo, un producto no recibe señal y sale como «Sin datos». No está roto: está sin configurar.",
                     "Sin días de entrega el producto sí aparece, pero calculado sobre 15 días que estamos suponiendo nosotros. Si tu proveedor tarda 45, el aviso te va a llegar tarde.",
-                    "En el plan gratis cada archivo puede pesar hasta 25 MB y la cuenta admite hasta 100 productos. Cuando te quedes corto, la pantalla te lo dice y te abre el cuadro para escribirnos.",
+                    "En el plan gratis cada archivo puede pesar hasta 25 MB y la cuenta admite hasta 100 productos; en el plan completo, 100 MB y 500 productos. Cuando te quedes corto, la pantalla te lo dice y te abre el cuadro para escribirnos.",
                     "No cierres la pestaña mientras el sistema está aprendiendo. El proceso puede tomar varios minutos según el tamaño de tu archivo.",
                 ],
             },
@@ -121,7 +121,7 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "En el plan gratis caben dos usuarios: tú y una persona más. Al intentar crear el tercero se abre «Llegaste al límite de tu plan gratis», que te explica que no hay nada bloqueado por función y te da tres formas de escribirnos.",
+                    "En el plan gratis caben dos usuarios: tú y una persona más; en el plan completo, tres. Al intentar crear uno más se abre «Llegaste al límite de tu plan», que te explica que lo que falta es espacio y te da tres formas de escribirnos.",
                     "No puedes cambiarte el estado ni eliminarte a ti mismo: esos dos controles no se dibujan en tu propia fila.",
                     "Lo que decide los permisos es el rol, no una lista de casillas por persona. No hay permisos individuales que configurar.",
                     "«Pendiente» no significa que algo falló: significa que esa persona todavía no abrió el correo de verificación. Reenvíalo con el icono de sobre antes de crearle una cuenta nueva.",
@@ -160,9 +160,9 @@ SECTION = {
                     ("Moneda", "De toda la empresa, y solo un administrador la cambia. Cambia el símbolo, no convierte los montos que ya cargaste."),
                     ("Zona horaria", "De toda la empresa, y solo un administrador la cambia. Manda sobre la hora a la que corren los recálculos programados."),
                     ("Cada cuánto se calculan tus compras", "Día, Semana o Mes, para toda la cuenta y solo por un administrador. Solo se ofrecen los períodos que tu historial permite."),
-                    ("Uso y límites", "Cinco barras: Productos (SKUs), Usuarios, Bodegas, Pronósticos guardados y Llaves de API. En el plan gratis son 100, 2, 1, 3 y 1; en el plan completo dicen «Sin límite»."),
+                    ("Uso y límites", "Cinco barras: Productos (SKUs), Usuarios, Bodegas, Pronósticos guardados y Llaves de API. En el plan gratis son 100, 2, 1, 3 y 0 (la API no está incluida); en el plan completo, 500, 3, 2, 20 y 3; en el corporativo dicen «Sin límite»."),
                     ("Seguridad", "Cambio de contraseña con un código de 6 dígitos al correo, válido por 10 minutos."),
-                    ("WhatsApp", "Tu número verificado para recibir mensajes de StockAI. Sin él, el interruptor de SMS no se puede activar."),
+                    ("WhatsApp", "Tu número verificado para recibir mensajes de StockAI. Sin él, el interruptor de SMS no se puede activar. Esta tarjeta es del plan completo: en el plan gratis se reemplaza por «Disponible en el plan completo»."),
                 ],
                 "tasks": [
                     (
@@ -186,8 +186,8 @@ SECTION = {
                     "Cambiar la moneda solo cambia el símbolo: no convierte nada. Si tus costos están en colones y eliges dólares, verás colones con signo de dólar.",
                     "La zona horaria no cambia cómo se muestran tus ventas ni tus pronósticos. Lo único que decide es a qué hora corren los recálculos programados.",
                     "Cambiar cada cuánto se calculan tus compras no es un cambio de vista: cambia las cantidades que te sugerimos comprar y lo que te llega por correo y WhatsApp cada mañana, y un producto con poca historia puede desaparecer del cálculo diario y sí aparecer en el semanal.",
-                    "El panel de uso muestra cinco límites, pero no todos los que existen. El tamaño máximo de archivo (25 MB en el plan gratis) y el tope de llamadas de API por día se cuentan aparte.",
-                    "No hay pantalla de compra ni checkout. Pasar al plan completo es una conversación con nosotros, y el botón «Necesito más espacio» es toda la superficie comercial que tiene el producto.",
+                    "El panel de uso muestra cinco límites, pero no todos los que existen. El tamaño máximo de archivo (25 MB en el plan gratis, 100 MB en el completo) y el tope de llamadas de API por día se cuentan aparte.",
+                    "No hay pantalla de compra ni checkout. Pasar al plan completo (con la API, el MCP y el bot de WhatsApp) o al corporativo es una conversación con nosotros, y el botón «Necesito más espacio» es toda la superficie comercial que tiene el producto.",
                 ],
             },
             {
@@ -247,7 +247,7 @@ SECTION = {
                 "gotchas": [
                     "La clave se ve una sola vez. Si cierras el recuadro sin copiarla no hay forma de recuperarla: hay que crear otra y revocar la vieja.",
                     "Revocar es inmediato y no avisa a nadie. Todo lo que estuviera usando esa clave deja de funcionar en la siguiente llamada.",
-                    "En el plan gratis cabe una sola llave de API, y cada llave admite 120 llamadas por minuto y 500 por día; en el plan completo el tope diario desaparece.",
+                    "Las llaves de API vienen con el plan completo: caben tres, y cada llave admite 120 llamadas por minuto y 2.000 por día; en el plan corporativo el tope diario desaparece. En el plan gratis la pestaña «API Keys» muestra «Disponible en el plan completo» en lugar de las llaves.",
                     "Las horas de la programación se leen en la zona horaria de tu empresa, no en la del servidor ni en la de tu navegador. Si esa zona está mal en Mi cuenta, todo lo programado corre a la hora equivocada.",
                     "Solo se pueden programar sesiones que ya terminaron de entrenar. Si el desplegable dice «Sin sesiones completadas», primero entrena una en Mis ventas.",
                     "Revisa de vez en cuando «Ya programado» y «Últimas corridas programadas»: una programación que lleva semanas fallando se ve igual de tranquila en el menú, y ahí es donde aparece el error.",
@@ -272,8 +272,8 @@ SECTION = {
                     "Los que modifican datos llevan la insignia «Escribe», y sus campos de prueba vienen con un aviso ámbar del efecto que van a tener.",
                     "En cada endpoint, «Probar» ejecuta la llamada de verdad contra tu cuenta y te devuelve el estado HTTP, la duración en milisegundos y la respuesta; «Ejemplo» te da el mismo llamado escrito como comando curl para copiarlo.",
                     "Antes de ejecutar una escritura sale una confirmación que nombra la consecuencia concreta — reemplazar tu archivo, encolar un entrenamiento real o registrar una orden de compra que después se controla en recepción.",
-                    "Las secciones de referencia al final explican tres cosas: la autenticación, que va en la cabecera Authorization; los límites, 120 llamadas por minuto y 500 por día en el plan gratis, con 429 y Retry-After al pasarte; y el envoltorio, donde tu contenido siempre viene en data y los errores traen error_code.",
-                    "Al final, antes del cierre, está la sección «Conecta tu asistente (MCP)»: la URL del servidor MCP de tu instalación, las cinco herramientas que ofrece y un curl para comprobar que tu clave funciona. Es para cuando lo que quieres no es que un sistema corra solo, sino preguntarle a un asistente de IA qué comprar hoy.",
+                    "Las secciones de referencia al final explican tres cosas: la autenticación, que va en la cabecera Authorization; los límites, 120 llamadas por minuto y 2.000 por día en el plan completo, con 429 y Retry-After al pasarte; y el envoltorio, donde tu contenido siempre viene en data y los errores traen error_code.",
+                    "Al final, antes del cierre, está la sección «Conecta tu asistente (MCP)»: la URL del servidor MCP de tu instalación, las cinco herramientas que ofrece y un curl para comprobar que tu clave funciona. Es para cuando lo que quieres no es que un sistema corra solo, sino preguntarle a un asistente de IA qué comprar hoy. La API y el MCP vienen con el plan completo; en el plan gratis esta pantalla muestra «Disponible en el plan completo».",
                     "El cierre de la página es una promesa explícita: estos endpoints no cambian de ruta ni de forma sin aviso, y cualquier otro endpoint del servicio es interno — alcanzable con tu clave, pero sin compromiso de mantenerlo.",
                 ],
                 "fields": [
@@ -460,7 +460,7 @@ SECTION = {
                     "A product needs at least 20 periods of history to enter the forecast. The ones that fall short are left out of the calculation: they do not show up with a bad forecast, they simply do not show up.",
                     "Without stock or without cost, a product gets no signal and comes out as “No data”. It is not broken: it is unconfigured.",
                     "Without a lead time the product does appear, but planned on an assumed 15 days. If your supplier takes 45, the warning will reach you late.",
-                    "On the free plan each file can be up to 25 MB and the account holds up to 100 products. When you outgrow that, the screen says so and opens the dialog to write to us.",
+                    "On the free plan each file can be up to 25 MB and the account holds up to 100 products; on the Full plan, 100 MB and 500 products. When you outgrow that, the screen says so and opens the dialog to write to us.",
                     "Do not close the tab while the system is learning. The process can take several minutes depending on the size of your file.",
                 ],
             },
@@ -510,7 +510,7 @@ SECTION = {
                     ),
                 ],
                 "gotchas": [
-                    "The free plan holds two users: you and one more. Trying to create a third opens “You reached your free plan limit”, which explains that no feature is locked and gives you three ways to write to us.",
+                    "The free plan holds two users: you and one more; the Full plan, three. Trying to create one more opens “You reached your plan limit”, which explains that what is missing is room and gives you three ways to write to us.",
                     "You cannot change your own status or delete yourself: neither control is drawn on your own row.",
                     "What decides permissions is the role, not a list of per-person checkboxes. There are no individual permissions to configure.",
                     "“Pending” does not mean something failed: it means that person has not opened the verification email yet. Resend it with the envelope icon before creating them a second account.",
@@ -550,9 +550,9 @@ SECTION = {
                     ("Currency", "Company-wide, and only an administrator changes it. It changes the symbol; it does not convert amounts you already loaded."),
                     ("Time zone", "Company-wide, and only an administrator changes it. It rules the hour at which scheduled recalculations run."),
                     ("How often your purchases are computed", "Day, Week or Month, for the whole account and only by an administrator. Only the periods your history affords are offered."),
-                    ("Usage and limits", "Five bars: Products (SKUs), Users, Warehouses, Saved forecasts and API keys. On the free plan those are 100, 2, 1, 3 and 1; on the full plan they read “Unlimited”."),
+                    ("Usage and limits", "Five bars: Products (SKUs), Users, Warehouses, Saved forecasts and API keys. On the free plan those are 100, 2, 1, 3 and 0 (the API is not included); on the Full plan, 500, 3, 2, 20 and 3; on the Corporate plan they read “Unlimited”."),
                     ("Security", "Password change with a 6-digit code emailed to you, valid for 10 minutes."),
-                    ("WhatsApp", "Your verified number for receiving messages from StockAI. Without it the SMS toggle cannot be turned on."),
+                    ("WhatsApp", "Your verified number for receiving messages from StockAI. Without it the SMS toggle cannot be turned on. This card belongs to the Full plan: on the free plan it is replaced by “Available on the Full plan”."),
                 ],
                 "tasks": [
                     (
@@ -576,8 +576,8 @@ SECTION = {
                     "Changing the currency only changes the symbol: it converts nothing. If your costs are in colones and you pick dollars, you will see colones with a dollar sign.",
                     "The time zone does not change how your sales or forecasts are displayed. The only thing it decides is what hour the scheduled recalculations run at.",
                     "Changing how often your purchases are computed is not a change of view: it changes the quantities we suggest you buy and what reaches you by email and WhatsApp every morning, and a product with little history can disappear from the daily calculation and still appear in the weekly one.",
-                    "The usage panel shows five limits, not every limit there is. The maximum file size (25 MB on the free plan) and the daily API call ceiling are counted separately.",
-                    "There is no purchase screen and no checkout. Moving to the full plan is a conversation with us, and the “I need more room” button is the entire commercial surface of the product.",
+                    "The usage panel shows five limits, not every limit there is. The maximum file size (25 MB on the free plan, 100 MB on the Full plan) and the daily API call ceiling are counted separately.",
+                    "There is no purchase screen and no checkout. Moving to the Full plan (with the API, MCP and the WhatsApp bot) or to Corporate is a conversation with us, and the “I need more room” button is the entire commercial surface of the product.",
                 ],
             },
             {
@@ -637,7 +637,7 @@ SECTION = {
                 "gotchas": [
                     "The key is shown once. If you close the box without copying it there is no way to recover it: you have to create another and revoke the old one.",
                     "Revoking is immediate and warns nobody. Anything that was using that key stops working on its next call.",
-                    "The free plan holds a single API key, and every key allows 120 calls per minute and 500 per day; on the full plan the daily ceiling disappears.",
+                    "API keys come with the Full plan: it holds three, and every key allows 120 calls per minute and 2,000 per day; on the Corporate plan the daily ceiling disappears. On the free plan the “API Keys” tab shows “Available on the Full plan” instead of the keys.",
                     "Schedule hours are read in your company’s time zone, not the server’s and not your browser’s. If that zone is wrong in My account, everything scheduled runs at the wrong hour.",
                     "Only sessions that already finished training can be scheduled. If the dropdown says “No completed sessions”, train one first in My sales.",
                     "Check “Already scheduled” and “Recent scheduled runs” from time to time: a schedule that has been failing for weeks looks just as calm in the menu, and that is where the error shows up.",
@@ -662,8 +662,8 @@ SECTION = {
                     "The ones that modify data carry the “Writes” badge, and their test fields come with an amber notice of the effect they will have.",
                     "On each endpoint, “Try it” runs the call for real against your account and returns the HTTP status, the duration in milliseconds and the response; “Example” gives you the same call written as a curl command to copy.",
                     "Before running a write, a confirmation names the concrete consequence — replacing your file, queueing a real training run, or recording a purchase order whose reception is then tracked.",
-                    "The reference sections at the end explain three things: authentication, which goes in the Authorization header; the rate limits, 120 calls per minute and 500 per day on the free plan, with 429 and Retry-After once you go over; and the envelope, where your payload always comes in data and errors carry error_code.",
-                    "At the end, just before the closing note, there is a \u201cConnect your assistant (MCP)\u201d section: your installation\u2019s MCP server URL, the five tools it offers and a curl to check that your key works. It is for when what you want is not a system running on a schedule, but to ask an AI assistant what to buy today.",
+                    "The reference sections at the end explain three things: authentication, which goes in the Authorization header; the rate limits, 120 calls per minute and 2,000 per day on the Full plan, with 429 and Retry-After once you go over; and the envelope, where your payload always comes in data and errors carry error_code.",
+                    "At the end, just before the closing note, there is a \u201cConnect your assistant (MCP)\u201d section: your installation\u2019s MCP server URL, the five tools it offers and a curl to check that your key works. It is for when what you want is not a system running on a schedule, but to ask an AI assistant what to buy today. The API and MCP come with the Full plan; on the free plan this screen shows “Available on the Full plan”.",
                     "The page closes with an explicit promise: these endpoints do not change path or shape without notice, and any other endpoint of the service is internal — reachable with your key, but with no commitment to keep it.",
                 ],
                 "fields": [

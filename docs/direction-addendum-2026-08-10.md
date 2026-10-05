@@ -9,6 +9,10 @@ task list. Its use is deciding what **not** to build.
 > every feature, and the tier only decides how much fits. Wherever the text
 > below argues about Professional vs Enterprise, read it as a record of the
 > reasoning, not of the product. Everything else still holds.
+>
+> **Note added 2026-10-05.** The "two tiers, both ship every feature" line above
+> is itself superseded: API access, MCP and the WhatsApp bot are now paid-only
+> and there are four tiers (free, paid = Full, corporate, demo). See CLAUDE.md.
 
 ## The rule
 
