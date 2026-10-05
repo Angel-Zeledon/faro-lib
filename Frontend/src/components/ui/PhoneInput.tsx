@@ -18,6 +18,7 @@ import {
   useCallback, useEffect, useId, useMemo, useRef, useState,
   type CSSProperties, type KeyboardEvent,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Search } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { controlStyle } from './Input'
@@ -44,6 +45,8 @@ export interface PhoneInputProps {
 }
 
 const PANEL_MAX = 300
+const SEARCH_H = 46        // height of the search row above the list
+const MOBILE_MAX = 560     // at or below this width the picker is a bottom sheet
 
 export default function PhoneInput({
   value, onChange, id, name, required, disabled, autoFocus, invalid,
@@ -116,8 +119,8 @@ export default function PhoneInput({
     ? {
         all: 'unset', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 6,
         padding: '0 10px', minHeight: 44, borderRadius: 11, cursor: disabled ? 'default' : 'pointer',
-        background: 'rgba(250,250,250,0.9)', border: '1px solid rgba(9,9,11,0.085)',
-        color: '#0a0a0a', fontSize: 14, whiteSpace: 'nowrap', flexShrink: 0,
+        background: 'var(--a-field, rgba(250,250,250,0.9))', border: '1px solid var(--a-line, rgba(9,9,11,0.085))',
+        color: 'var(--a-ink, #0a0a0a)', fontSize: 14, whiteSpace: 'nowrap', flexShrink: 0,
       }
     : {
         ...controlStyle({ invalid }), width: 'auto', display: 'flex', alignItems: 'center',
@@ -173,7 +176,12 @@ function CountryPicker({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
-  const [rect, setRect] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null)
+  const [rect, setRect] = useState<{
+    left: number; top: number; width: number; up: boolean; listMax: number; sheet: boolean
+  } | null>(null)
+  // The auth surface paints with `--a-*` tokens scoped to `.auth-split`; the panel
+  // lives in <body>, outside that scope, so the values are carried over at open.
+  const [tone, setTone] = useState<{ bg: string; ink: string; mute: string; line: string } | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -192,11 +200,23 @@ function CountryPicker({
   const place = useCallback(() => {
     const b = buttonRef.current?.getBoundingClientRect()
     if (!b) return
-    const width = Math.min(320, window.innerWidth - 16)
-    const left = Math.max(8, Math.min(b.left, window.innerWidth - width - 8))
-    const spaceBelow = window.innerHeight - b.bottom
-    const up = spaceBelow < PANEL_MAX + 16 && b.top > spaceBelow
-    setRect({ left, top: up ? b.top - 4 : b.bottom + 4, width, up })
+    const vw = window.innerWidth
+    const vh = window.visualViewport?.height ?? window.innerHeight
+    if (vw <= MOBILE_MAX) {
+      setRect({ left: 0, top: 0, width: vw, up: false, listMax: Math.max(120, Math.min(PANEL_MAX + 60, vh * 0.7 - SEARCH_H - 24)), sheet: true })
+      return
+    }
+    const width = Math.min(320, vw - 16)
+    const left = Math.max(8, Math.min(b.left, vw - width - 8))
+    const spaceBelow = vh - b.bottom - 12
+    const spaceAbove = b.top - 12
+    // Flip only when the list would be cramped below and there is more room above.
+    const up = spaceBelow < 180 && spaceAbove > spaceBelow
+    const room = (up ? spaceAbove : spaceBelow) - 4 - SEARCH_H - 10
+    setRect({
+      left, top: up ? b.top - 4 : b.bottom + 4, width, up,
+      listMax: Math.max(96, Math.min(PANEL_MAX, room)), sheet: false,
+    })
   }, [])
 
   const close = useCallback(() => { setOpen(false); setQuery('') }, [])
@@ -204,6 +224,14 @@ function CountryPicker({
   const openPanel = () => {
     if (disabled) return
     place()
+    if (isAuth && buttonRef.current) {
+      const cs = getComputedStyle(buttonRef.current)
+      const v = (n: string, d: string) => cs.getPropertyValue(n).trim() || d
+      setTone({
+        bg: v('--a-bg', '#ffffff'), ink: v('--a-ink', '#0a0a0a'), mute: v('--a-muted', '#71717a'),
+        line: v('--a-line', 'rgba(9,9,11,0.12)'),
+      })
+    }
     setActive(Math.max(0, all.findIndex(c => c.iso === iso)))
     setOpen(true)
   }
@@ -217,16 +245,26 @@ function CountryPicker({
       if (panelRef.current?.contains(node) || buttonRef.current?.contains(node)) return
       close()
     }
-    const onResize = () => close()
+    // Follow the field while the page scrolls or the viewport changes (the phone
+    // keyboard resizes it); never close on those, or typing in search would.
+    const onMove = () => place()
     document.addEventListener('mousedown', onDown)
     document.addEventListener('touchstart', onDown)
-    window.addEventListener('resize', onResize)
+    window.addEventListener('resize', onMove)
+    window.addEventListener('scroll', onMove, true)
+    window.visualViewport?.addEventListener('resize', onMove)
+    const lock = window.innerWidth <= MOBILE_MAX
+    const prevOverflow = document.body.style.overflow
+    if (lock) document.body.style.overflow = 'hidden'
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('touchstart', onDown)
-      window.removeEventListener('resize', onResize)
+      window.removeEventListener('resize', onMove)
+      window.removeEventListener('scroll', onMove, true)
+      window.visualViewport?.removeEventListener('resize', onMove)
+      if (lock) document.body.style.overflow = prevOverflow
     }
-  }, [open, close])
+  }, [open, close, place])
 
   useEffect(() => { setActive(0) }, [query])
 
@@ -242,11 +280,17 @@ function CountryPicker({
     if (e.key === 'Escape') { e.preventDefault(); close(); buttonRef.current?.focus() }
     else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(shown.length - 1, i + 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(0, i - 1)) }
+    else if (e.key === 'Home') { e.preventDefault(); setActive(0) }
+    else if (e.key === 'End') { e.preventDefault(); setActive(Math.max(0, shown.length - 1)) }
     else if (e.key === 'Enter') { e.preventDefault(); if (shown[active]) choose(shown[active]) }
   }
 
-  const ink = isAuth ? '#0a0a0a' : 'var(--text)'
-  const mute = isAuth ? '#71717a' : 'var(--muted)'
+  const ink = isAuth ? (tone?.ink ?? '#0a0a0a') : 'var(--text)'
+  const mute = isAuth ? (tone?.mute ?? '#71717a') : 'var(--muted)'
+  const line = isAuth ? (tone?.line ?? 'rgba(9,9,11,0.12)') : 'var(--border)'
+  const panelBg = isAuth ? (tone?.bg ?? '#fff') : 'var(--surface)'
+  const rowHover = isAuth ? 'color-mix(in srgb, currentColor 9%, transparent)' : 'var(--surface-2)'
+  const sheet = !!rect?.sheet
 
   return (
     <>
@@ -259,6 +303,7 @@ function CountryPicker({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         onClick={() => (open ? close() : openPanel())}
+        onKeyDown={e => { if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); openPanel() } }}
         style={buttonStyle}
       >
         <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>{flagOf(iso)}</span>
@@ -266,22 +311,29 @@ function CountryPicker({
         <ChevronDown size={13} aria-hidden style={{ color: mute }} />
       </button>
 
-      {open && rect && (
+      {open && rect && createPortal(
+        <>
+        {sheet && <div aria-hidden style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)' }} />}
         <div
           ref={panelRef}
+          role="dialog"
+          aria-label={label}
           onKeyDown={onKey}
           style={{
-            position: 'fixed', left: rect.left, width: rect.width, zIndex: 1000,
-            ...(rect.up ? { bottom: window.innerHeight - rect.top } : { top: rect.top }),
-            background: isAuth ? '#fff' : 'var(--surface)',
-            border: `1px solid ${isAuth ? 'rgba(9,9,11,0.12)' : 'var(--border)'}`,
-            borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', overflow: 'hidden',
-            color: ink,
+            position: 'fixed', zIndex: 1001, boxSizing: 'border-box',
+            ...(sheet
+              ? { left: 0, right: 0, bottom: 0, borderRadius: '16px 16px 0 0', paddingBottom: 'env(safe-area-inset-bottom)' }
+              : {
+                  left: rect.left, width: rect.width, borderRadius: 10,
+                  ...(rect.up ? { bottom: (window.visualViewport?.height ?? window.innerHeight) - rect.top } : { top: rect.top }),
+                }),
+            background: panelBg, border: `1px solid ${line}`,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.28)', overflow: 'hidden', color: ink,
           }}
         >
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
-            borderBottom: `1px solid ${isAuth ? 'rgba(9,9,11,0.08)' : 'var(--border)'}`,
+            borderBottom: `1px solid ${line}`, minHeight: SEARCH_H, boxSizing: 'border-box',
           }}>
             <Search size={14} aria-hidden style={{ color: mute, flexShrink: 0 }} />
             <input
@@ -297,7 +349,7 @@ function CountryPicker({
               onChange={e => setQuery(e.target.value)}
               autoComplete="off"
               style={{
-                all: 'unset', flex: 1, minWidth: 0, fontSize: 13, color: ink,
+                all: 'unset', flex: 1, minWidth: 0, fontSize: sheet ? 16 : 13, color: ink,
               }}
             />
           </div>
@@ -306,7 +358,7 @@ function CountryPicker({
             id={listId}
             role="listbox"
             aria-label={label}
-            style={{ listStyle: 'none', margin: 0, padding: 4, maxHeight: PANEL_MAX, overflowY: 'auto' }}
+            style={{ listStyle: 'none', margin: 0, padding: 4, maxHeight: rect.listMax, overflowY: 'auto', overscrollBehavior: 'contain' }}
           >
             {shown.map((c, i) => (
               <li
@@ -318,10 +370,10 @@ function CountryPicker({
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => choose(c)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '7px 8px',
+                  display: 'flex', alignItems: 'center', gap: 10, padding: sheet ? '11px 8px' : '7px 8px',
                   borderRadius: 7, cursor: 'pointer', fontSize: 13,
                   background: i === active
-                    ? (isAuth ? 'rgba(9,9,11,0.06)' : 'var(--surface-2)') : 'transparent',
+                    ? rowHover : 'transparent',
                 }}
               >
                 <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>{flagOf(c.iso)}</span>
@@ -339,6 +391,8 @@ function CountryPicker({
             )}
           </ul>
         </div>
+        </>,
+        document.body,
       )}
     </>
   )
