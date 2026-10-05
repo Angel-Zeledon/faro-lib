@@ -260,7 +260,9 @@ class TestMetering:
             self, client, test_tenant, monkeypatch):
         from backend.config import settings
         monkeypatch.setattr(settings, "testing_mode", False)
-        execute("""UPDATE tenants SET quota = quota || '{"max_api_calls_per_day": 2}'::jsonb
+        # Paid: API access is a paid-only feature and testing_mode is off here.
+        execute("""UPDATE tenants SET tier = 'paid',
+                          quota = quota || '{"max_api_calls_per_day": 2}'::jsonb
                     WHERE id = %s""", (test_tenant["id"],))
         raw, kid = _mint(test_tenant["id"], "viewer")
         try:

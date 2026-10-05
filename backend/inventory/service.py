@@ -5089,7 +5089,7 @@ def run_daily_inventory_alerts() -> None:
                 number = (r.get("whatsapp_number") or "").strip()
                 if not number:
                     continue
-                delivered = send_whatsapp(number, text, tenant_id=tid)
+                delivered = send_whatsapp(number, text, tenant_id=tid, plan_gated=True)
                 if not delivered:
                     log.warning("alert whatsapp not delivered to=%s", number)
                 record_notification_delivery(

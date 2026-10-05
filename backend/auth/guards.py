@@ -62,6 +62,22 @@ def _authenticate_api_key(credential: str, scope: dict | None = None) -> Current
             detail="API key is invalid or expired",
         )
 
+    # Plan entitlement, checked on EVERY call and not only when the key was
+    # minted: a tenant that is (or falls back to) a tier without the API keeps
+    # its old keys in the table, and they must stop working — and say why,
+    # instead of answering as an invalid key. Before the rate window and the
+    # meter, so a refused call is neither counted nor billed. The MCP endpoint
+    # is its own feature, so the error names the one actually being used.
+    from backend.entitlements.service import ensure_feature
+    route_path = getattr(scope.get("route"), "path", "") if scope is not None else ""
+    if route_path.endswith("/mcp"):
+        ensure_feature(key["tenant_id"], "mcp",
+                       "Existing API keys stop working on plans without MCP access.")
+    else:
+        ensure_feature(key["tenant_id"], "api",
+                       "This key still exists but the tenant's plan no longer "
+                       "includes API access, so it cannot be used.")
+
     # Which route this key was presented to, and whether a key may call it at
     # all. Decided by rule in `backend/api/public_surface.py`; refused here,
     # before the rate window and before metering, so a refused call is neither

@@ -461,14 +461,14 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
                 number = (r.get("whatsapp_number") or "").strip()
                 if not number:
                     continue
-                delivered = wa_mod.send_whatsapp(number, text, tenant_id=tid)
+                delivered = wa_mod.send_whatsapp(number, text, tenant_id=tid, plan_gated=True)
                 any_delivered = any_delivered or delivered
                 _record(tid, r["id"], REMINDER_WHATSAPP_ACTION, delivered, {
                     "channel": "whatsapp",
                     "recipient": number,
                     "sales_age_days": sales_age,
                     "stock_age_days": stock_age,
-                    **({} if delivered else {"reason": wa_mod.failure_reason()}),
+                    **({} if delivered else {"reason": wa_mod.failure_reason(tid)}),
                 })
 
             if any_delivered:

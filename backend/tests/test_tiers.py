@@ -54,15 +54,21 @@ def _stock_body(**over):
 
 # ── 1. Resolution ────────────────────────────────────────────────────────────
 
-def test_free_limits_are_short_and_paid_limits_are_open():
+def test_free_and_paid_limits_are_short_and_corporate_limits_are_open():
     free = tenant_limits({"tier": "free"})
     paid = tenant_limits({"tier": "paid"})
+    corporate = tenant_limits({"tier": "corporate"})
     for key in ("max_skus", "max_users", "max_locations", "max_sessions",
                 "max_api_keys", "max_api_calls_per_day"):
         assert isinstance(free[key], int), f"{key} must be a real ceiling on free"
-        assert paid[key] is None, f"{key} must be unlimited on paid"
-    # The infrastructure ceiling is NOT for sale: identical on both tiers.
-    assert free["max_concurrent_jobs"] == paid["max_concurrent_jobs"]
+        assert isinstance(paid[key], int), f"{key} must be a real ceiling on paid"
+        assert corporate[key] is None, f"{key} must be unlimited on corporate"
+    assert paid["max_skus"] > free["max_skus"]
+    # The feature booleans never leak into the limits map.
+    assert "api_access" not in paid
+    # The infrastructure ceiling is NOT for sale: identical on every tier.
+    assert (free["max_concurrent_jobs"] == paid["max_concurrent_jobs"]
+            == corporate["max_concurrent_jobs"])
 
 
 def test_unknown_or_missing_tier_falls_back_to_free():
@@ -132,12 +138,13 @@ def test_paid_tenant_sails_past_the_same_ceiling(
     assert _stock_count(tenant_id) == 3
 
 
-def test_free_tenant_gets_one_api_key_and_paid_gets_more(
+def test_paid_tenant_hits_its_api_key_ceiling_and_corporate_does_not(
     monkeypatch, make_tenant_user_headers, client,
 ):
     monkeypatch.setattr("backend.config.settings.testing_mode", False)
     headers, tenant_id = make_tenant_user_headers(role="analyst", return_tenant_id=True)
-    _set_tier(tenant_id, "free")
+    _set_tier(tenant_id, "paid")
+    _set_quota(tenant_id, {"max_api_keys": 1})   # 1 instead of 3, so the test is cheap
 
     first = client.post("/api/v1/api-keys", json={"name": "erp", "role": "viewer"},
                         headers=headers)
@@ -151,7 +158,8 @@ def test_free_tenant_gets_one_api_key_and_paid_gets_more(
     assert second.json()["error_params"]["limit"] == "max_api_keys"
     assert _key_count(tenant_id) == 1, "a refused key must not exist"
 
-    _set_tier(tenant_id, "paid")
+    _set_tier(tenant_id, "corporate")
+    _set_quota(tenant_id, {})
     third = client.post("/api/v1/api-keys", json={"name": "second", "role": "viewer"},
                         headers=headers)
     assert third.status_code in (200, 201), third.text

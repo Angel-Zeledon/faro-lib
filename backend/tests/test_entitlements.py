@@ -18,15 +18,15 @@ from backend.entitlements import service as ent
 
 
 @pytest.mark.offline
-def test_a_paying_tenant_counts_nothing():
+def test_a_corporate_tenant_counts_nothing():
     """SKUs, users, warehouses and saved sessions are the four numbers a
-    customer used to buy more of. On the paid tier they are unlimited, and this
-    test is what would notice a ceiling quietly appearing there."""
-    paid = PLANS["paid"]
-    assert paid.max_skus is None
-    assert paid.max_users is None
-    assert paid.max_locations is None
-    assert paid.max_sessions is None
+    customer used to buy more of. On the corporate tier they are unlimited, and
+    this test is what would notice a ceiling quietly appearing there."""
+    corporate = PLANS["corporate"]
+    assert corporate.max_skus is None
+    assert corporate.max_users is None
+    assert corporate.max_locations is None
+    assert corporate.max_sessions is None
 
 
 @pytest.mark.offline
@@ -35,7 +35,8 @@ def test_the_infrastructure_ceiling_is_not_for_sale():
     the same number. Upload size is the one commercial ceiling that survives on
     paid, because an upload is read into memory before it is anything else."""
     assert PLANS["free"].max_concurrent_jobs == PLANS["paid"].max_concurrent_jobs == 8
-    assert PLANS["paid"].max_dataset_size_mb == 2000
+    assert PLANS["corporate"].max_concurrent_jobs == 8
+    assert PLANS["corporate"].max_dataset_size_mb == 2000
 
 
 def _tenant(trial_ends_at=None, quota=None, tier="paid"):

@@ -1,5 +1,9 @@
 """What a tenant may do: which tier it is on, its limits, and whether it may write.
 
+2026-10-05: three paid-only features (API, MCP, WhatsApp bot) are back, as
+booleans on the plan (`tenant_features`, `ensure_feature`). Everything else
+below still holds.
+
 Feature entitlements used to live here too — `has_feature`, `required_plans_for`
 and a catalog to look them up in. They are not coming back: both tiers include
 every feature, so a feature check could only ever answer True, and a permission
@@ -12,15 +16,21 @@ from contextlib import contextmanager
 from dataclasses import fields
 from datetime import datetime, timezone
 
-from backend.entitlements.plans import DEFAULT_TIER, PLANS, PlanDef
+from backend.entitlements.plans import (
+    DEFAULT_TIER, FEATURE_FIELDS, FEATURE_REQUIRED_PLAN, PLANS, PlanDef,
+)
 
 log = logging.getLogger(__name__)
 
-_LIMIT_FIELDS = tuple(f.name for f in fields(PlanDef))
+# Numeric ceilings only. The paid-only booleans (api_access, ...) are the
+# fields in FEATURE_FIELDS and are read through `tenant_features`.
+_LIMIT_FIELDS = tuple(
+    f.name for f in fields(PlanDef) if f.name not in FEATURE_FIELDS.values()
+)
 
 
 def tenant_tier(tenant: dict) -> str:
-    """The tier this tenant runs on: 'free', 'paid' or 'demo'.
+    """The tier this tenant runs on: 'free', 'paid', 'corporate' or 'demo'.
 
     Anything unrecognised — a NULL column on a row that predates the migration,
     a typo somebody typed into psql — resolves to free. Failing to the paid
@@ -49,6 +59,60 @@ def tenant_limits(tenant: dict) -> dict:
     for field in _LIMIT_FIELDS:
         limits[field] = override[field] if field in override else getattr(plan, field)
     return limits
+
+
+def tenant_features(tenant: dict) -> dict[str, bool]:
+    """{'api': bool, 'mcp': bool, 'whatsapp_bot': bool} for this tenant.
+
+    The tier decides, and `tenants.quota` may override one feature by its
+    PlanDef field name (`{"api_access": true}`) — the same per-account escape
+    hatch the ceilings have, for a pilot we promised the API to.
+    """
+    plan = get_plan_def(tenant)
+    override = (tenant or {}).get("quota") or {}
+    out = {}
+    for key, field in FEATURE_FIELDS.items():
+        value = override[field] if field in override else getattr(plan, field)
+        out[key] = bool(value)
+    return out
+
+
+def feature_locked_error(feature: str, detail: str = ""):
+    """The structured 403 for a feature the tenant's plan does not include.
+
+    Wire contract (the frontend renders the copy): error_code
+    `plan_feature_locked`, error_params {feature, required_plan}.
+    """
+    from fastapi import status
+    from backend.errors import AppError
+    message = f"The {feature} feature is not included in this plan."
+    if detail:
+        message = f"{message} {detail}"
+    return AppError(
+        "plan_feature_locked", message,
+        status_code=status.HTTP_403_FORBIDDEN,
+        params={"feature": feature, "required_plan": FEATURE_REQUIRED_PLAN},
+    )
+
+
+def tenant_has_feature(tenant_id: str, feature: str) -> bool:
+    """Whether `tenant_id` may use `feature`. True in testing mode (like
+    `enforce_limit`). An unknown tenant row resolves to the free tier, so a
+    missing row is locked, never open."""
+    from backend.config import settings
+    from backend.db.connection import query_one
+    if settings.testing_mode:
+        return True
+    tenant = query_one("SELECT tier, quota FROM tenants WHERE id = %s", (tenant_id,))
+    return tenant_features(dict(tenant) if tenant else {})[feature]
+
+
+def ensure_feature(tenant_id: str, feature: str, detail: str = "") -> None:
+    """Raise `plan_feature_locked` (403) unless the plan includes `feature`
+    ('api' | 'mcp' | 'whatsapp_bot'). THE one enforcement call: every gate
+    in the product goes through here."""
+    if not tenant_has_feature(tenant_id, feature):
+        raise feature_locked_error(feature, detail)
 
 
 def trial_state(tenant: dict) -> str:

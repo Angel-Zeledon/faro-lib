@@ -3069,7 +3069,7 @@ def send_alert_now(
     if numbers:
         text = build_inventory_alert_text(critical, warning, inventory_url,
                                           period=period)
-        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text, tenant_id=user.tenant_id))
+        wa_sent = sum(1 for n in numbers if send_whatsapp(n, text, tenant_id=user.tenant_id, plan_gated=True))
 
     # The point of a test fire is to prove the channel works, so its outcome is
     # recorded like a real send instead of only being echoed in the response.

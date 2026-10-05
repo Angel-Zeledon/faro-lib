@@ -16,7 +16,7 @@ from backend.auth.guards import CurrentUser, get_current_user, require_role
 from backend.service_config.resolver import effective
 from backend.db.connection import query_one
 from backend.entitlements.service import (
-    is_read_only, tenant_limits, tenant_tier, trial_state,
+    is_read_only, tenant_features, tenant_limits, tenant_tier, trial_state,
 )
 from backend.entitlements.plans import DEMO
 from backend.errors import AppError
@@ -67,15 +67,17 @@ def _contact() -> dict:
 def get_entitlements(user: CurrentUser = Depends(get_current_user)):
     """This tenant's tier, its ceilings, and how close it is to them.
 
-    `plan`, `features` and `feature_plans` are gone with the old tiers: both
-    tiers include every feature, and a `features` map that answers True to
-    everything only invites the UI to keep asking.
+    `features` is back (2026-10-05) with exactly three booleans — api, mcp,
+    whatsapp_bot — the paid-only ones; every other feature is on every tier.
     """
     tenant = get_tenant(user.tenant_id) or {"quota": {}}
     ends = tenant.get("trial_ends_at")
     return ok({
         "tier": tenant_tier(tenant),
         "limits": tenant_limits(tenant),
+        # Paid-only features (2026-10-05): the UI renders a locked state from
+        # these. `tier` above tells it which plan the tenant is on.
+        "features": tenant_features(tenant),
         "usage": _usage(user.tenant_id),
         "contact": _contact(),
         "trial": {

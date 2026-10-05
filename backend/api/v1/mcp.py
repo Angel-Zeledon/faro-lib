@@ -73,7 +73,14 @@ def mcp_user(
 
     An `sk_live_*` key is what a connector uses; a browser session works too,
     which is what makes the endpoint callable from the app's own `/api` console.
+
+    MCP is a paid feature. A key is checked when it authenticates (the route
+    names the feature, see `auth.guards._authenticate_api_key`); a browser
+    session reaches the same endpoint without that path, so it is checked here.
     """
+    if not user.is_machine:
+        from backend.entitlements.service import ensure_feature
+        ensure_feature(user.tenant_id, "mcp")
     return user
 
 
