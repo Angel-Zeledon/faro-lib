@@ -1582,6 +1582,7 @@ def toggle_catalog_entry(
 
 @router.get("/report/pdf")
 def download_pdf_report(
+    request: Request,
     session_id: str = Query(...),
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     user: CurrentUser = Depends(get_current_user),
@@ -1596,6 +1597,12 @@ def download_pdf_report(
 
     from datetime import date
     filename = f"inventory_{date.today().isoformat()}.pdf"
+    # Audited: this is the one copy of the numbers that leaves the app to be
+    # forwarded. A PDF has no row count to report; its size and format say
+    # that a document of this session left.
+    audit.note(request, target_id=session_id,
+               after={"format": "pdf", "bytes": len(pdf_bytes),
+                      "service_level": service_level})
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
@@ -1824,10 +1831,13 @@ def get_roi_month_report(
     wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from datetime import datetime, timezone
 
-    from backend.inventory.roi_service import get_month_report, previous_month
+    from backend.api.v1.timezone import zoneinfo_of
+    from backend.inventory.roi_service import get_month_report, last_closed_month_for
 
     if year is None or month is None:
-        year, month = previous_month(datetime.now(tz=timezone.utc))
+        # The month that just closed on THIS tenant's calendar.
+        year, month = last_closed_month_for(
+            datetime.now(tz=timezone.utc), zoneinfo_of(user.tenant_id))
     return ok(get_month_report(user.tenant_id, year, month))
 
 
@@ -3348,6 +3358,7 @@ def forecast_money(
 
 @router.get("/status/export-po")
 def export_po(
+    request: Request,
     session_id: str = Query(...),
     service_level: float = Query(default=0.95, ge=0.5, le=0.999),
     signals: str = Query(default="PEDIR_YA,PEDIR_PRONTO", description="Comma-separated signals to include"),
@@ -3443,6 +3454,11 @@ def export_po(
             value,
         ])
 
+    # The audit row says how many lines the buyer took away, not just that a
+    # file left (warehouse and signals narrow it, so the count is not implied).
+    audit.note(request, target_id=session_id,
+               after={"rows": len(po_items), "format": "csv",
+                      "warehouse": warehouse or None})
     output.seek(0)
     return StreamingResponse(
         iter([_CSV_BOM + output.getvalue()]),
