@@ -44,6 +44,8 @@ export interface AssistantMobileProps {
   input: string
   onInput: (s: string) => void
   onSend: (text: string) => void
+  /** Present only while the newest message is a failed answer. */
+  onRetry?: () => void
   welcome: AssistantWelcome | null
   assistantOff: boolean
   onToggleFavorite: (id: string) => void
@@ -381,7 +383,8 @@ function Thread(p: AssistantMobileProps) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 4 }}>
           {p.messages.map(m => (
-            <div key={m.id} id={`msg-${m.id}`} style={{ scrollMarginTop: 8 }}><MessageBubble msg={m} large /></div>
+            <div key={m.id} id={`msg-${m.id}`} style={{ scrollMarginTop: 8 }}><MessageBubble msg={m} large
+              onRetry={p.onRetry && m.id === lastId ? p.onRetry : undefined} /></div>
           ))}
           {p.sending && <TypingBubble />}
         </div>

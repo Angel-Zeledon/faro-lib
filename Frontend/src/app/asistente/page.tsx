@@ -464,6 +464,23 @@ export default function AnalystPage() {
   const favorites = filtered.filter(c => c.is_favorite)
   const recent    = filtered.filter(c => !c.is_favorite)
 
+  // Retry the newest failed answer: drop the error bubble and the optimistic copy
+  // of the question (handleSend adds a fresh one), then ask the same thing again.
+  // Only the last message can be retried, so an old error never resends a
+  // question the thread has moved past.
+  const lastMessage = messages[messages.length - 1]
+  const retryable = !!lastMessage && lastMessage.source === 'error' && !sending && !assistantOff
+  const retryLast = useCallback(() => {
+    const last = messages[messages.length - 1]
+    if (!last || last.source !== 'error' || sending) return
+    const idx = messages.map(m => m.role).lastIndexOf('user')
+    const question = idx >= 0 ? messages[idx].content : ''
+    if (!question) return
+    setMessages(prev => prev.filter((m, i) =>
+      m.id !== last.id && !(i === idx && m.id.startsWith('opt-'))))
+    handleSend(question)
+  }, [messages, sending, handleSend])
+
   // A suggestion is a complete question about the user's own data: send it.
   // With no chat open, handleSend creates one first.
   const askNow = (question: string) => { if (!assistantOff) handleSend(question) }
@@ -488,6 +505,7 @@ export default function AnalystPage() {
         input={input}
         onInput={setInput}
         onSend={q => { if (!assistantOff) handleSend(q) }}
+        onRetry={retryable ? retryLast : undefined}
         welcome={welcome}
         assistantOff={assistantOff}
         onToggleFavorite={toggleFav}
@@ -685,6 +703,7 @@ export default function AnalystPage() {
               <div
                 ref={msgsRef}
                 data-tour="an.thread"
+                role="log" aria-live="polite" aria-busy={sending}
                 onScroll={handleScroll}
                 style={{
                   flex: 1,
@@ -747,7 +766,10 @@ export default function AnalystPage() {
                   // against the composer — the two chat screens in the same app
                   // disagreeing about which way a conversation stacks.
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
+                    {messages.map(msg => (
+                      <MessageBubble key={msg.id} msg={msg}
+                        onRetry={retryable && msg.id === lastMessage?.id ? retryLast : undefined} />
+                    ))}
                     {sending && <TypingBubble />}
                   </div>
                 )}
@@ -838,6 +860,8 @@ export default function AnalystPage() {
 
                   <button
                     onClick={() => { speech.stop(); handleSend(input); setInput('') }}
+                    aria-label={t('messages.send')}
+                    title={t('messages.send')}
                     disabled={!input.trim() || sending || creatingChat || assistantOff}
                     style={{
                       all: 'unset', width: 40, height: 40, borderRadius: 10,
