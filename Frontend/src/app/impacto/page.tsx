@@ -55,7 +55,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 28 }}>
         {/* POs generated */}
         <div data-tour="roi.hero_orders">
-          <div style={{ fontSize: 48, fontWeight: 900, color: C.indigo, lineHeight: 1 }}>
+          <div style={{ fontSize: 32, fontWeight: 900, color: C.indigo, lineHeight: 1 }}>
             {roi.total_pos_generated}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
@@ -75,7 +75,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
 
         {/* Urgent stockout risks actually acted on */}
         <div data-tour="roi.hero_risks">
-          <div style={{ fontSize: 48, fontWeight: 900, color: C.red, lineHeight: 1 }}>
+          <div style={{ fontSize: 32, fontWeight: 900, color: C.red, lineHeight: 1 }}>
             {fmtUnits(roi.total_skus_protected)}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
@@ -90,7 +90,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
         <div data-tour="roi.hero_value">
           {hasValue ? (
             <>
-              <div style={{ fontSize: 42, fontWeight: 900, color: C.green, lineHeight: 1 }}>
+              <div style={{ fontSize: 30, fontWeight: 900, color: C.green, lineHeight: 1 }}>
                 {formatMoney(roi.estimated_value_protected)}
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
@@ -102,7 +102,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
             </>
           ) : (
             <>
-              <div style={{ fontSize: 48, fontWeight: 900, color: C.amber, lineHeight: 1 }}>
+              <div style={{ fontSize: 32, fontWeight: 900, color: C.amber, lineHeight: 1 }}>
                 {fmtUnits(roi.total_units_ordered)}
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
@@ -134,7 +134,7 @@ function AdoptionCard({ roi }: { roi: InventoryROISummary }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: 52, fontWeight: 900, color, lineHeight: 1 }}>{pct}%</div>
+          <div style={{ fontSize: 34, fontWeight: 900, color, lineHeight: 1 }}>{pct}%</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
             {t('roi.adoption_rate_label')}
           </div>

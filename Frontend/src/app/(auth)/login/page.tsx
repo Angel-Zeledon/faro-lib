@@ -117,7 +117,7 @@ function LoginPageContent() {
         }}>
 
           <div style={{ marginBottom: 30 }}>
-            <h1 style={{ fontSize: 26, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.032em', lineHeight: 1.15 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.032em', lineHeight: 1.15 }}>
               {t('auth.login_title')}
             </h1>
             <p style={{ fontSize: 14, color: '#71717a', margin: 0, lineHeight: 1.5 }}>

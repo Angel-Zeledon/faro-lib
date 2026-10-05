@@ -481,7 +481,7 @@ export default function SettingsPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>{t('settings.title')}</div>
+        <div style={{ fontSize: 18, fontWeight: 700 }}>{t('settings.title')}</div>
         <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>
           {t('settings.subtitle')}
         </div>

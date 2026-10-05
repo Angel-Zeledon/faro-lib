@@ -463,7 +463,7 @@ function KPICard({ label, value, color, sub, onClick, active }: {
 }) {
  return (
  <div onClick={onClick} style={{ background: C.surface, border: `1px solid ${active ? color + '60' : C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${color}`, cursor: onClick ? 'pointer' : 'default', transition: 'border-color 0.15s' }}>
- <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
+ <div style={{ fontSize: 18, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
  <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{label}</div>
  {sub && <div style={{ fontSize: 10, color: C.dim, marginTop: 2, opacity: 0.7 }}>{sub}</div>}
  </div>
@@ -1342,7 +1342,7 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
     {t('inventory.sim_title')}
    </div>
 
-   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
     {/* Lead time slider */}
     <div>
      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.muted, marginBottom: 6 }}>
@@ -1398,16 +1398,16 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
    <div style={{
     marginTop: 16, padding: '12px 16px', borderRadius: 8,
     background: 'var(--surface)', border: `1px solid ${C.border}`,
-    display: 'flex', alignItems: 'center', gap: 16,
+    display: 'flex', alignItems: 'center', gap: '8px 16px', flexWrap: 'wrap',
    }}>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_original_rec')}</div>
-     <div style={{ fontSize: 20, fontWeight: 800, color: C.muted }}>{originalRec.toLocaleString('es')} {t('inventory.unit_und')}</div>
+     <div style={{ fontSize: 16, fontWeight: 800, color: C.muted }}>{originalRec.toLocaleString('es')} {t('inventory.unit_und')}</div>
     </div>
-    <div style={{ fontSize: 20, color: C.dim }}>→</div>
+    <div style={{ fontSize: 16, color: C.dim }}>→</div>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_with_changes')}</div>
-     <div style={{ fontSize: 24, fontWeight: 900, color: delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.text }}>
+     <div style={{ fontSize: 18, fontWeight: 900, color: delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.text }}>
       {simRecommended.toLocaleString('es')} {t('inventory.unit_und')}
      </div>
     </div>
@@ -2301,7 +2301,7 @@ export default function InventoryPage() {
  <SignalBadge s={item.signal} />
  <div style={{ textAlign: 'right' }}>
  {item.recommended_qty != null && item.recommended_qty > 0
- ? <span style={{ fontSize: 18, fontWeight: 800, color: signalColor(item.signal) }}>{fmt(item.recommended_qty, 0)}</span>
+ ? <span style={{ fontSize: 16, fontWeight: 800, color: signalColor(item.signal) }}>{fmt(item.recommended_qty, 0)}</span>
  : <span style={{ fontSize: 13, color: C.dim }}>—</span>}
  </div>
  <span style={{ fontSize: 12, color: C.muted }}>{item.supplier || '—'}</span>
@@ -2345,7 +2345,7 @@ export default function InventoryPage() {
        background: C.surface, border: `1px solid ${C.border}`,
        borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${color}`,
       }}>
-       <div style={{ fontSize: 20, fontWeight: 800, color }}>{value}</div>
+       <div style={{ fontSize: 17, fontWeight: 800, color }}>{value}</div>
        <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{label}</div>
       </div>
      ))}

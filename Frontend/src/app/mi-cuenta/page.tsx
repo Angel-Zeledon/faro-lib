@@ -156,7 +156,7 @@ function ProfileSection({ t, lang }: { t: (k: string) => string; lang: 'es' | 'e
           width: 64, height: 64, borderRadius: 16, flexShrink: 0,
           background: 'var(--accent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 22, fontWeight: 700, color: '#fff',
+          fontSize: 18, fontWeight: 700, color: '#fff',
         }}>
           {initials}
         </div>

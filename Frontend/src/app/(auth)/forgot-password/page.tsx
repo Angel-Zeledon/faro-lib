@@ -128,7 +128,7 @@ export default function ForgotPasswordPage() {
         }}>
           <Zap size={20} color="#fff" strokeWidth={2.5} />
         </div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px', letterSpacing: '-0.03em' }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px', letterSpacing: '-0.03em' }}>
           {t('auth.recover_title')}
         </h1>
         <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>

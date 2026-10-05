@@ -2241,7 +2241,7 @@ function QualityPanel({ q }: { q: QualityReport[string] }) {
           { label: t('skus.quality_missing_data'), value: pct(q.missing_pct) },
         ].map(({ label, value }) => (
           <div key={label} style={{ background: 'var(--surface-2)', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{value}</div>
             <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{label}</div>
           </div>
         ))}
@@ -2340,7 +2340,7 @@ function InventoryPanel({ inv, live, coverageUnit }: {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
         {cards.map(({ label, value, color }) => (
           <div key={label} style={{ background: 'var(--surface-2)', borderRadius: 8, padding: '12px 14px', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color }}>{value}</div>
             <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 3 }}>{label}</div>
           </div>
         ))}
@@ -2961,7 +2961,7 @@ export default function SkusPage() {
                             { label: t('skus.quality_missing_data'),  value: pct(skuQuality.missing_pct) },
                           ].map(({ label, value }) => (
                             <div key={label} style={{ background: 'var(--surface-2)', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--border)' }}>
-                              <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
+                              <div style={{ fontSize: 16, fontWeight: 700 }}>{value}</div>
                               <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{label}</div>
                             </div>
                           ))}

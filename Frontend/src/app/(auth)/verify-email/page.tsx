@@ -70,7 +70,7 @@ function VerifyEmailContent() {
         {status === 'ok' && (
           <>
             <CheckCircle2 size={36} color="#22c55e" style={{ margin: '0 auto 12px' }} />
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>{t('auth.verify_ok_title')}</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>{t('auth.verify_ok_title')}</h2>
             <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 24px' }}>{message}</p>
             <Link href="/login" style={{
               display: 'inline-block', padding: '10px 28px',
@@ -82,7 +82,7 @@ function VerifyEmailContent() {
         {status === 'error' && (
           <>
             <XCircle size={36} color="#ef4444" style={{ margin: '0 auto 12px' }} />
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>{t('auth.verify_failed_title')}</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>{t('auth.verify_failed_title')}</h2>
             <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 20px' }}>{message}</p>
 
             {resentNote ? (

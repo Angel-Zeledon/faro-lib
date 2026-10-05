@@ -673,7 +673,7 @@ export default function UsersPage() {
             <Users size={18} color="var(--accent)" />
           </div>
           <div>
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: 0, letterSpacing: '-0.02em' }}>
+            <h1 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', margin: 0, letterSpacing: '-0.02em' }}>
               {t('users.title')}
             </h1>
             <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>

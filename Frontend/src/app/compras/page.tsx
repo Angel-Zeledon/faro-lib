@@ -440,7 +440,7 @@ function ActionCard({ item, onApprove, onReject, onChangeQty, suppliers, onChang
        />
       ) : (
        <button onClick={() => setEditing(true)} style={{
-        all: 'unset', cursor: 'pointer', fontSize: 18, fontWeight: 800, color: accent,
+        all: 'unset', cursor: 'pointer', fontSize: 16, fontWeight: 800, color: accent,
         borderBottom: '2px dashed ' + accent + '60', lineHeight: 1,
        }}>
         {item.qty.toLocaleString('es')}
@@ -1181,7 +1181,7 @@ export default function HoyPage() {
     justifyContent: 'space-between', marginBottom: 28,
    }}>
     <div>
-     <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: '0 0 6px' }}>
+     <h1 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: '0 0 6px' }}>
       {t('hoy.greeting_good_morning')}{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}.
       {cart.length > 0 && totalPending > 0 && (
        <span style={{ fontSize: 14, fontWeight: 400, color: C.dim, marginLeft: 10 }}>
@@ -1931,7 +1931,7 @@ function KpiCard({ label, value, color, help }: { label: string; value: string; 
     {label}
     {help && <HelpTip text={help} size={13} />}
    </div>
-   <div style={{ fontSize: 22, fontWeight: 700, color }}>
+   <div style={{ fontSize: 18, fontWeight: 700, color }}>
     {value}
    </div>
   </div>

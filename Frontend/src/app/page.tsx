@@ -137,11 +137,11 @@ function Tag({ children }: { children: React.ReactNode }) {
 }
 
 function H2({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
- return <h2 style={{ fontSize: 34, fontWeight: 800, color: T.text, margin: '0 0 14px', letterSpacing: '-0.035em', lineHeight: 1.2, ...style }}>{children}</h2>
+ return <h2 style={{ fontSize: 26, fontWeight: 800, color: T.text, margin: '0 0 14px', letterSpacing: '-0.035em', lineHeight: 1.2, ...style }}>{children}</h2>
 }
 
 function Lead({ children, maxWidth = 600 }: { children: React.ReactNode; maxWidth?: number }) {
- return <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, margin: '0 0 44px', maxWidth }}>{children}</p>
+ return <p style={{ fontSize: 15, color: T.body, lineHeight: 1.7, margin: '0 0 44px', maxWidth }}>{children}</p>
 }
 
 function Check() {
@@ -165,7 +165,7 @@ function Dash() {
 
 // Sub-heading inside the long-form sections — one step below H2, same type scale.
 function H3({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
- return <h3 style={{ fontSize: 19, fontWeight: 800, color: T.text, margin: '0 0 16px', letterSpacing: '-0.02em', lineHeight: 1.3, ...style }}>{children}</h3>
+ return <h3 style={{ fontSize: 17, fontWeight: 800, color: T.text, margin: '0 0 16px', letterSpacing: '-0.02em', lineHeight: 1.3, ...style }}>{children}</h3>
 }
 
 // Wide tables scroll inside their own box so the page body never scrolls sideways.
@@ -642,7 +642,7 @@ export default function LandingPage() {
  .strip-shell { padding: 32px 20px !important; }
  .strip-grid { grid-template-columns: repeat(2, 1fr) !important; row-gap: 28px; }
  .strip-cell { border-right: none !important; padding: 0 12px !important; }
- .hero-h1 { font-size: 34px !important; }
+ .hero-h1 { font-size: 28px !important; }
  .card-pad { padding: 24px 20px !important; }
  .footer-shell { padding: 40px 20px !important; }
  .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; }
@@ -682,11 +682,11 @@ export default function LandingPage() {
  Para distribuidores, retail y manufactura
  </div>
 
- <h1 className="hero-h1" style={{ fontSize: 56, fontWeight: 900, color: T.text, margin: '0 0 18px', letterSpacing: '-0.05em', lineHeight: 1.1, maxWidth: 720 }}>
+ <h1 className="hero-h1" style={{ fontSize: 40, fontWeight: 800, color: T.text, margin: '0 0 18px', letterSpacing: '-0.05em', lineHeight: 1.1, maxWidth: 720 }}>
  Deja de gestionar el inventario<br />a base de intuición.
  </h1>
 
- <p style={{ fontSize: 18, color: T.body, lineHeight: 1.65, maxWidth: 560, margin: '0 0 36px' }}>
+ <p style={{ fontSize: 15, color: T.body, lineHeight: 1.65, maxWidth: 560, margin: '0 0 36px' }}>
  Faro analiza tus ventas históricas y genera pronósticos de demanda por producto — para que sepas cuánto comprar, cuándo comprar y qué productos están en riesgo de quiebre.
  </p>
 
@@ -724,7 +724,7 @@ export default function LandingPage() {
  { value: '1 día', label: 'Tiempo promedio de implementación' },
  ].map(({ value, label }, i) => (
  <div key={label} className="strip-cell" style={{ textAlign: 'center', padding: '0 32px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
- <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', letterSpacing: '-0.04em', marginBottom: 6 }}>{value}</div>
+ <div style={{ fontSize: 28, fontWeight: 900, color: '#fff', letterSpacing: '-0.04em', marginBottom: 6 }}>{value}</div>
  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>{label}</div>
  </div>
  ))}
@@ -845,10 +845,10 @@ export default function LandingPage() {
  <div style={{ maxWidth: 760 }}>
  <Tag>Nosotros</Tag>
  <H2>Construido para quien decide las compras, no para científicos de datos.</H2>
- <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, margin: '0 0 20px' }}>
+ <p style={{ fontSize: 15, color: T.body, lineHeight: 1.75, margin: '0 0 20px' }}>
  Faro nace para que los distribuidores, comercios y mayoristas de Latinoamérica dejen de comprar inventario a ciegas. La mayoría opera con Excel e intuición porque las herramientas de forecasting fueron hechas para grandes empresas con equipos de datos — no para una operación que maneja miles de SKUs con un equipo pequeño.
  </p>
- <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, margin: 0 }}>
+ <p style={{ fontSize: 15, color: T.body, lineHeight: 1.75, margin: 0 }}>
  Faro toma el historial de ventas que ya tienes (un CSV o Excel), lo convierte en pronósticos por producto y en decisiones concretas de compra, sin que necesites un analista dedicado. Hecho en Costa Rica, pensado para la realidad de las PyMEs de la región.
  </p>
  </div>
@@ -869,7 +869,7 @@ export default function LandingPage() {
  <div className="split card-pad" style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 12, padding: '36px 40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
  <div>
  <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>{CASES[activeCase].label}</div>
- <div style={{ fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 16, letterSpacing: '-0.03em', lineHeight: 1.25 }}>{CASES[activeCase].title}</div>
+ <div style={{ fontSize: 19, fontWeight: 800, color: T.text, marginBottom: 16, letterSpacing: '-0.03em', lineHeight: 1.25 }}>{CASES[activeCase].title}</div>
  <div style={{ fontSize: 14, color: T.body, lineHeight: 1.75 }}>{CASES[activeCase].desc}</div>
  </div>
  <div>
@@ -973,18 +973,18 @@ export default function LandingPage() {
  Más popular
  </div>
  )}
- <div style={{ fontSize: 20, fontWeight: 800, color: highlight ? '#fff' : T.text, marginBottom: 6 }}>{name}</div>
+ <div style={{ fontSize: 17, fontWeight: 800, color: highlight ? '#fff' : T.text, marginBottom: 6 }}>{name}</div>
  <div style={{ fontSize: 13, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted, marginBottom: 16, lineHeight: 1.5 }}>{desc}</div>
  {priceLabel ? (
  <div style={{ marginBottom: 18 }}>
- <div style={{ fontSize: 34, fontWeight: 900, color: highlight ? '#fff' : T.text, letterSpacing: '-0.04em', lineHeight: 1.1 }}>{priceLabel}</div>
+ <div style={{ fontSize: 28, fontWeight: 900, color: highlight ? '#fff' : T.text, letterSpacing: '-0.04em', lineHeight: 1.1 }}>{priceLabel}</div>
  {priceHint && (
  <div style={{ fontSize: 14, fontWeight: 600, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted, marginTop: 4 }}>{priceHint}</div>
  )}
  </div>
  ) : (
  <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 18 }}>
- <span style={{ fontSize: 40, fontWeight: 900, color: highlight ? '#fff' : T.text, letterSpacing: '-0.04em' }}>${price}</span>
+ <span style={{ fontSize: 32, fontWeight: 900, color: highlight ? '#fff' : T.text, letterSpacing: '-0.04em' }}>${price}</span>
  <span style={{ fontSize: 14, fontWeight: 600, color: highlight ? 'rgba(255,255,255,0.6)' : T.muted }}>/mes</span>
  </div>
  )}

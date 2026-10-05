@@ -22,8 +22,10 @@ import { useLanguage } from '@/contexts/LanguageContext'
 
 /** Routes with a real narrow-screen implementation.
  *  `/pedidos` earned its place here because registering a delivery is warehouse
- *  work — see app/pedidos/PedidosMobile.tsx. */
-const MOBILE_READY = ['/hoy', '/pedidos']
+ *  work — see app/pedidos/PedidosMobile.tsx. `/escenarios` stacks assumptions,
+ *  result and saved scenarios in one column (`.sim-grid`) and scrolls its two
+ *  tables sideways inside their cards, so it reads on a phone as it is. */
+const MOBILE_READY = ['/hoy', '/pedidos', '/escenarios']
 
 const DISMISS_KEY = 'fp_mobile_notice_dismissed'
 

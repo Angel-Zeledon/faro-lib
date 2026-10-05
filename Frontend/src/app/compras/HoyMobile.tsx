@@ -101,7 +101,7 @@ export default function HoyMobile(props: HoyMobileProps) {
     }}>
 
       {/* ── Greeting ── */}
-      <h1 style={{ fontSize: 19, fontWeight: 700, color: C.text, margin: '0 0 4px' }}>
+      <h1 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: '0 0 4px' }}>
         {t('hoy.greeting_good_morning')}{firstName ? `, ${firstName}` : ''}.
       </h1>
       <p style={{ fontSize: 12, color: C.dim, margin: '0 0 16px' }}>
@@ -396,7 +396,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onChange
             style={{
               width: '100%', textAlign: 'center', background: 'transparent',
               border: 'none', borderBottom: `2px dashed ${accent}60`,
-              color: accent, fontSize: 22, fontWeight: 800, outline: 'none',
+              color: accent, fontSize: 18, fontWeight: 800, outline: 'none',
               padding: '2px 0', minHeight: 34,
             }}
           />
@@ -575,7 +575,7 @@ function MiniKpi({ label, value, color }: { label: string; value: string; color:
       <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 4, overflowWrap: 'anywhere' }}>
         {label}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
     </div>
   )
 }

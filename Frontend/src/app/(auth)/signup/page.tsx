@@ -141,7 +141,7 @@ function SignupPageContent() {
             }}>
               <CheckCircle2 size={21} color="#fff" strokeWidth={2} />
             </div>
-            <h1 style={{ fontSize: 23, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
+            <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0a0a0a', margin: '0 0 9px', letterSpacing: '-0.03em' }}>
               {verifyUrl ? t('auth.verify_link_onscreen_title') : t('auth.check_email_title')}
             </h1>
             {verifyUrl ? (
@@ -184,7 +184,7 @@ function SignupPageContent() {
               marginBottom: 26, paddingLeft: 2,
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) both',
             }}>
-              <h1 style={{ fontSize: 34, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
+              <h1 style={{ fontSize: 26, fontWeight: 600, color: '#0a0a0a', margin: '0 0 10px', letterSpacing: '-0.038em', lineHeight: 1.08 }}>
                 {t('auth.signup_title')}
               </h1>
               <p style={{ fontSize: 14.5, color: '#71717a', margin: 0, lineHeight: 1.55 }}>

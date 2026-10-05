@@ -48,7 +48,7 @@ export default function PlanesPage() {
   return (
     <div style={{ maxWidth: 1040, margin: '0 auto', padding: '40px 24px 64px' }}>
       <header style={{ marginBottom: 36 }}>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>
+        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>
           {t('planes.title')}
         </h1>
         <p style={{ margin: '8px 0 0', fontSize: 14.5, lineHeight: 1.55, color: 'var(--dim)', maxWidth: 560 }}>
@@ -96,13 +96,13 @@ export default function PlanesPage() {
                 </span>
               )}
 
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
                 {PLAN_LABEL[p.id]}
               </h2>
 
               {p.custom ? (
                 <div style={{ margin: '10px 0 4px' }}>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
                     Personalizado
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--dim)', marginTop: 3 }}>
@@ -111,7 +111,7 @@ export default function PlanesPage() {
                 </div>
               ) : (
                 <div style={{ margin: '10px 0 4px', display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                  <span style={{ fontSize: 30, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
                     ${p.price}
                   </span>
                   <span style={{ fontSize: 13, color: 'var(--dim)' }}>{t('planes.per_month')}</span>

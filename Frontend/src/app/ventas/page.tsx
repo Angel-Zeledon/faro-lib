@@ -1084,7 +1084,7 @@ function QuickStartPageContent() {
  {/* Header */}
  <div style={{ textAlign: 'center', marginBottom: 40 }}>
  <h1 style={{
- fontSize: 26, fontWeight: 700,
+ fontSize: 20, fontWeight: 700,
  color: 'var(--text)', margin: 0, marginBottom: 8,
  letterSpacing: '-0.02em',
  }}>
@@ -1109,7 +1109,7 @@ function QuickStartPageContent() {
  {/* ── Step 1 ──────────────────────────────────────────────────────── */}
  {step === 1 && (
  <div>
- <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
+ <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
  {t('qs.upload_title')}
  </h2>
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
@@ -1256,7 +1256,7 @@ function QuickStartPageContent() {
  {/* ── Step 2 ──────────────────────────────────────────────────────── */}
  {step === 2 && inspection && (
  <div>
- <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
+ <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
  {t('qs.confirm_title')}
  </h2>
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
@@ -1385,7 +1385,7 @@ function QuickStartPageContent() {
  {/* ── Step 3 ──────────────────────────────────────────────────────── */}
  {step === 3 && (
  <div style={{ textAlign: 'center' }}>
- <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
+ <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
  {t('qs.learning_title')}
  </h2>
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 32px', lineHeight: 1.6 }}>

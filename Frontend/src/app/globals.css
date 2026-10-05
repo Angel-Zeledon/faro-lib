@@ -28,6 +28,19 @@
     --dur-4:    260ms;
     --ease-out: cubic-bezier(0.2, 0, 0.2, 1);
     --ease-in:  cubic-bezier(0.4, 0, 1, 1);
+
+    /* Type scale. Screens write sizes inline, so these are the agreed steps
+       rather than something every call site reads: a page title is 18, a card
+       or section heading 14-15, a KPI figure 18 (a hero figure on /impacto
+       30-34), body in dense data screens 13, captions and table headers 11-12.
+       Nothing in the app shell is set above 22. The landing keeps its own,
+       slightly larger scale (hero 44, section 28). On phones form controls are
+       16px (see the end of this file) so iOS does not zoom on focus. */
+    --fs-title:   18px;
+    --fs-section: 15px;
+    --fs-kpi:     18px;
+    --fs-body:    13px;
+    --fs-small:   12px;
   }
 
   /* Light is the default: for this audience (distribuidor SMB, luz de oficina
@@ -852,4 +865,52 @@
     min-height: 44px;
     margin-block: -13px;   /* the taller box grows over its own row, not the layout */
   }
+}
+
+/* Phones: a focused control under 16px makes iOS Safari zoom the whole page,
+   and the dense 12-13px geometry of the form scale is below that. Inline
+   sizes win over classes, hence !important. Checkboxes, radios and ranges are
+   not text entry and keep their own size; inputs inside a table keep their
+   height so a grid row does not grow, but still get 16px (zoom is about the
+   font, not the box). */
+@media (max-width: 760px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  select { min-height: 40px; }
+  table input, table select { min-height: 0; }
+}
+
+/* Scenario simulation layout: assumptions on the left, the result beside them,
+   saved scenarios under the assumptions. On narrow screens the order is
+   assumptions, result, saved: you change a number and see the answer without
+   scrolling past the history. The 1fr row keeps the result from stretching the
+   assumptions card when it is the taller one. */
+.sim-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas: "build result" "extras result";
+  gap: 16px 18px;
+  align-items: start;
+}
+.sim-build  { grid-area: build; }
+.sim-result { grid-area: result; }
+.sim-extras { grid-area: extras; }
+.sim-session { min-width: 220px; }
+@media (max-width: 900px) {
+  .sim-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: "build" "result" "extras";
+  }
+}
+@media (max-width: 760px) {
+  .sim-page { padding: 16px 16px !important; }
+  .sim-session { width: 100%; }
+  /* The buttons are written with `all: unset` inline, which only !important beats. */
+  .sim-btn { min-height: 44px !important; box-sizing: border-box !important; }
 }

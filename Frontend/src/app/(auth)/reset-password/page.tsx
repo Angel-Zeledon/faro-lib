@@ -53,7 +53,7 @@ function ResetPasswordForm() {
         }}>
           <Zap size={20} color="#fff" strokeWidth={2.5} />
         </div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px' }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px' }}>
           {t('auth.set_new_password_title')}
         </h1>
       </div>

@@ -27,7 +27,7 @@ export default function InventorySetupPage() {
 
   return (
     <div style={{ padding: '22px 26px', maxWidth: 1180, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
+      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
         {c('setupStock.page.title')}
       </h1>
       <p style={{ fontSize: 13, color: 'var(--dim)', margin: '6px 0 12px', lineHeight: 1.5 }}>
