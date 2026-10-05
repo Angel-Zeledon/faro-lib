@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic'
 import { getSkuIntelligence } from '@/lib/api'
 import type {
   MetricRow, QualityReport, SkuIntelligenceData, ForecastPoint,
+  InventoryStatusItem, CoverageUnit,
 } from '@/lib/types'
 import { downloadWorkbook } from '@/lib/excel'
 import Spinner from '@/components/ui/Spinner'
@@ -18,7 +19,8 @@ import {
   Maximize2, X,
 } from 'lucide-react'
 import { ChipGroup } from './ChipGroup'
-import { BuyerOutlook } from './BuyerOutlook'
+import { BuyerChart } from './BuyerChart'
+import { BuyerAnswers, BuyerTrust } from './BuyerSummary'
 import {
   type Translate, makeChampionRank, pct, fmt, fmtK, reliabilityInfo,
   downloadCSV, useCssToken,
@@ -694,7 +696,7 @@ export function buildChartOption(
 
 // ── Main chart panel ──────────────────────────────────────────────────────────
 
-export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTechnical, onSeeOrder }: {
+export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTechnical, onSeeOrder, status, coverageUnit }: {
   sessionId: string; sku: string; isDark: boolean
   /** Set on the single-session panel only — in compare mode two of these are
    *  on screen, and a tour anchor has to be unique in the DOM. */
@@ -704,15 +706,23 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
   quality?: QualityReport[string]
   /** True in the page's technical view: the rest of the stat tiles, the
    *  model-selection chips and the run details in the footer. The buyer view
-   *  gets the upcoming-periods strip in their place — see BuyerOutlook. */
+   *  gets the three answers and the trust line in their place — see
+   *  BuyerSummary. */
   showTechnical: boolean
   /** Buyer view: where "see what to order" goes (the Inventory tab). */
   onSeeOrder?: () => void
+  /** Buyer view: this SKU's live stock row, for the stock-out and lead-time
+   *  marker and the "what to order" answer. */
+  status?: InventoryStatusItem
+  coverageUnit?: CoverageUnit
 }) {
   const { t } = useLanguage()
   // Phones get the same panel with thumb-sized controls, the export menu as a
   // bottom sheet and a compact chart option — see buildChartOption(compact).
   const narrow = useIsNarrow()
+  // The buyer view is a different composition (answers, one hero chart, trust
+  // line), not the technical one with pieces hidden.
+  const buyer = !showTechnical
   const [data,        setData]        = useState<SkuIntelligenceData | null>(null)
   const [loading,     setLoading]     = useState(true)
   const [fetching,    setFetching]    = useState(false)
@@ -1006,9 +1016,9 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
   const singleModel = selModels.length <= 1
 
   const option = useMemo(() => {
-    if (!data) return {}
+    if (!data || buyer) return {}
     return buildChartOption(data, chartType, showBand && singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow)
-  }, [data, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow])
+  }, [data, buyer, chartType, showBand, singleModel, isDark, gaps, outliers, t, overlayList, accent, narrow])
 
   if (loading && !data) return (
     <div style={{ flex: 1, padding: '16px', minHeight: 360 }} role="status" aria-busy="true">
@@ -1058,10 +1068,10 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
           }))}
         />
 
-        {!narrow && <div style={{ width: 1, height: 18, background: 'var(--border)' }} />}
+        {!narrow && !buyer && <div style={{ width: 1, height: 18, background: 'var(--border)' }} />}
 
         {/* Chart type */}
-        <ChipGroup
+        {!buyer && <ChipGroup
           label={t('skus.chip_chart')}
           value={chartType}
           onChange={setChartType}
@@ -1070,9 +1080,9 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
             { value: 'line', label: t('skus.chart_type_line'), icon: <LineChartIcon size={10} /> },
             { value: 'bar',  label: t('skus.chart_type_bar'),  icon: <BarChart2 size={10} /> },
           ]}
-        />
+        />}
 
-        {!narrow && <div style={{ width: 1, height: 18, background: 'var(--border)' }} />}
+        {!narrow && !buyer && <div style={{ width: 1, height: 18, background: 'var(--border)' }} />}
 
         {/* Model selection — multi-select chips; each selected model renders
             its own colored series on the same axis. Behind the technical
@@ -1111,7 +1121,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
         )}
 
         {/* Confidence band — only meaningful with a single model selected */}
-        {singleModel && (
+        {singleModel && !buyer && (
           <BandToggle
             tourAnchor={tourAnchor ? 'skus.band' : undefined}
             active={showBand} onToggle={() => setShowBand(v => !v)} hasQuantiles={hasQuantiles}
@@ -1225,15 +1235,28 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
       )}
 
       {/* Stats strip */}
-      <StatsStrip data={data} quality={quality} showTechnical={showTechnical} />
+      {!buyer && <StatsStrip data={data} quality={quality} showTechnical={showTechnical} />}
+
+      {buyer && !narrow && (
+        <BuyerAnswers data={data} status={status} coverageUnit={coverageUnit} onSeeOrder={onSeeOrder} />
+      )}
 
       {/* Chart */}
       <div data-tour={tourAnchor ? 'skus.plot' : undefined} style={narrow && !fullscreen
         // Phones: a fixed height. The page scrolls; the chart does not compete
         // with it for the whole viewport.
-        ? { height: 280, padding: '6px 0 0', minWidth: 0 }
-        : { flex: 1, minHeight: 300, padding: '8px 0 0' }}>
-        {data.historical.length === 0 && data.forecast.length === 0 ? (
+        ? { height: buyer ? 300 : 280, padding: '6px 0 0', minWidth: 0 }
+        : { flex: 1, minHeight: buyer ? 380 : 300, padding: buyer ? '12px 8px 0 4px' : '8px 0 0' }}>
+        {buyer ? (
+          <BuyerChart
+            data={data}
+            status={status}
+            coverageUnit={coverageUnit}
+            isDark={isDark}
+            height={narrow && !fullscreen ? 288 : undefined}
+            onReady={inst => { echartsRef.current = inst }}
+          />
+        ) : data.historical.length === 0 && data.forecast.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--dim)', fontSize: 13 }}>
             {t('skus.no_series_data')}
           </div>
@@ -1249,13 +1272,11 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
         )}
       </div>
 
-      {!showTechnical && (
-        <BuyerOutlook
-          data={data}
-          formatDate={makeAxisDateFormatter(data.applied_granularity, data.forecast.map(p => p.date))}
-          onSeeOrder={onSeeOrder}
-        />
+      {/* Phones: the chart comes first, then the answers. */}
+      {buyer && narrow && (
+        <BuyerAnswers data={data} status={status} coverageUnit={coverageUnit} onSeeOrder={onSeeOrder} />
       )}
+      {buyer && <BuyerTrust data={data} quality={quality} />}
 
       {/* Footer info. The run details are the technical view's; the gap and
           outlier notices stay in both, because they change how far the curve

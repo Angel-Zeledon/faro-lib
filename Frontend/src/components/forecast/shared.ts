@@ -61,6 +61,32 @@ export const makeChampionRank = (rows: MetricRow[]) => {
     r[metric] as number | null | undefined
 }
 
+/** The model this SKU's orders come from, with its measured error. `accuracy`
+ *  is 1 - WAPE clamped to 0..100, or null when the figure would mean nothing
+ *  (a SKU that never sold, or the engine's undefined-WAPE sentinel). The
+ *  champion is picked BEFORE asking whether it has a WAPE — see the notes on
+ *  the page's `skuAccuracy` this was lifted from (math audit 2026-10-01). */
+export function championError(rows: MetricRow[]): {
+  wape: number | null; mae: number | null; accuracy: number | null
+} {
+  const rank = makeChampionRank(rows)
+  const best = rows
+    .filter(r => r.type !== 'baseline')
+    .sort((a, b) => (rank(a) ?? Infinity) - (rank(b) ?? Infinity))[0]
+  const none = { wape: null, mae: null, accuracy: null }
+  if (best?.wape == null) return none
+  // WAPE divides by total real demand: a flat line of zeros scores a
+  // meaningless 0 error and would proudly report 100%.
+  if (best.wape === 0 && (best.mae ?? 0) === 0) return none
+  // The other face of 0/0: the engine's sentinel in the hundreds of millions.
+  if (!Number.isFinite(best.wape) || best.wape >= 1e6) return none
+  return {
+    wape: best.wape,
+    mae: typeof best.mae === 'number' && Number.isFinite(best.mae) ? best.mae : null,
+    accuracy: Math.max(0, Math.round((1 - best.wape) * 100)),
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // `t` returns the key itself when the catalog has no entry, so a build whose

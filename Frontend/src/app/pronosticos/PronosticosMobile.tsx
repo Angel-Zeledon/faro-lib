@@ -2,27 +2,22 @@
 /**
  * `/pronosticos` on a phone.
  *
- * The desktop screen is a two-pane workspace: a 280px SKU column next to a
- * chart that fills the rest. Squeezed into 360px that layout measured 628px
- * wide, with the chart and its tabs pushed off the right edge. A phone does
- * one thing at a time, so the narrow view is two screens in one route:
- *
- *   list   — the session, the buyer/technical toggle, a search box and one
- *            card per SKU (name, series type, live signal). Tapping a card
- *            opens…
- *   detail — that SKU with the header's back arrow, its tabs as a swipeable
- *            strip, and the same panels the desktop renders (the chart is the
- *            same ChartPanel, in its compact phone mode).
+ * One screen, chart first. The desktop layout is a product column beside the
+ * chart; on 360px that column does not fit, and pushing a second "detail"
+ * screen made every product change a round trip. Here the product picker is a
+ * button that opens a bottom sheet holding the same searchable, sortable list
+ * the desktop column shows, and the chart (the same ChartPanel, in its compact
+ * phone mode) stays on screen underneath.
  *
  * Everything the desktop toolbar offers is still here — refresh, the
- * all-SKUs export and session compare sit in an "Opciones" sheet, because
- * three small buttons in a row are what pushed the toolbar past the edge.
- * All state lives in the page; this file only lays it out, so the two layouts
- * can never disagree about which session, SKU or tab is selected.
+ * all-SKUs export and session compare sit in an options sheet, because three
+ * small buttons in a row are what pushed the toolbar past the edge. All state
+ * lives in the page; this file only lays it out, so the two layouts can never
+ * disagree about which session, product or tab is selected.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import {
-  Search, Package, MoreHorizontal, RefreshCw, FileSpreadsheet, GitCompare, Loader2, X,
+  Package, MoreHorizontal, RefreshCw, FileSpreadsheet, GitCompare, Loader2, X, ChevronDown,
 } from 'lucide-react'
 import type {
   SessionInfo, MetricRow, InventoryRecommendation, QualityReport, InventorySignal,
@@ -30,17 +25,15 @@ import type {
 } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import RunWarningsPanel from '@/components/ui/RunWarningsPanel'
-import RunLineagePanel from '@/components/ui/RunLineagePanel'
 import { EmptyState, InlineError, LoadingState } from '@/components/ui/States'
-import Pagination from '@/components/table/Pagination'
 import { SIGNAL_STYLES } from '@/components/ui/SignalBadge'
 import {
-  BottomSheet, MobileCard, MobileList, MobileTabs, StatusBadge, signalTone, useMobileHeader,
+  BottomSheet, MobileTabs, StatusBadge, signalTone,
 } from '@/components/mobile'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTenantFacts, has } from '@/hooks/useTenantFacts'
 import { seriesTypeLabel } from '@/lib/enumLabels'
-import { SERIES_COLOR, pct, reliabilityInfo } from '@/components/forecast/shared'
+import { SERIES_COLOR, pct } from '@/components/forecast/shared'
 import { SessionSelector } from '@/components/forecast/SessionSelector'
 import { ChartPanel } from '@/components/forecast/ChartPanel'
 import CompareView from '@/components/forecast/CompareView'
@@ -48,7 +41,7 @@ import { SalesPatternPanel } from '@/components/forecast/SalesPatternPanel'
 import { MetricsTable } from '@/components/forecast/MetricsTable'
 import { QualityTab, QualityWarningList } from '@/components/forecast/QualityPanel'
 import { InventoryPanel } from '@/components/forecast/InventoryPanel'
-import { PolicyBacktestPanel } from '@/components/forecast/PolicyBacktestPanel'
+import { RunDetails } from '@/components/forecast/RunDetails'
 import { PanelPlaceholder } from '@/components/forecast/PanelChrome'
 import { ViewToggle, type ForecastView } from '@/components/forecast/ViewToggle'
 
@@ -72,19 +65,14 @@ export interface PronosticosMobileProps {
   onDismissLoadError: () => void
 
   loading: boolean
-  search: string
-  onSearch: (s: string) => void
-  /** All SKUs matching the search (the count); `pageRows` is what is shown. */
-  skuCount: number
-  page: { page: number; pageCount: number; offset: number; total: number; rows: string[] }
-  onPage: (p: number) => void
+  /** Products in the open session, before any search. */
+  catalogueCount: number
+  /** The page's own product list; `afterPick` closes the sheet it sits in. */
+  renderList: (touch: boolean, afterPick?: () => void) => React.ReactNode
   quality: QualityReport
   signalForSku: (sku: string) => InventorySignal | undefined
 
   selectedSku: string | null
-  detailOpen: boolean
-  onOpenSku: (sku: string) => void
-  onCloseDetail: () => void
 
   tab: string
   onTab: (tab: string) => void
@@ -121,28 +109,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
   const { t } = useLanguage()
   const { completedSessions } = useTenantFacts()
   const [optionsOpen, setOptionsOpen] = useState(false)
-  const showDetail = p.detailOpen && !!p.selectedSku
-
-  // The detail is a screen of its own: the header shows the SKU and a back
-  // arrow, exactly like a pushed view in a native app.
-  useMobileHeader(showDetail ? { title: p.selectedSku ?? undefined, onBack: p.onCloseDetail } : null)
-
-  // Going into a SKU starts at the top; coming back lands where the list was
-  // left, so a buyer walking the catalogue never loses their place.
-  const listScroll = useRef(0)
-  const wasDetail = useRef(false)
-  useEffect(() => {
-    const scroller = document.querySelector('.page-content')
-    if (!scroller) return
-    if (showDetail && !wasDetail.current) scroller.scrollTo({ top: 0 })
-    if (!showDetail && wasDetail.current) scroller.scrollTo({ top: listScroll.current })
-    wasDetail.current = showDetail
-  }, [showDetail])
-
-  const openSku = (sku: string) => {
-    listScroll.current = document.querySelector('.page-content')?.scrollTop ?? 0
-    p.onOpenSku(sku)
-  }
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const tabs = (p.showTechnical
     ? ['Forecast', 'Pattern', 'Metrics', 'Quality', 'Inventory']
@@ -173,7 +140,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
 
         {/* Same rule as the desktop toolbar: technical view, or a run still
             in progress so its progress is never hidden. */}
-        {p.sessionId && p.skuCount > 0 && (p.showTechnical || p.bulkExporting) && (
+        {p.sessionId && p.catalogueCount > 0 && (p.showTechnical || p.bulkExporting) && (
           <button
             className="mobile-btn mobile-btn-secondary"
             style={{ flex: 'none', width: '100%', justifyContent: 'flex-start' }}
@@ -181,7 +148,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
             disabled={p.bulkExporting}
           >
             {p.bulkExporting
-              ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} aria-hidden="true" /> {p.bulkProgress} / {p.skuCount} {t('skus.skus_count_plural')}…</>
+              ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} aria-hidden="true" /> {p.bulkProgress} / {p.skus.length} {t('skus.skus_count_plural')}…</>
               : <><FileSpreadsheet size={16} aria-hidden="true" /> {t('skus.btn_export_all_skus')}</>}
           </button>
         )}
@@ -192,17 +159,15 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
         )}
 
         {p.sessionId && p.showTechnical && has(completedSessions, 2) && (
-          <>
-            <button
-              className={`mobile-btn ${p.compareMode ? 'mobile-btn-primary' : 'mobile-btn-secondary'}`}
-              style={{ flex: 'none', width: '100%', justifyContent: 'flex-start' }}
-              aria-pressed={p.compareMode}
-              onClick={p.onToggleCompare}
-            >
-              {p.compareMode ? <X size={16} aria-hidden="true" /> : <GitCompare size={16} aria-hidden="true" />}
-              {p.compareMode ? t('skus.mobile_compare_stop') : t('skus.btn_compare')}
-            </button>
-          </>
+          <button
+            className={`mobile-btn ${p.compareMode ? 'mobile-btn-primary' : 'mobile-btn-secondary'}`}
+            style={{ flex: 'none', width: '100%', justifyContent: 'flex-start' }}
+            aria-pressed={p.compareMode}
+            onClick={p.onToggleCompare}
+          >
+            {p.compareMode ? <X size={16} aria-hidden="true" /> : <GitCompare size={16} aria-hidden="true" />}
+            {p.compareMode ? t('skus.mobile_compare_stop') : t('skus.btn_compare')}
+          </button>
         )}
       </div>
     </BottomSheet>
@@ -214,137 +179,57 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
         <InlineError error={p.sessError} onRetry={p.onRetrySessions} onDismiss={p.onDismissSessError} />
       )}
       {p.loadError && (
-        <InlineError error={new Error(p.loadError)} onDismiss={p.onDismissLoadError} />
+        <InlineError error={new Error(p.loadError)} onRetry={p.onRefresh} onDismiss={p.onDismissLoadError} />
       )}
     </>
   )
 
-  // ── Detail ────────────────────────────────────────────────────────────────
-  if (showDetail && p.selectedSku) {
-    const sku = p.selectedSku
-    const skuQuality = p.quality[sku]
-    const color = SERIES_COLOR[skuQuality?.series_type ?? 'unknown'] ?? SERIES_COLOR.unknown
-    const signal = p.signalForSku(sku)
-    const comparing = p.compareMode && !!p.sessionId
+  const sku = p.selectedSku
+  const skuQuality = sku ? p.quality[sku] : undefined
+  const color = SERIES_COLOR[skuQuality?.series_type ?? 'unknown'] ?? SERIES_COLOR.unknown
+  const signal = sku ? p.signalForSku(sku) : undefined
+  const comparing = p.compareMode && !!p.sessionId
+  const noSession = !p.sessionId
+  const noProducts = !!p.sessionId && !p.loading && p.catalogueCount === 0
 
-    return (
-      <div key="detail" className="mobile-push-enter" style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-        {errors}
-
-        {/* Who this is: series type, signal, and — technical view — the
-            numbers the desktop header carries. */}
-        <div data-tour="skus.header" style={{
-          display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
-        }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: color + '18',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Package size={16} color={color} aria-hidden="true" />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-              {skuQuality ? (
-                <>
-                  <span style={{ color, fontWeight: 600 }}>{seriesTypeLabel(t, skuQuality.series_type)}</span>
-                  {p.showTechnical && <> · {skuQuality.n_rows} {t('skus.rows_label')} · {pct(skuQuality.quality_score)} {t('skus.quality_label_lower')}</>}
-                </>
-              ) : t('skus.no_quality_data')}
-            </div>
-            {p.showTechnical && p.skuAccuracy != null && (
-              <div style={{ fontSize: 13, color: 'var(--dim)', marginTop: 2 }}>
-                {t('skus.accuracy_label')}: <strong style={{ color: 'var(--text)' }}>{p.skuAccuracy}%</strong>
-              </div>
-            )}
-          </div>
-          {signal && <StatusBadge label={t(SIGNAL_STYLES[signal].labelKey)} tone={signalTone(signal)} />}
-        </div>
-
-        {!p.showTechnical && skuQuality && p.skuWarnings.length > 0 && (
-          <div style={{ padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14 }}>
-            <QualityWarningList lines={p.skuWarnings} />
-          </div>
-        )}
-
-        <MobileTabs
-          ariaLabel={t('skus.mobile_tabs_aria')}
-          tabs={tabs}
-          value={p.tab}
-          onChange={p.onTab}
-          panelId="skus-mobile-panel"
-        />
-
-        <div
-          id="skus-mobile-panel"
-          role="tabpanel"
-          key={p.tab}
-          className="mobile-fade-enter"
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+      {/* Product picker + options. The picker names what is on screen, so the
+          chart below never needs a title of its own. */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minWidth: 0 }}>
+        <button
+          onClick={() => setPickerOpen(true)}
+          disabled={noSession || p.loading || p.catalogueCount === 0}
+          aria-haspopup="dialog"
+          aria-label={t('skus.picker_aria')}
+          className="tap-feedback"
           style={{
-            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
-            overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0,
+            all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flex: 1, minWidth: 0,
+            minHeight: TAP + 4, padding: '0 14px', borderRadius: 12,
+            border: '1px solid var(--border)', background: 'var(--surface)',
+            display: 'flex', alignItems: 'center', gap: 10,
+            opacity: noSession || p.catalogueCount === 0 ? 0.55 : 1,
           }}
         >
-          {p.tab === 'Forecast' && p.sessionId && (
-            comparing ? (
-              <CompareView
-                sessions={p.sessions}
-                primaryId={p.sessionId}
-                extraIds={p.cmpSessionIds}
-                onExtraIds={p.onCmpSessionIds}
-                skus={p.skus}
-                sku={sku}
-                onSku={p.onSku}
-                isDark={p.isDark}
-              />
-            ) : (
-              <ChartPanel
-                key={`${p.sessionId}-${sku}`}
-                tourAnchor="skus.chart"
-                sessionId={p.sessionId} sku={sku} isDark={p.isDark} quality={skuQuality}
-                showTechnical={p.showTechnical}
-                onSeeOrder={() => p.onTab('Inventory')}
-              />
-            )
-          )}
-          {p.tab === 'Pattern' && p.sessionId && (
-            <SalesPatternPanel key={`${p.sessionId}-${sku}`} sessionId={p.sessionId} sku={sku} isDark={p.isDark} />
-          )}
-          {p.tab === 'Metrics' && <MetricsTable rows={p.skuMetrics} sku={sku} />}
-          {p.tab === 'Quality' && (
-            skuQuality
-              ? <QualityTab q={skuQuality} showStats={p.showSkuStats} onToggleStats={p.onToggleSkuStats} />
-              : <PanelPlaceholder message={t('skus.empty_no_quality_data')} />
-          )}
-          {p.tab === 'Inventory' && (
-            p.skuInventory
-              ? <InventoryPanel inv={p.skuInventory} live={p.skuStatus} coverageUnit={p.coverageUnit} policy={p.skuPolicy} risk={p.skuRisk} />
-              : <div style={{ padding: 16, color: 'var(--dim)', fontSize: 14 }}>{t('skus.no_inventory_recommendations')}</div>
-          )}
-        </div>
-        {options}
-      </div>
-    )
-  }
-
-  // ── List ──────────────────────────────────────────────────────────────────
-  return (
-    <div key="list" className={wasDetail.current ? 'mobile-pop-enter' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', minWidth: 0 }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          {p.sessLoading
-            ? <div style={{ minHeight: TAP, display: 'flex', alignItems: 'center' }}><Spinner size={16} /></div>
-            : (
-              <div style={{ minWidth: 0 }} className="skus-mobile-session">
-                <SessionSelector
-                  tourAnchor="skus.session"
-                  sessions={p.sessions}
-                  selected={p.sessionId}
-                  onSelect={p.onSelectSession}
-                />
-              </div>
+          <span aria-hidden="true" style={{
+            width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+            background: signal ? SIGNAL_STYLES[signal].fg : 'var(--border)',
+          }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 16, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {sku ?? t('skus.picker_placeholder')}
+            </span>
+            {sku && (
+              <span style={{ display: 'block', fontSize: 12.5, color: 'var(--dim)' }}>
+                {skuQuality && <span style={{ color }}>{seriesTypeLabel(t, skuQuality.series_type)}</span>}
+                {p.showTechnical && skuQuality && <> · {skuQuality.n_rows} {t('skus.rows_label')} · {pct(skuQuality.quality_score)} {t('skus.quality_label_lower')}</>}
+                {p.showTechnical && p.skuAccuracy != null && <> · {t('skus.accuracy_label')} {p.skuAccuracy}%</>}
+              </span>
             )}
-        </div>
+          </span>
+          {signal && <StatusBadge label={t(SIGNAL_STYLES[signal].labelKey)} tone={signalTone(signal)} />}
+          <ChevronDown size={18} aria-hidden="true" style={{ color: 'var(--dim)', flexShrink: 0 }} />
+        </button>
         <button
           onClick={() => setOptionsOpen(true)}
           aria-label={t('skus.mobile_options')}
@@ -352,7 +237,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
           className="tap-feedback"
           style={{
             all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flexShrink: 0,
-            width: TAP + 4, minHeight: TAP, borderRadius: 10,
+            width: TAP + 4, minHeight: TAP + 4, borderRadius: 12,
             border: '1px solid var(--border)', background: 'var(--surface)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)',
             position: 'relative',
@@ -368,37 +253,10 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
         </button>
       </div>
 
-      <ViewToggle value={p.view} onChange={p.onView} touch />
-
       {errors}
 
-      <RunWarningsPanel sessionId={p.sessionId} collapsible />
-      {p.showTechnical && <RunLineagePanel sessionId={p.sessionId} />}
-
-      <div style={{ position: 'relative' }}>
-        <Search size={16} aria-hidden="true" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--dim)' }} />
-        <input
-          data-tour="skus.search"
-          type="search"
-          inputMode="search"
-          enterKeyHint="search"
-          placeholder={t('skus.search_placeholder')}
-          aria-label={t('skus.search_placeholder')}
-          value={p.search}
-          onChange={e => p.onSearch(e.target.value)}
-          className="form-input"
-          style={{ paddingLeft: 36, fontSize: 16, minHeight: TAP, boxSizing: 'border-box', width: '100%' }}
-        />
-      </div>
-
-      {p.skuCount > 0 && (
-        <div style={{ fontSize: 13, color: 'var(--dim)', padding: '0 2px' }}>
-          {p.skuCount} {p.skuCount !== 1 ? t('skus.skus_count_plural') : t('skus.skus_count_singular')}
-        </div>
-      )}
-
-      {!p.sessionId ? (
-        p.sessLoading ? null : (
+      {noSession ? (
+        p.sessLoading ? <div style={{ minHeight: TAP, display: 'flex', alignItems: 'center' }}><Spinner size={16} /></div> : (
           <EmptyState
             icon={<Package size={20} />}
             title={t('skus.empty_title')}
@@ -409,59 +267,109 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
       ) : p.loading ? (
         <LoadingState label={t('skus.loading_label')}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {Array.from({ length: 6 }, (_, i) => (
-              <div key={i} className="skeleton" style={{ height: 56, borderRadius: 12 }} />
-            ))}
+            <div className="skeleton" style={{ height: 300, borderRadius: 12 }} />
+            <div className="skeleton" style={{ height: 76, borderRadius: 12 }} />
+            <div className="skeleton" style={{ height: 76, borderRadius: 12 }} />
           </div>
         </LoadingState>
-      ) : p.skuCount === 0 ? (
-        <EmptyState compact icon={<Search size={20} />} title={t('skus.empty_no_skus_found')} />
-      ) : (
+      ) : noProducts ? (
+        <EmptyState
+          compact
+          icon={<Package size={20} />}
+          title={t('skus.empty_no_skus_found')}
+          body={t('skus.empty_no_products_body')}
+          actions={[{ label: t('skus.empty_cta'), href: '/ventas' }]}
+        />
+      ) : sku ? (
         <>
-          <MobileList ariaLabel={t('skus.mobile_list_aria')}>
-            {p.page.rows.map(sku => {
-              const q = p.quality[sku]
-              const signal = p.signalForSku(sku)
-              const color = SERIES_COLOR[q?.series_type ?? 'unknown'] ?? SERIES_COLOR.unknown
-              const rel = q ? reliabilityInfo(q.quality_score, t) : null
-              return (
-                <MobileCard
-                  key={sku}
-                  title={sku}
-                  subtitle={q
-                    ? <><span style={{ color }}>{seriesTypeLabel(t, q.series_type)}</span>{rel && <> · {rel.label}</>}</>
-                    : t('skus.no_quality_data')}
-                  status={signal ? { label: t(SIGNAL_STYLES[signal].labelKey), tone: signalTone(signal) } : undefined}
-                  leading={
-                    <span style={{
-                      width: 32, height: 32, borderRadius: 9, background: color + '18',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Package size={15} color={color} aria-hidden="true" />
-                    </span>
-                  }
-                  onClick={() => openSku(sku)}
-                />
-              )
-            })}
-          </MobileList>
-          {p.page.pageCount > 1 && (
-            <div className="skus-mobile-pagination" style={{ minWidth: 0 }}>
-              <Pagination
-                page={p.page.page}
-                pageCount={p.page.pageCount}
-                offset={p.page.offset}
-                total={p.page.total}
-                rowsOnPage={p.page.rows.length}
-                onPage={p.onPage}
-                label="SKU"
-              />
+          {!p.showTechnical && skuQuality && p.skuWarnings.length > 0 && (
+            <div style={{ padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14 }}>
+              <QualityWarningList lines={p.skuWarnings} />
             </div>
           )}
+
+          <MobileTabs
+            ariaLabel={t('skus.mobile_tabs_aria')}
+            tabs={tabs}
+            value={p.tab}
+            onChange={p.onTab}
+            panelId="skus-mobile-panel"
+          />
+
+          <div
+            id="skus-mobile-panel"
+            role="tabpanel"
+            key={p.tab}
+            className="mobile-fade-enter"
+            style={{
+              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
+              overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0,
+            }}
+          >
+            {p.tab === 'Forecast' && p.sessionId && (
+              comparing ? (
+                <CompareView
+                  sessions={p.sessions}
+                  primaryId={p.sessionId}
+                  extraIds={p.cmpSessionIds}
+                  onExtraIds={p.onCmpSessionIds}
+                  skus={p.skus}
+                  sku={sku}
+                  onSku={p.onSku}
+                  isDark={p.isDark}
+                />
+              ) : (
+                <ChartPanel
+                  key={`${p.sessionId}-${sku}`}
+                  tourAnchor="skus.chart"
+                  sessionId={p.sessionId} sku={sku} isDark={p.isDark} quality={skuQuality}
+                  showTechnical={p.showTechnical}
+                  onSeeOrder={() => p.onTab('Inventory')}
+                  status={p.skuStatus} coverageUnit={p.coverageUnit}
+                />
+              )
+            )}
+            {p.tab === 'Pattern' && p.sessionId && (
+              <SalesPatternPanel key={`${p.sessionId}-${sku}`} sessionId={p.sessionId} sku={sku} isDark={p.isDark} />
+            )}
+            {p.tab === 'Metrics' && <MetricsTable rows={p.skuMetrics} sku={sku} />}
+            {p.tab === 'Quality' && (
+              skuQuality
+                ? <QualityTab q={skuQuality} showStats={p.showSkuStats} onToggleStats={p.onToggleSkuStats} />
+                : <PanelPlaceholder message={t('skus.empty_no_quality_data')} />
+            )}
+            {p.tab === 'Inventory' && (
+              p.skuInventory
+                ? <InventoryPanel inv={p.skuInventory} live={p.skuStatus} coverageUnit={p.coverageUnit} policy={p.skuPolicy} risk={p.skuRisk} />
+                : <div style={{ padding: 16, color: 'var(--dim)', fontSize: 14 }}>{t('skus.no_inventory_recommendations')}</div>
+            )}
+          </div>
         </>
+      ) : (
+        <PanelPlaceholder message={t('skus.empty_select_sku_from_list')} />
       )}
 
-      {p.showTechnical && <PolicyBacktestPanel backtest={p.policyBacktest} catalogueSize={p.catalogueSize} />}
+      <ViewToggle value={p.view} onChange={p.onView} touch />
+
+      {!p.sessLoading && p.sessions.length > 0 && (
+        <div className="skus-mobile-session" style={{ minWidth: 0 }}>
+          <SessionSelector
+            tourAnchor="skus.session"
+            sessions={p.sessions}
+            selected={p.sessionId}
+            onSelect={p.onSelectSession}
+          />
+        </div>
+      )}
+
+      <RunWarningsPanel sessionId={p.sessionId} collapsible />
+      {p.showTechnical && (
+        <RunDetails sessionId={p.sessionId} backtest={p.policyBacktest} catalogueSize={p.catalogueSize} touch />
+      )}
+
+      <BottomSheet open={pickerOpen} onClose={() => setPickerOpen(false)} title={t('skus.picker_title')}>
+        {p.renderList(true, () => setPickerOpen(false))}
+      </BottomSheet>
       {options}
     </div>
   )
