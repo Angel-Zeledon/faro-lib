@@ -178,13 +178,18 @@ export default function SkusPage() {
     }
     const trained = sessions
       .filter(s => s.status === 'COMPLETED')
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
     if (!trained.length) return
     const active = activeSessionId
       ? trained.find(s => s.session_id === activeSessionId)?.session_id
       : undefined
+    // A back-test run is the newest session right after it finishes, but it is a
+    // test of the engine, not a plan: never land on one by default. It stays
+    // pickable by hand (the selector tags it) and only wins when it is all
+    // there is.
+    const landing = trained.find(s => !s.is_backtest && !s.archived_at) ?? trained[0]
     if (!sessionId) {
-      const pick = active ?? trained[0].session_id
+      const pick = active ?? landing.session_id
       lastAutoRef.current = pick
       setSessionId(pick)
       setTab('Forecast')
@@ -195,8 +200,19 @@ export default function SkusPage() {
     }
   }, [sessions, sessionId, activeSessionId])
 
+  // `t` is read through a ref so switching language does not refetch the whole
+  // session and throw away the SKU the user had selected.
+  const tRef = useRef(t)
+  tRef.current = t
+  // Bumped by the Refresh button: re-runs the load below for the SAME session.
+  const [reloadTick, setReloadTick] = useState(0)
+
   useEffect(() => {
     if (!sessionId) return
+    // A slow response for a session the user already left must not overwrite
+    // the one on screen.
+    let cancelled = false
+    const t = tRef.current
     setLoading(true)
     setLoadError(null)
     setSelectedSku(null)
@@ -214,6 +230,7 @@ export default function SkusPage() {
       // training recommendation if this is unavailable, so no error is surfaced.
       getInventoryStatus(sessionId, 0.95, { silent: true }).catch(() => ({ items: [], coverage_unit: undefined })),
     ]).then(([res, q, status]) => {
+      if (cancelled) return
       const rows = res.metrics?.rows ?? []
       setMetrics(rows)
       setInventory(res.inventory?.recommendations ?? [])
@@ -228,8 +245,9 @@ export default function SkusPage() {
       if (failedParts.length) {
         setLoadError(`${t('skus.err_load_failed_prefix')}: ${failedParts.join(', ')}. ${t('skus.err_load_failed_suffix')}`)
       }
-    }).finally(() => setLoading(false))
-  }, [sessionId, t])
+    }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [sessionId, reloadTick])
 
   // One pass instead of one full scan of `metrics` per card. With 2.000 SKUs
   // and ~4 rows each, the per-card `metrics.filter(...)` was 2.000 × 8.000
@@ -336,7 +354,9 @@ export default function SkusPage() {
       for (let i = 0; i < skus.length; i++) {
         const sku = skus[i]
         try {
-          const d = await getSkuIntelligence(sessionId, sku, {})
+          // silent: a failure is counted in `failed` and reported once below,
+          // not as one error toast per SKU.
+          const d = await getSkuIntelligence(sessionId, sku, {}, { silent: true })
           const rows: (string | number | null)[][] = [
             ['date', 'historical', 'forecast_p50', 'lower', 'upper'],
             ...d.historical.map(p => [p.date, p.value, null, null, null] as (string | number | null)[]),
@@ -356,11 +376,13 @@ export default function SkusPage() {
     }
   }, [sessionId, skus])
 
+  // Re-runs the load for the open session. (It used to clear the session and set
+  // it back 10 ms later, which let the auto-pick start a load for ANOTHER
+  // session in between.)
   const refresh = useCallback(() => {
-    const id = sessionId
-    setSessionId(null)
-    setTimeout(() => setSessionId(id), 10)
-  }, [sessionId])
+    reloadSessions()
+    setReloadTick(n => n + 1)
+  }, [reloadSessions])
   const pickSku = useCallback((sku: string) => { setSelectedSku(sku); setTab('Forecast') }, [])
 
   // One list, two homes: a column on desktop, a bottom sheet on phones.

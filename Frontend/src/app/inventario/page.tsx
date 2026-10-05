@@ -2201,7 +2201,20 @@ export default function InventoryPage() {
  const [reloadTick, setReloadTick] = useState(0)
  // A forecast adjustment moves the recommendation: refetch the table when one is saved.
  useEffect(() => {
-  const h = () => setReloadTick(x => x + 1)
+  const h = (e: Event) => {
+   // The adjusted product's recommendation just moved: an order quantity the
+   // buyer typed against the old one would be sent as if still current.
+   const sku = (e as CustomEvent<{ sku?: string }>).detail?.sku
+   if (sku) {
+    setEditedQty(prev => {
+     if (!(sku in prev)) return prev
+     const { [sku]: _dropped, ...rest } = prev
+     return rest
+    })
+    setEditingQtySku(cur => (cur === sku ? null : cur))
+   }
+   setReloadTick(x => x + 1)
+  }
   window.addEventListener(ADJUSTMENT_RELOAD_EVENT, h)
   return () => window.removeEventListener(ADJUSTMENT_RELOAD_EVENT, h)
  }, [])

@@ -8,7 +8,7 @@
  * overlaps an older one replaces it for planning but never erases it. How the
  * adjustments turned out is graded later, on the precision screen.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { createForecastAdjustment, getForecastAdjustments } from '@/lib/api'
 import type { AdjustmentReason, ForecastAdjustment } from '@/lib/types'
@@ -23,7 +23,10 @@ const field: React.CSSProperties = {
   border: `1px solid ${C.border}`, background: 'var(--surface-2)', color: C.text,
 }
 
-const iso = (d: Date) => d.toISOString().slice(0, 10)
+// LOCAL calendar date. `toISOString()` is UTC, so on a UTC-5 evening "today"
+// came out as tomorrow and the default period started a day late.
+const iso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 export const ADJUSTMENT_RELOAD_EVENT = 'stockai:forecast-adjusted'
 
 export function adjustmentLine(
@@ -52,20 +55,28 @@ export default function ForecastAdjustPanel({ sku }: { sku: string }) {
     end: iso(new Date(today.getTime() + 14 * 86400000)), reason: 'promotion' as AdjustmentReason, note: '',
   })
 
+  // Newest request wins (sku change, or a reload right after saving); unmount
+  // supersedes everything. A stale answer would list another product's
+  // adjustments under this one.
+  const latestLoad = useRef(0)
   const load = useCallback(() => {
     if (!sessionId) return
+    const reqId = ++latestLoad.current
     getForecastAdjustments(sessionId, sku)
-      .then(r => { setItems(r.items); setReasons(r.reasons) })
-      .catch(() => setItems([]))
+      .then(r => { if (reqId === latestLoad.current) { setItems(r.items ?? []); setReasons(r.reasons ?? []) } })
+      .catch(() => { if (reqId === latestLoad.current) setItems([]) })
   }, [sessionId, sku])
   useEffect(() => { load() }, [load])
+  useEffect(() => () => { latestLoad.current = -1 }, [])
 
   if (!sessionId) return null
   if (items.length === 0 && !canAdjust) return null
 
   const valueNum = Number(form.value)
   // 0 is allowed on purpose: it clears the period without erasing its history.
+  // A period needs both dates and cannot end before it starts.
   const valid = form.value.trim() !== '' && Number.isFinite(valueNum)
+    && !!form.start && !!form.end && form.end >= form.start
   const needsNote = form.reason === 'other' && !form.note.trim()
 
   async function save() {
@@ -77,7 +88,9 @@ export default function ForecastAdjustPanel({ sku }: { sku: string }) {
       })
       setOpen(false); setForm(f => ({ ...f, value: '', note: '' }))
       load()
-      window.dispatchEvent(new Event(ADJUSTMENT_RELOAD_EVENT))
+      // Says WHICH product moved, so a listener can drop only what the buyer
+      // typed against that product's old recommendation.
+      window.dispatchEvent(new CustomEvent(ADJUSTMENT_RELOAD_EVENT, { detail: { sku } }))
     } catch (e: unknown) {
       setError(errorDetail(e))
     } finally { setBusy(false) }

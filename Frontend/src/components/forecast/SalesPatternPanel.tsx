@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { getSkuIntelligence, getSkuDecomposition, ApiError } from '@/lib/api'
 import type { SkuIntelligenceData, DecompositionData, DecompositionPoint } from '@/lib/types'
@@ -355,16 +355,20 @@ export function SalesPatternPanel({ sessionId, sku, isDark }: {
 
   const accent = useCssToken('--accent', isDark ? '#2BA79A' : '#0F766E', isDark)
 
+  // Newest request wins; unmount supersedes everything.
+  const latestLoad = useRef(0)
   const load = useCallback(() => {
+    const reqId = ++latestLoad.current
     setLoading(true)
     setError(null)
     getSkuIntelligence(sessionId, sku, { agg: 'sum' }, { silent: true })
-      .then(d => setData(d))
-      .catch((e: unknown) => setError(e))
-      .finally(() => setLoading(false))
+      .then(d => { if (reqId === latestLoad.current) setData(d) })
+      .catch((e: unknown) => { if (reqId === latestLoad.current) setError(e) })
+      .finally(() => { if (reqId === latestLoad.current) setLoading(false) })
   }, [sessionId, sku])
 
   useEffect(() => { setData(null); setView(null); load() }, [load])
+  useEffect(() => () => { latestLoad.current = -1 }, [])
 
   const points = data?.historical ?? []
 

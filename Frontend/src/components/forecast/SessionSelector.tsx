@@ -27,6 +27,7 @@ export function SessionSelector({ sessions, selected, onSelect, selectId = 'skus
   // rather than competing with it.
   const context = current
     ? [
+        current.is_backtest ? t('sessions.tag_backtest') : null,
         current.granularity ? granularityLabel(t, current.granularity) : null,
         current.updated_at ? new Date(current.updated_at).toLocaleDateString(localeFor(lang)) : null,
       ].filter(Boolean).join(' · ')
@@ -54,7 +55,11 @@ export function SessionSelector({ sessions, selected, onSelect, selectId = 'skus
         }}
       >
         <option value="" disabled>{t('skus.select_trained_session')}</option>
-        {trained.map(s => <option key={s.session_id} value={s.session_id}>{s.name}</option>)}
+        {trained.map(s => (
+          <option key={s.session_id} value={s.session_id}>
+            {s.is_backtest ? `${s.name} (${t('sessions.tag_backtest')})` : s.name}
+          </option>
+        ))}
       </select>
       <div
         aria-hidden
