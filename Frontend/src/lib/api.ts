@@ -1540,6 +1540,32 @@ export const updateCommittedDemand = (id: string, body: Partial<import('./types'
 export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
   request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
 
+// ── Demand plan versions (a frozen plan and its sign-off; changes no purchase) ─
+export const listDemandPlans = () =>
+  request<import('./types').DemandPlanList>('GET', '/demand-plans')
+export const createDemandPlan = (body: { name: string; session_id?: string | null; horizon_periods?: number | null; note?: string | null }) =>
+  request<import('./types').DemandPlanVersion>('POST', '/demand-plans', body)
+export const getDemandPlan = (id: string) =>
+  request<import('./types').DemandPlanVersion>('GET', `/demand-plans/${encodeURIComponent(id)}`)
+export const getDemandPlanLines = (id: string, opts?: { q?: string; offset?: number; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.q) q.set('q', opts.q)
+  if (opts?.offset) q.set('offset', String(opts.offset))
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').DemandPlanLines>('GET', `/demand-plans/${encodeURIComponent(id)}/lines${qs ? `?${qs}` : ''}`)
+}
+export const diffDemandPlans = (a: string, b: string, limit = 50) =>
+  request<import('./types').DemandPlanDiff>(
+    'GET', `/demand-plans/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&limit=${limit}`)
+export const getDemandPlanAccuracy = (id: string) =>
+  request<import('./types').DemandPlanAccuracy>('GET', `/demand-plans/${encodeURIComponent(id)}/accuracy`)
+export const decideDemandPlan = (id: string, action: 'submit' | 'approve' | 'reject', comment?: string) =>
+  request<import('./types').DemandPlanVersion>(
+    'POST', `/demand-plans/${encodeURIComponent(id)}/${action}`, { comment: comment || null })
+export const commentDemandPlan = (id: string, comment: string) =>
+  request<import('./types').DemandPlanVersion>('POST', `/demand-plans/${encodeURIComponent(id)}/comments`, { comment })
+
 export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =>
   request<import('./types').AdjustmentValueAdded>(
     'GET', `/sessions/${sessionId}/adjustments/value-added`, undefined, opts)

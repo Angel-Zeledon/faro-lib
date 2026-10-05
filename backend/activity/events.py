@@ -128,6 +128,28 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=INFO,
         detail_keys=("sku", "references"),
     ),
+    # Demand plan versions (inventory/demand_plan_service.py): a frozen plan and
+    # its sign-off. A record and a measurement; none of these moves a purchase.
+    "demand_plan.created": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "skus", "periods"),
+    ),
+    "demand_plan.submitted": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name",),
+    ),
+    "demand_plan.approved": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment", "superseded"),
+    ),
+    "demand_plan.rejected": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment"),
+    ),
+    "demand_plan.commented": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name",),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     # Customer orders placed ahead of time, entered by a person. They move the

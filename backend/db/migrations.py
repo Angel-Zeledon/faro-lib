@@ -2035,6 +2035,8 @@ from backend.inventory.spike_edit_migrations import MIGRATIONS as _SPIKE_EDITS  
 _MIGRATIONS += _SPIKE_EDITS
 from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  # noqa: E402
 _MIGRATIONS += _SKU_ANALOGIES
+from backend.inventory.demand_plan_migrations import MIGRATIONS as _DEMAND_PLANS  # noqa: E402
+_MIGRATIONS += _DEMAND_PLANS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

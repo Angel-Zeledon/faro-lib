@@ -77,6 +77,7 @@ INTERNAL_TAGS: dict[str, str] = {
     # that person, and "who approved this" must name one.
     "inventory-approvals": "purchase-order approval rules and decisions belong to the people who hold that authority",
     "committed-demand": "a commitment is a customer order a person entered; it moves purchase decisions, so it is recorded under a person's name",
+    "demand-plans": "a demand plan version is approved by a person with the authority; who approved it must name a person, not a key",
     "spike-edits": "excluding a past spike is a person's judgement about their history, recorded under their name",
     "sku-analogies": "an analogy is a person's judgement that a new product sells like others, recorded under their name",
     "forecast-adjustments": "a forecast adjustment is a person's judgement, recorded under their name and graded per person",
