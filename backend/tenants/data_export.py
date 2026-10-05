@@ -168,6 +168,13 @@ _DELETE_ORDER: list[str] = [
     # forgotten for real. The guard that names them is doing its job.
     "service_config",
     "training_run_metrics",
+    # Added with the SSO and persisted-model work. All three carry
+    # `REFERENCES tenants(id) ON DELETE CASCADE`, so the rows already left with
+    # the tenant; listed because this list is the reviewable answer to "what
+    # belongs to a tenant".
+    "sso_domains",
+    "sso_providers",
+    "model_artifacts",
     "upgrade_requests",
     "whatsapp_conversations",
     "chat_messages",

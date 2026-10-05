@@ -81,11 +81,12 @@ class TestEveryCataloguedActionLeavesAnActorTargetAndDiff:
         saved = _rows(tid, "audit.schedule.saved")
         assert len(saved) == 2
         assert saved[0]["context"]["before"] is None
-        assert saved[0]["context"]["after"] == {"cron_expr": "0 6 * * 1", "enabled": True}
-        assert saved[1]["context"]["before"] == {"cron_expr": "0 6 * * 1", "enabled": True}
-        assert saved[1]["context"]["after"] == {"cron_expr": "0 0 * * *", "enabled": False}
+        # `retrain_mode` joined the audited snapshot with the retrain-freshness work.
+        assert saved[0]["context"]["after"] == {"cron_expr": "0 6 * * 1", "enabled": True, "retrain_mode": "refit"}
+        assert saved[1]["context"]["before"] == {"cron_expr": "0 6 * * 1", "enabled": True, "retrain_mode": "refit"}
+        assert saved[1]["context"]["after"] == {"cron_expr": "0 0 * * *", "enabled": False, "retrain_mode": "refit"}
         gone = _one(tid, "audit.schedule.deleted")
-        assert gone["context"]["before"] == {"cron_expr": "0 0 * * *", "enabled": False}
+        assert gone["context"]["before"] == {"cron_expr": "0 0 * * *", "enabled": False, "retrain_mode": "refit"}
         assert query_one("SELECT id FROM scheduled_jobs WHERE session_id=%s", (sid,)) is None
 
     def test_warehouse_create_and_demand_share_change(self, client, auth_headers, registered_user):

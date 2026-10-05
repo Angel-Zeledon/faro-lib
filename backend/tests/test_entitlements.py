@@ -51,8 +51,10 @@ def _tenant(trial_ends_at=None, quota=None, tier="paid"):
 def test_tenant_limits_merge_override():
     limits = ent.tenant_limits(_tenant(quota={"max_skus": 999}))
     assert limits["max_skus"] == 999          # the agreement with one customer
-    assert limits["max_users"] is None        # everything else stays unlimited
-    assert limits["max_dataset_size_mb"] == 2000
+    # Everything else stays the plan's own ceiling: `paid` is the limited Full
+    # plan since 2026-10-05, so the override changes ONE number and no other.
+    assert limits["max_users"] == PLANS["paid"].max_users
+    assert limits["max_dataset_size_mb"] == PLANS["paid"].max_dataset_size_mb
 
 
 @pytest.mark.offline
@@ -711,8 +713,10 @@ def test_entitlements_endpoint_reports_a_trial_not_a_plan(
     assert data["read_only"] is False
     assert data["trial"]["state"] == "active"
 
-    # The three keys the UI used to build padlocks out of. Their absence is the
-    # contract: a `features` map that answers True to everything invites the
-    # browser to keep asking, and a `plan` string invites it to compare.
-    for gone in ("plan", "features", "feature_plans"):
+    # Since 2026-10-05 three features are paid-only (API, MCP, WhatsApp bot), so
+    # `features` is reported, and a fresh free tenant has none of them. A `plan`
+    # string or a per-feature plan map would still invite the browser to compare
+    # plans, so those stay absent.
+    assert data["features"] == {"api": False, "mcp": False, "whatsapp_bot": False}
+    for gone in ("plan", "feature_plans"):
         assert gone not in data, f"/entitlements still reports {gone!r}"
