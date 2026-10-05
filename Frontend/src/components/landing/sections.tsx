@@ -11,7 +11,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { T } from '@/components/landing/theme'
 import { Section, Tag, H2, H3, Lead, Check, Scroller } from '@/components/landing/primitives'
 import { mailHref, waHref, CONTACT_EMAIL, CONTACT_PHONE_HREF, CONTACT_PHONE_LABEL } from '@/components/landing/contact'
-import { FULL_PLAN } from '@/components/landing/pricingModel'
+import { FULL_PLAN, CORPORATE_PLAN } from '@/components/landing/pricingModel'
 import { fill, fmtMoney, fmtNum } from '@/components/landing/PricingCalculator'
 
 function useCopy() {
@@ -141,10 +141,12 @@ export function FeaturesSection({ alt = false }: { alt?: boolean }) {
 // product stops at 100 turns the first real import into a broken promise.
 // `calcHref` points at the estimate calculator: `#calculadora` on /precios,
 // `/precios#calculadora` anywhere else.
-export function PricingSection({ calcHref = '/precios#calculadora' }: { calcHref?: string }) {
+export function PricingSection({ calcHref = '/precios#calculadora', showCorporate = false }: { calcHref?: string; showCorporate?: boolean }) {
  const { L, lang } = useCopy()
  const FREE_LIMITS = L.pricing.limits
  const fromPrice = fill(L.pricing.paidFrom, { price: fmtMoney(FULL_PLAN.baseMonthly, lang) })
+ const corp = L.pricing.corporate
+ const corpFrom = fill(corp.from, { price: fmtMoney(CORPORATE_PLAN.baseMonthly, lang) })
  const paidNote = fill(L.pricing.paidNote, {
   skus: fmtNum(FULL_PLAN.included.skus, lang),
   users: fmtNum(FULL_PLAN.included.users, lang),
@@ -217,6 +219,34 @@ export function PricingSection({ calcHref = '/precios#calculadora' }: { calcHref
  </div>
  </div>
  </div>
+
+ {/* The corporate band (owner, 2026-10-05): a position for large accounts,
+     quoted in a conversation. Same features as every plan; the only way in is
+     the existing contact links — no checkout, no plan comparison. */}
+ {showCorporate && (
+ <div data-reveal className="lp-card corp-card">
+ <div className="corp-main">
+ <div className="lp-label" style={{ marginBottom: 10 }}>{corp.label}</div>
+ <div className="price-amount">{corpFrom} <span className="price-per">{corp.perMonth}</span></div>
+ <div className="corp-billing">{corp.billing}</div>
+ <p className="corp-lead">{corp.lead}</p>
+ </div>
+ <div className="corp-side">
+ <div className="lp-label" style={{ marginBottom: 10 }}>{corp.itemsTitle}</div>
+ <ul className="no-strings corp-items">
+ {corp.items.map(t => (
+ <li key={t}><Check />{t}</li>
+ ))}
+ </ul>
+ <p className="corp-pending">{corp.pending}</p>
+ <div className="upg-foot">
+ <a href={waHref(corp.waPrefill)} target="_blank" rel="noopener noreferrer" className="btn-primary btn-sm">{L.pricing.ctaWhatsapp}</a>
+ <a href={mailHref(corp.mailSubject)} className="btn-ghost btn-sm">{L.pricing.ctaEmail}</a>
+ </div>
+ <p className="corp-foot">{corp.footnote}</p>
+ </div>
+ </div>
+ )}
 
  {/* How a free account grows: a conversation, never a checkout. The steps
      are a real sequence, hence the numbers. Every CTA here leads to a person

@@ -1,6 +1,7 @@
 import { LANDING } from '@/i18n/landing'
 import { SITE_URL } from '@/lib/siteUrls'
 import { SUBPAGE_PATHS, type SubpageKey } from '@/components/landing/subpagePaths'
+import { CORPORATE_PLAN, CURRENCY } from '@/components/landing/pricingModel'
 
 // schema.org data for the landing and its subpages, rendered on the server so
 // a crawler reads it without running the page's JavaScript. Spanish, like the
@@ -10,7 +11,9 @@ import { SUBPAGE_PATHS, type SubpageKey } from '@/components/landing/subpagePath
 // Only what the pages themselves already say. The FAQ is read from the same
 // catalogue the page renders, so the two cannot disagree; the offer is the free
 // plan at 0 because that is the one price that exists — the full plan has no
-// list price (it is a conversation), so it is not published as one.
+// list price (it is a conversation), so it is not published as one. The
+// corporate band (owner, 2026-10-05) is published as what it is: a starting
+// price (`minPrice`) on an annual contract, quoted in a conversation.
 
 const L = LANDING.es
 
@@ -117,14 +120,31 @@ export default function StructuredData() {
       featureList: L.features.groups.flatMap(g => g.items),
       image: `${SITE_URL}/og-image.png`,
       publisher: { '@id': `${SITE_URL}/#organization` },
-      offers: {
-        '@type': 'Offer',
-        name: L.pricing.freeLabel,
-        price: '0',
-        priceCurrency: 'USD',
-        description: L.pricing.freeNote,
-        url: `${SITE_URL}${SUBPAGE_PATHS.pricing}`,
-      },
+      offers: [
+        {
+          '@type': 'Offer',
+          name: L.pricing.freeLabel,
+          price: '0',
+          priceCurrency: 'USD',
+          description: L.pricing.freeNote,
+          url: `${SITE_URL}${SUBPAGE_PATHS.pricing}`,
+        },
+        {
+          '@type': 'Offer',
+          name: L.pricing.corporate.label,
+          priceCurrency: CURRENCY,
+          priceSpecification: {
+            '@type': 'UnitPriceSpecification',
+            minPrice: String(CORPORATE_PLAN.baseMonthly),
+            priceCurrency: CURRENCY,
+            billingDuration: 12,
+            unitCode: 'MON',
+            referenceQuantity: { '@type': 'QuantitativeValue', value: 1, unitCode: 'MON' },
+          },
+          description: L.pricing.corporate.lead,
+          url: `${SITE_URL}${SUBPAGE_PATHS.pricing}`,
+        },
+      ],
     },
     {
       '@type': 'WebPage',

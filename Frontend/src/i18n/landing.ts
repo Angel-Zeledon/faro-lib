@@ -134,6 +134,17 @@ export interface LandingCopy {
     // The full plan's "from" price. `{price}` is filled from
     // components/landing/pricingModel.ts — no price is ever written here.
     paidFrom: string; perMonth: string; calcLink: string
+    // The corporate band (owner, 2026-10-05): a position for large accounts,
+    // never a different product. `{price}` in `from` is filled from
+    // CORPORATE_PLAN in components/landing/pricingModel.ts. Only things that
+    // exist today may be listed in `items`; what is still being built goes in
+    // `pending`, worded as not yet available.
+    corporate: {
+      label: string; from: string; perMonth: string; billing: string
+      lead: string; itemsTitle: string; items: string[]
+      pending: string; footnote: string
+      waPrefill: string; mailSubject: string
+    }
   }
   // The estimate calculator on /precios. Every figure comes from
   // pricingModel.ts; these strings only carry `{n}`/`{price}` placeholders.
@@ -582,6 +593,24 @@ const es: LandingCopy = {
     paidFrom: 'Desde {price}',
     perMonth: 'al mes',
     calcLink: 'Calcula tu estimado',
+    corporate: {
+      label: 'Corporativo',
+      from: 'Desde {price}',
+      perMonth: 'al mes',
+      billing: 'Contrato anual',
+      lead: 'Para empresas que piden y compran con meses o años de anticipación, con muchas bodegas y muchos usuarios. No es otro producto: tiene las mismas funciones que los demás planes, con topes más amplios que se acuerdan en la cotización.',
+      itemsTitle: 'Qué incluye',
+      items: [
+        'Topes más amplios, acordados en la cotización',
+        'Muchas bodegas y muchos usuarios, con flujo de aprobación de pedidos y registro de auditoría',
+        'Inicio de sesión único (SSO) de tu empresa, conteo físico de inventario, ingreso de datos por correo y API',
+        'Acompañamiento en el arranque y una persona de contacto con nombre',
+      ],
+      pending: 'Los pedidos comprometidos de tus clientes, sumados al pronóstico, están en construcción y todavía no están disponibles.',
+      footnote: 'El precio de partida es una referencia: la cotización final se acuerda contigo, hablando.',
+      waPrefill: 'Hola, quiero cotizar el plan corporativo de StockAI.',
+      mailSubject: 'StockAI — cotización corporativa',
+    },
   },
   calc: {
     tag: 'Calculadora',
@@ -1137,6 +1166,24 @@ const en: LandingCopy = {
     paidFrom: 'From {price}',
     perMonth: 'a month',
     calcLink: 'Work out your estimate',
+    corporate: {
+      label: 'Corporate',
+      from: 'From {price}',
+      perMonth: 'a month',
+      billing: 'Annual contract',
+      lead: 'For companies that order and buy months or years ahead, with many warehouses and many users. It is not a different product: it has the same features as every other plan, with larger ceilings agreed in the quote.',
+      itemsTitle: 'What it includes',
+      items: [
+        'Larger ceilings, agreed in the quote',
+        'Many warehouses and many users, with a purchase-order approval workflow and an audit trail',
+        "Your company's single sign-on (SSO), physical stock counts, data intake by e-mail and the API",
+        'Onboarding support and a named contact person',
+      ],
+      pending: "Your customers' committed orders, layered on top of the forecast, are being built and are not available yet.",
+      footnote: 'The starting price is a reference: the final quote is agreed with you, in a conversation.',
+      waPrefill: 'Hi, I would like a quote for the StockAI corporate plan.',
+      mailSubject: 'StockAI — corporate quote',
+    },
   },
   calc: {
     tag: 'Calculator',

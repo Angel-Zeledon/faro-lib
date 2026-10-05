@@ -375,9 +375,16 @@ section[id], #demo { scroll-margin-top: 88px; }
 .price-paid-link:hover { color: var(--lp-beam); }
 .lp .price-paid-link:focus-visible { outline-color: var(--lp-beam); }
 .price-paid-val { font-weight: 700; color: #fff; white-space: nowrap; }
+.corp-card { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 32px; max-width: 920px; padding: 30px 28px; border-radius: 16px; margin-bottom: 20px; }
+.corp-billing { font-size: 13px; font-weight: 700; color: var(--lp-accent); margin: 6px 0 12px; }
+.corp-lead { font-size: 13.5px; line-height: 1.7; margin: 0; color: var(--lp-body); }
+.corp-items { margin: 0 0 14px; }
+.corp-pending { font-size: 13px; line-height: 1.65; margin: 0 0 16px; font-style: italic; color: var(--lp-muted); }
+.corp-foot { font-size: 12.5px; line-height: 1.6; margin: 14px 0 0; color: var(--lp-muted); }
 .value-list { list-style: none; margin: 0 0 48px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px; max-width: 1020px; }
 @media (max-width: 900px) {
  .price-grid { grid-template-columns: minmax(0, 1fr); }
+ .corp-card { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 22px 20px; }
  .value-list { grid-template-columns: minmax(0, 1fr); margin-bottom: 36px; }
 }
 .price-per { font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 15px; font-weight: 500; letter-spacing: 0; color: var(--lp-muted); }
