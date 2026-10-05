@@ -121,7 +121,7 @@ class TestMonthReportMath:
         assert r["recommendations_shown"] == 20        # 10 + 10
         assert r["recommendations_followed"] == 15     # 6 + 9
         assert r["adoption_rate"] == pytest.approx(0.75)  # 15 / 20
-        assert r["stockout_risks_handled"] == 5        # 3 + 2
+        assert r["urgent_lines_ordered"] == 5        # 3 + 2
         assert r["managed_purchase_value"] == 2000.0   # 1200 + 800
 
     def test_managed_value_is_none_not_zero_without_cost_data(self, client, test_tenant):
@@ -212,7 +212,7 @@ class TestInsufficientHistory:
         assert r["has_sufficient_history"] is False
         # Metrics must be None, never zeros that could be read as achievements.
         assert r["adoption_rate"] is None
-        assert r["stockout_risks_handled"] is None
+        assert r["urgent_lines_ordered"] is None
         assert r["managed_purchase_value"] is None
         assert r["orders_generated"] == 0
 
@@ -284,7 +284,7 @@ class TestRunMonthlyRoiEmails:
         )
 
         sent = roi_service.run_monthly_roi_emails(
-            now=datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc)
+            now=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
         )
 
         assert sent == 1
@@ -316,7 +316,7 @@ class TestRunMonthlyRoiEmails:
             lambda to, report, roi_url, currency=None, **_kw: (calls.append(to), True)[1],
         )
 
-        now = datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc)
+        now = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
         roi_service.run_monthly_roi_emails(now=now)
         roi_service.run_monthly_roi_emails(now=now)
 
@@ -342,7 +342,7 @@ class TestRunMonthlyRoiEmails:
         )
 
         sent = roi_service.run_monthly_roi_emails(
-            now=datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc)
+            now=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
         )
 
         assert sent == 0
@@ -365,7 +365,7 @@ class TestRunMonthlyRoiEmails:
         )
 
         sent = roi_service.run_monthly_roi_emails(
-            now=datetime(2026, 4, 1, 0, 5, tzinfo=timezone.utc)
+            now=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
         )
 
         assert sent == 0
@@ -398,7 +398,7 @@ class TestMonthlyRecapEmailTemplate:
             "recommendations_shown": 8,
             "recommendations_followed": 6,
             "adoption_rate": 0.75,
-            "stockout_risks_handled": 3,
+            "urgent_lines_ordered": 3,
             "managed_purchase_value": None,   # tenant has no unit costs
             "capital_freed": None,            # only one snapshot so far
         }
@@ -411,7 +411,7 @@ class TestMonthlyRecapEmailTemplate:
         # Asserted through the catalog rather than a literal: the wording of
         # these tiles is exactly what this test is not about, and pinning the
         # sentence made a copy correction look like a regression.
-        assert render_es("roi_email_metric_risks_label") in html
+        assert render_es("roi_email_metric_urgent_lines_label") in html
         # Underivable metrics must be absent, not rendered as ₡0.
         assert render_es("roi_email_metric_purchases_label") not in html
         assert render_es("roi_email_metric_capital_label") not in html
@@ -437,7 +437,7 @@ class TestMonthlyRecapEmailTemplate:
             "recommendations_shown": 8,
             "recommendations_followed": 6,
             "adoption_rate": 0.75,
-            "stockout_risks_handled": 3,
+            "urgent_lines_ordered": 3,
             "managed_purchase_value": 2_000_000.0,
             "capital_freed": 1_500_000.0,
         }

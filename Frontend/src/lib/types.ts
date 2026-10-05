@@ -1592,9 +1592,12 @@ export interface InventoryDashboardSummary {
 // ── Inventory ROI ─────────────────────────────────────────────────────────────
 export interface InventoryROISummary {
   total_pos_generated:       number
-  total_skus_protected:      number
+  /** Order lines flagged "order now" that the buyer ordered: what was done,
+   *  not stockouts avoided. */
+  urgent_lines_ordered:      number
   total_units_ordered:       number
-  estimated_value_protected: number
+  /** Units x unit cost of what was ordered; null when no order carried a cost. */
+  ordered_value:             number | null
   // Adoption metrics (decision tracking)
   total_suggested:           number
   total_approved:            number
@@ -1616,8 +1619,9 @@ export type CapitalFreedStatus = 'measured' | 'not_measured' | 'grew'
 export interface ROIMonthlyRow {
   month:             string          // 'YYYY-MM'
   pos_count:         number
-  skus_order_now:     number
-  total_value:       number
+  urgent_lines_ordered: number
+  /** null when no order of the month carried a unit cost: unknown, not zero. */
+  total_value:       number | null
   adoption_rate:     number | null
   capital_freed:     number | null
   capital_freed_status: CapitalFreedStatus
@@ -1632,7 +1636,7 @@ export interface ROIMonthReport {
   recommendations_shown:   number
   recommendations_followed: number
   adoption_rate:           number | null
-  stockout_risks_handled:  number | null
+  urgent_lines_ordered:    number | null
   managed_purchase_value:  number | null
   /** false when only SOME ordered lines carried a unit cost, so the value above
    *  is a floor rather than the month's total. */

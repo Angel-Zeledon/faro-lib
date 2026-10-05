@@ -11,9 +11,10 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
+from backend import audit
 from backend.audit import service as audit_svc
 from backend.auth.guards import CurrentUser, get_current_user, require_admin
 from backend.errors import AppError
@@ -65,9 +66,17 @@ def audit_filters(user: CurrentUser = Depends(require_admin)):
 
 @router.get("/export")
 def export_audit(
+    request: Request,
     filters: dict = Depends(_filters),
     user: CurrentUser = Depends(require_admin),
 ):
+    # Who took the audit trail out, and how much of it. The count is the rows the
+    # file will carry (the export is capped), read before streaming starts.
+    total = audit_svc.list_audit(user.tenant_id, limit=1, **filters)["total"]
+    audit.note(request, after={
+        "rows": min(int(total), audit_svc.EXPORT_MAX_ROWS), "format": "csv",
+        "filters": {k: str(v) for k, v in filters.items() if v is not None},
+    })
     stamp = date.today().isoformat()
     return StreamingResponse(
         audit_svc.export_csv(user.tenant_id, **filters),

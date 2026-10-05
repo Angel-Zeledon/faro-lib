@@ -47,7 +47,7 @@ function fmtUnits(n: number): string {
 function HeroCard({ roi }: { roi: InventoryROISummary }) {
   const { t, lang } = useLanguage()
   const narrow = useIsNarrow()
-  const hasValue = roi.estimated_value_protected > 0
+  const hasValue = roi.ordered_value != null
 
   return (
     <Card radius={14} padding={narrow ? '20px 18px' : '28px 32px'} data-tour="roi.hero" style={{ borderTop: `4px solid ${C.indigo}` }}>
@@ -79,13 +79,13 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
         {/* Urgent stockout risks actually acted on */}
         <div data-tour="roi.hero_risks">
           <div style={{ fontSize: 48, fontWeight: 900, color: C.red, lineHeight: 1 }}>
-            {fmtUnits(roi.total_skus_protected)}
+            {fmtUnits(roi.urgent_lines_ordered)}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
-            {t('roi.stockout_risks_handled')}
+            {t('roi.urgent_lines_ordered')}
           </div>
           <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>
-            {t('roi.stockout_risks_handled_detail')}
+            {t('roi.urgent_lines_ordered_detail')}
           </div>
         </div>
 
@@ -94,7 +94,7 @@ function HeroCard({ roi }: { roi: InventoryROISummary }) {
           {hasValue ? (
             <>
               <div style={{ fontSize: narrow ? 34 : 42, fontWeight: 900, color: C.green, lineHeight: 1, overflowWrap: 'anywhere' }}>
-                {formatMoney(roi.estimated_value_protected)}
+                {formatMoney(roi.ordered_value ?? 0)}
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginTop: 6 }}>
                 {t('roi.purchases_managed')}
@@ -193,7 +193,7 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
           <thead>
             <tr data-tour="roi.monthly_cols" style={{ background: C.card }}>
               {[
-                t('roi.col_month'), t('roi.col_orders'), t('roi.col_stockouts_handled'),
+                t('roi.col_month'), t('roi.col_orders'), t('roi.col_urgent_lines_ordered'),
                 t('roi.col_value_managed'), t('roi.col_adoption'), t('roi.col_capital_freed'),
               ].map(h => <Th key={h} size="lg">{h}</Th>)}
             </tr>
@@ -210,11 +210,11 @@ function MonthlyEvolutionTable({ rows }: { rows: ROIMonthlyRow[] }) {
                   {capitalizeFirst(fmtMonthLabel(row.month, lang))}
                 </Td>
                 <Td size="lg" divider={false}>{row.pos_count}</Td>
-                <Td size="lg" divider={false} style={{ color: row.skus_order_now > 0 ? C.red : C.dim, fontWeight: row.skus_order_now > 0 ? 700 : 400 }}>
-                  {row.skus_order_now}
+                <Td size="lg" divider={false} style={{ color: row.urgent_lines_ordered > 0 ? C.red : C.dim, fontWeight: row.urgent_lines_ordered > 0 ? 700 : 400 }}>
+                  {row.urgent_lines_ordered}
                 </Td>
                 <Td size="lg" divider={false} mono style={{ color: C.green }}>
-                  {formatMoney(row.total_value)}
+                  {(row.total_value != null ? formatMoney(row.total_value) : '—')}
                 </Td>
                 <Td size="lg" divider={false}>
                   {row.adoption_rate != null ? `${Math.round(row.adoption_rate * 100)}%` : '—'}
@@ -272,8 +272,8 @@ function MonthlyEvolutionCards({ rows }: { rows: ROIMonthlyRow[] }) {
           <MobileCard
             key={r.month}
             title={capitalizeFirst(fmtMonthLabel(r.month, lang))}
-            subtitle={t('roi.mobile_month_subtitle', { orders: r.pos_count, risks: r.skus_order_now })}
-            value={formatMoney(r.total_value)}
+            subtitle={t('roi.mobile_month_subtitle', { orders: r.pos_count, lines: r.urgent_lines_ordered })}
+            value={(r.total_value != null ? formatMoney(r.total_value) : '—')}
             onClick={() => setOpen(r.month)}
           />
         ))}
@@ -286,8 +286,8 @@ function MonthlyEvolutionCards({ rows }: { rows: ROIMonthlyRow[] }) {
         {row && (
           <div style={{ paddingBottom: 8 }}>
             {line(t('roi.col_orders'), row.pos_count)}
-            {line(t('roi.col_stockouts_handled'), row.skus_order_now, row.skus_order_now > 0 ? C.red : C.dim)}
-            {line(t('roi.col_value_managed'), formatMoney(row.total_value), C.green)}
+            {line(t('roi.col_urgent_lines_ordered'), row.urgent_lines_ordered, row.urgent_lines_ordered > 0 ? C.red : C.dim)}
+            {line(t('roi.col_value_managed'), (row.total_value != null ? formatMoney(row.total_value) : '—'), C.green)}
             {line(t('roi.col_adoption'), row.adoption_rate != null ? `${Math.round(row.adoption_rate * 100)}%` : '—')}
             {line(t('roi.col_capital_freed'), capitalFreed(row), row.capital_freed != null ? C.green : C.dim)}
           </div>
@@ -397,12 +397,12 @@ function MonthlyRecapCard({ report }: { report: ROIMonthReport }) {
             />
           )}
 
-          {report.stockout_risks_handled != null && (
+          {report.urgent_lines_ordered != null && (
             <RecapTile
               dataTour="roi.recap_risks"
-              value={`${report.stockout_risks_handled}`}
-              label={t('recap.metric_risks')}
-              note={t('recap.metric_risks_note')}
+              value={`${report.urgent_lines_ordered}`}
+              label={t('recap.metric_urgent_lines')}
+              note={t('recap.metric_urgent_lines_note')}
               color={C.red}
             />
           )}

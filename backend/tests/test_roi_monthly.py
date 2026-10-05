@@ -197,7 +197,7 @@ class TestGetMonthlySummary:
 
         this_row = rows[0]
         assert this_row["pos_count"] == 1
-        assert this_row["skus_order_now"] == 1
+        assert this_row["urgent_lines_ordered"] == 1
         assert this_row["total_value"] == 150.0
         assert this_row["adoption_rate"] == 0.5          # 1 approved / 2 suggested
         # No snapshot opening next month yet, so this month is still unmeasured.
@@ -206,7 +206,7 @@ class TestGetMonthlySummary:
 
         last_row = next(r for r in rows if r["month"] == last_month.strftime("%Y-%m"))
         assert last_row["pos_count"] == 2
-        assert last_row["skus_order_now"] == 3
+        assert last_row["urgent_lines_ordered"] == 3
         assert last_row["total_value"] == 800.0
         assert last_row["adoption_rate"] == pytest.approx(5 / 6)
         assert last_row["capital_freed"] == 4000.0    # 10000 -> 6000 during last month
@@ -220,7 +220,8 @@ class TestGetMonthlySummary:
         assert len(rows) == 2
         for row in rows:
             assert row["pos_count"] == 0
-            assert row["skus_order_now"] == 0
+            assert row["urgent_lines_ordered"] == 0
+            assert row["total_value"] is None   # unknown, not a measured zero
             assert row["adoption_rate"] is None
             assert row["capital_freed"] is None
             assert row["capital_freed_status"] == "not_measured"
