@@ -57,6 +57,8 @@ SELF = {
     # change their own password, verify their own phone, and hold their own
     # conversations — none of that is company state.
     "PATCH /api/v1/users/me": "your own profile",
+    "PATCH /api/v1/analyst/messages/{message_id}/star": "starring your own chat message",
+    "POST /api/v1/feedback": "reporting a problem about the app, not company state",
     "POST /api/v1/users/me/whatsapp/link": "your own phone number",
     "POST /api/v1/users/me/whatsapp/confirm": "your own phone number",
     "POST /api/v1/users/me/change-password/request": "your own password",

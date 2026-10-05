@@ -58,9 +58,12 @@ MIGRATIONS: list[tuple[str, str]] = [
     # Immutability lives in the database, so a script or a future endpoint that
     # "just fixes one number" fails loudly instead of rewriting an approved plan.
     ("create_demand_plan_immutable_fn",
+     # `%%` because the migration runner formats the statement with psycopg2: a bare
+     # `%` is a parameter marker there and made this function silently NOT exist,
+     # which left both tables mutable (caught by test_demand_plans on a real DB).
      """CREATE OR REPLACE FUNCTION demand_plan_refuse_update() RETURNS trigger AS $$
         BEGIN
-          RAISE EXCEPTION 'demand plan versions and their events are immutable (%)', TG_TABLE_NAME
+          RAISE EXCEPTION 'demand plan versions and their events are immutable (%%)', TG_TABLE_NAME
             USING ERRCODE = 'check_violation';
         END;
         $$ LANGUAGE plpgsql"""),
