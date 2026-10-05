@@ -25,8 +25,8 @@ export default function LimitsSection() {
 
   if (!ent) return null
   // A trial account has ceilings like the free tier, so it is drawn like one.
-  const free = ent.tier !== 'paid'
-  const tierKey = ent.tier === 'demo' ? 'trial' : free ? 'free' : 'paid'
+  const free = ent.tier === 'free' || ent.tier === 'demo'
+  const tierKey = ent.tier === 'demo' ? 'trial' : ent.tier === 'corporate' ? 'corporate' : free ? 'free' : 'paid'
 
   return (
     <div>

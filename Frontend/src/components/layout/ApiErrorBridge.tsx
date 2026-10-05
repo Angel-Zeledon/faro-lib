@@ -43,6 +43,13 @@ export default function ApiErrorBridge() {
       openUpgrade(typeof limit === 'string' ? limit : null)
       return
     }
+    // A feature the plan does not include is the same moment, not a failure:
+    // the dialog says what it is and how to ask, instead of an error toast.
+    if (err.code === 'plan_feature_locked') {
+      const feature = err.params?.feature
+      openUpgrade(null, typeof feature === 'string' ? feature : 'api')
+      return
+    }
     const now = Date.now()
     const key = `${err.kind}:${err.status}`
     const previous = lastSeen.current.get(key)

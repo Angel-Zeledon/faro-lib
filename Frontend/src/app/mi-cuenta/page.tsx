@@ -14,6 +14,8 @@ import MobileFormScope from '@/components/mobile/MobileFormScope'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import CurrencySection from '@/components/billing/CurrencySection'
 import LimitsSection from '@/components/limits/LimitsSection'
+import FeatureLocked from '@/components/limits/FeatureLocked'
+import { useFeature } from '@/lib/entitlements'
 import TimezoneSection from '@/components/billing/TimezoneSection'
 import Spinner from '@/components/ui/Spinner'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -1123,7 +1125,23 @@ type WaStep = 'loading' | 'form' | 'code' | 'verified'
 const isE164 = (s: string) => /^\+[1-9]\d{7,14}$/.test(s.trim())
 const IS_DEV = process.env.NODE_ENV !== 'production'
 
+// The plan decides whether the WhatsApp bot is included. A tenant without it sees
+// the real card replaced by a calm locked one (and the way to ask), never a form
+// whose "send code" would fail.
 function WhatsAppSection({ t }: { t: (k: string) => string }) {
+  const { locked } = useFeature('whatsapp_bot')
+  if (locked) {
+    return (
+      <Card>
+        <SectionTitle icon={MessageCircle} color="#2E8B62" title={t('config.wa_title')} subtitle={t('config.wa_subtitle')} />
+        <div data-tour="config.whatsapp"><FeatureLocked feature="whatsapp_bot" compact /></div>
+      </Card>
+    )
+  }
+  return <WhatsAppSetup t={t} />
+}
+
+function WhatsAppSetup({ t }: { t: (k: string) => string }) {
   const [step,           setStep]           = useState<WaStep>('loading')
   const [number,         setNumber]         = useState('')
   const [pendingNumber,  setPendingNumber]  = useState('')
@@ -1173,6 +1191,7 @@ function WhatsAppSection({ t }: { t: (k: string) => string }) {
         setResendIn(ra)
         setError(t('config.wa_err_cooldown').replace('{s}', String(ra)))
       }
+      else if (isApiError(e) && e.code === 'plan_feature_locked') setError(t('errors.plan_feature_locked_whatsapp_bot'))
       else if (isApiError(e) && e.status === 409) setError(t('config.wa_err_taken'))
       else if (isApiError(e) && e.status === 503) setError(t('config.wa_err_unavailable'))
       else setError(t('config.wa_err_send'))

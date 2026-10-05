@@ -15,7 +15,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
 import { Section, Tag, H2, Lead, Check } from '@/components/landing/primitives'
 import { mailHref, waHref } from '@/components/landing/contact'
-import { CALC_RANGES, FREE_PLAN, FULL_PLAN, estimate, type CalcInput } from '@/components/landing/pricingModel'
+import { CALC_RANGES, FULL_PLAN, estimate, type CalcInput } from '@/components/landing/pricingModel'
 
 type Key = keyof CalcInput
 const KEYS: Key[] = ['skus', 'users', 'warehouses', 'apiCalls']
@@ -44,7 +44,7 @@ const INCLUDED: Record<Key, number> = {
   skus: FULL_PLAN.included.skus,
   users: FULL_PLAN.included.users,
   warehouses: FULL_PLAN.included.warehouses,
-  apiCalls: FULL_PLAN.included.apiCallsPerMonth,
+  apiCalls: FULL_PLAN.included.apiCallsPerDay,
 }
 
 // ── Calculator ────────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ export function PricingCalculator() {
               <Check />
               <div>
                 <strong>{C.freeFits}</strong>
-                <p>{fill(C.freeFitsNote, { n: fmtNum(FREE_PLAN.apiCallsPerDay, lang) })}</p>
+                <p>{C.freeFitsNote}</p>
               </div>
             </div>
           )}
@@ -214,10 +214,9 @@ export function ApiPricing() {
   const { lang } = useLanguage()
   const A = LANDING[lang].api
   const params = {
-    included: fmtNum(FULL_PLAN.included.apiCallsPerMonth, lang),
+    included: fmtNum(FULL_PLAN.included.apiCallsPerDay, lang),
     price: fmtMoney(FULL_PLAN.addOns.apiCalls.price, lang),
     per: fmtNum(FULL_PLAN.addOns.apiCalls.per, lang),
-    free: fmtNum(FREE_PLAN.apiCallsPerDay, lang),
   }
   return (
     <Section id="api" alt>

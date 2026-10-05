@@ -104,7 +104,7 @@ const es: GuidesCopy = {
           h: 'Para quién es',
           p: [
             'Para quien compra mercadería a proveedores con un plazo de entrega: distribuidores, mayoristas, comercios, ferreterías, farmacias, casas de repuestos y fabricantes. Encaja sobre todo cuando hay cientos o miles de productos, el equipo es pequeño y las compras hoy se deciden con una hoja de Excel o con la memoria del comprador. Hay páginas por rubro en [industrias](/industrias).',
-            'Hay un plan gratis que no vence y trae todas las funciones, con techos de tamaño. Lo que cuesta ampliarlo está en [precios](/precios); en esta página no se escribe ningún precio a propósito.',
+            'Hay un plan gratis que no vence y trae el motor completo, con techos de tamaño y sin API, MCP ni bot de WhatsApp. Lo que cuesta ampliarlo está en [precios](/precios); en esta página no se escribe ningún precio a propósito.',
           ],
         },
         {
@@ -133,9 +133,9 @@ const es: GuidesCopy = {
         { q: '¿Qué es StockAI?', a: 'Es un software web de compras de inventario para distribuidores, mayoristas y comercios. Lee tus ventas y tus existencias y te dice qué pedir, cuánto y a qué proveedor.' },
         { q: '¿«Stock AI» y «StockAI» son lo mismo?', a: 'Sí. El nombre correcto es StockAI, todo junto; «stock ai» con espacio es como mucha gente lo escribe al buscarlo.' },
         { q: '¿StockAI reemplaza a mi ERP?', a: 'No, lo complementa. Tu ERP registra lo que pasó (ventas, existencias, compras); StockAI lee esa historia y te dice qué comprar. Sigues facturando y contabilizando donde siempre.' },
-        { q: '¿Es gratis?', a: 'Hay un plan gratis que no vence y trae todas las funciones, con techos de tamaño. Para ampliarlos se conversa con nosotros; los precios están en la página de precios.' },
+        { q: '¿Es gratis?', a: 'Hay un plan gratis que no vence y trae el motor completo, con techos de tamaño y sin API, MCP ni bot de WhatsApp. Para ampliarlos o sumarlos se conversa con nosotros; los precios están en la página de precios.' },
       ],
-      ctaLead: 'Prueba StockAI con tus propios datos en el plan gratis: sin tarjeta y con todas las funciones.',
+      ctaLead: 'Prueba StockAI con tus propios datos en el plan gratis: sin tarjeta y con el motor completo.',
       next: ['distributors', 'reorderPoint', 'forecast'],
     },
 
@@ -171,7 +171,7 @@ const es: GuidesCopy = {
           h: 'Cómo lo resuelve StockAI',
           p: [
             'Cada mañana ves una lista ordenada por urgencia con cuatro estados: PEDIR YA (menos de medio plazo de entrega de cobertura), PEDIR PRONTO (en el punto de reorden o por debajo), OK y SOBRESTOCK. No es una caja negra: la regla que decide el color es publicada y la puedes hacer a mano; está en [cómo funciona](/como-funciona) y [cómo se calcula](/como-se-calcula).',
-            'La cantidad sugerida descuenta lo que ya viene en camino, de un proveedor o de un traslado entre bodegas, y respeta el mínimo de compra. La orden la ajustas y la envías tú, por correo o WhatsApp. Hay páginas con ejemplos por rubro, como [consumo masivo, ferretería, farmacia, autopartes y retail](/industrias).',
+            'La cantidad sugerida descuenta lo que ya viene en camino, de un proveedor o de un traslado entre bodegas, y respeta el mínimo de compra. La orden la ajustas y la envías tú, por correo o, en el plan completo, por WhatsApp. Hay páginas con ejemplos por rubro, como [consumo masivo, ferretería, farmacia, autopartes y retail](/industrias).',
           ],
         },
         {
@@ -202,7 +202,7 @@ const es: GuidesCopy = {
         { q: '¿Sirve si tengo varias bodegas?', a: 'Sí. Puedes definir rutas entre bodegas con sus días de tránsito, y StockAI sugiere un traslado antes de comprar cuando una bodega tiene de sobra lo que otra necesita.' },
         { q: '¿Qué datos necesito para empezar?', a: 'Un archivo de ventas con fecha, producto y cantidad vendida, en CSV o Excel, con al menos 20 periodos de historial por producto. Las existencias actuales y el plazo de cada proveedor completan el cálculo.' },
       ],
-      ctaLead: 'Sube tu historial al plan gratis y mira tu primera lista de compras: sin tarjeta, con todas las funciones.',
+      ctaLead: 'Sube tu historial al plan gratis y mira tu primera lista de compras: sin tarjeta, con el motor completo.',
       next: ['reorderPoint', 'safetyStock', 'about'],
     },
 
@@ -446,7 +446,7 @@ const en: GuidesCopy = {
           h: 'Who it is for',
           p: [
             'For anyone who buys goods from suppliers with a delivery time: distributors, wholesalers, shops, hardware stores, pharmacies, spare-parts houses and manufacturers. It fits best when there are hundreds or thousands of products, the team is small and purchases are decided today with an Excel sheet or the buyer’s memory. There are pages by industry under [industries](/industrias).',
-            'There is a free plan that never expires and has every feature, with size ceilings. What lifting them costs is on [pricing](/precios); no price is written on this page on purpose.',
+            'There is a free plan that never expires and has the whole engine, with size ceilings and no API, MCP or WhatsApp bot. What lifting them costs is on [pricing](/precios); no price is written on this page on purpose.',
           ],
         },
         {
@@ -475,9 +475,9 @@ const en: GuidesCopy = {
         { q: 'What is StockAI?', a: 'It is web software for inventory purchasing, for distributors, wholesalers and shops. It reads your sales and stock and tells you what to order, how much and from which supplier.' },
         { q: 'Are “Stock AI” and “StockAI” the same?', a: 'Yes. The right name is StockAI, as one word; “stock ai” with a space is how many people type it when searching.' },
         { q: 'Does StockAI replace my ERP?', a: 'No, it complements it. Your ERP records what happened (sales, stock, purchases); StockAI reads that history and tells you what to buy. You keep invoicing and accounting where you always did.' },
-        { q: 'Is it free?', a: 'There is a free plan that never expires and has every feature, with size ceilings. To raise them you talk to us; prices are on the pricing page.' },
+        { q: 'Is it free?', a: 'There is a free plan that never expires and has the whole engine, with size ceilings and no API, MCP or WhatsApp bot. To raise them or add those you talk to us; prices are on the pricing page.' },
       ],
-      ctaLead: 'Try StockAI with your own data on the free plan: no card, every feature.',
+      ctaLead: 'Try StockAI with your own data on the free plan: no card, the whole engine.',
       next: ['distributors', 'reorderPoint', 'forecast'],
     },
 
@@ -512,7 +512,7 @@ const en: GuidesCopy = {
           h: 'How StockAI solves it',
           p: [
             'Every morning you see a list ordered by urgency with four states: PEDIR YA (less than half a lead time of cover), PEDIR PRONTO (at or below the reorder point), OK and SOBRESTOCK (overstock). It is not a black box: the rule that decides the colour is published and you can work it out by hand; see [how it works](/como-funciona) and [how it is calculated](/como-se-calcula).',
-            'The suggested quantity subtracts what is already on its way, from a supplier or a transfer between warehouses, and respects the minimum order. You adjust the order and send it yourself, by email or WhatsApp. There are pages with examples by industry, such as [consumer goods, hardware, pharmacy, auto parts and retail](/industrias).',
+            'The suggested quantity subtracts what is already on its way, from a supplier or a transfer between warehouses, and respects the minimum order. You adjust the order and send it yourself, by email or, on the full plan, by WhatsApp. There are pages with examples by industry, such as [consumer goods, hardware, pharmacy, auto parts and retail](/industrias).',
           ],
         },
         {
@@ -543,7 +543,7 @@ const en: GuidesCopy = {
         { q: 'Does it work with several warehouses?', a: 'Yes. You can define routes between warehouses with their transit days, and StockAI suggests a transfer before buying when one warehouse has spare what another needs.' },
         { q: 'What data do I need to start?', a: 'A sales file with date, product and quantity sold, as CSV or Excel, with at least 20 periods of history per product. Current stock and each supplier’s lead time complete the calculation.' },
       ],
-      ctaLead: 'Upload your history to the free plan and see your first purchase list: no card, every feature.',
+      ctaLead: 'Upload your history to the free plan and see your first purchase list: no card, the whole engine.',
       next: ['reorderPoint', 'safetyStock', 'about'],
     },
 
