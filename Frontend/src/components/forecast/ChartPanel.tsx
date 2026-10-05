@@ -8,7 +8,7 @@ import type {
 } from '@/lib/types'
 import { downloadWorkbook } from '@/lib/excel'
 import Spinner from '@/components/ui/Spinner'
-import { ErrorState } from '@/components/ui/States'
+import { ErrorState, InlineError } from '@/components/ui/States'
 import BottomSheet from '@/components/mobile/BottomSheet'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -22,7 +22,7 @@ import { ChipGroup } from './ChipGroup'
 import { BuyerChart } from './BuyerChart'
 import { BuyerAnswers, BuyerTrust } from './BuyerSummary'
 import {
-  type Translate, makeChampionRank, pct, fmt, fmtK, reliabilityInfo,
+  type Translate, makeChampionRank, byRank, pct, fmt, fmtK, reliabilityInfo,
   downloadCSV, useCssToken,
 } from './shared'
 
@@ -448,7 +448,7 @@ export function buildChartOption(
       })),
       tooltip: {
         formatter: (p: { data: { coord: [string, number] } }) =>
-          `<div style="font-size:11px"><b style="color:#B7791F">${t('skus.outlier_label')}</b><br/>${p.data.coord[0]}: ${p.data.coord[1].toFixed(2)}</div>`,
+          `<div style="font-size:11px"><b style="color:#B7791F">${t('skus.outlier_label')}</b><br/>${p.data.coord[0]}: ${typeof p.data.coord[1] === 'number' ? p.data.coord[1].toFixed(2) : '—'}</div>`,
       },
     }
   }
@@ -478,7 +478,9 @@ export function buildChartOption(
     ...historical.map(() => null),
     ...forecast.map(p => p.value),
   ]
-  if (historical.length > 0 && forecast.length > 0) {
+  // Line only: on bars this would draw a forecast-coloured duplicate of the
+  // last real observation.
+  if (chartType !== 'bar' && historical.length > 0 && forecast.length > 0) {
     fcastData[historical.length - 1] = historical[historical.length - 1].value
   }
   const fcastSeries: Record<string, unknown> = {
@@ -579,11 +581,15 @@ export function buildChartOption(
 
     const lines: string[] = []
 
+    // A null/NaN point (JSON carries no NaN) must not throw inside the tooltip.
+    const f2 = (v: number | null | undefined) =>
+      typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '—'
+
     if (hp)
-      lines.push(row(dot(histColor), t('skus.series_historical'), hp.value.toFixed(2)))
+      lines.push(row(dot(histColor), t('skus.series_historical'), f2(hp.value)))
 
     if (fp) {
-      lines.push(row(dot(fcastColor), primaryName, fp.value.toFixed(2)))
+      lines.push(row(dot(fcastColor), primaryName, f2(fp.value)))
       if (showBand) {
         // Two rows at most. The likely range is what the buyer plans against;
         // the wide one is the tail they are choosing to cover. The innermost
@@ -591,7 +597,7 @@ export function buildChartOption(
         const bandDot = (alpha: number) =>
           `<span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${FAN_COLOR};opacity:${alpha};flex-shrink:0"></span>`
         const range = (lo: number | null, hi: number | null) =>
-          `${lo !== null ? lo.toFixed(2) : '—'} – ${hi !== null ? hi.toFixed(2) : '—'}`
+          `${f2(lo)} – ${f2(hi)}`
 
         const lo = getQ(fp, FAN_LIKELY.lower, true)
         const hi = getQ(fp, FAN_LIKELY.upper, true)
@@ -607,7 +613,7 @@ export function buildChartOption(
       }
       for (const ov of overlayByDate) {
         const v = ov.byDate.get(date)
-        if (typeof v === 'number') lines.push(row(dot(ov.color), ov.name, v.toFixed(2)))
+        if (typeof v === 'number') lines.push(row(dot(ov.color), ov.name, f2(v)))
       }
     }
 
@@ -744,6 +750,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
   // Aggregation is fixed to 'sum' — the backend default (forecasts.py
   // `agg: str = Query("sum")`) — since the Sum/Avg toggle was removed.
   const cache = useRef<Map<string, SkuIntelligenceData>>(new Map())
+  const latestReq = useRef(0)
   const cacheKey = (gran: string | null, model: string | undefined) =>
     `${sku}|${gran ?? ''}|${model ?? ''}`
 
@@ -751,6 +758,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
     const key = cacheKey(gran ?? null, model)
     const hit = cache.current.get(key)
     if (hit) {
+      latestReq.current++   // supersede any request still in flight
       setData(hit)
       if (!gran) setGranularity(hit.applied_granularity)
       setLoading(false)
@@ -759,6 +767,10 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
     }
     if (isInitial) setLoading(true); else setFetching(true)
     setError(null)
+    // Only the newest request may write state: a slow response for a granularity
+    // or model the user already left would otherwise repaint the chart under the
+    // wrong chip, and one landing after unmount would set state on nothing.
+    const reqId = ++latestReq.current
     // `silent: true` — this panel renders the failure itself as an ErrorState.
     getSkuIntelligence(sessionId, sku, {
       model:       model,
@@ -767,6 +779,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
     }, { silent: true })
       .then(d => {
         cache.current.set(key, d)
+        if (reqId !== latestReq.current) return
         // Pre-cache under applied granularity so the follow-up effect is a cache hit
         cache.current.set(cacheKey(d.applied_granularity, model), d)
         // Also under the resolved model name, so defaulting the selection to
@@ -775,9 +788,12 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
         setData(d)
         if (!gran) setGranularity(d.applied_granularity)
       })
-      .catch((e: unknown) => setError(e))
-      .finally(() => { setLoading(false); setFetching(false) })
+      .catch((e: unknown) => { if (reqId === latestReq.current) setError(e) })
+      .finally(() => { if (reqId === latestReq.current) { setLoading(false); setFetching(false) } })
   }, [sessionId, sku])
+
+  // Unmount counts as "a newer request": nothing may land after it.
+  useEffect(() => () => { latestReq.current = -1 }, [])
 
   useEffect(() => {
     setData(null)
@@ -911,8 +927,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
         y += 7
         // Same order as the screen: by the metric the champion was chosen with.
         const pdfRank = makeChampionRank(data.metrics)
-        const sorted = [...data.metrics].sort((a, b) =>
-          (pdfRank(a) ?? Infinity) - (pdfRank(b) ?? Infinity))
+        const sorted = [...data.metrics].sort(byRank(pdfRank))
         sorted.forEach((r, ri) => {
           const even = ri % 2 === 0
           doc.setFillColor(even ? 248 : 255, even ? 250 : 255, even ? 252 : 255)
@@ -1234,6 +1249,18 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
         </BottomSheet>
       )}
 
+      {/* A failed granularity/model switch keeps the previous data on screen;
+          without this the chips would claim a view the chart is not showing. */}
+      {error != null && (
+        <div style={{ padding: '8px 16px' }}>
+          <InlineError
+            error={error}
+            onRetry={() => fetchData(granularity ?? undefined, selModels[0])}
+            onDismiss={() => setError(null)}
+          />
+        </div>
+      )}
+
       {/* Stats strip */}
       {!buyer && <StatsStrip data={data} quality={quality} showTechnical={showTechnical} />}
 
@@ -1284,7 +1311,7 @@ export function ChartPanel({ sessionId, sku, isDark, tourAnchor, quality, showTe
       <div style={{
         padding: narrow ? '4px 12px 8px' : '4px 16px 8px', display: 'flex', gap: 12,
         fontSize: narrow ? 11 : 10, color: 'var(--dim)',
-        ...(narrow ? { flexWrap: 'wrap' as const, rowGap: 4 } : {}),
+        flexWrap: 'wrap' as const, rowGap: 4,
       }}>
         {showTechnical && (
           <>

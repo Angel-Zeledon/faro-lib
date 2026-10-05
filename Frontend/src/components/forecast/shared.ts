@@ -61,6 +61,20 @@ export const makeChampionRank = (rows: MetricRow[]) => {
     r[metric] as number | null | undefined
 }
 
+/** Comparator: lowest rank first, rows without a usable rank last. A bare
+ *  `(a ?? Infinity) - (b ?? Infinity)` is NaN when both are missing (Infinity -
+ *  Infinity), and a NaN comparator leaves the order engine-dependent. */
+export const byRank = (rank: (r: MetricRow) => number | null | undefined) =>
+  (a: MetricRow, b: MetricRow): number => {
+    const x = rank(a), y = rank(b)
+    const xOk = typeof x === 'number' && !isNaN(x)
+    const yOk = typeof y === 'number' && !isNaN(y)
+    if (!xOk && !yOk) return 0
+    if (!xOk) return 1
+    if (!yOk) return -1
+    return (x as number) - (y as number)
+  }
+
 /** The model this SKU's orders come from, with its measured error. `accuracy`
  *  is 1 - WAPE clamped to 0..100, or null when the figure would mean nothing
  *  (a SKU that never sold, or the engine's undefined-WAPE sentinel). The
@@ -72,7 +86,7 @@ export function championError(rows: MetricRow[]): {
   const rank = makeChampionRank(rows)
   const best = rows
     .filter(r => r.type !== 'baseline')
-    .sort((a, b) => (rank(a) ?? Infinity) - (rank(b) ?? Infinity))[0]
+    .sort(byRank(rank))[0]
   const none = { wape: null, mae: null, accuracy: null }
   if (best?.wape == null) return none
   // WAPE divides by total real demand: a flat line of zeros scores a
@@ -106,7 +120,7 @@ export function fmt(n: number | null | undefined, d = 2) {
   return n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })
 }
 export function fmtK(n: number | null | undefined) {
-  if (n == null || isNaN(n)) return '—'
+  if (n == null || !isFinite(n)) return '—'
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (Math.abs(n) >= 1_000)     return `${(n / 1_000).toFixed(1)}K`
   return n.toFixed(1)

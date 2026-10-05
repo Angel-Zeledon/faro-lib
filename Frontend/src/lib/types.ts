@@ -19,6 +19,12 @@ export interface SessionInfo {
   /** Granularity of a family run (daily/weekly/monthly); null for single-grain
    * sessions trained before the family feature. */
   granularity?: string | null
+  /** A holdout test run: it trains on a truncated copy of a dataset to grade the
+   *  engine, and never drives planning. */
+  is_backtest?: boolean
+  /** Set on archived sessions. `/sessions` lists active ones only, but the
+   *  field rides along on every row. */
+  archived_at?: string | null
 }
 
 // Enriched row from GET /sessions/summary (session-history page).

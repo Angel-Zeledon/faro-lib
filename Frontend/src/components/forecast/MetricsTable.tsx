@@ -7,7 +7,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { modelLabel } from '@/lib/modelLabel'
 import { Download, TableProperties, Grid3x3 } from 'lucide-react'
-import { type Translate, makeChampionRank, tOr, pct, fmt, downloadCSV } from './shared'
+import { type Translate, makeChampionRank, byRank, tOr, pct, fmt, downloadCSV } from './shared'
 
 // Exports carry the SAME neutral labels the screen shows, not the raw
 // algorithm ids. The tempting alternative — real names in the file, numbers on
@@ -66,8 +66,7 @@ export function MetricsTable({ rows, sku }: { rows: MetricRow[]; sku: string }) 
   // SKU's forecast, its reorder point or its purchase order — and nothing on
   // screen said so.
   const tableRank = makeChampionRank(rows)
-  const sorted = [...rows].sort((a, b) =>
-    (tableRank(a) ?? Infinity) - (tableRank(b) ?? Infinity))
+  const sorted = [...rows].sort(byRank(tableRank))
   // A baseline is scored so the real models have something to beat; it is not a
   // candidate, and the engine refuses to buy from one. Badging the cheapest row
   // outright put "MEJOR" on `Referencia (temporada)` on real data — a naive
