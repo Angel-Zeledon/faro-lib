@@ -128,6 +128,28 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=INFO,
         detail_keys=("sku", "references"),
     ),
+    # Demand plan versions (inventory/demand_plan_service.py): a frozen plan and
+    # its sign-off. A record and a measurement; none of these moves a purchase.
+    "demand_plan.created": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "skus", "periods"),
+    ),
+    "demand_plan.submitted": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name",),
+    ),
+    "demand_plan.approved": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment", "superseded"),
+    ),
+    "demand_plan.rejected": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment"),
+    ),
+    "demand_plan.commented": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name",),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     # Customer orders placed ahead of time, entered by a person. They move the
@@ -143,6 +165,20 @@ EVENTS: dict[str, EventSpec] = {
     "committed_demand.changed": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("sku", "status"),
+    ),
+    # Blanket contracts: every save is a new revision, so the feed names who
+    # created, revised, activated, closed or cancelled one.
+    "supply_contract.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
+    ),
+    "supply_contract.revised": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
+    ),
+    "supply_contract.status_changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
     ),
     "purchase.order_generated": EventSpec(
         kind="purchase", severity=INFO,
@@ -363,6 +399,8 @@ REASONS: tuple[str, ...] = (
     "engine_error",
     "dataset_missing",
     "data_gate_blocked",
+    # a scheduled retrain skipped because the day's training ceiling is spent
+    "training_cap_reached",
     # the live forecast's error against real sales vs its training-time error
     "realised_accuracy_below_training",
     # delivery

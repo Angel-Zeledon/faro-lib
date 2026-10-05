@@ -11,17 +11,26 @@ champion per series is chosen exactly the way the product serves it (lowest
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
 DEFAULT_MODELS = ("lightgbm", "xgboost", "ets", "arima", "croston")
+ML_MODEL_NAMES = ("lightgbm", "xgboost")
 
 
-def build_config(horizon: int, season: int, models: List[str]) -> dict:
+def build_config(horizon: int, season: int, models: List[str],
+                 model_params: Optional[Dict[str, dict]] = None,
+                 routing: bool = True) -> dict:
     """Same shape as ``build_engine_config`` in backend/workers/runner.py, with
-    the wizard's defaults (walk-forward, 3 splits, min_history 20)."""
+    the wizard's defaults (walk-forward, 3 splits, min_history 20).
+
+    ``model_params`` adds per-model params (e.g. the opt-in
+    ``intermittent_objective``). ``routing=False`` runs every declared model on
+    every series, so model rows are compared on the SAME series instead of on
+    whatever subset the router hands each one."""
+    model_params = model_params or {}
     return {
         "name": "benchmark",
         "data": {"path": "", "date_freq": None},
@@ -30,7 +39,8 @@ def build_config(horizon: int, season: int, models: List[str]) -> dict:
         "features": {"lags": [1, 2, 3, 4], "rolling": [4, 8], "diffs": [1],
                      "calendar": True, "ewm_spans": [], "fourier_periods": [],
                      "fourier_K": 2},
-        "models": {m: {} for m in models},
+        "models": {m: dict(model_params.get(m) or {}) for m in models},
+        "routing": {"enabled": bool(routing)},
         "training": {"train_ratio": 0.8, "walk_forward": True, "wfv_splits": 3,
                      "min_history": 20, "seasonal_period": season, "max_workers": 1},
         "forecast": {"horizon": horizon},
@@ -71,7 +81,8 @@ def _champions(metrics_rows: list, noise_aware: bool = True) -> Dict[str, str]:
 
 
 def run_engine(train_df: pd.DataFrame, horizon: int, season: int,
-               models: List[str]) -> dict:
+               models: List[str], model_params: Optional[Dict[str, dict]] = None,
+               routing: bool = True) -> dict:
     """Train on ``train_df`` (sku, date, demand) and return
     ``{"forecasts": {sku: {model: {"point": arr, "q": {tau: arr}}}},
        "champion": {sku: model}, "failed": [sku, ...], "error": str|None}``.
@@ -79,7 +90,7 @@ def run_engine(train_df: pd.DataFrame, horizon: int, season: int,
     from forecasting_core.engine import ForecastEngine
 
     logging.getLogger("forecasting_core").setLevel(logging.ERROR)
-    cfg = build_config(horizon, season, models)
+    cfg = build_config(horizon, season, models, model_params, routing)
     try:
         engine = ForecastEngine.from_dict(cfg)
         engine.load_data(train_df.copy())

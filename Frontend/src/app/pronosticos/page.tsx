@@ -569,7 +569,15 @@ export default function SkusPage() {
           borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column',
           position: 'sticky', top: 0, alignSelf: 'start', height: 'min(calc(100vh - 140px), 760px)', minHeight: 420,
         }}>
-          {!sessionId ? (
+          {!sessionId && sessLoading ? (
+            /* The session list is still on its way: saying "nothing here yet"
+               and pointing at the upload would be wrong for most visitors. */
+            <div style={{ padding: 12 }}>
+              <LoadingState label={t('skus.loading_label')}>
+                <SkeletonTable rows={7} columns={1} />
+              </LoadingState>
+            </div>
+          ) : !sessionId ? (
             /* Nothing trained yet: point at the action that creates the data. */
             <div style={{ padding: 14 }}>
               <EmptyState

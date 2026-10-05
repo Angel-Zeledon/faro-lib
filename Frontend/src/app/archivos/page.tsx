@@ -32,6 +32,7 @@ import DataTabs from '@/components/layout/DataTabs'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { MobileList, MobileCard, MobileTabs, useMobileHeader } from '@/components/mobile'
 import StickyActionBar from '@/components/mobile/StickyActionBar'
+import { getUser } from '@/lib/auth'
 
 /** Phone: rows of a result set as cards, `PAGE` at a time. A spreadsheet of
  *  arbitrary width cannot be read at 360px; one record per card can. */
@@ -1712,7 +1713,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  </div>
  ) : (
  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
- <h2 style={{ margin: 0, color: C.text, fontSize: 18, fontWeight: 700,
+ <h2 style={{ margin: 0, color: C.text, fontSize: 16, fontWeight: 700,
  letterSpacing: '-0.015em',
  overflow: 'hidden', overflowWrap: 'anywhere', }}>
  {source.name}
@@ -1940,6 +1941,10 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  {testing ? <Spinner size={14} /> : <Link2 size={14} />} {t('data.btn_test_connection')}
  </button>
  </div>
+ ) : getUser()?.role === 'viewer' ? (
+ // Running SQL on the company's database is analyst-or-above on the
+ // server; say so here instead of letting every button answer 403.
+ <p style={{ color: C.muted, fontSize: 13, padding: '24px 0' }}>{t('data.sql_editor_viewer_note')}</p>
  ) : (
  <SqlEditorPanel source={source} onSaved={onUpdated} onDatasetCreated={onDatasetCreated} />
  )
@@ -2160,7 +2165,7 @@ function EmptyRight() {
  background: C.surface, border: `1px solid ${C.border}` }}>
  <Layers size={28} color={C.dim} aria-hidden="true" />
  </div>
- <h2 style={{ color: C.text, fontSize: 18, fontWeight: 700, margin: '0 0 8px',
+ <h2 style={{ color: C.text, fontSize: 16, fontWeight: 700, margin: '0 0 8px',
  letterSpacing: '-0.015em' }}>{t('data.no_source_selected')}</h2>
  <p style={{ color: C.muted, fontSize: 13.5, margin: '0 0 28px', maxWidth: 340, lineHeight: 1.6 }}>
  {t('data.no_source_selected_hint')}

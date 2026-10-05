@@ -120,6 +120,23 @@ def is_scoped(user: CurrentUser) -> bool:
     return scope_names(user) is not None
 
 
+def scope_warehouse_ids(user: CurrentUser) -> frozenset[str] | None:
+    """Warehouse IDS the caller is limited to, resolved against the tenant's
+    own warehouses (stale or foreign ids drop out, as in `scope_names`); None
+    when unrestricted. For rows that name a warehouse by id rather than by
+    name, such as customer commitments."""
+    ids = scope_ids(user)
+    if ids is None:
+        return None
+    if not ids:
+        return frozenset()
+    rows = query(
+        "SELECT id FROM warehouses WHERE tenant_id = %s AND id = ANY(%s)",
+        (user.tenant_id, ids),
+    )
+    return frozenset(r["id"] for r in rows)
+
+
 def _fold(name: str | None) -> str:
     return (name or "").strip().casefold()
 
@@ -206,6 +223,18 @@ def require_company_wide(user: CurrentUser) -> None:
             "warehouse_scope_company_totals",
             "This shows company-wide totals, which are not available to a user "
             "limited to some warehouses.",
+            status_code=403,
+        )
+
+
+def require_company_setting(user: CurrentUser) -> None:
+    """For changing configuration that governs EVERY warehouse (purchase
+    approval rules, who may approve): a caller limited to some warehouses is
+    refused, as they are when trying to change anybody's warehouse access."""
+    if is_scoped(user):
+        raise AppError(
+            "warehouse_scope_company_setting",
+            "Only a user with access to every warehouse can change this setting.",
             status_code=403,
         )
 
@@ -350,6 +379,31 @@ def filter_po_rows(user: CurrentUser, rows: list[dict], key: str = "id") -> list
     if allowed is None:
         return rows
     return [r for r in rows if r.get(key) in allowed]
+
+
+# ── Physical stock counts ────────────────────────────────────────────────────
+# A count walks ONE warehouse (`stock_counts.warehouse`, always a resolved name).
+
+def require_count_in_scope(user: CurrentUser, count_id: str) -> None:
+    """404 `count_not_found` when the count walks a warehouse outside the scope:
+    to a scoped user another warehouse's count does not exist (its lines carry
+    that warehouse's quantities, and applying it writes that warehouse's stock).
+    A count that really does not exist is left for the service's own 404."""
+    if scope_names(user) is None:
+        return
+    row = query_one(
+        "SELECT warehouse FROM stock_counts WHERE id = %s AND tenant_id = %s",
+        (count_id, user.tenant_id),
+    )
+    if row is not None and not in_scope(user, row["warehouse"]):
+        raise AppError("count_not_found", "Stock count not found", status_code=404,
+                       params={"count_id": count_id})
+
+
+def count_guard(count_id: str, user: CurrentUser = Depends(get_current_user)) -> None:
+    """Dependency for any route with a `{count_id}` path parameter. Put it AFTER
+    the role guard so a wrong role is still reported as a wrong role."""
+    require_count_in_scope(user, count_id)
 
 
 # ── Validation of a scope being SET ──────────────────────────────────────────

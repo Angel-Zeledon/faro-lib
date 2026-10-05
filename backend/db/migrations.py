@@ -555,6 +555,9 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      "CREATE INDEX IF NOT EXISTS idx_jobs_tenant ON jobs (tenant_id)"),
     ("create_jobs_session_idx",
      "CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs (session_id)"),
+    # The daily training ceiling counts one tenant's jobs created today.
+    ("create_jobs_tenant_created_idx",
+     "CREATE INDEX IF NOT EXISTS idx_jobs_tenant_created ON jobs (tenant_id, created_at)"),
     ("create_jobs_status_idx",
      "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status)"),
     ("create_chats",
@@ -585,6 +588,13 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      )"""),
     ("create_chat_messages_chat_idx",
      "CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_created ON chat_messages (chat_id, created_at)"),
+    # A message the person saved as a favorite: NULL = not starred, otherwise when
+    # it was starred (the Favorites list is ordered by it). Additive, nullable.
+    ("add_chat_messages_starred_at",
+     "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS starred_at TIMESTAMPTZ"),
+    ("create_chat_messages_starred_idx",
+     "CREATE INDEX IF NOT EXISTS idx_chat_messages_starred ON chat_messages (tenant_id, starred_at) "
+     "WHERE starred_at IS NOT NULL"),
     ("add_pw_change_codes_attempts",
      "ALTER TABLE pw_change_codes ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0"),
     ("create_auth_rate_events",
@@ -2031,10 +2041,15 @@ from backend.inventory.approval_migrations import MIGRATIONS as _APPROVALS  # no
 _MIGRATIONS += _APPROVALS
 from backend.inventory.committed_demand_migrations import MIGRATIONS as _COMMITTED  # noqa: E402
 _MIGRATIONS += _COMMITTED
+# Blanket supply contracts: after committed demand, whose table they extend.
+from backend.inventory.supply_contract_migrations import MIGRATIONS as _SUPPLY_CONTRACTS  # noqa: E402
+_MIGRATIONS += _SUPPLY_CONTRACTS
 from backend.inventory.spike_edit_migrations import MIGRATIONS as _SPIKE_EDITS  # noqa: E402
 _MIGRATIONS += _SPIKE_EDITS
 from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  # noqa: E402
 _MIGRATIONS += _SKU_ANALOGIES
+from backend.inventory.demand_plan_migrations import MIGRATIONS as _DEMAND_PLANS  # noqa: E402
+_MIGRATIONS += _DEMAND_PLANS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
@@ -2203,6 +2218,44 @@ _ENTERPRISE_ACCESS = [
      "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS warehouse_scope JSONB"),
 ]
 _MIGRATIONS += _ENTERPRISE_ACCESS
+
+
+# ── "Send feedback" (2026-10-05) ─────────────────────────────────────────────
+# What a signed-in person typed into the feedback dialog, plus the facts they
+# saw on the confirmation step. The screenshot is a FILE under storage/feedback/
+# (never a column): `screenshot_path` is relative to that tenant's folder. The
+# two consent flags are separate on purpose and each carries its own timestamp:
+# `consent_reply` = "you may e-mail me about this report", `consent_news` =
+# explicit opt-in to product news. No tenant FK on purpose, like most tenant
+# tables: erasure is the explicit list in tenants/data_export.py.
+_FEEDBACK = [
+    ("create_feedback_reports",
+     """CREATE TABLE IF NOT EXISTS feedback_reports (
+         id                  TEXT PRIMARY KEY,
+         tenant_id           TEXT NOT NULL,
+         user_id             TEXT NOT NULL,
+         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         message             TEXT NOT NULL,
+         error_code          TEXT,
+         page_path           TEXT,
+         user_agent          TEXT,
+         app_version         TEXT,
+         account_email       TEXT,
+         screenshot_path     TEXT,
+         consent_reply       BOOLEAN NOT NULL DEFAULT FALSE,
+         consent_reply_at    TIMESTAMPTZ,
+         consent_news        BOOLEAN NOT NULL DEFAULT FALSE,
+         consent_news_at     TIMESTAMPTZ,
+         notified            BOOLEAN NOT NULL DEFAULT FALSE
+     )"""),
+    ("idx_feedback_reports_tenant",
+     "CREATE INDEX IF NOT EXISTS idx_feedback_reports_tenant "
+     "ON feedback_reports (tenant_id, created_at DESC)"),
+    ("idx_feedback_reports_user",
+     "CREATE INDEX IF NOT EXISTS idx_feedback_reports_user "
+     "ON feedback_reports (user_id, created_at DESC)"),
+]
+_MIGRATIONS += _FEEDBACK
 
 
 # Postgres SQLSTATE codes that mean "this object is already there", which is the

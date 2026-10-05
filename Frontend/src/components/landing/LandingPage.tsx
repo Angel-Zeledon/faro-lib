@@ -238,7 +238,7 @@ export default function LandingPage() {
  <div className="split lp-card lp-card-soft" style={{ padding: '38px 40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
  <div key={`a-${activeCase}`} className="lp-swap">
  <div className="lp-label" style={{ color: T.accent, marginBottom: 12 }}>{CASES[activeCase].label}</div>
- <div style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, color: T.text, marginBottom: 16, letterSpacing: '-0.03em', lineHeight: 1.25 }}>{CASES[activeCase].title}</div>
+ <div style={{ fontFamily: DISPLAY, fontSize: 20, fontWeight: 600, color: T.text, marginBottom: 16, letterSpacing: '-0.03em', lineHeight: 1.25 }}>{CASES[activeCase].title}</div>
  <div style={{ fontSize: 14.5, color: T.body, lineHeight: 1.75 }}>{CASES[activeCase].desc}</div>
  </div>
  <div key={`b-${activeCase}`} className="lp-swap" style={{ animationDelay: '60ms' }}>

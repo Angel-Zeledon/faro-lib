@@ -248,7 +248,10 @@ def update_sql_config(
 @router.post("/{source_id}/test-connection")
 def test_connection(
     source_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    # Not a read: the probe stores its verdict in `datasets.connection_status`,
+    # which gates execute-query and materialize for everybody. A viewer must not
+    # be able to flip it (nor to make the server open connections on demand).
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
     result = svc.test_sql_connection(user.tenant_id, source_id)
@@ -257,18 +260,29 @@ def test_connection(
 
 # ── Execute SQL query ──────────────────────────────────────────────────────────
 
+# Both routes below run CALLER-WRITTEN SQL on the customer's own database. They
+# only read (sql_guard + a read-only transaction), but choosing what to read out
+# of a company's ERP is not a viewer's call, and a `read` API key acts as a
+# viewer: analyst-or-above, which for a key means a `write`-scope key.
+
 @router.post("/{source_id}/execute-query")
 def execute_query(
     source_id: str,
     body: ExecuteQueryRequest,
-    user: CurrentUser = Depends(get_current_user),
+    request: Request,
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    from backend.datasources.sql_guard import statement_hash
     _ds_or_404(user.tenant_id, source_id)
     try:
         result = svc.execute_sql_query(user.tenant_id, source_id, body.sql, limit=body.limit)
-        return ok(result)
     except ValueError as e:
         raise _service_error(e)
+    # The trail records WHICH statement ran (a hash, not the text — a query
+    # can name customers) and how much came back.
+    audit.note(request, after={"statement_sha256": statement_hash(body.sql),
+                               "rows": result.get("row_count")})
+    return ok(result)
 
 
 # ── Materialize SQL query into a CSV dataset ──────────────────────────────────
@@ -277,16 +291,22 @@ def execute_query(
 def materialize_source(
     source_id: str,
     body: MaterializeRequest,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    _ds_or_404(user.tenant_id, source_id)
+    from backend.datasources.sql_guard import statement_hash
+    src = _ds_or_404(user.tenant_id, source_id)
     try:
         dataset = svc.materialize_sql_source(
             user.tenant_id, user.user_id, source_id, sql=body.sql, name=body.name
         )
-        return ok(dataset)
     except ValueError as e:
         raise _service_error(e)
+    ran = (body.sql or src.get("saved_query") or "").strip()
+    audit.note(request, label=src.get("name"),
+               after={"statement_sha256": statement_hash(ran),
+                      "rows": dataset.get("row_count"), "dataset_id": dataset.get("id")})
+    return ok(dataset)
 
 
 # ── Export SQL query result as Excel ───────────────────────────────────────────
@@ -295,15 +315,21 @@ def materialize_source(
 def export_query(
     source_id: str,
     body: MaterializeRequest,
-    user: CurrentUser = Depends(get_current_user),
+    request: Request,
+    user: CurrentUser = Depends(require_analyst_or_above),
 ):
     from fastapi.responses import Response
 
-    _ds_or_404(user.tenant_id, source_id)
+    from backend.datasources.sql_guard import statement_hash
+
+    src = _ds_or_404(user.tenant_id, source_id)
     try:
-        content = svc.export_sql_query_xlsx(user.tenant_id, source_id, sql=body.sql)
+        content, rows = svc.export_sql_query_xlsx(user.tenant_id, source_id, sql=body.sql)
     except ValueError as e:
         raise _service_error(e)
+    ran = (body.sql or src.get("saved_query") or "").strip()
+    audit.note(request, label=src.get("name"),
+               after={"statement_sha256": statement_hash(ran), "rows": rows})
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -320,7 +346,10 @@ def save_query(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     _ds_or_404(user.tenant_id, source_id)
-    src = svc.save_sql_query(user.tenant_id, source_id, body.sql)
+    try:
+        src = svc.save_sql_query(user.tenant_id, source_id, body.sql)
+    except ValueError as e:
+        raise _service_error(e)
     return ok(src)
 
 

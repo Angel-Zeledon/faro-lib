@@ -131,7 +131,7 @@ export function TourChapters({ tour, shots }: {
       {tour.chapters.map(({ chapter, when, screens }, ci) => (
         <section key={chapter} id={chapterId(ci)} className="sg-chapter" aria-labelledby={`${chapterId(ci)}-h`}>
           <div className="tour-chapter">
-            <h3 id={`${chapterId(ci)}-h`} className="lp-h3" style={{ fontSize: 23, margin: '0 0 6px' }}>{chapter}</h3>
+            <h3 id={`${chapterId(ci)}-h`} className="lp-h3" style={{ fontSize: 20, margin: '0 0 6px' }}>{chapter}</h3>
             <p style={{ fontSize: 14.5, color: 'var(--lp-muted)', margin: 0, lineHeight: 1.6 }}>{when}</p>
           </div>
 

@@ -98,6 +98,7 @@ def _first_acted_on_po(
            JOIN inventory_po_log l ON l.id = i.po_log_id
            WHERE i.tenant_id = %s AND i.sku = %s
              AND i.status = ANY(%s)
+             AND l.cancelled_at IS NULL
              AND l.generated_at >= %s AND l.generated_at <= %s""",
         (tenant_id, sku, list(_ACTED_ON_STATUSES),
          _day_start(window_start), _day_start(window_end) + timedelta(days=1)),

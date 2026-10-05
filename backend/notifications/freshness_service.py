@@ -325,14 +325,13 @@ def _tenants_with_completed_sessions() -> list[str]:
 
 
 def _recipients(tenant_id: str) -> list[dict]:
-    """Admins/managers, with the id needed to attribute the delivery outcome."""
-    return [
-        dict(r) for r in query(
-            """SELECT id, email, whatsapp_number FROM users
-               WHERE tenant_id = %s AND role IN ('admin', 'analyst')""",
-            (tenant_id,),
-        )
-    ]
+    """Active, company-wide admins/analysts, with the id needed to attribute
+    the delivery outcome. The reminder names lagging warehouses, so a user
+    limited to some warehouses is withheld from it (see
+    `inventory.service.get_tenant_alert_recipients`), and a deactivated user
+    no longer receives it."""
+    from backend.inventory.service import get_tenant_alert_recipients
+    return get_tenant_alert_recipients(tenant_id)
 
 
 def _last_reminder_at(tenant_id: str) -> Optional[datetime]:
@@ -414,8 +413,10 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
                 if now - last < timedelta(days=REMINDER_COOLDOWN_DAYS):
                     continue
 
+            from backend.inventory.service import get_scoped_alert_recipients
             recipients = _recipients(tid)
-            if not recipients:
+            scoped_recipients = get_scoped_alert_recipients(tid)
+            if not recipients and not scoped_recipients:
                 continue
 
             sales_age = freshness["sales"]["age_days"]
@@ -470,6 +471,20 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
                     "stock_age_days": stock_age,
                     **({} if delivered else {"reason": wa_mod.failure_reason(tid)}),
                 })
+
+            if scoped_recipients:
+                # Users limited to some warehouses: the same clocks the screen
+                # shows them, naming only their own silent warehouses.
+                from backend.notifications.scoped_digest import send_scoped_freshness_reminders
+                scoped_reached = send_scoped_freshness_reminders(
+                    tid, scoped_recipients, freshness,
+                    sales_age=sales_age, stock_age=stock_age,
+                    sales_late=sales_late, stock_late=stock_late,
+                    upload_url=upload_url,
+                    email_action=REMINDER_EMAIL_ACTION,
+                    whatsapp_action=REMINDER_WHATSAPP_ACTION,
+                )
+                any_delivered = any_delivered or scoped_reached > 0
 
             if any_delivered:
                 notified += 1

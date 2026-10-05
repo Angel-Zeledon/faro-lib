@@ -537,7 +537,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
           leaving it editable would put the "Generate PO" bar back on screen
           for someone whose role can never generate one. */}
       {!canDecide ? (
-       <span style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+       <span style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
         {fmtNum(item.qty)}
        </span>
       ) : editing ? (
@@ -560,7 +560,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
        />
       ) : (
        <button onClick={() => setEditing(true)} style={{
-        all: 'unset', cursor: 'pointer', fontSize: 20, fontWeight: 600, color: 'var(--text)',
+        all: 'unset', cursor: 'pointer', fontSize: 17, fontWeight: 600, color: 'var(--text)',
         borderBottom: '1px dashed var(--border-strong)', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums',
        }}>
         {fmtNum(item.qty)}
@@ -1637,7 +1637,7 @@ export default function HoyPage() {
     justifyContent: 'space-between', gap: 24, marginBottom: 32,
    }}>
     <div style={{ minWidth: 0 }}>
-     <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.01em', color: C.text, margin: '0 0 8px' }}>
+     <h1 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', color: C.text, margin: '0 0 8px' }}>
       {t('hoy.greeting_good_morning')}{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}.
       {cart.length > 0 && totalPending > 0 && (
        <span style={{ fontSize: 14, fontWeight: 400, color: C.dim, marginLeft: 12 }}>
@@ -2678,7 +2678,7 @@ function KpiCard({ label, value, dot, help }: { label: string; value: string; do
     {label}
     {help && <HelpTip text={help} size={13} />}
    </div>
-   <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.1, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
+   <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.1, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
     {value}
    </div>
   </div>

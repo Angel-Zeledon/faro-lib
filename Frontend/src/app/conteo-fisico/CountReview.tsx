@@ -211,7 +211,7 @@ function Stat({ label, value, sub, color }: { label: string; value: string; sub?
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px' }}>
       <div style={{ fontSize: 11.5, color: C.dim, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: C.muted }}>{sub}</div>}
     </div>
   )

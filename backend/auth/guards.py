@@ -24,7 +24,32 @@ from backend.auth.jwt_handler import decode_token
 from backend.config import settings
 from backend.errors import AppError
 
-security = HTTPBearer()
+
+class _BearerOrApiKey(HTTPBearer):
+    """`Authorization: Bearer <credential>`, or `X-API-Key: sk_live_...`.
+
+    BI tools (Power BI's web connector, Excel Power Query, Looker) can set a
+    custom header but not always the Authorization one, and a key must never be
+    put in the URL (proxies and browser history keep URLs). So the same key is
+    accepted in either header and ends up as the same credential: everything
+    downstream (`get_current_user`, plan check, scope, rate window, meter) is
+    unchanged.
+
+    Authorization wins when both are sent. `X-API-Key` is read ONLY when it holds
+    an `sk_live_*` key: a JWT in it is not a credential, so it is treated as no
+    credential at all and answers exactly what a request with none answers.
+    """
+
+    async def __call__(self, request: Request):
+        from backend.auth.api_key_auth import looks_like_api_key
+        header_key = (request.headers.get("x-api-key") or "").strip()
+        if (header_key and looks_like_api_key(header_key)
+                and not request.headers.get("authorization")):
+            return HTTPAuthorizationCredentials(scheme="Bearer", credentials=header_key)
+        return await super().__call__(request)
+
+
+security = _BearerOrApiKey()
 
 
 class CurrentUser:

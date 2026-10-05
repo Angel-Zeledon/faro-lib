@@ -3,7 +3,7 @@ import type {
   QualityReport, RunWarnings, ConfigSchema, ChooseColumnsBody, CanonicalColumnsBody,
   JobResponse, MetricsResponse, InventoryResponse, RoutingPlan, TrainingResults,
   ForecastSeries, DataHealthReport,
-  Chat, ChatMessage, MessagesPage, ChatSourceType,
+  Chat, ChatMessage, FavoriteMessage, MessagesPage, ChatSourceType,
   DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
@@ -889,6 +889,14 @@ export const deleteChat  = (chatId: string) =>
 export const getChatMessages = (chatId: string, limit = 30, before?: string) =>
   request<MessagesPage>('GET', `/analyst/chats/${chatId}/messages?limit=${limit}${before ? `&before=${before}` : ''}`)
 
+/** Star or unstar one of the signed-in user's own messages. */
+export const starChatMessage = (messageId: string, starred: boolean) =>
+  request<ChatMessage>('PATCH', `/analyst/messages/${messageId}/star`, { starred })
+
+/** The messages the signed-in user starred, newest star first. */
+export const listFavoriteMessages = () =>
+  request<FavoriteMessage[]>('GET', '/analyst/favorites')
+
 /**
  * Ask the assistant. `language` is the UI language the answer is written in;
  * the backend answers from the account's live data (backend/assistant/).
@@ -1109,7 +1117,7 @@ export interface ScheduleRun {
   status: string; created_at: string
   started_at: string | null; completed_at: string | null; error: string | null
   /** Why a run did not train (`no_new_data`, `still_running`,
-   *  `source_refresh_failed`, `launch_failed`); null on a run that started.
+   *  `source_refresh_failed`, `launch_failed`, `training_cap_reached`); null on a run that started.
    *  Rendered through `schedule.run_reason.<code>`. */
   reason?: string | null
   reason_params?: Record<string, string | number>
@@ -1528,7 +1536,7 @@ export const getCommittedDemand = (opts?: { sku?: string; status?: import('./typ
   if (opts?.status) q.set('status', opts.status)
   if (opts?.limit) q.set('limit', String(opts.limit))
   const qs = q.toString()
-  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[] }>(
+  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[]; scope?: 'company' | 'warehouses' }>(
     'GET', `/committed-demand${qs ? `?${qs}` : ''}`)
 }
 export const createCommittedDemand = (body: import('./types').CommittedDemandInput) =>
@@ -1539,6 +1547,48 @@ export const updateCommittedDemand = (id: string, body: Partial<import('./types'
   request<import('./types').CommittedDemand>('PATCH', `/committed-demand/${encodeURIComponent(id)}`, body)
 export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
   request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
+// ── Blanket supply contracts (their releases become committed demand) ───────
+export const getSupplyContracts = () =>
+  request<{ statuses: import('./types').SupplyContractStatus[]; items: import('./types').SupplyContract[] }>('GET', '/supply-contracts')
+export const getSupplyContract = (rootId: string) =>
+  request<import('./types').SupplyContract>('GET', `/supply-contracts/${encodeURIComponent(rootId)}`)
+export const previewSupplyContract = (terms: import('./types').SupplyContractTerms) =>
+  request<{ releases: { sku: string; date: string; quantity: number }[]; lines: { sku: string; total_quantity: number }[] }>(
+    'POST', '/supply-contracts/preview', terms)
+export const createSupplyContract = (terms: import('./types').SupplyContractTerms, status: 'draft' | 'active') =>
+  request<import('./types').SupplyContract>('POST', '/supply-contracts', { ...terms, status })
+export const reviseSupplyContract = (rootId: string, terms: import('./types').SupplyContractTerms, expectedRevision: number) =>
+  request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/revisions`,
+    { ...terms, expected_revision: expectedRevision })
+export const setSupplyContractStatus = (rootId: string, status: 'active' | 'closed' | 'cancelled', expectedRevision: number) =>
+  request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/status`,
+    { status, expected_revision: expectedRevision })
+
+// ── Demand plan versions (a frozen plan and its sign-off; changes no purchase) ─
+export const listDemandPlans = () =>
+  request<import('./types').DemandPlanList>('GET', '/demand-plans')
+export const createDemandPlan = (body: { name: string; session_id?: string | null; horizon_periods?: number | null; note?: string | null }) =>
+  request<import('./types').DemandPlanVersion>('POST', '/demand-plans', body)
+export const getDemandPlan = (id: string) =>
+  request<import('./types').DemandPlanVersion>('GET', `/demand-plans/${encodeURIComponent(id)}`)
+export const getDemandPlanLines = (id: string, opts?: { q?: string; offset?: number; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.q) q.set('q', opts.q)
+  if (opts?.offset) q.set('offset', String(opts.offset))
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').DemandPlanLines>('GET', `/demand-plans/${encodeURIComponent(id)}/lines${qs ? `?${qs}` : ''}`)
+}
+export const diffDemandPlans = (a: string, b: string, limit = 50) =>
+  request<import('./types').DemandPlanDiff>(
+    'GET', `/demand-plans/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&limit=${limit}`)
+export const getDemandPlanAccuracy = (id: string) =>
+  request<import('./types').DemandPlanAccuracy>('GET', `/demand-plans/${encodeURIComponent(id)}/accuracy`)
+export const decideDemandPlan = (id: string, action: 'submit' | 'approve' | 'reject', comment?: string) =>
+  request<import('./types').DemandPlanVersion>(
+    'POST', `/demand-plans/${encodeURIComponent(id)}/${action}`, { comment: comment || null })
+export const commentDemandPlan = (id: string, comment: string) =>
+  request<import('./types').DemandPlanVersion>('POST', `/demand-plans/${encodeURIComponent(id)}/comments`, { comment })
 
 export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =>
   request<import('./types').AdjustmentValueAdded>(
@@ -2046,6 +2096,26 @@ export const requestUpgrade = (body: { limit_key?: string | null; message?: stri
   request<{ id: string; created: boolean; notified: boolean }>(
     'POST', '/entitlements/upgrade-request', body,
   )
+
+/**
+ * "Send feedback". `notified: false` means the report is stored but the e-mail
+ * to the team did not leave; the dialog says so. Silent on purpose: the dialog
+ * owns the failure message (the global error toast would offer to open this
+ * same dialog again).
+ */
+export interface FeedbackPayload {
+  message: string
+  error_code?: string | null
+  page_path?: string | null
+  user_agent?: string | null
+  app_version?: string | null
+  /** PNG/JPEG data URL, or omitted when the person did not include one. */
+  screenshot?: string | null
+  consent_reply: boolean
+  consent_news: boolean
+}
+export const sendFeedback = (body: FeedbackPayload) =>
+  request<{ id: string; notified: boolean }>('POST', '/feedback', body, { silent: true })
 
 // ── Multi-period planning (Phase B) ──────────────────────────────────────────
 export const getPlanning = () =>

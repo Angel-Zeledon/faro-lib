@@ -41,7 +41,7 @@ from dataclasses import dataclass
 
 # ── Tags whose routes a key may call (subject to rules 2–4) ──────────────────
 EXPOSED_TAGS: frozenset[str] = frozenset({
-    "sessions", "datasets", "data-sources", "configuration", "training",
+    "sessions", "datasets", "bi-datasets", "data-sources", "configuration", "training",
     "planning", "forecasts", "artifacts", "reports", "analyst",
     "documents", "webhooks", "schedule",
     "inventory", "inventory-recommendation-log", "inventory-reversals",
@@ -77,9 +77,12 @@ INTERNAL_TAGS: dict[str, str] = {
     # that person, and "who approved this" must name one.
     "inventory-approvals": "purchase-order approval rules and decisions belong to the people who hold that authority",
     "committed-demand": "a commitment is a customer order a person entered; it moves purchase decisions, so it is recorded under a person's name",
+    "supply-contracts": "a blanket contract is a customer agreement a person entered; its releases become commitments that move purchase decisions, so it is recorded under a person's name",
+    "demand-plans": "a demand plan version is approved by a person with the authority; who approved it must name a person, not a key",
     "spike-edits": "excluding a past spike is a person's judgement about their history, recorded under their name",
     "sku-analogies": "an analogy is a person's judgement that a new product sells like others, recorded under their name",
     "forecast-adjustments": "a forecast adjustment is a person's judgement, recorded under their name and graded per person",
+    "feedback": "a report names the person who read the confirmation step and pressed Send; a key has no such person",
     "trial": "unauthenticated trial signup",
     "inbound-email": "the tenant's private sales-by-e-mail address is a credential, and its allow-list is edited by an administrator on the Datos screen",
     "inbound-webhook": "the mail provider's webhook, authenticated by a shared-secret signature, not by key",

@@ -276,7 +276,8 @@ def _next_daily_run(now: datetime, hour: int) -> datetime:
 
 
 def _inventory_alert_loop() -> None:
-    """Fires inventory stockout alerts, then supplier lead-time deviation
+    """Materialises the blanket-contract releases entering the horizon, then
+    fires inventory stockout alerts, then supplier lead-time deviation
     alerts (feature 3.3), then data-freshness reminders, daily at 8:00 AM UTC.
     The three run independently: a supplier drifting late matters most while
     stock still looks healthy, which is exactly when the stockout digest sends
@@ -335,6 +336,16 @@ def _inventory_alert_loop() -> None:
                 boundary.isoformat(), already_done.isoformat(),
             )
             continue
+        try:
+            # First, so the stockout digest below already plans against the
+            # contract releases that entered the horizon today. Idempotent
+            # (one live commitment per release), so a catch-up re-run is safe.
+            from backend.inventory.supply_contract_service import (
+                run_daily_contract_materialisation,
+            )
+            run_daily_contract_materialisation()
+        except Exception as e:
+            log.error("Contract materialisation error: %s", e, exc_info=True)
         try:
             from backend.inventory.service import run_daily_inventory_alerts
             run_daily_inventory_alerts()
@@ -425,6 +436,11 @@ def _operator_digest_loop() -> None:
                                 error=f"{type(e).__name__}: {e}"[:500])
 
 
+# By this UTC hour every zone the product supports (the westernmost is UTC-6)
+# has started its new month.
+ROI_RECAP_SETTLE_HOUR_UTC = 7
+
+
 def _previous_month_start(now: datetime) -> datetime:
     """The most recent day-1 00:05 UTC boundary at or before `now`."""
     candidate = now.replace(day=1, hour=0, minute=5, second=0, microsecond=0)
@@ -511,6 +527,22 @@ def _monthly_overstock_snapshot_loop() -> None:
         except Exception as e:
             log.error("Monthly ROI recap error: %s", e, exc_info=True)
         loop_state.mark_run(loop_state.MONTHLY_OVERSTOCK, boundary)
+        # The recap is cut on each tenant's own calendar, so a tenant west of
+        # UTC has not finished its month at 00:05 UTC on the 1st. The pass above
+        # mails the tenants whose month is closed; this second one, once every
+        # supported zone has rolled over, mails the rest. It is idempotent (the
+        # send ledger), and a restart inside the wait loses nothing for good:
+        # the next monthly pass finds the month still unsent and mails it.
+        try:
+            settle_at = boundary.replace(hour=ROI_RECAP_SETTLE_HOUR_UTC, minute=5)
+            wait = (settle_at - datetime.now(timezone.utc)).total_seconds()
+            if wait > 0:
+                time.sleep(wait)
+            from backend.inventory.roi_service import run_monthly_roi_emails
+            sent = run_monthly_roi_emails()
+            log.info("Monthly ROI recap (second pass): mailed %d tenants", sent)
+        except Exception as e:
+            log.error("Monthly ROI recap (second pass) error: %s", e, exc_info=True)
 
 
 # Trial accounts last 24 hours (backend/trial/service.py). Hourly is late by at

@@ -657,6 +657,8 @@ def sync_stock_from_dataset(
     group_col: Optional[str],
     date_col: str,
     canonical_mapping: Optional[dict] = None,
+    store_col: Optional[str] = None,
+    report: Optional[dict] = None,
 ) -> int:
     """
     If the uploaded dataset contains recognized inventory columns (current_stock,
@@ -665,9 +667,15 @@ def sync_stock_from_dataset(
     recent value per SKU. This is what lets a Quick Start upload actually
     control what /inventory shows, instead of /inventory silently falling back
     to whatever was entered manually in a previous session.
+
+    `store_col`: the mapped store column, when the session has one. For a SKU
+    sold in several stores, its stock is the SUM of each store's latest stock
+    reading — the latest single row is one store's shelf, and buying the
+    network's demand against it over-orders. `report`, when given, is filled
+    with what that did (see `stock_summed_over_stores`), for the run findings.
     """
     from fastapi import HTTPException
-    from backend.dataframes.stock import last_row_per_group
+    from backend.dataframes.stock import last_row_per_group, stock_summed_over_stores
 
     # Pandas extraction lives at the boundary: latest row per SKU with raw
     # (unfloored) values, NaN cells dropped. Empty / no-recognized-columns
@@ -678,6 +686,24 @@ def sync_stock_from_dataset(
     # supply, so this can add data but never override it.
     wanted = set(_DATASET_STOCK_COLS) | set(canonical_cols)
     raw_entries = last_row_per_group(df, group_col, date_col, wanted)
+
+    # Several stores per SKU: replace the one-store stock with the network's.
+    # Which column carries the stock follows the same precedence as above.
+    stock_src = None
+    if df is not None and "current_stock" in getattr(df, "columns", []):
+        stock_src = "current_stock"
+    elif df is not None and "inventory" in canonical_cols and "inventory" in df.columns:
+        stock_src = "inventory"
+    if store_col and stock_src:
+        summed = stock_summed_over_stores(df, group_col, store_col, date_col, stock_src)
+        if summed["by_sku"]:
+            raw_entries = [
+                (sku, {**raw, stock_src: summed["by_sku"][sku]}
+                 if sku in summed["by_sku"] else raw)
+                for sku, raw in raw_entries
+            ]
+            if report is not None:
+                report.update({k: v for k, v in summed.items() if k != "by_sku"})
 
     # Resolve the per-SKU payload with the numeric floors up front (before the
     # max_skus check), exactly as before — only the pandas extraction moved out.
@@ -4893,10 +4919,30 @@ def get_latest_completed_session(tenant_id: str) -> Optional[dict]:
 #
 # `viewer` stays out on purpose: it is the read-only role, and a stockout digest
 # is a call to action addressed to whoever can act on it.
+#
+# Two more filters, both of which were missing:
+#   * ACTIVE users only. A deactivated or suspended user cannot sign in, and
+#     kept receiving the company's stock and money figures by e-mail.
+#   * COMPANY-WIDE users only for company-wide digests. The daily alert, the
+#     monthly recap and the freshness reminder are company totals — the same
+#     totals the screens refuse a warehouse-scoped user
+#     (`wscope.require_company_wide`). A scoped user is withheld from them and
+#     told so in their activity log (`record_digest_withheld`), rather than sent
+#     figures for warehouses they may not see.
+_ALERT_ROLES_SQL = "role IN ('admin', 'analyst') AND status = 'active'"
+# NULL (and a stored JSON null) = every warehouse; see auth/warehouse_scope.py.
+_COMPANY_WIDE_SQL = "(warehouse_scope IS NULL OR warehouse_scope = 'null'::jsonb)"
+
+# The activity-log action written when a company-wide digest is withheld from
+# a warehouse-scoped user (rendered by the frontend as enum.activity_<action>).
+DIGEST_WITHHELD_ACTION = "company_digest_withheld"
+
+
 def get_tenant_admin_emails(tenant_id: str) -> list[str]:
+    """E-mail addresses for a COMPANY-WIDE digest: active, unscoped admins/analysts."""
     rows = query(
-        """SELECT email FROM users
-           WHERE tenant_id = %s AND role IN ('admin', 'analyst')
+        f"""SELECT email FROM users
+           WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND {_COMPANY_WIDE_SQL}
            AND email IS NOT NULL""",
         (tenant_id,),
     )
@@ -4904,29 +4950,66 @@ def get_tenant_admin_emails(tenant_id: str) -> list[str]:
 
 
 def get_tenant_admin_whatsapps(tenant_id: str) -> list[str]:
-    """E.164 numbers of admins/analysts who opted into WhatsApp alerts."""
+    """E.164 numbers of active, unscoped admins/analysts who opted into WhatsApp alerts."""
     rows = query(
-        """SELECT whatsapp_number FROM users
-           WHERE tenant_id = %s AND role IN ('admin', 'analyst')
+        f"""SELECT whatsapp_number FROM users
+           WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND {_COMPANY_WIDE_SQL}
            AND whatsapp_number IS NOT NULL AND whatsapp_number <> ''""",
         (tenant_id,),
     )
     return [r["whatsapp_number"] for r in rows]
 
 
-def get_tenant_alert_recipients(tenant_id: str) -> list[dict]:
+def get_tenant_alert_recipients(tenant_id: str, *, include_scoped: bool = False) -> list[dict]:
     """
-    Admins/analysts with the identity needed to attribute a delivery outcome.
-    The email/WhatsApp lists above return bare contact strings, which cannot be
-    written to activity_logs (user_id is NOT NULL) — this returns the user row.
+    Active admins/analysts with the identity needed to attribute a delivery
+    outcome. The email/WhatsApp lists above return bare contact strings, which
+    cannot be written to activity_logs (user_id is NOT NULL) — this returns the
+    user row.
+
+    Company-wide users only, unless `include_scoped`: pass it ONLY for a digest
+    whose content is not warehouse-dimensioned (the supplier lead-time alert,
+    whose scorecard every scoped user already reads on screen).
     """
+    scope_sql = "" if include_scoped else f" AND {_COMPANY_WIDE_SQL}"
     return [
         dict(r) for r in query(
-            """SELECT id, email, whatsapp_number FROM users
-               WHERE tenant_id = %s AND role IN ('admin', 'analyst')""",
+            f"""SELECT id, email, whatsapp_number FROM users
+               WHERE tenant_id = %s AND {_ALERT_ROLES_SQL}{scope_sql}""",
             (tenant_id,),
         )
     ]
+
+
+def get_scoped_alert_recipients(tenant_id: str) -> list[dict]:
+    """Active admins/analysts limited to some warehouses — the people a
+    company-wide digest is withheld from."""
+    return [
+        dict(r) for r in query(
+            f"""SELECT id, email, whatsapp_number FROM users
+               WHERE tenant_id = %s AND {_ALERT_ROLES_SQL} AND NOT {_COMPANY_WIDE_SQL}""",
+            (tenant_id,),
+        )
+    ]
+
+
+def record_digest_withheld(tenant_id: str, digest: str) -> int:
+    """Tell each warehouse-scoped recipient, in their own activity log, that a
+    company-wide digest went out without them and why. Without this row the
+    missing e-mail reads as "nothing to report" — the silence this module's
+    delivery log exists to rule out. Returns how many users were withheld.
+    Never raises."""
+    try:
+        scoped = get_scoped_alert_recipients(tenant_id)
+    except Exception as e:  # pragma: no cover - the lookup must not abort a digest
+        log.warning("digest withheld lookup failed tenant=%s: %s", tenant_id, e)
+        return 0
+    for r in scoped:
+        record_notification_delivery(
+            tenant_id, r["id"], DIGEST_WITHHELD_ACTION, True,
+            context={"digest": digest, "reason": "warehouse_scope"},
+        )
+    return len(scoped)
 
 
 def record_notification_delivery(
@@ -5018,24 +5101,48 @@ def run_daily_inventory_alerts() -> None:
             critical = [i for i in items if i["signal"] == "PEDIR_YA"]
             warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
 
-            if not critical and not warning:
+            # Users limited to some warehouses get the digest of THEIR
+            # warehouses (notifications/scoped_digest.py), so the tenant-wide
+            # "nothing at risk" verdict must not end the run for them: the
+            # aggregate can be fine while one warehouse is out.
+            scoped_recipients = get_scoped_alert_recipients(tid)
+            company_has_alert = bool(critical or warning)
+            if not company_has_alert and not scoped_recipients:
                 continue
 
             # Transfer suggestions (feature 5.4): only meaningful — and only
             # computed — for tenants with 2+ warehouses.
             from backend.inventory import warehouse_service as wh_svc
             transfer_count = 0
-            if wh_svc.count_warehouses(tid) >= 2:
+            wh_items = None
+            scoped_error: Optional[Exception] = None
+            if scoped_recipients:
+                # The exact computation their screens read. A failure here must
+                # reach them as a failed row (below) without costing the
+                # company digest its send.
                 try:
                     wh_items = get_inventory_status_by_warehouse(
                         tid, sid,
                         forecasts=forecasts, stock_rows=stock_rows,
                         learned_lead_times=learned_lead_times,
                         incoming_qty=incoming_qty,
-                        period=period,          # same reason as above
+                        period=period,
                     )
+                except Exception as e:
+                    scoped_error = e
+                    log.error("inventory_alert: scoped status failed tenant=%s: %s", tid, e)
+            if company_has_alert and wh_svc.count_warehouses(tid) >= 2:
+                try:
+                    company_wh_items = wh_items if wh_items is not None else \
+                        get_inventory_status_by_warehouse(
+                            tid, sid,
+                            forecasts=forecasts, stock_rows=stock_rows,
+                            learned_lead_times=learned_lead_times,
+                            incoming_qty=incoming_qty,
+                            period=period,          # same reason as above
+                        )
                     transfer_count = sum(
-                        1 for i in wh_items if i.get("recommended_action") == "transfer")
+                        1 for i in company_wh_items if i.get("recommended_action") == "transfer")
                 except Exception as e:
                     log.debug("alert transfer count failed tenant=%s: %s", tid, e)
 
@@ -5046,7 +5153,9 @@ def run_daily_inventory_alerts() -> None:
             # rows itself, after counting, so the digest reports every SKU at
             # risk instead of the ten it had room to list.
             from backend.notifications import email as email_mod
-            recipients = get_tenant_alert_recipients(tid)
+            # Company totals: active, unscoped recipients only. A warehouse-
+            # scoped buyer gets the digest of their own warehouses below.
+            recipients = get_tenant_alert_recipients(tid) if company_has_alert else []
             for r in recipients:
                 if not r.get("email"):
                     continue
@@ -5103,6 +5212,20 @@ def run_daily_inventory_alerts() -> None:
                     },
                 )
 
+            if scoped_recipients and scoped_error is not None:
+                for r in scoped_recipients:
+                    record_notification_delivery(
+                        tid, r["id"], "inventory_alert_email", False,
+                        context={"channel": "email", "recipient": r.get("email"),
+                                 "reason": f"scoped digest failed: {scoped_error}"},
+                    )
+            elif scoped_recipients:
+                from backend.notifications.scoped_digest import send_scoped_inventory_alerts
+                send_scoped_inventory_alerts(
+                    tid, scoped_recipients, wh_items or [],
+                    inventory_url=inventory_url, period=period,
+                )
+
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)
             # A crash BEFORE any send (a corrupt forecasts blob, an unreadable
@@ -5113,7 +5236,7 @@ def run_daily_inventory_alerts() -> None:
             # without a failed row, absence is ambiguous. Write one per
             # recipient so it shows up in /me/activity, where they can see it.
             try:
-                for r in get_tenant_alert_recipients(tid) or []:
+                for r in get_tenant_alert_recipients(tid, include_scoped=True) or []:
                     record_notification_delivery(
                         tid, r["id"], "inventory_alert_email", False,
                         context={"channel": "email", "recipient": r.get("email"),

@@ -134,7 +134,7 @@ export default function ForgotPasswordPage() {
         <div style={{ marginBottom: 10 }}>
           <BrandMark size={40} />
         </div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px', letterSpacing: '-0.03em' }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px', letterSpacing: '-0.03em' }}>
           {t('auth.recover_title')}
         </h1>
         <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>
@@ -180,7 +180,7 @@ export default function ForgotPasswordPage() {
                 <input
                   id="forgot-email" name="email"
                   type="email" required value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="you@company.com" style={_input}
+                  placeholder={t('auth.ph_email')} style={_input}
                   onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
                   onBlur={e => (e.target.style.borderColor = 'var(--surface)')}
                 />

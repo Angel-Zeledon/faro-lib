@@ -14,7 +14,7 @@
  *   ErrorState — a legible reason (derived from ApiError.kind, so the copy for
  *     "no permission" is written once) plus a retry affordance.
  */
-import { useBugReport } from '@/lib/bugReport'
+import { useFeedback } from '@/components/feedback/context'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { RefreshCw, AlertTriangle, Lock, SearchX, WifiOff, ServerCrash } from 'lucide-react'
@@ -260,7 +260,7 @@ export function ErrorState({ error, onRetry, compact }: {
   const copy = ERROR_COPY[kind]
   const detail = errorDetail(error)
   const showRetry = Boolean(onRetry) && copy.retryable
-  const reportBug = useBugReport()
+  const reportBug = useFeedback()
   // Only failures on our side are worth a report; the rest say what to do.
   const reportable = kind === 'server' || kind === 'unknown'
 
@@ -316,7 +316,7 @@ export function ErrorState({ error, onRetry, compact }: {
               textDecoration: 'underline', textUnderlineOffset: 3,
             }}
           >
-            {t('bugreport.action')}
+            {t('feedback.action')}
           </button>
         </div>
       )}

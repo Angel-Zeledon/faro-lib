@@ -1,8 +1,8 @@
 'use client'
 import { useEffect } from 'react'
 import Button from '@/components/ui/Button'
-import { AlertTriangle, Mail, RefreshCw } from 'lucide-react'
-import { useBugReport } from '@/lib/bugReport'
+import { AlertTriangle, MessageSquareText, RefreshCw } from 'lucide-react'
+import { useFeedback } from '@/components/feedback/context'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 export default function GlobalError({
@@ -13,7 +13,7 @@ export default function GlobalError({
   reset: () => void
 }) {
   const { t } = useLanguage()
-  const reportBug = useBugReport()
+  const reportBug = useFeedback()
   useEffect(() => { console.error('[page error]', error) }, [error])
 
   return (
@@ -47,10 +47,10 @@ export default function GlobalError({
           {t('states.retry')}
         </Button>
         <Button
-          variant="ghost" icon={<Mail size={13} />}
+          variant="ghost" icon={<MessageSquareText size={13} />}
           onClick={() => reportBug({ code: error.digest, detail: error.message })}
         >
-          {t('bugreport.action')}
+          {t('feedback.action')}
         </Button>
       </div>
     </div>

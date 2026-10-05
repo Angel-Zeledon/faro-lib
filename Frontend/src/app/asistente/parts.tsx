@@ -10,7 +10,9 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { chatSourceLabel } from '@/lib/enumLabels'
 import type { AssistantWelcome, ChatMessage } from '@/lib/types'
 import { User } from 'lucide-react'
-import { AssistantMark } from '@/components/brand/AssistantMark'
+import { AssistantAvatar } from '@/components/brand/AssistantAvatar'
+import { messageToPlainText } from '@/lib/chatText'
+import { CopyButton, StarButton } from './MessageActions'
 import { Markdown } from '@/components/ui/Markdown'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
@@ -75,10 +77,10 @@ export function TypingBubble() {
     <div data-testid="typing-indicator" style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 4 }}>
       <div style={{
         width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-        background: 'rgba(46,139,98,0.12)',
+        background: 'var(--accent-dim)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <AssistantMark size={14} />
+        <AssistantAvatar size={22} />
       </div>
       <div style={{
         background: 'var(--surface-2)', border: '1px solid var(--border)',
@@ -100,18 +102,26 @@ export function TypingBubble() {
 
 // ── Message bubble ─────────────────────────────────────────────────────────────
 /** `large`: the phone layout — 15px text, no avatars, wider bubbles. */
-export function MessageBubble({ msg, large = false, onRetry }: {
+export function MessageBubble({ msg, large = false, onRetry, onToggleStar }: {
   msg: ChatMessage
   large?: boolean
+  /** Star / unstar this message. Absent: the star is not offered. */
+  onToggleStar?: (msg: ChatMessage) => void
   /** Given only to the newest failed answer: asks the same question again. */
   onRetry?: () => void
 }) {
   const { t }  = useLanguage()
   const isUser = msg.role === 'user'
   const srcColor = msg.source ? (SOURCE_COLOR[msg.source] ?? '#94a3b8') : null
+  // A message that is not stored yet (optimistic) or is a failure notice has
+  // nothing to star, and an error notice has nothing worth copying.
+  const stored = !msg.id.startsWith('opt-') && !msg.id.startsWith('err-')
+  const showActions = msg.source !== 'error' && stored
   return (
     <div
       data-testid={isUser ? 'user-message' : 'assistant-message'}
+      data-msg-id={msg.id}
+      className={`msg-row${large ? ' msg-row-large' : ''}`}
       style={{
         display: 'flex', gap: 10, alignItems: 'flex-end',
         flexDirection: isUser ? 'row-reverse' : 'row',
@@ -123,10 +133,10 @@ export function MessageBubble({ msg, large = false, onRetry }: {
       {/* Avatar */}
       <div style={{
         width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-        background: isUser ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'rgba(46,139,98,0.12)',
+        background: isUser ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'var(--accent-dim)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {isUser ? <User size={13} color="var(--accent)" /> : <AssistantMark size={13} />}
+        {isUser ? <User size={13} color="var(--accent)" /> : <AssistantAvatar size={22} />}
       </div>
 
       </>)}
@@ -170,6 +180,14 @@ export function MessageBubble({ msg, large = false, onRetry }: {
               borderRadius: 4, padding: '1px 6px',
             }}>
               {chatSourceLabel(t, msg.source)}
+            </span>
+          )}
+          {showActions && (
+            <span className="msg-actions">
+              <CopyButton getText={() => messageToPlainText(msg.role, msg.content)} />
+              {onToggleStar && (
+                <StarButton starred={!!msg.starred_at} onToggle={() => onToggleStar(msg)} />
+              )}
             </span>
           )}
         </div>

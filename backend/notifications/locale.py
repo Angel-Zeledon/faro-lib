@@ -128,6 +128,12 @@ _ES: dict[str, str] = {
     "alert_email_col_supplier":     "Proveedor",
     "alert_email_cta":              "Ver tablero de inventario",
     "alert_email_footer":           "Esta alerta se genera automáticamente cuando hay productos en riesgo de stockout.",
+    # ── Warehouse-scoped digests (a user limited to some warehouses) ──────────
+    # The same digests as the company ones, restricted to the recipient's own
+    # warehouses; these keys only say so. `{warehouses}` is a comma-joined list.
+    "digest_scope_subject":         "{subject} (bodegas: {warehouses})",
+    "digest_scope_line":            "Este resumen cubre solo tus bodegas: <strong>{warehouses}</strong>.",
+    "digest_scope_whatsapp":        "🏬 Solo tus bodegas: {warehouses}",
     # ── Daily stockout digest (WhatsApp) ──────────────────────────────────────
     # Separate singular/plural entries wherever the verb agrees with the count —
     # a `{s}` suffix cannot express "se agota" → "se agotan".
@@ -185,8 +191,8 @@ _ES: dict[str, str] = {
     "roi_email_headline_default":       "Esto es lo que hiciste con StockAI en {month}.",
     "roi_email_metric_adoption_label":  "de las recomendaciones que decidiste",
     "roi_email_metric_adoption_note":   "Seguiste {followed} de las {shown} líneas sobre las que llegaste a decidir. Las que dejaste pasar sin tocar no están en ninguno de los dos lados.",
-    "roi_email_metric_risks_label":     "líneas urgentes que pediste",
-    "roi_email_metric_risks_note":      "Líneas marcadas “Pedir ya” que sí ordenaste en el mes — no productos distintos. Es lo que hiciste, no una estimación de quiebres evitados, y no comprueba que hayan llegado.",
+    "roi_email_metric_urgent_lines_label":     "líneas urgentes que pediste",
+    "roi_email_metric_urgent_lines_note":      "Líneas marcadas “Pedir ya” que sí ordenaste en el mes — no productos distintos. Es lo que hiciste, no una estimación de quiebres evitados, y no comprueba que hayan llegado.",
     "roi_email_metric_capital_label":   "de baja en tu sobrestock",
     "roi_email_metric_capital_note":    "Diferencia medida entre el valor de tu inventario en sobrestock al inicio y al final del mes. No sabemos cuánto de esa baja fue por tus compras: el sobrestock también baja al vender, al registrar merma, al borrar productos y al reentrenar.",
     "roi_email_metric_purchases_label": "en compras gestionadas",
@@ -384,6 +390,9 @@ _EN: dict[str, str] = {
     "assistant_unit_day":             "days",
     "assistant_unit_week":            "weeks",
     "assistant_unit_month":           "months",
+    "digest_scope_subject":           "{subject} (warehouses: {warehouses})",
+    "digest_scope_line":              "This summary covers only your warehouses: <strong>{warehouses}</strong>.",
+    "digest_scope_whatsapp":          "🏬 Your warehouses only: {warehouses}",
     "wa_plan_locked":                 "The WhatsApp assistant is not included in your company's plan. Ask your administrator to enable it by writing to us from StockAI; everything else stays available in the app.",
 }
 

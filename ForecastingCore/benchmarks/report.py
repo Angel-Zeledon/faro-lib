@@ -6,7 +6,7 @@ import math
 from collections import Counter, defaultdict
 from typing import Dict, List
 
-from .metrics import SEGMENTS, fva, nanmean
+from .metrics import SEGMENTS, STOCKOUT_MULTIPLIER, fva, nanmean
 
 REFERENCE = "naive"
 
@@ -31,6 +31,19 @@ def _agg_method(recs: List[dict], method: str) -> dict:
         "smape": nanmean(m["smape"] for m, _, _ in ms),
         "bias": _pooled_ratio(signed, act) if act > 0 else float("nan"),
     }
+    # Records written before cost_sum existed simply lack it; no number is
+    # invented for them.
+    if all("cost_sum" in m for m, _, _ in ms):
+        out["cost_ratio"] = _pooled_ratio(sum(m["cost_sum"] for m, _, _ in ms), act)
+    # The same two errors on the HORIZON TOTAL per series-origin — the number
+    # an order quantity is built from. Per-period cost on a zero-inflated
+    # series is minimised by forecasting zero whenever P(0) > 3/4 (the
+    # optimum of a 3:1 linear loss is the 75th percentile), so per-period
+    # metrics alone cannot rank intermittent models for a purchase decision.
+    totals = [m["signed_err_sum"] for m, _, _ in ms]
+    out["total_wape"] = _pooled_ratio(sum(abs(s) for s in totals), act)
+    out["total_cost_ratio"] = _pooled_ratio(
+        sum(max(s, 0.0) + STOCKOUT_MULTIPLIER * max(-s, 0.0) for s in totals), act)
     if method != REFERENCE:
         ref_err = sum(n["abs_err_sum"] for _, n, _ in ms if n)
         out["fva_vs_naive"] = fva(err, ref_err)
@@ -98,13 +111,15 @@ def to_markdown(dataset_label: str, agg: dict, mix: dict, meta: dict) -> str:
             continue
         a = agg[seg]
         lines += [f"**Segment `{seg}`** (n={a['n_series_origins']} series-origins)", "",
-                  "| method | MASE | WAPE | sMAPE | bias | FVA vs naive | FVA vs seasonal naive | wins/losses vs naive | pinball (scaled) | cov80 |",
-                  "|---|---|---|---|---|---|---|---|---|---|"]
+                  "| method | n | MASE | WAPE | sMAPE | bias | asym. cost / demand | total WAPE | total asym. cost / demand | FVA vs naive | FVA vs seasonal naive | wins/losses vs naive | pinball (scaled) | cov80 |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for m, v in a["methods"].items():
             wl = (f"{v['wins_vs_naive']}/{v['losses_vs_naive']}" if "wins_vs_naive" in v else "-")
             lines.append(
-                f"| {m} | {_f(v.get('mase'))} | {_f(v.get('wape'), pct=True)} | {_f(v.get('smape'), 1)} "
-                f"| {_f(v.get('bias'), pct=True)} | {_f(v.get('fva_vs_naive'), pct=True)} "
+                f"| {m} | {v.get('n', '-')} | {_f(v.get('mase'))} | {_f(v.get('wape'), pct=True)} | {_f(v.get('smape'), 1)} "
+                f"| {_f(v.get('bias'), pct=True)} | {_f(v.get('cost_ratio'))} "
+                f"| {_f(v.get('total_wape'), pct=True)} | {_f(v.get('total_cost_ratio'))} "
+                f"| {_f(v.get('fva_vs_naive'), pct=True)} "
                 f"| {_f(v.get('fva_vs_seasonal_naive'), pct=True)} | {wl} "
                 f"| {_f(v.get('pinball_scaled'))} | {_f(v.get('coverage80'), pct=True)} |")
         lines.append("")

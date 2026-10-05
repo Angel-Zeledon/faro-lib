@@ -62,6 +62,7 @@ import {
 } from 'lucide-react'
 import CommittedDemandPanel from '@/components/inventory/CommittedDemandPanel'
 import AnalogyPanel from '@/components/inventory/AnalogyPanel'
+import SupplyContractsPanel from '@/components/inventory/SupplyContractsPanel'
 import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -684,7 +685,7 @@ function KPICard({ label, value, color, sub, onClick, active }: {
  // beside the label, and the accent only to say "this filter is on".
  const body = (
  <>
- <div style={{ fontSize: 24, fontWeight: 600, color: C.text, lineHeight: 1.1, letterSpacing: '-0.02em', overflowWrap: 'anywhere' }}>{value}</div>
+ <div style={{ fontSize: 20, fontWeight: 600, color: C.text, lineHeight: 1.1, letterSpacing: '-0.02em', overflowWrap: 'anywhere' }}>{value}</div>
  <div style={{ fontSize: 12, color: C.muted, marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
  <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
  {label}
@@ -1889,12 +1890,12 @@ function SimulatorPanel({ item }: { item: InventoryStatusItem }) {
    }}>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_original_rec')}</div>
-     <div style={{ fontSize: 20, fontWeight: 800, color: C.muted }}>{fmtNum(originalRec)} {t('inventory.unit_und')}</div>
+     <div style={{ fontSize: 17, fontWeight: 800, color: C.muted }}>{fmtNum(originalRec)} {t('inventory.unit_und')}</div>
     </div>
-    <div style={{ fontSize: 20, color: C.dim, display: narrow ? 'none' : undefined }}>→</div>
+    <div style={{ fontSize: 17, color: C.dim, display: narrow ? 'none' : undefined }}>→</div>
     <div>
      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{t('inventory.sim_with_changes')}</div>
-     <div style={{ fontSize: 24, fontWeight: 900, color: delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.text }}>
+     <div style={{ fontSize: 20, fontWeight: 900, color: delta > 0 ? '#ef4444' : delta < 0 ? '#22c55e' : C.text }}>
       {fmtNum(simRecommended)} {t('inventory.unit_und')}
      </div>
     </div>
@@ -2136,6 +2137,9 @@ export default function InventoryPage() {
  useEffect(() => {
   if (viewMode === 'simple' || viewMode === 'table' || viewMode === 'provider') lastPrimaryView.current = viewMode
  }, [viewMode])
+ // Bumped when a contract or a contract's commitment changes, so the two
+ // committed-demand panels (contracts and commitments) re-read each other.
+ const [commitmentsVersion, setCommitmentsVersion] = useState(0)
  const [expandedSku, setExpandedSku] = useState<string | null>(null)
  // Phone only: the SKU whose detail sheet is open (the desktop expands a row).
  const [detailSku, setDetailSku] = useState<string | null>(null)
@@ -3536,14 +3540,14 @@ export default function InventoryPage() {
       background: C.surface, border: `1px solid ${C.border}`,
       borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.red}`,
      }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{formatMoneyCompact(deadCapital.total_value)}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.red }}>{formatMoneyCompact(deadCapital.total_value)}</div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.deadcap_kpi_total')}</div>
      </div>
      <div style={{
       background: C.surface, border: `1px solid ${C.border}`,
       borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.amber}`,
      }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: C.amber }}>{deadCapital.sku_count}</div>
+      <div style={{ fontSize: 17, fontWeight: 800, color: C.amber }}>{deadCapital.sku_count}</div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.deadcap_kpi_skus')}</div>
      </div>
      {deadCapital.unpriced_sku_count > 0 && (
@@ -3551,7 +3555,7 @@ export default function InventoryPage() {
        background: C.surface, border: `1px solid ${C.border}`,
        borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.dim}`,
       }}>
-       <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{deadCapital.unpriced_sku_count}</div>
+       <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{deadCapital.unpriced_sku_count}</div>
        <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.deadcap_kpi_unpriced')}</div>
       </div>
      )}
@@ -3724,7 +3728,7 @@ export default function InventoryPage() {
      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
      padding: '14px 18px', borderTop: `3px solid ${C.red}`, marginBottom: 20, maxWidth: 260,
     }}>
-     <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{costInflation.supplier_count}</div>
+     <div style={{ fontSize: 18, fontWeight: 800, color: C.red }}>{costInflation.supplier_count}</div>
      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.inflation_kpi_suppliers')}</div>
     </div>
 
@@ -3899,7 +3903,7 @@ export default function InventoryPage() {
      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
      padding: '14px 18px', borderTop: `3px solid ${C.red}`, marginBottom: 20, maxWidth: 260,
     }}>
-     <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{marginErosion.sku_count}</div>
+     <div style={{ fontSize: 18, fontWeight: 800, color: C.red }}>{marginErosion.sku_count}</div>
      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.erosion_kpi_count')}</div>
     </div>
 
@@ -4064,14 +4068,14 @@ export default function InventoryPage() {
       background: C.surface, border: `1px solid ${C.border}`,
       borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.text}`,
      }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{formatMoneyCompact(forecastMoney.total_revenue)}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{formatMoneyCompact(forecastMoney.total_revenue)}</div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.money_kpi_revenue')}</div>
      </div>
      <div style={{
       background: C.surface, border: `1px solid ${C.border}`,
       borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${forecastMoney.total_margin < 0 ? C.red : C.green}`,
      }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: forecastMoney.total_margin < 0 ? C.red : C.green }}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: forecastMoney.total_margin < 0 ? C.red : C.green }}>
        {formatMoneyCompact(forecastMoney.total_margin)}
       </div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>
@@ -4083,7 +4087,7 @@ export default function InventoryPage() {
       background: C.surface, border: `1px solid ${C.border}`,
       borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.amber}`,
      }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: C.amber }}>{forecastMoney.sku_count}</div>
+      <div style={{ fontSize: 17, fontWeight: 800, color: C.amber }}>{forecastMoney.sku_count}</div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.money_kpi_skus')}</div>
      </div>
     </div>
@@ -4184,7 +4188,9 @@ export default function InventoryPage() {
  ) : viewMode === 'committed' ? (
  /* ── Committed demand: one component for desktop and phone ── */
  <div style={{ padding: narrow ? 0 : undefined, display: 'flex', flexDirection: 'column', gap: 16 }}>
-  <CommittedDemandPanel />
+  <CommittedDemandPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
+  {/* Blanket contracts: their releases become the commitments listed above. */}
+  <SupplyContractsPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
   {/* Forecast by analogy: a new product with no history plans from products it sells like. */}
   <AnalogyPanel onChanged={() => { if (sessionId) load(sessionId) }} />
  </div>
@@ -4323,32 +4329,32 @@ export default function InventoryPage() {
    <>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 12 }}>
      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.text}` }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{costOfIgnoring.summary.skus_flagged}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{costOfIgnoring.summary.skus_flagged}</div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_flagged')}</div>
      </div>
      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.green}` }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.green }}>{costOfIgnoring.summary.skus_ordered}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.green }}>{costOfIgnoring.summary.skus_ordered}</div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_ordered')}</div>
      </div>
      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.red}` }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>{costOfIgnoring.summary.skus_likely_stockout}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.red }}>{costOfIgnoring.summary.skus_likely_stockout}</div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_stockout')}</div>
      </div>
      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.dim}` }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.dim }}>{costOfIgnoring.summary.skus_unclear}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.dim }}>{costOfIgnoring.summary.skus_unclear}</div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_unclear')}</div>
      </div>
     </div>
 
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16, maxWidth: 520 }}>
      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.amber}` }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: C.amber }}>
+      <div style={{ fontSize: 17, fontWeight: 800, color: C.amber }}>
        {costOfIgnoring.summary.total_estimated_lost_units == null ? '—' : costOfIgnoring.summary.total_estimated_lost_units.toLocaleString()}
       </div>
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>{t('inventory.ignoring_kpi_lost_units')}</div>
      </div>
      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', borderTop: `3px solid ${C.red}` }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: costOfIgnoring.summary.total_estimated_lost_value == null ? C.dim : C.red }}>
+      <div style={{ fontSize: 17, fontWeight: 800, color: costOfIgnoring.summary.total_estimated_lost_value == null ? C.dim : C.red }}>
        {costOfIgnoring.summary.total_estimated_lost_value == null
         ? t('inventory.ignoring_kpi_lost_value_none')
         : formatMoneyCompact(costOfIgnoring.summary.total_estimated_lost_value)}

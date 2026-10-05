@@ -2,7 +2,7 @@ import {
   ShoppingCart, ClipboardList, Package, Boxes, Truck, TrendingUp, Database,
   History, MessagesSquare, FlaskConical, Plug, Settings, Users, KeyRound,
   Upload, Plus, SunMoon, Languages, LifeBuoy, MessageSquare, ListChecks, ScrollText,
-  Clock, Code2, ServerCog, User, ScanLine, type LucideIcon,
+  Clock, Code2, ServerCog, User, ScanLine, FileCheck2, type LucideIcon,
 } from 'lucide-react'
 import { siteHref } from '@/lib/siteUrls'
 import type { InventoryStatusItem } from '@/lib/types'
@@ -57,6 +57,7 @@ export const COMMANDS: Command[] = [
   { id: 'go.sessions',     group: 'navigate', href: '/historial',            labelKey: 'nav.sessions',      aliasKey: 'cmd.alias.sessions',   Icon: History },
   { id: 'go.analyst',      group: 'navigate', href: '/asistente',             labelKey: 'nav.analyst',       aliasKey: 'cmd.alias.analyst',    Icon: MessagesSquare },
   { id: 'go.scenarios',    group: 'navigate', href: '/escenarios',           labelKey: 'nav.scenarios',     aliasKey: 'cmd.alias.scenarios',  Icon: FlaskConical },
+  { id: 'go.demand_plan',  group: 'navigate', href: '/plan-de-demanda',      labelKey: 'nav.demand_plan',   aliasKey: 'cmd.alias.demand_plan', Icon: FileCheck2 },
   // The palette lists EVERY screen, including the ones the sidebar now
   // reaches through Pronósticos, Inventario or Configuración: it is the power
   // user's shortcut past the hubs. It must still hide what role hides

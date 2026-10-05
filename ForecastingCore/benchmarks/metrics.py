@@ -124,6 +124,21 @@ def classify_segment(history) -> str:
     return "intermittent" if cv2 < CV2_CUTOFF else "lumpy"
 
 
+# Same default as the engine's DEFAULT_STOCKOUT_MULTIPLIER
+# (forecasting_core/evaluation/metrics.py): a unit short costs 3x a unit over.
+# Duplicated, not imported, to keep this module engine-free.
+STOCKOUT_MULTIPLIER = 3.0
+
+
+def asymmetric_cost_sum(y, f, stockout_multiplier: float = STOCKOUT_MULTIPLIER) -> float:
+    """Total asymmetric cost: sum(over + multiplier * under). Pooled over
+    series and divided by total actual demand it becomes a scale-free ratio
+    (``cost_ratio`` in the report), the same objective the engine's tuner and
+    champion race minimise."""
+    y, f = _arr(y), _arr(f)
+    return float(np.sum(np.maximum(f - y, 0.0) + stockout_multiplier * np.maximum(y - f, 0.0)))
+
+
 def fva(err_method: float, err_naive: float) -> float:
     """Forecast value added: 1 - err_method / err_naive (positive = better than
     naive). NaN if the naive error is zero."""
@@ -150,6 +165,7 @@ def score_forecast(y, f, insample, season: int,
         "abs_err_sum": float(np.sum(np.abs(_arr(f) - _arr(y)))),
         "actual_sum": float(np.sum(np.abs(_arr(y)))),
         "signed_err_sum": float(np.sum(_arr(f) - _arr(y))),
+        "cost_sum": asymmetric_cost_sum(y, f),
     }
     if quantiles:
         pb = pinball(y, quantiles)

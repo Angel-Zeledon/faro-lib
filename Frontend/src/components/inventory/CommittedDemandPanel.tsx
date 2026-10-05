@@ -32,7 +32,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10)
 
 interface BulkRowError { row: number; code: string; params?: Record<string, unknown> }
 
-export default function CommittedDemandPanel() {
+export default function CommittedDemandPanel({ onChanged, reloadToken }: { onChanged?: () => void; reloadToken?: number } = {}) {
   const { t, lang } = useLanguage()
   const errorDetail = useErrorDetail()
   const confirm = useConfirm()
@@ -44,6 +44,9 @@ export default function CommittedDemandPanel() {
   const [items, setItems] = useState<CommittedDemand[]>([])
   const [byCustomer, setByCustomer] = useState<CommittedDemandCustomer[]>([])
   const [loaded, setLoaded] = useState(false)
+  // True for a user limited to some warehouses: the list and the at-risk
+  // verdict cover their warehouses only, and the screen says so.
+  const [scoped, setScoped] = useState(false)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -65,12 +68,12 @@ export default function CommittedDemandPanel() {
 
   const load = useCallback(() => {
     getCommittedDemand({ status })
-      .then(r => { setItems(r.items); setByCustomer(r.by_customer ?? []); setLoadError(null) })
+      .then(r => { setItems(r.items); setByCustomer(r.by_customer ?? []); setScoped(r.scope === 'warehouses'); setLoadError(null) })
       .catch(e => { setItems([]); setByCustomer([]); setLoadError(errorDetail(e)) })
       .finally(() => setLoaded(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [load, reloadToken])
   useEffect(() => { listWarehouses().then(setWarehouses).catch(() => setWarehouses([])) }, [])
 
   const sorted = useMemo(
@@ -133,6 +136,8 @@ export default function CommittedDemandPanel() {
     try {
       await setCommittedDemandStatus(c.id, next)
       load()
+      // A contract's progress is read from these rows: let it refresh too.
+      if (c.source === 'contract') onChanged?.()
     } catch (e: unknown) {
       setError(errorDetail(e))
     } finally { setBusy(false) }
@@ -317,6 +322,9 @@ export default function CommittedDemandPanel() {
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             {t('committed.by_customer_title')}
           </div>
+          {scoped && (
+            <p style={{ margin: 0, fontSize: 12, color: C.dim }}>{t('committed.scoped_note')}</p>
+          )}
           {byCustomer.map(g => (
             <div key={g.customer ?? '__none__'} style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', alignItems: 'baseline', fontSize: 12.5, color: C.text }}>
               <span style={{ fontWeight: 600 }}>{g.customer || t('committed.customer_unknown')}</span>
@@ -349,6 +357,11 @@ export default function CommittedDemandPanel() {
                   {c.overdue && (
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: C.amber, border: `1px solid ${C.amber}`, borderRadius: 6, padding: '1px 6px' }}>
                       {t('committed.overdue')}
+                    </span>
+                  )}
+                  {c.source === 'contract' && (
+                    <span title={t('committed.from_contract_hint')} style={{ fontSize: 10.5, fontWeight: 600, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 6, padding: '1px 6px' }}>
+                      {t('committed.from_contract')}
                     </span>
                   )}
                   {c.status === 'open' && c.at_risk === true && (

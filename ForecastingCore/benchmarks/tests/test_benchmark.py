@@ -22,6 +22,15 @@ def test_mae_wape_bias_known_values():
     assert metrics.bias(y, f) == pytest.approx(6 / 60)      # (2 - 2 + 6) / 60
 
 
+def test_asymmetric_cost_known_value_and_pooled_ratio():
+    y, f = [10, 20, 30], [12, 18, 36]          # over 2, under 2, over 6
+    assert metrics.asymmetric_cost_sum(y, f) == pytest.approx(2 + 3 * 2 + 6)
+    from benchmarks.report import _agg_method
+    rec = {"methods": {"m": metrics.score_forecast(y, f, [1, 2, 3, 4], 1),
+                       "naive": metrics.score_forecast(y, [30, 30, 30], [1, 2, 3, 4], 1)}}
+    assert _agg_method([rec, rec], "m")["cost_ratio"] == pytest.approx(14 / 60)
+
+
 def test_wape_and_bias_undefined_on_zero_actuals():
     assert math.isnan(metrics.wape([0, 0], [1, 1]))
     assert math.isnan(metrics.bias([0, 0], [1, 1]))

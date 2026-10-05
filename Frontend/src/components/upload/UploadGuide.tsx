@@ -15,13 +15,14 @@
  * Header names are the Spanish aliases the template ships (CSV vocabulary is
  * deliberately Spanish, see CLAUDE.md); meanings are i18n keys.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Download, FileSpreadsheet, ChevronDown, ChevronRight, Check } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { MiniTable } from '@/components/ui/ExplainerVisual'
 import { downloadWorkbook } from '@/lib/excel'
 import { downloadCsvTemplate, CSV_TEMPLATE_HEADERS, CSV_TEMPLATE_ROWS } from '@/lib/csvCheck'
 import { downloadInventoryTemplate } from '@/lib/api'
+import { NARROW_MEDIA_QUERY } from '@/hooks/useIsNarrow'
 
 export type UploadKind = 'sales' | 'stock'
 
@@ -65,6 +66,12 @@ const CHECKLIST: Record<UploadKind, string[]> = {
 export default function UploadGuide({ kind, defaultOpen = true }: { kind: UploadKind; defaultOpen?: boolean }) {
   const { t } = useLanguage()
   const [open, setOpen] = useState(defaultOpen)
+  // On a phone the open guide is several screens tall and pushes the file
+  // picker out of sight, so it starts folded there (one tap opens it). The
+  // first render stays desktop-shaped to match the server; this runs once.
+  useEffect(() => {
+    if (defaultOpen && window.matchMedia?.(NARROW_MEDIA_QUERY).matches) setOpen(false)
+  }, [defaultOpen])
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const cols = kind === 'sales' ? SALES_COLS : STOCK_COLS
   const required = cols.filter(c => c.required)

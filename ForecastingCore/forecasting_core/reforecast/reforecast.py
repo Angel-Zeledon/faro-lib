@@ -12,7 +12,8 @@ What each family does with the new actuals
 ``arima``  the fitted parameters are applied to the new history (``filter``).
 ``ets``  the smoothing parameters and initial states are applied to the new
     history. Needs the series to start where it started at training time.
-``croston``  has no fitted state beyond its constant: re-run on the new history.
+``croston`` / ``tsb`` / ``adida`` / ``imapa``  no fitted state beyond their
+    constants: re-run on the new history.
 ``prophet`` (and anything else with no carried state)  CANNOT be updated: it is
     refitted for that series, and the result says so (``mode == "refit"``).
 
@@ -141,6 +142,20 @@ def _check_columns(cfg, df: pd.DataFrame) -> None:
 
 def _check_schema(ctx: dict, cfg, df: pd.DataFrame) -> None:
     changed = diff_schema(ctx.get("input_schema") or {}, input_schema(cfg))
+    if set(changed) == {"group_keys"}:
+        trained_keys = list(changed["group_keys"]["trained"] or [])
+        current_keys = list(changed["group_keys"]["current"] or [])
+        if len(trained_keys) >= 2 and current_keys == trained_keys[:1]:
+            # Models fitted per (SKU, store) before stores were summed into one
+            # series per SKU (data/store_rollup.py). Those models forecast one
+            # store's demand as the SKU's, so they must not be reused; the user
+            # changed nothing, so "your columns changed" would be a false reason.
+            raise ReforecastRefused(
+                "stores_summed_since_training",
+                "The models were trained per (SKU, store); the session now "
+                "forecasts each SKU on the sum of its stores, so a full refit is "
+                "required.",
+                {"trained_group_keys": ", ".join(map(str, trained_keys))})
     if changed:
         raise ReforecastRefused(
             "schema_incompatible",
@@ -224,6 +239,12 @@ def _stat_from_state(model: str, state: dict, series: np.ndarray, h: int,
     if model == "croston" and state.get("kind") == "croston":
         from forecasting_core.models.croston import croston_forecast
         return {"forecast": croston_forecast(series, alpha=float(state["alpha"]), n_ahead=h)}
+
+    if model in ("tsb", "adida", "imapa"):
+        # Same as Croston: fixed constants, no fitted state — re-run them.
+        from forecasting_core.models.intermittent import forecast_from_state
+        fc = forecast_from_state(model, state, series, h)
+        return None if fc is None else {"forecast": fc}
     return None
 
 
@@ -241,6 +262,15 @@ def _refit_stat(model: str, sku: str, df: pd.DataFrame, cfg, h: int) -> Optional
         extra = {}
     elif model == "croston":
         from forecasting_core.models.croston import run_croston_core as fn
+        extra = {}
+    elif model == "tsb":
+        from forecasting_core.models.intermittent import run_tsb_core as fn
+        extra = {}
+    elif model == "adida":
+        from forecasting_core.models.intermittent import run_adida_core as fn
+        extra = {}
+    elif model == "imapa":
+        from forecasting_core.models.intermittent import run_imapa_core as fn
         extra = {}
     elif model == "prophet":
         from forecasting_core.models.prophet import run_prophet_core as fn
