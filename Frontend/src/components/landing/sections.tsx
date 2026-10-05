@@ -141,7 +141,12 @@ export function FeaturesSection({ alt = false }: { alt?: boolean }) {
 // product stops at 100 turns the first real import into a broken promise.
 // `calcHref` points at the estimate calculator: `#calculadora` on /precios,
 // `/precios#calculadora` anywhere else.
-export function PricingSection({ calcHref = '/precios#calculadora', showCorporate = false }: { calcHref?: string; showCorporate?: boolean }) {
+// `part` (the /precios page only): the page renders 'plans' right under its
+// hero (the plans, the corporate band and the "how an account grows" card),
+// the calculator after them, and 'why' (the promises and what the price is
+// weighed against) further down. The home page keeps `part="all"`: the
+// argument first, then the plans.
+export function PricingSection({ calcHref = '/precios#calculadora', showCorporate = false, part = 'all' }: { calcHref?: string; showCorporate?: boolean; part?: 'all' | 'plans' | 'why' }) {
  const { L, lang } = useCopy()
  const FREE_LIMITS = L.pricing.limits
  const fromPrice = fill(L.pricing.paidFrom, { price: fmtMoney(FULL_PLAN.baseMonthly, lang) })
@@ -152,8 +157,8 @@ export function PricingSection({ calcHref = '/precios#calculadora', showCorporat
   users: fmtNum(FULL_PLAN.included.users, lang),
   warehouses: fmtNum(FULL_PLAN.included.warehouses, lang),
  })
- return (
- <Section id="precio" alt>
+ const argument = (
+ <>
  <Tag>{L.pricing.tag}</Tag>
  <H2>{L.pricing.title}</H2>
  <Lead maxWidth={720}>
@@ -177,6 +182,10 @@ export function PricingSection({ calcHref = '/precios#calculadora', showCorporat
  ))}
  </ul>
 
+ </>
+ )
+ const plans = (
+ <>
  <div className="grid-2 price-grid">
  <div data-reveal className="lp-card price-card">
  <div className="lp-label" style={{ marginBottom: 10 }}>{L.pricing.freeLabel}</div>
@@ -271,6 +280,18 @@ export function PricingSection({ calcHref = '/precios#calculadora', showCorporat
  <a href={mailHref(L.pricing.mailSubject)} className="btn-ghost btn-sm">{L.pricing.ctaEmail}</a>
  </div>
  </div>
+ </>
+ )
+ if (part === 'plans') {
+  return <Section id="precio" alt className="sec-plans-first">{plans}</Section>
+ }
+ if (part === 'why') {
+  return <Section id="por-que-este-precio" alt>{argument}</Section>
+ }
+ return (
+ <Section id="precio" alt>
+ {argument}
+ {plans}
  </Section>
  )
 }

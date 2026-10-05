@@ -64,6 +64,25 @@ export const CP_CSS = `
 .gd-head { position: sticky; top: 104px; }
 .gd-head .lp-h2 { font-size: clamp(26px, 2.5vw, 34px); margin: 0; }
 .gd-body > :last-child { margin-bottom: 0; }
+/* Callouts: a formula, a worked example or the one thing to keep. Three looks for three jobs, no icons. */
+.gd-callout { margin: 22px 0 26px; max-width: 68ch; font-size: 16px; border-radius: 14px; padding: 18px 22px 20px; position: relative; }
+.gd-callout-label { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--lp-accent); letter-spacing: 0.01em; }
+.gd-callout-lines { list-style: none; margin: 0; padding: 0; }
+.gd-callout-lines li { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gd-callout.is-formula { background: var(--lp-accent-bg); border: 1px solid var(--lp-accent-bd); border-left: 4px solid var(--lp-accent); }
+.gd-callout.is-formula .gd-callout-lines li { font-family: var(--font-brand), system-ui, sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.45; color: var(--lp-text); padding: 4px 0; }
+.gd-callout.is-formula .gd-callout-lines li + li { font-size: 15px; font-weight: 500; letter-spacing: -0.005em; color: var(--lp-body); }
+.gd-callout.is-example { background: var(--lp-bg2); border: 1px solid var(--lp-border); }
+.sec-alt .gd-callout.is-example { background: var(--lp-bg); }
+.gd-callout.is-example .gd-callout-lines li { font-size: 15px; line-height: 1.55; color: var(--lp-text); padding: 9px 0; border-top: 1px solid var(--lp-border); }
+.gd-callout.is-example .gd-callout-lines li:last-child { font-weight: 700; }
+.gd-callout.is-takeaway { background: var(--lp-strip); border: 1px solid rgba(255,255,255,0.08); }
+.gd-callout.is-takeaway .gd-callout-label { color: var(--lp-beam); }
+.gd-callout.is-takeaway .gd-callout-lines li { font-family: var(--font-brand), system-ui, sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.4; color: #fff; text-wrap: pretty; }
+@media (max-width: 640px) {
+ .gd-callout { padding: 16px 16px 18px; }
+ .gd-callout.is-formula .gd-callout-lines li, .gd-callout.is-takeaway .gd-callout-lines li { font-size: 17px; }
+}
 @media (max-width: 960px) {
  .sec.gd-sec { padding: 56px 0; }
  .gd-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }

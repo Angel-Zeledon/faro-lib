@@ -100,6 +100,8 @@ export default function LandingPage() {
  <div className="hero-grid" />
  </div>
  <div className="hero-inner">
+ <div className="hero-cols">
+ <div className="hero-copy">
 
  <p className="hero-eyebrow lp-rise lp-d1">{L.hero.eyebrow}</p>
 
@@ -119,6 +121,9 @@ export default function LandingPage() {
  <Check />
  <span>{L.hero.trialNote}</span>
  </p>
+ </div>
+
+ </div>
 
  <div className="hero-pills lp-rise lp-d5">
  <div className="lp-label" style={{ marginRight: 4 }}>{L.misc.industriesLabel}</div>
@@ -217,7 +222,7 @@ export default function LandingPage() {
  <HomeTour />
 
  {/* ── INDUSTRIES ───────────────────────────────────────────────────── */}
- <Section id="casos" alt>
+ <Section id="casos">
  <Tag>{L.cases.tag}</Tag>
  <H2>{L.cases.title}</H2>
  <Lead>
@@ -230,7 +235,7 @@ export default function LandingPage() {
  </button>
  ))}
  </div>
- <div className="split lp-card lp-card-soft" style={{ padding: '38px 40px', borderRadius: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
+ <div className="split lp-card lp-card-soft" style={{ padding: '38px 40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'start' }}>
  <div key={`a-${activeCase}`} className="lp-swap">
  <div className="lp-label" style={{ color: T.accent, marginBottom: 12 }}>{CASES[activeCase].label}</div>
  <div style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, color: T.text, marginBottom: 16, letterSpacing: '-0.03em', lineHeight: 1.25 }}>{CASES[activeCase].title}</div>
@@ -259,7 +264,7 @@ export default function LandingPage() {
      column restated the morning section. */}
 
  {/* ── VS EXCEL ─────────────────────────────────────────────────────── */}
- <Section id="comparacion">
+ <Section id="comparacion" alt>
  <Tag>{L.compare.tag}</Tag>
  <H2>{L.compare.title}</H2>
  <Lead>
@@ -287,10 +292,10 @@ export default function LandingPage() {
  </Section>
 
  {/* ── HOW IT DECIDES ───────────────────────────────────────────────── */}
- <DecideSection />
+ <DecideSection alt={false} />
 
  {/* ── WHAT YOU NEED ────────────────────────────────────────────────── */}
- <Section id="empezar">
+ <Section id="empezar" alt>
  <Tag>{L.start.tag}</Tag>
  <H2>{L.start.title}</H2>
  <Lead maxWidth={680}>

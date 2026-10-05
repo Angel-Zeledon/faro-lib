@@ -119,7 +119,16 @@ body { margin: 0; background: var(--lp-bg); color: var(--lp-text); font-family: 
 html { scroll-behavior: smooth; }
 .lp { overflow-x: clip; background: var(--lp-bg); color: var(--lp-text); -webkit-font-smoothing: antialiased; }
 .lp ::selection { background: rgba(76,195,181,0.30); }
-.lp a:focus-visible, .lp button:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 3px; border-radius: 8px; }
+.lp a:focus-visible, .lp button:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 3px; }
+/* Plain inline links get a softened ring; buttons keep their own corners (a radius here used to reshape a focused button). */
+.lp a:not([class]):focus-visible { border-radius: 4px; }
+/* globals.css gives every focused element a 4px radius; that would reshape a rounded button the moment it is focused, so these keep their own corners. */
+.lp .btn-primary:focus-visible, .lp .btn-ghost:focus-visible { border-radius: 12px; }
+.lp .btn-sm:focus-visible, .lp .nav-signup:focus-visible { border-radius: 10px; }
+.lp .final-btn:focus-visible { border-radius: 11px; }
+.lp .case-tab:focus-visible { border-radius: 9px; }
+/* Dark surfaces: the teal ring is invisible on petroleum, so it turns light. */
+.lp .strip-shell :focus-visible, .lp .final-sec :focus-visible, .lp .gd-callout.is-takeaway :focus-visible, .lp .price-card.is-paid :focus-visible { outline-color: var(--lp-beam); }
 
 /* The nav is fixed, so an anchor jump parks the target under it: click Precio
    in the menu and the eyebrow and half the headline are behind the bar. The
@@ -249,6 +258,8 @@ section[id], #demo { scroll-margin-top: 88px; }
 }
 .lp-card-soft { background: var(--lp-bg2); }
 .sec-alt .lp-card { background: var(--lp-bg); }
+/* The soft card is the tinted one wherever it sits, including on an alternate band. */
+.sec-alt .lp-card.lp-card-soft { background: var(--lp-surface); }
 .lp-card-title { font-size: 15px; font-weight: 700; color: var(--lp-text); margin-bottom: 8px; line-height: 1.4; letter-spacing: -0.01em; }
 .lp-card-body { font-size: 13.5px; color: var(--lp-body); line-height: 1.68; }
 .lp-bar { width: 28px; height: 3px; border-radius: 2px; margin-bottom: 18px; background: linear-gradient(90deg, var(--lp-accent), var(--lp-beam)); }
@@ -276,6 +287,16 @@ section[id], #demo { scroll-margin-top: 88px; }
 .hero-lead { font-size: clamp(16px, 1.6vw, 19px); color: var(--lp-body); line-height: 1.65; max-width: 590px; margin: 0 0 36px; text-wrap: pretty; }
 .hero-ctas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .hero-note { display: flex; align-items: center; gap: 8px; margin: 16px 0 64px; font-size: 13px; color: var(--lp-muted); line-height: 1.5; }
+
+/* Hero layout. Stacked (copy, then the product frame) until 1000px; from there
+   two columns, so the first screen holds the headline AND the product at once.
+   The headline is smaller in two columns (a 66px headline in half the width
+   was what pushed the frame under the fold), and its size is re-tuned for the
+   rule in the comment above .lp-h1: same line count with the fallback face as
+   with Space Grotesk. The frame's image carries width/height, so its box is
+   reserved before it loads. */
+.hero-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; align-items: center; }
+.hero-copy { min-width: 0; }
 
 /* The product frame: a 1px rim, a chrome bar and the real screenshot. */
 .hero-stage { position: relative; perspective: 1800px; }
@@ -356,8 +377,11 @@ section[id], #demo { scroll-margin-top: 88px; }
 @keyframes lp-swap { from { opacity: 0; transform: translate3d(0, 8px, 0); } to { opacity: 1; transform: none; } }
 
 /* ── Pricing ── */
+/* /precios: the plans open the page, right under its hero. */
+.sec-plans-first { padding-top: 56px; }
+.sec-plans-first .price-grid, .sec-plans-first .corp-card, .sec-plans-first .upg-card { max-width: none; }
 .price-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 16px; max-width: 920px; margin-bottom: 20px; align-items: stretch; }
-.price-card { padding: 30px 28px; border-radius: 16px; }
+.price-card { padding: 30px 28px; border-radius: 14px; }
 /* The full plan: petroleum, white type, a beam-coloured rule on top. Same
    surface in both themes (like the closing band), so it reads as the
    premium object on the page either way. */
@@ -375,7 +399,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 .price-paid-link:hover { color: var(--lp-beam); }
 .lp .price-paid-link:focus-visible { outline-color: var(--lp-beam); }
 .price-paid-val { font-weight: 700; color: #fff; white-space: nowrap; }
-.corp-card { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 32px; max-width: 920px; padding: 30px 28px; border-radius: 16px; margin-bottom: 20px; }
+.corp-card { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 32px; max-width: 920px; padding: 30px 28px; border-radius: 14px; margin-bottom: 20px; }
 .corp-card::before { content: ''; position: absolute; top: -1px; left: 32px; width: 64px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--lp-accent), var(--lp-beam)); }
 .corp-billing { font-size: 13px; font-weight: 700; color: var(--lp-accent); margin: 6px 0 12px; }
 .corp-lead { font-size: 13.5px; line-height: 1.7; margin: 0; color: var(--lp-body); }
@@ -536,7 +560,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 /* ── Pricing: promises and how it grows ── */
 .no-strings { list-style: none; margin: -24px 0 36px; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 22px; }
 .no-strings li { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--lp-text); }
-.upg-card { max-width: 920px; padding: 30px 32px; border-radius: 16px; }
+.upg-card { max-width: 920px; padding: 30px 32px; border-radius: 14px; }
 .upg-steps { list-style: none; margin: 0 0 26px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; position: relative; }
 /* The thread between the three numbers: it is a sequence, so it reads as one. */
 .upg-steps::before { content: ''; position: absolute; top: 19px; left: 38px; right: 12%; height: 1px; background: linear-gradient(90deg, var(--lp-accent-bd), var(--lp-border)); }
@@ -564,6 +588,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 .feat-items { list-style: none; margin: 0; padding: 0; }
 .feat-items li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--lp-body); line-height: 1.55; padding: 7px 0; }
 .feat-items li svg { margin-top: 2px; }
+.lp a.lp-more:hover { text-decoration-thickness: 2px; text-underline-offset: 5px; }
 .lp-more { display: inline-flex; align-items: center; min-height: 44px; margin-top: 8px; font-size: 14.5px; font-weight: 700; color: var(--lp-accent); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
 
 /* The Excel / gut / StockAI table: four columns that hold on a phone by
