@@ -240,6 +240,32 @@ EVENTS: dict[str, EventSpec] = {
     "account.provider_unlinked": EventSpec(
         kind="account", severity=WARNING, detail_keys=("provider", "email"),
     ),
+    # Enterprise sign-on (backend/auth/sso/) and warehouse scopes. Who got in
+    # through the company provider, who was created by it, whose role a group
+    # changed, and every change of the configuration or of what a person may
+    # see: the things an administrator is asked about in an audit.
+    "account.sso_sign_in": EventSpec(
+        kind="account", severity=INFO, detail_keys=("email",),
+    ),
+    "account.sso_user_created": EventSpec(
+        kind="account", severity=INFO, detail_keys=("email", "role"),
+    ),
+    "account.sso_role_mapped": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "role", "previous_role"),
+    ),
+    "account.sso_sign_in_refused": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
+    "account.sso_config_changed": EventSpec(
+        kind="account", severity=WARNING,
+        detail_keys=("issuer", "enabled", "enforce_sso", "domains"),
+    ),
+    "account.sso_config_removed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("issuer",),
+    ),
+    "account.warehouse_scope_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "warehouses"),
+    ),
 }
 
 
@@ -273,6 +299,10 @@ REASONS: tuple[str, ...] = (
     "linked_at_provider_sign_in",
     "linked_unverified_password_removed",
     "unlinked_by_the_account_owner",
+    # enterprise sign-on: a group at the company provider changed a role, and a
+    # sign-in the tenant's own provider flow refused (the code is a param)
+    "mapped_from_identity_provider_groups",
+    "sso_sign_in_refused",
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",

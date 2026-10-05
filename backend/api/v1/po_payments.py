@@ -9,6 +9,7 @@ touched by this change. See `inventory/po_payment_service.py` for the model.
 from fastapi import APIRouter, Depends
 
 from backend.activity.events import record_event
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, require_analyst_or_above
 from backend.inventory import po_payment_service as pay_svc
 from backend.inventory.roi_service import format_po_number
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/inventory/po", tags=["inventory-payments"])
 def mark_po_paid(
     po_log_id: str,
     user: CurrentUser = Depends(require_analyst_or_above),
+    _scope: None = Depends(wscope.po_guard),
 ):
     """Take a sent order off the cash calendar: its invoice is settled.
 
@@ -42,6 +44,7 @@ def mark_po_paid(
 def mark_po_unpaid(
     po_log_id: str,
     user: CurrentUser = Depends(require_analyst_or_above),
+    _scope: None = Depends(wscope.po_guard),
 ):
     """The undo of mark-paid: the order is owed again, on its original due
     date. Recorded as a warning (it puts money back on the calendar), with the

@@ -1,3 +1,4 @@
+import json
 import secrets
 import logging
 import re
@@ -9,6 +10,7 @@ from pydantic import BaseModel, field_validator, model_validator
 
 from backend.activity.events import record_event
 from backend.api.public_surface import ROLE_SCOPE, SCOPE_ROLE
+from backend.auth import warehouse_scope as wscope
 from backend.auth.api_key_auth import KEY_PREFIX, RATE_MAX_PER_MINUTE, hash_key
 from backend.auth.guards import (
     CurrentUser, get_current_user, require_admin, require_analyst_or_above,
@@ -37,6 +39,10 @@ class CreateKeyRequest(BaseModel):
     # Days until the key stops working. None = never, which is what an
     # unattended nightly sync usually wants.
     expires_in_days: int | None = None
+    # Warehouses the key is limited to (ids from GET /inventory/warehouses).
+    # Omitted = as unrestricted as its creator; a creator limited to some
+    # warehouses can only mint a key within their own.
+    warehouse_ids: list[str] | None = None
 
     @field_validator("scope")
     @classmethod
@@ -77,6 +83,24 @@ class CreateKeyRequest(BaseModel):
         return v
 
 
+def _key_warehouse_scope(user: CurrentUser, requested: list[str] | None) -> list[str] | None:
+    """The scope a new key is stored with. A key never reaches past its creator:
+    a creator limited to some warehouses gets a key within them (their own scope
+    when none is asked for, a 403 for anything outside it)."""
+    ids = wscope.validate_scope_ids(user.tenant_id, requested)
+    creator = wscope.scope_ids(user)
+    if creator is None:
+        return ids
+    if ids is None:
+        return creator
+    outside = [i for i in ids if i not in creator]
+    if outside:
+        row = query_one("SELECT name FROM warehouses WHERE id = %s AND tenant_id = %s",
+                        (outside[0], user.tenant_id))
+        raise wscope.denied((row or {}).get("name"))
+    return ids
+
+
 @router.post("")
 def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_analyst_or_above)):
     # How many machine credentials this tenant may hold. The free tier gets one
@@ -85,6 +109,7 @@ def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_a
     from backend.entitlements.service import enforce_limit, limit_guard
 
     raw = KEY_PREFIX + secrets.token_urlsafe(32)
+    key_wh_scope = _key_warehouse_scope(user, body.warehouse_ids)
     # No role check beyond the guard on this endpoint, deliberately: 'analyst'
     # is the strongest role a key can hold, and `require_analyst_or_above` has
     # already refused anyone weaker than that. A key can never outrank the
@@ -100,12 +125,14 @@ def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_a
         enforce_limit(user.tenant_id, "max_api_keys",
                       int(existing["n"]) if existing else 0, conn=conn)
         execute(
-            """INSERT INTO api_keys (id, tenant_id, name, key_hash, role, created_by, last4, expires_at)
+            """INSERT INTO api_keys (id, tenant_id, name, key_hash, role, created_by, last4, expires_at,
+                                     warehouse_scope)
                VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s, %s,
                        CASE WHEN %s IS NULL THEN NULL
-                            ELSE NOW() + (%s || ' days')::INTERVAL END)""",
+                            ELSE NOW() + (%s || ' days')::INTERVAL END, %s::jsonb)""",
             (user.tenant_id, body.name, hash_key(raw), body.role, user.user_id, raw[-4:],
-             body.expires_in_days, body.expires_in_days),
+             body.expires_in_days, body.expires_in_days,
+             None if key_wh_scope is None else json.dumps(key_wh_scope)),
             conn=conn,
         )
     # The name and role are safe to log; the key itself never is, not even
@@ -123,13 +150,15 @@ def create_api_key(body: CreateKeyRequest, user: CurrentUser = Depends(require_a
     )
     # The raw key is returned exactly once. Nothing stores it — not this
     # process, not the database — so a customer who loses it mints a new one.
-    return ok({"key": raw, "name": body.name, "role": body.role, "scope": body.scope})
+    return ok({"key": raw, "name": body.name, "role": body.role, "scope": body.scope,
+               "warehouse_ids": key_wh_scope})
 
 
 @router.get("")
 def list_api_keys(user: CurrentUser = Depends(get_current_user)):
     rows = query(
-        """SELECT id, name, role, scope, last4, last_used, expires_at, created_at
+        """SELECT id, name, role, scope, last4, last_used, expires_at, created_at,
+                  warehouse_scope
            FROM api_keys WHERE tenant_id = %s ORDER BY created_at DESC""",
         (user.tenant_id,),
     )

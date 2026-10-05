@@ -13,11 +13,12 @@ from backend import audit
 from pydantic import BaseModel
 
 from backend.api.v1.auth import _reject_weak_password
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import (
     CurrentUser, get_current_user, require_admin, require_verified_admin,
 )
 from backend.config import settings
-from backend.db.connection import execute, query_one
+from backend.db.connection import execute, query, query_one
 from backend.activity.events import record_event
 from backend.errors import AppError
 from backend.schemas.auth import (
@@ -354,6 +355,64 @@ def update_user_admin(
         return ok({**updated, "verification_email_sent": verification_sent})
 
     return ok(updated)
+
+
+class WarehouseScopeRequest(BaseModel):
+    # Warehouse ids (GET /inventory/warehouses). null = every warehouse; an
+    # empty list = none at all.
+    warehouse_ids: Optional[list[str]] = None
+
+
+@router.put("/{user_id}/warehouse-scope")
+def set_user_warehouse_scope(
+    user_id: str,
+    body: WarehouseScopeRequest,
+    user: CurrentUser = Depends(require_admin),
+):
+    """Limit a person to some warehouses, or lift the limit."""
+    if wscope.is_scoped(user):
+        # An administrator limited to some warehouses cannot widen anybody's
+        # scope, their own included.
+        raise AppError(
+            "warehouse_scope_change_forbidden",
+            "Only an administrator with access to every warehouse can change warehouse access.",
+            status_code=403,
+        )
+    target = user_svc.get_user(user.tenant_id, user_id)
+    if not target:
+        raise AppError("user_not_found", "User not found", status_code=404)
+    ids = wscope.validate_scope_ids(user.tenant_id, body.warehouse_ids)
+    if ids is not None and target["role"] == "admin":
+        # The company must keep somebody who can see every warehouse and change
+        # who sees what; limiting the last such administrator would strand it.
+        others = query_one(
+            """SELECT COUNT(*) AS n FROM users
+                WHERE tenant_id = %s AND role = 'admin' AND status = 'active'
+                  AND warehouse_scope IS NULL AND id <> %s""",
+            (user.tenant_id, user_id),
+        )
+        if not others or int(others["n"]) == 0:
+            raise AppError(
+                "warehouse_scope_last_admin",
+                "At least one active administrator must keep access to every warehouse.",
+                status_code=409,
+            )
+    import json as _json
+    execute(
+        "UPDATE users SET warehouse_scope = %s::jsonb, updated_at = NOW() "
+        "WHERE id = %s AND tenant_id = %s",
+        (None if ids is None else _json.dumps(ids), user_id, user.tenant_id),
+    )
+    names = "all" if ids is None else ", ".join(sorted(
+        r["name"] for r in query(
+            "SELECT name FROM warehouses WHERE tenant_id = %s AND id = ANY(%s)",
+            (user.tenant_id, ids)))) or "none"
+    record_event(
+        user.tenant_id, user.user_id, "account.warehouse_scope_changed",
+        resource=user_id, reason="changed_by_an_account_admin",
+        details={"email": target["email"], "warehouses": names},
+    )
+    return ok(user_svc._public(user_svc.get_user(user.tenant_id, user_id)))
 
 
 @router.delete("/{user_id}")

@@ -248,6 +248,7 @@ _ES: dict[str, str] = {
     "wa_write_in_app":       "Eso se hace en la app 🙂 Aprobar una orden o registrar una recepción no se puede deshacer, así que por aquí no lo ejecuto. Entra a StockAI y lo haces en dos clics.",
     "wa_generic_mode":       "Recibí tu mensaje. Por ahora estoy en modo básico: puedo confirmar una acción pendiente si respondes “sí”. Muy pronto podré responder tus consultas de inventario por aquí.",
     "wa_apology":            "Perdón, tuve un problema procesando tu mensaje. ¿Puedes intentarlo de nuevo?",
+    "wa_scoped_user":        "Tu usuario está limitado a algunas bodegas, y por aquí todavía no puedo responderte solo con esas. Entra a StockAI para ver y registrar lo de tus bodegas.",
     "wa_read_only":          "Tu perfil es de solo lectura, así que no puedo ejecutar acciones. Puedo darte información de inventario si quieres.",
     "wa_read_only_tool":     "Tu perfil es de solo lectura; no puedes ejecutar esta acción.",
     "wa_no_analysis_yet":    "Aún no hay un análisis de inventario listo. Sube tus ventas y entrena un modelo primero.",

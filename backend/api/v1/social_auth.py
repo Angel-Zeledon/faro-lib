@@ -141,6 +141,10 @@ def _finish(
         )
         resolution = flow.resolve_account(identity, terms_accepted=bool(row["terms_accepted"]))
         flow.check_can_sign_in(resolution.user)
+        # A provider button is not a way round a company's enforced SSO.
+        from backend.auth.sso import service as sso_service
+        if sso_service.enforced_for(resolution.user["tenant_id"], resolution.user["email"]):
+            raise SocialAuthError("sso_required", "SSO is required for this account")
     except SocialAuthError as exc:
         log.info("[social] %s callback refused: %s (%s)", provider, exc.code, exc.detail)
         return _error_redirect(exc.code, intent)
@@ -243,7 +247,8 @@ def oauth_exchange(body: ExchangeRequest, request: Request):
 def my_identities(user: CurrentUser = Depends(get_current_user)):
     rows = query(
         """SELECT provider, email, created_at, last_used_at FROM user_identities
-            WHERE user_id = %s AND tenant_id = %s ORDER BY created_at""",
+            WHERE user_id = %s AND tenant_id = %s
+              AND provider NOT LIKE 'sso:%%' ORDER BY created_at""",
         (user.user_id, user.tenant_id),
     )
     me = query_one(

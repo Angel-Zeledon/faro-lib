@@ -18,6 +18,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.inventory import recommendation_reports as reports
 from backend.schemas.common import ok
@@ -49,6 +50,7 @@ def cost_of_ignoring(
     the conservatism rules (no PO + no observed stockout => no loss claimed;
     no sale price => units reported, value null).
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     end = to_date or date.today()
     start = from_date or (end - timedelta(days=30))
     if start > end:
@@ -73,4 +75,5 @@ def why_changed(
     `available: false` with a `reason` when there is not yet a previous row
     to compare against.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     return ok(reports.why_changed(user.tenant_id, sku))

@@ -9,6 +9,7 @@ import { Eye, EyeOff, AlertTriangle, MailCheck } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 import { SocialButtons, socialErrorText } from '@/components/auth/SocialButtons'
+import { SsoSignIn } from '@/components/auth/SsoSignIn'
 
 // The split stage (wordmark, form column, the morning-list panel) comes from
 // (auth)/layout.tsx — this file renders only the form, centred in its column.
@@ -32,6 +33,9 @@ function LoginPageContent() {
   // A login refused for a verification reason is the one error the user cannot
   // fix by retyping something, so it gets an action instead of just a message.
   const [canResend,  setCanResend]  = useState(false)
+  // Their company made single sign-on mandatory: the password form refused, so
+  // the company option opens by itself with the address already typed.
+  const [ssoRequired, setSsoRequired] = useState(false)
   const [resending,  setResending]  = useState(false)
   const [resentNote, setResentNote] = useState<string | null>(null)
 
@@ -65,6 +69,7 @@ function LoginPageContent() {
     e.preventDefault()
     setError(null)
     setCanResend(false)
+    setSsoRequired(false)
     setResentNote(null)
     setLoading(true)
     try {
@@ -82,6 +87,7 @@ function LoginPageContent() {
     } catch (err: unknown) {
       setError(authErrorText(err, 'auth.login_failed'))
       setCanResend(isApiError(err) && VERIFICATION_CODES.includes(err.code))
+      setSsoRequired(isApiError(err) && err.code === 'sso_required')
     } finally {
       setLoading(false)
     }
@@ -213,6 +219,8 @@ function LoginPageContent() {
               )}
             </button>
           </form>
+
+          <SsoSignIn initialEmail={email} forceOpen={ssoRequired} />
         </div>
 
         <p className="auth-enter" style={{

@@ -225,6 +225,28 @@ Step-by-step console instructions: `docs/social-login.md`. An existing account i
 
 Writable from the panel: `SOCIAL_LOGIN_ENABLED`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `FACEBOOK_OAUTH_APP_ID`, `FACEBOOK_OAUTH_APP_SECRET`, `APPLE_OAUTH_SERVICE_ID`, `APPLE_OAUTH_TEAM_ID`, `APPLE_OAUTH_KEY_ID`, `APPLE_OAUTH_PRIVATE_KEY`.
 
+## `enterprise_sso` - Company sign-in through the customer's own OpenID Connect provider.
+
+*Kind:* external service. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* no.
+
+**What is lost without it:** The 'Sign in with your company' option disappears from the login screen and tenant admins cannot configure a provider. Email + password keeps working for everyone, and any 'enforce SSO' setting a tenant already saved is suspended while this is off (so nobody is locked out). Off by default - a source install shows only the email form.
+
+**Minimum to turn it on:** `FRONTEND_URL`
+
+Each tenant admin configures their own provider (issuer URL, client id and secret, allowed e-mail domains) in the app; the secret is stored encrypted and so needs secret storage to be available. The redirect URI to register at the identity provider is built from FRONTEND_URL:
+
+    <FRONTEND_URL>/api/v1/auth/sso/callback
+
+People are created just-in-time inside the tenant that owns their e-mail domain, never as administrators. Only OpenID Connect is supported (no SAML).
+
+| Variable | Default | Notes | What it does |
+|---|---|---|---|
+| `ENTERPRISE_SSO_ENABLED` | `false` | - | Master switch for enterprise single sign-on. False hides the company sign-in option and suspends every tenant's provider and 'enforce SSO' setting without deleting them. |
+
+It also uses, without duplicating them: `frontend_url`.
+
+Writable from the panel: `ENTERPRISE_SSO_ENABLED`.
+
 ## `worker` - Background training worker and the scheduled-job loops.
 
 *Kind:* deployment. *Editable from the panel:* no. *Per tenant:* no. *Connection test:* no.

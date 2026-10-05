@@ -49,6 +49,7 @@ PUBLIC = {
     "POST /api/v1/auth/resend-verification": "you cannot verify without it",
     "POST /api/v1/auth/oauth/{provider}/callback": "Apple's form_post; the single-use state is the credential",
     "POST /api/v1/auth/oauth/exchange": "the one-time handoff code is the credential",
+    "POST /api/v1/auth/sso/discover": "a lookup typed as POST so the address is not in a URL; writes nothing",
 }
 
 SELF = {

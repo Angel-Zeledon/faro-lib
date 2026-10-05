@@ -929,6 +929,8 @@ export interface AdminUser {
   created_at: string
   last_login_at: string | null
   tenant_id: string
+  /** Warehouse ids the person is limited to. null = every warehouse. */
+  warehouse_scope?: string[] | null
 }
 
 export const listAdminUsers = (params?: {
@@ -955,6 +957,61 @@ export const deleteAdminUser = (id: string) =>
 
 export const setUserStatus = (id: string, status: string) =>
   request<AdminUser>('PATCH', `/users/${id}/status`, { status })
+
+/** Limit a person to some warehouses (ids), or lift the limit with null. */
+export const setUserWarehouseScope = (id: string, warehouseIds: string[] | null) =>
+  request<AdminUser>('PUT', `/users/${id}/warehouse-scope`, { warehouse_ids: warehouseIds })
+
+// ── Enterprise single sign-on (OpenID Connect, one provider per tenant) ───────
+// Off unless the instance operator enabled it; `enabled` is then false.
+export interface SsoConfig {
+  issuer: string
+  client_id: string
+  has_client_secret: boolean
+  allowed_domains: string[]
+  default_role: 'analyst' | 'viewer'
+  enforce_sso: boolean
+  groups_claim: string | null
+  group_roles: Record<string, 'analyst' | 'viewer'>
+  enabled: boolean
+  updated_at: string | null
+}
+
+export const getSsoAvailability = () =>
+  request<{ enabled: boolean }>('GET', '/auth/sso/availability', undefined, { silent: true })
+
+/** Does this work e-mail sign in through a company provider? */
+export const ssoDiscover = (email: string) =>
+  request<{ available: boolean; enforced: boolean }>(
+    'POST', '/auth/sso/discover', { email }, { silent: true })
+
+/** Where the browser goes to start a company sign-in: a navigation, not a
+ *  fetch, because the provider's page has to take over the window. */
+export const ssoStartUrl = (email: string) =>
+  `/api/v1/auth/sso/start?email=${encodeURIComponent(email)}`
+
+export const getSsoConfig = () =>
+  request<{
+    instance_enabled: boolean
+    secret_storage: boolean
+    redirect_uri: string
+    config: SsoConfig | null
+  }>('GET', '/auth/sso/config')
+
+export const saveSsoConfig = (body: {
+  issuer: string
+  client_id: string
+  client_secret?: string | null
+  allowed_domains: string[]
+  default_role: 'analyst' | 'viewer'
+  enforce_sso: boolean
+  groups_claim: string | null
+  group_roles: Record<string, 'analyst' | 'viewer'>
+  enabled: boolean
+}) => request<{ config: SsoConfig }>('PUT', '/auth/sso/config', body)
+
+export const deleteSsoConfig = () =>
+  request<{ removed: boolean }>('DELETE', '/auth/sso/config')
 
 // ── Accuracy Tracking ─────────────────────────────────────────────────────────
 export const getAccuracyReport = (sessionId: string, threshold?: number) =>

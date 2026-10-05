@@ -131,7 +131,7 @@ def _inventory_status(user: CurrentUser, args: dict) -> dict:
         signal=signal,
         supplier=supplier,
         by_warehouse=False,
-        limit=None, offset=0, sort="urgency", q=None,   # the endpoint's own paging is off here
+        limit=None, offset=0, sort="urgency", order=None, q=None, skus=None,  # the endpoint's own paging is off here
         user=user,
     )["data"]
 
