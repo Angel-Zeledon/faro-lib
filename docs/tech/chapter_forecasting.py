@@ -110,7 +110,7 @@ CHAPTER = {
             },
             {
                 "name": "Validación y elección del campeón",
-                "where": "forecasting_core/pipelines/pipeline.py:778 · _select_champions",
+                "where": "forecasting_core/pipelines/pipeline.py:840 · _select_champions",
                 "what": (
                     "Validación hacia adelante con ventana expansiva y un HUECO igual "
                     "al horizonte, para que la ventana de entrenamiento nunca toque "
@@ -261,7 +261,7 @@ CHAPTER = {
             },
             {
                 "name": "Validation and champion selection",
-                "where": "forecasting_core/pipelines/pipeline.py:778 · _select_champions",
+                "where": "forecasting_core/pipelines/pipeline.py:840 · _select_champions",
                 "what": (
                     "Walk-forward validation with an expanding window and a GAP equal "
                     "to the horizon, so the training window never touches data the "
