@@ -6,11 +6,10 @@ import StructuredData from '@/components/landing/StructuredData'
 // theme), so its search metadata lives in this server wrapper — the only place
 // Next lets a route declare it. Spanish, like the rest of the server-rendered
 // head: it is the primary market and what a crawler sees before any script.
-const TITLE = 'StockAI — Qué pedir hoy, cuánto y a qué proveedor'
+const TITLE = 'StockAI: software de inventario para distribuidores'
 const DESCRIPTION =
-  'Compras de inventario para distribuidores y mayoristas de Latinoamérica: ' +
-  'StockAI lee tus ventas y tu inventario y cada mañana te dice qué productos se van ' +
-  'a quebrar, cuánto pedir y a quién. Plan gratis para siempre, sin tarjeta.'
+  'StockAI (Stock AI) lee tus ventas y tu inventario y cada mañana te dice qué pedir, ' +
+  'cuánto y a qué proveedor. Para distribuidores de Latinoamérica. Plan gratis, sin tarjeta.'
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },

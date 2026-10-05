@@ -80,7 +80,7 @@ function useContent() {
 interface Crumb { label: string; href?: string }
 interface Related { href: string; label: string; desc: string }
 
-function ContentShell({ title, intro, crumbs, related, children }: {
+export function ContentShell({ title, intro, crumbs, related, children }: {
   title: string
   intro: string
   crumbs: Crumb[]

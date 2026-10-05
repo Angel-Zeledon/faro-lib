@@ -45,8 +45,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // this used to overwrite them too — so a crawler that runs JavaScript read
   // "StockAI — Inventario Inteligente" on every public page. A title that is
   // not one of the two app titles belongs to that page and is left alone.
+  // The server renders <html lang="es">; an English visitor's document must say
+  // so too (screen readers pick the voice from it, browsers offer translation).
+  useEffect(() => { document.documentElement.lang = lang }, [lang])
+
   useEffect(() => {
-    const dicts = Object.values(translations) as Record<string, string>[]
+    const dicts =Object.values(translations) as Record<string, string>[]
     const dict = translations[lang] as Record<string, string>
     const title = dict['app.title']
     const description = dict['app.description']

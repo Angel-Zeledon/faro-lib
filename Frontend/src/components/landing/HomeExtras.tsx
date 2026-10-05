@@ -10,7 +10,8 @@ import { LANDING } from '@/i18n/landing'
 import { LANDING_CONTENT } from '@/i18n/landingContent'
 import { Section, Tag, H2, Lead, Check, Dash } from '@/components/landing/primitives'
 import { CP_CSS } from '@/components/landing/ContentPages'
-import { CONTENT_PATHS, INDUSTRIES_HUB_PATH } from '@/components/landing/contentPaths'
+import { GUIDES } from '@/i18n/landingGuides'
+import { CONTENT_PATHS, GUIDE_ORDER, GUIDE_PATHS, INDUSTRIES_HUB_PATH } from '@/components/landing/contentPaths'
 
 // The first three screens of the tour's first chapter: the panel, the
 // inventory and the purchase orders — what the morning section describes.
@@ -58,6 +59,7 @@ export function HomeAudience() {
     [CONTENT_PATHS.excel, C.excel.label],
     [CONTENT_PATHS.integrations, C.integrations.label],
     [CONTENT_PATHS.changelog, C.changelog.label],
+    ...GUIDE_ORDER.map((k): [string, string] => [GUIDE_PATHS[k], GUIDES[lang].items[k].label]),
   ]
   return (
     <Section id="para-quien" alt>
