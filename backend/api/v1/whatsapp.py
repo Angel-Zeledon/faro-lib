@@ -103,6 +103,41 @@ def _rate_limited(phone: str) -> bool:
         return False
 
 
+def _tell_plan_locked(phone: str, sender: dict) -> bool:
+    """Send the locked-plan notice unless this sender already got one in the
+    last 24 hours. Returns whether a message was sent. Never raises.
+
+    The day's slot is claimed BEFORE sending (an insert into the same event
+    table the rate limiter uses), so a Twilio retry or a chatty sender cannot
+    produce two notices; if the send itself fails the slot stays spent — one
+    missed notice beats a loop of them.
+    """
+    from backend.notifications.locale import render
+    key = f"wa_locked:{sender['tenant_id']}:{sender['user_id']}"
+    try:
+        execute(
+            "DELETE FROM auth_rate_events WHERE key = %s AND created_at < NOW() - INTERVAL '24 hours'",
+            (key,),
+        )
+        row = query_one("SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s", (key,))
+        if row and int(row["n"]) >= 1:
+            return False
+        execute("INSERT INTO auth_rate_events (key) VALUES (%s)", (key,))
+    except Exception:  # noqa: BLE001 — the store failing must not become a reply loop
+        log.exception("[whatsapp] locked-plan notice store failed; not replying")
+        return False
+    lang = "es"
+    try:
+        pref = query_one("SELECT language FROM user_preferences WHERE user_id = %s",
+                         (sender["user_id"],))
+        if pref and pref.get("language") == "en":
+            lang = "en"
+    except Exception:  # noqa: BLE001
+        pass
+    return send_whatsapp(phone, render(lang, "wa_plan_locked"),
+                         tenant_id=sender["tenant_id"])
+
+
 @router.post("/inbound")
 async def inbound(request: Request, background: BackgroundTasks):
     form = await request.form()
@@ -123,6 +158,14 @@ async def inbound(request: Request, background: BackgroundTasks):
     sender = identity.resolve_sender(phone)
     if not sender:
         send_whatsapp(phone, _REJECT_UNKNOWN)
+        return Response(status_code=200)
+
+    # The bot is a paid feature (2026-10-05). A locked tenant's sender is told
+    # so ONCE per day and nothing else happens: no state read, no model call, no
+    # idempotency row. Not answering at all would read as "the bot is broken".
+    from backend.entitlements.service import tenant_has_feature
+    if not tenant_has_feature(sender["tenant_id"], "whatsapp_bot"):
+        _tell_plan_locked(phone, sender)
         return Response(status_code=200)
 
     ctx = ToolContext(tenant_id=sender["tenant_id"], user_id=sender["user_id"], role=sender["role"])

@@ -37,6 +37,12 @@ def is_configured(tenant_id: str | None = None) -> bool:
 
 def failure_reason(tenant_id: str | None = None) -> str:
     """Stable code for why a send failed — mirrors email.failure_reason()."""
+    if tenant_id:
+        from backend.entitlements.service import tenant_has_feature
+        if not tenant_has_feature(tenant_id, "whatsapp_bot"):
+            # Only the plan-gated sends can fail for this reason; the others
+            # never ask this question with a locked tenant.
+            return "plan_feature_locked"
     return "transport_error" if is_configured(tenant_id) else "not_configured"
 
 
@@ -71,12 +77,24 @@ def _transport_send(
 def send_whatsapp(
     to_number: str, body: str, media_url: str | None = None,
     tenant_id: str | None = None,
+    plan_gated: bool = False,
 ) -> bool:
     """
     Send a WhatsApp text (optionally with a media attachment, e.g. a PDF URL
     Twilio will fetch and deliver) to +E164 number. Returns True on success.
     Never raises — alerting must not break the caller's loop.
+
+    `plan_gated=True` is for the bot and its alerts (daily/manual stock
+    alerts, freshness warnings): a tenant whose plan lacks `whatsapp_bot` gets
+    nothing sent — logged and False, not an error. Messages that are not the
+    bot (supplier purchase orders, verification codes, the locked-plan reply
+    itself) leave it False.
     """
+    if plan_gated and tenant_id:
+        from backend.entitlements.service import tenant_has_feature
+        if not tenant_has_feature(tenant_id, "whatsapp_bot"):
+            log.info("[whatsapp] skipped: plan has no whatsapp_bot tenant=%s", tenant_id)
+            return False
     if not is_configured(tenant_id):
         log.warning("Twilio not configured — WhatsApp not sent to %s", to_number)
         return False

@@ -214,6 +214,9 @@ def test_idempotency_same_sid_single_execution(client, twilio_token, registered_
 def test_rate_limit_blocks_without_llm(client, twilio_token, registered_user, monkeypatch):
     # Rate limiting is bypassed in testing_mode; force it on for this test.
     monkeypatch.setattr(settings, "testing_mode", False)
+    # The bot is paid-only: with testing_mode off a free tenant is answered with
+    # the locked notice instead of reaching the limiter this test is about.
+    execute("UPDATE tenants SET tier = 'paid' WHERE id = %s", (registered_user["tenant"]["id"],))
     num = _verified_number(registered_user, "+573006660000")
     # auth_rate_events has no tenant FK, so rows survive tenant teardown; clear
     # this key so a previous run's events don't pre-fill the window.
@@ -293,3 +296,71 @@ def test_viewer_denied_over_http(client, twilio_token, registered_user):
         resp = _post(client, {"From": f"whatsapp:{num}", "Body": f"aprueba {po_id}", "MessageSid": "SM-v"})
     assert resp.status_code == 200
     assert query_one("SELECT sent_at FROM inventory_po_log WHERE id = %s", (po_id,))["sent_at"] is None
+
+
+# --- The bot is paid-only: a locked tenant's sender is told ONCE a day -------
+
+def test_locked_plan_sender_is_answered_once_a_day_and_nothing_else_happens(
+    client, twilio_token, registered_user, monkeypatch, _no_outbound,
+):
+    from backend.notifications.locale import render_es
+    monkeypatch.setattr(settings, "testing_mode", False)
+    tid = registered_user["tenant"]["id"]
+    uid = registered_user["user"]["id"]
+    execute("UPDATE tenants SET tier = 'free' WHERE id = %s", (tid,))
+    num = _verified_number(registered_user, "+573007770000")
+    key = f"wa_locked:{tid}:{uid}"
+    execute("DELETE FROM auth_rate_events WHERE key = %s", (key,))
+
+    fake = _FakeLLM([json.dumps({"tool": None, "args": {}, "reply": "should never run"})] * 3)
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", return_value=fake):
+        for i in range(3):
+            r = _post(client, {"From": f"whatsapp:{num}", "Body": "hola",
+                               "MessageSid": f"SM-locked-{i}"})
+            assert r.status_code == 200
+
+    # One notice for three messages, in the catalog's Spanish, to that number.
+    assert _no_outbound.call_count == 1
+    sent_to, sent_body = _no_outbound.call_args.args[:2]
+    assert sent_to == num
+    assert sent_body == render_es("wa_plan_locked")
+    # No model call, no conversation state, no idempotency row.
+    assert fake.calls == 0
+    assert query_one("SELECT COUNT(*) AS n FROM auth_rate_events WHERE key = %s",
+                     (key,))["n"] == 1
+    from backend.whatsapp import conversation_store as cs
+    assert cs.is_duplicate(tid, uid, "SM-locked-0") is False
+
+
+def test_locked_plan_notice_a_new_day_is_a_new_notice(
+    client, twilio_token, registered_user, monkeypatch, _no_outbound,
+):
+    monkeypatch.setattr(settings, "testing_mode", False)
+    tid = registered_user["tenant"]["id"]
+    uid = registered_user["user"]["id"]
+    execute("UPDATE tenants SET tier = 'free' WHERE id = %s", (tid,))
+    num = _verified_number(registered_user, "+573007771111")
+    key = f"wa_locked:{tid}:{uid}"
+    execute("DELETE FROM auth_rate_events WHERE key = %s", (key,))
+
+    _post(client, {"From": f"whatsapp:{num}", "Body": "hola", "MessageSid": "SM-d1"})
+    execute("UPDATE auth_rate_events SET created_at = NOW() - INTERVAL '25 hours' "
+            "WHERE key = %s", (key,))
+    _post(client, {"From": f"whatsapp:{num}", "Body": "hola", "MessageSid": "SM-d2"})
+    assert _no_outbound.call_count == 2
+
+
+def test_paid_sender_is_not_told_the_plan_is_locked(
+    client, twilio_token, registered_user, monkeypatch, _no_outbound,
+):
+    from backend.notifications.locale import render_es
+    monkeypatch.setattr(settings, "testing_mode", False)
+    tid = registered_user["tenant"]["id"]
+    execute("UPDATE tenants SET tier = 'paid' WHERE id = %s", (tid,))
+    num = _verified_number(registered_user, "+573007772222")
+    fake = _FakeLLM([json.dumps({"tool": None, "args": {}, "reply": "hola"})])
+    with mock.patch("backend.ai.local_llm.get_local_llm_client", return_value=fake):
+        r = _post(client, {"From": f"whatsapp:{num}", "Body": "hola", "MessageSid": "SM-paid"})
+    assert r.status_code == 200
+    assert fake.calls == 1
+    assert all(c.args[1] != render_es("wa_plan_locked") for c in _no_outbound.call_args_list)

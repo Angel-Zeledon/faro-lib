@@ -394,7 +394,7 @@ def build(app=None) -> dict:
             "window_seconds": RATE_WINDOW_SECONDS,
             "per_day_per_key": {
                 tier: PLANS[tier].max_api_calls_per_day
-                for tier in ("demo", "free", "paid") if tier in PLANS
+                for tier in ("demo", "free", "paid", "corporate") if tier in PLANS
             },
         },
         "tags": [{"tag": t, "endpoints": eps} for t, eps in sorted(tags.items())],
