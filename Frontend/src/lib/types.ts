@@ -1494,8 +1494,41 @@ export interface InventoryStatusPageParams {
   order?: 'asc' | 'desc'
   q?: string
   signal?: string
+  /** ABC class (value ranking of the whole catalogue). */
+  abc?: AbcClass
   /** Exact SKUs to look up (names of a known few rows). */
   skus?: string[]
+}
+
+export type AbcClass = 'A' | 'B' | 'C'
+
+/** One ABC class in the "service level by class" suggestion. */
+export interface ServiceLevelClassRow {
+  abc: AbcClass
+  skus: number
+  /** Share of the catalogue's demand value, 0..1. */
+  value_share: number
+  /** Mean service level the class plans on today (null when it has no SKUs). */
+  current_service_level: number | null
+  suggested_service_level: number
+  /** SKUs a click would change (unconfigured, and not already at the suggestion). */
+  would_change: number
+  /** SKUs whose level someone already set: left alone. */
+  owned: number
+}
+
+export type ServiceLevelClassesState =
+  | { available: false; reason: string }
+  | { available: true; session_id: string; classes: ServiceLevelClassRow[];
+      cutoffs: { a: number; b: number; x: number; y: number } }
+
+export interface ServiceLevelClassApplied {
+  abc: AbcClass
+  service_level: number
+  updated: number
+  kept_own_level: number
+  without_stock_row: number
+  skus: string[]
 }
 
 export interface SuppliersPageResponse {

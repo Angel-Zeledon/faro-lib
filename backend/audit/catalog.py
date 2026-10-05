@@ -81,6 +81,7 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("DELETE", "/inventory/po-approval/rules/{rule_id}"): _r("config.changed", "setting", "rule_id"),
     ("PUT", "/inventory/po-approval/approvers/{user_id}"): _r("user.permissions_changed", "user", "user_id"),
     ("DELETE", "/inventory/signal-thresholds"):     _r("config.changed", "setting"),
+    ("POST", "/inventory/service-level-classes/apply"): _r("config.changed", "setting"),
     ("PUT", "/service-config/tenant/services/{service_key}"):    _r("config.changed", "setting", "service_key"),
     ("DELETE", "/service-config/tenant/services/{service_key}"): _r("config.changed", "setting", "service_key"),
     # sales received by e-mail: the webhook writes its own row (the actor is the

@@ -1217,6 +1217,15 @@ export const previewSignalThresholds = (
   opts?: RequestOpts,
 ) => request<SignalThresholdsPreview>('POST', '/inventory/signal-thresholds/preview', body, opts)
 
+// ── Suggested service level per ABC class ────────────────────────────────────
+// Read-only description, then one POST per class the person accepts. Nothing
+// changes unless that POST is made (analyst or admin).
+export const getServiceLevelClasses = (opts?: RequestOpts) =>
+  request<import('./types').ServiceLevelClassesState>('GET', '/inventory/service-level-classes', undefined, opts)
+
+export const applyServiceLevelClass = (abc: import('./types').AbcClass) =>
+  request<import('./types').ServiceLevelClassApplied>('POST', '/inventory/service-level-classes/apply', { abc })
+
 export const getInventoryStatus =(sessionId: string, serviceLevel = 0.95, opts?: RequestOpts) =>
   request<InventoryStatusResponse>(
     'GET',
@@ -1239,6 +1248,7 @@ export const getInventoryStatusPage = (
   if (params.order) qs.set('order', params.order)
   if (params.q && params.q.trim()) qs.set('q', params.q.trim())
   if (params.signal) qs.set('signal', params.signal)
+  if (params.abc) qs.set('abc', params.abc)
   if (params.skus?.length) qs.set('skus', params.skus.join(','))
   return request<InventoryStatusResponse>('GET', `/inventory/status?${qs.toString()}`, undefined, opts)
 }

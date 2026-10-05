@@ -375,6 +375,8 @@ from backend.api.v1 import inventory_recommendation_log as recommendation_log_ro
 app.include_router(recommendation_log_router.router, prefix=_PREFIX)
 from backend.api.v1 import signal_thresholds as signal_thresholds_router  # noqa: E402
 app.include_router(signal_thresholds_router.router, prefix=_PREFIX)
+from backend.api.v1 import service_level_classes as service_level_classes_router  # noqa: E402
+app.include_router(service_level_classes_router.router, prefix=_PREFIX)
 from backend.api.v1 import reception_reversals as reception_reversals_router  # noqa: E402
 app.include_router(reception_reversals_router.router, prefix=_PREFIX)
 from backend.api.v1 import po_payments as po_payments_router  # noqa: E402
