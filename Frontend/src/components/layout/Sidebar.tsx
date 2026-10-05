@@ -11,7 +11,7 @@ import { useSidebar } from '@/contexts/SidebarContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
-import { Wordmark } from '@/components/brand/Wordmark'
+import { BrandMark } from '@/components/brand/BrandMark'
 import { NAV, TOOLS_NAV, SETTINGS_ITEM, drawn, activePrimary, rememberOrigin, type Screen } from './navItems'
 import { siteHref } from '@/lib/siteUrls'
 import { useTenantFacts } from '@/hooks/useTenantFacts'
@@ -160,21 +160,18 @@ export default function Sidebar() {
     >
 
       {/* Logo */}
-      {(!collapsedNow || isDrawer) && <div style={{
-        padding: '22px 20px 18px',
+      <div style={{
+        padding: collapsedNow ? '14px 0' : '18px 20px 16px',
         borderBottom: '1px solid var(--sidebar-border)',
-        display: 'flex', alignItems: 'center',
+        display: 'flex', alignItems: 'center', gap: 12,
+        justifyContent: collapsedNow ? 'center' : 'flex-start',
       }}>
-        {/* Type-only mark; the sidebar is petrol in both themes, so "ai"
-            takes the light end of the brand gradient to hold its contrast.
-            On the collapsed rail there is no mark at all: an initial or a
-            fragment of the name is not the name. */}
+        {/* The logo: "stock" over "ai" on the petrol square (same artwork as the
+            app icon). The sidebar is petrol too, so the mark carries a hairline. */}
+        <BrandMark size={collapsedNow ? 30 : 38} outline />
         {!collapsedNow && (
-          <div>
-            <Wordmark size={21} color="var(--sidebar-text-active)" accent="#4CC3B5" />
-            <div style={{ fontSize: 11, color: 'var(--sidebar-dim)', marginTop: 5 }}>
-              {t('sidebar.tagline')}
-            </div>
+          <div style={{ fontSize: 11, lineHeight: 1.35, color: 'var(--sidebar-dim)', minWidth: 0 }}>
+            {t('sidebar.tagline')}
           </div>
         )}
         {isDrawer && (
@@ -191,7 +188,7 @@ export default function Sidebar() {
             <X size={18} aria-hidden="true" />
           </button>
         )}
-      </div>}
+      </div>
 
       {/* Navigation */}
       <nav aria-label={t('mobile.tabbar_label')} style={{
