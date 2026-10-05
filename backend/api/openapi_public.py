@@ -40,10 +40,10 @@ API_ERROR = {
     "description": (
         "Every error. Branch on `error_code` when there is one (stable, snake_case; "
         "a few older limit errors spell it in capitals, e.g. `PLAN_LIMIT_REACHED`); "
-        "`detail` is an English fallback and may change. `error_code` is absent on "
-        "framework answers: a missing or malformed Authorization header "
-        "(401 `Not authenticated`), an unknown route (404), a wrong method (405) and "
-        "the rate-limit answer (429)."
+        "`detail` is an English fallback and may change. Even the framework "
+        "answers carry one: `unauthenticated` (401, missing or malformed "
+        "Authorization header), `not_found` (404, unknown route), "
+        "`method_not_allowed` (405) and `rate_limited` (429)."
     ),
     "properties": {
         "detail": {"description": (
@@ -57,13 +57,13 @@ API_ERROR = {
 }
 
 _KEY_ERRORS = {
-    "401": "API key missing (`Not authenticated`), invalid, revoked or expired (`api_key_invalid`).",
+    "401": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`).",
     "403": (
         "The key may not call this endpoint (`api_key_route_not_exposed`), is "
         "read-only on a write (`api_key_scope_insufficient`), or another "
         "permission check refused it."
     ),
-    "429": "Per-minute rate limit or the plan's daily ceiling reached; the body has no `error_code`. Honour `Retry-After` (seconds).",
+    "429": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds).",
 }
 
 

@@ -418,6 +418,23 @@ def delete_source(
 
 # ── Statistical analysis ───────────────────────────────────────────────────────
 
+def _check_iso_dates(**dates: Optional[str]) -> None:
+    """Reject a date filter that is not YYYY-MM-DD with a 422 instead of the
+    500 pandas' parser error used to become."""
+    from datetime import date as _date
+    for field, value in dates.items():
+        if not value:
+            continue
+        try:
+            _date.fromisoformat(value[:10])
+        except ValueError:
+            raise AppError(
+                "date_invalid_iso",
+                f"{field} must be an ISO date (YYYY-MM-DD)",
+                params={"field": field},
+            )
+
+
 @router.get("/{source_id}/analyze")
 def analyze_source(
     source_id: str,
@@ -447,6 +464,7 @@ def analyze_source(
     if sc and sc not in df.columns:
         sc = None
 
+    _check_iso_dates(date_from=date_from, date_to=date_to)
     from backend.dataframes.series import filter_dataframe_by_date
     df = filter_dataframe_by_date(df, dc, date_from, date_to)
 
@@ -454,6 +472,10 @@ def analyze_source(
         from forecasting_core.analysis.analyzer import TimeSeriesAnalyzer
         analyzer = TimeSeriesAnalyzer(df, date_col=dc, target_col=tc, group_col=sc or None)
         summary_df = analyzer.summary()
+    except (ValueError, TypeError) as e:
+        # A column that exists but holds the wrong kind of data (text as the
+        # target, numbers as the date): the caller's mapping, not a server fault.
+        raise AppError("analysis_failed", f"Analysis failed: {e}", status_code=422)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
@@ -496,6 +518,20 @@ def analyze_sku(
     except ValueError as e:
         raise _service_error(e)
 
+    # The names arrive as query text. A name that is not a column (the audit
+    # sent a date, "2026-10-01") surfaced from deep in pandas as KeyError and was
+    # reported as a 500 "Analysis failed: '2026-10-01'" — a caller mistake, so it
+    # is a 400 that names the column, like the sibling /analyze route.
+    for col in (date_col, target_col, sku_col):
+        if col and col not in df.columns:
+            raise AppError(
+                "upload_column_missing",
+                f"Column '{col}' not found in the data source",
+                status_code=400,
+                params={"column": col, "columns": ", ".join(map(str, df.columns))},
+            )
+    _check_iso_dates(date_from=date_from, date_to=date_to)
+
     try:
         from backend.dataframes.series import filter_dataframe_by_date
         df = filter_dataframe_by_date(df, date_col, date_from, date_to)
@@ -503,6 +539,10 @@ def analyze_sku(
         analyzer = TimeSeriesAnalyzer(df, date_col=date_col, target_col=target_col, group_col=sku_col or None)
         sku_arg = sku_id if sku_col else None
         report = analyzer.analyze(sku_arg)
+    except (ValueError, TypeError) as e:
+        # A column that exists but holds the wrong kind of data (text as the
+        # target, numbers as the date): the caller's mapping, not a server fault.
+        raise AppError("analysis_failed", f"Analysis failed: {e}", status_code=422)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 

@@ -32,6 +32,13 @@ _RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(p, re.DOTALL), c) for p, c in [
         # ── Authentication / authorization ───────────────────────────────────
         (r"API key is invalid or expired", "api_key_invalid"),
+        # FastAPI's own answers (no credential, unknown route, wrong verb) and
+        # the per-key rate limit: sentences with a fixed shape that carried no
+        # code, so a client could only branch on the status number.
+        (r"Not authenticated", "unauthenticated"),
+        (r"Not Found", "not_found"),
+        (r"Method Not Allowed", "method_not_allowed"),
+        (r"Rate limit exceeded: \d+ requests per minute per API key, .*", "rate_limited"),
         (r"Token expired", "token_expired"),
         (r"Invalid token( type)?(: .*)?", "token_invalid"),
         (r"Token has been revoked", "token_revoked"),
