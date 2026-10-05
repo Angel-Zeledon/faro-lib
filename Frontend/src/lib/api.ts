@@ -3,7 +3,7 @@ import type {
   QualityReport, RunWarnings, ConfigSchema, ChooseColumnsBody, CanonicalColumnsBody,
   JobResponse, MetricsResponse, InventoryResponse, RoutingPlan, TrainingResults,
   ForecastSeries, DataHealthReport,
-  Chat, ChatMessage, MessagesPage, ChatSourceType,
+  Chat, ChatMessage, FavoriteMessage, MessagesPage, ChatSourceType,
   DataSource, DataPreview, EditableTable, SqlQueryResult, SqlEngine,
   InventoryStock, InventoryStatusResponse, InventoryDashboardSummary,
   InventoryEvent, InventoryROISummary, POLogEntry, POLineDecision,
@@ -888,6 +888,14 @@ export const deleteChat  = (chatId: string) =>
 
 export const getChatMessages = (chatId: string, limit = 30, before?: string) =>
   request<MessagesPage>('GET', `/analyst/chats/${chatId}/messages?limit=${limit}${before ? `&before=${before}` : ''}`)
+
+/** Star or unstar one of the signed-in user's own messages. */
+export const starChatMessage = (messageId: string, starred: boolean) =>
+  request<ChatMessage>('PATCH', `/analyst/messages/${messageId}/star`, { starred })
+
+/** The messages the signed-in user starred, newest star first. */
+export const listFavoriteMessages = () =>
+  request<FavoriteMessage[]>('GET', '/analyst/favorites')
 
 /**
  * Ask the assistant. `language` is the UI language the answer is written in;

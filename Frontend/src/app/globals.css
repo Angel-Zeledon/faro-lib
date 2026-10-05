@@ -1377,3 +1377,33 @@ input[type="password"]::-ms-clear { display: none; }
 
 /* Sender / time labels: small and quiet. */
 .msg-meta { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Per-message actions (copy, star). On a mouse they appear when the message is
+   hovered or holds keyboard focus; on touch there is no hover, so they are
+   always there. A starred message keeps its star visible. */
+.msg-actions { display: inline-flex; align-items: center; gap: 2px; }
+.msg-action-btn {
+  all: unset; box-sizing: border-box; cursor: pointer;
+  width: 26px; height: 26px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--dim);
+}
+.msg-action-btn:hover { background: var(--surface-2); color: var(--text); }
+.msg-action-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.msg-action-btn[data-on="true"] { color: #B7791F; }
+.msg-action-note { font-size: 11px; color: var(--accent); margin-left: 2px; }
+.msg-row-large .msg-action-btn { width: 40px; height: 36px; border-radius: 10px; }
+.msg-row-large .msg-action-note { font-size: 12.5px; }
+@media (hover: hover) and (pointer: fine) {
+  .msg-row:not(.msg-row-large) .msg-action-btn { opacity: 0; transition: opacity var(--dur-2) var(--ease-out); }
+  .msg-row:not(.msg-row-large):hover .msg-action-btn,
+  .msg-row:not(.msg-row-large):focus-within .msg-action-btn,
+  .msg-row:not(.msg-row-large) .msg-action-btn[data-on="true"] { opacity: 1; }
+}
+/* The message a favorite was opened at: a brief wash so the eye finds it. */
+.msg-focus > div:last-child > div:first-child { animation: msgFocus 1800ms var(--ease-out); }
+@keyframes msgFocus {
+  0%, 60% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+  100%    { box-shadow: 0 0 0 3px transparent; }
+}
+

@@ -183,6 +183,62 @@ def add_message(
     return rows[0]
 
 
+def set_message_star(
+    tenant_id: str,
+    user_id: str,
+    message_id: str,
+    starred: bool,
+) -> Optional[dict]:
+    """
+    Star or unstar one message. The message must live in a chat owned by this
+    user in this tenant — otherwise nothing is touched and None comes back, the
+    same answer as for a message that does not exist, so ids cannot be probed.
+    Starring twice keeps the first timestamp.
+    """
+    rows = query(
+        """
+        UPDATE chat_messages m
+        SET starred_at = CASE WHEN %s THEN COALESCE(m.starred_at, NOW()) ELSE NULL END
+        FROM chats c
+        WHERE m.id = %s
+          AND m.tenant_id = %s
+          AND c.id = m.chat_id
+          AND c.tenant_id = %s
+          AND c.user_id = %s
+        RETURNING m.*
+        """,
+        (starred, message_id, tenant_id, tenant_id, user_id),
+    )
+    return rows[0] if rows else None
+
+
+def list_starred_messages(tenant_id: str, user_id: str, limit: int = 200) -> list[dict]:
+    """
+    The messages this user starred, newest star first, each with its chat title
+    and — for an assistant answer — the question that produced it (the user
+    message right before it in the same chat).
+    """
+    return query(
+        """
+        SELECT
+          m.id, m.chat_id, m.role, m.content, m.source, m.created_at, m.starred_at,
+          c.title AS chat_title,
+          CASE WHEN m.role = 'assistant' THEN (
+            SELECT q.content FROM chat_messages q
+            WHERE q.chat_id = m.chat_id AND q.role = 'user' AND q.created_at <= m.created_at
+            ORDER BY q.created_at DESC LIMIT 1
+          ) END AS question
+        FROM chat_messages m
+        JOIN chats c ON c.id = m.chat_id
+        WHERE m.tenant_id = %s AND c.tenant_id = %s AND c.user_id = %s
+          AND m.starred_at IS NOT NULL
+        ORDER BY m.starred_at DESC
+        LIMIT %s
+        """,
+        (tenant_id, tenant_id, user_id, limit),
+    )
+
+
 def count_recent_user_messages(tenant_id: str, seconds: int = 60) -> int:
     """
     Count user messages sent by this tenant in the last `seconds` — used for rate limiting.

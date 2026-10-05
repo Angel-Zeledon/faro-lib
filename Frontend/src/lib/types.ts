@@ -621,6 +621,22 @@ export interface ChatMessage {
   source?:          string
   retrieved_count?: number
   created_at:       string
+  /** When the person starred it; null/absent when it is not a favorite. */
+  starred_at?:      string | null
+}
+
+/** A starred message with the chat it lives in and the question it answered. */
+export interface FavoriteMessage {
+  id:         string
+  chat_id:    string
+  role:       'user' | 'assistant'
+  content:    string
+  source:     string | null
+  created_at: string
+  starred_at: string
+  chat_title: string
+  /** The user message that produced an assistant answer; null for a user message. */
+  question:   string | null
 }
 
 export interface MessagesPage {

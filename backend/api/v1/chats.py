@@ -162,6 +162,31 @@ def get_messages(
     return ok({"messages": messages, "has_more": has_more})
 
 
+# ── Favorite messages ──────────────────────────────────────────────────────────
+# Any signed-in user may star a message of THEIR OWN chats (no role needed: it
+# changes nothing but their own list). A message in someone else's chat — same
+# tenant or not — answers 404, exactly like one that does not exist.
+
+@router.patch("/analyst/messages/{message_id}/star")
+def star_message(
+    message_id: str,
+    body: dict,
+    user: CurrentUser = Depends(get_current_user),
+):
+    starred = body.get("starred")
+    if not isinstance(starred, bool):
+        raise HTTPException(status_code=400, detail="'starred' must be true or false")
+    msg = chat_store.set_message_star(user.tenant_id, user.user_id, message_id, starred)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return ok(msg)
+
+
+@router.get("/analyst/favorites")
+def list_favorites(user: CurrentUser = Depends(get_current_user)):
+    return ok(chat_store.list_starred_messages(user.tenant_id, user.user_id))
+
+
 # ── Send message ───────────────────────────────────────────────────────────────
 
 @router.post("/analyst/chats/{chat_id}/messages")
