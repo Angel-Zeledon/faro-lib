@@ -48,8 +48,7 @@ import type { DataFreshnessInfo } from '@/lib/api'
 import { formatMoney, formatMoneyCompact } from '@/lib/currency'
 import { coverageUnitLabel } from '@/lib/period'
 import { renderExplanation } from '@/lib/explanationCopy'
-import SignalBadge from '@/components/ui/SignalBadge'
-import StaleDataBanner, { StaleSignalChip } from '@/components/ui/StaleDataBanner'
+import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { ErrorState, LoadingState, SkeletonCards, useErrorDetail } from '@/components/ui/States'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import {
@@ -58,8 +57,9 @@ import {
 import BottomSheet from '@/components/mobile/BottomSheet'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { fmtNum } from '@/lib/numberLocale'
+import { StaleLine, useTabFold } from './folds'
 import {
-  C, AllClear, AssumptionsBanner, SourceBadge, provenanceText, summarizeAssumptions,
+  C, AllClear, StatusMark, SourceBadge, provenanceText, summarizeAssumptions,
   tOr, type ActionItem, IncomingNote, OrderedNote,
 } from './shared'
 
@@ -152,8 +152,16 @@ export default function HoyMobile(props: HoyMobileProps) {
   const noCostOnFile = kpis?.valued_skus === 0 && (kpis?.total_skus ?? 0) > 0
   const pendingDecisions = cart.filter(i => i.status === 'pending' && i.qty > 0).length
 
+  // What used to be banners is shown on the line it concerns and in the bell.
+  const assumptionSummary = briefing ? summarizeAssumptions(briefing) : null
+  const noContactNames = new Set(contactHealth.map(r => r.supplier.toLowerCase()))
+  const lateBySupplier = new Map(leadTimeAlerts.map(a => [a.supplier.toLowerCase(), a] as const))
+  const staleFold = useTabFold('compras.stale_dismissed')
+
   const cardProps = (item: ActionItem) => ({
     item, briefing: briefing!, stale: semaphoreStale, canDecide,
+    noContact: !!item.supplier && noContactNames.has(item.supplier.toLowerCase()),
+    lateAlert: item.supplier ? lateBySupplier.get(item.supplier.toLowerCase()) ?? null : null,
     onApprove: () => onApprove(item.sku),
     onRemove: () => onRemove(item.sku),
     onRestore: () => onApprove(item.sku),
@@ -179,6 +187,29 @@ export default function HoyMobile(props: HoyMobileProps) {
               ? <>
                   {new Date(`${briefing.date}T12:00:00`).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CR', { weekday: 'long', day: 'numeric', month: 'long' })}
                   {pendingDecisions > 0 && <> · {tOr(t, 'mobile.hoy_pending_decisions', `${pendingDecisions} to decide`, { n: pendingDecisions })}</>}
+                  {overduePOs.length > 0 ? (
+                    <>
+                      {' · '}{t(overduePOs.length === 1 ? 'hoy.deliveries_to_confirm_one' : 'hoy.deliveries_to_confirm_other', { n: overduePOs.length })}
+                      {onReceive && (
+                        <>
+                          {' '}
+                          <button onClick={() => onReceive(overduePOs[0].po_log_id)} style={{
+                            all: 'unset', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600,
+                            minHeight: 44, display: 'inline-flex', alignItems: 'center', boxSizing: 'border-box',
+                          }}>
+                            {t('hoy.deliveries_confirm_cta')}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  ) : pendingReceptions > 0 ? (
+                    <>
+                      {' · '}
+                      <Link href="/pedidos" style={{ color: C.dim, textDecoration: 'underline', minHeight: 44, display: 'inline-flex', alignItems: 'center' }}>
+                        {pendingReceptions} {pendingReceptions === 1 ? t('hoy.receptions_pending_singular') : t('hoy.receptions_pending_plural')}
+                      </Link>
+                    </>
+                  ) : null}
                 </>
               : t('hoy.date_loading')}
           </p>
@@ -200,13 +231,7 @@ export default function HoyMobile(props: HoyMobileProps) {
         <>
           {/* Above everything else, exactly as on desktop: it is not one more
               alert, it is the caveat that applies to all of them. */}
-          {freshness && <StaleDataBanner freshness={freshness} />}
-
-          <AssumptionsBanner summary={summarizeAssumptions(briefing)} stacked />
-
-          {leadTimeAlerts.length > 0 && (
-            <div style={{ marginBottom: 12 }}><SupplierLeadTimeAlertBanner alerts={leadTimeAlerts} /></div>
-          )}
+          {freshness && staleFold.open !== true && <StaleLine compact freshness={freshness} onDismiss={() => staleFold.set(true)} />}
 
           {/* ── Counters: 2×2, the four the desktop row shows ── */}
           {kpis && (
@@ -239,60 +264,6 @@ export default function HoyMobile(props: HoyMobileProps) {
             </p>
           )}
 
-          {/* ── Arrivals: receiving goods is the other thing done phone in hand ── */}
-          {overduePOs.length > 0 && (
-            <DailySection
-              color={C.red}
-              icon={<AlertTriangle size={13} aria-hidden="true" />}
-              title={t('hoy.overdue_section_title')}
-            >
-              <ul style={listReset}>
-                {overduePOs.map(o => (
-                  <li key={`${o.po_log_id}-${o.supplier}`} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
-                    borderRadius: 12, marginBottom: 8, minHeight: 56, boxSizing: 'border-box',
-                    background: 'rgba(192,80,77,0.06)', border: '1px solid rgba(192,80,77,0.25)',
-                  }}>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.text, lineHeight: 1.45 }}>
-                      {t('hoy.overdue_line_prefix')} <strong>{o.supplier}</strong>{' '}
-                      {t('hoy.overdue_line_suffix')} <strong>{o.days_overdue}</strong> {t('hoy.overdue_days_ago_suffix')}
-                    </span>
-                    {onReceive && (
-                      <button
-                        onClick={() => onReceive(o.po_log_id)}
-                        aria-label={`${t('hoy.overdue_cta')} — ${o.supplier}`}
-                        style={{
-                          all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flexShrink: 0,
-                          minHeight: TAP, padding: '0 12px', borderRadius: 10,
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          fontSize: 13, fontWeight: 700, color: C.red, border: `1px solid ${C.red}55`,
-                        }}
-                      >
-                        <Truck size={15} aria-hidden="true" /> {t('hoy.overdue_cta')}
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </DailySection>
-          )}
-          {pendingReceptions > 0 && (
-            <Link href="/pedidos" className="tap-feedback" style={{
-              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
-              padding: '10px 12px', borderRadius: 12, minHeight: 52, boxSizing: 'border-box',
-              background: 'color-mix(in srgb, var(--accent) 6%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
-              textDecoration: 'none',
-            }}>
-              <Truck size={17} color={C.indigo} style={{ flexShrink: 0 }} aria-hidden="true" />
-              <span style={{ fontSize: 13.5, color: C.text, flex: 1, lineHeight: 1.4 }}>
-                <strong>{pendingReceptions}</strong>{' '}
-                {pendingReceptions === 1 ? t('hoy.receptions_pending_singular') : t('hoy.receptions_pending_plural')}
-              </span>
-              <ChevronRight size={18} color={C.indigo} aria-hidden="true" />
-            </Link>
-          )}
-
           {intro}
 
           {/* ── The work ── */}
@@ -322,8 +293,13 @@ export default function HoyMobile(props: HoyMobileProps) {
             <AllClear stale={semaphoreStale} unmeasured={nothingCounted} />
           )}
 
-          {contactHealth.length > 0 && (
-            <div style={{ marginBottom: 14 }}><SupplierContactHealthBanner rows={contactHealth} /></div>
+          {assumptionSummary && assumptionSummary.fields.length > 0 && cart.length > 0 && (
+            <p style={{ fontSize: 12.5, color: C.dim, margin: '0 0 18px', lineHeight: 1.55 }}>
+              {t(assumptionSummary.skus === 1 ? 'hoy.assumed_note_one' : 'hoy.assumed_note_other', { n: assumptionSummary.skus })}{' '}
+              <Link href="/configurar-inventario" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>
+                {t('hoy.assumed_note_cta')}
+              </Link>
+            </p>
           )}
 
           {extras}
@@ -390,7 +366,7 @@ export default function HoyMobile(props: HoyMobileProps) {
             onClick={() => { onGenerate(); setCartOpen(false) }}
             disabled={generating}
             aria-busy={generating}
-            style={{ background: '#2E8B62', color: '#fff', flex: 2 }}
+            style={{ background: 'var(--accent)', color: '#fff', flex: 2 }}
           >
             {generating ? t('hoy.btn_download_po_busy') : t('hoy.btn_download_po')}
           </button>
@@ -468,8 +444,10 @@ export default function HoyMobile(props: HoyMobileProps) {
 const listReset: React.CSSProperties = { listStyle: 'none', margin: 0, padding: 0 }
 
 // ── One decision, one card ───────────────────────────────────────────────────
-function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestore, onChangeQty, onOpen, canDecide }: {
+function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestore, onChangeQty, onOpen, canDecide, noContact = false, lateAlert = null }: {
   item:        ActionItem
+  noContact?:  boolean
+  lateAlert?:  SupplierLeadTimeAlert | null
   briefing:    MorningBriefing
   stale:       boolean
   onApprove:   () => void
@@ -529,10 +507,9 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
 
   return (
     <div style={{
-      border: `1px solid ${inCart ? '#22c55e55' : C.border}`,
-      borderLeft: `4px solid ${inCart ? '#2E8B62' : accent}`,
+      border: `1px solid ${inCart ? 'var(--accent)' : C.border}`,
       borderRadius: 14, marginBottom: 10, overflow: 'hidden',
-      background: inCart ? 'rgba(46,139,98,0.04)' : 'var(--surface)',
+      background: 'var(--surface)',
       transition: 'background var(--dur-3) var(--ease-out), border-color var(--dur-3) var(--ease-out)',
     }}>
       {/* The head of the card opens the line in full: why, supplier, "no pedir". */}
@@ -546,7 +523,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
         }}
       >
         <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'block', fontSize: 15.5, fontWeight: 700, color: C.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>
+          <span style={{ display: 'block', fontSize: 15.5, fontWeight: 600, color: C.text, lineHeight: 1.3, overflowWrap: 'anywhere' }}>
             {item.name}
           </span>
           <span style={{ display: 'block', fontSize: 12, fontFamily: 'monospace', color: C.dim, marginTop: 2, overflowWrap: 'anywhere' }}>
@@ -557,7 +534,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
         </span>
         <span style={{
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2, minHeight: 28,
-          fontSize: 12.5, color: C.indigo, fontWeight: 600,
+          fontSize: 12.5, color: C.dim, fontWeight: 500,
         }}>
           {t('hoy.why_toggle_show')} <ChevronRight size={15} aria-hidden="true" />
         </span>
@@ -566,7 +543,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
       <div style={{ padding: '0 14px 12px' }}>
         {/* Signal + honesty chips */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          <SignalBadge signal={item.signal} size="md" />
+          <StatusMark signal={item.signal} size={12.5} />
           {stale && <StaleSignalChip title={t('freshness.banner_title')} />}
           {anyAssumed && (
             <span style={{
@@ -588,11 +565,26 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
         </div>
         <IncomingNote item={item} />
         <OrderedNote item={item} />
+        {(noContact || lateAlert) && item.supplier && (
+          <div style={{ marginTop: 6, fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>
+            {noContact && (
+              <div>
+                {t('hoy.chip_no_contact')}{' · '}
+                <Link href={`/proveedores?focus=${encodeURIComponent(item.supplier)}`} style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center' }}>
+                  {t('hoy.chip_complete')}
+                </Link>
+              </div>
+            )}
+            {lateAlert && (
+              <div>{t('hoy.chip_late_supplier', { recent: lateAlert.lead_time_recent, usual: lateAlert.lead_time_historical })}</div>
+            )}
+          </div>
+        )}
 
         {/* Quantity stepper — read-only for a viewer */}
         {isOrdered ? null : !canDecide ? (
           <div style={{ marginTop: 12, textAlign: 'center' }}>
-            <div style={{ color: accent, fontSize: 22, fontWeight: 800 }}>{fmtNum(item.qty)}</div>
+            <div style={{ color: C.text, fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtNum(item.qty)}</div>
             <div style={{ fontSize: 11.5, color: C.dim, marginTop: 3 }}>
               {t('hoy.label_units')}{value > 0 && <> · ≈ {formatMoney(value)}</>}
             </div>
@@ -618,8 +610,8 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
                 }}
                 style={{
                   width: '100%', textAlign: 'center', background: 'transparent',
-                  border: 'none', borderBottom: `2px dashed ${accent}60`,
-                  color: accent, fontSize: 22, fontWeight: 800, outline: 'none',
+                  border: 'none', borderBottom: `1px dashed var(--border-strong)`,
+                  color: C.text, fontSize: 22, fontWeight: 600, outline: 'none', fontVariantNumeric: 'tabular-nums',
                   padding: '2px 0', minHeight: TAP, boxSizing: 'border-box',
                 }}
               />
@@ -644,10 +636,10 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
               all: 'unset', boxSizing: 'border-box', width: '100%', marginTop: 12,
               minHeight: 48, borderRadius: 12, cursor: canOrder || inCart ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-              fontSize: 15, fontWeight: 700,
-              background: inCart ? 'transparent' : canOrder ? '#2E8B62' : 'var(--surface-2)',
-              color: inCart ? '#2F855A' : canOrder ? '#fff' : C.dim,
-              border: inCart ? '1px solid #2E8B62' : '1px solid transparent',
+              fontSize: 15, fontWeight: 600,
+              background: inCart ? 'transparent' : canOrder ? 'var(--accent)' : 'var(--surface-2)',
+              color: inCart ? 'var(--accent)' : canOrder ? '#fff' : C.dim,
+              border: inCart ? '1px solid var(--accent)' : '1px solid transparent',
               transition: 'background var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out)',
             }}
           >
@@ -702,7 +694,7 @@ function LineDetailSheet({ item, briefing, onClose, canDecide, suppliers, onChan
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <span style={{ fontSize: 12.5, fontFamily: 'monospace', color: C.dim }}>{it.sku}</span>
-        <SignalBadge signal={it.signal} size="md" />
+        <StatusMark signal={it.signal} size={12.5} />
       </div>
 
       {sentence && (
@@ -826,34 +818,40 @@ function StepButton({ children, onClick, disabled, label }: {
 }
 
 function MiniKpi({ label, value, color }: { label: string; value: string; color: string }) {
+  // `color` only says whether the figure deserves a status dot: the figure
+  // itself is always plain text, so colour appears on the marker and nowhere else.
+  const dot = color === C.red ? 'var(--signal-order-now-fg)' : color === C.amber ? 'var(--signal-order-soon-fg)' : null
   return (
     <div style={{
       background: 'var(--surface)', border: `1px solid ${C.border}`,
-      borderRadius: 12, padding: '10px 12px', minWidth: 0,
+      borderRadius: 12, padding: '12px 14px', minWidth: 0,
     }}>
-      <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 3, overflowWrap: 'anywhere' }}>{label}</div>
-      <div style={{ fontSize: 21, fontWeight: 700, color, overflow: 'hidden', overflowWrap: 'anywhere', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 12, color: C.dim, marginBottom: 4, overflowWrap: 'anywhere', display: 'flex', alignItems: 'center', gap: 6 }}>
+        {dot && <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0 }} />}
+        {label}
+      </div>
+      <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   )
 }
 
-function DailySection({ color, icon, title, count, children }: {
-  color: string
-  icon: React.ReactNode
+function DailySection({ icon, title, count, children }: {
+  color?: string
+  icon?: React.ReactNode
   title: string
   count?: number
   children: React.ReactNode
 }) {
+  void icon
   return (
-    <section style={{ marginBottom: 16 }}>
+    <section style={{ marginBottom: 20 }}>
       <h2 style={{
-        fontSize: 12, fontWeight: 700, color, margin: '4px 0 8px',
-        textTransform: 'uppercase', letterSpacing: '0.07em',
-        display: 'flex', alignItems: 'center', gap: 6,
+        fontSize: 13, fontWeight: 600, color: C.muted, margin: '4px 0 10px',
+        display: 'flex', alignItems: 'baseline', gap: 8,
       }}>
-        {icon}<span style={{ flex: 1, minWidth: 0 }}>{title}</span>
+        <span style={{ minWidth: 0 }}>{title}</span>
         {count != null && count > 0 && (
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0 }}>{count}</span>
+          <span style={{ fontSize: 13, fontWeight: 400, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>{count}</span>
         )}
       </h2>
       {children}
@@ -871,7 +869,7 @@ function CartSummary({ approved }: { approved: ActionItem[] }) {
   const marginProtected = priced.reduce((s, i) => s + i.qty * (i.unit_margin ?? 0), 0)
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#2F855A' }}>
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>
         {approved.length} {t('hoy.cart_products_approved')}
       </div>
       {total > 0 && (
@@ -880,15 +878,15 @@ function CartSummary({ approved }: { approved: ActionItem[] }) {
         </div>
       )}
       {total > 0 && uncostedLines > 0 && (
-        <div style={{ fontSize: 11.5, color: C.amber, marginTop: 1 }}>{t('hoy.cart_total_uncosted', { count: uncostedLines })}</div>
+        <div style={{ fontSize: 11.5, color: C.dim, marginTop: 1 }}>{t('hoy.cart_total_uncosted', { count: uncostedLines })}</div>
       )}
       {priced.length > 0 && marginProtected > 0 && (
-        <div style={{ fontSize: 12, color: C.green, marginTop: 1 }}>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>
           {formatMoney(marginProtected)} {t('hoy.cart_protects_margin_suffix')}
         </div>
       )}
       {unpriced.length > 0 && priced.length > 0 && (
-        <div style={{ fontSize: 11.5, color: C.amber, marginTop: 1 }}>
+        <div style={{ fontSize: 11.5, color: C.dim, marginTop: 1 }}>
           {t('hoy.cart_margin_excludes_prefix')} {unpriced.length} {t('hoy.cart_margin_excludes_suffix')}
         </div>
       )}
@@ -915,7 +913,7 @@ function MobileCartBar({ approved, onOpen, onGenerate, generating }: {
   return (
     <div className="cart-bar-enter" style={{
       position: 'fixed', left: 0, right: 0, bottom: 'var(--mobile-nav-h, 0px)', zIndex: 40,
-      background: 'var(--surface)', borderTop: '1px solid rgba(46,139,98,0.45)',
+      background: 'var(--surface)', borderTop: '1px solid var(--border-strong)',
       boxShadow: '0 -6px 24px rgba(0,0,0,0.18)', padding: '10px 12px',
       display: 'flex', alignItems: 'center', gap: 10,
     }}>
@@ -929,7 +927,7 @@ function MobileCartBar({ approved, onOpen, onGenerate, generating }: {
         }}
       >
         <span style={{ minWidth: 0, flex: 1 }}>
-          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: '#2F855A' }}>
+          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: C.text }}>
             {approved.length} {t('hoy.cart_products_approved')}
           </span>
           <span key={total} className="value-changed" style={{ display: 'block', fontSize: 12.5, color: C.muted, overflow: 'hidden', overflowWrap: 'anywhere', borderRadius: 4 }}>
@@ -943,7 +941,7 @@ function MobileCartBar({ approved, onOpen, onGenerate, generating }: {
         disabled={generating}
         aria-busy={generating}
         className="mobile-btn"
-        style={{ flex: 'none', background: '#2E8B62', color: '#fff', padding: '0 18px' }}
+        style={{ flex: 'none', background: 'var(--accent)', color: '#fff', padding: '0 18px' }}
       >
         {generating ? t('hoy.btn_download_po_busy') : tOr(t, 'mobile.hoy_cart_generate', 'Generate')}
       </button>
@@ -982,7 +980,7 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
       onClose={onClose}
       maxHeight="92dvh"
       title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-        <Check size={18} color="#2F855A" aria-hidden="true" /> {t('hoy.generate_send_title')}
+        <Check size={18} color="var(--accent)" aria-hidden="true" /> {t('hoy.generate_send_title')}
       </span>}
       footer={<>
         <Link href="/pedidos" className="mobile-btn mobile-btn-secondary" style={{ textDecoration: 'none' }}>
@@ -997,7 +995,7 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
       <ul style={{ ...listReset, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
         {bySupplier.map(([supplier, ls]) => (
           <li key={supplier || '__none__'} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', fontSize: 13 }}>
-            <div style={{ fontWeight: 700, color: supplier ? C.text : C.amber }}>
+            <div style={{ fontWeight: 600, color: C.text }}>
               {supplier || t('hoy.generate_send_no_supplier')}
             </div>
             <div style={{ color: C.dim, marginTop: 2, lineHeight: 1.45 }}>
@@ -1010,17 +1008,17 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
       {canDecide && (sendState === 'done' && sendResult ? (
         <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
           {sendResult.sent.map(s => (
-            <div key={s.supplier} style={{ fontSize: 13, color: C.green }}>
+            <div key={s.supplier} style={{ fontSize: 13, color: C.muted }}>
               ✓ {s.supplier}{s.email ? ' · email' : ''}{s.whatsapp ? ' · WhatsApp' : ''}
             </div>
           ))}
           {sendResult.skipped.map((s, idx) => (
-            <div key={`${s.supplier}-${idx}`} style={{ fontSize: 13, color: C.amber }}>
+            <div key={`${s.supplier}-${idx}`} style={{ fontSize: 13, color: C.muted }}>
               {s.supplier || '—'}: {sendReason(s.reason)}
             </div>
           ))}
           {(sendResult.unresolved ?? []).length > 0 && (
-            <div style={{ fontSize: 13, color: C.amber }}>
+            <div style={{ fontSize: 13, color: C.muted }}>
               {t('roi.send_po_unresolved')} {(sendResult.unresolved ?? []).map(u => u.sku).join(', ')}
             </div>
           )}

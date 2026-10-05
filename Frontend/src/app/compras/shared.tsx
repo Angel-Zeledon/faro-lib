@@ -17,6 +17,8 @@ import { isAssumed, sourceLabelKey, type RuleScope, type ValueSource } from '@/l
 import type { MorningBriefing, InventoryStatusItem, ServiceLevelCaveat, CoverageUnit, IncomingSource } from '@/lib/types'
 import { incomingText } from '@/lib/incomingCopy'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
+import { SIGNAL_STYLES } from '@/components/ui/SignalBadge'
+import type { InventorySignal } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 // ── Colour palette ────────────────────────────────────────────────────────────
@@ -33,6 +35,22 @@ export const C = {
  green: '#2E8B62',
  blue: '#4F7FB5',
  indigo: 'var(--accent)',
+}
+
+// ── The only place a semáforo colour appears on the Panel ─────────────────────
+// A small dot beside a plain label. The colour never fills a card, a banner or
+// a header: it marks the status and nothing else. The label is always there, so
+// colour is never the only channel.
+export function StatusMark({ signal, size = 13 }: { signal: string; size?: number }) {
+ const { t } = useLanguage()
+ const style = SIGNAL_STYLES[signal as InventorySignal]
+ if (!style) return null
+ return (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: size, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+   <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: style.fg, flexShrink: 0 }} />
+   {t(style.labelKey)}
+  </span>
+ )
 }
 
 // ── Cart types ────────────────────────────────────────────────────────────────
@@ -199,8 +217,10 @@ const ASSUMPTION_FIELD_FALLBACK_EN: Record<string, string> = {
 
 const SETUP_PATH = '/configurar-inventario'
 
-export function AssumptionsBanner({ summary, stacked = false }: {
+export function AssumptionsBanner({ summary, stacked = false, flush = false }: {
  summary: AssumptionSummary
+ /** Inside a container that owns the spacing (the Panel's review strip). */
+ flush?: boolean
  /** Narrow screens put the CTA under the text instead of beside it; at 390px
   *  the side-by-side layout squeezes the sentence into a column of one word. */
  stacked?: boolean
@@ -224,7 +244,7 @@ export function AssumptionsBanner({ summary, stacked = false }: {
     display: 'flex',
     flexDirection: stacked ? 'column' : 'row',
     alignItems: 'flex-start', gap: 10, textDecoration: 'none',
-    marginBottom: 20, padding: '12px 16px', borderRadius: 10,
+    marginBottom: flush ? 0 : 20, padding: '12px 16px', borderRadius: 10,
     background: 'color-mix(in srgb, var(--accent) 6%, transparent)', border: '1px dashed color-mix(in srgb, var(--accent) 40%, transparent)',
    }}
   >
