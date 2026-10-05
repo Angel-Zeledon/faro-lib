@@ -34,6 +34,37 @@ _UNIQUE_VIOLATION = "23505"
 _PRIMARY_ORDER = "ss.is_primary DESC, ss.created_at ASC, ss.supplier_id ASC"
 
 
+def shape_lead_time_percentiles(
+    p80: Optional[float],
+    p95: Optional[float],
+    observations: int,
+    needed: int,
+) -> tuple[Optional[float], Optional[float]]:
+    """Report the observed p80 / p95 lead time (days) of a supplier, or None.
+
+    The percentiles come from SQL `PERCENTILE_CONT` (linear interpolation) over
+    `supplier_lead_time_obs`. They are DISPLAY-ONLY: the safety-stock formula and
+    the late-order alert still use the learned average / std, unchanged.
+
+    Same gates as the learned average they sit beside, so the screen never shows
+    a tail for a supplier whose average it refuses to show:
+      - fewer than `needed` receptions -> None (a tail of 1-2 points is noise);
+      - a non-positive p95 (every delivery landed the day it was ordered) -> None;
+      - missing / NaN input -> None.
+    p95 is clamped up to p80 so rounding can never print p95 below p80.
+    """
+    if observations < needed or p80 is None or p95 is None:
+        return None, None
+    try:
+        a, b = float(p80), float(p95)
+    except (TypeError, ValueError):
+        return None, None
+    if a != a or b != b or b <= 0:  # NaN or unusable
+        return None, None
+    a = max(0.0, a)
+    return round(a, 1), round(max(a, b), 1)
+
+
 def _stamp_lead_time_provenance(safe: dict, data: dict) -> dict:
     """Mark `suppliers.lead_time_days` as user-set when this call supplies one.
 
@@ -89,12 +120,16 @@ def list_suppliers(tenant_id: str, *, q: str | None = None,
     rows = query(
         """SELECT s.*,
                   COALESCE(o.n, 0) AS lead_time_observations,
-                  o.avg_days       AS lead_time_learned_days
+                  o.avg_days       AS lead_time_learned_days,
+                  o.p80_days       AS lead_time_p80_days,
+                  o.p95_days       AS lead_time_p95_days
            FROM suppliers s
            LEFT JOIN (
                SELECT LOWER(supplier)     AS supplier,
                       COUNT(*)::int       AS n,
-                      AVG(lead_time_days) AS avg_days
+                      AVG(lead_time_days) AS avg_days,
+                      PERCENTILE_CONT(0.8)  WITHIN GROUP (ORDER BY lead_time_days) AS p80_days,
+                      PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY lead_time_days) AS p95_days
                FROM supplier_lead_time_obs
                WHERE tenant_id = %s
                GROUP BY LOWER(supplier)
@@ -123,6 +158,11 @@ def list_suppliers(tenant_id: str, *, q: str | None = None,
             round(float(average), 1)
             if usable and observations >= MIN_LEAD_TIME_OBSERVATIONS
             else None
+        )
+        row["lead_time_p80_days"], row["lead_time_p95_days"] = (
+            shape_lead_time_percentiles(
+                row.get("lead_time_p80_days"), row.get("lead_time_p95_days"),
+                observations, MIN_LEAD_TIME_OBSERVATIONS)
         )
         # Enough deliveries, none of them usable. Without this the UI reads
         # "3 of 3 recorded — 0 more and we adjust on our own", promising an

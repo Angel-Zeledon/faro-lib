@@ -6,6 +6,7 @@ import type { AdjustmentValueAdded, ValueAddedGroup } from '@/lib/types'
 import Card from '@/components/ui/Card'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { fmtNum } from '@/lib/numberLocale'
+import BiasWords from '@/components/precision/BiasWords'
 
 const COLOR: Record<ValueAddedGroup['verdict'], string> = {
   improved: 'var(--accent)', worsened: '#B7791F', neutral: 'var(--muted)',
@@ -56,6 +57,11 @@ export default function AdjustmentValueCard({ sessionId }: { sessionId: string }
       {agg && d.status === 'ok' && (
         <div style={{ fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.55, marginTop: 4 }}>
           {t('forecast_adj.value_detail', { n: agg.n_points, better: agg.better_points, worse: agg.worse_points })}
+          {agg.base_bias != null && agg.adjusted_bias != null && (
+            <div data-testid="adjustment-bias">
+              {t('forecast_adj.value_bias')} <BiasWords bias={agg.base_bias} /> → <BiasWords bias={agg.adjusted_bias} />
+            </div>
+          )}
         </div>
       )}
       {d.status === 'ok' && (d.by_user.length > 1 || d.by_reason.length > 1) && (
@@ -65,6 +71,9 @@ export default function AdjustmentValueCard({ sessionId }: { sessionId: string }
               {d.by_user.map(u => (
                 <li key={u.user} style={{ color: 'var(--text)', overflowWrap: 'anywhere' }}>
                   <strong>{u.name || '—'}</strong> <span style={{ color: 'var(--dim)' }}>{sentence(t, u)}</span>
+                  {u.base_bias != null && u.adjusted_bias != null && (
+                    <div style={{ fontSize: 11 }}><BiasWords bias={u.base_bias} /> → <BiasWords bias={u.adjusted_bias} /></div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -74,6 +83,9 @@ export default function AdjustmentValueCard({ sessionId }: { sessionId: string }
               {d.by_reason.map(r => (
                 <li key={r.reason} style={{ color: 'var(--text)' }}>
                   <strong>{t(`forecast_adj.reason.${r.reason}`)}</strong> <span style={{ color: 'var(--dim)' }}>{sentence(t, r)}</span>
+                  {r.base_bias != null && r.adjusted_bias != null && (
+                    <div style={{ fontSize: 11 }}><BiasWords bias={r.base_bias} /> → <BiasWords bias={r.adjusted_bias} /></div>
+                  )}
                 </li>
               ))}
             </ul>

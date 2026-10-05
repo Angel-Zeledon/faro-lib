@@ -54,6 +54,8 @@ interface SupplierLearning {
   lead_time_observations_needed?: number
   lead_time_learned_days?:        number | null
   lead_time_learned_unusable?:    boolean
+  lead_time_p80_days?:            number | null
+  lead_time_p95_days?:            number | null
 }
 type SupplierWithLearning = Supplier & SupplierLearning
 
@@ -78,11 +80,21 @@ function LeadTimeLearning({ supplier }: { supplier: SupplierWithLearning }) {
   const learned = supplier.lead_time_learned_days
 
   if (seen >= needed && learned != null) {
+    const p80 = supplier.lead_time_p80_days
+    const p95 = supplier.lead_time_p95_days
     return (
       <span style={{ color: C.green }}>
         {tOr(t, 'suppliers.learning_active',
           `Learned from ${seen} deliveries: ${learned} days on average — that is the number we plan with.`,
           { n: seen, days: learned })}
+        {p80 != null && p95 != null && (
+          <span style={{ color: C.dim }}>
+            {' '}
+            {tOr(t, 'suppliers.learning_percentiles',
+              `8 in 10 arrive within ${p80} days, 19 in 20 within ${p95}.`,
+              { p80, p95 })}
+          </span>
+        )}
       </span>
     )
   }

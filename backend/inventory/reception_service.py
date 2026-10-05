@@ -799,6 +799,8 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
                   MIN(o.lead_time_days)             AS lead_time_real_min,
                   MAX(o.lead_time_days)             AS lead_time_real_max,
                   AVG(o.lead_time_days)             AS lead_time_real_avg,
+                  PERCENTILE_CONT(0.8)  WITHIN GROUP (ORDER BY o.lead_time_days) AS lead_time_p80_days,
+                  PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY o.lead_time_days) AS lead_time_p95_days,
                   MAX(o.observed_at)                AS last_reception,
                   s.declared_lead_time              AS lead_time_declarado,
                   AVG(CASE WHEN o.lead_time_days <= s.declared_lead_time THEN 1.0 ELSE 0.0 END)
@@ -875,6 +877,13 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
         for k in ("lead_time_real_avg", "lead_time_real_min", "lead_time_real_max"):
             if d.get(k) is not None:
                 d[k] = round(float(d[k]), 1)
+        # Display-only tail of the observed lead times; same sample floor as the
+        # learned average on the supplier card (see shape_lead_time_percentiles).
+        from backend.inventory.service import MIN_LEAD_TIME_OBSERVATIONS
+        from backend.inventory.supplier_service import shape_lead_time_percentiles
+        d["lead_time_p80_days"], d["lead_time_p95_days"] = shape_lead_time_percentiles(
+            d.get("lead_time_p80_days"), d.get("lead_time_p95_days"),
+            int(d.get("n_receptions") or 0), MIN_LEAD_TIME_OBSERVATIONS)
         if d.get("on_time_rate") is not None:
             d["on_time_rate"] = round(float(d["on_time_rate"]), 3)
 
@@ -955,6 +964,8 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
             "lead_time_real_min": None,
             "lead_time_real_max": None,
             "lead_time_real_avg": None,
+            "lead_time_p80_days": None,
+            "lead_time_p95_days": None,
             "last_reception": None,
             "lead_time_declarado": None,
             "on_time_rate": None,
