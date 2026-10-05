@@ -16,6 +16,7 @@ import Spinner from '@/components/ui/Spinner'
 import RunWarningsPanel from '@/components/ui/RunWarningsPanel'
 import { useTenantFacts, has } from '@/hooks/useTenantFacts'
 import RunLineagePanel from '@/components/ui/RunLineagePanel'
+import ReforecastAction from '@/components/forecast/ReforecastAction'
 import {
   EmptyState, InlineError, LoadingState, SkeletonTable,
 } from '@/components/ui/States'
@@ -515,6 +516,7 @@ export default function SkusPage() {
       {/* Collapsed to one line: it used to run ~600px above the chart, which
           is why a page called "Predicciones" opened with no prediction in
           view. The finding keeps its colour and its click; it gives up the room. */}
+      <ReforecastAction sessionId={sessionId} />
       <RunWarningsPanel sessionId={sessionId} collapsible />
       {/* How the forecast was produced (fingerprints, config JSON) is an
           analyst's question: the buyer view does not carry it. */}

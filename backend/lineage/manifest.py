@@ -131,8 +131,14 @@ def build_manifest(
     outcome: str, error: Optional[str] = None,
     result: Optional[dict] = None, forecasts: Optional[dict] = None,
     stage_timings: Optional[dict] = None,
+    artifacts: Optional[list] = None, reforecast: Optional[dict] = None,
 ) -> dict:
-    """Assemble the manifest from what the run left behind. Plain dicts only."""
+    """Assemble the manifest from what the run left behind. Plain dicts only.
+
+    `artifacts` lists the persisted model files the run produced (family, kind,
+    SHA-256): the digests a later re-forecast verifies before loading anything.
+    `reforecast` is present only for a re-forecast and records what it was
+    derived from (see backend/model_registry/reforecast_service.py)."""
     from backend.sessions.service import get_session
     from backend.training.job_service import get_job
 
@@ -206,6 +212,15 @@ def build_manifest(
             "series_count": len(forecasts),
         },
     }
+    if artifacts:
+        manifest["model_artifacts"] = artifacts
+    if reforecast is not None:
+        manifest["reforecast"] = {
+            "parent_session_id": session.get("parent_session_id"),
+            "parent_dataset_hash": (reforecast or {}).get("parent_dataset_hash"),
+            "last_full_refit_at": _iso(session.get("last_full_refit_at")),
+            **{k: v for k, v in reforecast.items() if k != "parent_dataset_hash"},
+        }
     return manifest
 
 

@@ -346,6 +346,8 @@ app.include_router(datasets.router,      prefix=_PREFIX)
 app.include_router(datasources.router,   prefix=_PREFIX)
 app.include_router(configuration.router, prefix=_PREFIX)
 app.include_router(training.router,      prefix=_PREFIX)
+from backend.api.v1 import reforecast as reforecast_router  # noqa: E402
+app.include_router(reforecast_router.router, prefix=_PREFIX)
 app.include_router(planning_router.router, prefix=_PREFIX)
 app.include_router(forecasts.router,     prefix=_PREFIX)
 app.include_router(artifacts.router,     prefix=_PREFIX)

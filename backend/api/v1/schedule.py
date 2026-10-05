@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
 
@@ -32,6 +33,20 @@ CRON_PRESETS = {
 class SaveScheduleRequest(BaseModel):
     cron_expr: str
     enabled:   bool = True
+    # 'refit' trains from scratch on every run (the behaviour before this field
+    # existed); 'reforecast' re-forecasts from the stored models while they are
+    # young and refits them once they are older than
+    # `reforecast_full_refit_days` (backend/sessions/retrain_service.py).
+    retrain_mode: Optional[str] = None
+
+    @field_validator("retrain_mode")
+    @classmethod
+    def _valid_mode(cls, v: Optional[str]) -> Optional[str]:
+        # None = "leave it as it is" on an update, "refit" on a new schedule: a
+        # client that never heard of the field must not reset it by re-saving.
+        if v is not None and v not in ("refit", "reforecast"):
+            raise ValueError("retrain_mode must be 'refit' or 'reforecast'")
+        return v
 
     @field_validator("cron_expr")
     @classmethod
@@ -98,7 +113,8 @@ def list_schedules(user: CurrentUser = Depends(get_current_user)):
     """
     rows = query(
         """SELECT j.id, j.session_id, s.name AS session_name, j.cron_expr,
-                  j.next_run, j.enabled, j.last_run, j.last_error, j.last_error_at
+                  j.next_run, j.enabled, j.last_run, j.last_error, j.last_error_at,
+                  j.retrain_mode
              FROM scheduled_jobs j
              JOIN sessions s ON s.id = j.session_id AND s.tenant_id = j.tenant_id
             WHERE j.tenant_id = %s
@@ -172,7 +188,7 @@ def get_schedule(session_id: str, user: CurrentUser = Depends(get_current_user))
     # last_run / last_error / last_error_at come along so the UI can tell a
     # healthy schedule from one whose trigger has been failing for weeks.
     row = query_one(
-        "SELECT id, session_id, cron_expr, next_run, enabled, last_run, last_error, last_error_at "
+        "SELECT id, session_id, cron_expr, next_run, enabled, last_run, last_error, last_error_at, retrain_mode "
         "FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
         (session_id, user.tenant_id),
     )
@@ -196,26 +212,32 @@ def save_schedule(
         raise AppError("session_not_found", "Session not found", status_code=404)
     next_run = _next_run(body.cron_expr, user.tenant_id)
     existing = query_one(
-        "SELECT id, cron_expr, enabled FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
+        "SELECT id, cron_expr, enabled, retrain_mode FROM scheduled_jobs WHERE session_id = %s AND tenant_id = %s",
         (session_id, user.tenant_id),
     )
     audit.note(
         request,
-        before=({"cron_expr": existing["cron_expr"], "enabled": existing["enabled"]}
+        before=({"cron_expr": existing["cron_expr"], "enabled": existing["enabled"],
+                 "retrain_mode": existing["retrain_mode"]}
                 if existing else None),
-        after={"cron_expr": body.cron_expr, "enabled": body.enabled},
+        after={"cron_expr": body.cron_expr, "enabled": body.enabled,
+               "retrain_mode": body.retrain_mode
+               or (existing["retrain_mode"] if existing else "refit")},
     )
     if existing:
         execute(
-            "UPDATE scheduled_jobs SET cron_expr=%s, next_run=%s, enabled=%s WHERE id=%s",
-            (body.cron_expr, next_run, body.enabled, existing["id"]),
+            "UPDATE scheduled_jobs SET cron_expr=%s, next_run=%s, enabled=%s, "
+            "retrain_mode=COALESCE(%s, retrain_mode) WHERE id=%s",
+            (body.cron_expr, next_run, body.enabled, body.retrain_mode, existing["id"]),
         )
         schedule_id = existing["id"]
     else:
         row = query_one(
-            """INSERT INTO scheduled_jobs (id, tenant_id, session_id, cron_expr, next_run, enabled)
-               VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s) RETURNING id""",
-            (user.tenant_id, session_id, body.cron_expr, next_run, body.enabled),
+            """INSERT INTO scheduled_jobs (id, tenant_id, session_id, cron_expr, next_run,
+                                          enabled, retrain_mode)
+               VALUES (gen_random_uuid()::text, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (user.tenant_id, session_id, body.cron_expr, next_run, body.enabled,
+             body.retrain_mode or "refit"),
         )
         schedule_id = row["id"] if row else None
 
@@ -226,6 +248,8 @@ def save_schedule(
         "cron_expr":  body.cron_expr,
         "next_run":   next_run.isoformat(),
         "enabled":    body.enabled,
+        "retrain_mode": body.retrain_mode
+        or (existing["retrain_mode"] if existing else "refit"),
     })
 
 

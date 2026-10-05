@@ -173,6 +173,10 @@ class Settings(BaseSettings):
     # Relative worsening of a session's realised WAPE over its training-time WAPE
     # at which the one in-app "forecast is degrading" alert is raised (percent).
     accuracy_degradation_threshold_pct: float = 25.0
+    # Scheduled retrains in 'reforecast' mode re-forecast from the stored models
+    # while the last FULL refit is younger than this many days, and refit
+    # otherwise. 7 is the owner's default (docs/retraining-and-enterprise.md).
+    reforecast_full_refit_days: int = 7
     # Public external base URL Twilio POSTs the inbound webhook to (scheme + host,
     # e.g. "https://app.stockai.com"). Twilio computes X-Twilio-Signature over the
     # PUBLIC url; behind the frontend proxy / TLS termination the backend sees an

@@ -977,6 +977,42 @@ class ForecastEngine:
             return pd.DataFrame(columns=["sku", "model", "date", "forecast", "p90_lo", "p90_hi", "step"])
         return self._forecast_df.reset_index(drop=True)
 
+    def export_artifacts(self):
+        """
+        Serialise the trained models into a versioned, content-hashed
+        ``ArtifactSet`` (see ``forecasting_core.reforecast``). JSON + native
+        model formats, no pickle. The caller decides where the bytes live.
+        """
+        self._require_trained()
+        from forecasting_core.reforecast import build_artifact_set
+        return build_artifact_set(self)
+
+    def reforecast(self, artifacts, horizon: Optional[int] = None, **options):
+        """
+        Forecast from persisted models over the history loaded into this engine
+        (``load_data``), WITHOUT refitting. Mirrors the state ``train()`` leaves
+        behind, so ``get_metrics`` / ``get_forecast`` / ``get_inventory_report``
+        read the re-forecast as they would a trained run.
+
+        Raises ``forecasting_core.reforecast.ReforecastRefused`` (with a stable
+        ``code``) when the artifacts cannot answer for this data.
+        """
+        self._require_data()
+        self._ensure_config()
+        from forecasting_core.reforecast import reforecast as _reforecast
+        result = _reforecast(artifacts, self._df, self._config, horizon, **options)
+        self._metrics_df = result.metrics_df
+        self._forecast_df = result.forecast_df
+        self._inventory_df = result.inventory_df
+        self._fitted_models = result.fitted_models
+        self._stat_forecasts = {}
+        self._run_id = f"reforecast_{result.parent_run_id}"
+        self._run_metadata = result.run_metadata
+        self._demand_risk = result.demand_risk
+        self._policy_backtest = result.policy_backtest
+        self._transformer = None
+        return result
+
     def get_inventory_report(self) -> dict:
         """
         Return inventory recommendations (reorder point, safety stock, stockout risk).

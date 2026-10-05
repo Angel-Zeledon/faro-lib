@@ -2353,3 +2353,27 @@ export const getAuditTrail = (q: AuditQuery & { limit?: number; offset?: number 
 export const getAuditFilters = () => request<AuditFilters>('GET', '/audit/filters', undefined, { silent: true })
 export const downloadAuditCsv = (q: AuditQuery = {}) =>
   downloadBlob(`/audit/export?${auditQs(q)}`, `audit-${new Date().toISOString().slice(0, 10)}.csv`)
+
+// ── Re-forecast with the new sales, without retraining ───────────────────────
+
+export interface ReforecastStatus {
+  session_id: string
+  eligible: boolean
+  /** Stable code when not eligible (no_new_data, no_artifacts, ...). */
+  reason: string | null
+  has_artifacts: boolean
+  new_data: boolean
+  newer_dataset_id: string | null
+  refit_age_days: number | null
+  refit_due: boolean
+  /** Model families that cannot be updated and would be refitted per series. */
+  refit_families: string[]
+}
+
+export const getReforecastStatus = (sessionId: string) =>
+  request<ReforecastStatus>('GET', `/sessions/${sessionId}/reforecast/status`, undefined, { silent: true })
+
+export const startReforecast = (sessionId: string, datasetId?: string | null) =>
+  request<{ session_id: string; job_id: string; parent_session_id: string }>(
+    'POST', `/sessions/${sessionId}/reforecast`, datasetId ? { dataset_id: datasetId } : undefined,
+  )

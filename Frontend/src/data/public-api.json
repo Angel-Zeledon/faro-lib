@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 227,
-  "read": 144,
-  "write": 83
+  "total": 229,
+  "read": 145,
+  "write": 84
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -12578,6 +12578,12 @@
          "required": false,
          "type": "boolean",
          "default": true
+        },
+        {
+         "name": "retrain_mode",
+         "required": false,
+         "type": "string",
+         "nullable": true
         }
        ]
       },
@@ -13407,6 +13413,110 @@
      "scope": "read",
      "summary": "List a session's jobs",
      "description": "Training jobs run for the session.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-sessions-session_id-reforecast",
+     "method": "POST",
+     "path": "/sessions/{session_id}/reforecast",
+     "tag": "training",
+     "scope": "write",
+     "summary": "Start Reforecast",
+     "description": "Create a NEW session that forecasts from this session's stored models over newer sales, without retraining. The source session is never modified. Counts against the plan's saved-forecast ceiling; runs on the job queue.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": false,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "dataset_id",
+         "required": false,
+         "type": "string",
+         "nullable": true
+        }
+       ],
+       "nullable": true
+      },
+      "example": {
+       "dataset_id": "<dataset_id>"
+      }
+     },
+     "success_status": 202,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-sessions-session_id-reforecast-status",
+     "method": "GET",
+     "path": "/sessions/{session_id}/reforecast/status",
+     "tag": "training",
+     "scope": "read",
+     "summary": "Reforecast Status",
+     "description": "Whether a re-forecast with newer sales is on offer for this session: stored models present, newer data than the forecast used, and the refit age of the models. `reason` is a stable code when it is not.",
      "parameters": [
       {
        "name": "session_id",

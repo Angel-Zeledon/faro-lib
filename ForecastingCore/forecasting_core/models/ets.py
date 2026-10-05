@@ -62,6 +62,14 @@ def run_ets_core(df, dt, target, group, train_ratio, min_rows, seasonal_period,
                 ).fit(optimized=True)
                 result["forecast"] = full_model.forecast(horizon)
                 result["residuals"] = train - model.fittedvalues
+                # Smoothing parameters and initial states of the SERVED model,
+                # kept so `reforecast` can re-run the filter over newer history
+                # without re-estimating them.
+                result["state"] = {
+                    "kind": "ets", "use_seasonal": bool(use_seasonal),
+                    "seasonal_period": int(seasonal_period),
+                    "params": dict(full_model.params),
+                }
             results[key] = result
         except Exception as e:
             log.warning(f"ETS failed SKU={sku}: {e}")

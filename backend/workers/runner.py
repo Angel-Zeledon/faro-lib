@@ -1421,6 +1421,111 @@ def _record_training_outcome(
         log.exception("could not record the training outcome for session=%s", session_id)
 
 
+# ── Persisted models and re-forecasts ──────────────────────────────────────
+
+def _load_reforecast_artifacts(tenant_id: str, session_id: str):
+    """`(parent_session_id, LoadedArtifacts)` for a re-forecast session, else
+    `(None, None)`. Every refusal becomes a `TrainingDataError` carrying a
+    stable code (`reforecast_<code>`) that the frontend renders."""
+    session = get_session(tenant_id, session_id) or {}
+    if not session.get("is_reforecast"):
+        return None, None
+    parent_id = session.get("parent_session_id")
+    from forecasting_core.reforecast import ArtifactIntegrityError, load_artifact_set
+
+    from backend.errors import AppError
+    from backend.model_registry import service as registry
+    try:
+        files = registry.load_verified(tenant_id, parent_id)
+        return parent_id, load_artifact_set(files)
+    except AppError as exc:
+        raise TrainingDataError(f"reforecast_{exc.code}") from exc
+    except (ArtifactIntegrityError, ValueError) as exc:
+        log.error("re-forecast of %s: artifacts of %s unreadable: %s",
+                  session_id, parent_id, exc)
+        raise TrainingDataError("reforecast_artifact_integrity_failed") from exc
+
+
+def _run_reforecast(engine, artifacts, prog, tenant_id, session_id, job_id):
+    """Forecast from the stored models over the loaded history. The training
+    stages do not exist for this run, so the bar drops them and moves on the one
+    that does."""
+    from forecasting_core.reforecast import ReforecastRefused
+
+    for stage in ("validate", "quality", "assign_models", "features", "ml_training",
+                  "global_model", "stat_training", "ensemble", "registry"):
+        prog.drop(stage)
+    prog.begin("future_forecast",
+               "Updating the forecast with the new sales (no retraining)...")
+    try:
+        result = engine.reforecast(artifacts)
+    except ReforecastRefused as exc:
+        # The code is the stable part; the parameters say what to change.
+        detail = ", ".join(f"{k}={v}" for k, v in sorted(exc.params.items()))
+        session_store.append_log(
+            tenant_id, session_id, job_id,
+            f"[{datetime.now(timezone.utc).isoformat()}] [reforecast] refused: "
+            f"{exc.code} {detail}".strip())
+        raise TrainingDataError(f"reforecast_{exc.code}") from exc
+    prog.finish("future_forecast")
+    return result
+
+
+_MAX_REFORECAST_STATUSES = 200
+
+
+def _reforecast_payload(result, parent_session_id: str) -> dict:
+    """What a re-forecast did, for the results screen: counts for everything,
+    detail only for what was NOT a plain state update."""
+    unusual = [s.to_dict() for s in result.statuses if s.mode != "updated"]
+    return {
+        "parent_session_id": parent_session_id,
+        "parent_run_id": result.parent_run_id,
+        "horizon": result.horizon,
+        "summary": result.summary,
+        "exceptions": unusual[:_MAX_REFORECAST_STATUSES],
+        "exceptions_truncated": max(0, len(unusual) - _MAX_REFORECAST_STATUSES),
+        "new_series": result.new_series,
+    }
+
+
+def _reforecast_lineage(tenant_id: str, parent_session_id: str, result) -> dict:
+    from backend.model_registry import reforecast_service as rf
+    from backend.model_registry import service as registry
+    return {
+        "parent_dataset_hash": rf._trained_dataset_hash(tenant_id, parent_session_id),
+        "artifacts_used": registry.manifest_summary(tenant_id, parent_session_id),
+        "summary": result.summary,
+        "parent_run_id": result.parent_run_id,
+    }
+
+
+def _persist_models(tenant_id: str, session_id: str, engine, parent_session_id):
+    """Store this run's models (a full training) or register the parent's
+    (a re-forecast); returns the summaries for the manifest, `[]` on failure.
+
+    Never fails the run: the forecast is already saved. It is not silent either:
+    a session without stored models reports `no_artifacts` from the status
+    endpoint, so the re-forecast action simply is not offered, and this logs at
+    ERROR."""
+    from backend.db.connection import execute
+    from backend.model_registry import service as registry
+    try:
+        if parent_session_id:
+            registry.inherit_artifacts(tenant_id, session_id, parent_session_id)
+        else:
+            artifact_set = engine.export_artifacts()
+            registry.save_artifact_set(tenant_id, session_id, artifact_set.files)
+            # The age re-forecasts inherit: when these models were FITTED.
+            execute(
+                "UPDATE sessions SET last_full_refit_at = NOW() "
+                "WHERE id = %s AND tenant_id = %s", (session_id, tenant_id))
+        return registry.manifest_summary(tenant_id, session_id)
+    except Exception:  # noqa: BLE001
+        log.exception("could not persist the models of session=%s", session_id)
+        return []
+
+
 # ── Main training entry point ──────────────────────────────────────────────
 
 def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
@@ -1453,6 +1558,12 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         prog = JobProgress(tenant_id, session_id, job_id)
         prog.begin("init", "Building engine config...")
         config = build_engine_config(tenant_id, session_id)
+
+        # A re-forecast session loads its parent's verified models instead of
+        # fitting new ones. Done first so a missing or tampered artifact fails
+        # the job before any data is read, with a code the frontend can render.
+        reforecast_parent_id, reforecast_artifacts = _load_reforecast_artifacts(
+            tenant_id, session_id)
 
         prog.begin("load", "Loading dataset...")
         from forecasting_core.engine import ForecastEngine
@@ -1669,7 +1780,12 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
 
         # The engine reports its own stages and per-SKU units; they fold into
         # this job's plan, so the bar moves with real work done.
-        engine.train(on_progress=prog.on_engine_event)
+        reforecast_result = None
+        if reforecast_artifacts is not None:
+            reforecast_result = _run_reforecast(
+                engine, reforecast_artifacts, prog, tenant_id, session_id, job_id)
+        else:
+            engine.train(on_progress=prog.on_engine_event)
 
         prog.begin("results", "Collecting metrics...")
         metrics = engine.get_metrics()
@@ -1687,7 +1803,10 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         # registro de métricas de entrenamiento"). Must never fail training.
         try:
             from backend.training.metrics_history import record_training_metrics
-            record_training_metrics(tenant_id, session_id, metrics.get("by_model") or {})
+            # A re-forecast measured nothing new: its metrics are the parent's.
+            # Recording them again would show a fit that never happened.
+            if reforecast_result is None:
+                record_training_metrics(tenant_id, session_id, metrics.get("by_model") or {})
         except Exception as e:
             log.warning(f"Recording training metrics history failed (non-fatal): {e}")
 
@@ -1718,6 +1837,9 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             # column): the read side of per-warehouse freshness.
             "store_data_through": _store_data_through(engine._df, col_cfg),
         }
+        if reforecast_result is not None:
+            result_payload["reforecast"] = _reforecast_payload(
+                reforecast_result, reforecast_parent_id)
         session_store.set_training_result(tenant_id, session_id, result_payload)
 
         prog.begin("forecast", "Generating forecast series...")
@@ -1779,6 +1901,9 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
         except Exception as e:
             log.warning(f"Config export failed: {e}")
 
+        model_artifacts = _persist_models(
+            tenant_id, session_id, engine, reforecast_parent_id)
+
         mark_completed(tenant_id, job_id)
         force_status(tenant_id, session_id, "COMPLETED", "results")
         from backend.lineage.manifest import save_manifest
@@ -1786,6 +1911,10 @@ def run_training_job(tenant_id: str, session_id: str, job_id: str) -> None:
             tenant_id, session_id, job_id, outcome="COMPLETED",
             result=result_payload, forecasts=forecasts,
             stage_timings=prog.stage_timings(),
+            artifacts=model_artifacts,
+            reforecast=(_reforecast_lineage(
+                tenant_id, reforecast_parent_id, reforecast_result)
+                if reforecast_result is not None else None),
         )
         fire_webhooks(tenant_id, "job.completed", {"job_id": job_id, "session_id": session_id})
         broadcaster.broadcast_sync(job_id, {"type": "completed", "job_id": job_id})

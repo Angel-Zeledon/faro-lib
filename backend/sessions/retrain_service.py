@@ -208,6 +208,65 @@ def _free_unreferenced_snapshots(tenant_id: str, schedule_id: str, keep: str) ->
             log.warning("retrain: could not free snapshot %s: %s", row["id"], exc)
 
 
+RETRAIN_MODE_REFIT = "refit"
+RETRAIN_MODE_REFORECAST = "reforecast"
+RETRAIN_MODES = (RETRAIN_MODE_REFIT, RETRAIN_MODE_REFORECAST)
+
+
+def retrain_mode(tenant_id: str, schedule_id: str) -> str:
+    row = query_one(
+        "SELECT retrain_mode FROM scheduled_jobs WHERE id = %s AND tenant_id = %s",
+        (schedule_id, tenant_id),
+    )
+    mode = (row or {}).get("retrain_mode")
+    return mode if mode in RETRAIN_MODES else RETRAIN_MODE_REFIT
+
+
+def _launch_reforecasts(
+    tenant_id: str, schedule_id: str, template_session_id: str,
+    dataset_id: str, content_hash: Optional[str],
+) -> Optional[dict]:
+    """Re-forecast each grain of the serving family from its stored models, or
+    return None when a full refit is the right answer (and say nothing: the
+    caller then refits, which is the safe path).
+
+    A full refit is chosen when there is nothing to derive from, when the models
+    are `reforecast_full_refit_days` old or older, or when the schedule's last
+    re-forecast FAILED — a refusal (the data drifted past what the stored models
+    can answer for) would otherwise repeat every day until the age limit."""
+    from backend.model_registry import reforecast_service as rf
+
+    parents = rf.reforecast_parents_for_schedule(
+        tenant_id, schedule_id, template_session_id)
+    if not parents or any(rf.refit_due(p) for p in parents):
+        return None
+    last = query_one(
+        "SELECT status FROM sessions WHERE tenant_id = %s AND scheduled_job_id = %s "
+        "AND is_reforecast ORDER BY created_at DESC LIMIT 1",
+        (tenant_id, schedule_id),
+    )
+    if last and last["status"] == "FAILED":
+        log.info("Scheduled retrain %s: the last re-forecast failed - refitting", schedule_id)
+        return None
+
+    prune_previous_runs(tenant_id, schedule_id)
+    launched = []
+    for parent in parents:
+        launched.append(rf.launch_reforecast(
+            tenant_id, "scheduler", parent["id"], schedule_id=schedule_id,
+            dataset_id=dataset_id, require_new_data=False, enforce_job_cap=False,
+        ))
+    record_run(
+        tenant_id, schedule_id, LAUNCHED, session_id=launched[0]["session_id"],
+        dataset_id=dataset_id, content_hash=content_hash,
+        reason_params={"mode": "reforecast", "sessions": len(launched)},
+    )
+    log.info("Scheduled re-forecast launched: schedule=%s sessions=%s",
+             schedule_id, [x["session_id"] for x in launched])
+    return {"family_id": parents[0].get("family_id"), "mode": RETRAIN_MODE_REFORECAST,
+            "sessions": launched, "base_job_id": launched[0]["job_id"]}
+
+
 def launch_scheduled_retrain(
     tenant_id: str, schedule_id: str, template_session_id: str,
     user_id: str = "scheduler",
@@ -271,6 +330,18 @@ def _launch(
             delete_source(tenant_id, fresh_dataset_id)
         log.info("Scheduled retrain skipped: no new data for schedule %s", schedule_id)
         return None
+
+    # 'Re-forecast daily, refit periodically': while the models are young and the
+    # last re-forecast did not fail, new data only advances the forecast from the
+    # stored models. Anything that stops that (models too old, nothing stored, a
+    # failed re-forecast) falls through to the full refit below.
+    if retrain_mode(tenant_id, schedule_id) == RETRAIN_MODE_REFORECAST:
+        reforecasted = _launch_reforecasts(
+            tenant_id, schedule_id, template_session_id, dataset_id, content_hash)
+        if reforecasted is not None:
+            if fresh_dataset_id:
+                _free_unreferenced_snapshots(tenant_id, schedule_id, keep=fresh_dataset_id)
+            return reforecasted
 
     # Free the slot this schedule used last time before asking for another one,
     # so a plan ceiling counts what the schedule actually keeps.

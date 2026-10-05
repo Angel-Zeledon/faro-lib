@@ -1861,6 +1861,56 @@ _ENTERPRISE = [
 _MIGRATIONS += _ENTERPRISE
 
 
+# ── Persisted models and re-forecasts (backend/model_registry/) ──────────────
+# Its own appended list, like the two above. All additive.
+_MODEL_ARTIFACTS = [
+    # One row per stored artifact FILE of a session: one per model family plus a
+    # `context` file. `content_hash` is the SHA-256 of the stored bytes and is
+    # verified before the file is parsed. A re-forecast session does not copy
+    # its parent's files: it registers the same paths with
+    # `inherited_from_session_id` set, so the chain "full fit -> daily
+    # re-forecasts" keeps one set of models on disk. Sessions are permanent and
+    # so are these rows; the tenant FK only makes tenant erasure complete.
+    ("create_model_artifacts",
+     """CREATE TABLE IF NOT EXISTS model_artifacts (
+         id                        TEXT PRIMARY KEY,
+         tenant_id                 TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         session_id                TEXT NOT NULL,
+         family                    TEXT NOT NULL,
+         kind                      TEXT NOT NULL,
+         version                   INT  NOT NULL DEFAULT 1,
+         format                    TEXT NOT NULL,
+         storage_path              TEXT NOT NULL,
+         content_hash              TEXT NOT NULL,
+         size_bytes                BIGINT NOT NULL,
+         metadata                  JSONB NOT NULL DEFAULT '{}'::jsonb,
+         inherited_from_session_id TEXT,
+         created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         UNIQUE (tenant_id, session_id, family)
+     )"""),
+    ("create_model_artifacts_session_idx",
+     "CREATE INDEX IF NOT EXISTS idx_model_artifacts_session "
+     "ON model_artifacts (tenant_id, session_id)"),
+    # A re-forecast is a NEW session that names the one it was derived from;
+    # the parent is never modified.
+    ("add_sessions_is_reforecast",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_reforecast BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("add_sessions_parent_session_id",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS parent_session_id TEXT"),
+    # When the models behind this session were last FITTED (not re-forecast). A
+    # full training stamps its own completion; a re-forecast inherits its
+    # parent's, so "how old are these models" survives a chain of re-forecasts.
+    ("add_sessions_last_full_refit_at",
+     "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_full_refit_at TIMESTAMPTZ"),
+    # 'refit' (default, today's behaviour) | 'reforecast': re-forecast when new
+    # data arrived and the last full refit is younger than
+    # `reforecast_full_refit_days`, otherwise refit.
+    ("add_scheduled_jobs_retrain_mode",
+     "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS retrain_mode TEXT NOT NULL DEFAULT 'refit'"),
+]
+_MIGRATIONS += _MODEL_ARTIFACTS
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.
