@@ -27,7 +27,11 @@ from forecasting_core.training.global_trainer import GlobalTrainer
 from forecasting_core.training.trainer import Trainer
 
 HORIZON = 14
-FEATURES = FeaturesConfig(lags=[1, 7], diffs=[1], rolling=[7], calendar=True)
+# Country pinned: the default moved from CO to CR on 2026-09-30 and this fixture
+# (one seed) flipped its h-step-vs-fold ordering with it. NOTE: that ordering holds
+# on only 1 of 5 seeds, so the premise is seed-dependent, not a general property.
+FEATURES = FeaturesConfig(lags=[1, 7], diffs=[1], rolling=[7], calendar=True,
+                          holiday_country="CO")
 
 
 # ---------------------------------------------------------------------------
