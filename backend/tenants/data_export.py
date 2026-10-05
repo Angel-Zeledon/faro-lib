@@ -73,6 +73,9 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("bom_items", "bom_items", "*"),
     ("warehouses", "warehouses", "*"),
     ("documents", "documents", "*"),
+    # What the person typed on the feedback dialog. The screenshot FILES travel
+    # in the zip too (feedback_screenshots/), see build_export_zip.
+    ("feedback_reports", "feedback_reports", "*"),
     ("chats", "chats", "*"),
     ("chat_messages", "chat_messages", "*"),
     ("accuracy_snapshots", "accuracy_snapshots", "*"),
@@ -149,6 +152,23 @@ def build_export_zip(tenant_id: str) -> bytes:
             rows = query(f"SELECT {cols} FROM {table} WHERE tenant_id = %s", (tenant_id,))
             zf.writestr(f"{stem}.json", _dump(rows))
             manifest["tables"][stem] = len(rows)
+
+        # The screenshots are the tenant's data like any uploaded file: they
+        # travel with the export, under the report id that names them.
+        shots = 0
+        for row in query(
+            "SELECT screenshot_path FROM feedback_reports "
+            "WHERE tenant_id = %s AND screenshot_path IS NOT NULL", (tenant_id,),
+        ):
+            try:
+                from backend.feedback.service import screenshot_abspath
+                f = screenshot_abspath(tenant_id, row["screenshot_path"])
+                if f.is_file():
+                    zf.write(f, f"feedback_screenshots/{f.name}")
+                    shots += 1
+            except (OSError, ValueError) as exc:
+                log.warning("export: skipped a feedback screenshot: %s", exc)
+        manifest["feedback_screenshots"] = shots
 
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
 
@@ -232,6 +252,7 @@ _DELETE_ORDER: list[str] = [
     "api_usage_daily",
     "api_keys",
     "documents",
+    "feedback_reports",
     "user_permissions",
     "user_identities",
     "refresh_tokens",
@@ -257,7 +278,7 @@ _DELETE_ORDER: list[str] = [
 # single rmtree per category instead of one helper per file type.
 _STORAGE_CATEGORIES = (
     "tenants", "users", "sessions", "datasets", "jobs", "artifacts",
-    "pos", "documents", "logs",
+    "pos", "documents", "logs", "feedback",
 )
 
 

@@ -2097,6 +2097,26 @@ export const requestUpgrade = (body: { limit_key?: string | null; message?: stri
     'POST', '/entitlements/upgrade-request', body,
   )
 
+/**
+ * "Send feedback". `notified: false` means the report is stored but the e-mail
+ * to the team did not leave; the dialog says so. Silent on purpose: the dialog
+ * owns the failure message (the global error toast would offer to open this
+ * same dialog again).
+ */
+export interface FeedbackPayload {
+  message: string
+  error_code?: string | null
+  page_path?: string | null
+  user_agent?: string | null
+  app_version?: string | null
+  /** PNG/JPEG data URL, or omitted when the person did not include one. */
+  screenshot?: string | null
+  consent_reply: boolean
+  consent_news: boolean
+}
+export const sendFeedback = (body: FeedbackPayload) =>
+  request<{ id: string; notified: boolean }>('POST', '/feedback', body, { silent: true })
+
 // ── Multi-period planning (Phase B) ──────────────────────────────────────────
 export const getPlanning = () =>
   request<PlanningState>('GET', '/planning')

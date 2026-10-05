@@ -97,6 +97,8 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("DELETE", "/webhooks/{webhook_id}"):           _r("webhook.deleted", "webhook", "webhook_id"),
     ("POST", "/documents"):                         _r("document.created", "document"),
     ("DELETE", "/documents/{doc_id}"):              _r("document.deleted", "document", "doc_id"),
+    # a person telling us what happened (the text itself is never audited)
+    ("POST", "/feedback"):                          _r("feedback.sent", "feedback"),
     # data leaving the product
     ("GET", "/tenant/export"):                      _r("export.tenant_data", "tenant"),
     ("GET", "/inventory/status/export-po"):         _r("export.purchase_orders", "purchase_order"),

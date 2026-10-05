@@ -3,12 +3,13 @@ import { InstallAppButton } from './InstallAppButton'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { LogOut, User, ChevronLeft, ChevronRight, X, LifeBuoy } from 'lucide-react'
+import { LogOut, User, ChevronLeft, ChevronRight, X, LifeBuoy, MessageSquareText } from 'lucide-react'
 import clsx from 'clsx'
 import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
 import { useSidebar } from '@/contexts/SidebarContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useFeedback } from '@/components/feedback/context'
 import { roleLabel } from '@/lib/enumLabels'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { BrandMark } from '@/components/brand/BrandMark'
@@ -28,6 +29,7 @@ export default function Sidebar() {
   const user    = getUser()
   const { collapsed, toggle, drawerOpen, closeDrawer } = useSidebar()
   const { t } = useLanguage()
+  const sendFeedback = useFeedback()
 
   // On a phone the rail is not a column of the layout — it is a drawer that
   // slides over the page. `collapsed` (the icons-only desktop rail) is
@@ -245,6 +247,22 @@ export default function Sidebar() {
           <LifeBuoy size={14} aria-hidden="true" />
           {!collapsedNow && <span>{t('help.center')}</span>}
         </a>
+
+        <button
+          type="button"
+          onClick={() => { if (drawerOpen) closeDrawer(); sendFeedback() }}
+          title={t('feedback.action')}
+          style={{
+            all: 'unset', cursor: 'pointer', boxSizing: 'border-box', marginTop: 2,
+            display: 'flex', alignItems: 'center', justifyContent: collapsedNow ? 'center' : 'flex-start',
+            gap: collapsedNow ? 0 : 8, width: '100%',
+            padding: collapsedNow ? '8px 0' : '8px 10px', borderRadius: 7,
+            color: 'var(--sidebar-text)', fontSize: 12.5,
+          }}
+        >
+          <MessageSquareText size={14} aria-hidden="true" />
+          {!collapsedNow && <span>{t('feedback.action')}</span>}
+        </button>
 
         {/* Collapse toggle — desktop only. In the drawer there is nothing to
             collapse to: the panel is either open over the page or gone. */}

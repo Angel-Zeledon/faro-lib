@@ -2220,6 +2220,44 @@ _ENTERPRISE_ACCESS = [
 _MIGRATIONS += _ENTERPRISE_ACCESS
 
 
+# ── "Send feedback" (2026-10-05) ─────────────────────────────────────────────
+# What a signed-in person typed into the feedback dialog, plus the facts they
+# saw on the confirmation step. The screenshot is a FILE under storage/feedback/
+# (never a column): `screenshot_path` is relative to that tenant's folder. The
+# two consent flags are separate on purpose and each carries its own timestamp:
+# `consent_reply` = "you may e-mail me about this report", `consent_news` =
+# explicit opt-in to product news. No tenant FK on purpose, like most tenant
+# tables: erasure is the explicit list in tenants/data_export.py.
+_FEEDBACK = [
+    ("create_feedback_reports",
+     """CREATE TABLE IF NOT EXISTS feedback_reports (
+         id                  TEXT PRIMARY KEY,
+         tenant_id           TEXT NOT NULL,
+         user_id             TEXT NOT NULL,
+         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         message             TEXT NOT NULL,
+         error_code          TEXT,
+         page_path           TEXT,
+         user_agent          TEXT,
+         app_version         TEXT,
+         account_email       TEXT,
+         screenshot_path     TEXT,
+         consent_reply       BOOLEAN NOT NULL DEFAULT FALSE,
+         consent_reply_at    TIMESTAMPTZ,
+         consent_news        BOOLEAN NOT NULL DEFAULT FALSE,
+         consent_news_at     TIMESTAMPTZ,
+         notified            BOOLEAN NOT NULL DEFAULT FALSE
+     )"""),
+    ("idx_feedback_reports_tenant",
+     "CREATE INDEX IF NOT EXISTS idx_feedback_reports_tenant "
+     "ON feedback_reports (tenant_id, created_at DESC)"),
+    ("idx_feedback_reports_user",
+     "CREATE INDEX IF NOT EXISTS idx_feedback_reports_user "
+     "ON feedback_reports (user_id, created_at DESC)"),
+]
+_MIGRATIONS += _FEEDBACK
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.

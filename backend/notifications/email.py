@@ -1130,3 +1130,51 @@ def send_upgrade_request_email(
     except Exception as exc:
         log.error("Failed to send upgrade request email to %s: %s", to, exc)
         return False
+
+
+def send_feedback_email(
+    *,
+    to: str,
+    tenant_name: str,
+    tenant_id: str,
+    report: dict,
+    screenshot=None,
+) -> bool:
+    """Tell the instance contact about a feedback report. Returns True if sent.
+
+    Goes to us, not to a customer, so like the upgrade request it is plain
+    English and needs no locale catalog. Everything the person typed is escaped:
+    this is HTML that a person controls. The screenshot, when there is one,
+    travels as an attachment (both transports support it); the stored file in
+    `storage/feedback/` stays the record. The log line names ids only.
+    """
+    def esc(value) -> str:
+        return html_lib.escape(str(value)) if value not in (None, "") else "—"
+
+    def yes_no(flag) -> str:
+        return "yes" if flag else "no"
+
+    body = f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Feedback from {esc(tenant_name)}</p>
+        <p style="color:{_DIM};margin:0 0 4px;">Report: <strong style="color:{_TEXT};">{esc(report.get("id"))}</strong> · tenant {esc(tenant_id)}</p>
+        <p style="color:{_DIM};margin:0 0 4px;">From: <strong style="color:{_TEXT};">{esc(report.get("account_email"))}</strong></p>
+        <p style="color:{_DIM};margin:0 0 4px;">Error code: <strong style="color:{_TEXT};">{esc(report.get("error_code"))}</strong></p>
+        <p style="color:{_DIM};margin:0 0 4px;">Page: <strong style="color:{_TEXT};">{esc(report.get("page_path"))}</strong> · app {esc(report.get("app_version"))}</p>
+        <p style="color:{_DIM};margin:0 0 4px;">Browser: {esc(report.get("user_agent"))}</p>
+        <p style="color:{_DIM};margin:0 0 4px;">May e-mail them about this report: <strong style="color:{_TEXT};">{yes_no(report.get("consent_reply"))}</strong></p>
+        <p style="color:{_DIM};margin:0 0 16px;">Product-news opt-in: <strong style="color:{_TEXT};">{yes_no(report.get("consent_news"))}</strong></p>
+        <p style="color:{_TEXT};margin:0 0 16px;white-space:pre-wrap;">{esc(report.get("message"))}</p>
+        <p style="color:{_DIM};font-size:12px;">{"Screenshot attached." if screenshot is not None else "No screenshot was included."}</p>
+    """
+    attachment = None
+    if screenshot is not None:
+        attachment = {
+            "filename": f"feedback-{report.get('id')}.{screenshot.ext}",
+            "content_bytes": screenshot.content,
+        }
+    try:
+        _send(to, f"Feedback — {tenant_name}", _base_html("Feedback", body), attachment)
+        return True
+    except Exception as exc:
+        log.error("Failed to send feedback email for report %s: %s", report.get("id"), exc)
+        return False

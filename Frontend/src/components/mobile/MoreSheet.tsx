@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Download, LifeBuoy, LogOut, Share, User } from 'lucide-react'
+import { Download, LifeBuoy, LogOut, MessageSquareText, Share, User } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getUser, clearAuth } from '@/lib/auth'
@@ -16,6 +16,7 @@ import AttentionDot from '@/components/layout/AttentionDot'
 import BottomSheet from './BottomSheet'
 import LegalLinks from '@/components/legal/LegalLinks'
 import { siteHref } from '@/lib/siteUrls'
+import { useFeedback } from '@/components/feedback/context'
 
 /**
  * "Más": the desktop sidebar entries that are not bottom tabs — Proveedores,
@@ -41,6 +42,7 @@ export default function MoreSheet({ open, onClose, unread }: {
   const user = getUser()
   const facts = useTenantFacts()
   const attention = useAttentionCounts()
+  const sendFeedback = useFeedback()
 
   function logout() {
     authLogout().catch(() => {})
@@ -145,6 +147,11 @@ export default function MoreSheet({ open, onClose, unread }: {
         <LifeBuoy size={20} color="var(--muted)" aria-hidden="true" />
         <span style={{ flex: 1 }}>{t('help.center')}</span>
       </a>
+
+      <button type="button" className="tap-feedback" style={row} onClick={() => { onClose(); sendFeedback() }}>
+        <MessageSquareText size={20} color="var(--muted)" aria-hidden="true" />
+        <span style={{ flex: 1 }}>{t('feedback.action')}</span>
+      </button>
 
       {installMode && (
         <>
