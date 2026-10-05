@@ -1944,6 +1944,14 @@ export interface SkuIntelligenceData {
   } | null
 }
 
+/** `GET /sessions/{id}/forecast-total`: the catalogue summed per date. Same
+ *  shape as one SKU's intelligence plus how many SKUs went into it and the mean
+ *  of their champion WAPEs. */
+export interface ForecastTotalData extends SkuIntelligenceData {
+  n_skus:        number
+  accuracy_wape: number | null
+}
+
 // ── Series decomposition ──────────────────────────────────────────────────────
 /** One bucket of the STL split. The four values are aligned by construction on
  *  the backend — `observed === trend + seasonal + residual` for every row — so
