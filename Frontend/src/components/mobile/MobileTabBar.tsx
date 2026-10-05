@@ -6,6 +6,8 @@ import { ShoppingCart, ClipboardList, Package, MessagesSquare, Menu } from 'luci
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useDmUnread } from '@/lib/dmUnread'
 import { screenFor } from '@/components/layout/navItems'
+import { useAttentionCounts } from '@/hooks/useAttention'
+import AttentionDot from '@/components/layout/AttentionDot'
 import MoreSheet from './MoreSheet'
 
 /**
@@ -35,6 +37,7 @@ export default function MobileTabBar() {
   const path = usePathname()
   const { t } = useLanguage()
   const unread = useDmUnread()
+  const attention = useAttentionCounts()
   const [moreOpen, setMoreOpen] = useState(false)
   const keyboard = useKeyboardOpen()
 
@@ -91,6 +94,11 @@ export default function MobileTabBar() {
               <TabIndicator active={active} />
               <Icon size={22} strokeWidth={active ? 2.3 : 1.8} aria-hidden="true" />
               {label(labelKey)}
+              {href === '/pedidos' && attention.orders > 0 && (
+                <span style={{ position: 'absolute', top: 4, left: 'calc(50% + 6px)' }}>
+                  <AttentionDot count={attention.orders} />
+                </span>
+              )}
             </Link>
           )
         })}
@@ -115,6 +123,7 @@ export default function MobileTabBar() {
                 fontSize: 9.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>{unread > 99 ? '99+' : unread}</span>
             )}
+            {unread === 0 && attention.suppliers > 0 && (<span style={{ position: 'absolute', top: -3, right: -7 }}><AttentionDot count={attention.suppliers} /></span>)}
           </span>
           {label('mobile.tab_more')}
         </button>
