@@ -66,6 +66,9 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.error("DB pool init failed — server will start but DB calls will fail: %s", exc)
 
+    from backend.db.connection import set_slow_query_threshold_ms
+    set_slow_query_threshold_ms(settings.ops_slow_query_ms)
+
     # Ensure upload directory exists for binary dataset files
     from pathlib import Path
     _storage = Path("storage")

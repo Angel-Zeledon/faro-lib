@@ -121,6 +121,7 @@ async def _loop() -> None:
     consecutive_errors = 0
     while True:
         try:
+            loop_state.beat(worker_id())
             if len(_running_jobs) < settings.max_concurrent_jobs:
                 # One statement takes the job and marks it RUNNING. The old
                 # dequeue -> get_job -> mark_running sequence let two workers

@@ -285,3 +285,24 @@ What it does NOT buy: isolation from the database. Both instances still share on
 | Variable | Default | Notes | What it does |
 |---|---|---|---|
 | `PUBLIC_API_ONLY` | `false` | environment only | Serve only the public integration surface on this instance. |
+
+## `operations` - Thresholds behind the installation status panel (queue, worker, disk, backup, latency).
+
+*Kind:* deployment. *Editable from the panel:* no. *Per tenant:* no. *Connection test:* no.
+
+**What is lost without it:** Nothing turns off. These decide when `GET /service-config/ops` and the 'Installation status' panel call a reading degraded; they never block a request or a job.
+
+These are the service-level objectives of the installation, in one place. Request latency is measured in the API process that answers `/service-config/ops` (an in-memory rolling window, lost on restart); queue, worker heartbeat and failed jobs are read from the database and therefore cover every process. The backup readings need the backup script's success marker to be visible to the API container: see `deploy/RESTORE.md`.
+
+| Variable | Default | Notes | What it does |
+|---|---|---|---|
+| `OPS_QUEUE_WAIT_DEGRADED_MINUTES` | `10.0` | environment only | A job that has been QUEUED longer than this many minutes makes the queue degraded. |
+| `OPS_RUNNING_JOB_DEGRADED_MINUTES` | `180.0` | environment only | A job RUNNING longer than this many minutes is reported as possibly stuck. |
+| `OPS_WORKER_HEARTBEAT_STALE_SECONDS` | `120.0` | environment only | The worker's last heartbeat older than this many seconds means nobody is claiming jobs. |
+| `OPS_DISK_FREE_MIN_PERCENT` | `10.0` | environment only | Free space below this percentage on the storage or backup volume is degraded. |
+| `OPS_BACKUP_MAX_AGE_HOURS` | `36.0` | environment only | The last successful backup older than this many hours is degraded. 36 tolerates one missed night. |
+| `OPS_POOL_SATURATION_PERCENT` | `85.0` | environment only | Database connections in use, as a percentage of the pool, at or above which the pool is degraded. |
+| `OPS_LATENCY_SLO_MS` | `3000.0` | environment only | A route family whose p95 latency (recent window) exceeds this many milliseconds is degraded. |
+| `OPS_SLOW_QUERY_MS` | `1000.0` | environment only | Statements slower than this many milliseconds are counted as slow queries (count and worst only; parameters are never kept). |
+| `BACKUP_STATUS_PATH` | - | environment only | Path, as the API container sees it, of the JSON success marker the nightly backup script writes. Empty means the backup readings report 'unknown'. |
+| `BACKUP_DIR` | - | environment only | Folder the backups are written to, as the API container sees it; used to report its free disk space. Empty skips that reading. |

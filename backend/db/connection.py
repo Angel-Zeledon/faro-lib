@@ -6,7 +6,9 @@ All writes auto-commit on success, rollback on exception.
 """
 
 import math
+import threading
 import time
+from collections import deque
 from contextlib import contextmanager
 from typing import Any, Optional
 
@@ -35,6 +37,69 @@ def init_pool(database_url: str, min_conn: int = 1, max_conn: int = 10) -> None:
         database_url,
         cursor_factory=psycopg2.extras.RealDictCursor,
     )
+
+
+# Slow-statement ledger for the operations surface. Bounded (a deque with a
+# maxlen), holds the statement SHAPE only — the first characters of the SQL
+# text, never its parameters, which is where customer data would be.
+_SLOW_QUERY_MS = 1000.0
+_SLOW_LEDGER_MAX = 500
+_slow_lock = threading.Lock()
+_slow_ledger: "deque[tuple[float, float, str]]" = deque(maxlen=_SLOW_LEDGER_MAX)
+_statements_total = 0
+
+
+def set_slow_query_threshold_ms(value: float) -> None:
+    """Applied at startup from the registry's `ops_slow_query_ms`."""
+    global _SLOW_QUERY_MS
+    _SLOW_QUERY_MS = float(value)
+
+
+def _note_statement(sql: str, started: float) -> None:
+    global _statements_total
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    with _slow_lock:
+        _statements_total += 1
+        if elapsed_ms >= _SLOW_QUERY_MS:
+            _slow_ledger.append((time.time(), elapsed_ms, " ".join(sql.split())[:80]))
+
+
+def slow_query_stats(window_seconds: float = 3600.0) -> dict:
+    """Statements slower than the threshold inside the window (this process)."""
+    cutoff = time.time() - window_seconds
+    with _slow_lock:
+        recent = [e for e in _slow_ledger if e[0] >= cutoff]
+        total = _statements_total
+    worst = max(recent, key=lambda e: e[1]) if recent else None
+    return {
+        "threshold_ms": _SLOW_QUERY_MS,
+        "window_seconds": window_seconds,
+        "count": len(recent),
+        "worst_ms": round(worst[1], 1) if worst else None,
+        "worst_statement": worst[2] if worst else None,
+        "statements_total": total,
+    }
+
+
+def pool_stats() -> dict | None:
+    """Connections checked out vs the pool ceiling, or None before init.
+
+    Reads two attributes psycopg2's pool keeps for itself (`maxconn`, `_used`);
+    there is no public accessor. Wrapped so a psycopg2 change degrades to
+    "unknown" instead of breaking the operations endpoint.
+    """
+    if _pool is None:
+        return None
+    try:
+        maximum = int(_pool.maxconn)
+        in_use = len(_pool._used)
+    except Exception:  # noqa: BLE001 — diagnostics must not raise
+        return None
+    return {
+        "max": maximum,
+        "in_use": in_use,
+        "saturation_pct": round(100.0 * in_use / maximum, 1) if maximum else 0.0,
+    }
 
 
 def pool_is_initialized() -> bool:
@@ -174,7 +239,11 @@ def _run_pooled(sql: str, params: tuple, fetch_rows: bool) -> list[dict]:
             acquired = True
             try:
                 with pooled_conn.cursor() as cur:
-                    cur.execute(sql, params)
+                    started = time.perf_counter()
+                    try:
+                        cur.execute(sql, params)
+                    finally:
+                        _note_statement(sql, started)
                     if fetch_rows and cur.description:
                         rows = [dict(row) for row in cur.fetchall()]
             except psycopg2.OperationalError as exc:

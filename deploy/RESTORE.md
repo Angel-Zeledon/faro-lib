@@ -156,3 +156,97 @@ effect as losing it: every stored secret must be entered again.
    pass runs or is recorded as skipped.
 3. Re-run any training that was RUNNING when the backup was taken. A job row
    that was mid-flight comes back as a session nobody is working on.
+
+---
+
+## Monthly restore drill (automated)
+
+The manual drill above proves it once. `scripts/restore_drill.py` does the same
+steps, checks that what came back is whole, and prints how long each step took.
+Run it once a month and keep the output: it is the only honest source for an
+RTO figure, and the age of the backup it restores is the RPO that restore
+delivers.
+
+What it does, and what it refuses to touch: it creates a database named
+`drill_<timestamp>` and an empty scratch directory, restores the **latest**
+`faro-YYYY-MM-DD.sql.gz` and `faro-storage-YYYY-MM-DD.tar.gz` into them, and
+drops both at the end. It never connects to the live database by name and
+refuses a work directory that already has files in it.
+
+```sh
+# On the host, with the backups in /var/backups and the postgres container
+# named faro-db-1 (run from a checkout of the repo; python3 is enough, the
+# script only needs the standard library and `docker`):
+python3 scripts/restore_drill.py \
+    --backup-dir /var/backups \
+    --psql "docker exec -i faro-db-1 psql -U faro" \
+    --original-storage /app/storage \
+    --live-db faro \
+    --json /var/backups/drill-$(date +%F).json
+```
+
+Checks, each `pass` / `warn` / `fail` (exit code 1 only on a `fail`):
+
+| Check | Fails when |
+|---|---|
+| `archives` | the marker's sha256 of either archive differs from the file, or the storage archive is under 10 KB (an empty volume) |
+| `restore_db` | (warns) psql printed `ERROR` lines while loading |
+| `row_counts` | any table's rows after restore differ from the rows the dump file itself carries |
+| `foreign_keys` | fewer FK constraints exist than the dump declares, or any single-column FK has an orphan row |
+| `tenant_orphans` | (warns) rows point at a tenant that no longer exists; the app deliberately has no FK on most tables |
+| `storage` | the archive will not extract; warns when `instance_secret.key` is missing |
+| `datasets` | a sampled dataset or document file is missing or unreadable (read to the end) |
+| `artifacts` | a sampled completed session has no readable artifact files; warns when a dataset's sha256 differs from its lineage manifest (it may have been edited in place) |
+
+The report ends with `RESULT: PASS|WARN|FAIL`, the measured restore time
+(database + storage) and the whole drill's time, and a list of what that
+estimate **leaves out**: provisioning a replacement server, copying the backups
+to it, DNS and certificates, and the time it takes a person to decide to start.
+Add those by hand when you quote an RTO. A `fail` in `row_counts`,
+`foreign_keys`, `datasets` or `archives` means the backup is broken: treat it as
+an incident (`docs/compliance/incident-response.md`).
+
+What it does **not** prove: that the application boots against the restore (do
+step 5 above after a real incident) or anything about a copy of the backups
+kept off the server. Credentials are not decrypted by the drill; step 2 of the
+manual drill still stands for that.
+
+Row counts come from the dump file, not from the live database, on purpose: the
+live tables keep changing after the dump was taken, so comparing against them
+would report drift that is not a defect.
+
+---
+
+## Updating the server's backup script and wiring the marker
+
+The repository copy of the nightly backup is `deploy/ops/backup.sh`. The server
+runs `/opt/stockai-ops/backup.sh`, which this repository cannot see. The repo
+copy adds what a bare `pg_dump | gzip` lacks: a temp-name-then-rename dump, a
+size floor on the storage archive, retention, and a **success marker**
+(`last_success.json`, written last and atomically, with sizes and sha256 of both
+archives). The installation status panel reads that marker; without it the
+backup reading is `unknown`, which is deliberate.
+
+One-time steps on the server (nothing here has been run for you):
+
+```sh
+# 1. Compare before replacing: the server copy may carry local settings.
+diff /opt/stockai-ops/backup.sh /opt/faro/deploy/ops/backup.sh
+
+# 2. If the differences are only the defaults below, install the repo copy.
+#    The script reads these from the environment: BACKUP_DIR (/var/backups),
+#    DB_CONTAINER (faro-db-1), DB_USER, DB_NAME (faro), STORAGE_VOLUME
+#    (faro_storage; check `docker volume ls | grep storage`),
+#    RETENTION_DAYS (14 - keep it equal to what the privacy policy and DPA say).
+install -m 755 /opt/faro/deploy/ops/backup.sh /opt/stockai-ops/backup.sh
+
+# 3. Run it once by hand and look at the marker.
+/opt/stockai-ops/backup.sh && cat /var/backups/last_success.json
+```
+
+Then `./deploy.sh`: `deploy/docker-compose.prod.yml` now mounts the backup folder
+read-only into the API container at `/backups` (override the host folder with
+`BACKUP_HOST_DIR` in `deploy/.env`) and sets `BACKUP_STATUS_PATH` and
+`BACKUP_DIR`, so the panel can read the marker and the folder's free disk space.
+The thresholds (36 h maximum age, 10% minimum free disk) are the `operations`
+service in `backend/service_config/registry.py`.
