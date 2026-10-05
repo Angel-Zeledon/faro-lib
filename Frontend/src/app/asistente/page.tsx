@@ -6,8 +6,9 @@ import {
 import {
   listChats, createChat, updateChat, deleteChat,
   getChatMessages, sendChatMessage, getAssistantWelcome, isApiError,
+  starChatMessage, listFavoriteMessages,
 } from '@/lib/api'
-import type { AssistantWelcome, Chat, ChatMessage } from '@/lib/types'
+import type { AssistantWelcome, Chat, ChatMessage, FavoriteMessage } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -15,6 +16,8 @@ import { useCapabilities } from '@/lib/capabilities'
 import { useToast } from '@/contexts/ToastContext'
 import { MessageBubble, TypingBubble, Welcome, previewText, clampStyle } from './parts'
 import AssistantMobile from './AssistantMobile'
+import FavoritesList from './Favorites'
+import { AssistantAvatar } from '@/components/brand/AssistantAvatar'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
   Plus, Search, Star, Trash2, Send, Mic, Square,
@@ -168,7 +171,7 @@ function EmptyState({
         border: '1px solid color-mix(in srgb, var(--accent) 15%, transparent)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <MessageSquare size={28} color="var(--accent)" strokeWidth={1.5} />
+        <AssistantAvatar size={40} />
       </div>
       {welcome ? (
         <Welcome welcome={welcome} onAsk={onAsk} disabled={disabled} />
@@ -210,6 +213,14 @@ export default function AnalystPage() {
   const [input,       setInput]       = useState('')
   const [search,      setSearch]      = useState('')
   const [welcome,     setWelcome]     = useState<AssistantWelcome | null>(null)
+  // Saved messages. null = not loaded yet; the sidebar tab and the phone's
+  // Favorites tab both read this one list.
+  const [savedMessages, setSavedMessages] = useState<FavoriteMessage[] | null>(null)
+  const [favoritesError, setFavoritesError] = useState<string | null>(null)
+  const [view,        setView]        = useState<'chats' | 'favorites'>('chats')
+  // A favorite being opened: the message to bring into view once its chat loads.
+  const [focusMsgId,  setFocusMsgId]  = useState<string | null>(null)
+  const focusPagesRef = useRef(0)
   const narrow = useIsNarrow()
   const msgsRef    = useRef<HTMLDivElement>(null)
   const inputRef   = useRef<HTMLTextAreaElement>(null)
@@ -308,6 +319,7 @@ export default function AnalystPage() {
     try {
       const chat = await createChat(sessionId ? { session_id: sessionId } : {})
       setChats(prev => [chat, ...prev])
+      setView('chats')
       setActive(chat.id)
     } catch (e) { console.error(e) }
   }, [])
@@ -413,6 +425,78 @@ export default function AnalystPage() {
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); speech.stop(); handleSend(input); setInput('') }
   }
+  // ── Favorite messages ─────────────────────────────────────────────────────
+  function loadFavorites() {
+    setFavoritesError(null)
+    listFavoriteMessages().then(setSavedMessages).catch(() => {
+      // The count in the tab is a nicety; the error shows when the tab is open.
+      setFavoritesError(t('analyst.favorites_error'))
+    })
+  }
+
+  const setStar = useCallback(async (msg: ChatMessage, starred: boolean) => {
+    const apply = (on: boolean) => setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, starred_at: on ? new Date().toISOString() : null } : m))
+    apply(starred)
+    // Leaves the saved list at once; the server confirms below.
+    if (!starred) setSavedMessages(prev => prev && prev.filter(f => f.id !== msg.id))
+    try {
+      await starChatMessage(msg.id, starred)
+      // The list needs the chat title and the question, which only the server joins.
+      if (starred) loadFavorites()
+    } catch {
+      apply(!starred)
+      loadFavorites()
+      addToast(t('analyst.star_failed'), '', 'error')
+    }
+  }, [addToast, t])
+
+  const toggleStar = (msg: ChatMessage) => setStar(msg, !msg.starred_at)
+  const removeFavorite = (item: FavoriteMessage) =>
+    setStar({ id: item.id } as ChatMessage, false)
+  const openFavorite = (item: FavoriteMessage) => {
+    focusPagesRef.current = 0
+    setView('chats')
+    setFocusMsgId(item.id)
+    setActive(item.chat_id)
+  }
+
+  // Bring the opened favorite into view once its chat has loaded, paging back
+  // through older messages when it is further up than the first page.
+  useEffect(() => {
+    if (!focusMsgId || !activeChatId || loadingMsgs) return
+    if (messages.length === 0 || messages[0].chat_id !== activeChatId) return
+    let cancelled = false
+    if (!messages.some(m => m.id === focusMsgId)) {
+      if (!hasMore || focusPagesRef.current >= 10) { setFocusMsgId(null); return }
+      focusPagesRef.current += 1
+      getChatMessages(activeChatId, 100, messages[0].id).then(page => {
+        if (cancelled) return
+        setMessages(prev => [...page.messages, ...prev])
+        setHasMore(page.has_more)
+      }).catch(() => setFocusMsgId(null))
+      return () => { cancelled = true }
+    }
+    // After loadMessages' own jump to the bottom.
+    const timer = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-msg-id="${CSS.escape(focusMsgId)}"]`)
+      if (el) {
+        // Scroll only the thread's own scroller: scrollIntoView would also
+        // move the clipped app shell around it and push the headers off screen.
+        let sc: HTMLElement | null = el.parentElement
+        while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+        if (sc) {
+          const delta = el.getBoundingClientRect().top - sc.getBoundingClientRect().top
+          sc.scrollTop += delta - Math.max(0, (sc.clientHeight - el.offsetHeight) / 2)
+        }
+        el.classList.add('msg-focus')
+        setTimeout(() => el.classList.remove('msg-focus'), 2000)
+      }
+      setFocusMsgId(null)
+    }, 160)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [focusMsgId, activeChatId, loadingMsgs, messages, hasMore])
+
   // ── Toggle favorite ───────────────────────────────────────────────────────
   const toggleFav = async (chatId: string) => {
     const chat = chats.find(c => c.id === chatId)
@@ -511,6 +595,12 @@ export default function AnalystPage() {
         onToggleFavorite={toggleFav}
         onDelete={handleDelete}
         relTime={iso => fmtRelative(iso, t)}
+        onToggleStar={toggleStar}
+        favorites={savedMessages}
+        favoritesError={favoritesError}
+        onLoadFavorites={loadFavorites}
+        onOpenFavorite={openFavorite}
+        onRemoveFavorite={removeFavorite}
       />
     )
   }
@@ -564,6 +654,37 @@ export default function AnalystPage() {
               >
                 <Plus size={14} />
               </button>
+            </div>
+
+            {/* Conversations / saved messages */}
+            <div role="tablist" aria-label={t('analyst.chats_title')} style={{
+              display: 'flex', gap: 3, padding: 3, marginBottom: 10, borderRadius: 8,
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+            }}>
+              {(['chats', 'favorites'] as const).map(id => {
+                const on = view === id
+                return (
+                  <button
+                    key={id} role="tab" type="button" aria-selected={on}
+                    data-testid={`assistant-tab-${id}`}
+                    onClick={() => { setView(id); if (id === 'favorites') loadFavorites() }}
+                    style={{
+                      all: 'unset', boxSizing: 'border-box', flex: 1, height: 26, borderRadius: 6, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                      fontSize: 12, fontWeight: 600,
+                      color: on ? 'var(--text)' : 'var(--muted)',
+                      background: on ? 'var(--surface)' : 'transparent',
+                      boxShadow: on ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                    }}
+                  >
+                    {id === 'favorites' && <Star size={11} aria-hidden="true" fill={on ? '#B7791F' : 'none'} color={on ? '#B7791F' : 'currentColor'} />}
+                    {id === 'chats' ? t('analyst.tab_chats') : t('analyst.tab_favorites')}
+                    {id === 'favorites' && savedMessages && savedMessages.length > 0 && (
+                      <span style={{ fontSize: 10, color: 'var(--dim)', fontWeight: 500 }}>{savedMessages.length}</span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
 
             {/* Search */}
@@ -620,7 +741,7 @@ export default function AnalystPage() {
                       <ChatItem
                         key={c.id} chat={c}
                         active={c.id === activeChatId}
-                        onSelect={() => setActive(c.id)}
+                        onSelect={() => { setView('chats'); setActive(c.id) }}
                         onFavorite={() => toggleFav(c.id)}
                         onDelete={() => handleDelete(c.id)}
                       />
@@ -644,7 +765,7 @@ export default function AnalystPage() {
                       <ChatItem
                         key={c.id} chat={c}
                         active={c.id === activeChatId}
-                        onSelect={() => setActive(c.id)}
+                        onSelect={() => { setView('chats'); setActive(c.id) }}
                         onFavorite={() => toggleFav(c.id)}
                         onDelete={() => handleDelete(c.id)}
                       />
@@ -677,7 +798,19 @@ export default function AnalystPage() {
               <span>{t('analyst.unavailable_banner')}</span>
             </div>
           )}
-          {!activeChatId ? (
+          {view === 'favorites' ? (
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
+              <div style={{ maxWidth: 760, margin: '0 auto' }}>
+                <h2 style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                  {t('analyst.favorites_title')}
+                </h2>
+                <FavoritesList
+                  items={savedMessages} error={favoritesError}
+                  onOpen={openFavorite} onRemove={removeFavorite}
+                />
+              </div>
+            </div>
+          ) : !activeChatId ? (
             <EmptyState
               onCreate={() => handleNewChat()}
               welcome={welcome}
@@ -767,7 +900,7 @@ export default function AnalystPage() {
                   // disagreeing about which way a conversation stacks.
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {messages.map(msg => (
-                      <MessageBubble key={msg.id} msg={msg}
+                      <MessageBubble key={msg.id} msg={msg} onToggleStar={toggleStar}
                         onRetry={retryable && msg.id === lastMessage?.id ? retryLast : undefined} />
                     ))}
                     {sending && <TypingBubble />}

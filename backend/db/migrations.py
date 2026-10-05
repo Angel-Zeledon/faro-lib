@@ -585,6 +585,13 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      )"""),
     ("create_chat_messages_chat_idx",
      "CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_created ON chat_messages (chat_id, created_at)"),
+    # A message the person saved as a favorite: NULL = not starred, otherwise when
+    # it was starred (the Favorites list is ordered by it). Additive, nullable.
+    ("add_chat_messages_starred_at",
+     "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS starred_at TIMESTAMPTZ"),
+    ("create_chat_messages_starred_idx",
+     "CREATE INDEX IF NOT EXISTS idx_chat_messages_starred ON chat_messages (tenant_id, starred_at) "
+     "WHERE starred_at IS NOT NULL"),
     ("add_pw_change_codes_attempts",
      "ALTER TABLE pw_change_codes ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0"),
     ("create_auth_rate_events",
