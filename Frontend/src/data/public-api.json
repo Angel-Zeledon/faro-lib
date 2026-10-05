@@ -8920,15 +8920,36 @@
        "example": "urgency"
       },
       {
+       "name": "order",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "description": "Direction for the column sorts; omitted keeps each key's own default"
+       },
+       "example": "<order>"
+      },
+      {
        "name": "q",
        "in": "query",
        "required": false,
        "schema": {
         "type": "string",
         "max_length": 100,
-        "description": "Matches SKU, category or supplier"
+        "description": "Matches SKU, product name, category or supplier"
        },
        "example": "<q>"
+      },
+      {
+       "name": "skus",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 4000,
+        "description": "Comma-separated exact SKUs: look up the names/status of a known few"
+       },
+       "example": "<skus>"
       }
      ],
      "request_body": null,

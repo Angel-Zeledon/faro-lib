@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'rea
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
- getInventoryStatus, upsertInventoryStock, deleteInventoryStock,
+ getInventoryStatusPage, getActionableStatusItems, upsertInventoryStock, deleteInventoryStock,
  importInventoryCSV, exportInventoryPO, downloadInventoryPDF,
  listInventoryEvents, createInventoryEvent, updateInventoryEvent, deleteInventoryEvent,
  listSuppliers, getDeadCapital, simulateEvent, logPOGeneration, downloadInventoryTemplate,
@@ -21,10 +21,10 @@ import type {
  EventMultiplier,
  SupplierCostInflationResponse, MarginErosionResponse, ForecastMoneyResponse,
  CostOfIgnoringResponse, WhyChangedResponse, WhyChangedFieldOrigin,
- SignalThresholdsState,
+ SignalThresholdsState, InventoryStatusSort,
 } from '@/lib/types'
 import { useAutoSession } from '@/hooks/useAutoSession'
-import Pagination, { usePage } from '@/components/table/Pagination'
+import Pagination, { usePage, PAGE_SIZE } from '@/components/table/Pagination'
 import { useWarehouses, WarehouseSelector } from '@/components/inventory/WarehouseControls'
 import { WarehouseStatusTable } from '@/components/inventory/WarehouseStatusTable'
 import DataFreshness from '@/components/ui/DataFreshness'
@@ -1111,8 +1111,8 @@ const SHRINKAGE_REASONS: ShrinkageReason[] = ['breakage', 'expiry', 'self_consum
  * at all, so every shrinkage 404'd blaming the SKU for a warehouse the user
  * never chose.
  */
-function ShrinkageModal({ items, warehouses, defaultWarehouse, onClose, onSaved }: {
- items: InventoryStatusItem[]
+function ShrinkageModal({ sessionId, warehouses, defaultWarehouse, onClose, onSaved }: {
+ sessionId: string
  warehouses: string[]
  defaultWarehouse: string | null
  onClose: () => void
@@ -1129,6 +1129,27 @@ function ShrinkageModal({ items, warehouses, defaultWarehouse, onClose, onSaved 
  const [saving, setSaving] = useState(false)
  const [error, setError] = useState<string | null>(null)
 
+ // The picker searches on the server as you type (a 5,000-SKU catalogue is
+ // never loaded into the dialog): suggestions come from a debounced page
+ // request, and an exact SKU typed in full is looked up by itself so it is
+ // found even when many longer SKUs contain it.
+ const [items, setItems] = useState<InventoryStatusItem[]>([])
+ useEffect(() => {
+  let alive = true
+  const typed = sku.trim()
+  const handle = setTimeout(async () => {
+   try {
+    const res = await getInventoryStatusPage(sessionId, { limit: 30, q: typed }, 0.95, { silent: true })
+    let rows = res.items
+    if (typed && !rows.some(r => r.sku === typed)) {
+     const exact = await getInventoryStatusPage(sessionId, { limit: 1, skus: [typed] }, 0.95, { silent: true })
+     rows = [...exact.items, ...rows]
+    }
+    if (alive) setItems(rows)
+   } catch { if (alive) setItems([]) }
+  }, typed ? 250 : 0)
+  return () => { alive = false; clearTimeout(handle) }
+ }, [sku, sessionId])
  const selected = items.find(i => i.sku === sku) || null
  const qtyNum = parseFloat(quantity)
  const estCost = selected?.unit_cost != null && !isNaN(qtyNum) && qtyNum > 0
@@ -1615,8 +1636,10 @@ function rowToEdit(item: InventoryStatusItem): EditState {
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
 // ── Provider group ────────────────────────────────────────────────────────────
-function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEditedQty, setEditingQtySku, effectiveQty, coverageUnit }: {
+function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEditedQty, setEditingQtySku, effectiveQty, coverageUnit, partial }: {
  name: string; items: InventoryStatusItem[]; onEdit: (item: InventoryStatusItem) => void
+ /** More than one page exists: the group may continue on the next one. */
+ partial?: boolean
  editedQty: Record<string, number>
  editingQtySku: string | null
  setEditedQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
@@ -1632,7 +1655,7 @@ function ProviderGroup({ name, items, onEdit, editedQty, editingQtySku, setEdite
  <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: 10 }}>
  <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: C.card, cursor: 'pointer', borderBottom: open ? `1px solid ${C.border}` : 'none' }}>
  <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{name || t('inventory.no_provider')}</span>
- <span style={{ fontSize: 11, color: C.dim }}>{items.length} SKUs</span>
+ <span style={{ fontSize: 11, color: C.dim }}>{items.length} SKUs{partial ? ` · ${t('inventory.group_on_this_page')}` : ''}</span>
  {critical > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(239,68,68,0.1)', color: C.red }}>{critical} {critical !== 1 ? t('inventory.urgent_plural') : t('inventory.urgent_singular')}</span>}
  {warning > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(245,158,11,0.1)', color: C.amber }}>{warning} {t('inventory.soon_suffix')}</span>}
  <ChevronDown size={13} color={C.dim} style={{ transform: open ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }} />
@@ -2033,15 +2056,28 @@ export default function InventoryPage() {
  const { sessionId, setSessionId, currentSession, completedSessions, error: sessionsError, refresh: refreshSessions } = useAutoSession()
  // Translates an ApiError's `error_code` + `params` into the user's language.
  const errorDetail = useErrorDetail()
+ // `data.items` is ONE server page (filtered, sorted, 100 rows), never the
+ // catalogue: a 5,000-SKU tenant used to ship every row on every visit. The
+ // KPI row reads `kpi`, which is the server's summary over the WHOLE set and
+ // does not move when a page, a filter or a sort does.
  const [data, setData] = useState<{ items: InventoryStatusItem[]; summary: Record<string, number>; excluded_skus?: ExcludedSku[]; coverage_unit?: CoverageUnit } | null>(null)
+ const [kpi, setKpi] = useState<Record<string, number> | null>(null)
+ const [pageTotal, setPageTotal] = useState(0)
  const [loading, setLoading] = useState(false)
+ // Paging / re-sorting over rows already on screen: they stay visible, dimmed.
+ const [fetching, setFetching] = useState(false)
  // Raw error, so ErrorState can classify by kind instead of showing a
  // pre-flattened string.
  const [error, setError] = useState<unknown>(null)
  const [signalFilter, setSignalFilter] = useState<InventorySignal | ''>('')
  const [search, setSearch] = useState('')
+ // Typing filters on the server; one request per pause, not per keystroke.
+ const [debouncedSearch, setDebouncedSearch] = useState('')
+ useEffect(() => {
+  const h = setTimeout(() => setDebouncedSearch(search), search ? 300 : 0)
+  return () => clearTimeout(h)
+ }, [search])
  const [sort, setSort] = useState<SortState | null>(null)
- const [page, setPage] = useState(1)
  const [viewMode, setViewMode] = useState<'table' | 'simple' | 'provider' | 'update' | 'capital' | 'inflation' | 'erosion' | 'money' | 'ignored'>(() =>
  typeof window !== 'undefined' && localStorage.getItem('adv') === '1' ? 'table' : 'simple'
  )
@@ -2072,6 +2108,7 @@ export default function InventoryPage() {
  const [suppliers, setSuppliers] = useState<Supplier[]>([])
  const importRef = useRef<HTMLInputElement>(null)
  const savingRef = useRef(false)
+ const exportingEditedRef = useRef(false)
  // "Dinero parado" (capital parado): the one view of money that is not
  // moving — needs no session, reads real stock-level history. See
  // getDeadCapital. The session-bound "dead stock" view it used to sit beside
@@ -2135,19 +2172,77 @@ export default function InventoryPage() {
  listSuppliers().then(setSuppliers).catch(() => {})
  }, [reloadEvents])
 
- const load = useCallback(async (sid: string) => {
- if (!sid) return
- setLoading(true); setError(null)
+ // Which server page is wanted. The page number belongs to the query it was
+ // chosen in: change the filter, the sort or the view and it is page 1 again
+ // without a second request for the stale page.
+ const serverSort: { sort: InventoryStatusSort; order?: 'asc' | 'desc' } =
+  viewMode === 'simple' ? { sort: 'decision' }
+  : viewMode === 'provider' ? { sort: 'supplier_urgency' }
+  : viewMode === 'table' && sort ? { sort: (sort.key === 'sku' ? 'name' : sort.key) as InventoryStatusSort, order: sort.dir }
+  : { sort: 'urgency' }
+ const queryKey = [sessionId, signalFilter, debouncedSearch, serverSort.sort, serverSort.order ?? ''].join('|')
+ const [pageState, setPageState] = useState({ key: '', page: 1 })
+ const page = pageState.key === queryKey ? pageState.page : 1
+ const setPage = useCallback((p: number) => setPageState({ key: queryKey, page: p }), [queryKey])
+
+ const [reloadTick, setReloadTick] = useState(0)
+ const reloadRef = useRef(true)       // true: the next fetch replaces the screen with a skeleton
+ const loadedSessionRef = useRef('')
+ const kpiRef = useRef<Record<string, number> | null>(null)
+ const fetchSeq = useRef(0)
+ const hasData = useRef(false)
+
+ // Re-reads the current page after a save/import/refresh. Edited order
+ // quantities are dropped: they were typed against numbers that just changed.
+ const load = useCallback(async (sid?: string) => {
+ if (sid === '') return
+ reloadRef.current = true
  setEditedQty({})
  setEditingQtySku(null)
- // `silent: true` — the failure is rendered as a full ErrorState below, so the
- // interceptor's toast would say the same thing twice.
- try { setData(withSingleSeriesLabel(await getInventoryStatus(sid, 0.95, { silent: true }), t)) }
- catch (e: unknown) { setError(e) }
- finally { setLoading(false) }
- }, [t])
+ setReloadTick(n => n + 1)
+ }, [])
 
- useEffect(() => { if (sessionId) load(sessionId) }, [sessionId, load])
+ const wantsStatus = !!sessionId && viewMode !== 'capital' && viewMode !== 'inflation'
+  && viewMode !== 'erosion' && viewMode !== 'money' && viewMode !== 'ignored'
+
+ useEffect(() => {
+ if (!wantsStatus) return
+ const sid = sessionId
+ const full = reloadRef.current || !hasData.current || loadedSessionRef.current !== sid
+ if (loadedSessionRef.current !== sid) { setEditedQty({}); setEditingQtySku(null) }
+ reloadRef.current = false
+ loadedSessionRef.current = sid
+ const seq = ++fetchSeq.current
+ if (full) { setLoading(true) } else { setFetching(true) }
+ setError(null)
+ const filtered = !!(signalFilter || debouncedSearch.trim())
+ void (async () => {
+  try {
+   // `silent: true` — the failure is rendered as a full ErrorState below, so the
+   // interceptor's toast would say the same thing twice.
+   const res = withSingleSeriesLabel(await getInventoryStatusPage(sid, {
+    limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, signal: signalFilter || undefined,
+    q: debouncedSearch, ...serverSort,
+   }, 0.95, { silent: true }), t)
+   if (seq !== fetchSeq.current) return
+   // The KPI row describes the whole catalogue. A response for an unfiltered
+   // query IS that; under a filter the response's summary describes the
+   // filter, so the unfiltered one is asked for separately (once per reload).
+   let base = res.summary as Record<string, number>
+   if (filtered && (full || !kpiRef.current)) {
+    const whole = await getInventoryStatusPage(sid, { limit: 1 }, 0.95, { silent: true })
+    if (seq !== fetchSeq.current) return
+    base = whole.summary as Record<string, number>
+   }
+   if (!filtered || full || !kpiRef.current) { kpiRef.current = base; setKpi(base) }
+   hasData.current = true
+   setData(res as typeof data)
+   setPageTotal(res.page?.total ?? res.items.length)
+  } catch (e: unknown) { if (seq === fetchSeq.current) setError(e) }
+  finally { if (seq === fetchSeq.current) { setLoading(false); setFetching(false) } }
+ })()
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [wantsStatus, sessionId, queryKey, page, reloadTick, t])
 
  // ── Dead capital ("dinero parado") load ─────────────────────────────────────
  // No session dependency: it works off real stock-level history alone, so a
@@ -2202,23 +2297,38 @@ export default function InventoryPage() {
  }, [viewMode, ignoringFromDate, ignoringToDate, ignoringPoWindow])
 
  // ── Update-draft initialization ────────────────────────────────────────────
+ // The editor works on the page on screen. Moving between pages keeps what was
+ // typed: only rows with no pending edit are (re)built from the server.
+ const updateDraftRef = useRef(updateDraft)
+ const rowBaselineRef = useRef(rowBaseline)
+ const updatedSkusRef = useRef(updatedSkus)
+ updateDraftRef.current = updateDraft
+ rowBaselineRef.current = rowBaseline
+ updatedSkusRef.current = updatedSkus
+ const draftModeRef = useRef(false)
  useEffect(() => {
- if (viewMode === 'update' && data) {
- const draft: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = {}
+ if (viewMode !== 'update') { draftModeRef.current = false; return }
+ if (!data) return
+ const fresh = !draftModeRef.current
+ draftModeRef.current = true
+ const draft: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = fresh ? {} : { ...updateDraftRef.current }
+ const baseline: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = fresh ? {} : { ...rowBaselineRef.current }
  data.items.forEach(item => {
- draft[item.sku] = {
+ if (!fresh && updatedSkusRef.current.has(item.sku) && draft[item.sku]) return
+ const row = {
  current_stock: String(item.current_stock ?? ''),
  lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS),
  supplier: item.supplier ?? '',
  }
- })
- setUpdateDraft(draft)
+ draft[item.sku] = row
  // What each row looked like the last time it was in sync with the server.
  // Esc restores from here and a per-row save refreshes it, so discarding
  // after saving one row does not resurrect the pre-save value.
- setRowBaseline(draft)
- setUpdatedSkus(new Set())
- }
+ baseline[item.sku] = { ...row }
+ })
+ setUpdateDraft(draft)
+ setRowBaseline(baseline)
+ if (fresh) setUpdatedSkus(new Set())
  }, [viewMode, data])
 
  function handleDraftChange(sku: string, field: string, value: string) {
@@ -2337,27 +2447,13 @@ export default function InventoryPage() {
  await load(sessionId)
  }
 
- const items = useMemo(() => (data?.items ?? []).filter(item => {
- if (signalFilter && item.signal !== signalFilter) return false
- if (search) { const q = search.toLowerCase(); return item.sku.toLowerCase().includes(q) || (item.display_name ?? '').toLowerCase().includes(q) || (item.supplier ?? '').toLowerCase().includes(q) }
- return true
- }), [data, signalFilter, search])
-
- // The order the rows are paged in. It differs per view — the simple view puts
- // everything that needs a decision first — so it has to be resolved before
- // slicing, or page 1 would be an arbitrary window of the wrong sequence.
- const orderedItems = useMemo(() => {
- if (viewMode === 'simple') {
- return [
- ...items.filter(i => i.signal !== 'OK' && i.signal !== 'SIN_DATOS'),
- ...items.filter(i => i.signal === 'OK' || i.signal === 'SIN_DATOS'),
- ]
- }
- if (viewMode === 'table' && sort) return sortItems(items, sort)
- return items
- }, [items, viewMode, sort])
-
- const paged = usePage(orderedItems, page, setPage)
+ // Filtering, ordering and paging happen on the server (see queryKey above);
+ // what is held here is the page that came back.
+ const items = useMemo(() => data?.items ?? [], [data])
+ const pageCount = Math.max(1, Math.ceil(pageTotal / PAGE_SIZE))
+ const paged = { rows: items, pageCount, page: Math.min(page, pageCount), offset: (Math.min(page, pageCount) - 1) * PAGE_SIZE, total: pageTotal }
+ // A page that no longer exists (rows were deleted under it) pulls back in.
+ useEffect(() => { if (!loading && !fetching && data && page > pageCount) setPage(pageCount) }, [loading, fetching, data, page, pageCount, setPage])
  const pageItems = paged.rows
  const deadCapitalItems = useMemo(() => deadCapital?.items ?? [], [deadCapital])
  const deadCapitalPaged = usePage(deadCapitalItems, deadCapitalPage, setDeadCapitalPage)
@@ -2370,18 +2466,26 @@ export default function InventoryPage() {
  const costOfIgnoringSkus = useMemo(() => costOfIgnoring?.skus ?? [], [costOfIgnoring])
  const costOfIgnoringPaged = usePage(costOfIgnoringSkus, ignoringPage, setIgnoringPage)
  // The report itself only carries the sku code (it is a read over the
- // recommendation log, which does not persist a display name) — the main
- // status list already loaded for this tenant does, so this joins the two
- // client-side rather than asking the backend to duplicate that lookup.
- const skuDisplayName = useMemo(() => {
- const m: Record<string, string> = {}
- for (const i of data?.items ?? []) if (i.display_name) m[i.sku] = i.display_name
- return m
- }, [data])
+ // recommendation log, which does not persist a display name). Names for the
+ // rows on screen are fetched by exact SKU, one request per report page, rather
+ // than joined against a whole-catalogue list held in the browser.
+ const [skuDisplayName, setSkuDisplayName] = useState<Record<string, string>>({})
+ const namesAsked = useRef<Set<string>>(new Set())
+ useEffect(() => {
+  if (viewMode !== 'ignored' || !sessionId) return
+  const missing = costOfIgnoringPaged.rows.map(r => r.sku).filter(k => !namesAsked.current.has(k))
+  if (missing.length === 0) return
+  missing.forEach(k => namesAsked.current.add(k))
+  getInventoryStatusPage(sessionId, { limit: 500, skus: missing }, 0.95, { silent: true })
+   .then(res => setSkuDisplayName(prev => {
+    const next = { ...prev }
+    for (const i of res.items) if (i.display_name) next[i.sku] = i.display_name
+    return next
+   }))
+   .catch(() => { missing.forEach(k => namesAsked.current.delete(k)) })
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [viewMode, sessionId, costOfIgnoringPaged.rows])
 
- // Any change to what is being listed sends you back to the first page:
- // staying on page 14 of a list that now has 2 pages is never what you meant.
- useEffect(() => { setPage(1) }, [search, signalFilter, viewMode, sessionId, sort])
 
  function toggleSort(key: SortKey) {
  setSort(prev => prev?.key === key
@@ -2486,8 +2590,8 @@ export default function InventoryPage() {
  // Exports a PO CSV built from the buyer's edited quantities (instead of the
  // server re-deriving them) and logs the decisions via logPOGeneration so
  // edited amounts are reflected in adoption tracking.
- function exportEditedPO() {
- if (!sessionId || !data) return
+ async function exportEditedPO() {
+ if (!sessionId || !data || exportingEditedRef.current) return
  // While a warehouse tab is open, `data.items` is still the NETWORK list and
  // the edits the buyer made live in the per-warehouse table, so this export
  // would emit quantities from a view nobody is looking at. The server-side
@@ -2500,8 +2604,15 @@ export default function InventoryPage() {
  // emit 'approved' or 'modified'. Adoption was structurally incapable of
  // recording a refusal, and a tenant working from this screen saw a green
  // 100% forever — with every urgent SKU also counted as a risk acted on.
- const actionable = data.items
-  .filter(i => i.signal === 'PEDIR_YA' || i.signal === 'PEDIR_PRONTO')
+ //
+ // "Every actionable line" means the whole catalogue's, not the page on screen:
+ // they are fetched here by signal (urgent + soon only), so a 5,000-SKU tenant
+ // downloads the lines that need a decision and nothing else.
+ exportingEditedRef.current = true
+ let actionable: InventoryStatusItem[]
+ try { actionable = await getActionableStatusItems(sessionId) }
+ catch (e: unknown) { setError(e); return }
+ finally { exportingEditedRef.current = false }
  const orderItems = actionable.filter(i => effectiveQty(i) > 0)
  const declined = actionable.filter(i => effectiveQty(i) <= 0)
  if (orderItems.length === 0) return
@@ -2523,6 +2634,8 @@ export default function InventoryPage() {
   ]
  })
  downloadCsv('purchase_order.csv', buildCsv(header, rows))
+ addToast(t('inventory.toast_export_edited_title'),
+  t('inventory.toast_export_edited_body', { n: orderItems.length, total: actionable.length }), 'success')
  // Log decisions: ordered (edited => 'modified', otherwise 'approved') AND
  // the actionable lines the buyer zeroed out, which are refusals and have to
  // be recorded as such — they are the only thing that can move adoption off
@@ -2591,9 +2704,10 @@ export default function InventoryPage() {
   ? t('inventory.view_update')
   : analysisViews.find(([m]) => m === viewMode)?.[2] ?? ''
 
- const summary = data?.summary
- const skusWithoutStock = data ? data.items.filter(i => !i.has_stock).length : 0
- const skusWithForecast = data ? data.items.filter(i => i.has_forecast).length : 0
+ // KPIs and the "no stock" banner come from the server's whole-catalogue summary.
+ const summary = kpi ?? undefined
+ const skusWithoutStock = kpi?.without_stock ?? 0
+ const skusWithForecast = kpi?.with_forecast ?? 0
 
  // No page-level entrance on this root: the route fade is applied once by
  // AppShell, and a second one here would double-animate the same screen.
@@ -2857,9 +2971,13 @@ export default function InventoryPage() {
  <>
  {/* Main table / view. On a phone the cards bring their own surface, so the
      framing box and the toolbar band are dropped. */}
- <div style={narrow
-  ? { minWidth: 0 }
-  : { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+ <div style={{
+  ...(narrow
+   ? { minWidth: 0 }
+   : { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }),
+  opacity: fetching ? 0.55 : 1, transition: 'opacity 0.15s',
+ }}
+  aria-busy={fetching || undefined}>
 
  {/* Toolbar */}
  {!isAnalysisView && <div style={narrow
@@ -2867,7 +2985,7 @@ export default function InventoryPage() {
   : { padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10, background: C.card }}>
  <input data-tour="inv.search" type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, minWidth: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none', ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, boxSizing: 'border-box' } : {}) }} />
  {search && <button onClick={() => setSearch('')} aria-label={t('inventory.search_clear')} title={t('inventory.search_clear')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', ...(narrow ? { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' } : {}) }}><X size={narrow ? 18 : 13} aria-hidden="true" /></button>}
- <span style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }}>{items.length} SKU{items.length !== 1 ? 's' : ''}</span>
+ <span style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }} aria-live="polite">{pageTotal.toLocaleString(localeFor(lang))} SKU{pageTotal !== 1 ? 's' : ''}</span>
  </div>}
 
  {loading ? (
@@ -2947,7 +3065,7 @@ export default function InventoryPage() {
  </>
  ) : viewMode === 'provider' ? (
  <>
- <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} editedQty={editedQty} editingQtySku={editingQtySku} setEditedQty={setEditedQty} setEditingQtySku={setEditingQtySku} effectiveQty={effectiveQty} coverageUnit={data?.coverage_unit} />)}</div>
+ <div style={{ padding: 16 }}>{byProvider.map(([provider, provItems]) => <ProviderGroup key={provider || '__none__'} name={provider} items={provItems} onEdit={startEdit} editedQty={editedQty} editingQtySku={editingQtySku} setEditedQty={setEditedQty} setEditingQtySku={setEditingQtySku} effectiveQty={effectiveQty} coverageUnit={data?.coverage_unit} partial={pageCount > 1} />)}</div>
  <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
  </>
 
@@ -2960,6 +3078,7 @@ export default function InventoryPage() {
    {isNetworkStockView
     ? tOr(t, 'inventory.bulk_network_readonly', 'These figures add up every warehouse. Pick one above to edit its stock.')
     : t('inventory.m_update_hint')}
+   {pageCount > 1 && !isNetworkStockView && <span style={{ display: 'block', marginTop: 4 }}>{t('inventory.bulk_paged_hint', { n: updatedSkus.size })}</span>}
   </span>
   <button onClick={() => importRef.current?.click()} disabled={importing} className="mobile-btn mobile-btn-secondary" style={{ flex: '0 0 auto', fontSize: 14 }}>
    <Upload size={15} aria-hidden="true" /> {t('inventory.btn_import_csv_arrow')}
@@ -2986,17 +3105,7 @@ export default function InventoryPage() {
  <Pagination page={paged.page} pageCount={paged.pageCount} offset={paged.offset} total={paged.total} rowsOnPage={pageItems.length} onPage={setPage} label="SKU" />
  <StickyActionBar hidden={updatedSkus.size === 0}>
   <button type="button" className="mobile-btn mobile-btn-secondary" style={{ flex: '0 0 auto' }}
-   onClick={() => {
-    if (data) {
-     const draft: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = {}
-     data.items.forEach(item => {
-      draft[item.sku] = { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS), supplier: item.supplier ?? '' }
-     })
-     setUpdateDraft(draft)
-     setRowBaseline(draft)
-     setUpdatedSkus(new Set())
-    }
-   }}>
+   onClick={() => { setUpdateDraft({ ...rowBaseline }); setUpdatedSkus(new Set()) }}>
    {t('inventory.btn_discard')}
   </button>
   <button type="button" data-tour="inv.save" className="mobile-btn mobile-btn-primary" onClick={handleSaveAll} disabled={updateSaving}>
@@ -3024,17 +3133,7 @@ export default function InventoryPage() {
  {updatedSkus.size === 0 ? t('inventory.no_changes') : `${updatedSkus.size} ${updatedSkus.size !== 1 ? t('inventory.rows_modified_plural') : t('inventory.rows_modified_singular')}`}
  </span>
  <button
- onClick={() => {
- if (data) {
- const draft: Record<string, { current_stock: string; lead_time_days: string; supplier: string }> = {}
- data.items.forEach(item => {
- draft[item.sku] = { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS), supplier: item.supplier ?? '' }
- })
- setUpdateDraft(draft)
- setRowBaseline(draft)
- setUpdatedSkus(new Set())
- }
- }}
+ onClick={() => { setUpdateDraft({ ...rowBaseline }); setUpdatedSkus(new Set()) }}
  disabled={updatedSkus.size === 0}
  style={{ all: 'unset', cursor: updatedSkus.size === 0 ? 'default' : 'pointer', padding: '6px 14px', borderRadius: 7, border: `1px solid ${C.border}`, fontSize: 12, color: C.dim, opacity: updatedSkus.size === 0 ? 0.4 : 1, ...(narrow ? { minHeight: 44, boxSizing: 'border-box', display: 'flex', alignItems: 'center' } : {}) }}
  >
@@ -3062,6 +3161,7 @@ export default function InventoryPage() {
    'These figures add up every warehouse. Pick one above to edit its stock.')
   : tOr(t, 'inventory.bulk_keyboard_hint',
    'Enter saves this row and moves to the next · Esc discards this row')}
+ {pageCount > 1 && !isNetworkStockView && <span> · {t('inventory.bulk_paged_hint', { n: updatedSkus.size })}</span>}
  </div>
  {/* Row-level outcome, announced. Without it a keyboard user pressing Enter
      had no way to know whether the row was saved. */}
@@ -4516,7 +4616,7 @@ export default function InventoryPage() {
 
  {showShrinkageModal && (
  <ShrinkageModal
-  items={data?.items ?? []}
+  sessionId={sessionId}
   warehouses={warehouses.map(w => w.name)}
   // The warehouse tab that is open is the one the buyer is looking at, so it
   // is the one the modal opens on. On "Todas" it falls back to the default.

@@ -1109,6 +1109,37 @@ export const getInventoryStatus =(sessionId: string, serviceLevel = 0.95, opts?:
     undefined, opts,
   )
 
+/** One server-side page of the status list. Rows are filtered by `signal` / `q`
+ *  and ordered by `sort` on the server; `summary` is the same for every page of
+ *  a filter and `page.total` is the filtered count. */
+export const getInventoryStatusPage = (
+  sessionId: string, params: import('./types').InventoryStatusPageParams,
+  serviceLevel = 0.95, opts?: RequestOpts,
+) => {
+  const qs = new URLSearchParams({
+    session_id: sessionId, service_level: String(serviceLevel),
+    limit: String(params.limit), offset: String(params.offset ?? 0),
+    sort: params.sort ?? 'urgency',
+  })
+  if (params.order) qs.set('order', params.order)
+  if (params.q && params.q.trim()) qs.set('q', params.q.trim())
+  if (params.signal) qs.set('signal', params.signal)
+  if (params.skus?.length) qs.set('skus', params.skus.join(','))
+  return request<InventoryStatusResponse>('GET', `/inventory/status?${qs.toString()}`, undefined, opts)
+}
+
+/** Every line the buyer is told to order (urgent + soon), whole. The edited-PO
+ *  export acts on all of them, not just the page on screen, so it asks for the
+ *  actionable subset explicitly instead of holding the full list in memory. */
+export const getActionableStatusItems = async (sessionId: string, serviceLevel = 0.95) => {
+  const [urgent, soon] = await Promise.all(['PEDIR_YA', 'PEDIR_PRONTO'].map(signal =>
+    request<InventoryStatusResponse>(
+      'GET',
+      `/inventory/status?session_id=${sessionId}&service_level=${serviceLevel}&signal=${signal}`,
+    )))
+  return [...urgent.items, ...soon.items]
+}
+
 // `warehouse` is the destination for rows whose file names none — how the
 // per-warehouse tab stocks a location without asking the user to add a column.
 export const importInventoryCSV = (file: File, warehouse?: string) => {
@@ -1632,6 +1663,18 @@ export function getDocumentContentUrl(docId: string): string {
 // ── Suppliers ─────────────────────────────────────────────────────────────────
 export const listSuppliers    = (opts?: RequestOpts) =>
   request<Supplier[]>('GET', '/inventory/suppliers', undefined, opts)
+
+/** One server-side page of active suppliers; `total` counts the search match. */
+export const listSuppliersPage = (
+  params: { limit?: number; offset?: number; q?: string }, opts?: RequestOpts,
+) => {
+  const qs = new URLSearchParams({
+    limit: String(params.limit ?? 50), offset: String(params.offset ?? 0),
+  })
+  if (params.q && params.q.trim()) qs.set('q', params.q.trim())
+  return request<import('./types').SuppliersPageResponse>(
+    'GET', `/inventory/suppliers/page?${qs.toString()}`, undefined, opts)
+}
 
 /** What the form may send. `lead_time_days` is nullable on the way IN and a
  *  number on the way out: leaving it empty is how a supplier is created
