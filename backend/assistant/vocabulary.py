@@ -20,6 +20,8 @@ TOPIC_WORDS: dict[str, tuple[str, ...]] = {
                   "parad", "inmovil", "overstock", "tied", "money", "cash"),
     "demand": ("tendencia", "venta", "ventas", "demanda", "vend", "trend", "sales",
                "demand", "pico", "temporada", "spike", "season"),
+    "committed": ("compromiso", "compromisos", "contrato", "anticipad", "en riesgo",
+                  "committed", "commitment", "customer order", "at risk"),
     "activity": ("hice", "hicimos", "ultimo", "ultima", "actividad", "historial",
                  "did i", "activity", "recent", "lately"),
     "risks": ("riesgo", "rojo", "urgente", "pedir", "agot", "quiebre", "falta", "compra",

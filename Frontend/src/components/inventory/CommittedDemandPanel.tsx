@@ -15,7 +15,7 @@ import {
   bulkCreateCommittedDemand, createCommittedDemand, getCommittedDemand,
   listWarehouses, setCommittedDemandStatus,
 } from '@/lib/api'
-import type { CommittedDemand, CommittedDemandInput, CommittedDemandStatus, Warehouse } from '@/lib/types'
+import type { CommittedDemand, CommittedDemandCustomer, CommittedDemandInput, CommittedDemandStatus, Warehouse } from '@/lib/types'
 import { isApiError } from '@/lib/api'
 import { translateErrorParts } from '@/lib/errorMessage'
 import { useErrorDetail } from '@/components/ui/States'
@@ -41,6 +41,7 @@ export default function CommittedDemandPanel() {
 
   const [status, setStatus] = useState<CommittedDemandStatus>('open')
   const [items, setItems] = useState<CommittedDemand[]>([])
+  const [byCustomer, setByCustomer] = useState<CommittedDemandCustomer[]>([])
   const [loaded, setLoaded] = useState(false)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -63,8 +64,8 @@ export default function CommittedDemandPanel() {
 
   const load = useCallback(() => {
     getCommittedDemand({ status })
-      .then(r => { setItems(r.items); setLoadError(null) })
-      .catch(e => { setItems([]); setLoadError(errorDetail(e)) })
+      .then(r => { setItems(r.items); setByCustomer(r.by_customer ?? []); setLoadError(null) })
+      .catch(e => { setItems([]); setByCustomer([]); setLoadError(errorDetail(e)) })
       .finally(() => setLoaded(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
@@ -302,6 +303,29 @@ export default function CommittedDemandPanel() {
         <p style={{ margin: 0, fontSize: 13, color: C.dim }}>{t(`committed.empty_${status}`)}</p>
       )}
 
+      {status === 'open' && byCustomer.length > 0 && (
+        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            {t('committed.by_customer_title')}
+          </div>
+          {byCustomer.map(g => (
+            <div key={g.customer ?? '__none__'} style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', alignItems: 'baseline', fontSize: 12.5, color: C.text }}>
+              <span style={{ fontWeight: 600 }}>{g.customer || t('committed.customer_unknown')}</span>
+              <span style={{ color: C.dim }}>{t('committed.by_customer_open', { n: g.open })}</span>
+              {g.at_risk > 0 ? (
+                <span style={{ color: C.red, fontWeight: 600 }}>
+                  {t('committed.by_customer_at_risk', { n: g.at_risk, units: g.shortfall.toLocaleString() })}
+                  {g.first_safe_order_date && <> · {t('committed.order_by', { date: g.first_safe_order_date })}</>}
+                </span>
+              ) : g.unknown < g.open ? (
+                <span style={{ color: C.dim }}>{t('committed.by_customer_covered')}</span>
+              ) : null}
+              {g.unknown > 0 && <span style={{ color: C.amber }}>{t('committed.by_customer_unknown', { n: g.unknown })}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {sorted.length > 0 && (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sorted.map(c => (
@@ -318,7 +342,29 @@ export default function CommittedDemandPanel() {
                       {t('committed.overdue')}
                     </span>
                   )}
+                  {c.status === 'open' && c.at_risk === true && (
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: C.red, border: `1px solid ${C.red}`, borderRadius: 6, padding: '1px 6px' }}>
+                      {t('committed.at_risk', { units: (c.shortfall ?? 0).toLocaleString() })}
+                    </span>
+                  )}
+                  {c.status === 'open' && c.at_risk === false && (
+                    <span style={{ fontSize: 10.5, fontWeight: 600, color: C.dim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '1px 6px' }}>
+                      {t('committed.covered')}
+                    </span>
+                  )}
+                  {c.status === 'open' && c.at_risk == null && (
+                    <span title={t('committed.no_verdict_hint')} style={{ fontSize: 10.5, fontWeight: 600, color: C.amber, border: `1px solid ${C.amber}`, borderRadius: 6, padding: '1px 6px' }}>
+                      {t('committed.no_verdict')}
+                    </span>
+                  )}
                 </div>
+                {c.status === 'open' && c.at_risk === true && c.latest_safe_order_date && (
+                  <div style={{ fontSize: 12, color: C.red, marginTop: 2 }}>
+                    {c.order_date_passed
+                      ? t('committed.order_by_passed', { date: c.latest_safe_order_date })
+                      : t('committed.order_by', { date: c.latest_safe_order_date })}
+                  </div>
+                )}
                 <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
                   {c.delivery_date} · {c.customer || t('committed.customer_unknown')} · {warehouseName(c.warehouse_id)}
                   {!c.on_top_of_base && <> · {t('committed.in_history_badge')}</>}

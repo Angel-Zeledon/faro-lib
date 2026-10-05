@@ -4558,6 +4558,15 @@ export default function InventoryPage() {
  <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{item.sku}</div>
  {item.display_name && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{item.display_name}</div>}
  {item.supplier && <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>{item.supplier}</div>}
+ {item.committed_only && (
+ <div style={{ fontSize: 10.5, color: C.indigo, marginTop: 2 }}>
+ {t('inventory.committed_only_line', {
+ units: Number((item.committed_applied ?? []).reduce((s, c) => s + c.units, 0).toFixed(1)).toLocaleString(),
+ shortfall: Number((item.committed_shortfall ?? 0).toFixed(1)).toLocaleString(),
+ })}
+ {item.committed_stock_unknown && <> · {t('inventory.committed_only_unknown')}</>}
+ </div>
+ )}
  </th>
  <td style={{ padding: '10px 12px', borderBottom: isExpanded ? 'none' : `1px solid ${C.border}` }}>
  {item.has_stock ? <span style={{ fontWeight: 600 }}>{fmt(item.current_stock, 0)}</span> : <span style={{ color: C.dim, fontSize: 11 }}>{t('inventory.no_record')}</span>}

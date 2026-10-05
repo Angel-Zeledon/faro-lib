@@ -303,6 +303,34 @@ def _suppliers(data: AccountData) -> Section | None:
                    hidden=max(0, len(score) - _SUPPLIER_ROWS))
 
 
+_COMMITTED_ROWS = 6
+
+
+def _committed(data: AccountData) -> Section | None:
+    """Customer orders placed ahead of time, and which ones the stock will not
+    cover. Absent when the account recorded none (nothing to say), but a read
+    that FAILED is written down as unavailable, never as "no commitments"."""
+    ledger = data.committed_demand  # the read happens here, so `missing` is filled below
+    if "committed_demand" in data.missing:
+        return Section("committed", "Customer commitments",
+                       ["- Unavailable right now (could not be read); do not say there are none."], 20)
+    items = ledger.get("items") or []
+    if not items:
+        return None
+    risky = [i for i in items if i.get("at_risk")]
+    unknown = [i for i in items if i.get("at_risk") is None]
+    lines = [f"- {len(items)} open commitments, {len(risky)} at risk (stock plus incoming "
+             f"does not cover them, earliest date first), {len(unknown)} with no verdict "
+             "(no stock recorded for the product)."]
+    for i in risky[:_COMMITTED_ROWS]:
+        late = " — the latest safe order date has ALREADY PASSED" if i.get("order_date_passed") else ""
+        lines.append(f"- {i.get('customer') or 'Unnamed customer'}: {i.get('sku')} "
+                     f"{_num(i.get('quantity'))} units due {i.get('delivery_date')}, short "
+                     f"{_num(i.get('shortfall'))}; order by {i.get('latest_safe_order_date')}{late}")
+    return Section("committed", "Customer commitments (orders placed ahead of time)", lines,
+                   72 if risky else 30, hidden=max(0, len(risky) - _COMMITTED_ROWS))
+
+
 def _demand(data: AccountData) -> Section | None:
     b = data.briefing
     lines = []
@@ -366,7 +394,7 @@ def build_account_context(
     if data.planning.get("active_session_id"):
         candidates += [_kpis(data), *_risks(data), _overstock(data), _demand(data),
                        _focus_products(data, focus)]
-    candidates += [_orders(data), _suppliers(data), _activity(data)]
+    candidates += [_orders(data), _suppliers(data), _committed(data), _activity(data)]
 
     boost = _boost(question)
     sections = [s for s in candidates if s is not None]

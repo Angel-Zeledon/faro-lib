@@ -18,6 +18,7 @@ from typing import Optional
 from forecasting_core.business.optimizer import OptimizationInput
 
 import math as _math
+from datetime import date
 
 from backend.db import session_store
 from backend.inventory import stock_defaults_service as sd_svc
@@ -430,7 +431,14 @@ def build_optimization_input(
     # of how much is left, and how much is left is precisely what nobody told
     # us. So the SKU is left out and named in `needs_stock`, and the screens say
     # what is missing instead of printing a number about nothing.
-    skus = sorted(set(forecasts) - set(skus_missing_stock(forecasts, stock_rows)))
+    #
+    # Orders customers placed ahead of time are demand the forecast cannot see
+    # (see committed_demand_service). A SKU that only has commitments (no forecast
+    # of its own) is planned on them alone, with no forecast invented.
+    from backend.inventory import committed_demand_service as _cd_svc
+    committed_by_sku = _cd_svc.active_by_sku(tenant_id)
+    plannable = set(forecasts) | set(committed_by_sku)
+    skus = sorted(plannable - set(skus_missing_stock(plannable, stock_rows)))
 
     if not skus or not warehouses:
         return None
@@ -534,6 +542,10 @@ def build_optimization_input(
                 series[step] = point["value"]
         return series
 
+    # A commitment names its warehouse by ID; the model works in names. One
+    # read for the whole tenant, and only when something is committed.
+    _wh_ids = ({w["name"]: str(w["id"]) for w in wh_svc.list_warehouses(tenant_id)}
+               if committed_by_sku else {})
     for sku in milp_skus:
         sku_rows = rows_by_sku.get(sku, {})
 
@@ -564,6 +576,21 @@ def build_optimization_input(
             for w in warehouses:
                 share = shares.get(w, 0.0)
                 demand[(sku, w)] = [v * share for v in total_curve]
+
+        # Committed customer orders due inside the horizon, laid into the bucket
+        # of their delivery date. Every rule about what counts comes from the
+        # same function the Panel uses; a SKU with none is left untouched.
+        if committed_by_sku.get(sku):
+            _default_wh = wh_svc.get_default_warehouse_name(tenant_id)
+            if _default_wh not in warehouses:
+                _default_wh = sorted(warehouses, key=wh_svc.name_precedence_key)[0]
+            extra = _cd_svc.demand_buckets_by_warehouse(
+                committed_by_sku[sku], date.today(), horizon_days, days_per_period,
+                horizon_buckets, warehouses, None if per_wh_forecasts else shares,
+                _default_wh,
+                _wh_ids)
+            for w, series in extra.items():
+                demand[(sku, w)] = [a + b for a, b in zip(demand[(sku, w)], series)]
 
         costs = [c for c in (_usable_unit_cost(row.get("unit_cost"))
                              for row in sku_rows.values()) if c is not None]
