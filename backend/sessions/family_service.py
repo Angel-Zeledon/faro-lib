@@ -43,16 +43,63 @@ def _horizon_steps(granularity: str, user_horizon_days: int | None) -> int:
     return max(MIN_HORIZON_STEPS, min(steps, GENEROUS_REACH[granularity]))
 
 
+def _extend_for_need(spec: dict, need: dict | None) -> None:
+    """Raise `spec["horizon"]` to cover the buying need, never lower it.
+
+    `need` is `horizon_need.derive_need` output. The configured horizon (the
+    user's pick, or the grain's generous reach) is kept whenever it already
+    covers the need; otherwise the spec gains `horizon_extension` — the facts
+    the run, the wizard and the logs state out loud."""
+    if not need:
+        return
+    grain = spec["granularity"]
+    needed_steps = math.ceil(need["need_days"] / DAYS_PER_PERIOD[grain])
+    configured = spec["horizon"]
+    if needed_steps <= configured:
+        return
+    spec["horizon"] = needed_steps
+    spec["horizon_extension"] = {
+        "granularity": grain,
+        "configured_steps": configured,
+        "steps": needed_steps,
+        "need_days": need["need_days"],
+        "required_days": need["required_days"],
+        "lead_time_days": need["lead_time_days"],
+        "review_period_days": need["review_period_days"],
+        "supplier": need.get("supplier"),
+        "sku": need.get("sku"),
+        "capped": bool(need.get("capped")),
+    }
+
+
+def describe_extension(ext: dict) -> str:
+    """The sentence a run prints when its horizon was raised (English; the UI
+    renders its own localized copy from the structured fields)."""
+    who = f"supplier {ext['supplier']}" if ext.get("supplier") else f"SKU {ext.get('sku')}"
+    text = (
+        f"Horizon extended to {ext['steps']} {ext['granularity']} steps "
+        f"(was {ext['configured_steps']}) because {who} needs lead time + review = "
+        f"{ext['required_days']} days ({ext['lead_time_days']} + {ext['review_period_days']}), "
+        f"{ext['need_days']} days with the safety margin."
+    )
+    if ext.get("capped"):
+        text += " The need exceeds the 365-day ceiling, so the horizon stops there."
+    return text
+
+
 def plan_family(
     dates: list[str],
     user_granularity: str = "auto",
     user_horizon_days: int | None = None,
+    need: dict | None = None,
 ) -> list[dict]:
     """Decide which granularities to train and with what config. Pure — no DB.
 
     Returns finest-first, one dict per available grain:
-      {granularity, target_freq, horizon, is_base}.
+      {granularity, target_freq, horizon, is_base} plus `horizon_extension`
+      when `need` (see `horizon_need.derive_need`) raised the horizon.
     The base (finest detected) grain trains natively (target_freq None).
+    `need=None` is exactly the behaviour before the buying need existed.
 
     When the user picked an explicit granularity (Quick Start wizard) and the
     data can support it, only that grain is planned. A non-viable pick (too few
@@ -73,6 +120,7 @@ def plan_family(
             "horizon": _horizon_steps(g, user_horizon_days),
             "is_base": g == base_freq,
         })
+        _extend_for_need(specs[-1], need)
     return specs
 
 
@@ -123,6 +171,7 @@ def launch_training_family(
     user_id: str,
     user_horizon_days: int | None = None,
     user_granularity: str = "auto",
+    extend_for_buying_need: bool = True,
 ) -> dict:
     """Fan a ready-to-train base session out into its granularity family and
     enqueue every member. The base session must already be validated and in a
@@ -132,6 +181,13 @@ def launch_training_family(
     they narrow the fan-out (single explicit grain when viable) and size each
     grain's horizon (see plan_family). Both are persisted into the base
     session's forecast_cfg for auditability.
+
+    The horizon is then RAISED (never lowered) when the tenant's declared lead
+    times + review periods need more than it covers (`horizon_need`); every
+    session whose horizon was raised carries `forecast_cfg["horizon_extension"]`
+    and its first log line says why. `extend_for_buying_need=False` is for runs
+    whose horizon is a measurement, not a purchase window (back-tests: the
+    horizon IS the held-out span).
     """
     from backend.activity.events import record_event
     from backend.db.connection import execute
@@ -168,7 +224,20 @@ def launch_training_family(
         raise
 
     dates = _read_dataset_dates(tenant_id, base_session_id)
-    specs = plan_family(dates, user_granularity, user_horizon_days)  # always >= 1
+    need = None
+    need_error = False
+    if extend_for_buying_need:
+        try:
+            from backend.sessions import horizon_need
+            need = horizon_need.tenant_need(tenant_id)
+        except Exception:
+            # Training must not depend on this lookup, but the run must not
+            # pretend it was consulted either: the failure is logged here and
+            # written to the run's own log below.
+            need_error = True
+            log.warning("family: could not derive the buying-need horizon for "
+                        "tenant=%s session=%s", tenant_id, base_session_id, exc_info=True)
+    specs = plan_family(dates, user_granularity, user_horizon_days, need)  # always >= 1
     base_spec = specs[0]
     family_id = base_session_id
 
@@ -179,6 +248,10 @@ def launch_training_family(
         (family_id, base_spec["granularity"], base_session_id, tenant_id))
     base_fcfg = dict(session_store.get_field(tenant_id, base_session_id, "forecast_cfg") or {})
     base_fcfg["horizon"] = base_spec["horizon"]
+    # Always rewritten, so a relaunch never inherits the previous run's note.
+    base_fcfg.pop("horizon_extension", None)
+    if base_spec.get("horizon_extension"):
+        base_fcfg["horizon_extension"] = base_spec["horizon_extension"]
     # Audit trail of what the user actually asked for in the wizard.
     if user_horizon_days is not None:
         base_fcfg["user_horizon_days"] = user_horizon_days
@@ -211,6 +284,9 @@ def launch_training_family(
             if val is not None:
                 if field == "forecast_cfg":
                     val = {**dict(val), "horizon": spec["horizon"]}
+                    val.pop("horizon_extension", None)
+                    if spec.get("horizon_extension"):
+                        val["horizon_extension"] = spec["horizon_extension"]
                 session_store.set_field(tenant_id, sib_id, field, val)
         session_store.set_field(tenant_id, sib_id, "granularity_cfg",
                                 {"strategy": "aggregate", "target_freq": spec["target_freq"]})
@@ -226,6 +302,24 @@ def launch_training_family(
     members[0]["job_id"] = base_job_id
     for m in members[1:]:
         m["job_id"] = _enqueue(tenant_id, m["session_id"], user_id)
+
+    # The run says what it did to the horizon. Best effort: a log write that
+    # fails must not undo a queued run, but it is not swallowed silently.
+    by_session = {m["session_id"]: spec for m, spec in zip(members, specs)}
+    for m in members:
+        spec = by_session[m["session_id"]]
+        ext = spec.get("horizon_extension")
+        if ext:
+            m["horizon_extension"] = ext
+        line = describe_extension(ext) if ext else (
+            "Could not derive the horizon needed by lead time + review period; "
+            "the configured horizon was used." if need_error else None)
+        if line:
+            try:
+                session_store.append_log(tenant_id, m["session_id"], m["job_id"], line)
+            except Exception:
+                log.warning("family: could not write the horizon note for job=%s",
+                            m["job_id"], exc_info=True)
 
     log.info("[family] tenant=%s family=%s members=%d",
              tenant_id, family_id, len(members))

@@ -13,7 +13,7 @@ import type {
   CostOfIgnoringResponse, WhyChangedResponse,
   ShrinkageReason, ShrinkageRecord,
   Warehouse, WarehouseStatusResponse, Transfer, TransferLane,
-  PlanningState, PlanningPeriod, MeUser,
+  PlanningState, PlanningPeriod, MeUser, HorizonPreview,
   SignalThresholdFactors, SignalThresholdScope, SignalThresholdRule,
   SignalThresholdsState, SignalThresholdsPreview,
 } from './types'
@@ -2026,6 +2026,8 @@ export const getPlanning = () =>
   request<PlanningState>('GET', '/planning')
 export const setPlanning = (period: PlanningPeriod, horizon: number) =>
   request<PlanningState>('PUT', '/planning', { period, horizon })
+export const getHorizonNeed = (horizonDays: number) =>
+  request<HorizonPreview>('GET', `/planning/horizon-need?horizon_days=${horizonDays}`)
 
 // ── What-if scenarios (PENDIENTES #7) ────────────────────────────────────────
 // `previewScenario` runs inline rules without saving them (the builder's live

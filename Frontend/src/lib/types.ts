@@ -2645,6 +2645,23 @@ export interface PlanningState {
   requested_period:  PlanningPeriod | null
 }
 
+// The horizon the tenant's buying need (lead time + review period) asks for.
+// `need` is null when nothing is declared: the horizon is then untouched.
+export interface HorizonNeed {
+  need_days:          number   // with the safety margin, clamped to the ceiling
+  required_days:      number   // lead time + review period, no margin
+  lead_time_days:     number
+  review_period_days: number
+  supplier:           string | null
+  sku:                string
+  capped:             boolean
+}
+export interface HorizonPreview {
+  need:         HorizonNeed | null
+  ceiling_days: number
+  by_grain: Record<PlanningPeriod, { configured_steps: number; steps: number; extended: boolean }>
+}
+
 // ── What-if scenarios (PENDIENTES #7) ────────────────────────────────────────
 
 export type ScenarioRuleType =

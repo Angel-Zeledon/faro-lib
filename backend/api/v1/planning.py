@@ -7,7 +7,9 @@ GET /planning  — the active {period, horizon}, the family's available periods,
 PUT /planning  — set {period, horizon}. Admin-only.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from backend import audit
 from pydantic import BaseModel, Field
@@ -30,6 +32,16 @@ def get_planning(user: CurrentUser = Depends(get_current_user)):
     data = plan.get_planning(user.tenant_id)
     data["active_session_id"] = plan.resolve_active_session(user.tenant_id)
     return ok(data)
+
+
+@router.get("/horizon-need")
+def get_horizon_need(
+    horizon_days: Optional[int] = Query(default=None, ge=1, le=365),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """The horizon the buying need asks for, shown by the Quick Start wizard
+    before training. `need` is null when nothing is declared."""
+    return ok(plan.horizon_preview(user.tenant_id, horizon_days))
 
 
 @router.put("")

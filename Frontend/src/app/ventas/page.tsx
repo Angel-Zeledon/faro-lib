@@ -7,7 +7,7 @@ import {
  setBusinessConfig, startTraining, getJob,
  startDemoQuickstart, listDatasets, getSessionSummaries, getColumnsConfig,
  getDataGate, setRemediations, getActiveTraining, getTenantTimezone,
- previewGuidedReading, applyGuidedReading,
+ previewGuidedReading, applyGuidedReading, getHorizonNeed,
 } from '@/lib/api'
 import type { TrainingFamily } from '@/lib/api'
 import {
@@ -22,7 +22,7 @@ import DataIssuesPanel from '@/components/ui/DataIssuesPanel'
 import RemediationChoices from '@/components/ui/RemediationChoices'
 import type {
  InspectionResult, CanonicalMapping, DatasetMeta, SessionSummary, DataGate,
- GuidanceReport, GuidedRecord,
+ GuidanceReport, GuidedRecord, HorizonPreview,
 } from '@/lib/types'
 import HelpTip from '@/components/ui/HelpTip'
 import { useErrorDetail } from '@/components/ui/States'
@@ -589,6 +589,32 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
      : !grainKey && horizonDays > GRAIN_REACH_DAYS.daily
       ? t('qs.horizon_cap_auto', { daily: spanText(GRAIN_REACH_DAYS.daily, t), weekly: spanText(GRAIN_REACH_DAYS.weekly, t) })
       : null
+ // What the tenant's own suppliers need (lead time + review period). Advisory:
+ // when the lookup fails the note is simply absent and the launch decides
+ // on the server regardless.
+ const [needPreview, setNeedPreview] = useState<HorizonPreview | null>(null)
+ useEffect(() => {
+  let live = true
+  const timer = setTimeout(() => {
+   getHorizonNeed(horizonDays)
+    .then(p => { if (live) setNeedPreview(p) })
+    .catch(() => { if (live) setNeedPreview(null) })
+  }, 300)
+  return () => { live = false; clearTimeout(timer) }
+ }, [horizonDays])
+ const needGrain = grainKey ?? 'daily'
+ const needNote: string | null = (() => {
+  const preview = needPreview
+  const need = preview?.need
+  if (!preview || !need || !preview.by_grain[needGrain]?.extended) return null
+  const params = {
+   who: need.supplier ?? need.sku, required: need.required_days,
+   lead: need.lead_time_days, review: need.review_period_days,
+   span: spanText(need.need_days, t),
+  }
+  const base = t(need.supplier ? 'qs.horizon_extended' : 'qs.horizon_extended_sku', params)
+  return need.capped ? `${base} ${t('qs.horizon_extended_capped', { max: spanText(preview.ceiling_days, t) })}` : base
+ })()
  const fieldN: React.CSSProperties = narrow ? { fontSize: 16, minHeight: 44, boxSizing: 'border-box', borderRadius: 10 } : {}
  const labelStyle: React.CSSProperties = {
  fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6,
@@ -664,6 +690,11 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
  <div style={{ fontSize: 12, color: horizonNote ? '#92400e' : 'var(--dim)', marginTop: 6, lineHeight: 1.5 }}>
  {horizonNote ?? t('qs.horizon_history_tip')}
  </div>
+ {needNote && (
+ <div role="status" data-testid="qs-horizon-extended" style={{ fontSize: 12, color: '#92400e', marginTop: 6, lineHeight: 1.5 }}>
+ {needNote}
+ </div>
+ )}
  </div>
  <div data-tour="qs.granularity">
  <span style={labelStyle}>{t('qs.plan_granularity_label')}</span>
