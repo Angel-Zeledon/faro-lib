@@ -21,6 +21,7 @@ from backend.inventory.defaults import (
     SOURCE_LEARNED,
     SOURCE_USER,
 )
+from backend.inventory import abc_xyz as _abc_xyz
 from backend.inventory import signal_thresholds as _sig_th
 
 log = logging.getLogger(__name__)
@@ -1106,49 +1107,21 @@ def tenant_wide_daily_levels(
 # ── ABC-XYZ classification ────────────────────────────────────────────────────
 
 def _classify_xyz(cv: Optional[float]) -> str:
-    """
-    X = low variability (predictable), Y = moderate, Z = high (erratic).
-    Uses coefficient of variation from the series analysis.
-    """
-    if cv is None:
-        return "?"
-    if cv < 0.5:
-        return "X"
-    if cv < 1.0:
-        return "Y"
-    return "Z"
+    """X = predictable, Y = moderate, Z = erratic — from the engine's per-series
+    CV. The cut-offs live in `abc_xyz.py`, the one definition."""
+    return _abc_xyz.classify_xyz(cv)
 
 
 def _classify_abc(items: list[dict]) -> dict[str, str]:
+    """A = top 80% cumulative value, B = next 15%, C = rest.
+
+    Value proxy = daily_demand * unit_cost (or just daily_demand if no cost).
+    The math is `abc_xyz.classify_abc`, pure and tested on its own.
     """
-    A = top 80% cumulative revenue proxy, B = next 15%, C = rest.
-    Revenue proxy = daily_demand * unit_cost (or just daily_demand if no cost).
-    """
-    scored = []
-    for item in items:
-        demand = item.get("daily_demand") or 0.0
-        cost   = item.get("unit_cost") or 1.0
-        scored.append((item["sku"], demand * cost))
-
-    scored.sort(key=lambda x: x[1], reverse=True)
-    total = sum(v for _, v in scored)
-
-    if total == 0:
-        return {sku: "C" for sku, _ in scored}
-
-    result: dict[str, str] = {}
-    cumulative = 0.0
-    for sku, val in scored:
-        # Assign tier based on cumulative BEFORE adding this item,
-        # so a single dominant SKU (e.g. 99% revenue) gets classified as A not C.
-        if cumulative < 0.80:
-            result[sku] = "A"
-        elif cumulative < 0.95:
-            result[sku] = "B"
-        else:
-            result[sku] = "C"
-        cumulative += val / total
-    return result
+    return _abc_xyz.classify_abc(
+        (item["sku"], (item.get("daily_demand") or 0.0) * (item.get("unit_cost") or 1.0))
+        for item in items
+    )
 
 
 # ── Signal calculation ────────────────────────────────────────────────────────

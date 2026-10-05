@@ -248,6 +248,7 @@ def read_status(
     skus: Optional[str] = None, q: Optional[str] = None,
     sort: str = "urgency", order: Optional[str] = None,
     limit: Optional[int] = None, offset: int = 0,
+    abc: Optional[str] = None,
 ) -> Optional[dict]:
     """The rows and summary the status endpoint answers with, from the snapshot.
 
@@ -274,6 +275,10 @@ def read_status(
         if supplier:
             where.append("supplier_lc = %s")
             params.append(supplier.lower())
+        if abc:
+            # The class is part of the stored row, not a column of its own.
+            where.append("item->>'abc' = %s")
+            params.append(abc.upper())
         if skus and skus.strip():
             wanted = sorted({x.strip() for x in skus.split(",") if x.strip()})
             where.append("sku = ANY(%s)")

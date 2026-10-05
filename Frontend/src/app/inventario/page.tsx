@@ -15,7 +15,7 @@ import {
  ApiError,
 } from '@/lib/api'
 import type {
- InventoryStatusItem, InventorySignal,
+ InventoryStatusItem, InventorySignal, AbcClass,
  InventoryCalcExplanation, InventoryEvent, Supplier, DeadCapitalResponse, ExcludedSku,
  EventSimulationResult, POLineDecision, ShrinkageReason, CalendarCatalogEntry, CoverageUnit,
  EventMultiplier,
@@ -2103,6 +2103,8 @@ export default function InventoryPage() {
  // pre-flattened string.
  const [error, setError] = useState<unknown>(null)
  const [signalFilter, setSignalFilter] = useState<InventorySignal | ''>('')
+ // ABC class (value ranking): a second, independent server-side filter.
+ const [abcFilter, setAbcFilter] = useState<AbcClass | ''>('')
  const [search, setSearch] = useState('')
  // Typing filters on the server; one request per pause, not per keystroke.
  const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -2213,7 +2215,7 @@ export default function InventoryPage() {
   : viewMode === 'provider' ? { sort: 'supplier_urgency' }
   : viewMode === 'table' && sort ? { sort: (sort.key === 'sku' ? 'name' : sort.key) as InventoryStatusSort, order: sort.dir }
   : { sort: 'urgency' }
- const queryKey = [sessionId, signalFilter, debouncedSearch, serverSort.sort, serverSort.order ?? ''].join('|')
+ const queryKey = [sessionId, signalFilter, abcFilter, debouncedSearch, serverSort.sort, serverSort.order ?? ''].join('|')
  const [pageState, setPageState] = useState({ key: '', page: 1 })
  const page = pageState.key === queryKey ? pageState.page : 1
  const setPage = useCallback((p: number) => setPageState({ key: queryKey, page: p }), [queryKey])
@@ -2267,14 +2269,14 @@ export default function InventoryPage() {
  const seq = ++fetchSeq.current
  if (full) { setLoading(true) } else { setFetching(true) }
  setError(null)
- const filtered = !!(signalFilter || debouncedSearch.trim())
+ const filtered = !!(signalFilter || abcFilter || debouncedSearch.trim())
  void (async () => {
   try {
    // `silent: true` — the failure is rendered as a full ErrorState below, so the
    // interceptor's toast would say the same thing twice.
    const res = withSingleSeriesLabel(await getInventoryStatusPage(sid, {
     limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, signal: signalFilter || undefined,
-    q: debouncedSearch, ...serverSort,
+    abc: abcFilter || undefined, q: debouncedSearch, ...serverSort,
    }, 0.95, { silent: true }), t)
    if (seq !== fetchSeq.current) return
    // The KPI row describes the whole catalogue. A response for an unfiltered
@@ -3033,6 +3035,12 @@ export default function InventoryPage() {
   : { padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10, background: C.card }}>
  <input data-tour="inv.search" type="search" name="inventory_search" aria-label={t('inventory.search_placeholder')} value={search} onChange={e => setSearch(e.target.value)} placeholder={t('inventory.search_placeholder')} style={{ flex: 1, minWidth: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 12px', fontSize: 12, color: C.text, outline: 'none', ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10, boxSizing: 'border-box' } : {}) }} />
  {search && <button onClick={() => setSearch('')} aria-label={t('inventory.search_clear')} title={t('inventory.search_clear')} style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex', ...(narrow ? { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' } : {}) }}><X size={narrow ? 18 : 13} aria-hidden="true" /></button>}
+ <select data-testid="inv-abc-filter" aria-label={t('inventory.abc_filter')} title={t('inventory.tip_abc_xyz')} value={abcFilter} onChange={e => setAbcFilter(e.target.value as AbcClass | '')} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 8px', fontSize: 12, color: C.text, ...(narrow ? { fontSize: 16, minHeight: 44, borderRadius: 10 } : {}) }}>
+ <option value="">{t('inventory.abc_filter_all')}</option>
+ <option value="A">{t('inventory.abc_filter_class', { abc: 'A' })}</option>
+ <option value="B">{t('inventory.abc_filter_class', { abc: 'B' })}</option>
+ <option value="C">{t('inventory.abc_filter_class', { abc: 'C' })}</option>
+ </select>
  <span style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }} aria-live="polite">{pageTotal.toLocaleString(localeFor(lang))} SKU{pageTotal !== 1 ? 's' : ''}</span>
  </div>}
 
@@ -3077,7 +3085,7 @@ export default function InventoryPage() {
  /* Two very different emptinesses: a filter that matched nothing (clear it)
     versus a session with no stock loaded (go load it). */
  <div style={{ padding: '32px 24px' }}>
- {signalFilter || search ? (
+ {signalFilter || abcFilter || search ? (
  <EmptyState
  compact
  icon={<Search size={20} />}
@@ -3086,7 +3094,7 @@ export default function InventoryPage() {
  actions={[{
  label: t('inventory.empty_filtered_cta'),
  variant: 'secondary',
- onClick: () => { setSignalFilter(''); setSearch('') },
+ onClick: () => { setSignalFilter(''); setAbcFilter(''); setSearch('') },
  }]}
  />
  ) : (
