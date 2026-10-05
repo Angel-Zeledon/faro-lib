@@ -31,7 +31,7 @@ from backend.schemas.common import ok
 from backend.schemas.configuration import (
     AttachDatasetRequest, BusinessConfigRequest, CanonicalColumnsRequest,
     ColumnsConfigRequest, FeaturesConfigRequest, ForecastConfigRequest,
-    ModelsConfigRequest, RemediationsRequest, ValidationConfigRequest,
+    GuidedReadingRequest, ModelsConfigRequest, RemediationsRequest, ValidationConfigRequest,
 )
 from backend.sessions import service as session_svc
 
@@ -227,6 +227,19 @@ def inspect_dataset(
             "granularity": granularity,
             "inspected_at": _now(),
         }
+        # The guided-upload reading of the same file, and the record of what was
+        # already done to it. A guide that fails must say so (`guidance_error`):
+        # an absent field would read as "nothing to ask".
+        from backend.guided import service as guided_svc
+        from backend.dataframes.guided import analyze_file
+        try:
+            inspection["guidance"] = analyze_file(ds_meta["file_path"], {})
+            inspection["guidance_error"] = None
+        except Exception as e:  # noqa: BLE001 - reported, never swallowed
+            log.warning("guided reading failed session=%s: %s", session_id, e)
+            inspection["guidance"] = None
+            inspection["guidance_error"] = str(e)[:300]
+        inspection["guided_reading"] = guided_svc.applied(user.tenant_id, session_id)
         session_store.set_field(user.tenant_id, session_id, "inspection", inspection)
 
         if profile:
@@ -360,6 +373,54 @@ def get_remediations(session_id: str, user: CurrentUser = Depends(get_current_us
 
     _get_session_or_404(user.tenant_id, session_id)
     return ok({"remediations": gate_svc.chosen_remediations(user.tenant_id, session_id)})
+
+
+# ── Guided upload ──────────────────────────────────────────────────────────
+
+@router.get("/sessions/{session_id}/guided-reading")
+def get_guided_reading(
+    session_id: str,
+    decisions: Optional[str] = Query(None, description="JSON object: the answers so far"),
+    mapping: Optional[str] = Query(None, description="JSON object: a mapping to check"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """What the guide makes of the ORIGINAL file, given the answers so far.
+
+    Read-only and repeatable: the wizard calls it again after each answer, so the
+    conversation moves one question at a time. Also returns the record of any
+    fixes already applied to this session's file.
+    """
+    from backend.guided import service as guided_svc
+
+    s = _get_session_or_404(user.tenant_id, session_id)
+    report = guided_svc.preview(
+        user.tenant_id, s,
+        guided_svc.parse_json_param(decisions, "decisions"),
+        guided_svc.parse_json_param(mapping, "mapping"),
+    )
+    return ok({"report": report, "applied": guided_svc.applied(user.tenant_id, session_id)})
+
+
+@router.post("/sessions/{session_id}/configure/guided-reading")
+def configure_guided_reading(
+    session_id: str,
+    body: GuidedReadingRequest,
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Apply the guide's fixes as a recorded, deterministic transformation.
+
+    Writes a NEW dataset (the original is never modified), re-attaches the
+    session to it and stores the fix list with the session. Refuses with
+    `guided_reading_not_ready` while any question is open or the file is
+    unusable, so a half-answered conversation can never change the data.
+    `revert` re-attaches the original file.
+    """
+    from backend.guided import service as guided_svc
+
+    s = _get_session_or_404(user.tenant_id, session_id)
+    result = guided_svc.apply(user.tenant_id, user.user_id, s, body.decisions,
+                              body.mapping, revert=body.revert)
+    return ok(result)
 
 
 # ── Columns ────────────────────────────────────────────────────────────────

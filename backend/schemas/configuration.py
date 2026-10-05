@@ -100,6 +100,19 @@ class RemediationsRequest(BaseModel):
     remediations: Dict[str, str] = Field(default_factory=dict, max_length=40)
 
 
+class GuidedReadingRequest(BaseModel):
+    """The answers collected by the guided upload so far.
+
+    ``decisions`` is the guide's own vocabulary (see
+    ``forecasting_core.data.guidance.analyze``); it is validated by running the
+    guide, not by a schema here, because a decision the file does not need is
+    simply ignored by it. ``revert`` puts the session back on the original file.
+    """
+    decisions: Dict[str, Any] = Field(default_factory=dict)
+    mapping: Optional[Dict[str, Optional[str]]] = None
+    revert: bool = False
+
+
 class CanonicalColumnsRequest(BaseModel):
     """New canonical 14-field column mapping request."""
     canonical_mapping: Dict[str, Optional[str]] = {}

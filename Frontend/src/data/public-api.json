@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 239,
-  "read": 149,
-  "write": 90
+  "total": 241,
+  "read": 150,
+  "write": 91
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -1925,6 +1925,87 @@
      ]
     },
     {
+     "id": "post-sessions-session_id-configure-guided-reading",
+     "method": "POST",
+     "path": "/sessions/{session_id}/configure/guided-reading",
+     "tag": "configuration",
+     "scope": "write",
+     "summary": "Configure Guided Reading",
+     "description": "Apply the guide's fixes as a recorded, deterministic transformation.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<session_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "decisions",
+         "required": false,
+         "type": "object",
+         "free_form": true
+        },
+        {
+         "name": "mapping",
+         "required": false,
+         "type": "object",
+         "values": {
+          "type": "string",
+          "nullable": true
+         },
+         "nullable": true
+        },
+        {
+         "name": "revert",
+         "required": false,
+         "type": "boolean",
+         "default": false
+        }
+       ],
+       "description": "The answers collected by the guided upload so far."
+      },
+      "example": {
+       "decisions": {},
+       "mapping": {
+        "key": "mapping"
+       },
+       "revert": false
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
      "id": "get-sessions-session_id-configure-models",
      "method": "GET",
      "path": "/sessions/{session_id}/configure/models",
@@ -2403,6 +2484,69 @@
        "dataset_id": "<dataset_id>"
       }
      },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-sessions-session_id-guided-reading",
+     "method": "GET",
+     "path": "/sessions/{session_id}/guided-reading",
+     "tag": "configuration",
+     "scope": "read",
+     "summary": "Get Guided Reading",
+     "description": "What the guide makes of the ORIGINAL file, given the answers so far.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<session_id>"
+      },
+      {
+       "name": "decisions",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "description": "JSON object: the answers so far"
+       },
+       "example": "<decisions>"
+      },
+      {
+       "name": "mapping",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "description": "JSON object: a mapping to check"
+       },
+       "example": "<mapping>"
+      }
+     ],
+     "request_body": null,
      "success_status": 200,
      "response_content_types": [
       "application/json"

@@ -11,6 +11,7 @@ Example:
 """
 
 import os
+import re
 import pandas as pd
 
 
@@ -37,7 +38,7 @@ def _sniff_separator(path: str) -> str:
 CSV_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
 
 
-def _read_csv(path: str, sep: str) -> pd.DataFrame:
+def _read_csv(path: str, sep: str, **kwargs) -> pd.DataFrame:
     """Read a CSV whose exporter may not have written UTF-8.
 
     An ERP export from a Windows machine in a Spanish locale is cp1252, and
@@ -53,7 +54,7 @@ def _read_csv(path: str, sep: str) -> pd.DataFrame:
     last: "UnicodeDecodeError | None" = None
     for encoding in CSV_ENCODINGS:
         try:
-            return pd.read_csv(path, sep=sep, encoding=encoding)
+            return pd.read_csv(path, sep=sep, encoding=encoding, **kwargs)
         except UnicodeDecodeError as exc:
             last = exc
     raise last                                  # pragma: no cover - latin-1 cannot fail
@@ -97,6 +98,35 @@ def _fix_day_first_dates(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+_CODE_COLUMN = re.compile(
+    r"(?i)sku|codigo|c[oó]digo|code|(?:^|_)cod(?:_|$)|referencia|(?:^|_)ref(?:_|$)|item|articulo|"
+    r"art[ií]culo|producto|product|ean|upc|barcode|material|(?:^|_)id(?:_|$)")
+_LEADING_ZERO = re.compile(r"^\s*0\d+\s*$")
+
+
+def _keep_leading_zeros(df: pd.DataFrame, reread) -> pd.DataFrame:
+    """Give product codes back the zeros the number parser took away.
+
+    ``00123`` read as a number is ``123``: a different product code, with no
+    error and no warning. Only columns that are NAMED like a code and came out
+    numeric are re-read as text, and only those that really hold a value with a
+    leading zero are replaced, so an ordinary integer column is never turned
+    into text. ``reread(columns)`` returns those columns as strings.
+    """
+    cols = [c for c in df.columns
+            if pd.api.types.is_numeric_dtype(df[c]) and _CODE_COLUMN.search(str(c))]
+    if not cols:
+        return df
+    try:
+        raw = reread(cols)
+    except Exception:
+        return df          # the plain reading stands; never fail a load over this
+    for c in cols:
+        if c in raw.columns and raw[c].dropna().astype(str).str.match(_LEADING_ZERO).any():
+            df[c] = raw[c].astype(object).where(raw[c].notna(), None)
+    return df
+
+
 class LoadError(Exception):
     pass
 
@@ -131,9 +161,16 @@ class DataLoader:
             raise LoadError(f"Unsupported format '{ext}'. Supported: {self.SUPPORTED}")
 
         if ext == ".csv":
-            return _fix_day_first_dates(_read_csv(path, _sniff_separator(path)))
+            sep = _sniff_separator(path)
+            df = _read_csv(path, sep)
+            df = _keep_leading_zeros(
+                df, lambda cols: _read_csv(path, sep, usecols=cols, dtype=str))
+            return _fix_day_first_dates(df)
         if ext in (".xlsx", ".xls"):
-            return _fix_day_first_dates(pd.read_excel(path))
+            df = pd.read_excel(path)
+            df = _keep_leading_zeros(
+                df, lambda cols: pd.read_excel(path, usecols=cols, dtype=str))
+            return _fix_day_first_dates(df)
         if ext == ".parquet":
             return _fix_day_first_dates(pd.read_parquet(path))
         if ext == ".json":
