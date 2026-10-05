@@ -150,6 +150,11 @@ export function MobileStockCards({ items, coverageUnit, mode, effectiveQty, edit
             onClick={() => onOpen(item)}
             ariaLabel={`${item.display_name || item.sku}, ${signalLabel(t, item.signal)}`}
           >
+            {item.forecast_source === 'analogy' && (
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }} title={t('analogy.badge_tip')}>
+                {t('analogy.badge')} · {t('analogy.badge_tip')}
+              </span>
+            )}
             {(item.incoming_qty ?? 0) > 0 && (
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                 {incomingText(t, item.incoming_qty, item.incoming_sources)}
@@ -275,6 +280,11 @@ export function MobileSkuSheet({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <SharedSignalBadge signal={it.signal} />
             {it.display_name && <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--muted)' }}>{it.sku}</span>}
+            {it.forecast_source === 'analogy' && (
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }} title={t('analogy.badge_tip')}>
+                {t('analogy.badge')}
+              </span>
+            )}
           </div>
 
           {/* The quantity to order, editable — the phone twin of the dashed

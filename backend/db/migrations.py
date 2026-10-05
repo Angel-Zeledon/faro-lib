@@ -2033,6 +2033,8 @@ from backend.inventory.committed_demand_migrations import MIGRATIONS as _COMMITT
 _MIGRATIONS += _COMMITTED
 from backend.inventory.spike_edit_migrations import MIGRATIONS as _SPIKE_EDITS  # noqa: E402
 _MIGRATIONS += _SPIKE_EDITS
+from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  # noqa: E402
+_MIGRATIONS += _SKU_ANALOGIES
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

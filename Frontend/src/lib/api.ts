@@ -1511,6 +1511,16 @@ export const createSpikeEdit = (sessionId: string, body: {
 }) => request<import('./types').SpikeEdit>('POST', `/sessions/${sessionId}/spike-edits`, body)
 export const revertSpikeEdit = (spikeEditId: string) =>
   request<import('./types').SpikeEdit>('POST', `/spike-edits/${spikeEditId}/revert`, {})
+// ── Forecast by analogy (a new product sells like others) ───────────────────
+export const getSkuAnalogies = () =>
+  request<{ limits: import('./types').AnalogyLimits; items: import('./types').SkuAnalogy[] }>(
+    'GET', '/sku-analogies')
+export const createSkuAnalogy = (body: {
+  new_sku: string; reference_skus: string[]; scale_factor: number
+  start_date?: string; note?: string
+}) => request<import('./types').SkuAnalogy>('POST', '/sku-analogies', body)
+export const revertSkuAnalogy = (analogyId: string) =>
+  request<import('./types').SkuAnalogy>('POST', `/sku-analogies/${analogyId}/revert`, {})
 // ── Committed demand (customer orders placed ahead of time) ─────────────────
 export const getCommittedDemand = (opts?: { sku?: string; status?: import('./types').CommittedDemandStatus; limit?: number }) => {
   const q = new URLSearchParams()

@@ -132,6 +132,8 @@ LEGACY: dict[str, tuple[str, str]] = {
     "forecast.adjusted":               ("forecast_adjustment", "forecast_adjustment.created"),
     "forecast.spike_excluded":         ("spike_edit", "spike_edit.created"),
     "forecast.spike_restored":         ("spike_edit", "spike_edit.reverted"),
+    "forecast.analogy_defined":        ("sku_analogy", "sku_analogy.created"),
+    "forecast.analogy_reverted":       ("sku_analogy", "sku_analogy.reverted"),
     "committed_demand.created":        ("committed_demand", "committed_demand.created"),
     "committed_demand.imported":       ("committed_demand", "committed_demand.imported"),
     "committed_demand.changed":        ("committed_demand", "committed_demand.changed"),

@@ -2093,6 +2093,32 @@ def _compute_inventory_status(
     _committed_skus = _cd_all.active_by_sku(tenant_id)
     all_skus = sorted(set(forecasts.keys()) | set(_committed_skus.keys()))
 
+    # Forecast by analogy: a product the engine could not train (too little
+    # history) can be planned from the products a person said it sells like.
+    # Empty for a tenant that defined none, which leaves every row as it was.
+    # A failure here must not take the status screen down, but it is logged and
+    # the products stay SIN_DATOS exactly as before (never a guessed number).
+    analogy_serving: dict = {}
+    analogy_retired: dict = {}
+    analogy_unavailable: dict = {}
+    try:
+        from backend.inventory import analogy_service as _an_svc
+        _analogies = _an_svc.active_by_sku(tenant_id)
+        if _analogies:
+            analogy_serving, analogy_retired, analogy_unavailable = \
+                _an_svc.plan_analogies(_analogies, forecasts, best_model)
+            if analogy_retired and signal_threshold_patch is None:
+                # First time the trained model is seen to have taken over: say
+                # so on the ledger, once.
+                _an_svc.mark_superseded(
+                    tenant_id,
+                    [a["id"] for a in analogy_retired.values() if not a.get("superseded_at")],
+                    session_id)
+            all_skus = sorted(set(all_skus) | set(analogy_serving) | set(analogy_unavailable))
+    except Exception:
+        log.exception("forecast by analogy skipped for tenant=%s", tenant_id)
+        analogy_serving, analogy_retired, analogy_unavailable = {}, {}, {}
+
     # Real lead times learned from recorded receptions, one query for the whole
     # tenant (never per SKU inside the loop).
     if learned_lead_times is None:
@@ -2196,6 +2222,15 @@ def _compute_inventory_status(
     for sku in all_skus:
         stock = stock_map.get(sku)
         model_forecasts = forecasts.get(sku, {})
+        # Where this row's demand comes from. A trained model, or - only while
+        # there is none - the analogy a person defined (never presented as a
+        # trained forecast: the row says so and is low confidence).
+        forecast_source = "trained" if model_forecasts else None
+        analogy_applied: list[dict] = []
+        if not model_forecasts and sku in analogy_serving:
+            model_forecasts = analogy_serving[sku]["model_forecasts"]
+            forecast_source = "analogy"
+            analogy_applied = [analogy_serving[sku]["applied"]]
 
         primary           = primary_suppliers.get(sku) or {}
         supplier          = (stock.get("supplier") if stock else None) or primary.get("supplier_name")
@@ -2224,6 +2259,13 @@ def _compute_inventory_status(
 
         has_forecast = bool(model_forecasts)
         has_stock    = stock is not None and current_stock is not None
+        analogy_note = analogy_unavailable.get(sku)
+        if analogy_applied and not has_stock:
+            # The semaphore cannot run without a stock figure, so the analogy
+            # moved nothing on this row: say so instead of claiming it applied.
+            analogy_note = {"analogy_id": analogy_applied[0]["analogy_id"],
+                            "references_missing": [], "reason": "no_stock"}
+            analogy_applied, forecast_source = [], None
         adjustments_applied: list[dict] = []
         committed_applied: list[dict] = []
         committed_only: Optional[dict] = None
@@ -2405,6 +2447,9 @@ def _compute_inventory_status(
                 # Customer orders placed ahead of time that moved this number:
                 # who, when, how many units. Empty when none apply.
                 "committed_applied": committed_applied,
+                # An analogy stood in for the model: named here so the
+                # breakdown never reads as a trained forecast. Empty otherwise.
+                "analogy_applied": analogy_applied,
             }
             if recommended <= 0:
                 # Enough stock: keep the numbers (the what-if simulator needs
@@ -2554,6 +2599,20 @@ def _compute_inventory_status(
             "recommended_qty": recommended,
             "adjustments_applied": adjustments_applied,
             "committed_applied": committed_applied,
+            # Where the demand came from: "trained" (a model fitted on this
+            # product), "analogy" (a person's "it sells like A and B"; never a
+            # trained forecast) or None (no forecast). `analogy_applied` names
+            # the references, factor and band widening; `analogy_retired` says a
+            # trained model has since taken over; `analogy_unavailable` that an
+            # analogy exists but none of its references has a forecast.
+            "forecast_source": forecast_source,
+            "low_confidence": forecast_source == "analogy",
+            "analogy_applied": analogy_applied,
+            "analogy_retired": ({"analogy_id": analogy_retired[sku]["id"],
+                                 "retired_at": (analogy_retired[sku].get("superseded_at")
+                                               or date.today().isoformat())}
+                                if sku in analogy_retired else None),
+            "analogy_unavailable": analogy_note,
             # Already on its way: open POs + transfers in transit. Exposed so
             # the UI can say "N units arriving (OC-000123)" instead of leaving
             # the buyer to wonder why the quantity dropped.
