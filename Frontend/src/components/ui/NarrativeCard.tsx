@@ -4,6 +4,7 @@ import { FileText, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, E
 import Link from 'next/link'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { Markdown } from '@/components/ui/Markdown'
 
 type Urgency = 'critical' | 'warning' | 'ok'
 
@@ -19,56 +20,11 @@ const URGENCY_CFG: Record<Urgency, {
   ok:       { border: 'rgba(46,139,98,0.3)',  bg: 'rgba(46,139,98,0.04)',  icon: CheckCircle2,  iconColor: '#2E8B62', labelKey: 'narrative.urgency_ok',       labelFallback: 'Under control' },
 }
 
-// Simple markdown: bold (**text**), bullets (- text), headers (**Title**)
+// Narratives mark a section title as a line that is entirely **bold**; the
+// shared renderer shows those as its quiet small-caps h4.
 function RenderNarrative({ text }: { text: string }) {
-  const lines = text.split('\n')
-  return (
-    <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text)' }}>
-      {lines.map((line, i) => {
-        if (!line.trim()) return <div key={i} style={{ height: 6 }} />
-
-        // Header line starting with ** and ending with **
-        if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
-          return (
-            <div
-              key={i}
-              style={{
-                fontWeight: 700,
-                marginTop: 12,
-                marginBottom: 4,
-                fontSize: 12,
-                textTransform: 'uppercase' as const,
-                letterSpacing: '0.05em',
-                color: 'var(--muted)',
-              }}
-            >
-              {line.replace(/\*\*/g, '')}
-            </div>
-          )
-        }
-
-        // Bullet line
-        if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) {
-          const content = line.replace(/^[-•]\s*/, '')
-          return (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
-              <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--dim)', flexShrink: 0, marginTop: 7 }} />
-              <span>{renderInline(content)}</span>
-            </div>
-          )
-        }
-
-        return <p key={i} style={{ margin: '4px 0' }}>{renderInline(line)}</p>
-      })}
-    </div>
-  )
-}
-
-function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/)
-  return parts.map((p, i) =>
-    p.startsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : p
-  )
+  const source = text.replace(/^[ \t]*\*\*([^*\n]+)\*\*[ \t]*$/gm, '#### $1')
+  return <Markdown text={source} />
 }
 
 interface NarrativeCardProps {

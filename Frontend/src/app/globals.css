@@ -1250,3 +1250,111 @@
 .mobile-btn-primary { background: var(--accent); color: #fff; }
 .mobile-btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 .mobile-btn-danger { background: var(--signal-order-now-fg); color: #fff; }
+
+/* ── Message typography ───────────────────────────────────────────────────────
+   One reading style for every place a person reads written text: assistant
+   replies, narrative cards, the inbox. The face (--font-text, Inter) is loaded
+   in layout.tsx and applied ONLY here — the rest of the app stays on the system
+   face. Scale: body 15px (16px with .msg-prose-lg, the phone layout), line
+   height 1.6, measure capped near 70 characters. Headings step 20/18/16px with
+   a small-caps 12px label; weight and size, never colour. Colours are the
+   existing tokens, so the dark theme follows without a second set. */
+.msg-prose {
+  --msg-size: 15px;
+  font-family: var(--font-text), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: var(--msg-size);
+  line-height: 1.6;
+  color: var(--text);
+  max-width: 70ch;
+  min-width: 0;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.003em;
+  hyphens: manual;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  text-wrap: pretty;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.msg-prose-lg { --msg-size: 16px; }
+/* Typed text (user bubbles, inbox): keeps the sender's own line breaks. */
+.msg-prose.msg-plain { white-space: pre-wrap; max-width: none; line-height: 1.5; color: inherit; }
+
+.msg-prose > * + * { margin-top: 0.7em; }
+.msg-prose p { margin: 0; }
+.msg-prose strong { font-weight: 650; }
+.msg-prose em { font-style: italic; }
+
+.msg-prose h1, .msg-prose h2, .msg-prose h3, .msg-prose h4 {
+  line-height: 1.3; font-weight: 650; text-wrap: balance; letter-spacing: -0.012em;
+}
+.msg-prose h1 { font-size: 1.333em; margin-top: 1.1em; }
+.msg-prose h2 { font-size: 1.2em;   margin-top: 1.1em; }
+.msg-prose h3 { font-size: 1.067em; margin-top: 1em; }
+.msg-prose h4 {
+  font-size: 0.8em; margin-top: 1.1em; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+}
+.msg-prose > :is(h1, h2, h3, h4):first-child { margin-top: 0; }
+.msg-prose :is(h1, h2, h3, h4) + * { margin-top: 0.35em; }
+
+/* Lists: hanging markers — wrapped lines align under the text, not the dot. */
+.msg-prose ul, .msg-prose ol { padding-left: 1.4em; }
+.msg-prose ul { list-style: disc; }
+.msg-prose ol { list-style: decimal; }
+.msg-prose li { padding-left: 0.2em; }
+.msg-prose li + li { margin-top: 0.3em; }
+.msg-prose li > :is(ul, ol) { margin-top: 0.3em; }
+.msg-prose ul ul { list-style: circle; }
+.msg-prose li::marker { color: var(--dim); }
+
+.msg-prose blockquote {
+  border-left: 3px solid var(--border-strong); padding: 0.1em 0 0.1em 0.9em; color: var(--muted);
+}
+.msg-prose hr { border: 0; border-top: 1px solid var(--border); margin: 1em 0; }
+
+.msg-prose a {
+  color: var(--accent); text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 0.18em; text-decoration-thickness: 1px;
+}
+.msg-prose a:hover { text-decoration-color: currentColor; }
+
+/* Code: system monospace, quiet tint. Blocks scroll sideways instead of clipping. */
+.msg-prose code, .msg-prose pre {
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-variant-ligatures: none;
+}
+.msg-prose code {
+  font-size: 0.88em; padding: 0.12em 0.4em; border-radius: 5px;
+  background: var(--surface-3); overflow-wrap: anywhere;
+}
+.msg-prose pre {
+  font-size: 0.86em; line-height: 1.55; padding: 0.8em 1em; border-radius: 8px;
+  background: var(--surface-3); border: 1px solid var(--border);
+  overflow-x: auto; white-space: pre; tab-size: 2; max-width: 100%;
+}
+.msg-prose pre code { background: none; padding: 0; font-size: 1em; overflow-wrap: normal; }
+
+/* Tables: horizontal rules only, figures right-aligned and tabular; scrolls
+   inside its own wrapper when the bubble is narrower than the table. */
+.msg-table-wrap {
+  overflow-x: auto; max-width: 100%;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.msg-prose table { border-collapse: collapse; width: 100%; font-size: 0.93em; line-height: 1.45; }
+.msg-prose :is(th, td) {
+  padding: 0.5em 0.8em; text-align: left; vertical-align: top;
+  border-bottom: 1px solid var(--border); overflow-wrap: normal; word-break: normal;
+}
+.msg-prose th {
+  font-size: 0.85em; font-weight: 650; color: var(--muted); white-space: nowrap;
+  background: var(--surface-3); letter-spacing: 0.01em;
+}
+.msg-prose tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface-3) 45%, transparent); }
+.msg-prose tbody tr:last-child td { border-bottom: 0; }
+.msg-prose .msg-num, .msg-prose .msg-right { text-align: right; white-space: nowrap; }
+.msg-prose .msg-center { text-align: center; }
+
+/* Sender / time labels: small and quiet. */
+.msg-meta { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }

@@ -11,6 +11,7 @@ import { chatSourceLabel } from '@/lib/enumLabels'
 import type { AssistantWelcome, ChatMessage } from '@/lib/types'
 import { User } from 'lucide-react'
 import { AssistantMark } from '@/components/brand/AssistantMark'
+import { Markdown } from '@/components/ui/Markdown'
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 // Colour only — the badge text comes from `chatSourceLabel`, so the copy the
@@ -62,42 +63,10 @@ export function fmtTime(iso: string) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-// ── Markdown lite renderer ─────────────────────────────────────────────────────
+// ── Markdown renderer ──────────────────────────────────────────────────────────
+// The renderer itself is shared with the narrative cards (components/ui/Markdown.tsx).
 export function Md({ text, large = false }: { text: string; large?: boolean }) {
-  return (
-    <div style={{ fontSize: large ? 15 : 13, lineHeight: large ? 1.6 : 1.75, color: 'var(--text)', ...(large ? { overflowWrap: 'anywhere' } : {}) }}>
-      {text.split('\n').map((line, i) => {
-        if (!line.trim()) return <div key={i} style={{ height: 7 }} />
-        const bold = (s: string) =>
-          s.split(/(\*\*[^*]+\*\*)/).map((p, j) =>
-            p.startsWith('**') ? <strong key={j}>{p.slice(2, -2)}</strong> : p,
-          )
-        // Headings. The model writes `### Capital tied up`, and without this
-        // the hashes were printed to the user as literal text.
-        const heading = line.trim().match(/^(#{1,6})\s+(.*)$/)
-        if (heading) {
-          const level = heading[1].length
-          return (
-            <div key={i} style={{
-              fontSize: level <= 2 ? 15 : 14,
-              fontWeight: 700,
-              margin: i === 0 ? '0 0 4px' : '14px 0 4px',
-              color: 'var(--text)',
-            }}>{bold(heading[2])}</div>
-          )
-        }
-        if (/^(\*|-|\d+\.) /.test(line.trim())) {
-          return (
-            <div key={i} style={{ display: 'flex', gap: 7, margin: '2px 0' }}>
-              <span style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 1 }}>·</span>
-              <span>{bold(line.replace(/^(\s*(\*|-|\d+\.)\s*)/, ''))}</span>
-            </div>
-          )
-        }
-        return <div key={i} style={{ margin: '2px 0' }}>{bold(line)}</div>
-      })}
-    </div>
-  )
+  return <Markdown text={text} large={large} />
 }
 
 // ── Typing indicator ───────────────────────────────────────────────────────────
@@ -159,7 +128,7 @@ export function MessageBubble({ msg, large = false }: { msg: ChatMessage; large?
 
       {/* Bubble */}
       <div style={{
-        maxWidth: large ? '86%' : '75%', ...(large ? { minWidth: 0 } : {}), display: 'flex', flexDirection: 'column',
+        maxWidth: large ? '92%' : '78%', minWidth: 0, display: 'flex', flexDirection: 'column',
         alignItems: isUser ? 'flex-end' : 'flex-start', gap: 3,
       }}>
         <div style={{
@@ -169,14 +138,14 @@ export function MessageBubble({ msg, large = false }: { msg: ChatMessage; large?
           padding: '10px 14px',
         }}>
           {isUser
-            ? <div style={{ fontSize: large ? 15 : 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', ...(large ? { overflowWrap: 'anywhere' } : {}) }}>{msg.content}</div>
+            ? <div className={`msg-prose msg-plain${large ? ' msg-prose-lg' : ''}`}>{msg.content}</div>
             : <Md text={msg.content} large={large} />}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 10, color: 'var(--dim)' }}>{fmtTime(msg.created_at)}</span>
+          <span className="msg-meta">{fmtTime(msg.created_at)}</span>
           {srcColor && msg.source && !isUser && (
             <span style={{
-              fontSize: 9, fontWeight: 600, letterSpacing: '0.05em',
+              fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
               color: srcColor, background: srcColor + '18',
               borderRadius: 4, padding: '1px 6px',
             }}>

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Space_Grotesk } from 'next/font/google'
+import { Inter, Space_Grotesk } from 'next/font/google'
 import './globals.css'
 import ConditionalShell from '@/components/layout/ConditionalShell'
 import { ThemeProvider } from '@/contexts/ThemeContext'
@@ -72,11 +72,22 @@ const brandFont = Space_Grotesk({
   display: 'swap',
 })
 
+/** The reading face of message text (`.msg-prose` in globals.css) — AI replies,
+ *  narrative cards, the inbox. Variable, so one file covers every weight, with
+ *  latin-ext for Spanish accents. Self-hosted by Next at build time like the
+ *  wordmark face. Scoped to messages on purpose: the rest of the app still
+ *  renders in the system face (see the report on a global switch). */
+const textFont = Inter({
+  subsets: ['latin', 'latin-ext'],
+  variable: '--font-text',
+  display: 'swap',
+})
+
 const NO_FLASH =`try{document.documentElement.setAttribute('data-theme',localStorage.getItem('theme')||'light')}catch(e){}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={brandFont.variable}>
+    <html lang="es" className={`${brandFont.variable} ${textFont.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
       </head>

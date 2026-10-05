@@ -261,7 +261,7 @@ function Thread(p: MessagesMobileProps) {
                 color: mine ? '#fff' : 'var(--text)',
                 border: mine ? 'none' : '1px solid var(--border)',
               }}>
-                <div style={{ fontSize: 15, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>
+                <div className="msg-prose msg-plain msg-prose-lg">{m.body}</div>
                 <div style={{
                   fontSize: 11, marginTop: 2, textAlign: 'right',
                   color: mine ? 'rgba(255,255,255,0.78)' : 'var(--dim)',
