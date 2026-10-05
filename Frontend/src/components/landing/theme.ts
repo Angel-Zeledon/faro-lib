@@ -376,6 +376,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 .lp .price-paid-link:focus-visible { outline-color: var(--lp-beam); }
 .price-paid-val { font-weight: 700; color: #fff; white-space: nowrap; }
 .corp-card { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 32px; max-width: 920px; padding: 30px 28px; border-radius: 16px; margin-bottom: 20px; }
+.corp-card::before { content: ''; position: absolute; top: -1px; left: 32px; width: 64px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--lp-accent), var(--lp-beam)); }
 .corp-billing { font-size: 13px; font-weight: 700; color: var(--lp-accent); margin: 6px 0 12px; }
 .corp-lead { font-size: 13.5px; line-height: 1.7; margin: 0; color: var(--lp-body); }
 .corp-items { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 10px; }
@@ -497,6 +498,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  .card-pad, .lp-card { padding: 22px 20px !important; }
  .footer-shell { padding: 44px 20px !important; }
  .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; }
+ .footer-grid > :first-child { grid-column: 1 / -1; }
  .footer-bottom { flex-direction: column; align-items: flex-start !important; gap: 8px; }
  .lp-lead { font-size: 15.5px; margin-bottom: 36px; }
 
@@ -534,7 +536,7 @@ section[id], #demo { scroll-margin-top: 88px; }
 /* ── Pricing: promises and how it grows ── */
 .no-strings { list-style: none; margin: -24px 0 36px; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 22px; }
 .no-strings li { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--lp-text); }
-.upg-card { max-width: 880px; padding: 30px 32px; border-radius: 16px; }
+.upg-card { max-width: 920px; padding: 30px 32px; border-radius: 16px; }
 .upg-steps { list-style: none; margin: 0 0 26px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; position: relative; }
 /* The thread between the three numbers: it is a sequence, so it reads as one. */
 .upg-steps::before { content: ''; position: absolute; top: 19px; left: 38px; right: 12%; height: 1px; background: linear-gradient(90deg, var(--lp-accent-bd), var(--lp-border)); }

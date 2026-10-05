@@ -55,13 +55,13 @@ const LEGAL_CSS = `
 .lg-toc-n { color: var(--lp-dim); font-variant-numeric: tabular-nums; }
 .lg-toc-fold { display: none; }
 
-.lg-doc { max-width: 68ch; min-width: 0; }
+.lg-doc { max-width: calc(68ch + 44px); min-width: 0; }
 .lg-summary {
  margin: 0 0 48px; padding: 22px 26px 20px; border-radius: 14px;
  background: var(--lp-accent-bg); border: 1px solid var(--lp-accent-bd);
 }
 .lg-summary h2 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--lp-text); margin: 0 0 10px; }
-.lg-summary ul { margin: 0; padding: 0 0 0 18px; }
+.lg-summary ul { margin: 0; padding: 0 0 0 18px; list-style: disc; }
 .lg-summary li { font-size: 15.5px; color: var(--lp-text); line-height: 1.6; margin: 0 0 6px; }
 .lg-summary li::marker { color: var(--lp-accent); }
 
@@ -75,7 +75,9 @@ const LEGAL_CSS = `
 .lg-sec-body { padding-left: calc(21px * 2.1); }
 .lg-sec p, .lg-sec li { font-size: 15.5px; color: var(--lp-body); line-height: 1.75; text-wrap: pretty; }
 .lg-sec p { margin: 0 0 14px; }
-.lg-sec ul { margin: 0 0 16px; padding-left: 20px; }
+.lg-sec ul { margin: 0 0 16px; padding-left: 20px; list-style: disc; }
+.lg-sec ol { margin: 0 0 16px; padding-left: 22px; list-style: decimal; }
+.lg-sec li::marker { color: var(--lp-dim); }
 .lg-sec li { margin-bottom: 6px; }
 .lg-doc strong { color: var(--lp-text); font-weight: 600; }
 .lg-doc a { color: var(--lp-accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -84,7 +86,7 @@ const LEGAL_CSS = `
 .lg-table { width: 100%; border-collapse: collapse; margin: 4px 0 18px; font-size: 14px; }
 .lg-table th { text-align: left; font-weight: 600; color: var(--lp-text); padding: 10px 12px 10px 0; border-bottom: 1px solid var(--lp-border-strong); vertical-align: bottom; }
 .lg-table td { color: var(--lp-body); padding: 11px 12px 11px 0; border-bottom: 1px solid var(--lp-border); vertical-align: top; line-height: 1.6; }
-.lg-table td:first-child { color: var(--lp-text); font-weight: 600; overflow-wrap: anywhere; }
+.lg-table td:first-child { color: var(--lp-text); font-weight: 600; overflow-wrap: break-word; hyphens: auto; }
 
 .lg-questions { margin: 8px 0 0; padding-top: 22px; border-top: 1px solid var(--lp-border); font-size: 15px; color: var(--lp-body); }
 

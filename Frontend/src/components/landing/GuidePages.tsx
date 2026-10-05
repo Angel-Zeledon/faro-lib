@@ -41,14 +41,18 @@ export function GuidePage({ guide }: { guide: GuideKey }) {
       related={g.next.map(k => ({ href: GUIDE_PATHS[k], label: G.items[k].label, desc: G.items[k].metaDesc }))}
     >
       {g.sections.map((s, i) => (
-        <Section key={s.h} alt={i % 2 === 1}>
-          <H2>{s.h}</H2>
-          {s.p.map(p => <p key={p} className="cp-prose"><RichText text={p} /></p>)}
-          {s.list && (
-            <ul className="cp-list">
-              {s.list.map(item => <li key={item}><Check /><span><RichText text={item} /></span></li>)}
-            </ul>
-          )}
+        <Section key={s.h} alt={i % 2 === 1} className="gd-sec">
+          <div className="gd-grid">
+            <div className="gd-head"><H2>{s.h}</H2></div>
+            <div className="gd-body">
+              {s.p.map(p => <p key={p} className="cp-prose"><RichText text={p} /></p>)}
+              {s.list && (
+                <ul className="cp-list">
+                  {s.list.map(item => <li key={item}><Check /><span><RichText text={item} /></span></li>)}
+                </ul>
+              )}
+            </div>
+          </div>
         </Section>
       ))}
 
