@@ -1829,6 +1829,34 @@ _ENTERPRISE = [
               FOR EACH ROW EXECUTE FUNCTION session_manifests_immutable();
           END IF;
         END $$"""),
+    # The latest realised-accuracy reading per session: how the forecast is doing
+    # against sales that arrived after it was made, next to how it did at
+    # training time. ONE row per session (an upsert on every new sales upload),
+    # unlike `accuracy_snapshots` which is one row per (sku, date) and is filled
+    # by hand from a CSV of actuals. `alerted_at` is the idempotency latch for
+    # the single in-app alert: set when the alert fires, cleared when the
+    # forecast recovers, so re-reading the same upload never alerts twice.
+    ("create_session_accuracy_tracking",
+     """CREATE TABLE IF NOT EXISTS session_accuracy_tracking (
+         session_id      TEXT PRIMARY KEY,
+         tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         dataset_id      TEXT,
+         status          TEXT NOT NULL,
+         baseline_wape   DOUBLE PRECISION,
+         realised_wape   DOUBLE PRECISION,
+         degradation_pct DOUBLE PRECISION,
+         bias            DOUBLE PRECISION,
+         threshold_pct   DOUBLE PRECISION,
+         n_points        INT NOT NULL DEFAULT 0,
+         n_skus          INT NOT NULL DEFAULT 0,
+         compared_from   DATE,
+         compared_to     DATE,
+         alerted_at      TIMESTAMPTZ,
+         computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_session_accuracy_tracking_idx",
+     "CREATE INDEX IF NOT EXISTS idx_session_accuracy_tracking_tenant "
+     "ON session_accuracy_tracking (tenant_id)"),
 ]
 _MIGRATIONS += _ENTERPRISE
 

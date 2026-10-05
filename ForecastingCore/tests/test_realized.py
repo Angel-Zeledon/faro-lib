@@ -101,3 +101,51 @@ def test_describe_overlap_numbers():
     out = describe_overlap("2026-01-15", "2026-03-15", "2026-02-01", "2026-03-31")
     assert (out["overlap_from"], out["overlap_to"]) == ("2026-02-01", "2026-03-15")
     assert describe_overlap(None, "2026-03-15", "2026-02-01", "2026-03-31")["relation"] == "unknown"
+
+# ── degradation vs training-time accuracy ───────────────────────────────────
+
+from forecasting_core.evaluation.realized import (  # noqa: E402
+    assess_degradation, baseline_wape, training_wape_by_series,
+)
+
+
+def test_training_wape_uses_the_champion_row_and_drops_meaningless_scores():
+    rows = [
+        {"sku": "A", "model": "lgbm", "wape": 0.2, "mae": 3.0},
+        {"sku": "A", "model": "naive", "wape": 0.1, "mae": 1.0, "type": "baseline"},
+        {"sku": "A", "model": "prophet", "wape": 0.05, "mae": 1.0},   # not the champion
+        {"sku": "B", "model": "lgbm", "wape": 0.0, "mae": 0.0},        # 0/0: no demand
+        {"sku": "C", "model": "lgbm", "wape": 9e8, "mae": 5.0},        # epsilon artefact
+        {"sku": "D", "model": "lgbm", "wape": float("nan"), "mae": 1.0},
+    ]
+    champs = {s: "lgbm" for s in "ABCD"}
+    assert training_wape_by_series(rows, champs) == {"A": 0.2}
+
+
+def test_baseline_is_weighted_by_realised_volume_and_ignores_unsold_series():
+    base = baseline_wape({"A": 0.1, "B": 0.5, "C": 0.9},
+                         {"A": 90.0, "B": 10.0, "C": 0.0, "Z": 5.0})
+    assert base == pytest.approx((0.1 * 90 + 0.5 * 10) / 100)
+    assert baseline_wape({"A": 0.1}, {"B": 3.0}) is None
+    assert baseline_wape({"A": 0.1}, {"A": 0.0}) is None
+
+
+def test_degradation_flags_only_a_material_and_well_supported_worsening():
+    d = assess_degradation(0.20, 0.30, 50)
+    assert d["status"] == "degraded"
+    assert d["degradation_pct"] == pytest.approx(50.0)
+    # +50% relative but only 2 pp absolute: an excellent forecast stays stable.
+    assert assess_degradation(0.04, 0.06, 50)["status"] == "stable"
+    # Below the relative threshold.
+    assert assess_degradation(0.20, 0.24, 50)["status"] == "stable"
+    # Too few points to judge, even though the numbers look bad.
+    assert assess_degradation(0.20, 0.60, 3)["status"] == "too_little"
+    # Doing better than at training time is stable, with a negative figure.
+    better = assess_degradation(0.30, 0.20, 50)
+    assert better["status"] == "stable" and better["degradation_pct"] < 0
+
+
+def test_degradation_without_a_usable_baseline_says_so():
+    assert assess_degradation(None, 0.3, 50)["status"] == "no_baseline"
+    assert assess_degradation(0.0, 0.3, 50)["status"] == "no_baseline"
+    assert assess_degradation(0.2, None, 50)["status"] == "no_baseline"

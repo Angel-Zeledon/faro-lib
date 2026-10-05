@@ -45,7 +45,7 @@ export type FieldKey =
   | 'worker_enabled' | 'scheduler_enabled' | 'worker_id'
   | 'max_concurrent_jobs' | 'worker_poll_interval_seconds'
   | 'max_upload_size_mb' | 'dataset_editor_max_rows' | 'dataset_editor_max_mb'
-  | 'sql_materialize_max_rows'
+  | 'sql_materialize_max_rows' | 'accuracy_degradation_threshold_pct'
   | 'public_api_only'
 
 export interface ServiceCopy {
@@ -254,6 +254,7 @@ const es: ServiceConfigCopy = {
     dataset_editor_max_rows: 'Filas que el editor de datos abre. Se revisa contra el conteo guardado ANTES de leer el archivo, así que uno enorme nunca se carga en memoria solo para descubrir que no cabía.',
     dataset_editor_max_mb: 'El mismo resguardo, por tamaño de archivo.',
     sql_materialize_max_rows: 'Tope de filas al convertir una consulta SQL en un archivo. Pasarse es un rechazo, nunca un recorte.',
+    accuracy_degradation_threshold_pct: 'Cuánto peor (en porcentaje relativo) debe rendir un pronóstico contra las ventas reales, comparado con su precisión al entrenarse, para que la app avise una sola vez. Es solo un aviso: nada se reentrena solo.',
     public_api_only: 'Servir en esta instancia únicamente la superficie pública de integración.',
   },
   ui: {
@@ -442,6 +443,7 @@ const en: ServiceConfigCopy = {
     dataset_editor_max_rows: 'Rows the in-app data editor will open. Checked against the stored row count BEFORE reading the file, so a huge one is never loaded into memory just to find out it did not fit.',
     dataset_editor_max_mb: 'The same guard, by file size.',
     sql_materialize_max_rows: 'Row ceiling when turning a SQL query into a file. Exceeding it is a refusal, never a truncation.',
+    accuracy_degradation_threshold_pct: 'How much worse (relative percent) a forecast must perform against real sales, compared with its accuracy at training, before the app raises its single alert. A notice only: nothing retrains by itself.',
     public_api_only: 'Serve only the public integration surface on this instance.',
   },
   ui: {

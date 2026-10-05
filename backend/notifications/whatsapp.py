@@ -215,6 +215,7 @@ def build_freshness_reminder_text(
     sales_age_days: int | None,
     stock_age_days: int | None,
     upload_url: str,
+    silent_warehouses: list[dict] | None = None,
 ) -> str:
     """
     Data-freshness reminder for the highest open-rate channel in LatAm.
@@ -228,6 +229,9 @@ def build_freshness_reminder_text(
         lines.append(render_es("freshness_whatsapp_sales", days=sales_age_days))
     if stock_age_days is not None:
         lines.append(render_es("freshness_whatsapp_stock", days=stock_age_days))
+    if silent_warehouses:
+        listed = ", ".join(f'{w["name"]} ({int(w["days"])} d)' for w in silent_warehouses)
+        lines.append(render_es("freshness_whatsapp_warehouses", list=listed))
     lines.append(render_es("freshness_whatsapp_cta", url=upload_url))
     return "\n".join(lines)
 

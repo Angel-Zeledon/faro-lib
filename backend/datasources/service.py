@@ -130,6 +130,17 @@ def _public(row: dict) -> dict:
     return out
 
 
+def _track_new_sales(tenant_id: str, dataset_id: str) -> None:
+    """A sales file just landed: grade the live forecasts against it in the
+    background (notification only; see forecast_check/tracking.py). Never
+    raises and never delays the upload response."""
+    try:
+        from backend.forecast_check.tracking import schedule_tracking
+        schedule_tracking(tenant_id, dataset_id)
+    except Exception:  # noqa: BLE001
+        log.exception("could not schedule accuracy tracking for dataset=%s", dataset_id)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -203,6 +214,7 @@ async def create_file_source(
             size_bytes, row_count, col_count, user_id,
         ),
     )
+    _track_new_sales(tenant_id, source_id)
     return _public(get_source(tenant_id, source_id))
 
 
@@ -299,6 +311,7 @@ async def replace_file_source(
            WHERE id=%s AND tenant_id=%s""",
         (file.filename, suffix.lstrip("."), str(file_path), size_bytes, row_count, col_count, source_id, tenant_id),
     )
+    _track_new_sales(tenant_id, source_id)
     return _public(get_source(tenant_id, source_id))
 
 
@@ -573,6 +586,7 @@ def materialize_sql_source(
         "updated_at=NOW() WHERE id=%s AND tenant_id=%s",
         (query_sql, row_count, len(columns), source_id, tenant_id),
     )
+    _track_new_sales(tenant_id, new_id)
     return _public(get_source(tenant_id, new_id))
 
 

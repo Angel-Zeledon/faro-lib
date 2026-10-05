@@ -170,6 +170,9 @@ class Settings(BaseSettings):
     # Row ceiling when snapshotting a SQL query into a CSV dataset. Exceeding it
     # is a refusal, never a silent truncation.
     sql_materialize_max_rows: int = 500_000
+    # Relative worsening of a session's realised WAPE over its training-time WAPE
+    # at which the one in-app "forecast is degrading" alert is raised (percent).
+    accuracy_degradation_threshold_pct: float = 25.0
     # Public external base URL Twilio POSTs the inbound webhook to (scheme + host,
     # e.g. "https://app.stockai.com"). Twilio computes X-Twilio-Signature over the
     # PUBLIC url; behind the frontend proxy / TLS termination the backend sees an

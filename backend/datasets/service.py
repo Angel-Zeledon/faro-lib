@@ -72,6 +72,10 @@ async def upload_dataset(tenant_id: str, user_id: str, file: UploadFile) -> dict
             user_id,
         ),
     )
+    # A sales file just landed: grade the live forecasts against it in the
+    # background (notification only; see forecast_check/tracking.py).
+    from backend.datasources.service import _track_new_sales
+    _track_new_sales(tenant_id, dataset_id)
     return get_dataset(tenant_id, dataset_id)
 
 

@@ -256,6 +256,17 @@ def _force_local_llm_in_tests():
 
 
 @pytest.fixture(autouse=True)
+def _no_background_accuracy_tracking(monkeypatch):
+    """Every sales upload schedules a background accuracy reading
+    (forecast_check/tracking.py). A daemon thread racing the next test's tenant
+    teardown would make unrelated tests flaky, so the spawn is a no-op by
+    default; the tracking tests call `track_dataset` directly or patch `_spawn`
+    to run inline."""
+    monkeypatch.setattr("backend.forecast_check.tracking._spawn", lambda fn: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _default_whatsapp_bot_mode():
     """The dev .env may enable WHATSAPP_BOT_GENERIC_MODE (a stopgap while no
     hosted LLM is funded). Tests exercise the real smart bot, so force it off

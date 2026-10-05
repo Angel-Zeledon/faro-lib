@@ -112,6 +112,26 @@ export default function DataFreshness({ currentSession, loading }: {
           {t('freshness.stock_age', { days: stockDays })}
         </Link>
       )}
+
+      {/* Per-warehouse silence: one chip per warehouse that stopped reporting
+          while the others kept going (the backend only lists those). */}
+      {(freshness?.warehouses?.items ?? []).filter(w => w.lagging && w.silent_days != null).map(w => (
+        <Link
+          key={w.name}
+          href="/inventario"
+          data-testid="warehouse-silent"
+          title={t('freshness.warehouse_silent_title', { days: w.silent_days ?? 0 })}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '5px 10px', borderRadius: 8, fontSize: 12, textDecoration: 'none',
+            background: 'rgba(183,121,31,0.07)', border: '1px solid rgba(183,121,31,0.35)',
+            color: amber, fontWeight: 600, maxWidth: '100%',
+          }}
+        >
+          <Package size={12} color={amber} />
+          {t('freshness.warehouse_silent', { name: w.name, days: w.silent_days ?? 0 })}
+        </Link>
+      ))}
     </div>
   )
 }

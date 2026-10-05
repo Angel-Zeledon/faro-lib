@@ -114,6 +114,7 @@ function useAlertBody() {
       if (sales != null && stock != null) return t('alerts.body.data_freshness_both', { sales, stock })
       if (sales != null) return t('alerts.body.data_freshness_sales', { sales })
       if (stock != null) return t('alerts.body.data_freshness_stock', { stock })
+      if (d.silent_warehouses != null) return t('alerts.body.data_freshness_warehouses', { silent_warehouses: d.silent_warehouses })
       return ''
     }
     return t(`alerts.body.${a.kind}`, d)

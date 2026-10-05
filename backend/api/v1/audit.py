@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from backend.audit import service as audit_svc
 from backend.auth.guards import CurrentUser, get_current_user, require_admin
 from backend.errors import AppError
+from backend.lineage import run_metrics
 from backend.lineage.manifest import latest_manifest
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
@@ -73,6 +74,18 @@ def export_audit(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="audit-{stamp}.csv"'},
     )
+
+
+@manifest_router.get("/training/run-durations")
+def get_run_durations(
+    limit: int = Query(run_metrics.DEFAULT_RUNS, ge=1, le=run_metrics.MAX_RUNS,
+                       description="How many of the most recent runs to aggregate"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Median and p95 training duration over the tenant's last `limit` runs, by
+    catalogue-size bucket and by granularity, read from the lineage manifests
+    (no new storage). For choosing a retrain cadence from evidence."""
+    return ok(run_metrics.run_duration_metrics(user.tenant_id, limit))
 
 
 @manifest_router.get("/sessions/{session_id}/manifest")

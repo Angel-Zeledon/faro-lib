@@ -2,8 +2,8 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 225,
-  "read": 142,
+  "total": 227,
+  "read": 144,
   "write": 83
  },
  "limits": {
@@ -4462,6 +4462,49 @@
         "default": 0.2
        },
        "example": 0.2
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-sessions-session_id-accuracy-tracking",
+     "method": "GET",
+     "path": "/sessions/{session_id}/accuracy-tracking",
+     "tag": "forecasts",
+     "scope": "read",
+     "summary": "Get Accuracy Tracking",
+     "description": "The latest automatic reading of how this forecast is doing against the sales uploaded after it was made, next to its accuracy at training time.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<session_id>"
       }
      ],
      "request_body": null,
@@ -13074,6 +13117,53 @@
         "type": "string"
        },
        "example": "<session_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-training-run-durations",
+     "method": "GET",
+     "path": "/training/run-durations",
+     "tag": "sessions",
+     "scope": "read",
+     "summary": "Get Run Durations",
+     "description": "Median and p95 training duration over the tenant's last `limit` runs, by catalogue-size bucket and by granularity, read from the lineage manifests (no new storage). For choosing a retrain cadence from evidence.",
+     "parameters": [
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200,
+        "default": 50,
+        "description": "How many of the most recent runs to aggregate"
+       },
+       "example": 50
       }
      ],
      "request_body": null,

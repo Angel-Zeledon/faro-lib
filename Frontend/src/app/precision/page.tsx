@@ -9,6 +9,7 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 import type { SessionSummary } from '@/lib/types'
 import { EmptyState, InlineError, LoadingState, SkeletonTable } from '@/components/ui/States'
 import Card from '@/components/ui/Card'
+import AccuracyTrackingCard from '@/components/precision/AccuracyTrackingCard'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { fmtNum } from '@/lib/numberLocale'
@@ -293,6 +294,8 @@ function PrecisionInner() {
           </label>
         )}
       </div>
+
+      {sessionId && <AccuracyTrackingCard sessionId={sessionId} />}
 
       {/* What this run forecast and what it was trained on. */}
       {data && (
