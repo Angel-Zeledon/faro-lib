@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 
 import { getAlertHistory, markAlertsRead } from '@/lib/api'
+import { useAttention } from '@/hooks/useAttention'
 import { formatMoney } from '@/lib/currency'
 import { useLanguage } from '@/contexts/LanguageContext'
 import type { AlertEntry, AlertKind, AlertSeverity, AlertStatus, LocalNotice } from './types'
@@ -291,6 +292,67 @@ function LocalRow({ notice }: { notice: LocalNotice }) {
   )
 }
 
+/**
+ * What is waiting on the buyer right now: late deliveries, suppliers that
+ * could not be sent an order, suppliers running late. Derived from the live
+ * lists (see hooks/useAttention), so an entry stays until its cause is fixed,
+ * there is one per kind rather than one per order, and each carries the link
+ * that resolves it. These used to be banners on the Panel.
+ */
+export function AttentionRows({ onNavigate }: { onNavigate?: () => void }) {
+  const { t } = useLanguage()
+  const { overdue, contactHealth, leadTimeAlerts } = useAttention()
+  const contacts = contactHealth.filter(r => r.has_open_pos)
+  const rows: { id: string; Icon: typeof PackageX; title: string; detail: string; href: string; cta: string }[] = []
+  if (overdue.length > 0) {
+    rows.push({
+      id: 'overdue', Icon: Truck,
+      title: t(overdue.length === 1 ? 'alerts.attention.overdue_one' : 'alerts.attention.overdue_other', { n: overdue.length }),
+      detail: overdue.slice(0, 3).map(o => `${o.supplier} (${t('alerts.attention.days_late', { n: o.days_overdue })})`).join(' · '),
+      href: '/pedidos', cta: t('alerts.attention.overdue_cta'),
+    })
+  }
+  if (contacts.length > 0) {
+    rows.push({
+      id: 'contacts', Icon: PackageX,
+      title: t(contacts.length === 1 ? 'alerts.attention.contacts_one' : 'alerts.attention.contacts_other', { n: contacts.length }),
+      detail: contacts.slice(0, 3).map(r => r.supplier).join(' · '),
+      href: `/proveedores?focus=${encodeURIComponent(contacts[0].supplier)}`, cta: t('alerts.attention.contacts_cta'),
+    })
+  }
+  if (leadTimeAlerts.length > 0) {
+    rows.push({
+      id: 'lead_time', Icon: Clock,
+      title: t(leadTimeAlerts.length === 1 ? 'alerts.attention.lead_time_one' : 'alerts.attention.lead_time_other', { n: leadTimeAlerts.length }),
+      detail: leadTimeAlerts.slice(0, 3).map(a => `${a.supplier} (${a.lead_time_recent} / ${a.lead_time_historical} ${t('alerts.attention.days_abbrev')})`).join(' · '),
+      href: '/proveedores/scorecard', cta: t('alerts.attention.lead_time_cta'),
+    })
+  }
+  if (rows.length === 0) return null
+  return (
+    <>
+      <SectionLabel>{t('alerts.section_attention')}</SectionLabel>
+      {rows.map(r => (
+        <div key={r.id} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <r.Icon size={14} color="var(--muted)" style={{ marginTop: 2, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600 }}>{r.title}</div>
+            {r.detail && <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{r.detail}</div>}
+            <Link href={r.href} onClick={onNavigate} style={{ display: 'inline-block', marginTop: 4, fontSize: 11.5, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>
+              {r.cta}
+            </Link>
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+export function useAttentionTotal(): number {
+  const { overdue, contactHealth, leadTimeAlerts } = useAttention()
+  return (overdue.length > 0 ? 1 : 0) + (contactHealth.some(r => r.has_open_pos) ? 1 : 0) + (leadTimeAlerts.length > 0 ? 1 : 0)
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
@@ -345,7 +407,10 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
   }, [load])
 
   const localUnread = localNotices.filter(n => !n.read).length
-  const unread = serverUnread + localUnread
+  // One per kind of pending thing (not per order): the badge counts what needs
+  // doing, and drops by itself once it is done.
+  const attentionTotal = useAttentionTotal()
+  const unread = serverUnread + localUnread + attentionTotal
 
   async function openPanel() {
     setOpen(true)
@@ -363,7 +428,7 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
     }
   }
 
-  const isEmpty = alerts.length === 0 && localNotices.length === 0
+  const isEmpty = alerts.length === 0 && localNotices.length === 0 && attentionTotal === 0
 
   return (
     <div style={{ position: 'relative' }}>
@@ -453,6 +518,7 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
                 </div>
               ) : (
                 <>
+                  <AttentionRows onNavigate={() => setOpen(false)} />
                   {alerts.length > 0 && (
                     <>
                       {/* Not "what we sent" any more: the same list now carries

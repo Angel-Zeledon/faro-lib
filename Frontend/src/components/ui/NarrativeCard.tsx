@@ -80,6 +80,9 @@ interface NarrativeCardProps {
   fallback?:      boolean
   analytistLink?: string  // link to open analyst with context
   compact?:       boolean // shorter display
+  /** Neutral surface: no urgency tint on the card, a muted chip. The urgency
+   *  stays readable as a small status dot — colour only on the marker itself. */
+  plain?:         boolean
   onRefresh?:     () => void
 }
 
@@ -87,7 +90,7 @@ export default function NarrativeCard({
   title,
   narrative, keyPoints = [], urgency = 'ok',
   loading = false, fallback = false,
-  analytistLink, compact = false, onRefresh,
+  analytistLink, compact = false, plain = false, onRefresh,
 }: NarrativeCardProps) {
   const { t } = useLanguage()
   // Its two footer buttons are 20px tall on desktop; 44px on a phone.
@@ -97,7 +100,8 @@ export default function NarrativeCard({
     : {}
   const [expanded, setExpanded] = useState(!compact)
   const [visible,  setVisible]  = useState(false)
-  const cfg  = URGENCY_CFG[urgency]
+  const base = URGENCY_CFG[urgency]
+  const cfg  = plain ? { ...base, border: 'var(--border)', bg: 'var(--surface)' } : base
   const Icon = cfg.icon
 
   /** `t` echoes the key back when the catalog has no entry — show the English
@@ -135,7 +139,8 @@ export default function NarrativeCard({
       >
         <div style={{
           width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-          background: 'color-mix(in srgb, var(--accent) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
+          background: plain ? 'transparent' : 'color-mix(in srgb, var(--accent) 12%, transparent)',
+          border: plain ? '1px solid var(--border)' : '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <FileText size={13} color="var(--accent)" />
@@ -144,7 +149,7 @@ export default function NarrativeCard({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{cardTitle}</div>
           {!loading && !expanded && keyPoints.length > 0 && (
-            <div style={{ fontSize: 11, color: cfg.iconColor, marginTop: 1, overflow: 'hidden', overflowWrap: 'anywhere', }}>
+            <div style={{ fontSize: 11, color: plain ? 'var(--muted)' : cfg.iconColor, marginTop: 1, overflow: 'hidden', overflowWrap: 'anywhere', }}>
               {keyPoints[0]}
             </div>
           )}
@@ -158,6 +163,12 @@ export default function NarrativeCard({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {!loading && (
+            plain ? (
+              <span style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.iconColor }} />
+                {copy(cfg.labelKey, cfg.labelFallback)}
+              </span>
+            ) : (
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
               background: cfg.iconColor + '18', color: cfg.iconColor,
@@ -165,6 +176,7 @@ export default function NarrativeCard({
             }}>
               <Icon size={9} /> {copy(cfg.labelKey, cfg.labelFallback)}
             </span>
+            )
           )}
           {fallback && !loading && (
             <span style={{ fontSize: 9, color: 'var(--dim)', padding: '1px 6px', borderRadius: 10, border: '1px solid var(--border)' }}>{copy('narrative.rules_badge', 'rules')}</span>
@@ -204,8 +216,8 @@ export default function NarrativeCard({
                   display: 'flex', alignItems: 'center', gap: 4,
                   fontSize: 11, color: 'var(--accent)', textDecoration: 'none',
                   padding: '2px 8px', borderRadius: 5,
-                  border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
-                  background: 'color-mix(in srgb, var(--accent) 6%, transparent)',
+                  border: plain ? '1px solid var(--border)' : '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+                  background: plain ? 'transparent' : 'color-mix(in srgb, var(--accent) 6%, transparent)',
                   ...tap,
                 }}>
                   <ExternalLink size={9} aria-hidden="true" /> {t('narrative.ask_analyst')}

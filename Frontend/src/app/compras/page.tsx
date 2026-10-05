@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
  AlertTriangle, Clock, TrendingUp, TrendingDown, Archive,
  RefreshCw, ArrowRight, BarChart2, Package, Truck,
- ChevronDown, ChevronUp, Send, X, Upload, PlayCircle,
+ ChevronDown, ChevronUp, Send, X, Upload, PlayCircle, Check,
 } from 'lucide-react'
 import {
  getMorningBriefing, getMorningNarrative, getPOHistory, optimizeInventory, logPOGeneration,
@@ -51,10 +51,12 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 // the unverified all-clear) and the cart's item shape live in ./shared so the
 // narrow-screen card list below makes exactly the same promises as this table.
 import {
-  C, AllClear, AssumptionsBanner, SourceBadge, provenanceText, summarizeAssumptions,
+  C, AllClear, StatusMark, SourceBadge, provenanceText, summarizeAssumptions,
   tOr, type ActionItem, type ActionStatus, IncomingNote, OrderedNote,
 } from './shared'
 import HoyMobile from './HoyMobile'
+import { MoreAnalysis, StaleLine, analysisSections, useTabFold } from './folds'
+import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { fmtNum } from '@/lib/numberLocale'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -168,12 +170,14 @@ function recommendationsNotOnCards(b: MorningBriefing): BriefingRecommendation[]
 }
 
 function RecIcon({ rec_type }: { rec_type: BriefingRecommendation['rec_type'] }) {
+ // One muted tone for all of them: the kind is in the icon's shape, not its colour.
+ const color = 'var(--dim)'
  switch (rec_type) {
-  case 'STOCKOUT_RISK': return <AlertTriangle size={16} color={C.red} />
-  case 'REORDER_SOON': return <Clock size={16} color={C.amber} />
-  case 'DEMAND_UP': return <TrendingUp size={16} color={C.green} />
-  case 'DEMAND_DOWN': return <TrendingDown size={16} color={C.red} />
-  case 'OVERSTOCK': return <Archive size={16} color={C.blue} />
+  case 'STOCKOUT_RISK': return <AlertTriangle size={16} color={color} />
+  case 'REORDER_SOON': return <Clock size={16} color={color} />
+  case 'DEMAND_UP': return <TrendingUp size={16} color={color} />
+  case 'DEMAND_DOWN': return <TrendingDown size={16} color={color} />
+  case 'OVERSTOCK': return <Archive size={16} color={color} />
  }
 }
 
@@ -236,8 +240,13 @@ function LeadTimeLearning({ item }: { item: ActionItem }) {
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
-function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers, onChangeSupplier, canDecide, tourAnchor, tourAnchors }: {
+function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers, onChangeSupplier, canDecide, tourAnchor, tourAnchors, stale = false, noContact = false, lateAlert = null }: {
  item:        ActionItem
+ /** This line's supplier has no email or WhatsApp: an order would skip it. */
+ stale?:      boolean
+ noContact?:  boolean
+ /** This line's supplier is running later than its own history. */
+ lateAlert?:  SupplierLeadTimeAlert | null
  onApprove:   () => void
  onReject:    () => void
  /** Take the line back OUT of the cart — NOT the same thing as rejecting it.
@@ -298,71 +307,70 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
 
  return (
   <div style={{
-   border:       `1px solid ${isApproved ? '#22c55e40' : isRejected ? 'var(--border)' : accent + '30'}`,
-   borderLeft:   `4px solid ${isApproved ? '#2E8B62'  : isRejected ? 'var(--border)' : accent}`,
-   borderRadius: 10,
-   padding:      '16px 18px',
-   marginBottom: 10,
-   background:   isApproved ? 'rgba(46,139,98,0.03)' : isRejected ? 'var(--surface-2)' : 'var(--surface)',
-   opacity:      isRejected ? 0.5 : 1,
-   // Explicit list, never `all`: `all` also animates padding and border-width,
-   // so the card juddered while the "why" panel expanded underneath it. These
-   // three are the only properties that actually change on approve/reject.
-   // The approval green is the colour of a decision taken — it is NOT a
-   // semáforo token, and the SignalBadge inside is untouched by this.
-   transition:   'border-color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out), opacity var(--dur-2) var(--ease-out)',
+   padding:    '18px 20px',
+   background: 'var(--surface)',
+   opacity:    isRejected ? 0.55 : 1,
+   transition: 'opacity var(--dur-2) var(--ease-out)',
   }}>
 
    {/* Header */}
-   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-    <div>
-     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
-      {/* El borde de color solo no dice en qué estado está el SKU: el badge
-          añade icono + etiqueta (WCAG 1.4.1). */}
-      <SignalBadge signal={item.signal} />
+   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 12 }}>
+    <div style={{ minWidth: 0 }}>
+     <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{item.name}</span>
+      <StatusMark signal={item.signal} size={12} />
+      {stale && <StaleSignalChip title={t('freshness.banner_title')} />}
       {/* The code only when the name is not already the code — "SKU-005
           SKU-005" said the same thing twice. Same rule as the phone card. */}
       {item.name !== item.sku && (
-       <span style={{
-        fontSize: 10, fontFamily: 'monospace', color: 'var(--dim)',
-        background: 'var(--surface-2)', padding: '2px 6px', borderRadius: 4,
-       }}>{item.sku}</span>
-      )}
-      {isApproved && (
-       <span style={{
-        fontSize: 10, fontWeight: 700, color: '#2E8B62',
-        background: 'rgba(46,139,98,0.1)', padding: '2px 8px', borderRadius: 20,
-       }}>{t('hoy.badge_approved')}</span>
+       <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--dim)' }}>{item.sku}</span>
       )}
      </div>
-     <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 3 }}>{item.reason}</div>
+     <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>{item.reason}</div>
      <IncomingNote item={item} />
      {/* Supplier is a decision, not a label: the buyer can send this line to
          whoever they want before the order is generated. Which is exactly why
          it is a picker only for a role that can generate one — re-pointing a
          line also flips it to `modified` and fills the cart. A viewer gets the
          same read-only label a tenant with no suppliers loaded already sees. */}
-     {suppliers.length > 0 && canDecide && !isOrdered ? (
-      <label data-tour={tourAnchors?.supplier} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
-       <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('hoy.cart_supplier_label')}</span>
-       <select
-        value={item.supplier_id ?? (suppliers.find(s => s.name === item.supplier)?.id ?? '')}
-        onChange={e => onChangeSupplier(e.target.value)}
-        aria-label={t('hoy.cart_supplier_label')}
-        style={{
-         fontSize: 11, padding: '2px 6px', borderRadius: 6,
-         border: '1px solid var(--border)', background: 'var(--surface-2)',
-         color: 'var(--text)', maxWidth: 200,
-        }}
-       >
-        <option value="">{t('hoy.cart_supplier_none')}</option>
-        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-       </select>
-      </label>
-     ) : item.supplier ? (
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{item.supplier}</div>
-     ) : null}
+     <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
+      {suppliers.length > 0 && canDecide && !isOrdered ? (
+       <label data-tour={tourAnchors?.supplier} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('hoy.cart_supplier_label')}</span>
+        <select
+         value={item.supplier_id ?? (suppliers.find(s => s.name === item.supplier)?.id ?? '')}
+         onChange={e => onChangeSupplier(e.target.value)}
+         aria-label={t('hoy.cart_supplier_label')}
+         style={{
+          fontSize: 12, padding: '3px 6px', borderRadius: 6,
+          border: '1px solid var(--border)', background: 'var(--surface)',
+          color: 'var(--text)', maxWidth: 220,
+         }}
+        >
+         <option value="">{t('hoy.cart_supplier_none')}</option>
+         {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+       </label>
+      ) : item.supplier ? (
+       <span style={{ fontSize: 12, color: 'var(--dim)' }}>{item.supplier}</span>
+      ) : null}
+      {/* What used to be banners, now where it concerns: the supplier of THIS
+          line. Plain text, no fill. */}
+      {noContact && item.supplier && (
+       <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+        {t('hoy.chip_no_contact')}{' · '}
+        <Link href={`/proveedores?focus=${encodeURIComponent(item.supplier)}`} style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>
+         {t('hoy.chip_complete')}
+        </Link>
+       </span>
+      )}
+      {lateAlert && (
+       <span style={{ fontSize: 12, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+        <Clock size={12} aria-hidden="true" />
+        {t('hoy.chip_late_supplier', { recent: lateAlert.lead_time_recent, usual: lateAlert.lead_time_historical })}
+       </span>
+      )}
+     </div>
     </div>
     {hasWhyData && (
      <button
@@ -527,7 +535,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
           leaving it editable would put the "Generate PO" bar back on screen
           for someone whose role can never generate one. */}
       {!canDecide ? (
-       <span style={{ fontSize: 18, fontWeight: 800, color: accent, lineHeight: 1 }}>
+       <span style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
         {fmtNum(item.qty)}
        </span>
       ) : editing ? (
@@ -550,15 +558,15 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
        />
       ) : (
        <button onClick={() => setEditing(true)} style={{
-        all: 'unset', cursor: 'pointer', fontSize: 18, fontWeight: 800, color: accent,
-        borderBottom: '2px dashed ' + accent + '60', lineHeight: 1,
+        all: 'unset', cursor: 'pointer', fontSize: 20, fontWeight: 600, color: 'var(--text)',
+        borderBottom: '1px dashed var(--border-strong)', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums',
        }}>
         {fmtNum(item.qty)}
        </button>
       )}
       <span style={{ fontSize: 12, color: 'var(--dim)' }}>{t('hoy.label_units')}</span>
       {estimatedValue > 0 && (
-       <span style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'monospace' }}>
+       <span style={{ fontSize: 12, color: 'var(--dim)', fontVariantNumeric: 'tabular-nums' }}>
         ≈ {fmtMoney(estimatedValue)}
        </span>
       )}
@@ -575,7 +583,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
         <>
          <button onClick={onApprove} style={{
           all: 'unset', cursor: 'pointer', padding: '7px 16px', borderRadius: 8,
-          background: '#2E8B62', color: '#fff', fontSize: 13, fontWeight: 700,
+          background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600,
           display: 'flex', alignItems: 'center', gap: 5,
          }}>
           {t('hoy.btn_approve')}
@@ -594,12 +602,16 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
        )}
       </div>
      ) : (
-      <button onClick={onUndo} style={{
-       all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--dim)',
-       marginLeft: 'auto', textDecoration: 'underline',
-      }}>
-       {t('hoy.btn_undo')}
-      </button>
+      <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
+        <Check size={14} aria-hidden="true" /> {t('hoy.badge_approved')}
+       </span>
+       <button onClick={onUndo} style={{
+        all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--dim)', textDecoration: 'underline',
+       }}>
+        {t('hoy.btn_undo')}
+       </button>
+      </span>
      )}
     </div>
    )}
@@ -624,39 +636,22 @@ function shortDateES(iso: string | null, lang: string): string {
 
 function SpikeCard({ s }: { s: DemandSpike }) {
  const { t, lang } = useLanguage()
- const accent = s.already_late ? C.red : C.amber
  return (
-  <div style={{
-   border:       `1px solid ${accent}30`,
-   borderLeft:   `4px solid ${accent}`,
-   borderRadius: 10, padding: '14px 18px', marginBottom: 10,
-   background:   'var(--surface)',
-  }}>
-   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-    <TrendingUp size={16} color={accent} style={{ flexShrink: 0, marginTop: 2 }} />
-    <div style={{ flex: 1, minWidth: 0 }}>
-     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{s.display_name}</span>
-      <span style={{
-       fontSize: 11, fontWeight: 700, color: C.green,
-       background: 'rgba(46,139,98,0.1)', padding: '2px 8px', borderRadius: 20,
-      }}>+{s.uplift_pct}% {t('hoy.spike_projected')}</span>
-     </div>
-     <div style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-      {t('hoy.spike_peak_expected_prefix')} <strong style={{ color: C.text }}>{shortDateES(s.peak_date, lang)}</strong>
-      {' '}({t('hoy.spike_in_days_prefix')} {s.days_until_peak} {t('hoy.spike_days_unit')}{s.days_until_peak !== 1 ? 's' : ''}).
-      {' '}{t('hoy.spike_supplier_lead_prefix')} {s.lead_time_days} {t('hoy.spike_days_unit')}.
-     </div>
-     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8,
-      fontSize: 13, fontWeight: 700, color: accent,
-     }}>
-      <Clock size={13} />
-      {s.already_late
-       ? t('hoy.spike_already_late')
-       : <>{t('hoy.spike_order_before_prefix')} {shortDateES(s.order_by_date, lang)} {t('hoy.spike_order_before_suffix')}</>}
-     </div>
-    </div>
+  <div style={{ padding: '14px 0', borderTop: '1px solid var(--border)' }}>
+   <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+    <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{s.display_name}</span>
+    <span style={{ fontSize: 12, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>+{s.uplift_pct}% {t('hoy.spike_projected')}</span>
+   </div>
+   <div style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+    {t('hoy.spike_peak_expected_prefix')} <strong style={{ color: C.text, fontWeight: 600 }}>{shortDateES(s.peak_date, lang)}</strong>
+    {' '}({t('hoy.spike_in_days_prefix')} {s.days_until_peak} {t('hoy.spike_days_unit')}{s.days_until_peak !== 1 ? 's' : ''}).
+    {' '}{t('hoy.spike_supplier_lead_prefix')} {s.lead_time_days} {t('hoy.spike_days_unit')}.
+   </div>
+   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 13, fontWeight: 600, color: C.text }}>
+    <Clock size={13} aria-hidden="true" color="var(--dim)" />
+    {s.already_late
+     ? t('hoy.spike_already_late')
+     : <>{t('hoy.spike_order_before_prefix')} {shortDateES(s.order_by_date, lang)} {t('hoy.spike_order_before_suffix')}</>}
    </div>
   </div>
  )
@@ -1439,6 +1434,19 @@ export default function HoyPage() {
  // banner and its tour anchor agree on when there is anything to admit.
  const assumptions = summarizeAssumptions(briefing)
 
+
+ // What used to be banners is shown where it concerns: on the card of the
+ // supplier it is about, and in the bell (see hooks/useAttention).
+ const noContactNames = new Set(contactHealth.map(r => r.supplier.toLowerCase()))
+ const lateBySupplier = new Map(leadTimeAlerts.map(a => [a.supplier.toLowerCase(), a] as const))
+ const staleFold = useTabFold('compras.stale_dismissed')
+
+ // What the closed "More analysis" fold holds, so its badge and its sections
+ // use one set of guards.
+ const moreSections = briefing
+  ? analysisSections(briefing, optimization, recommendationsNotOnCards(briefing).length)
+  : []
+
  // Total pending actions for greeting
  const totalPending = cart.filter(i => i.status === 'pending' && i.qty > 0).length
 
@@ -1485,6 +1493,7 @@ export default function HoyPage() {
   const narrativeNode = (narrative || loadingNarrative) ? (
    <div style={{ marginBottom: 14 }}>
     <NarrativeCard
+ plain
      title={t('hoy.narrative_card_title')}
      narrative={narrative?.narrative ?? null}
      keyPoints={(narrative?.key_points ?? []).map(p => keyPointText(p, t))}
@@ -1599,39 +1608,55 @@ export default function HoyPage() {
  }
 
  return (
-  <div style={{ background: C.bg, minHeight: '100vh', padding: '32px 40px', position: 'relative' }}>
+  <div style={{ background: C.bg, minHeight: '100vh', padding: '40px 48px 64px', position: 'relative' }}>
 
-   {/* ── Tagline ── */}
-   <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-    <span style={{
-     fontSize: 10, fontWeight: 700, color: C.indigo,
-     padding: '2px 8px', borderRadius: 20,
-     background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
-     textTransform: 'uppercase' as const, letterSpacing: '0.07em',
-    }}>
-     {t('hoy.tagline_badge')}
-    </span>
-    <span style={{ fontSize: 11, color: C.dim }}>{t('hoy.tagline_subtitle')}</span>
-   </div>
+   <div style={{ maxWidth: 1000, margin: '0 auto' }}>
 
-   {/* ── Header ── */}
+   {/* ── Header: one title, one quiet line under it ── */}
    <div style={{
     display: 'flex', alignItems: 'flex-start',
-    justifyContent: 'space-between', marginBottom: 28,
+    justifyContent: 'space-between', gap: 24, marginBottom: 32,
    }}>
-    <div>
-     <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: '0 0 6px' }}>
+    <div style={{ minWidth: 0 }}>
+     <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.01em', color: C.text, margin: '0 0 8px' }}>
       {t('hoy.greeting_good_morning')}{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}.
       {cart.length > 0 && totalPending > 0 && (
-       <span style={{ fontSize: 14, fontWeight: 400, color: C.dim, marginLeft: 10 }}>
+       <span style={{ fontSize: 14, fontWeight: 400, color: C.dim, marginLeft: 12 }}>
         {t('hoy.greeting_pending_actions_prefix')} {totalPending} {t('hoy.greeting_pending_actions_suffix')}
        </span>
       )}
      </h1>
      {briefing ? (
-      <p style={{ fontSize: 13, color: C.dim, margin: 0 }}>
+      <p data-tour={overduePOs.length > 0 ? 'hoy.receptions' : undefined} style={{ fontSize: 13, color: C.dim, margin: 0, lineHeight: 1.6 }}>
        {t('hoy.date_today_prefix')} {formatDateES(briefing.date, lang)}.{' '}
        {t('hoy.date_active_session')}: <span style={{ color: C.muted }}>{briefing.session_name}</span>
+       {/* Deliveries waiting for a yes: plain text on the same line, not a
+           box. The full list lives in the bell and on Orders. */}
+       {overduePOs.length > 0 ? (
+        <>
+         {' · '}
+         {t(overduePOs.length === 1 ? 'hoy.deliveries_to_confirm_one' : 'hoy.deliveries_to_confirm_other', { n: overduePOs.length })}
+         {canEdit && (
+          <>
+           {' '}
+           <button
+            data-tour="hoy.receive"
+            onClick={() => setReceivingPO(overduePOs[0].po_log_id)}
+            style={{ all: 'unset', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600 }}
+           >
+            {t('hoy.deliveries_confirm_cta')}
+           </button>
+          </>
+         )}
+        </>
+       ) : pendingPOs.length > 0 ? (
+        <>
+         {' · '}
+         <Link href="/pedidos" style={{ color: C.dim, textDecoration: 'underline' }}>
+          {pendingPOs.length} {pendingPOs.length === 1 ? t('hoy.receptions_pending_singular') : t('hoy.receptions_pending_plural')}
+         </Link>
+        </>
+       ) : null}
       </p>
      ) : (
       <p style={{ fontSize: 13, color: C.dim, margin: 0 }}>
@@ -1678,125 +1703,44 @@ export default function HoyPage() {
            computed on stock (or sales) nobody has refreshed. */}
        {freshness && <StaleDataBanner freshness={freshness} />}
 
-       {/* How much of today's advice rests on values nobody gave us. Renders
-           nothing when there is nothing to admit — the count comes from the
-           recommendations on screen, never from a fixed number. */}
-       {/* The anchor is on a wrapper (AssumptionsBanner lives in ./shared and
-           does not forward unknown props), and only when the banner actually
-           renders — an anchor over nothing would make the tour point at air. */}
-       {assumptions.fields.length > 0 && (
-        <div data-tour="hoy.assumptions">
-         <AssumptionsBanner summary={assumptions} />
-        </div>
-       )}
+       {/* The one condition that makes every recommendation below unreliable
+           stays in view, as a single slim neutral line that can be dismissed
+           for this tab. Everything else that used to be a banner here lives in
+           the bell and on the line it concerns. */}
+       {freshness && staleFold.open !== true && <StaleLine freshness={freshness} onDismiss={() => staleFold.set(true)} />}
 
-       {/* Feature 3.3 — a supplier's recent lead time drifted significantly
-           off its own history. Sits above the overdue nudge because it is the
-           earlier signal: it explains WHY orders are starting to run late. */}
-       {leadTimeAlerts.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-         <SupplierLeadTimeAlertBanner alerts={leadTimeAlerts} />
-        </div>
-       )}
-
-       {/* Overdue-reception alerts: expected arrival (learned supplier lead
-           time) has passed with no reception recorded. */}
-       {overduePOs.length > 0 && (
-        <div data-tour="hoy.receptions" style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-         <div style={{
-          fontSize: 11, fontWeight: 700, color: C.red,
-          textTransform: 'uppercase', letterSpacing: '0.08em',
-         }}>
-          {t('hoy.overdue_section_title')}
-         </div>
-         {overduePOs.map((o, idx) => (
-          <div key={`${o.po_log_id}-${o.supplier}`} style={{
-           display: 'flex', alignItems: 'center', gap: 10,
-           padding: '12px 16px', borderRadius: 10,
-           background: 'rgba(192,80,77,0.06)', border: '1px solid rgba(192,80,77,0.25)',
-          }}>
-           <AlertTriangle size={15} color={C.red} style={{ flexShrink: 0 }} />
-           <span style={{ fontSize: 13, color: C.text, flex: 1 }}>
-            {t('hoy.overdue_line_prefix')} <strong>{o.supplier}</strong>{' '}
-            {t('hoy.overdue_line_suffix')} <strong>{o.days_overdue}</strong> {t('hoy.overdue_days_ago_suffix')}
-           </span>
-           {/* The alert itself stays for everyone — a late delivery is worth
-               knowing about whatever your role. Only recording the reception,
-               which writes stock, is gated. */}
-           {canEdit && (
-            <button
-             /* First row only: a tour anchor has to be unique to be findable. */
-             data-tour={idx === 0 ? 'hoy.receive' : undefined}
-             onClick={() => setReceivingPO(o.po_log_id)}
-             style={{
-              all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
-              fontSize: 12, fontWeight: 700, color: C.red, padding: '6px 12px', borderRadius: 7,
-              border: `1px solid ${C.red}55`, flexShrink: 0,
-             }}
-            >
-             <Truck size={12} /> {t('hoy.overdue_cta')}
-            </button>
-           )}
-          </div>
-         ))}
-        </div>
-       )}
-
-       {/* Pending receptions banner */}
-       {pendingPOs.length > 0 && (
-        <Link href="/pedidos" style={{ textDecoration: 'none' }}>
-         <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20,
-          padding: '12px 16px', borderRadius: 10,
-          background: 'color-mix(in srgb, var(--accent) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
-         }}>
-          <Truck size={15} color={C.indigo} style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: C.text, flex: 1 }}>
-           <strong>{pendingPOs.length}</strong>{' '}
-           {pendingPOs.length === 1 ? t('hoy.receptions_pending_singular') : t('hoy.receptions_pending_plural')}
-          </span>
-          <span style={{
-           fontSize: 12, fontWeight: 700, color: C.indigo,
-           display: 'inline-flex', alignItems: 'center', gap: 4,
-          }}>
-           {t('hoy.receptions_cta')} <ArrowRight size={12} />
-          </span>
-         </div>
-        </Link>
-       )}
-
-       {/* KPI row */}
-       <div data-tour="hoy.kpis" style={{ display: 'flex', gap: 12, marginBottom: semaphoreStale ? 8 : 28, flexWrap: 'wrap' }}>
-        <KpiCard label={t('hoy.kpi_total_skus')}        value={String(kpis!.total_skus)}       color={C.text} />
-        <KpiCard label={t('hoy.kpi_risk_today')}        value={nothingCounted ? '—' : String(kpis!.order_now)}   color={kpis!.order_now > 0 ? C.red : C.text} />
-        <KpiCard label={t('hoy.kpi_this_week')}         value={nothingCounted ? '—' : String(kpis!.order_soon)}  color={kpis!.order_soon > 0 ? C.amber : C.text} />
+       {/* KPI row: figures, not boxes. */}
+       <div data-tour="hoy.kpis" style={{
+        display: 'flex', gap: 48, flexWrap: 'wrap', padding: '20px 0',
+        borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`,
+        marginBottom: semaphoreStale ? 12 : 32,
+       }}>
+        <KpiCard label={t('hoy.kpi_total_skus')}        value={String(kpis!.total_skus)} />
+        <KpiCard label={t('hoy.kpi_risk_today')}        value={nothingCounted ? '—' : String(kpis!.order_now)}
+         dot={kpis!.order_now > 0 ? 'var(--signal-order-now-fg)' : undefined} />
+        <KpiCard label={t('hoy.kpi_this_week')}         value={nothingCounted ? '—' : String(kpis!.order_soon)}
+         dot={kpis!.order_soon > 0 ? 'var(--signal-order-soon-fg)' : undefined} />
         {/* "₡0 en bodega" reads as "your stock is worth nothing". With no unit
             cost on file the honest answer is that we were never told. */}
         <KpiCard label={t('hoy.kpi_inventory_value')}
-         value={(nothingCounted || noCostOnFile) ? '—' : fmtM(kpis!.total_inventory_value)}
-         color={C.text} />
+         value={(nothingCounted || noCostOnFile) ? '—' : fmtM(kpis!.total_inventory_value)} />
        </div>
        {/* Every counter above divides by the same stale stock — say so once,
            right under them, instead of letting five confident numbers stand. */}
        {semaphoreStale && (
-        <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 24, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 24, lineHeight: 1.6 }}>
          {t('freshness.kpi_caveat')}
         </div>
        )}
        {/* A risk count of 0 over products nobody has counted is not "no risk",
-           it is "no idea" — and ₡0 in the warehouse reads as "you have nothing"
-           when the truth is that nothing was measured. The uncounted share of
-           the catalogue decides how much of this row can be believed. */}
-       {/* The one place the uncounted products are named on this screen: the
-           optimizer's "Faltan N por contar" card below repeated the same count
-           and is now shown only when its number differs. Its call to action
-           lives here instead. */}
+           it is "no idea". The uncounted share of the catalogue decides how
+           much of this row can be believed. */}
        {uncounted > 0 && (
-        <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 24, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 24, lineHeight: 1.6 }}>
          {(nothingCounted ? t('hoy.kpi_nothing_counted') : t('hoy.kpi_partially_counted'))
            .replace('{count}', String(uncounted))
            .replace('{total}', String(kpis!.total_skus))}{' '}
-         <Link href="/inventario" style={{ fontWeight: 600, color: 'var(--accent)' }}>
+         <Link href="/inventario" style={{ fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>
           {t('hoy.needs_stock_cta')}
          </Link>
         </div>
@@ -1807,8 +1751,9 @@ export default function HoyPage() {
 
         {/* AI Narrative */}
         {(narrative || loadingNarrative) && (
-         <div data-tour="hoy.narrative" style={{ marginBottom: 20 }}>
+         <div data-tour="hoy.narrative" style={{ marginBottom: 32 }}>
           <NarrativeCard
+ plain
            title={t('hoy.narrative_card_title')}
            narrative={narrative?.narrative ?? null}
            keyPoints={(narrative?.key_points ?? []).map(p => keyPointText(p, t))}
@@ -1834,60 +1779,78 @@ export default function HoyPage() {
          </div>
         )}
 
-        {/* URGENTE section */}
+        {/* The hero: what to order today, as one calm list. Rows share a
+            container and are separated by hairlines, so they line up and have
+            the same rhythm; the status colour is only the small dot in each. */}
         {cart.filter(i => i.signal === 'PEDIR_YA').length > 0 && (
-         <div data-tour="hoy.actions" style={{ marginBottom: 24 }}>
-          <div style={{
-           fontSize: 11, fontWeight: 700, color: 'var(--signal-order-now-fg)',
-           textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
-           display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-           <AlertTriangle size={12} aria-hidden="true" />
+         <div data-tour="hoy.actions" style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 600, color: C.muted, margin: '0 0 12px', display: 'flex', alignItems: 'baseline', gap: 8 }}>
            {t('hoy.section_urgent')}
+           <span style={{ fontWeight: 400, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>
+            {cart.filter(i => i.signal === 'PEDIR_YA' && i.status !== 'rejected').length}
+           </span>
+          </h2>
+          <div style={{ display: 'grid', gap: 1, background: C.border, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+           {cart.filter(i => i.signal === 'PEDIR_YA').map((item, idx) => (
+            <ActionCard
+             key={item.sku}
+             item={item}
+             stale={semaphoreStale}
+             noContact={!!item.supplier && noContactNames.has(item.supplier.toLowerCase())}
+             lateAlert={item.supplier ? lateBySupplier.get(item.supplier.toLowerCase()) ?? null : null}
+             tourAnchor={idx === 0 ? 'hoy.why' : undefined}
+             tourAnchors={idx === 0 ? { supplier: 'hoy.supplier', qty: 'hoy.qty', decide: 'hoy.decide' } : undefined}
+             onApprove={() => approveItem(item.sku)}
+             onReject={() => rejectItem(item.sku)}
+             onUndo={() => unapproveItem(item.sku)}
+             onChangeQty={qty => changeQty(item.sku, qty)}
+             suppliers={suppliers}
+             onChangeSupplier={id => changeSupplier(item.sku, id)}
+             canDecide={canEdit}
+            />
+           ))}
           </div>
-          {cart.filter(i => i.signal === 'PEDIR_YA').map((item, idx) => (
-           <ActionCard
-            key={item.sku}
-            item={item}
-            tourAnchor={idx === 0 ? 'hoy.why' : undefined}
-            tourAnchors={idx === 0 ? { supplier: 'hoy.supplier', qty: 'hoy.qty', decide: 'hoy.decide' } : undefined}
-            onApprove={() => approveItem(item.sku)}
-            onReject={() => rejectItem(item.sku)}
-            onUndo={() => unapproveItem(item.sku)}
-            onChangeQty={qty => changeQty(item.sku, qty)}
-            suppliers={suppliers}
-            onChangeSupplier={id => changeSupplier(item.sku, id)}
-            canDecide={canEdit}
-           />
-          ))}
          </div>
         )}
 
-        {/* ESTA SEMANA section */}
         {cart.filter(i => i.signal === 'PEDIR_PRONTO').length > 0 && (
-         <div style={{ marginBottom: 24 }}>
-          <div style={{
-           fontSize: 11, fontWeight: 700, color: 'var(--signal-order-soon-fg)',
-           textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
-           display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-           <Clock size={12} aria-hidden="true" />
+         <div style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 600, color: C.muted, margin: '0 0 12px', display: 'flex', alignItems: 'baseline', gap: 8 }}>
            {t('hoy.section_this_week')}
+           <span style={{ fontWeight: 400, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>
+            {cart.filter(i => i.signal === 'PEDIR_PRONTO' && i.status !== 'rejected').length}
+           </span>
+          </h2>
+          <div style={{ display: 'grid', gap: 1, background: C.border, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+           {cart.filter(i => i.signal === 'PEDIR_PRONTO').map(item => (
+            <ActionCard
+             key={item.sku}
+             item={item}
+             stale={semaphoreStale}
+             noContact={!!item.supplier && noContactNames.has(item.supplier.toLowerCase())}
+             lateAlert={item.supplier ? lateBySupplier.get(item.supplier.toLowerCase()) ?? null : null}
+             onApprove={() => approveItem(item.sku)}
+             onReject={() => rejectItem(item.sku)}
+             onUndo={() => unapproveItem(item.sku)}
+             onChangeQty={qty => changeQty(item.sku, qty)}
+             suppliers={suppliers}
+             onChangeSupplier={id => changeSupplier(item.sku, id)}
+             canDecide={canEdit}
+            />
+           ))}
           </div>
-          {cart.filter(i => i.signal === 'PEDIR_PRONTO').map(item => (
-           <ActionCard
-            key={item.sku}
-            item={item}
-            onApprove={() => approveItem(item.sku)}
-            onReject={() => rejectItem(item.sku)}
-            onUndo={() => unapproveItem(item.sku)}
-            onChangeQty={qty => changeQty(item.sku, qty)}
-            suppliers={suppliers}
-            onChangeSupplier={id => changeSupplier(item.sku, id)}
-            canDecide={canEdit}
-           />
-          ))}
          </div>
+        )}
+
+        {/* What we estimated ourselves, as a footnote under the list it is
+            about: one plain sentence and a link, not a box. */}
+        {assumptions.fields.length > 0 && cart.length > 0 && (
+         <p data-tour="hoy.assumptions" style={{ fontSize: 12, color: C.dim, margin: '-12px 0 32px', lineHeight: 1.6 }}>
+          {t(assumptions.skus === 1 ? 'hoy.assumed_note_one' : 'hoy.assumed_note_other', { n: assumptions.skus })}{' '}
+          <Link href="/configurar-inventario" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>
+           {t('hoy.assumed_note_cta')}
+          </Link>
+         </p>
         )}
 
         {/* All-rejected empty state */}
@@ -1895,13 +1858,6 @@ export default function HoyPage() {
 
         {/* No risks / warnings at all */}
         {cart.length === 0 && <AllClear stale={semaphoreStale} unmeasured={nothingCounted} />}
-
-        {/* Feature 2.5 — suppliers the send path would silently skip. */}
-        {relevantContactHealth.length > 0 && (
-         <div style={{ marginBottom: 10 }}>
-          <SupplierContactHealthBanner rows={relevantContactHealth} />
-         </div>
-        )}
 
         {/* Price breaks (3.5) and cash calendar (3.6) — both judged against
             the cart as it stands, so they sit right above it. */}
@@ -1932,14 +1888,14 @@ export default function HoyPage() {
         {approved.length > 0 && (
          <div className="cart-bar-enter" data-tour="hoy.cart" style={{
           position: 'sticky', bottom: 16,
-          background: 'var(--surface)', border: '1px solid rgba(46,139,98,0.4)',
+          background: 'var(--surface)', border: '1px solid var(--border-strong)',
           borderRadius: 12, padding: '14px 20px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
           display: 'flex', alignItems: 'center', gap: 16,
           marginTop: 8,
          }}>
           <div style={{ flex: 1 }}>
-           <div style={{ fontSize: 13, fontWeight: 700, color: '#2E8B62' }}>
+           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
             {approved.length} {t('hoy.cart_products_approved')}
            </div>
            <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>
@@ -1956,14 +1912,14 @@ export default function HoyPage() {
              </span>
             )}
             {totalValue > 0 && uncostedLines > 0 && (
-             <span style={{ color: C.amber }}>
+             <span style={{ color: C.muted }}>
               {` (${t('hoy.cart_total_uncosted', { count: uncostedLines })})`}
              </span>
             )}
            </div>
            {/* Margen visible en el carrito (2.10) */}
            {salesProtected > 0 && (
-            <div style={{ fontSize: 12, color: C.green, marginTop: 4, fontWeight: 600 }}>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
              {t('hoy.cart_protects_prefix')} {fmtMoney(salesProtected)} {t('hoy.cart_protects_sales_suffix')}{' '}
              {fmtMoney(marginProtected)} {t('hoy.cart_protects_margin_suffix')}
             </div>
@@ -1974,7 +1930,7 @@ export default function HoyPage() {
                and none priced, where the margin row is absent entirely and the
                note becomes an invitation instead of a warning. */}
            {unpriced.length > 0 && priced.length > 0 && (
-            <div style={{ fontSize: 11, color: C.amber, marginTop: 3 }}>
+            <div style={{ fontSize: 11.5, color: C.dim, marginTop: 3 }}>
              {t('hoy.cart_margin_excludes_prefix')} {unpriced.length} {t('hoy.cart_margin_excludes_suffix')}
             </div>
            )}
@@ -2019,7 +1975,7 @@ export default function HoyPage() {
           <button data-tour="hoy.download" onClick={downloadOC} disabled={submitting}
            aria-busy={submitting} style={{
            all: 'unset', cursor: submitting ? 'wait' : 'pointer', padding: '10px 20px', borderRadius: 8,
-           background: '#2E8B62', color: '#fff', fontSize: 14, fontWeight: 700,
+           background: 'var(--accent)', color: '#fff', fontSize: 14, fontWeight: 600,
            display: 'flex', alignItems: 'center', gap: 8, opacity: submitting ? 0.6 : 1,
           }}>
            {submitting ? t('hoy.btn_download_po_busy') : t('hoy.btn_download_po')}
@@ -2031,11 +1987,11 @@ export default function HoyPage() {
             send it to its suppliers without navigating away to /orders. */}
         {generatedPO && (
          <div style={{
-          marginTop: 12, background: 'var(--surface)', border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
+          marginTop: 12, background: 'var(--surface)', border: '1px solid var(--border-strong)',
           borderRadius: 12, padding: '16px 20px',
          }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-           <Send size={14} color={C.indigo} />
+           <Send size={14} color="var(--muted)" />
            <span style={{ fontSize: 14, fontWeight: 700, color: C.text, flex: 1 }}>
             {t('hoy.generate_send_title')}
            </span>
@@ -2060,7 +2016,7 @@ export default function HoyPage() {
              display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
              padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)',
             }}>
-             <span style={{ fontWeight: 700, color: supplier ? C.text : C.amber, flexShrink: 0 }}>
+             <span style={{ fontWeight: 600, color: C.text, flexShrink: 0 }}>
               {supplier || t('hoy.generate_send_no_supplier')}
              </span>
              <span style={{ color: 'var(--dim)' }}>
@@ -2073,17 +2029,17 @@ export default function HoyPage() {
           {sendState === 'done' && sendResult ? (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sendResult.sent.map(s => (
-             <div key={s.supplier} style={{ fontSize: 12, color: C.green }}>
+             <div key={s.supplier} style={{ fontSize: 12, color: C.muted }}>
               {s.supplier}{s.email ? ' · email' : ''}{s.whatsapp ? ' · WhatsApp' : ''}
              </div>
             ))}
             {sendResult.skipped.map((s, idx) => (
-             <div key={`${s.supplier}-${idx}`} style={{ fontSize: 12, color: C.amber }}>
+             <div key={`${s.supplier}-${idx}`} style={{ fontSize: 12, color: C.muted }}>
               {s.supplier || '—'}: {sendReason(s.reason, t)}
              </div>
             ))}
             {(sendResult.unresolved ?? []).length > 0 && (
-             <div style={{ fontSize: 12, color: C.amber }}>
+             <div style={{ fontSize: 12, color: C.muted }}>
               {t('roi.send_po_unresolved')}{' '}
               {(sendResult.unresolved ?? []).map(u => u.sku).join(', ')}
              </div>
@@ -2102,8 +2058,8 @@ export default function HoyPage() {
              disabled={sendState === 'sending'}
              style={{
               all: 'unset', cursor: sendState === 'sending' ? 'not-allowed' : 'pointer',
-              padding: '9px 18px', borderRadius: 8, background: C.indigo, color: '#fff',
-              fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
+              padding: '9px 18px', borderRadius: 8, background: 'var(--accent)', color: '#fff',
+              fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6,
               opacity: sendState === 'sending' ? 0.7 : 1,
              }}
             >
@@ -2144,8 +2100,8 @@ export default function HoyPage() {
       {optimization && (optimization.needs_stock?.length ?? 0) > 0
         && optimization.needs_stock!.length !== uncounted && (
        <section style={{
-        marginTop: 32, padding: '12px 14px', borderRadius: 10,
-        border: '1px solid var(--border)', borderLeft: '4px solid #B7791F',
+        marginTop: 32, padding: '14px 16px', borderRadius: 12,
+        border: '1px solid var(--border)', background: 'var(--surface)',
        }}>
         <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
          {t('hoy.needs_stock_title').replace('{count}', String(optimization.needs_stock!.length))}
@@ -2164,6 +2120,7 @@ export default function HoyPage() {
        </section>
       )}
 
+       <MoreAnalysis sections={moreSections}>
       {/* `status === 'fallback'` is part of the condition, not just of the notice
           inside it. The whole section used to render only when there were lines
           to show — so a greedy fallback that produced an EMPTY plan drew nothing
@@ -2172,10 +2129,12 @@ export default function HoyPage() {
           different sentence and the more expensive one to get wrong. */}
       {optimization && (optimization.orders.length > 0 || optimization.transfers.length > 0
                         || optimization.status === 'fallback') && (
-        <section style={{ marginTop: 32, marginBottom: 28 }}>
-         <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+        <section style={{ marginTop: 16, marginBottom: 20 }}>
+         <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
           {t('hoy.optimizer_title')}
          </h2>
+         {(optimization.orders.length > 0 || optimization.transfers.length > 0) && (
+          <>
          <p style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 6 }}>
           {t('hoy.optimizer_subtitle').replace('{horizon}', String(optimization.horizon_days))}
          </p>
@@ -2187,6 +2146,8 @@ export default function HoyPage() {
          <p style={{ fontSize: 11.5, color: 'var(--dim)', marginBottom: 14, lineHeight: 1.6 }}>
           {t('hoy.optimizer_vs_semaforo').replace('{horizon}', String(optimization.horizon_days))}
          </p>
+          </>
+         )}
          {/* Math audit O1: a SKU whose supplier takes as long as the horizon
              used to be planned at 0 under a heading promising {horizon} days.
              Its plan now reaches the next order's arrival, and the panel says
@@ -2209,8 +2170,8 @@ export default function HoyPage() {
          {optimization.status === 'fallback' && (
           <p style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 14, padding: '8px 10px',
                       borderRadius: 8, color: 'var(--text)',
-                      background: 'color-mix(in srgb, var(--signal-order-soon-fg) 12%, transparent)',
-                      border: '1px solid color-mix(in srgb, var(--signal-order-soon-fg) 35%, transparent)' }}>
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border)' }}>
            {/* An empty fallback needs its own sentence. The standard notice says
                "this list was built by a simpler rule" — about a list that is not
                there, which reads as reassurance instead of a warning. */}
@@ -2278,10 +2239,9 @@ export default function HoyPage() {
 
        {/* Anticípate — proactive future demand peaks */}
        {(briefing.demand_spikes?.length ?? 0) > 0 && (
-        <section style={{ marginTop: 32, marginBottom: 28 }}>
+        <section style={{ marginTop: 16, marginBottom: 20 }}>
          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <TrendingUp size={16} color={C.amber} />
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: 0 }}>
            {t('hoy.section_anticipate_title')}
           </h2>
          </div>
@@ -2296,8 +2256,8 @@ export default function HoyPage() {
 
        {/* Demand changes & other sections below the queue */}
        {briefing.demand_changes.length > 0 && (
-        <section style={{ marginTop: 32, marginBottom: 28 }}>
-         <h2 style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: '0 0 14px' }}>
+        <section style={{ marginTop: 16, marginBottom: 20 }}>
+         <h2 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 14px' }}>
           {t('hoy.section_demand_changes')}
          </h2>
          <div style={{
@@ -2307,7 +2267,7 @@ export default function HoyPage() {
           {briefing.demand_changes.map((item, idx) => {
            const pct = item.demand_trend_pct
            const up  = pct > 0
-           const pctColor = up ? C.green : C.red
+           const pctColor = C.text
            const sign     = up ? '+' : ''
            return (
             <div
@@ -2319,8 +2279,8 @@ export default function HoyPage() {
                ? `1px solid ${C.border}` : 'none',
              }}
             >
-             {up ? <TrendingUp size={16} color={C.green} /> : <TrendingDown size={16} color={C.red} />}
-             <span style={{ fontSize: 13, fontWeight: 700, color: pctColor, minWidth: 52 }}>
+             {up ? <TrendingUp size={16} color="var(--dim)" /> : <TrendingDown size={16} color="var(--dim)" />}
+             <span style={{ fontSize: 13, fontWeight: 600, color: pctColor, minWidth: 52, fontVariantNumeric: 'tabular-nums' }}>
               {sign}{pct.toFixed(0)}%
              </span>
              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{item.sku}</span>
@@ -2341,8 +2301,8 @@ export default function HoyPage() {
        )}
 
        {recommendationsNotOnCards(briefing).length > 0 && (
-        <section style={{ marginBottom: 28 }}>
-         <h2 style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: '0 0 14px' }}>
+        <section style={{ marginBottom: 20 }}>
+         <h2 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 14px' }}>
           {t('hoy.section_system_recommendations')}
          </h2>
          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -2372,13 +2332,13 @@ export default function HoyPage() {
        )}
 
        {briefing.overstocked.length > 0 && kpis!.capital_in_overstock > 0 && (
-        <section style={{ marginBottom: 28 }}>
-         <h2 style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: '0 0 14px' }}>
+        <section style={{ marginBottom: 20 }}>
+         <h2 style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 14px' }}>
           {t('hoy.section_capital_opportunities')}
          </h2>
          <div style={{
-          background: 'rgba(79,127,181,0.05)', border: `1px solid ${C.blue}33`,
-          borderRadius: 10, padding: '16px 20px',
+          background: C.surface, border: `1px solid ${C.border}`,
+          borderRadius: 12, padding: '16px 20px',
          }}>
           <p style={{ fontSize: 14, color: C.text, margin: '0 0 16px' }}>
            {t('hoy.capital_overstock_prefix')} {fmtM(kpis!.capital_in_overstock)} {t('hoy.capital_overstock_suffix')}
@@ -2406,7 +2366,7 @@ export default function HoyPage() {
                </span>
               )}
               {item.inventory_value != null && (
-               <span style={{ fontSize: 13, fontWeight: 600, color: C.blue }}>
+               <span style={{ fontSize: 13, fontWeight: 600, color: C.text, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtM(item.inventory_value)}
                </span>
               )}
@@ -2417,6 +2377,8 @@ export default function HoyPage() {
          </div>
         </section>
        )}
+
+       </MoreAnalysis>
 
        {/* Footer */}
        <div style={{
@@ -2448,6 +2410,8 @@ export default function HoyPage() {
      )}
     </>
    )}
+
+   </div>
 
    {/* Reception modal — reused from /orders, opened from the overdue-reception nudge */}
    {receivingPO && (
@@ -2484,7 +2448,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
 }) {
  const { t } = useLanguage()
  const kpis = briefing.kpis
- const sectionTitle: React.CSSProperties = { fontSize: 16, fontWeight: 700, color: C.text, margin: '0 0 4px' }
+ const sectionTitle: React.CSSProperties = { fontSize: 14, fontWeight: 600, color: C.text, margin: '0 0 4px' }
  const sectionDesc: React.CSSProperties = { fontSize: 12.5, color: C.dim, margin: '0 0 10px', lineHeight: 1.5 }
  const row: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', minHeight: 52,
@@ -2507,7 +2471,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
        carries the link, so the card only appears when its number differs. */}
    {optimization && (optimization.needs_stock?.length ?? 0) > 0
      && optimization.needs_stock!.length !== (briefing.kpis?.sin_datos ?? 0) && (
-    <section style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${C.border}`, borderLeft: '4px solid #B7791F', background: C.surface }}>
+    <section style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${C.border}`, background: C.surface }}>
      <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: C.text }}>
       {t('hoy.needs_stock_title').replace('{count}', String(optimization.needs_stock!.length))}
      </h3>
@@ -2522,15 +2486,21 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
     </section>
    )}
 
+   <MoreAnalysis compact sections={analysisSections(briefing, optimization, recommendationsNotOnCards(briefing).length)}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22, minWidth: 0 }}>
    {showPlan && optimization && (
     <section>
      <h2 style={sectionTitle}>{t('hoy.optimizer_title')}</h2>
+     {(optimization.orders.length > 0 || optimization.transfers.length > 0) && (
+      <>
      <p style={sectionDesc}>{t('hoy.optimizer_subtitle').replace('{horizon}', String(optimization.horizon_days))}</p>
      <p style={{ ...sectionDesc, fontSize: 12 }}>{t('hoy.optimizer_vs_semaforo').replace('{horizon}', String(optimization.horizon_days))}</p>
+      </>
+     )}
      {optimization.status === 'fallback' && (
       <p style={{ fontSize: 12.5, lineHeight: 1.5, margin: '0 0 10px', padding: '8px 10px', borderRadius: 8, color: 'var(--text)',
-             background: 'color-mix(in srgb, var(--signal-order-soon-fg) 12%, transparent)',
-             border: '1px solid color-mix(in srgb, var(--signal-order-soon-fg) 35%, transparent)' }}>
+             background: 'var(--surface-2)',
+             border: '1px solid var(--border)' }}>
        {optimization.orders.length === 0 && optimization.transfers.length === 0
         ? t('hoy.optimizer_fallback_empty')
         : t('hoy.optimizer_fallback_notice')}
@@ -2582,7 +2552,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
    {(briefing.demand_spikes?.length ?? 0) > 0 && (
     <section>
      <h2 style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: 6 }}>
-      <TrendingUp size={16} color={C.amber} aria-hidden="true" /> {t('hoy.section_anticipate_title')}
+      {t('hoy.section_anticipate_title')}
      </h2>
      <p style={sectionDesc}>{t('hoy.section_anticipate_desc')}</p>
      {(briefing.demand_spikes ?? []).map(sp => <SpikeCard key={sp.sku} s={sp} />)}
@@ -2598,7 +2568,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
        const up = pct > 0
        return (
         <li key={item.sku} style={first(idx)}>
-         {up ? <TrendingUp size={17} color={C.green} aria-hidden="true" /> : <TrendingDown size={17} color={C.red} aria-hidden="true" />}
+         {up ? <TrendingUp size={17} color="var(--dim)" aria-hidden="true" /> : <TrendingDown size={17} color="var(--dim)" aria-hidden="true" />}
          <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>
            {item.display_name || item.sku}
@@ -2607,7 +2577,7 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
            {up ? t('hoy.demand_running_above_forecast') : t('hoy.demand_running_below_forecast')}
           </span>
          </span>
-         <strong style={{ fontSize: 14, color: up ? C.green : C.red, flexShrink: 0 }}>{up ? '+' : ''}{pct.toFixed(0)}%</strong>
+         <strong style={{ fontSize: 14, fontWeight: 600, color: C.text, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{up ? '+' : ''}{pct.toFixed(0)}%</strong>
         </li>
        )
       })}
@@ -2654,32 +2624,31 @@ function HoyMobileExtras({ briefing, optimization, optimizationLoading, canEdit,
          )}
         </span>
         {item.inventory_value != null && (
-         <strong style={{ fontSize: 14, color: C.blue, flexShrink: 0 }}>{fmtM(item.inventory_value)}</strong>
+         <strong style={{ fontSize: 14, fontWeight: 600, color: C.text, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{fmtM(item.inventory_value)}</strong>
         )}
        </li>
       ))}
      </ul>
     </section>
    )}
+    </div>
+   </MoreAnalysis>
   </div>
  )
 }
 
-// ── KPI card helper ───────────────────────────────────────────────────────────
-function KpiCard({ label, value, color, help }: { label: string; value: string; color: string; help?: string }) {
+// ── KPI figure helper ─────────────────────────────────────────────────────────
+// A quiet label over a large tabular number. No box; the optional dot is the
+// only colour and it is the status marker, not decoration.
+function KpiCard({ label, value, dot, help }: { label: string; value: string; dot?: string; help?: string }) {
  return (
-  <div style={{
-   flex: '1 1 160px',
-   background: 'var(--surface)',
-   border: '1px solid var(--border)',
-   borderRadius: 10,
-   padding: '14px 18px',
-  }}>
-   <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
+  <div style={{ minWidth: 120 }}>
+   <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+    {dot && <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0 }} />}
     {label}
     {help && <HelpTip text={help} size={13} />}
    </div>
-   <div style={{ fontSize: 22, fontWeight: 700, color }}>
+   <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.1, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
     {value}
    </div>
   </div>

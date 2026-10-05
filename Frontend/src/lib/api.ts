@@ -1352,14 +1352,14 @@ export const uncancelPO = (poLogId: string) =>
 export const getSupplierScorecard = () =>
   request<import('./types').SupplierScorecardRow[]>('GET', '/inventory/suppliers/scorecard')
 
-export const getOverduePOs = () =>
-  request<import('./types').OverdueReception[]>('GET', '/inventory/po/overdue')
+export const getOverduePOs = (opts?: RequestOpts) =>
+  request<import('./types').OverdueReception[]>('GET', '/inventory/po/overdue', undefined, opts)
 
-export const getSupplierContactHealth = () =>
-  request<import('./types').SupplierContactHealthRow[]>('GET', '/inventory/suppliers/contact-health')
+export const getSupplierContactHealth = (opts?: RequestOpts) =>
+  request<import('./types').SupplierContactHealthRow[]>('GET', '/inventory/suppliers/contact-health', undefined, opts)
 
-export const getSupplierLeadTimeAlerts = () =>
-  request<import('./types').SupplierLeadTimeAlert[]>('GET', '/inventory/suppliers/lead-time-alerts')
+export const getSupplierLeadTimeAlerts = (opts?: RequestOpts) =>
+  request<import('./types').SupplierLeadTimeAlert[]>('GET', '/inventory/suppliers/lead-time-alerts', undefined, opts)
 
 // ── Supplier price breaks (feature 3.5) ──────────────────────────────────────
 export const getPriceBreaks = (params?: { supplier_id?: string; sku?: string }) => {
