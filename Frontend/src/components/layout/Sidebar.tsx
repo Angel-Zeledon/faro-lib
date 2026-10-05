@@ -12,8 +12,9 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { Wordmark } from '@/components/brand/Wordmark'
-import { NAV, TOOLS_NAV, SETTINGS_ITEM, canSee, activePrimary, rememberOrigin, type Screen } from './navItems'
+import { NAV, TOOLS_NAV, SETTINGS_ITEM, drawn, activePrimary, rememberOrigin, type Screen } from './navItems'
 import { siteHref } from '@/lib/siteUrls'
+import { useTenantFacts } from '@/hooks/useTenantFacts'
 
 // The nav definition lives in ./navItems: six daily screens, then
 // Configuración pinned at the foot. Every other screen is reached from the one
@@ -62,8 +63,14 @@ export default function Sidebar() {
 
   // Six daily screens and Configuración. Role still hides an entry, never a
   // plan: there are no locks.
-  const visibleNav = NAV.filter(item => canSee(item, user?.role))
-  const order = [...visibleNav, ...TOOLS_NAV, SETTINGS_ITEM]
+  // Entries with a rule (Proveedores, Escenarios, Mensajes, Actividad) are drawn
+  // when the tenant has something for them, or when you are on them; the
+  // command palette lists everything regardless.
+  const facts = useTenantFacts()
+  const show = (item: Screen) => drawn(item, user?.role, facts, path)
+  const visibleNav = NAV.filter(show)
+  const visibleTools = TOOLS_NAV.filter(show)
+  const order = [...visibleNav, ...visibleTools, SETTINGS_ITEM]
 
   // Where the user came from, so a secondary screen lights the entry it was
   // opened from (see activePrimary).
@@ -196,14 +203,14 @@ export default function Sidebar() {
             evenly instead of bunching at the top. */}
         {collapsedNow ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly', minHeight: 0 }}>
-            {[...visibleNav, ...TOOLS_NAV.filter(item => canSee(item, user?.role))].map(renderItem)}
+            {[...visibleNav, ...visibleTools].map(renderItem)}
           </div>
         ) : (
           <>
             {visibleNav.map(renderItem)}
             {/* Tools that belong to no single flow. */}
             <div style={{ borderTop: '1px solid var(--sidebar-border)', margin: '8px 0 10px' }} />
-            {TOOLS_NAV.filter(item => canSee(item, user?.role)).map(renderItem)}
+            {visibleTools.map(renderItem)}
             {/* Configuración sits apart from the daily screens: it is where the
                 rest of the product lives (account, team, data, automation). */}
             <div style={{ flex: 1, minHeight: 16 }} />

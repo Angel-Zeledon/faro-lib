@@ -9,7 +9,8 @@ import { getUser, clearAuth } from '@/lib/auth'
 import { authLogout } from '@/lib/api'
 import { roleLabel } from '@/lib/enumLabels'
 import { useInstall } from '@/lib/pwa'
-import { SCREENS, ANALYSIS_TABS, SETTINGS_HREF, navItemMatches, type Screen } from '@/components/layout/navItems'
+import { SCREENS, ANALYSIS_TABS, SETTINGS_HREF, navItemMatches, drawn, type Screen } from '@/components/layout/navItems'
+import { useTenantFacts } from '@/hooks/useTenantFacts'
 import BottomSheet from './BottomSheet'
 import LegalLinks from '@/components/legal/LegalLinks'
 import { siteHref } from '@/lib/siteUrls'
@@ -36,6 +37,7 @@ export default function MoreSheet({ open, onClose, unread }: {
   const { mode: installMode, install } = useInstall()
   const [iosHelp, setIosHelp] = useState(false)
   const user = getUser()
+  const facts = useTenantFacts()
 
   function logout() {
     authLogout().catch(() => {})
@@ -57,7 +59,7 @@ export default function MoreSheet({ open, onClose, unread }: {
   return (
     <BottomSheet open={open} onClose={onClose} title={t('mobile.tab_more')}>
       <nav aria-label={t('mobile.tab_more')}>
-        {MORE.map(item => {
+        {MORE.filter(item => drawn(item, user?.role, facts, path)).map(item => {
           const active = navItemMatches(item, path)
           const Icon = item.Icon
           return (
@@ -89,7 +91,7 @@ export default function MoreSheet({ open, onClose, unread }: {
                   the top of Pronósticos. */}
               {item.href === '/pronosticos' && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 12px 8px 46px' }}>
-                  {ANALYSIS_TABS.slice(1).map(sub => {
+                  {ANALYSIS_TABS.slice(1).filter(sub => drawn(sub, user?.role, facts, path)).map(sub => {
                     const on = path === sub.href || path.startsWith(`${sub.href}/`)
                     return (
                       <Link

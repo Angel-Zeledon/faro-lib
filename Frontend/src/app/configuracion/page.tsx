@@ -6,14 +6,20 @@
  * right: a menu that size hides the five screens a buyer opens every day among
  * the ones opened twice a year. The sidebar now carries the daily screens and
  * this one entry; everything else that is "set up once, look at sometimes"
- * lives here, one click further, each card linking to the screen that already
+ * lives here, one click further, each row linking to the screen that already
  * existed. Nothing here edits anything — it is an index, so no screen had to be
  * rewritten and every old URL still works.
  *
- * Desktop: an account band, then a grid of section cards. Phone: the same
- * sections as a grouped list (components/mobile), like a phone's own settings.
- * Role decides what is listed, by the same `adminOnly` rule as the rest of the
- * navigation (components/layout/navItems.ts).
+ * Layout: ONE column, one width, on desktop and phone alike. Each section is a
+ * small heading over a single card; every row in every card is the same height
+ * with the same icon tile, so nothing staggers. The earlier card grid mixed
+ * cards of one and three rows and a "Legal" card of a different shape, which
+ * read as misaligned boxes.
+ *
+ * Which rows are drawn follows the same presentation rules as the sidebar
+ * (components/layout/navItems.ts `visibleWhen`, fed by hooks/useTenantFacts):
+ * a row for something the tenant has no use for yet is left out, never locked —
+ * the screens stay reachable by URL and from the command palette.
  */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -23,7 +29,7 @@ import { roleLabel } from '@/lib/enumLabels'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { SCREENS, canSee, type Screen } from '@/components/layout/navItems'
-import { MobileList, MobileCard, MobileSection } from '@/components/mobile'
+import { useTenantFacts, type TenantFacts } from '@/hooks/useTenantFacts'
 import LegalLinks from '@/components/legal/LegalLinks'
 
 interface Row { screen: Screen; descKey: string }
@@ -56,6 +62,13 @@ const SECTIONS: Section[] = [
 
 const ACCOUNT_HREF = '/mi-cuenta'
 
+/** True only when every count is known and zero: nothing connected yet. */
+const nothingConnected = (f: TenantFacts) =>
+  [f.apiKeys, f.webhooks, f.schedules].every(n => n === 0)
+
+// One size for every row, so no card is taller than its neighbour by accident.
+const ROW_MIN_HEIGHT = 68
+
 export default function SettingsHubPage() {
   const { t }  = useLanguage()
   const narrow = useIsNarrow()
@@ -63,163 +76,125 @@ export default function SettingsHubPage() {
   // not exist while the page renders on the server.
   const [user, setUser] = useState<AuthUser | null>(null)
   useEffect(() => { setUser(getUser()) }, [])
+  const facts = useTenantFacts('connect')
 
   const sections = SECTIONS
-    .map(s => ({ ...s, rows: s.rows.filter(r => canSee(r.screen, user?.role)) }))
+    .map(s => ({
+      ...s,
+      rows: s.rows
+        .filter(r => canSee(r.screen, user?.role, facts))
+        // Nothing connected yet: say in one line that this is optional.
+        .map(r => r.screen.href === '/automatizacion' && nothingConnected(facts)
+          ? { ...r, descKey: 'hub.connect_optional_desc' }
+          : r),
+    }))
     .filter(s => s.rows.length > 0)
 
   const name = user ? (user.full_name || user.email.split('@')[0]) : ''
 
-  if (narrow) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <MobileSection title={t('hub.account_title')}>
-          <MobileList ariaLabel={t('hub.account_title')}>
-            <MobileCard
-              href={ACCOUNT_HREF}
-              leading={<Avatar size={40} />}
-              title={name || t('nav.account')}
-              subtitle={t('hub.account_desc')}
-            />
-          </MobileList>
-        </MobileSection>
-
-        {sections.map(s => (
-          <MobileSection key={s.id} title={t(s.titleKey)}>
-            <MobileList ariaLabel={t(s.titleKey)}>
-              {s.rows.map(({ screen: sc, descKey }) => (
-                <MobileCard
-                  key={sc.href}
-                  href={sc.href}
-                  leading={<IconTile Icon={sc.Icon} size={32} />}
-                  title={t(sc.labelKey)}
-                  subtitle={t(descKey)}
-                />
-              ))}
-            </MobileList>
-          </MobileSection>
-        ))}
-
-        <MobileSection title={t('legal.group')}>
-          <LegalLinks />
-        </MobileSection>
-      </div>
-    )
-  }
-
   return (
-    <div style={{ width: '100%', maxWidth: 1040, display: 'flex', flexDirection: 'column', gap: 22 }}>
-      <header>
+    <div style={{ width: '100%', maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* On a phone the app bar already says "Configuración". */}
+      {!narrow && <header>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>
           {t('nav.config')}
         </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)', maxWidth: 560, lineHeight: 1.5 }}>
+        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
           {t('hub.subtitle')}
         </p>
-      </header>
+      </header>}
 
-      {/* Your account, in the sidebar's petrol: the one place on this screen
-          that is about you rather than the business. */}
-      <Link href={ACCOUNT_HREF} className="hub-account" style={{
-        display: 'flex', alignItems: 'center', gap: 16, textDecoration: 'none',
-        padding: '18px 22px', borderRadius: 14,
-        background: 'var(--sidebar-bg)', color: 'var(--sidebar-text-active)',
-      }}>
-        <Avatar size={46} onPetrol />
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 16, fontWeight: 650, overflow: 'hidden', overflowWrap: 'anywhere', }}>
-              {name || t('nav.account')}
-            </span>
-            {user && (
-              <span style={{ fontSize: 12, color: 'var(--sidebar-dim)' }}>
-                {user.email} · {roleLabel(t, user.role)}
-              </span>
-            )}
-          </span>
-          <span style={{ display: 'block', marginTop: 4, fontSize: 13, color: 'var(--sidebar-text)' }}>
-            {t('hub.account_desc')}
-          </span>
-        </span>
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
-          fontSize: 12.5, fontWeight: 600, color: 'var(--sidebar-beam)',
-        }}>
-          {t('hub.account_open')}
-          <ChevronRight size={15} aria-hidden="true" />
-        </span>
-      </Link>
+      <HubSection id="account" title={t('hub.account_title')}>
+        <HubRow
+          href={ACCOUNT_HREF}
+          icon={<User size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />}
+          title={name || t('nav.account')}
+          description={user ? `${user.email} · ${roleLabel(t, user.role)}` : t('hub.account_desc')}
+          last
+        />
+      </HubSection>
 
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-        gap: 16, alignItems: 'start',
-      }}>
-        {sections.map(s => (
-          <section key={s.id} aria-labelledby={`hub-${s.id}`} style={card}>
-            <h2 id={`hub-${s.id}`} style={cardTitle}>{t(s.titleKey)}</h2>
-            <ul style={{ listStyle: 'none', margin: 0, padding: '0 6px 6px' }}>
-              {s.rows.map(({ screen: sc, descKey }) => (
-                <li key={sc.href}>
-                  <Link href={sc.href} className="hub-row" style={{
-                    display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none',
-                    padding: '10px 10px', borderRadius: 9, color: 'var(--text)',
-                  }}>
-                    <IconTile Icon={sc.Icon} size={32} />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600 }}>{t(sc.labelKey)}</span>
-                      <span style={{ display: 'block', marginTop: 2, fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>
-                        {t(descKey)}
-                      </span>
-                    </span>
-                    <ChevronRight size={15} color="var(--dim)" aria-hidden="true" style={{ flexShrink: 0 }} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
+      {sections.map(s => (
+        <HubSection key={s.id} id={s.id} title={t(s.titleKey)}>
+          {s.rows.map(({ screen: sc, descKey }, i) => {
+            const Icon = sc.Icon
+            return (
+              <HubRow
+                key={sc.href}
+                href={sc.href}
+                icon={<Icon size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />}
+                title={t(sc.labelKey)}
+                description={t(descKey)}
+                last={i === s.rows.length - 1}
+              />
+            )
+          })}
+        </HubSection>
+      ))}
 
-        <section aria-labelledby="hub-legal" style={card}>
-          <h2 id="hub-legal" style={cardTitle}>{t('legal.group')}</h2>
-          <div style={{ padding: '0 8px 8px' }}>
-            <LegalLinks />
-          </div>
-        </section>
-      </div>
+      <HubSection id="legal" title={t('legal.group')}>
+        <div style={{ padding: '6px 8px', minHeight: ROW_MIN_HEIGHT - 12, display: 'flex', alignItems: 'center' }}>
+          <LegalLinks />
+        </div>
+      </HubSection>
     </div>
   )
 }
 
-const card: React.CSSProperties = {
-  background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
-  minWidth: 0,
-}
+// One icon size and weight for the whole screen (components/ui/icons.ts: 18-22
+// inside tiles, default-to-light stroke).
+const ICON_SIZE = 18
+const ICON_STROKE = 1.7
 
-const cardTitle: React.CSSProperties = {
-  margin: 0, padding: '14px 16px 6px', fontSize: 14, fontWeight: 650,
-  color: 'var(--text)', letterSpacing: '-0.01em',
-}
-
-function IconTile({ Icon, size }: { Icon: React.ElementType; size: number }) {
+function HubSection({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
-    <span aria-hidden="true" style={{
-      width: size, height: size, borderRadius: 8, flexShrink: 0,
-      background: 'var(--accent-dim)', color: 'var(--accent)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      <Icon size={Math.round(size * 0.5)} strokeWidth={1.9} />
-    </span>
+    <section aria-labelledby={`hub-${id}`} style={{ minWidth: 0 }}>
+      <h2 id={`hub-${id}`} style={{
+        margin: '0 4px 8px', fontSize: 12, fontWeight: 700, color: 'var(--dim)',
+        textTransform: 'uppercase', letterSpacing: '0.06em',
+      }}>
+        {title}
+      </h2>
+      <div style={{
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
+        overflow: 'hidden',
+      }}>
+        {children}
+      </div>
+    </section>
   )
 }
 
-function Avatar({ size, onPetrol }: { size: number; onPetrol?: boolean }) {
+function HubRow({ href, icon, title, description, last }: {
+  href: string
+  icon: React.ReactNode
+  title: string
+  description: string
+  last?: boolean
+}) {
   return (
-    <span aria-hidden="true" style={{
-      width: size, height: size, borderRadius: '50%', flexShrink: 0,
-      background: onPetrol ? 'var(--sidebar-active-bg)' : 'var(--accent-dim)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    <Link href={href} className="hub-row tap-feedback" style={{
+      display: 'flex', alignItems: 'center', gap: 14, textDecoration: 'none',
+      minHeight: ROW_MIN_HEIGHT, boxSizing: 'border-box', padding: '12px 16px',
+      color: 'var(--text)',
+      borderBottom: last ? 'none' : '1px solid var(--border)',
     }}>
-      <User size={Math.round(size * 0.45)} color={onPetrol ? 'var(--sidebar-beam)' : 'var(--accent)'} />
-    </span>
+      <span aria-hidden="true" style={{
+        width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+        background: 'var(--accent-dim)', color: 'var(--accent)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {icon}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 14, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>
+          {title}
+        </span>
+        <span style={{ display: 'block', marginTop: 2, fontSize: 13, color: 'var(--muted)', lineHeight: 1.4, overflowWrap: 'anywhere' }}>
+          {description}
+        </span>
+      </span>
+      <ChevronRight size={16} color="var(--dim)" aria-hidden="true" style={{ flexShrink: 0 }} />
+    </Link>
   )
 }

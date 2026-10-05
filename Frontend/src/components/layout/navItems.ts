@@ -6,6 +6,7 @@ import {
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
   ScrollText, Settings,
 } from 'lucide-react'
+import { has, UNKNOWN_FACTS, type TenantFacts } from '@/hooks/useTenantFacts'
 
 // ── Screen registry ───────────────────────────────────────────────────────────
 //
@@ -28,6 +29,12 @@ export interface Screen {
   adminOnly?: boolean
   /** The primary entry (sidebar / tab bar) this screen is reached from. */
   parent?:    string
+  /** Presentation rule: drawn in the sidebar, tab strips and settings hub only
+   *  when this holds for what the tenant already has (hooks/useTenantFacts).
+   *  Never a lock — the route stays reachable by URL and from the command
+   *  palette, and the screen you are on is always drawn. Unknown counts must
+   *  answer true (`has` does). */
+  visibleWhen?: (facts: TenantFacts) => boolean
 }
 
 export const SETTINGS_HREF = '/configuracion'
@@ -37,7 +44,7 @@ export const SCREENS: Screen[] = [
   { href: '/compras',               labelKey: 'nav.hoy',             Icon: ShoppingCart },
   { href: '/pedidos',               labelKey: 'nav.orders',          Icon: ClipboardList },
   { href: '/inventario',            labelKey: 'nav.inventory',       Icon: Package },
-  { href: '/proveedores',           labelKey: 'nav.suppliers',       Icon: Truck },
+  { href: '/proveedores',           labelKey: 'nav.suppliers',       Icon: Truck,        visibleWhen: f => has(f.suppliers) },
   { href: '/pronosticos',           labelKey: 'nav.skus',            Icon: TrendingUp },
   { href: '/asistente',             labelKey: 'nav.analyst',         Icon: MessagesSquare },
   { href: SETTINGS_HREF,            labelKey: 'nav.config',          Icon: Settings },
@@ -48,9 +55,9 @@ export const SCREENS: Screen[] = [
   { href: '/configurar-inventario', labelKey: 'nav.inventory_setup', Icon: ListChecks,   parent: '/inventario' },
 
   // ── Under Pronósticos: the analysis tabs (ANALYSIS_TABS below) ─────────────
-  { href: '/escenarios',            labelKey: 'nav.scenarios',       Icon: FlaskConical, parent: '/pronosticos' },
-  { href: '/impacto',               labelKey: 'nav.roi',             Icon: Target,       parent: '/pronosticos' },
-  { href: '/historial',             labelKey: 'nav.sessions',        Icon: History,      parent: '/pronosticos' },
+  { href: '/escenarios',            labelKey: 'nav.scenarios',       Icon: FlaskConical, parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
+  { href: '/impacto',               labelKey: 'nav.roi',             Icon: Target,       parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
+  { href: '/historial',             labelKey: 'nav.sessions',        Icon: History,      parent: '/pronosticos', visibleWhen: f => has(f.completedSessions, 2) },
 
   // ── Under Configuración (the /configuracion hub lists them) ────────────────
   { href: '/mi-cuenta',             labelKey: 'nav.account',         Icon: User,         parent: SETTINGS_HREF },
@@ -63,17 +70,17 @@ export const SCREENS: Screen[] = [
   // NOT adminOnly: an analyst is exactly who wires a customer's own system up
   // to the public API, and the page only ever acts with the key the reader
   // pastes into it — never with their session.
-  { href: '/api',                   labelKey: 'nav.api',             Icon: Code2,        parent: SETTINGS_HREF },
+  { href: '/api',                   labelKey: 'nav.api',             Icon: Code2,        parent: SETTINGS_HREF, visibleWhen: f => has(f.apiKeys) },
   // adminOnly hides it from an analyst; the INSTANCE tab inside it is gated
   // again by INSTANCE_ADMIN_EMAILS, because `admin` is a role inside a tenant
   // and the deployment's credentials are not a tenant's to read.
-  { href: '/instalacion',           labelKey: 'nav.installation',    Icon: ServerCog,    parent: SETTINGS_HREF, adminOnly: true },
+  { href: '/instalacion',           labelKey: 'nav.installation',    Icon: ServerCog,    parent: SETTINGS_HREF, adminOnly: true, visibleWhen: f => f.isInstanceOperator !== false },
   // The other half of the bell, which only carries what needs a decision.
   // Reached from the bell's "see all" link and from Configuración.
-  { href: '/actividad',             labelKey: 'nav.activity',        Icon: ScrollText,   parent: SETTINGS_HREF },
+  { href: '/actividad',             labelKey: 'nav.activity',        Icon: ScrollText,   parent: SETTINGS_HREF, visibleWhen: f => has(f.teammates) },
 
   // ── No parent: reached from the top bar's messages icon (and "Más") ────────
-  { href: '/mensajes',              labelKey: 'nav.messages',        Icon: MessageSquare },
+  { href: '/mensajes',              labelKey: 'nav.messages',        Icon: MessageSquare, visibleWhen: f => has(f.teammates) },
 ]
 
 /** The sidebar's daily screens, in order. Configuración is pinned separately
@@ -96,9 +103,23 @@ export const SETTINGS_ITEM: Screen = byHref(SETTINGS_HREF)
 export const ANALYSIS_TABS: Screen[] =
   ['/pronosticos', '/escenarios', '/impacto', '/historial'].map(byHref)
 
-/** Role is the only thing that hides an entry (there are no plan locks). */
-export function canSee(screen: Screen, role: string | undefined | null): boolean {
-  return !(screen.adminOnly && role !== 'admin')
+/** Role and the screen's `visibleWhen` rule decide whether an entry is DRAWN
+ *  (there are no plan locks and nothing is ever blocked: see Screen.visibleWhen).
+ *  Without `facts` the rule is skipped, i.e. the entry is shown. */
+export function canSee(
+  screen: Screen, role: string | undefined | null, facts: TenantFacts = UNKNOWN_FACTS,
+): boolean {
+  if (screen.adminOnly && role !== 'admin') return false
+  return screen.visibleWhen ? screen.visibleWhen(facts) : true
+}
+
+/** `canSee`, except the screen the user is standing on is always drawn, so a
+ *  hidden entry reached by URL never leaves the navigation without a "you are
+ *  here". */
+export function drawn(
+  screen: Screen, role: string | undefined | null, facts: TenantFacts, path: string,
+): boolean {
+  return routeMatches(screen.href, path) || canSee(screen, role, facts)
 }
 
 const routeMatches = (href: string, path: string) => path === href || path.startsWith(`${href}/`)

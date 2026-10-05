@@ -5,7 +5,7 @@ import { getTenantCurrency } from '@/lib/api'
 import { setActiveCurrency } from '@/lib/currency'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
-import SectionTabs, { SECTION_TABS_HEIGHT, hasSectionTabs } from './SectionTabs'
+import SectionTabs, { SECTION_TABS_HEIGHT, useSectionTabs } from './SectionTabs'
 import AuthGuard from './AuthGuard'
 import SkuSearchOverlay from './SkuSearchOverlay'
 import { SidebarProvider } from '@/contexts/SidebarContext'
@@ -30,6 +30,7 @@ import { PwaRegister } from './PwaRegister'
 import MobileTabBar from '@/components/mobile/MobileTabBar'
 import { MobileHeaderProvider } from '@/components/mobile/MobileHeaderContext'
 import DesktopOnlyNotice from '@/components/mobile/DesktopOnlyNotice'
+import { TenantFactsProvider } from '@/hooks/useTenantFacts'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -38,6 +39,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <EntitlementsProvider>
       <CapabilitiesProvider>
       <WarehousesProvider>
+      <TenantFactsProvider>
       <PlanningProvider>
         <TrainingProvider>
         <ToastProvider>
@@ -66,6 +68,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </ToastProvider>
         </TrainingProvider>
       </PlanningProvider>
+      </TenantFactsProvider>
       </WarehousesProvider>
       </CapabilitiesProvider>
       </EntitlementsProvider>
@@ -111,6 +114,7 @@ function CurrencyBoot() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   const narrow   = useIsNarrow()
+  const hasTabs  = useSectionTabs().length > 0
   const pathname = usePathname()
 
   return (
@@ -124,7 +128,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         style={{
           ...(narrow ? { minWidth: 0 } : {}),
           // A screen sized to the viewport subtracts the analysis tab strip.
-          ['--section-tabs-h' as string]: hasSectionTabs(pathname) ? `${SECTION_TABS_HEIGHT}px` : '0px',
+          ['--section-tabs-h' as string]: hasTabs ? `${SECTION_TABS_HEIGHT}px` : '0px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, minWidth: 0 }}>

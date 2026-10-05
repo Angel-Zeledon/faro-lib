@@ -14,6 +14,7 @@ import { downloadWorkbook } from '@/lib/excel'
 import SignalBadge from '@/components/ui/SignalBadge'
 import Spinner from '@/components/ui/Spinner'
 import RunWarningsPanel from '@/components/ui/RunWarningsPanel'
+import { useTenantFacts, has } from '@/hooks/useTenantFacts'
 import RunLineagePanel from '@/components/ui/RunLineagePanel'
 import {
   EmptyState, InlineError, LoadingState, SkeletonTable,
@@ -97,6 +98,7 @@ export default function SkusPage() {
   // Buyer or technical view — the page-level toggle. Remembered per viewer and
   // shareable as `?view=tech`; see useForecastView.
   const [view, setView] = useForecastView()
+  const { completedSessions } = useTenantFacts()
   const showTechnical = view === 'tech'
   // Compare mode
   const [compareMode,    setCompareMode]    = useState(false)
@@ -462,7 +464,7 @@ export default function SkusPage() {
 
           {/* Compare toggle — technical view: comparing two training runs is
               an analyst's question, not a buyer's. */}
-          {sessionId && showTechnical && (
+          {sessionId && showTechnical && has(completedSessions, 2) && (
             <button
               data-tour="skus.compare"
               onClick={() => { setCompareMode(v => !v); if (compareMode) setCmpSessionIds([]) }}
@@ -514,7 +516,9 @@ export default function SkusPage() {
           is why a page called "Predicciones" opened with no prediction in
           view. The finding keeps its colour and its click; it gives up the room. */}
       <RunWarningsPanel sessionId={sessionId} collapsible />
-      <RunLineagePanel sessionId={sessionId} />
+      {/* How the forecast was produced (fingerprints, config JSON) is an
+          analyst's question: the buyer view does not carry it. */}
+      {showTechnical && <RunLineagePanel sessionId={sessionId} />}
 
 
       {/* Body */}
@@ -745,9 +749,11 @@ export default function SkusPage() {
           Renders nothing when the run has no backtest to report.
           Below the chart on purpose: it qualifies the forecast, so it reads
           after it instead of standing between the user and it. */}
-      <div style={{ marginTop: 16 }}>
-        <PolicyBacktestPanel backtest={policyBacktest} catalogueSize={metricsBySku.size} />
-      </div>
+      {showTechnical && (
+        <div style={{ marginTop: 16 }}>
+          <PolicyBacktestPanel backtest={policyBacktest} catalogueSize={metricsBySku.size} />
+        </div>
+      )}
     </div>
   )
 }
