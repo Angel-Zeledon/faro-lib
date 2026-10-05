@@ -187,10 +187,8 @@ export default function MessagesPage() {
             display: 'flex', flexDirection: 'column', minHeight: 0,
           }}>
             <div style={{ padding: '14px 16px 12px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-                  {t('messages.page_title')}
-                </span>
+              {/* The top bar already says "Mensajes": only the count here. */}
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-start', gap: 8, marginBottom: 10 }}>
                 <span style={{ fontSize: 11, color: 'var(--dim)' }}>
                   {t('messages.people_count', { n: contacts.length })}
                 </span>

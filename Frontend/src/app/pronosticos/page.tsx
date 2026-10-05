@@ -26,7 +26,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { seriesTypeLabel } from '@/lib/enumLabels'
 import {
   Search, Package, ChevronDown, RefreshCw,
-  TrendingUp, GitCompare, FileSpreadsheet, Loader2,
+  GitCompare, FileSpreadsheet, Loader2,
 } from 'lucide-react'
 // The screen's panels. They lived in this file until it passed 3,400 lines;
 // they moved out unchanged when the page was split into a buyer view and a
@@ -419,10 +419,10 @@ export default function SkusPage() {
       {/* Top toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between', paddingBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <TrendingUp size={15} color="var(--accent)" />
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{t('skus.page_title')}</span>
+          {/* The top bar and the tab strip already say "Pronósticos": the
+              toolbar leads with the count. */}
           {skus.length > 0 && (
-            <span style={{ fontSize: 11, color: 'var(--dim)', marginLeft: 4 }}>
+            <span style={{ fontSize: 11, color: 'var(--dim)' }}>
               {skus.length} {skus.length !== 1 ? t('skus.skus_count_plural') : t('skus.skus_count_singular')}
             </span>
           )}

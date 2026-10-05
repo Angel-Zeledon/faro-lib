@@ -966,15 +966,11 @@ export default function ApiDocsPage() {
             </span>
           </div>
 
-          <h1 style={{
-            fontSize: narrow ? 26 : 36, fontWeight: 700, letterSpacing: '-0.025em',
-            color: '#fff', margin: 0, lineHeight: 1.15,
-          }}>
-            {t('apidocs.title')}
-          </h1>
+          {/* The top bar already says "API": the hero leads with the one
+              sentence that adds something instead of repeating the title. */}
           <p style={{
-            fontSize: narrow ? 14 : 16, color: 'rgba(255,255,255,0.72)',
-            margin: '12px 0 0', lineHeight: 1.6, maxWidth: 660,
+            fontSize: narrow ? 20 : 26, fontWeight: 700, letterSpacing: '-0.02em',
+            color: '#fff', margin: 0, lineHeight: 1.3, maxWidth: 700,
           }}>
             {t('apidocs.intro')}
           </p>

@@ -174,7 +174,7 @@ function EmptyState({
         <Welcome welcome={welcome} onAsk={onAsk} disabled={disabled} />
       ) : (
         <div>
-          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t('analyst.title')}</div>
+          {/* No title: the top bar already says "Asistente IA". */}
           <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 300 }}>
             {t('analyst.empty_state_description')}
           </div>
@@ -529,7 +529,7 @@ export default function AnalystPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <MessageSquare size={14} color="var(--accent)" />
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t('analyst.title')}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t('analyst.chats_title')}</span>
               </div>
               <button
                 data-tour="an.new"

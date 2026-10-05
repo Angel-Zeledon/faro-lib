@@ -1576,23 +1576,7 @@ export default function ConfigPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 9,
-          background: 'var(--accent)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <Settings2 size={16} color="#fff" strokeWidth={2} />
-        </div>
-        <div>
-          <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', margin: 0 }}>
-            {t('configuration')}
-          </h1>
-        </div>
-      </div>
-
+      {/* The top bar already says "Mi cuenta": the page starts with its sections. */}
       {/* Sections */}
       {/* Two balanced columns, grouped like the phone's settings list: the
           person on the left, the company on the right. The left column used to

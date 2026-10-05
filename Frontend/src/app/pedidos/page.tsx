@@ -167,21 +167,9 @@ export default function OrdersPage() {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 9,
-            background: 'var(--accent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <ClipboardList size={17} color="#fff" strokeWidth={2.5} />
-          </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
-              {t('orders.page_title')}
-            </h1>
-            <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t('orders.page_subtitle')}</p>
-          </div>
-        </div>
+        {/* The top bar / phone header already names the screen: only what it
+            is for. */}
+        <p style={{ margin: 0, fontSize: 12, color: C.dim, flex: '1 1 200px', minWidth: 0 }}>{t('orders.page_subtitle')}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {pendingCount > 0 && (
             <span data-tour="pedidos.pending" style={{

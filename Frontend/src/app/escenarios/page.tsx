@@ -476,14 +476,8 @@ export default function ScenariosPage() {
         gap: 16, flexWrap: 'wrap', marginBottom: 20,
       }}>
         <div>
-          <h1 style={{
-            fontSize: 22, fontWeight: 700, color: C.text, margin: 0,
-            display: 'flex', alignItems: 'center', gap: 9,
-          }}>
-            <FlaskConical size={19} color={C.accent} />
-            {t('scenarios.title')}
-          </h1>
-          <p style={{ fontSize: 13, color: C.dim, margin: '6px 0 0', maxWidth: 640 }}>
+          {/* The top bar already names the screen. */}
+          <p style={{ fontSize: 13, color: C.dim, margin: 0, maxWidth: 640 }}>
             {t('scenarios.subtitle')}
           </p>
         </div>
@@ -866,10 +860,7 @@ function ScenariosMobile({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
       <div>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FlaskConical size={17} color={C.accent} aria-hidden="true" /> {t('scenarios.title')}
-        </h1>
-        <p style={{ fontSize: 13.5, color: C.dim, margin: '6px 0 0', lineHeight: 1.5 }}>{t('scenarios.subtitle')}</p>
+        <p style={{ fontSize: 13.5, color: C.dim, margin: 0, lineHeight: 1.5 }}>{t('scenarios.subtitle')}</p>
       </div>
 
       <div data-tour="sc.session" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

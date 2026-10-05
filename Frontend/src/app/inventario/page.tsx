@@ -2714,20 +2714,13 @@ export default function InventoryPage() {
  return (
  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
- {/* Header: the name of the screen on the left; on the right the one thing
+ {/* Header: what the screen is for on the left; on the right the one thing
      most people come here to do (update stock) and two quiet menus. Every
      other action is still here, one click deeper — nothing was removed. */}
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
- {/* On a phone the compact header already names the screen. */}
- <div style={{ display: narrow ? 'none' : 'flex', alignItems: 'center', gap: 12 }}>
- <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
- <ShoppingCart size={17} color="var(--accent)" strokeWidth={2} aria-hidden="true" />
- </div>
- <div>
- <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: C.text, letterSpacing: '-0.02em' }}>{t('inventory.title')}</h1>
- <p style={{ margin: '2px 0 0', fontSize: 12, color: C.dim }}>{t('inventory.subtitle')}</p>
- </div>
- </div>
+ {/* The top bar / phone header already names the screen: here only what it
+     is for, and only on desktop. */}
+ {!narrow && <p style={{ margin: 0, fontSize: 12, color: C.dim }}>{t('inventory.subtitle')}</p>}
 
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', ...(narrow ? { width: '100%', minWidth: 0 } : {}) }}>
  <DataFreshness currentSession={currentSession} />

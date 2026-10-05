@@ -186,16 +186,9 @@ function PrecisionInner() {
     }
   }
 
+  // The top bar already names the screen: only the one-line purpose here.
   const header = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ width: 36, height: 36, borderRadius: 9, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Target size={17} color="#fff" strokeWidth={2.5} />
-      </div>
-      <div>
-        <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>{t('precision.page_title')}</h1>
-        <p style={{ margin: 0, fontSize: 11, color: 'var(--dim)' }}>{t('precision.page_subtitle')}</p>
-      </div>
-    </div>
+    <p style={{ margin: 0, fontSize: 12, color: 'var(--dim)' }}>{t('precision.page_subtitle')}</p>
   )
 
   if (sessions === null) {

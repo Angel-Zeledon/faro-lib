@@ -546,23 +546,10 @@ export default function UsersPage() {
     <div style={{ padding: '28px 32px', maxWidth: 1100, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10,
-            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Users size={18} color="var(--accent)" />
-          </div>
-          <div>
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: 0, letterSpacing: '-0.02em' }}>
-              {t('users.title')}
-            </h1>
-            <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>
-              {total} {total !== 1 ? t('users.user_plural') : t('users.user_singular')} {t('users.in_workspace')}
-            </p>
-          </div>
-        </div>
+        {/* The top bar already says "Usuarios": here only the count. */}
+        <p style={{ fontSize: 12, color: 'var(--dim)', margin: 0 }}>
+          {total} {total !== 1 ? t('users.user_plural') : t('users.user_singular')} {t('users.in_workspace')}
+        </p>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={load}

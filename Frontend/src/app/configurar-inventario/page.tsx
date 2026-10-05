@@ -32,10 +32,8 @@ export default function InventorySetupPage() {
 
   return (
     <div style={{ padding: narrow ? 0 : '22px 26px', maxWidth: 1180, margin: '0 auto' }}>
-      <h1 style={{ fontSize: narrow ? 18 : 20, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
-        {c('setupStock.page.title')}
-      </h1>
-      <p style={{ fontSize: 13, color: 'var(--dim)', margin: '6px 0 12px', lineHeight: 1.5 }}>
+      {/* The top bar / phone header already carries the title. */}
+      <p style={{ fontSize: 13, color: 'var(--dim)', margin: '0 0 12px', lineHeight: 1.5 }}>
         {c('setupStock.page.subtitle')}
       </p>
 

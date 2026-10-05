@@ -132,7 +132,7 @@ function Home(p: AssistantMobileProps) {
         </span>
         <div data-testid="assistant-welcome" style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3 }}>
-            {w ? (w.first_name ? t('analyst.greeting', { name: w.first_name }) : t('analyst.greeting_anonymous')) : t('analyst.title')}
+            {w ? (w.first_name ? t('analyst.greeting', { name: w.first_name }) : t('analyst.greeting_anonymous')) : t('analyst.greeting_anonymous')}
           </div>
           <div style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.55, marginTop: 4 }}>
             {!w ? t('analyst.empty_state_description')

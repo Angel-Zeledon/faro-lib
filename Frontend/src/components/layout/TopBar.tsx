@@ -41,6 +41,10 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   '/pedidos':       'orders.page_title',
   '/mensajes':      'messages.page_title',
   '/historial':     'sessions.page_title',
+  // Not a registered screen (reached from Pronósticos): without this the bar
+  // would fall back to the brand.
+  '/proveedores/scorecard': 'scorecard.title',
+  '/precision':     'precision.page_title',
 }
 
 // Granularity label of the active session, reusing the planning vocabulary.
@@ -59,14 +63,20 @@ export default function TopBar() {
   const narrow  = useIsNarrow()
   const router  = useRouter()
   const headerOverride = useMobileHeaderOverride()
-  const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path]) : 'StockAI'
   // A secondary screen names the sidebar entry it lives under: a breadcrumb
   // on desktop, a back arrow on a phone. Only on the screen's own route — a
   // deeper sub-route already has its own way back.
   const screen  = screenFor(path)
+  // The analysis screens are tabs of Pronósticos and carry their own tab strip
+  // (SectionTabs): a breadcrumb back to Pronósticos would say it twice.
   const parent  = screen?.parent && screen.href === path
+    && !ANALYSIS_TABS.some(tab => tab.href === path)
     ? SCREENS.find(s => s.href === screen.parent) ?? null
     : null
+  // The bar owns "where am I": the route's title map, then the screen's own
+  // sidebar label, and the brand only on a route that is not a screen.
+  const title   = PAGE_TITLE_KEYS[path] ? t(PAGE_TITLE_KEYS[path])
+    : screen ? t(screen.labelKey) : 'StockAI'
   const { addToast } = useToast()
   // Active-session badge source of truth.
   //
@@ -260,7 +270,7 @@ export default function TopBar() {
           </>
         )}
         <h1 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
-          {parent && !PAGE_TITLE_KEYS[path] && screen ? t(screen.labelKey) : title}
+          {title}
         </h1>
         {activeSession && (
           <>

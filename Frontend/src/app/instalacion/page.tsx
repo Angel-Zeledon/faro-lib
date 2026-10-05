@@ -496,15 +496,8 @@ export default function InstallationPage() {
 
   const body = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: narrow ? 14 : 20 }}>
-      {narrow ? (
-        // The compact header already says "Instalación"; the lead is enough.
-        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5, padding: '0 4px' }}>{ui.lead}</div>
-      ) : (
-      <div>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>{ui.title}</div>
-        <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 2 }}>{ui.lead}</div>
-      </div>
-      )}
+      {/* The top bar / compact header already says "Instalación": the lead only. */}
+      <div style={{ fontSize: narrow ? 13 : 12, color: narrow ? 'var(--muted)' : 'var(--dim)', lineHeight: 1.5, padding: narrow ? '0 4px' : 0 }}>{ui.lead}</div>
 
       {narrow ? (
         <MobileTabs

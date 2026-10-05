@@ -107,23 +107,10 @@ export default function ActivityPage() {
         display: 'flex', alignItems: 'center', gap: 10,
         flexWrap: 'wrap', justifyContent: 'space-between',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 9, background: 'var(--accent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <ScrollText size={17} color="#fff" strokeWidth={2.5} />
-          </div>
-          <div>
-            <h1 style={{
-              margin: 0, fontSize: 16, fontWeight: 700, color: C.text,
-              letterSpacing: '-0.02em',
-            }}>
-              {t('activity.title')}
-            </h1>
-            <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t(tab === 'audit' ? 'audit.subtitle' : 'activity.subtitle')}</p>
-          </div>
-        </div>
+        {/* The top bar already names the screen: only the one-line purpose here. */}
+        <p style={{ margin: 0, fontSize: 12, color: C.dim, flex: '1 1 240px', minWidth: 0 }}>
+          {t(tab === 'audit' ? 'audit.subtitle' : 'activity.subtitle')}
+        </p>
 
         {tab === 'feed' && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', ...(narrow ? { width: '100%' } : {}) }}>

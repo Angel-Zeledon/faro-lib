@@ -94,15 +94,13 @@ export default function SettingsHubPage() {
 
   return (
     <div style={{ width: '100%', maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* On a phone the app bar already says "Configuración". */}
-      {!narrow && <header>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>
-          {t('nav.config')}
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+      {/* The top bar already says "Configuración" (a phone's app bar too):
+          only the one-line purpose here, on desktop. */}
+      {!narrow && (
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
           {t('hub.subtitle')}
         </p>
-      </header>}
+      )}
 
       <HubSection id="account" title={t('hub.account_title')}>
         <HubRow

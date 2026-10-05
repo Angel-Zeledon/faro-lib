@@ -1608,14 +1608,8 @@ function QuickStartPageContent() {
  <DataTabs style={{ marginBottom: narrow ? 18 : 32 }} />
 
  {/* Header */}
- <div style={{ textAlign: 'center', marginBottom: narrow ? 20 : 40 }}>
- <h1 style={{
- fontSize: narrow ? 21 : 26, fontWeight: 700,
- color: 'var(--text)', margin: 0, marginBottom: 8,
- letterSpacing: '-0.02em',
- }}>
- {t('qs.title')}
- </h1>
+ <div style={{ textAlign: 'center', marginBottom: narrow ? 20 : 32 }}>
+ {/* The top bar says "Mis ventas" and the tab strip "Cargar ventas": only the promise here. */}
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: 0 }}>
  {t('qs.subtitle')}
  </p>
