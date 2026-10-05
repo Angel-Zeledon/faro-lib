@@ -80,6 +80,8 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("forecast_adjustments", "forecast_adjustments", "*"),
     ("committed_demand", "committed_demand", "*"),
     ("supply_contracts", "supply_contracts", "*"),
+    ("demand_plan_versions", "demand_plan_versions", "*"),
+    ("demand_plan_version_events", "demand_plan_version_events", "*"),
     ("spike_edits", "spike_edits", "*"),
     ("spike_edit_applications", "spike_edit_applications", "*"),
     ("sku_analogies", "sku_analogies", "*"),
@@ -185,6 +187,10 @@ _DELETE_ORDER: list[str] = [
     "forecast_adjustments",
     "committed_demand",
     "supply_contracts",
+    # Demand plan versions are permanent (immutable rows); only whole-tenant
+    # erasure removes them. Events first: they reference their version.
+    "demand_plan_version_events",
+    "demand_plan_versions",
     "spike_edit_applications",
     "spike_edits",
     "sku_analogies",

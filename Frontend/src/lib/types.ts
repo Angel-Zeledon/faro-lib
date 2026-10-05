@@ -1151,6 +1151,142 @@ export interface CommittedDemandCustomer {
   first_safe_order_date: string | null
 }
 
+// ── Demand plan versions ─────────────────────────────────────────────────────
+
+export type DemandPlanStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'superseded'
+
+export interface DemandPlanTotals {
+  forecast: number | null
+  adjustment: number | null
+  committed: number | null
+  plan: number | null
+  sku_count: number
+  skus_without_forecast: number
+  period_count: number
+}
+
+export interface DemandPlanPeriodTotal {
+  period: string
+  forecast: number | null
+  adjustment: number | null
+  committed: number | null
+  plan: number | null
+}
+
+export interface DemandPlanEvent {
+  id: number
+  kind: 'status' | 'comment'
+  from_status: DemandPlanStatus | null
+  to_status: DemandPlanStatus | null
+  actor_id: string
+  actor_name: string | null
+  comment: string | null
+  details: { self_approved?: boolean; superseded_by?: string }
+  created_at: string
+}
+
+export interface DemandPlanVersion {
+  id: string
+  name: string
+  session_id: string
+  session_name: string | null
+  granularity: string | null
+  anchor_date: string
+  first_period: string
+  last_period: string
+  horizon_periods: number
+  sku_count: number
+  snapshot_bytes: number
+  totals: DemandPlanTotals
+  note: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  status: DemandPlanStatus
+  // Detail only.
+  by_period?: DemandPlanPeriodTotal[]
+  events?: DemandPlanEvent[]
+  submitted_by?: string | null
+  approver_count?: number
+  can_approve?: boolean
+  superseded?: string[]
+  self_approved?: boolean
+}
+
+export interface DemandPlanList {
+  items: DemandPlanVersion[]
+  statuses: DemandPlanStatus[]
+  approver_count: number
+  can_approve: boolean
+  max_versions: number
+}
+
+export interface DemandPlanLine {
+  sku: string
+  forecast: number | null
+  adjustment: number | null
+  committed: number | null
+  plan: number | null
+  has_forecast: boolean
+  adjustments: number
+  commitments: number
+  by_period: number[]
+}
+
+export interface DemandPlanLines {
+  total: number
+  offset: number
+  limit: number
+  periods: string[]
+  items: DemandPlanLine[]
+}
+
+export interface DemandPlanDiff {
+  version_a: string
+  version_b: string
+  status: 'ok' | 'no_common_periods'
+  n_common_periods: number
+  periods_only_in_a: number
+  periods_only_in_b: number
+  total_a: number | null
+  total_b: number | null
+  n_skus_changed: number
+  skus_only_in_a: number
+  skus_only_in_b: number
+  items: { sku: string; plan_a: number; plan_b: number; change: number; change_pct: number | null; only_in: 'a' | 'b' | null }[]
+}
+
+export interface DemandPlanFva {
+  n_points: number
+  actual_total: number | null
+  plan_error: number | null
+  model_error: number | null
+  plan_wape: number | null
+  model_wape: number | null
+  plan_bias: number | null
+  model_bias: number | null
+  improvement_pct: number | null
+  better_points: number
+  worse_points: number
+  verdict: 'improved' | 'worsened' | 'neutral' | 'too_little' | 'no_data'
+}
+
+export interface DemandPlanAccuracy {
+  version_id: string
+  version_status: DemandPlanStatus
+  status: string
+  source: { dataset_id: string; name: string } | null
+  periods_total: number
+  periods_passed: number
+  periods_compared: number
+  skipped_no_actual: number
+  skipped_no_forecast: number
+  first_period_end: string | null
+  aggregate: DemandPlanFva | null
+  n_skus: number
+  by_sku: (DemandPlanFva & { sku: string })[]
+}
+
 export interface CommittedDemandInput {
   sku: string
   delivery_date: string
