@@ -4656,8 +4656,28 @@ def get_morning_briefing(tenant_id: str, session_id: str, service_level: float =
         else:
             item['demand_trend_pct'] = None
 
-    risks      = [i for i in items if i['signal'] == 'PEDIR_YA']
-    warnings   = [i for i in items if i['signal'] == 'PEDIR_PRONTO']
+    # Money at risk ("what to order first"): annotation + ordering only, the
+    # signals and quantities are untouched. Rows with no price/cost carry None
+    # and sort after valued ones in their previous order.
+    from backend.inventory import money_at_risk as _mar
+    for item in items:
+        if item['signal'] not in ('PEDIR_YA', 'PEDIR_PRONTO'):
+            continue
+        stock_now = item.get('current_stock')
+        stocked_out = bool(item.get('has_stock')) and stock_now is not None and stock_now <= 0
+        amount, basis = _mar.money_at_risk(
+            item.get('daily_demand'),
+            _lead_time_in_periods(item.get('lead_time_days') or 0, period),
+            item.get('coverage_days'),
+            item.get('sale_price'),
+            item.get('unit_cost'),
+            in_stockout=stocked_out,
+        )
+        item['money_at_risk'] = amount
+        item['money_at_risk_basis'] = basis
+
+    risks      = _mar.sort_by_money_at_risk(i for i in items if i['signal'] == 'PEDIR_YA')
+    warnings   = _mar.sort_by_money_at_risk(i for i in items if i['signal'] == 'PEDIR_PRONTO')
     overstocked = sorted(
         [i for i in items if i['signal'] == 'SOBRESTOCK' and i.get('inventory_value')],
         key=lambda x: x.get('inventory_value') or 0,
