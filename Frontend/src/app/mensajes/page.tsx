@@ -169,13 +169,20 @@ export default function MessagesPage() {
   const showThread = !narrow || activeId !== null
 
   return (
-    <div style={{ padding: narrow ? 12 : 24, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Card padding={0} style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+    // Edge to edge: the shell pads every page by 24px, so the screen cancels it
+    // and sizes itself to the viewport below the top bar. Each pane scrolls on
+    // its own; the page itself never does.
+    <div style={{
+      margin: narrow ? 0 : -24,
+      height: narrow ? '100%' : 'calc(100vh - 51px - var(--section-tabs-h, 0px))',
+      display: 'flex', flexDirection: 'column',
+    }}>
+      <Card padding={0} style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0, borderRadius: narrow ? undefined : 0, border: narrow ? undefined : 'none' }}>
 
         {/* ── Conversation list ── */}
         {showList && (
           <div style={{
-            width: narrow ? '100%' : 280, minWidth: narrow ? undefined : 280,
+            width: narrow ? '100%' : 'clamp(280px, 24vw, 380px)', flexShrink: 0,
             borderRight: narrow ? 'none' : '1px solid var(--border)',
             display: 'flex', flexDirection: 'column', minHeight: 0,
           }}>
@@ -368,7 +375,10 @@ export default function MessagesPage() {
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{activeName}</span>
                 </div>
 
-                <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 }}>
+                <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', minHeight: 0 }}>
+                  {/* The pane uses the full width; the conversation itself is a
+                      centred column so a line never runs across 1,500px. */}
+                  <div style={{ maxWidth: 920, margin: '0 auto' }}>
                   {threadLoading && (
                     <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner size={16} /></div>
                   )}
@@ -382,7 +392,7 @@ export default function MessagesPage() {
                     return (
                       <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
                         <div style={{
-                          maxWidth: '72%', padding: '8px 12px',
+                          maxWidth: 'min(80%, 640px)', padding: '8px 12px',
                           borderRadius: mine ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
                           background: mine ? 'var(--accent)' : 'var(--surface-2)',
                           color: mine ? '#fff' : 'var(--text)',
@@ -399,10 +409,12 @@ export default function MessagesPage() {
                       </div>
                     )
                   })}
+                  </div>
                 </div>
 
+                <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border)' }}>
                 <div style={{
-                  padding: 12, borderTop: '1px solid var(--border)',
+                  maxWidth: 920, margin: '0 auto',
                   display: 'flex', gap: 8, alignItems: 'center',
                 }}>
                   <Input
@@ -429,6 +441,7 @@ export default function MessagesPage() {
                   >
                     {sending ? <Spinner size={14} /> : <Send size={15} />}
                   </button>
+                </div>
                 </div>
               </>
             )}

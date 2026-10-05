@@ -128,7 +128,7 @@ export function MessageBubble({ msg, large = false }: { msg: ChatMessage; large?
 
       {/* Bubble */}
       <div style={{
-        maxWidth: large ? '92%' : '78%', minWidth: 0, display: 'flex', flexDirection: 'column',
+        maxWidth: large ? '92%' : '78%', minWidth: 0, ...(large && !isUser ? { width: '100%' } : {}), display: 'flex', flexDirection: 'column',
         alignItems: isUser ? 'flex-end' : 'flex-start', gap: 3,
       }}>
         <div style={{

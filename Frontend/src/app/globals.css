@@ -1267,7 +1267,7 @@
   color: var(--text);
   max-width: 70ch;
   min-width: 0;
-  font-variant-numeric: tabular-nums lining-nums;
+  font-variant-numeric: lining-nums;
   letter-spacing: -0.003em;
   hyphens: manual;
   overflow-wrap: anywhere;
@@ -1334,6 +1334,12 @@
   background: var(--surface-3); border: 1px solid var(--border);
   overflow-x: auto; white-space: pre; tab-size: 2; max-width: 100%;
 }
+/* Scrollers must not widen the bubble: a wide table or code line would
+   otherwise set the bubble's min-content and push text past the screen edge.
+   width:0 + min-width:100% takes them out of intrinsic sizing, then fills it. */
+@media (max-width: 768px) {
+  .msg-prose-lg pre, .msg-prose-lg .msg-table-wrap { width: 0; min-width: 100%; box-sizing: border-box; }
+}
 .msg-prose pre code { background: none; padding: 0; font-size: 1em; overflow-wrap: normal; }
 
 /* Tables: horizontal rules only, figures right-aligned and tabular; scrolls
@@ -1354,6 +1360,10 @@
 .msg-prose tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface-3) 45%, transparent); }
 .msg-prose tbody tr:last-child td { border-bottom: 0; }
 .msg-prose .msg-num, .msg-prose .msg-right { text-align: right; white-space: nowrap; }
+/* Figures line up in tables (columns) and in numbered lists (markers); running
+   prose keeps proportional digits, which read better inline. */
+.msg-prose table, .msg-prose li::marker { font-variant-numeric: tabular-nums lining-nums; }
+.msg-prose td:first-child { white-space: nowrap; }
 .msg-prose .msg-center { text-align: center; }
 
 /* Sender / time labels: small and quiet. */
