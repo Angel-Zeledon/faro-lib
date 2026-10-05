@@ -1374,6 +1374,48 @@ export const receivePO = (
 ) =>
   request<import('./types').ReceptionResult>('POST', `/inventory/po/${poLogId}/receive`, body ?? {})
 
+// ── PO approval (opt-in: nothing here is reached unless a rule exists) ───────
+export const getPOApprovalSettings = (opts?: RequestOpts) =>
+  request<import('./types').POApprovalSettings>('GET', '/inventory/po-approval/settings', undefined, opts)
+export const createPOApprovalRule = (body: {
+  threshold: number; warehouse?: string | null; supplier_id?: string | null; self_approve_below?: number | null
+}) => request<import('./types').POApprovalRule>('POST', '/inventory/po-approval/rules', body)
+export const updatePOApprovalRule = (id: string, body: Partial<{
+  threshold: number; warehouse: string | null; supplier_id: string | null
+  self_approve_below: number | null; active: boolean
+}>) => request<import('./types').POApprovalRule>('PATCH', `/inventory/po-approval/rules/${id}`, body)
+export const deletePOApprovalRule = (id: string) =>
+  request<{ deleted: boolean }>('DELETE', `/inventory/po-approval/rules/${id}`)
+export const setPOApprover = (userId: string, canApprove: boolean) =>
+  request<{ user_id: string; can_approve: boolean }>(
+    'PUT', `/inventory/po-approval/approvers/${userId}`, { can_approve: canApprove })
+export const getPOApprovalPending = (opts?: RequestOpts) =>
+  request<{ is_approver: boolean; items: import('./types').POApprovalPendingItem[] }>(
+    'GET', '/inventory/po-approval/pending', undefined, opts)
+export const getPOApproval = (poLogId: string) =>
+  request<import('./types').POApproval>('GET', `/inventory/po/${poLogId}/approval`)
+export const requestPOApproval = (poLogId: string, note?: string) =>
+  request<import('./types').POApproval & { changed: boolean; notified: number }>(
+    'POST', `/inventory/po/${poLogId}/approval/request`, note ? { note } : {})
+export const approvePO = (poLogId: string, comment?: string) =>
+  request<import('./types').POApproval & { changed: boolean }>(
+    'POST', `/inventory/po/${poLogId}/approval/approve`, comment ? { comment } : {})
+export const rejectPO = (poLogId: string, comment: string) =>
+  request<import('./types').POApproval & { changed: boolean }>(
+    'POST', `/inventory/po/${poLogId}/approval/reject`, { comment })
+
+// ── Forecast adjustments ─────────────────────────────────────────────────────
+export const getForecastAdjustments = (sessionId: string, sku?: string) =>
+  request<{ reasons: import('./types').AdjustmentReason[]; items: import('./types').ForecastAdjustment[] }>(
+    'GET', `/sessions/${sessionId}/adjustments${sku ? `?sku=${encodeURIComponent(sku)}` : ''}`)
+export const createForecastAdjustment = (sessionId: string, body: {
+  sku: string; start_date: string; end_date: string; mode: 'percent' | 'absolute'
+  value: number; reason_code: import('./types').AdjustmentReason; reason_note?: string
+}) => request<import('./types').ForecastAdjustment>('POST', `/sessions/${sessionId}/adjustments`, body)
+export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =>
+  request<import('./types').AdjustmentValueAdded>(
+    'GET', `/sessions/${sessionId}/adjustments/value-added`, undefined, opts)
+
 export const sendPOToSuppliers = (poLogId: string) =>
   request<import('./types').SendPOResult>('POST', `/inventory/po/${poLogId}/send`)
 

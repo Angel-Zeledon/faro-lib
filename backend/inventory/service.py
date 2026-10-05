@@ -2123,6 +2123,10 @@ def _compute_inventory_status(
         ev["id"]: _index_overrides(get_event_multipliers(tenant_id, ev["id"]))
         for ev in active_events
     }
+    # Manual forecast adjustments ("+15%, promotion", by who): one query for the
+    # whole tenant, applied beside the events below and always named on the row.
+    from backend.inventory import forecast_adjustment_service as _fa_svc
+    adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
 
     items: list[dict] = []
 
@@ -2157,6 +2161,7 @@ def _compute_inventory_status(
 
         has_forecast = bool(model_forecasts)
         has_stock    = stock is not None and current_stock is not None
+        adjustments_applied: list[dict] = []
 
         _sl_val, service_level_source, service_level_rule_scope = _sd_svc.resolve_field(
             "service_level", stock, rule_index, supplier=supplier, category=category,
@@ -2212,7 +2217,11 @@ def _compute_inventory_status(
                  "category": category},
                 today, lead_time, active_events, overrides_by_event,
             ) if active_events else (1.0, [])
-            avg_daily_eff = avg_daily * event_mult
+            # A person's adjustment of this product's forecast (who/why on the
+            # row): same blending over the lead-time window as an event.
+            adj_mult, adjustments_applied = _fa_svc.demand_multiplier(
+                adjustments_by_sku.get(sku), today, lead_time)
+            avg_daily_eff = avg_daily * event_mult * adj_mult
             coverage_days = current_stock / avg_daily_eff if avg_daily_eff > 0 else 9999.0
             # The measured band belongs to ONE model's forecast. Pairing it with
             # a different model's point forecast would mix a global model's
@@ -2316,6 +2325,9 @@ def _compute_inventory_status(
                 # event instead of leaving the buyer to notice the quantity
                 # moved on its own.
                 "events_applied": events_applied,
+                # Manual forecast adjustments that moved this number: who, by
+                # how much, why. Empty when none apply.
+                "adjustments_applied": adjustments_applied,
             }
             if recommended <= 0:
                 # Enough stock: keep the numbers (the what-if simulator needs
@@ -2454,6 +2466,7 @@ def _compute_inventory_status(
             # the row so no screen restates a threshold it could get wrong.
             "signal_thresholds":  sku_thresholds,
             "recommended_qty": recommended,
+            "adjustments_applied": adjustments_applied,
             # Already on its way: open POs + transfers in transit. Exposed so
             # the UI can say "N units arriving (OC-000123)" instead of leaving
             # the buyer to wonder why the quantity dropped.
@@ -2670,6 +2683,10 @@ def get_inventory_status_by_warehouse(
         ev["id"]: _index_overrides(get_event_multipliers(tenant_id, ev["id"]))
         for ev in active_events
     }
+    # Manual forecast adjustments ("+15%, promotion", by who): one query for the
+    # whole tenant, applied beside the events below and always named on the row.
+    from backend.inventory import forecast_adjustment_service as _fa_svc
+    adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
 
     items: list[dict] = []
     for sku in all_skus:
@@ -2774,7 +2791,9 @@ def get_inventory_status_by_warehouse(
                      "category": category},
                     today, lead_time, active_events, overrides_by_event,
                 ) if active_events else (1.0, [])
-                avg_daily_eff = avg_daily * event_mult
+                adj_mult, adjustments_applied = _fa_svc.demand_multiplier(
+                    adjustments_by_sku.get(sku), today, lead_time)
+                avg_daily_eff = avg_daily * event_mult * adj_mult
                 sku_risk = demand_risk.get(sku)
                 if sku_risk and sku_risk.get("model") != best_model.get(sku):
                     sku_risk = None
@@ -2819,6 +2838,7 @@ def get_inventory_status_by_warehouse(
                 recommended = None
                 reorder_point = None
                 events_applied = []
+                adjustments_applied = []
 
             items.append({
                 "sku": sku,
@@ -2848,6 +2868,7 @@ def get_inventory_status_by_warehouse(
                 # the "Ver por qué" panel can name the event here too, not
                 # just on the aggregate row. Empty when none apply.
                 "events_applied": events_applied,
+                "adjustments_applied": adjustments_applied,
                 "recommended_qty": recommended,
                 # Already on its way: open POs + transfers in transit. Exposed so
                 # the UI can say "N units arriving (OC-000123)" instead of

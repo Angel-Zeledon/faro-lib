@@ -32,6 +32,7 @@ import { formatMoney } from '@/lib/currency'
 import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { SendPOButton } from '@/components/po/POHistory'
+import { ApprovalChip } from '@/components/po/POApproval'
 import { UndoPOActions } from '@/components/po/UndoPOActions'
 import { PaidPOActions } from '@/components/po/PaidPOActions'
 import { CancelPOActions, CancelledBadge } from '@/components/po/CancelPOActions'
@@ -419,12 +420,14 @@ function OrderDetailSheet({ entry, onClose, canEdit, suppliersWithoutContact, on
       {/* Every per-order action the desktop row offers, one per row. */}
       <SheetHeading>{tOr(t, 'mobile.pedidos_actions_title', 'Actions')}</SheetHeading>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {e.approval?.required && <div><ApprovalChip approval={e.approval} /></div>}
         {canEdit && (
           <SendPOButton
             key={e.id}
             poLogId={e.id}
             suppliersWithoutContact={suppliersWithoutContact}
             onSent={onChanged}
+            approval={e.approval}
           />
         )}
         {/* PO actions slot — per-order actions (e.g. "mark as paid", "cancel
@@ -455,7 +458,7 @@ function OrderDetailSheet({ entry, onClose, canEdit, suppliersWithoutContact, on
         </p>
         {/* Shared with the desktop table on purpose — the WhatsApp payload and
             the wa.me link must be the same message wherever it is sent from. */}
-        <ForwardPOActions key={e.id} poLogId={e.id} />
+        <ForwardPOActions key={e.id} poLogId={e.id} approval={e.approval} />
       </div>
     </BottomSheet>
   )

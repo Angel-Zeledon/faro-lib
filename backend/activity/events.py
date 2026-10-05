@@ -101,6 +101,13 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=WARNING,
         detail_keys=("session_id", "session_name", "degradation_pct"),
     ),
+    # A person changed what a product's forecast says for a period. Recorded
+    # next to the immutable adjustment row so the activity feed answers "who
+    # moved this number, and why" without opening the precision screen.
+    "forecast.adjusted": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "adjustment", "adjustment_reason"),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     "purchase.order_generated": EventSpec(
@@ -159,6 +166,22 @@ EVENTS: dict[str, EventSpec] = {
     "purchase.order_uncancelled": EventSpec(
         kind="purchase", severity=WARNING,
         detail_keys=("reference",),
+    ),
+    # The approval workflow (opt-in: only tenants with an approval rule ever
+    # see these). Info on purpose: the approver is reached through the bell's
+    # attention rows and an email, which are addressed to THEM; a tenant-wide
+    # bell entry for every request would be noise for everyone else.
+    "purchase.approval_requested": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "value"),
+    ),
+    "purchase.approval_approved": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "value", "decision_comment"),
+    ),
+    "purchase.approval_rejected": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "value", "decision_comment"),
     ),
 
     # ── Sales received by e-mail (backend/inbound_email/) ────────────────────

@@ -51,6 +51,7 @@ import { renderExplanation } from '@/lib/explanationCopy'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { ErrorState, LoadingState, SkeletonCards, useErrorDetail } from '@/components/ui/States'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import { RequestApprovalButton, usePOApproval } from '@/components/po/POApproval'
 import {
   SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
 } from '@/components/suppliers/SupplierHealthBanners'
@@ -966,6 +967,9 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
   const [last, setLast] = useState<POLogEntry | null>(po)
   if (po && po !== last) setLast(po)
   const shown = po ?? last
+  // Only a tenant with an approval rule ever gets `required`: for everybody
+  // else this is `null`/not required and the sheet is what it always was.
+  const { data: approval, reload: reloadApproval } = usePOApproval(shown?.id)
   if (!shown) return null
   const bySupplier = Object.entries(lines.reduce<Record<string, ActionItem[]>>((acc, i) => {
     const key = i.supplier || ''
@@ -1024,6 +1028,12 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
           )}
         </div>
       ) : (
+        approval?.required ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+            <p style={{ margin: 0, fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('po_approval.generated_hint')}</p>
+            <RequestApprovalButton poLogId={shown.id} approval={approval} onChanged={reloadApproval} />
+          </div>
+        ) :
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
           {sendError != null && (
             <div role="alert" style={{ fontSize: 13, color: C.red, lineHeight: 1.5 }}>
@@ -1045,7 +1055,7 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
 
       <div style={{ padding: 12, borderRadius: 12, background: 'var(--surface-2)', border: `1px solid ${C.border}` }}>
         <p style={{ fontSize: 12.5, color: C.dim, margin: '0 0 10px', lineHeight: 1.5 }}>{t('po.forward_hint')}</p>
-        <ForwardPOActions poLogId={shown.id} />
+        <ForwardPOActions poLogId={shown.id} approval={approval} />
       </div>
     </BottomSheet>
   )

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getPOItems, receivePO, sendPOToSuppliers } from '@/lib/api'
-import type { POLogEntry, POItemLine, OverdueReception } from '@/lib/types'
+import type { POLogEntry, POItemLine, OverdueReception, POApprovalBadge } from '@/lib/types'
 import AttentionChip from '@/components/layout/AttentionChip'
 import Spinner from '@/components/ui/Spinner'
 import { useErrorDetail } from '@/components/ui/States'
@@ -13,6 +13,7 @@ import { formatPoNumber } from '@/lib/poNumber'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
 import { UndoPOActions } from '@/components/po/UndoPOActions'
 import { PaidPOActions } from '@/components/po/PaidPOActions'
+import { ApprovalChip, RequestApprovalButton } from '@/components/po/POApproval'
 import { CancelPOActions, CancelledBadge } from '@/components/po/CancelPOActions'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import BottomSheet from '@/components/mobile/BottomSheet'
@@ -335,9 +336,12 @@ export function ReceptionModal({ poId, onClose, onSaved }: {
   )
 }
 
-export function SendPOButton({ poLogId, suppliersWithoutContact, onSent }: {
+export function SendPOButton({ poLogId, suppliersWithoutContact, onSent, approval }: {
   poLogId: string
   suppliersWithoutContact: string[]
+  /** Set by the server only for a tenant with an approval rule. While the order
+   *  needs an approval it lacks, "send" is replaced by "request approval". */
+  approval?: POApprovalBadge | null
   /** Called after a send that reached at least one supplier (the phone detail
    *  sheet reloads the order so its "sent" state is current). */
   onSent?: () => void
@@ -349,6 +353,10 @@ export function SendPOButton({ poLogId, suppliersWithoutContact, onSent }: {
   const errorDetail = useErrorDetail()
   const [state, setState] = useState<'idle' | 'sending' | 'done'>('idle')
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  // The hooks above are all unconditional; this return only changes the output.
+  if (approval?.required) {
+    return <RequestApprovalButton poLogId={poLogId} approval={approval} onChanged={onSent} />
+  }
 
   async function handleClick() {
     setState('sending')
@@ -564,8 +572,10 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                           <Truck size={11} aria-hidden="true" /> {t(overdueById[entry.id] ? 'attention.confirm_arrival' : 'po.reception_btn_register')}
                         </button>
                       )}
-                      <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact} />
-                      <ForwardPOActions poLogId={entry.id} />
+                      <ApprovalChip approval={entry.approval} />
+                      <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact}
+                                    approval={entry.approval} onSent={onUndone} />
+                      <ForwardPOActions poLogId={entry.id} approval={entry.approval} />
                       {/* A paid order cannot be un-sent (the server refuses:
                           the invoice is evidence it reached the supplier), so
                           the undo is not offered until the payment is unmarked. */}

@@ -97,7 +97,13 @@ def mark_po_sent(tenant_id: str, po_log_id: str) -> None:
     `sent_at IS NULL` in the WHERE clause makes this first-write-wins: resending
     a PO (a supplier lost the email, a second supplier on the same order) must
     not move the due date of an invoice already issued against the first send.
+
+    Refuses an order that still needs approval: the last step every send path
+    shares, so a caller that forgot the check higher up still cannot mark an
+    unapproved order as having left.
     """
+    from backend.inventory import po_approval_service as approval_svc
+    approval_svc.assert_sendable(tenant_id, po_log_id)
     execute(
         """UPDATE inventory_po_log
               SET sent_at = NOW()

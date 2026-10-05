@@ -20,7 +20,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Días de cobertura",
-                "where": "backend/inventory/service.py:2216 · coverage_days",
+                "where": "backend/inventory/service.py:2225 · coverage_days",
                 "what": (
                     "Cuánto dura el stock que hay hoy al ritmo de venta pronosticado. "
                     "Es el número del que cuelga todo lo demás."
@@ -101,7 +101,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-bodega y traslados",
-                "where": "backend/inventory/service.py:2516 · get_inventory_status_by_warehouse",
+                "where": "backend/inventory/service.py:2529 · get_inventory_status_by_warehouse",
                 "what": (
                     "La demanda se reparte entre bodegas de dos formas, y cuando una "
                     "bodega necesita lo que a otra le sobra, se propone un traslado en "
@@ -168,7 +168,7 @@ CHAPTER = {
         "topics": [
             {
                 "name": "Coverage days",
-                "where": "backend/inventory/service.py:2216 · coverage_days",
+                "where": "backend/inventory/service.py:2225 · coverage_days",
                 "what": (
                     "How long today's stock lasts at the forecast sales rate. Every "
                     "other number hangs off this one."
@@ -248,7 +248,7 @@ CHAPTER = {
             },
             {
                 "name": "Multi-warehouse and transfers",
-                "where": "backend/inventory/service.py:2516 · get_inventory_status_by_warehouse",
+                "where": "backend/inventory/service.py:2529 · get_inventory_status_by_warehouse",
                 "what": (
                     "Demand is split across warehouses in one of two ways, and when one "
                     "warehouse needs what another has spare, a transfer is proposed "

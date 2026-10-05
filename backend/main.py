@@ -379,6 +379,10 @@ from backend.api.v1 import po_payments as po_payments_router  # noqa: E402
 app.include_router(po_payments_router.router, prefix=_PREFIX)
 from backend.api.v1 import po_cancellation as po_cancellation_router  # noqa: E402
 app.include_router(po_cancellation_router.router, prefix=_PREFIX)
+from backend.api.v1 import po_approvals as po_approvals_router  # noqa: E402
+app.include_router(po_approvals_router.router, prefix=_PREFIX)
+from backend.api.v1 import forecast_adjustments as forecast_adjustments_router  # noqa: E402
+app.include_router(forecast_adjustments_router.router, prefix=_PREFIX)
 app.include_router(scenarios_router.router, prefix=_PREFIX)
 app.include_router(ai_insights.router,     prefix=_PREFIX)
 app.include_router(demo.router,            prefix=_PREFIX)

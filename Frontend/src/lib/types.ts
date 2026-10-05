@@ -940,6 +940,9 @@ export interface InventoryCalcExplanation {
   // fact the semáforo already applied. Empty when no event touches the
   // window right now, even if one is declared for a different date range.
   events_applied?:     InventoryCalcEventApplied[]
+  // A person's manual adjustment of this product's forecast that moved the
+  // number: who, how much, why. Empty when none applies.
+  adjustments_applied?: AppliedAdjustment[]
 }
 
 /** One declared event whose window overlapped this sku's lead-time window,
@@ -1492,6 +1495,120 @@ export interface POLogEntry {
   /** True when the server answered an `Idempotency-Key` it had already seen:
    *  this is the order the FIRST request created, nothing new was written. */
   replayed?: boolean
+  /** Present only when the tenant has an approval rule. */
+  approval?: POApprovalBadge
+}
+
+// ── PO approval (opt-in workflow) ────────────────────────────────────────────
+export type POApprovalStatus =
+  'not_required' | 'approval_needed' | 'pending_approval' | 'approved' | 'rejected'
+export interface POApprovalBadge { required: boolean; status: POApprovalStatus }
+export interface POApprovalEntry {
+  id: string
+  status: 'requested' | 'approved' | 'rejected'
+  amount: number
+  requested_by: string
+  requested_by_name: string | null
+  requested_at: string
+  request_note: string | null
+  decided_by: string | null
+  decided_by_name: string | null
+  decided_at: string | null
+  comment: string | null
+}
+export interface POApproval extends POApprovalBadge {
+  po_log_id: string
+  amount: number | null
+  amount_known: boolean | null
+  history: POApprovalEntry[]
+  open_request: POApprovalEntry | null
+  can_decide: boolean
+}
+export interface POApprovalRule {
+  id: string
+  threshold: number
+  warehouse: string | null
+  supplier_id: string | null
+  supplier_name: string | null
+  self_approve_below: number | null
+  active: boolean
+}
+export interface POApprover { id: string; email: string; full_name: string | null; role: string }
+export interface POApprovalSettings {
+  rules: POApprovalRule[]
+  enabled: boolean
+  approvers: POApprover[]
+  is_approver: boolean
+}
+export interface POApprovalPendingItem {
+  approval_id: string
+  po_log_id: string
+  reference: string
+  amount: number
+  sku_count: number
+  suppliers: string | null
+  warehouse: string | null
+  requested_by_name: string | null
+  requested_at: string
+  note: string | null
+  can_decide: boolean
+}
+
+// ── Forecast adjustments and their measured value ────────────────────────────
+export type AdjustmentReason =
+  'promotion' | 'price_change' | 'new_customer' | 'lost_customer' | 'seasonality'
+  | 'supply_issue' | 'market_news' | 'data_error' | 'other'
+export interface ForecastAdjustment {
+  id: string
+  session_id: string
+  sku: string
+  start_date: string
+  end_date: string
+  mode: 'percent' | 'absolute'
+  value: number
+  pct: number
+  baseline_units: number | null
+  reason_code: AdjustmentReason
+  reason_note: string | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  superseded_by: string | null
+}
+/** One entry of `adjustments_applied` on a recommendation row. */
+export interface AppliedAdjustment {
+  adjustment_id: string
+  pct: number
+  mode: 'percent' | 'absolute'
+  reason_code: AdjustmentReason
+  reason_note: string | null
+  created_by: string
+  created_by_name: string | null
+  overlap_days: number
+  window_days: number
+  blended_multiplier: number
+}
+export interface ValueAddedGroup {
+  n_points: number
+  base_error: number
+  adjusted_error: number
+  base_wape: number | null
+  adjusted_wape: number | null
+  /** + = the adjusted forecast's error was that much SMALLER than the model's. */
+  improvement_pct: number | null
+  better_points: number
+  worse_points: number
+  verdict: 'improved' | 'worsened' | 'neutral' | 'too_little' | 'no_data'
+}
+export interface AdjustmentValueAdded {
+  session_id: string
+  status: string
+  n_adjustments: number
+  n_adjustments_graded?: number
+  source: { dataset_id: string; name: string } | null
+  aggregate: ValueAddedGroup | null
+  by_user: (ValueAddedGroup & { user: string; name: string | null })[]
+  by_reason: (ValueAddedGroup & { reason: AdjustmentReason })[]
 }
 
 // A line of a PO as stored server-side, with reception progress.

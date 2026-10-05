@@ -208,7 +208,12 @@ def execute_pending_action(ctx: ToolContext, action: dict) -> str:
         po = rec_svc.get_po(ctx.tenant_id, po_log_id)
         if not po:
             raise ToolError(render_es("wa_po_not_found"))
-        rec_svc.mark_po_sent(ctx.tenant_id, po_log_id)
+        from backend.errors import AppError
+        try:
+            rec_svc.mark_po_sent(ctx.tenant_id, po_log_id)
+        except AppError as exc:
+            # An order waiting on approval cannot be marked as sent from chat.
+            raise ToolError(render_es("wa_po_needs_approval"))
         ref = format_po_number(po.get("po_number"), po_log_id)
         return render_es("wa_po_sent_ok", reference=ref)
 
