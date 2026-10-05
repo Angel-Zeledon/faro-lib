@@ -154,7 +154,7 @@ const es: ContentCopy = {
         { title: 'Plazos que se corrigen solos', desc: 'Cada recepción que registras enseña cuánto tarda de verdad el proveedor. Desde la tercera, StockAI planifica con ese plazo y no con el prometido.' },
         { title: 'Una orden armada por proveedor', desc: 'Con la cantidad sugerida, el mínimo de compra respetado y el motivo de cada línea. La revisas, la ajustas y la envías tú.' },
       ],
-      calendarNote: 'Temporadas: StockAI trae un calendario comercial de Costa Rica y de Colombia (quincenas, aguinaldo o primas, Semana Santa, Día de la Madre, temporada escolar, Black Friday, Navidad). Los multiplicadores son un punto de partida que tú editas, no cifras ajustadas a tus ventas.',
+      calendarNote: 'Temporadas: StockAI trae un calendario comercial de diez países (Costa Rica, Colombia, México, Perú, Chile, Argentina, Ecuador, Guatemala, Panamá y República Dominicana: quincenas, aguinaldo o primas, Semana Santa, Día de la Madre, temporada escolar, Black Friday, Navidad). Los multiplicadores son un punto de partida que tú editas, no cifras ajustadas a tus ventas.',
     },
     items: {
       consumer: {
@@ -173,7 +173,7 @@ const es: ContentCopy = {
         howTitle: 'Qué parte de StockAI aplica',
         how: [
           { title: 'Semáforo sobre todo el catálogo', desc: 'Cada producto queda en PEDIR YA, PEDIR PRONTO, OK o SOBRESTOCK, ordenado por urgencia. Revisas la lista de arriba hacia abajo, no producto por producto.' },
-          { title: 'Quincenas y temporadas en el modelo', desc: 'Los días de pago y los feriados de Costa Rica o Colombia entran al pronóstico como variables, y las temporadas de cada producto se detectan solas.' },
+          { title: 'Quincenas y temporadas en el modelo', desc: 'Los días de pago y los feriados de tu país entran al pronóstico como variables, y las temporadas de cada producto se detectan solas.' },
           { title: 'Plazo real por proveedor', desc: 'Registras cada recepción, completa o parcial. A partir de la tercera, el punto de reorden usa los días que tardó de verdad, y el scorecard te muestra declarado contra real.' },
           { title: 'Mínimos y escalas de precio', desc: 'La cantidad sugerida respeta el mínimo de compra del proveedor y, si cargaste escalas por volumen, te dice cuánto falta para el siguiente escalón.' },
           { title: 'Sobrestock antes de liquidar', desc: 'Lo que cubre tres veces el plazo (o más) se marca SOBRESTOCK, con el dinero que tiene parado a la vista.' },
@@ -250,7 +250,7 @@ const es: ContentCopy = {
           { title: 'Plazo real de cada droguería', desc: 'Cada recepción registrada enseña cuántos días tarda de verdad cada proveedor. Un plazo corto y confiable permite cubrir con poco inventario.' },
           { title: 'Sobrestock marcado temprano', desc: 'Lo que cubre varias veces el plazo se marca SOBRESTOCK antes de que el producto envejezca, para dejar de reponerlo.' },
           { title: 'Merma por vencimiento registrada', desc: 'Cuando algo se vence, lo registras con su motivo y su costo, y el inventario baja por el mismo camino que cualquier otra salida.' },
-          { title: 'Temporadas y calendario del país', desc: 'El pronóstico incluye los feriados y las fechas comerciales de Costa Rica o Colombia, y detecta la estacionalidad propia de cada producto.' },
+          { title: 'Temporadas y calendario del país', desc: 'El pronóstico incluye los feriados y las fechas comerciales de tu país, y detecta la estacionalidad propia de cada producto.' },
         ],
         sampleTitle: 'Una mañana de ejemplo',
         sampleLead: 'Cuatro productos de una farmacia imaginaria, tal como los ordena StockAI.',
@@ -323,7 +323,7 @@ const es: ContentCopy = {
           { title: 'Vista por bodega y consolidada', desc: 'Cada tienda o bodega tiene su pestaña y su semáforo; también ves el total. El plan gratis trae una bodega; al ampliarlo no hay tope de ubicaciones.' },
           { title: 'Traslado antes de compra', desc: 'Defines rutas con días de tránsito y costo. Si un producto falta en una tienda y sobra en otra, StockAI sugiere mover, y solo si a la que presta le quedan al menos 30 días de cobertura.' },
           { title: 'Promociones y escenarios', desc: 'En el simulador marcas una promoción, duplicas la demanda de una categoría o atrasas a un proveedor, y comparas contra el plan actual sin tocar nada real.' },
-          { title: 'Calendario comercial', desc: 'Las fechas de Costa Rica y de Colombia vienen cargadas (quincenas, Black Friday, Navidad, temporada escolar) y puedes editarlas.' },
+          { title: 'Calendario comercial', desc: 'Las fechas de diez países de Latinoamérica vienen cargadas (quincenas, aguinaldos y primas, Black Friday, Navidad, temporada escolar) y puedes editarlas.' },
           { title: 'Recálculo programado', desc: 'Cada lunes, a diario, en días hábiles o el primero del mes, sin que nadie lo lance a mano.' },
         ],
         sampleTitle: 'Una mañana de ejemplo',
@@ -587,7 +587,7 @@ const en: ContentCopy = {
         { title: 'Lead times that correct themselves', desc: 'Every reception you log teaches how long the supplier really takes. From the third one, StockAI plans with that lead time, not the promised one.' },
         { title: 'One order, built per supplier', desc: 'With the suggested quantity, the minimum order respected and the reason for each line. You review it, adjust it and send it.' },
       ],
-      calendarNote: 'Seasons: StockAI ships a commercial calendar for Costa Rica and Colombia (paydays, year-end bonus, Holy Week, Mother’s Day, back to school, Black Friday, Christmas). The multipliers are a starting point you edit, not figures fitted to your sales.',
+      calendarNote: 'Seasons: StockAI ships a commercial calendar for ten countries (Costa Rica, Colombia, Mexico, Peru, Chile, Argentina, Ecuador, Guatemala, Panama and the Dominican Republic: paydays, year-end bonus, Holy Week, Mother’s Day, back to school, Black Friday, Christmas). The multipliers are a starting point you edit, not figures fitted to your sales.',
     },
     items: {
       consumer: {
@@ -606,7 +606,7 @@ const en: ContentCopy = {
         howTitle: 'Which part of StockAI applies',
         how: [
           { title: 'A signal across the whole catalogue', desc: 'Every product lands on PEDIR YA, PEDIR PRONTO, OK or SOBRESTOCK, sorted by urgency. You read the list top to bottom, not product by product.' },
-          { title: 'Paydays and seasons in the model', desc: 'Paydays and the holidays of Costa Rica or Colombia enter the forecast as variables, and each product’s seasons are detected on their own.' },
+          { title: 'Paydays and seasons in the model', desc: 'Paydays and the holidays of your country enter the forecast as variables, and each product’s seasons are detected on their own.' },
           { title: 'Real lead time per supplier', desc: 'You log each reception, full or partial. From the third one, the reorder point uses how long it really took, and the scorecard shows declared against real.' },
           { title: 'Minimums and price breaks', desc: 'The suggested quantity respects the supplier’s minimum order and, if you loaded volume breaks, tells you how far the next step is.' },
           { title: 'Overstock before liquidation', desc: 'What covers three lead times (or more) is flagged SOBRESTOCK, with the money it ties up in view.' },
@@ -683,7 +683,7 @@ const en: ContentCopy = {
           { title: 'Each wholesaler’s real lead time', desc: 'Every reception you log teaches how many days each supplier really takes. A short, reliable lead time lets you cover with little stock.' },
           { title: 'Overstock flagged early', desc: 'What covers several lead times is flagged SOBRESTOCK before the product ages, so you stop replenishing it.' },
           { title: 'Shrinkage from expiry, logged', desc: 'When something expires you log it with its reason and its cost, and stock drops through the same path as any other outflow.' },
-          { title: 'Seasons and the country calendar', desc: 'The forecast includes the holidays and commercial dates of Costa Rica or Colombia, and picks up each product’s own seasonality.' },
+          { title: 'Seasons and the country calendar', desc: 'The forecast includes the holidays and commercial dates of your country, and picks up each product’s own seasonality.' },
         ],
         sampleTitle: 'A sample morning',
         sampleLead: 'Four products of an imaginary pharmacy, as StockAI orders them.',
@@ -756,7 +756,7 @@ const en: ContentCopy = {
           { title: 'Per-warehouse and consolidated views', desc: 'Each store or warehouse has its own tab and its own signal; you also see the total. The free plan includes one warehouse; when you expand it there is no cap on locations.' },
           { title: 'Transfer before purchase', desc: 'You define lanes with transit days and cost. If a product is short in one store and surplus in another, StockAI suggests moving it, and only if the lending store keeps at least 30 days of cover.' },
           { title: 'Promotions and scenarios', desc: 'In the simulator you mark a promotion, double a category’s demand or delay a supplier, and compare against the current plan without touching anything real.' },
-          { title: 'Commercial calendar', desc: 'The dates of Costa Rica and Colombia come loaded (paydays, Black Friday, Christmas, back to school) and you can edit them.' },
+          { title: 'Commercial calendar', desc: 'The dates of ten Latin American countries come loaded (paydays, year-end bonuses, Black Friday, Christmas, back to school) and you can edit them.' },
           { title: 'Scheduled recalculation', desc: 'Every Monday, daily, on business days or on the first of the month, without anyone launching it by hand.' },
         ],
         sampleTitle: 'A sample morning',
