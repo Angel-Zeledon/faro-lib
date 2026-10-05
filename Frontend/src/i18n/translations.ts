@@ -979,6 +979,7 @@ export const translations = {
     'enum.activity_monthly_roi_email':              'Reporte mensual de cuánto ahorraste, por correo',
     'enum.activity_supplier_lead_time_alert_email': 'Alerta de tiempo de entrega de proveedor por correo',
     'enum.activity_company_digest_withheld':        'Resumen de toda la empresa no enviado: tu usuario está limitado a algunas bodegas',
+    'enum.activity_scoped_digest_empty':            'Resumen de tus bodegas no enviado: no había nada que reportar en ellas',
 
     'skus.xls_sheet_forecast':    'Pronóstico',
     'skus.xls_sheet_metrics':     'Métricas',
@@ -6962,6 +6963,7 @@ export const translations = {
     'enum.activity_monthly_roi_email':              'Monthly savings report by email',
     'enum.activity_supplier_lead_time_alert_email': 'Supplier lead-time alert by email',
     'enum.activity_company_digest_withheld':        'Company-wide summary not sent: your user is limited to some warehouses',
+    'enum.activity_scoped_digest_empty':            'Summary of your warehouses not sent: there was nothing to report in them',
 
     'skus.xls_sheet_forecast':    'Forecast',
     'skus.xls_sheet_metrics':     'Metrics',
