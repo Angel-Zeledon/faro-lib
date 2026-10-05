@@ -99,6 +99,69 @@ def _inverse_normal_cdf(p: float) -> float:
 _SIGNAL_PRIORITY = {"PEDIR_YA": 0, "PEDIR_PRONTO": 1, "OK": 2, "SOBRESTOCK": 3, "SIN_DATOS": 4}
 
 
+# ── Status ordering (server-side paging) ──────────────────────────────────────
+
+STATUS_SORT_PATTERN = (
+    "^(urgency|sku|coverage|value|recommended|signal|name|stock|demand_lt|qty|"
+    "lead_time|moq|abc_xyz|decision|supplier_urgency)$"
+)
+
+
+def _num(field: str):
+    """Sort key for a numeric field: a missing value counts as -inf, so it leads
+    an ascending sort and trails a descending one, as the table always did."""
+    return lambda i: i.get(field) if i.get(field) is not None else float("-inf")
+
+
+_COLUMN_SORT_KEYS = {
+    "signal":      lambda i: _SIGNAL_PRIORITY.get(i["signal"], 99),
+    "name":        lambda i: (i.get("display_name") or i.get("sku") or "").lower(),
+    "sku":         lambda i: str(i.get("sku") or ""),
+    "stock":       _num("current_stock"),
+    "coverage":    _num("coverage_days"),
+    "demand_lt":   _num("lead_time_demand"),
+    "qty":         _num("recommended_qty"),
+    "recommended": _num("recommended_qty"),
+    "lead_time":   _num("lead_time_days"),
+    "moq":         _num("moq"),
+    "abc_xyz":     lambda i: i.get("abc_xyz") or "ZZ",
+    "value":       _num("inventory_value"),
+}
+
+
+def sort_status_items(items: list[dict], sort: str, order: Optional[str] = None) -> list[dict]:
+    """Orders the (already filtered) status rows for a page.
+
+    `urgency` is the service's own order. `decision` puts everything that needs
+    a purchasing decision ahead of OK / SIN_DATOS rows (the simple view).
+    `supplier_urgency` keeps each supplier's rows together, suppliers holding the
+    most urgent product first, so a page boundary never scatters a group. Column
+    sorts take `order`; with `order` omitted the original defaults hold
+    (coverage ascending, value and recommended descending).
+    """
+    if sort == "urgency":
+        return items
+    if sort == "decision":
+        return sorted(items, key=lambda i: i["signal"] in ("OK", "SIN_DATOS"))
+    if sort == "supplier_urgency":
+        best: dict[str, int] = {}
+        for i in items:
+            k = i.get("supplier") or ""
+            best[k] = min(best.get(k, 99), _SIGNAL_PRIORITY.get(i["signal"], 99))
+        return sorted(items, key=lambda i: (best[i.get("supplier") or ""],
+                                            (i.get("supplier") or "").casefold(),
+                                            i.get("supplier") or ""))
+    if order is None:
+        if sort == "coverage":
+            return sorted(items, key=lambda i: (i.get("coverage_days") is None, i.get("coverage_days") or 0))
+        if sort == "value":
+            return sorted(items, key=lambda i: -(i.get("inventory_value") or 0))
+        if sort == "recommended":
+            return sorted(items, key=lambda i: -(i.get("recommended_qty") or 0))
+    by_sku = sorted(items, key=lambda i: str(i.get("sku") or ""))   # stable tiebreak, always ascending
+    return sorted(by_sku, key=_COLUMN_SORT_KEYS[sort], reverse=(order == "desc"))
+
+
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 def upsert_stock(
@@ -385,9 +448,9 @@ def list_stock_page(
     say "51-100 of 4,812" without having loaded the other 4,700."""
     where, params = "tenant_id = %s", [tenant_id]
     if q and q.strip():
-        where += " AND (sku ILIKE %s OR category ILIKE %s OR supplier ILIKE %s)"
+        where += " AND (sku ILIKE %s OR display_name ILIKE %s OR category ILIKE %s OR supplier ILIKE %s)"
         like = f"%{q.strip()}%"
-        params += [like, like, like]
+        params += [like, like, like, like]
     if warehouse:
         where += " AND warehouse = %s"
         params.append(warehouse)

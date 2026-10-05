@@ -1355,7 +1355,35 @@ export interface InventoryStatusResponse {
     overstock:               number
     sin_datos:                number
     total_inventory_value:   number
+    /** Over the whole filtered set, never the loaded page (page requests only). */
+    without_stock?:          number
+    with_forecast?:          number
   }
+  /** Present only when the request asked for a page. `total` counts the
+   *  filtered set. */
+  page?: { limit: number; offset: number; total: number; sort: string; order?: string } | null
+}
+
+export type InventoryStatusSort =
+  | 'urgency' | 'decision' | 'supplier_urgency' | 'signal' | 'name' | 'stock' | 'coverage'
+  | 'demand_lt' | 'qty' | 'lead_time' | 'moq' | 'abc_xyz' | 'value'
+
+export interface InventoryStatusPageParams {
+  limit: number
+  offset?: number
+  sort?: InventoryStatusSort
+  order?: 'asc' | 'desc'
+  q?: string
+  signal?: string
+  /** Exact SKUs to look up (names of a known few rows). */
+  skus?: string[]
+}
+
+export interface SuppliersPageResponse {
+  items: Supplier[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export interface InventoryDashboardSummary {

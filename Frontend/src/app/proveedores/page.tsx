@@ -3,10 +3,11 @@ import { Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
-  listSuppliers, createSupplier, updateSupplier, deleteSupplier,
+  listSuppliersPage, createSupplier, updateSupplier, deleteSupplier,
 } from '@/lib/api'
 import type { Supplier } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
+import Pagination from '@/components/table/Pagination'
 import { EmptyState, ErrorState, InlineError, LoadingState, SkeletonTable, useErrorDetail } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { DEFAULT_LEAD_TIME_DAYS } from '@/lib/inventoryDefaults'
@@ -23,8 +24,12 @@ import { BottomSheet, MobileList, MobileCard } from '@/components/mobile'
 import StickyActionBar from '@/components/mobile/StickyActionBar'
 import {
   Truck, Plus, Edit2, Trash2, Save, Info, ChevronDown, ChevronRight, BarChart3, Tag,
-  Mail, Phone, MessageCircle,
+  Mail, Phone, MessageCircle, Search, X,
 } from 'lucide-react'
+
+// Suppliers are read one server page at a time; the search runs on the server
+// too, so the list never has to hold every supplier.
+const SUPPLIERS_PAGE_SIZE = 50
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
@@ -521,6 +526,19 @@ function SuppliersPageInner() {
   // Typed with the learning counters the list endpoint now ships alongside each
   // supplier; they are optional so an older backend simply renders no state.
   const [suppliers, setSuppliers] = useState<SupplierWithLearning[]>([])
+  // `total` counts every supplier matching the search, not the rows loaded.
+  const [total,     setTotal]     = useState(0)
+  const [search,    setSearch]    = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const h = setTimeout(() => setDebouncedSearch(search), search ? 300 : 0)
+    return () => clearTimeout(h)
+  }, [search])
+  // The page number belongs to the search it was chosen in: a new search is
+  // page 1 without a request for a page that no longer exists.
+  const [pageState, setPageState] = useState({ key: '', page: 1 })
+  const page = pageState.key === debouncedSearch ? pageState.page : 1
+  const setPage = useCallback((p: number) => setPageState({ key: debouncedSearch, page: p }), [debouncedSearch])
   const [loading,   setLoading]   = useState(true)
   // The raw error is kept (not a flattened string) so ErrorState/InlineError
   // can classify it by kind. `loadError` is the one that blanks the screen;
@@ -543,26 +561,43 @@ function SuppliersPageInner() {
   // interceptor's toast would duplicate it.
   const load = useCallback(async () => {
     setLoading(true); setLoadError(null)
-    try { setSuppliers(await listSuppliers({ silent: true })) }
+    try {
+      const res = await listSuppliersPage(
+        { limit: SUPPLIERS_PAGE_SIZE, offset: (page - 1) * SUPPLIERS_PAGE_SIZE, q: debouncedSearch },
+        { silent: true })
+      setSuppliers(res.items as SupplierWithLearning[])
+      setTotal(res.total)
+    }
     catch (e: unknown) { setLoadError(e) }
     finally { setLoading(false) }
-  }, [])
+  }, [page, debouncedSearch])
 
   useEffect(() => { load() }, [load])
 
+  const pageCount = Math.max(1, Math.ceil(total / SUPPLIERS_PAGE_SIZE))
+  // A page that no longer exists (the last row of it was deleted) pulls back in.
+  useEffect(() => { if (!loading && page > pageCount) setPage(pageCount) }, [loading, page, pageCount, setPage])
+
+  // The deep link names a supplier that may sit on any page, so it is looked up
+  // by name on the server instead of searched for in the loaded rows.
   useEffect(() => {
-    if (loading || !focusName || focusHandled.current) return
+    if (!focusName || focusHandled.current) return
     focusHandled.current = true
-    const match = suppliers.find(s => s.name.toLowerCase() === focusName.toLowerCase())
-    if (match) {
-      setEditing(match)
+    void (async () => {
+      let match: Supplier | undefined
+      try {
+        const res = await listSuppliersPage({ q: focusName, limit: 200 }, { silent: true })
+        match = res.items.find(s => s.name.toLowerCase() === focusName.toLowerCase())
+      } catch { /* the list's own load reports the failure */ }
+      if (match) {
+        setEditing(match)
+      } else {
+        setPrefillName(focusName)
+        setEditing(null)
+      }
       setShowForm(true)
-    } else {
-      setPrefillName(focusName)
-      setEditing(null)
-      setShowForm(true)
-    }
-  }, [loading, focusName, suppliers])
+    })()
+  }, [focusName])
 
   async function handleSave(form: SupplierForm) {
     setSaving(true); setActionError(null)
@@ -656,7 +691,7 @@ function SuppliersPageInner() {
           </Link>
           {/* Hidden while the list is empty: the empty state below carries the
               same "add" button, and the phone already works this way. */}
-          {!isFormOpen && !narrow && !(suppliers.length === 0 && !loading && !loadError) && (
+          {!isFormOpen && !narrow && !(total === 0 && !debouncedSearch && !loading && !loadError) && (
             <button
               data-tour="sup.add"
               onClick={() => { setEditing(null); setShowForm(true) }}
@@ -688,8 +723,38 @@ function SuppliersPageInner() {
         />
       )}
 
+      {/* Search + count: shown whenever there is anything to search. The count is
+          the server's, over every match, not the rows on this page. */}
+      {!loadError && (total > 0 || debouncedSearch || search) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <input
+            type="search" name="supplier_search" value={search}
+            onChange={e => setSearch(e.target.value)}
+            aria-label={t('suppliers.search_aria')}
+            placeholder={t('suppliers.search_placeholder')}
+            style={{
+              flex: 1, minWidth: 0, maxWidth: narrow ? undefined : 360, background: C.surface,
+              border: `1px solid ${C.border}`, borderRadius: narrow ? 10 : 7,
+              padding: '6px 12px', fontSize: narrow ? 16 : 12, color: C.text, outline: 'none',
+              ...(narrow ? { minHeight: 44, boxSizing: 'border-box' } : {}),
+            }}
+          />
+          {search && (
+            <button type="button" onClick={() => setSearch('')} aria-label={t('suppliers.search_clear')}
+              title={t('suppliers.search_clear')}
+              style={{ all: 'unset', cursor: 'pointer', color: C.dim, display: 'flex',
+                ...(narrow ? { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' } : {}) }}>
+              <X size={narrow ? 18 : 13} aria-hidden="true" />
+            </button>
+          )}
+          <span aria-live="polite" style={{ fontSize: 11, color: C.dim, whiteSpace: 'nowrap' }}>
+            {total === 1 ? t('suppliers.count_total_one') : t('suppliers.count_total', { n: total.toLocaleString() })}
+          </span>
+        </div>
+      )}
+
       {/* Content */}
-      {loading ? (
+      {loading && suppliers.length === 0 ? (
         <Card padding={8}>
           <LoadingState label={t('suppliers.loading_label')}>
             <SkeletonTable rows={5} columns={4} />
@@ -697,6 +762,14 @@ function SuppliersPageInner() {
         </Card>
       ) : loadError ? (
         <ErrorState error={loadError} onRetry={load} />
+      ) : suppliers.length === 0 && debouncedSearch && !isFormOpen ? (
+        <EmptyState
+          compact
+          icon={<Search size={20} />}
+          title={t('suppliers.search_empty_title')}
+          body={t('suppliers.search_empty_body')}
+          actions={[{ label: t('suppliers.search_empty_cta'), variant: 'secondary', onClick: () => setSearch('') }]}
+        />
       ) : suppliers.length === 0 && !isFormOpen ? (
         /* ── Empty state: names the payoff, then opens the form ──── */
         /* The wrapper carries the tour's "add" anchor while the header button
@@ -777,6 +850,14 @@ function SuppliersPageInner() {
         </Card>
       ) : null}
 
+      {suppliers.length > 0 && (
+        <div style={{ opacity: loading ? 0.55 : 1 }} aria-busy={loading || undefined}>
+          <Pagination page={Math.min(page, pageCount)} pageCount={pageCount}
+            offset={(Math.min(page, pageCount) - 1) * SUPPLIERS_PAGE_SIZE} total={total}
+            rowsOnPage={suppliers.length} onPage={setPage} label="suppliers" />
+        </div>
+      )}
+
       {narrow && (
         <SupplierSheet
           supplier={detailId && !isFormOpen ? suppliers.find(s => s.id === detailId) ?? null : null}
@@ -785,7 +866,7 @@ function SuppliersPageInner() {
           onDelete={handleDelete}
         />
       )}
-      {narrow && !loading && !loadError && suppliers.length > 0 && (
+      {narrow && !loading && !loadError && (suppliers.length > 0 || !!debouncedSearch) && (
         <StickyActionBar hidden={isFormOpen}>
           <button type="button" data-tour="sup.add" className="mobile-btn mobile-btn-primary"
                   onClick={() => { setEditing(null); setShowForm(true) }}>

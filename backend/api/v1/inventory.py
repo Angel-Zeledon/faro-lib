@@ -899,9 +899,15 @@ def inventory_status(
         default=None, ge=1, le=500,
         description="Page size. Omitted = every row (the original contract)."),
     offset: int = Query(default=0, ge=0),
-    sort: str = Query(default="urgency", pattern="^(urgency|sku|coverage|value|recommended)$"),
+    sort: str = Query(default="urgency", pattern=svc.STATUS_SORT_PATTERN),
+    order: Optional[str] = Query(
+        default=None, pattern="^(asc|desc)$",
+        description="Direction for the column sorts; omitted keeps each key's own default"),
     q: Optional[str] = Query(default=None, max_length=100,
-                             description="Matches SKU, category or supplier"),
+                             description="Matches SKU, product name, category or supplier"),
+    skus: Optional[str] = Query(
+        default=None, max_length=4000,
+        description="Comma-separated exact SKUs: look up the names/status of a known few"),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -936,25 +942,25 @@ def inventory_status(
     if supplier:
         items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
 
+    if skus and skus.strip():
+        wanted = {x.strip() for x in skus.split(",") if x.strip()}
+        items = [i for i in items if i["sku"] in wanted]
+
     if q and q.strip():
         needle = q.strip().lower()
         items = [i for i in items if needle in " ".join(
-            str(i.get(k) or "") for k in ("sku", "category", "supplier")).lower()]
+            str(i.get(k) or "") for k in ("sku", "display_name", "category", "supplier")).lower()]
 
     # The summary describes the whole filtered set; paging only narrows what
     # is sent. Both responses below read `items` for the summary and `shown`
     # for the rows, so a page can never change a total.
     shown, page = items, None
     if limit is not None:
-        keyed = {
-            "sku":         lambda i: str(i.get("sku") or ""),
-            "coverage":    lambda i: (i.get("coverage_days") is None, i.get("coverage_days") or 0),
-            "value":       lambda i: -(i.get("inventory_value") or 0),
-            "recommended": lambda i: -(i.get("recommended_qty") or 0),
-        }.get(sort)
-        ordered = sorted(items, key=keyed) if keyed else items   # "urgency" is the service's own order
+        ordered = svc.sort_status_items(items, sort, order)
         shown = ordered[offset:offset + limit]
         page = {"limit": limit, "offset": offset, "total": len(items), "sort": sort}
+        if order:
+            page["order"] = order
 
     if by_warehouse:
         return ok({
@@ -986,6 +992,8 @@ def inventory_status(
             "order_now":      critical,
             "order_soon":  warning,
             "ok":            sum(1 for i in items if i["signal"] == "OK"),
+            "without_stock": sum(1 for i in items if not i.get("has_stock")),
+            "with_forecast": sum(1 for i in items if i.get("has_forecast")),
             "overstock":    sum(1 for i in items if i["signal"] == "SOBRESTOCK"),
             "sin_datos":     sum(1 for i in items if i["signal"] == "SIN_DATOS"),
             "total_inventory_value": round(total_value, 2),

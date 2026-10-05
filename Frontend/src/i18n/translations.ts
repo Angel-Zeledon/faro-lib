@@ -4796,6 +4796,20 @@ export const translations = {
     'compare.horizon_value': '{n} periodos ({grain})',
     'compare.remove_group_aria': 'Quitar actualizaciones de la comparación',
     'compare.remove_session': 'Quitar {name}',
+
+    // ── Server-paged inventory and suppliers ───────────────────────────────────
+    'inventory.group_on_this_page': 'en esta página',
+    'inventory.toast_export_edited_title': 'Pedido descargado',
+    'inventory.toast_export_edited_body': '{n} líneas de {total} productos por pedir. Incluye todos los urgentes y próximos, no solo los de la página en pantalla.',
+    'inventory.bulk_paged_hint': 'Hay más páginas: lo que cambies en otras páginas se conserva, y Guardar aplica las {n} filas modificadas, no solo las de esta página.',
+    'suppliers.search_placeholder': 'Buscar por nombre, teléfono o correo',
+    'suppliers.search_aria': 'Buscar proveedores',
+    'suppliers.search_clear': 'Borrar búsqueda',
+    'suppliers.count_total': '{n} proveedores',
+    'suppliers.count_total_one': '1 proveedor',
+    'suppliers.search_empty_title': 'Ningún proveedor coincide',
+    'suppliers.search_empty_body': 'Ningún proveedor coincide con esa búsqueda. Prueba con otro nombre, teléfono o correo.',
+    'suppliers.search_empty_cta': 'Borrar búsqueda',
   },
   en: {
     // ── Auth screens (pre-login) — see the `es` block.
@@ -9438,6 +9452,20 @@ export const translations = {
     'compare.horizon_value': '{n} periods ({grain})',
     'compare.remove_group_aria': 'Remove updates from the comparison',
     'compare.remove_session': 'Remove {name}',
+
+    // ── Server-paged inventory and suppliers ───────────────────────────────────
+    'inventory.group_on_this_page': 'on this page',
+    'inventory.toast_export_edited_title': 'Order downloaded',
+    'inventory.toast_export_edited_body': '{n} lines out of {total} products to order. It includes every urgent and soon product, not only the ones on this page.',
+    'inventory.bulk_paged_hint': 'There are more pages: what you change on other pages is kept, and Save applies all {n} modified rows, not only the ones on this page.',
+    'suppliers.search_placeholder': 'Search by name, phone or email',
+    'suppliers.search_aria': 'Search suppliers',
+    'suppliers.search_clear': 'Clear search',
+    'suppliers.count_total': '{n} suppliers',
+    'suppliers.count_total_one': '1 supplier',
+    'suppliers.search_empty_title': 'No supplier matches',
+    'suppliers.search_empty_body': 'No supplier matches that search. Try another name, phone or email.',
+    'suppliers.search_empty_cta': 'Clear search',
   },
 } as const
 
