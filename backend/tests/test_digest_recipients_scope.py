@@ -108,6 +108,11 @@ class TestDailyAlert:
                             lambda **kw: sent_to.append(kw["to"]) or True)
         monkeypatch.setattr("backend.notifications.whatsapp.send_whatsapp",
                             lambda number, *a, **kw: wa_to.append(number) or True)
+        # Per-warehouse rows: the scoped user's own warehouse has nothing at
+        # risk, so they get no e-mail (the company digest above is not theirs).
+        monkeypatch.setattr(inv_svc, "get_inventory_status_by_warehouse",
+                            lambda *a, **kw: [{"sku": "SKU-1", "warehouse": "Sur",
+                                               "signal": "PEDIR_YA"}])
         monkeypatch.setattr(inv_svc, "get_tenants_with_active_sessions",
                             lambda: [{"tenant_id": p["tid"]}])
         monkeypatch.setattr(planning_service, "resolve_active_session", lambda t: "sess-test")
@@ -125,9 +130,15 @@ class TestDailyAlert:
         assert sorted(sent_to) == sorted([p["admin"]["email"], p["analyst"]["email"]])
         assert wa_to == ["+50670000001"], "a scoped or inactive number got the company digest"
 
-        withheld = _withheld(p["tid"])
-        assert [w["user_id"] for w in withheld] == [p["scoped"]["id"]]
-        assert withheld[0]["context"] == {"digest": "inventory_alert", "reason": "warehouse_scope"}
+        # Nothing at risk in the scoped user's warehouse (Norte): no e-mail,
+        # and the activity log says why instead of staying silent.
+        empty = query(
+            "SELECT user_id, context FROM activity_logs WHERE tenant_id = %s "
+            "AND action = 'scoped_digest_empty'", (p["tid"],))
+        assert [w["user_id"] for w in empty] == [p["scoped"]["id"]]
+        assert empty[0]["context"]["digest"] == "inventory_alert"
+        assert empty[0]["context"]["warehouses"] == ["Norte"]
+        assert _withheld(p["tid"]) == []
 
         delivered_to = {r["user_id"] for r in query(
             "SELECT user_id FROM activity_logs WHERE tenant_id = %s AND action = 'inventory_alert_email'",
