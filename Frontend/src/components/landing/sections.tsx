@@ -233,7 +233,7 @@ export function PricingSection({ calcHref = '/precios#calculadora', showCorporat
  </div>
  <div className="corp-side">
  <div className="lp-label" style={{ marginBottom: 10 }}>{corp.itemsTitle}</div>
- <ul className="no-strings corp-items">
+ <ul className="corp-items">
  {corp.items.map(t => (
  <li key={t}><Check />{t}</li>
  ))}

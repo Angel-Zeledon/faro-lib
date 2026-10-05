@@ -378,7 +378,9 @@ section[id], #demo { scroll-margin-top: 88px; }
 .corp-card { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 32px; max-width: 920px; padding: 30px 28px; border-radius: 16px; margin-bottom: 20px; }
 .corp-billing { font-size: 13px; font-weight: 700; color: var(--lp-accent); margin: 6px 0 12px; }
 .corp-lead { font-size: 13.5px; line-height: 1.7; margin: 0; color: var(--lp-body); }
-.corp-items { margin: 0 0 14px; }
+.corp-items { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 10px; }
+.corp-items li { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.5; font-weight: 600; color: var(--lp-text); }
+.corp-items li svg { flex: none; margin-top: 2px; }
 .corp-pending { font-size: 13px; line-height: 1.65; margin: 0 0 16px; font-style: italic; color: var(--lp-muted); }
 .corp-foot { font-size: 12.5px; line-height: 1.6; margin: 14px 0 0; color: var(--lp-muted); }
 .value-list { list-style: none; margin: 0 0 48px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px; max-width: 1020px; }

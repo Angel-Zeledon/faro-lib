@@ -96,15 +96,26 @@ export default function StructuredData() {
       '@type': 'Organization',
       '@id': `${SITE_URL}/#organization`,
       name: 'StockAI',
+      // How people actually type the brand: with a space, and as the domain.
+      // Naming the variants here is what lets a search for "stock ai" resolve
+      // to this entity instead of to a generic phrase.
+      alternateName: ['Stock AI', 'StockAI.es'],
       url: `${SITE_URL}/`,
       logo: `${SITE_URL}/og-image.png`,
       areaServed: 'Latin America',
+      contactPoint: {
+        '@type': 'ContactPoint',
+        contactType: 'sales',
+        email: 'contacto@stockai.es',
+        availableLanguage: ['es', 'en'],
+      },
     },
     {
       '@type': 'WebSite',
       '@id': `${SITE_URL}/#website`,
       url: `${SITE_URL}/`,
       name: 'StockAI',
+      alternateName: ['Stock AI', 'StockAI.es'],
       inLanguage: ['es', 'en'],
       publisher: { '@id': `${SITE_URL}/#organization` },
     },

@@ -22,6 +22,23 @@ export const metadata: Metadata = {
   title: 'StockAI — Inventario Inteligente',
   description: 'Plataforma de inventario inteligente para distribuidores y mayoristas',
   applicationName: 'StockAI',
+  // The link preview of EVERY route that does not set its own (the app and its
+  // sign-in form included). Without these a chat or social app that unfurls
+  // `app.stockai.es` has no image to show and falls back to whatever icon it
+  // cached the first time it saw the site, which is how an old logo outlives a
+  // rebrand. Pages with their own `openGraph` (the landing) replace this whole.
+  openGraph: {
+    type: 'website',
+    siteName: 'StockAI',
+    title: 'StockAI — Qué pedir hoy, cuánto y a qué proveedor',
+    description: 'Compras de inventario para distribuidores y mayoristas de Latinoamérica.',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StockAI' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'StockAI — Qué pedir hoy, cuánto y a qué proveedor',
+    images: ['/og-image.png'],
+  },
   // Every route but the landing is the signed-in app or a sign-in form, so the
   // default is to stay out of search results; app/page.tsx opts back in.
   // robots.ts says the same thing to crawlers that read robots.txt first.
