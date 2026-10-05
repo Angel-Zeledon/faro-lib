@@ -54,7 +54,7 @@ function MobileRecordCards({ columns, rows, label }: { columns: string[]; rows: 
   {columns.map(c => (
    <div key={c} style={{ display: 'contents' }}>
    <span style={{ color: C.muted, overflow: 'hidden', overflowWrap: 'anywhere', }}>{c}</span>
-   <span style={{ color: C.text, fontFamily: MONO, fontSize: 12.5, overflowWrap: 'anywhere' }}>
+   <span style={{ color: C.text, fontVariantNumeric: 'tabular-nums', fontSize: 12.5, overflowWrap: 'anywhere' }}>
     {row[c] == null ? <span style={{ color: C.muted, fontStyle: 'italic' }}>null</span> : String(row[c])}
    </span>
    </div>
@@ -219,7 +219,7 @@ function fmt(bytes: number | null) {
 /**
  * Shared chrome for every result grid on this screen (query results, file
  * preview, spreadsheet editor). A result set should read as data, not as a
- * document: monospace values so glyph widths line up, a header that is visibly
+ * document: tabular figures so columns line up, a header that is visibly
  * a header rather than a first row, tight rows, and hairlines instead of a
  * boxed border on every cell.
  */
@@ -275,7 +275,7 @@ function DataGrid({ columns, rows }: { columns: string[]; rows: Record<string, u
  onMouseLeave={e => (e.currentTarget.style.background = gridRowBg(i))}>
  {columns.map(c => (
  <td key={c} style={{ padding: '5px 12px', color: C.text,
- fontFamily: MONO, fontSize: 11.5, lineHeight: 1.7,
+ fontVariantNumeric: 'tabular-nums', fontSize: 11.5, lineHeight: 1.7,
  textAlign: alignOf.get(c), borderBottom: `1px solid ${C.border}`, maxWidth: 260,
  overflow: 'hidden', overflowWrap: 'anywhere' }}>
  {/* NULL is a value, not missing text — italic dim is the convention every
@@ -651,7 +651,7 @@ function SqlEditorPanel({ source, onSaved, onDatasetCreated }: {
      figure in the code voice; the two exports stay where they were. */}
  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: narrow ? 'wrap' : undefined }}>
  <Table2 size={13} color={C.muted} aria-hidden="true" />
- <span style={{ color: C.text, fontSize: 12, fontWeight: 600, fontFamily: MONO }}>
+ <span style={{ color: C.text, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
  {result.row_count}
  </span>
  <span style={{ color: C.muted, fontSize: 12 }}>
@@ -705,8 +705,8 @@ const PANEL: React.CSSProperties = {
  border: '1px solid var(--border)', padding: '13px 15px',
 }
 
-/** Figures in a table are display type: monospace so the columns line up. */
-const TD_NUM: React.CSSProperties = { ...TD, fontFamily: MONO, fontSize: 11.5, textAlign: 'right' }
+/** Figures in a table: tabular figures so the columns line up. */
+const TD_NUM: React.CSSProperties = { ...TD, fontVariantNumeric: 'tabular-nums', fontSize: 11.5, textAlign: 'right' }
 
 /**
  * A classification's colour, carried by a dot instead of by the word itself.
@@ -752,7 +752,7 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
   <MobileList ariaLabel={t('data.tab_analysis')}>
    {rows.map((row, i) => (
    <MobileCard key={row.sku ?? i}
-    title={<span style={{ fontFamily: MONO }}>{row.sku ?? '__all__'}</span>}
+    title={<span style={{ fontVariantNumeric: 'tabular-nums' }}>{row.sku ?? '__all__'}</span>}
     subtitle={`${seasonalityClassLabel(t, row.seasonality_class)} · ${trendDirectionLabel(t, row.trend_direction)}`}
     value={row.mean != null ? row.mean.toFixed(1) : '—'}
     valueCaption={`${t('data.col_n')} ${row.n?.toLocaleString() ?? '—'} · ${t('data.col_cv')} ${row.cv != null ? row.cv.toFixed(2) : '—'}`}
@@ -815,7 +815,7 @@ function AnalysisSummaryTable({ rows, sortCol, sortDir, onSort, onSelect }: {
  onMouseLeave={e => (e.currentTarget.style.background = bg)}
  style={{ background: bg, cursor: row.error ? 'default' : 'pointer',
  transition: `background var(--dur-1) var(--ease-out)` }}>
- <td style={{ ...TD, color: C.green, fontWeight: 600, fontFamily: MONO, fontSize: 11.5 }}>
+ <td style={{ ...TD, color: C.green, fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: 11.5 }}>
  {row.sku ?? '__all__'}
  {row.error && <span style={{ color: C.red, fontSize: 10, marginLeft: 6 }}>⚠ {t('data.error_short')}</span>}
  </td>
@@ -944,12 +944,12 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  </button>
  <div>
  <h3 style={{ margin: 0, color: C.text, fontSize: 15, fontWeight: 700,
- fontFamily: sku === '__all__' ? undefined : MONO, letterSpacing: '-0.01em' }}>
+ fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
  {sku === '__all__' ? t('data.full_dataset') : sku}
  </h3>
  {/* Range and cadence are machine facts about the series, so they keep the
      code voice the identifier above them already speaks. */}
- <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO }}>
+ <span style={{ color: C.muted, fontSize: 11.5, fontVariantNumeric: 'tabular-nums' }}>
  {dr.start ? `${dr.start} → ${dr.end}` : ''}
  {dr.n_days != null ? ` · ${dr.n_days} ${Number(dr.n_days) === 1 ? t('data.days_singular') : t('data.days_plural')}` : ''}
  {dr.freq_detected ? ` · ${dr.freq_detected}` : ''}
@@ -1008,9 +1008,9 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  {detail.outliers!.map(o => (
   <li key={o.date} style={{ padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
   <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-   <span style={{ fontFamily: MONO, color: C.muted }}>{o.date}</span>
-   <span style={{ marginLeft: 'auto', fontFamily: MONO, fontWeight: 700 }}>{o.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-   <span style={{ fontFamily: MONO, color: C.muted }}>{o.z_score > 0 ? '+' : ''}{o.z_score}σ</span>
+   <span style={{ fontVariantNumeric: 'tabular-nums', color: C.muted }}>{o.date}</span>
+   <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{o.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+   <span style={{ fontVariantNumeric: 'tabular-nums', color: C.muted }}>{o.z_score > 0 ? '+' : ''}{o.z_score}σ</span>
   </div>
   <div style={{ color: C.muted, marginTop: 2 }}>
    <Dot color={o.value > o.upper_bound ? C.red : C.amber} />
@@ -1040,7 +1040,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  const sev = o.value > o.upper_bound ? C.red : C.amber
  return (
  <tr key={o.date} style={{ background: gridRowBg(i) }}>
- <td style={{ ...TD, color: C.muted, fontFamily: MONO, fontSize: 11 }}>
+ <td style={{ ...TD, color: C.muted, fontVariantNumeric: 'tabular-nums', fontSize: 11 }}>
  {o.date}
  </td>
  <td style={{ ...TD_NUM, fontWeight: 700 }}>
@@ -1081,7 +1081,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between',
  alignItems: 'baseline', marginBottom: 5, gap: 8 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{label}</span>
- <span style={{ color: C.text, fontSize: narrow ? 13 : 11, fontWeight: 600, fontFamily: MONO,
+ <span style={{ color: C.text, fontSize: narrow ? 13 : 11, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
  maxWidth: narrow ? '60%' : 96, overflow: 'hidden', overflowWrap: 'anywhere', textAlign: 'right' }}>
  {String(val)}
  </span>
@@ -1126,7 +1126,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  ].map(([l, v]) => (
  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{l}</span>
- <span style={{ color: C.text, fontSize: 11, fontWeight: 600, fontFamily: MONO }}>{v}</span>
+ <span style={{ color: C.text, fontSize: 11, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{v}</span>
  </div>
  ))}
  </div>
@@ -1142,7 +1142,7 @@ function SkuDetailView({ sku, detail, loading, onBack }: {
  ].map(([l, v]) => (
  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
  <span style={{ color: C.muted, fontSize: 11 }}>{l}</span>
- <span style={{ color: C.text, fontSize: 11, fontWeight: 600, fontFamily: MONO }}>{String(v)}</span>
+ <span style={{ color: C.text, fontSize: 11, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</span>
  </div>
  ))}
  </div>
@@ -1328,7 +1328,7 @@ function AnalysisTab({ source, columns, activeSheet }: {
  <div key={label} style={{ paddingLeft: i === 0 ? 0 : 16, paddingRight: 16,
  borderLeft: i === 0 ? 'none' : `1px solid ${C.border}` }}>
  <div style={EYEBROW}>{label}</div>
- <div style={{ color: C.text, fontSize: 12, fontWeight: 600, fontFamily: MONO, marginTop: 2 }}>{val}</div>
+ <div style={{ color: C.text, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{val}</div>
  </div>
  ))}
  </div>
@@ -1466,7 +1466,7 @@ function DatasetEditorPanel({ source, onCreated }: {
       {columns.map(c => (
        <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, borderRadius: 999,
         border: `1px solid ${C.border2}`, background: C.surface, paddingLeft: 12, maxWidth: '100%' }}>
-        <span style={{ fontFamily: MONO, fontSize: 13, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>{c}</span>
+        <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 13, color: C.text, overflow: 'hidden', overflowWrap: 'anywhere', }}>{c}</span>
         <button onClick={() => renameColumn(c)} aria-label={`${t('data.editor_rename_column')}: ${c}`}
          style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
          <Edit2 size={14} aria-hidden="true" />
@@ -1492,9 +1492,9 @@ function DatasetEditorPanel({ source, onCreated }: {
        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8 }}>
         {columns.map(c => (
          <label key={c} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-          <span style={{ fontSize: 12, color: C.muted, fontFamily: MONO, overflow: 'hidden', overflowWrap: 'anywhere', }}>{c}</span>
+          <span style={{ fontSize: 12, color: C.muted, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', overflowWrap: 'anywhere', }}>{c}</span>
           <input value={row[c] == null ? '' : String(row[c])} name={`m-cell-${ri}-${c}`}
-           onChange={e => setCell(ri, c, e.target.value)} style={{ ...M_FIELD, fontFamily: MONO }} />
+           onChange={e => setCell(ri, c, e.target.value)} style={{ ...M_FIELD, fontVariantNumeric: 'tabular-nums' }} />
          </label>
         ))}
        </div>
@@ -1519,7 +1519,7 @@ function DatasetEditorPanel({ source, onCreated }: {
        {columns.map(c => (
         <th key={c} style={gridTh()}>
          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontFamily: MONO, textTransform: 'none', letterSpacing: 0,
+          <span style={{ fontVariantNumeric: 'tabular-nums', textTransform: 'none', letterSpacing: 0,
            fontSize: 11, color: C.text }}>{c}</span>
           <button onClick={() => renameColumn(c)} title={t('data.editor_rename_column')}
            style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 0 }}>
@@ -1549,7 +1549,7 @@ function DatasetEditorPanel({ source, onCreated }: {
            name={`cell-${ri}-${c}`} aria-label={c}
            onChange={e => setCell(ri, c, e.target.value)}
            style={{ width: '100%', minWidth: 90, background: 'transparent', border: 'none',
-            padding: '6px 12px', color: C.text, fontSize: 11.5, fontFamily: MONO, lineHeight: 1.7,
+            padding: '6px 12px', color: C.text, fontSize: 11.5, fontVariantNumeric: 'tabular-nums', lineHeight: 1.7,
             outline: 'none', boxSizing: 'border-box' }} />
          </td>
         ))}
@@ -1729,13 +1729,13 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 7, minWidth: 0 }}>
  <StatusBadge status={source.connection_status} />
  {source.original_filename && (
- <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO,
+ <span style={{ color: C.muted, fontSize: 11.5, fontVariantNumeric: 'tabular-nums',
  overflow: 'hidden', overflowWrap: 'anywhere', }}>
  {source.original_filename}
  </span>
  )}
  {source.sql_config && (
- <span style={{ color: C.muted, fontSize: 11.5, fontFamily: MONO,
+ <span style={{ color: C.muted, fontSize: 11.5, fontVariantNumeric: 'tabular-nums',
  overflow: 'hidden', overflowWrap: 'anywhere', }}>
  {source.sql_config.host}:{source.sql_config.port}/{source.sql_config.database}
  </span>
@@ -1784,7 +1784,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  ? { paddingLeft: i % 2 === 0 ? 0 : 14, borderLeft: i % 2 === 0 ? 'none' : `1px solid ${C.border}`, minWidth: 0 }
  : { paddingLeft: i === 0 ? 0 : 18, paddingRight: 18, borderLeft: i === 0 ? 'none' : `1px solid ${C.border}` }}>
  <div style={EYEBROW}>{s.label}</div>
- <div style={{ color: C.text, fontSize: 13.5, fontWeight: 600, fontFamily: MONO, marginTop: 3 }}>{s.value}</div>
+ <div style={{ color: C.text, fontSize: 13.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{s.value}</div>
  </div>
  ))}
  </div>
@@ -1850,7 +1850,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  }}
                  className="btn"
  style={{ padding: '4px 12px', borderRadius: 20, fontSize: 11.5, fontWeight: 600,
- fontFamily: MONO, ...(narrow ? { minHeight: 44, fontSize: 13 } : {}),
+ fontVariantNumeric: 'tabular-nums', ...(narrow ? { minHeight: 44, fontSize: 13 } : {}),
  cursor: 'pointer', border: `1px solid ${activeSheet === s ? alpha(C.green, 55) : C.border2}`,
  background: activeSheet === s ? C.greenDim : 'transparent',
  color: activeSheet === s ? C.green : C.muted }}>
@@ -2063,7 +2063,7 @@ function NewSourcePanel({ onCreated, onCancel }:
  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px',
  background: C.greenDim, border: `1px solid ${alpha(C.green, 35)}`, borderRadius: 9, marginBottom: 14 }}>
  <FileSpreadsheet size={15} color={C.green} aria-hidden="true" style={{ flexShrink: 0 }} />
- <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600, fontFamily: MONO,
+ <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
  overflow: 'hidden', overflowWrap: 'anywhere', }}>{file.name}</span>
  {/* The filename above keeps the code voice; its size does not — "28.9 KB"
      is a number and a unit, and the unit is a word. */}
@@ -2424,7 +2424,7 @@ export default function DataPage() {
  fontSize: 11, color: C.muted, minWidth: 0, fontVariantNumeric: 'tabular-nums' }}>
  <span style={{
  overflow: 'hidden', overflowWrap: 'anywhere',
- ...(src.source_type === 'sql' ? { fontFamily: MONO, fontSize: 10.5 } : null),
+ ...(src.source_type === 'sql' ? { fontVariantNumeric: 'tabular-nums', fontSize: 10.5 } : null),
  }}>
  {src.source_type === 'sql'
  ? `${src.sql_config?.engine} · ${src.sql_config?.host}`
