@@ -657,6 +657,8 @@ def sync_stock_from_dataset(
     group_col: Optional[str],
     date_col: str,
     canonical_mapping: Optional[dict] = None,
+    store_col: Optional[str] = None,
+    report: Optional[dict] = None,
 ) -> int:
     """
     If the uploaded dataset contains recognized inventory columns (current_stock,
@@ -665,9 +667,15 @@ def sync_stock_from_dataset(
     recent value per SKU. This is what lets a Quick Start upload actually
     control what /inventory shows, instead of /inventory silently falling back
     to whatever was entered manually in a previous session.
+
+    `store_col`: the mapped store column, when the session has one. For a SKU
+    sold in several stores, its stock is the SUM of each store's latest stock
+    reading — the latest single row is one store's shelf, and buying the
+    network's demand against it over-orders. `report`, when given, is filled
+    with what that did (see `stock_summed_over_stores`), for the run findings.
     """
     from fastapi import HTTPException
-    from backend.dataframes.stock import last_row_per_group
+    from backend.dataframes.stock import last_row_per_group, stock_summed_over_stores
 
     # Pandas extraction lives at the boundary: latest row per SKU with raw
     # (unfloored) values, NaN cells dropped. Empty / no-recognized-columns
@@ -678,6 +686,24 @@ def sync_stock_from_dataset(
     # supply, so this can add data but never override it.
     wanted = set(_DATASET_STOCK_COLS) | set(canonical_cols)
     raw_entries = last_row_per_group(df, group_col, date_col, wanted)
+
+    # Several stores per SKU: replace the one-store stock with the network's.
+    # Which column carries the stock follows the same precedence as above.
+    stock_src = None
+    if df is not None and "current_stock" in getattr(df, "columns", []):
+        stock_src = "current_stock"
+    elif df is not None and "inventory" in canonical_cols and "inventory" in df.columns:
+        stock_src = "inventory"
+    if store_col and stock_src:
+        summed = stock_summed_over_stores(df, group_col, store_col, date_col, stock_src)
+        if summed["by_sku"]:
+            raw_entries = [
+                (sku, {**raw, stock_src: summed["by_sku"][sku]}
+                 if sku in summed["by_sku"] else raw)
+                for sku, raw in raw_entries
+            ]
+            if report is not None:
+                report.update({k: v for k, v in summed.items() if k != "by_sku"})
 
     # Resolve the per-SKU payload with the numeric floors up front (before the
     # max_skus check), exactly as before — only the pandas extraction moved out.
