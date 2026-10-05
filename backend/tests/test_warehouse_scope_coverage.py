@@ -32,9 +32,19 @@ API_DIR = Path(__file__).resolve().parents[1] / "api" / "v1"
 _DIMENSIONED = re.compile(
     r"warehouse|bodega|inventory_stock|list_stock|get_stock|get_inventory_status"
     r"|morning_briefing|inventory_snapshot|stock_history|get_incoming|po_log|po_items"
-    r"|reception|transfer|shrinkage|dead_capital|get_roi|freshness",
+    r"|reception|transfer|shrinkage|dead_capital|get_roi|freshness"
+    # Customer commitments name a warehouse and carry a stock-based verdict.
+    # `GET /committed-demand` slipped through for a whole release because its
+    # body (`svc.list_for_tenant(...)`, `svc.annotate_risk(...)`) contained
+    # none of the words above.
+    r"|committed_demand|commitment|annotate_risk",
     re.I,
 )
+
+# Routers whose EVERY route is warehouse-dimensioned, whatever words its body
+# happens to use: the per-function text scan missed the commitments list once,
+# so a new route in one of these modules is flagged by where it lives.
+DIMENSIONED_MODULES = {"committed_demand.py"}
 _HELPER = re.compile(r"wscope\.|warehouse_scope|_require_transfer_end_in_scope")
 _VERBS = {"get", "post", "put", "patch", "delete"}
 
@@ -73,7 +83,8 @@ def _router_functions():
 
 
 def _flagged():
-    return [(f, n, seg) for f, n, seg in _router_functions() if _DIMENSIONED.search(seg)]
+    return [(f, n, seg) for f, n, seg in _router_functions()
+            if f in DIMENSIONED_MODULES or _DIMENSIONED.search(seg)]
 
 
 def test_the_scan_sees_the_routers():
@@ -115,6 +126,36 @@ def test_the_allow_list_has_no_stale_entries():
 
 def test_every_allow_list_entry_says_why():
     assert all(len(reason.strip()) > 15 for reason in ALLOWED.values())
+
+
+def test_every_committed_demand_route_is_flagged_and_guarded():
+    """The router that leaked: all of its routes are in the scan, and each one
+    calls the scope helper."""
+    routes = {n: seg for f, n, seg in _flagged() if f == "committed_demand.py"}
+    assert {"list_commitments", "create_commitment", "create_commitments_bulk",
+            "update_commitment", "set_commitment_status"} <= set(routes)
+    unguarded = [n for n, seg in routes.items() if not _HELPER.search(seg)]
+    assert not unguarded, unguarded
+
+
+def test_a_new_route_in_a_dimensioned_module_is_caught_whatever_it_says(tmp_path, monkeypatch):
+    """A route whose body names no warehouse word is still flagged when it lives
+    in a module listed in DIMENSIONED_MODULES — the hole the commitments list
+    fell through."""
+    import backend.tests.test_warehouse_scope_coverage as me
+
+    (tmp_path / "committed_demand.py").write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.get('/committed-demand/export')\n"
+        "def export_everything(user=None):\n"
+        "    return svc.list_for_tenant(user.tenant_id)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(me, "API_DIR", tmp_path)
+    flagged = {f"{f}:{n}" for f, n, seg in me._flagged()
+               if not me._HELPER.search(seg) and f"{f}:{n}" not in me.ALLOWED}
+    assert flagged == {"committed_demand.py:export_everything"}
 
 
 def test_the_scan_goes_red_for_an_unguarded_function(tmp_path, monkeypatch):

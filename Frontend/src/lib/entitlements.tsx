@@ -63,5 +63,5 @@ export function useFeature(feature: PlanFeature): { locked: boolean } {
 
 /** The limits a user can see themselves approaching, in the order they hit them. */
 export const LIMIT_KEYS = [
-  "max_skus", "max_users", "max_locations", "max_sessions", "max_api_keys",
+  "max_skus", "max_users", "max_locations", "max_sessions", "max_trainings_per_day", "max_api_keys",
 ] as const;

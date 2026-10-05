@@ -429,7 +429,7 @@ function SchedulesTab() {
   const runDetail = (run: ScheduleRun): string => {
     if (run.reason) {
       const key = `schedule.run_reason.${run.reason}`
-      const text = t(key)
+      const text = t(key, run.reason_params ?? {})
       return text === key ? run.reason : text
     }
     return run.error ? run.error.slice(0, 120) : ''

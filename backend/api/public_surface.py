@@ -41,7 +41,7 @@ from dataclasses import dataclass
 
 # ── Tags whose routes a key may call (subject to rules 2–4) ──────────────────
 EXPOSED_TAGS: frozenset[str] = frozenset({
-    "sessions", "datasets", "data-sources", "configuration", "training",
+    "sessions", "datasets", "bi-datasets", "data-sources", "configuration", "training",
     "planning", "forecasts", "artifacts", "reports", "analyst",
     "documents", "webhooks", "schedule",
     "inventory", "inventory-recommendation-log", "inventory-reversals",

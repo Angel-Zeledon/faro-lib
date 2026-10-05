@@ -11,10 +11,12 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
+from backend import audit
 from backend.audit import service as audit_svc
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user, require_admin
 from backend.errors import AppError
 from backend.lineage import run_metrics
@@ -23,6 +25,13 @@ from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 
 router = APIRouter(prefix="/audit", tags=["audit"])
+
+# _COMPANY_WIDE_TRAIL: the trail covers the whole company - receptions,
+# transfers and purchase orders of every warehouse, named in each row's details
+# - and its rows carry no reliable warehouse to filter on. An admin limited to
+# some warehouses is therefore refused it (`warehouse_scope_company_totals`),
+# like every other company-wide read, instead of reading other warehouses'
+# activity through it.
 manifest_router = APIRouter(tags=["sessions"])
 
 
@@ -49,6 +58,7 @@ def list_audit(
     offset: int = Query(0, ge=0),
     user: CurrentUser = Depends(require_admin),
 ):
+    wscope.require_company_wide(user)  # see _COMPANY_WIDE_TRAIL above
     return ok(audit_svc.list_audit(user.tenant_id, limit=limit, offset=offset, **filters))
 
 
@@ -56,6 +66,7 @@ def list_audit(
 def audit_filters(user: CurrentUser = Depends(require_admin)):
     """The filter vocabulary, served so the screen cannot offer a value that
     nothing can ever be recorded under."""
+    wscope.require_company_wide(user)
     return ok({
         "target_types": audit_svc.TARGET_TYPES,
         "actions": audit_svc.audit_actions(),
@@ -65,9 +76,18 @@ def audit_filters(user: CurrentUser = Depends(require_admin)):
 
 @router.get("/export")
 def export_audit(
+    request: Request,
     filters: dict = Depends(_filters),
     user: CurrentUser = Depends(require_admin),
 ):
+    wscope.require_company_wide(user)
+    # Who took the audit trail out, and how much of it. The count is the rows the
+    # file will carry (the export is capped), read before streaming starts.
+    total = audit_svc.list_audit(user.tenant_id, limit=1, **filters)["total"]
+    audit.note(request, after={
+        "rows": min(int(total), audit_svc.EXPORT_MAX_ROWS), "format": "csv",
+        "filters": {k: str(v) for k, v in filters.items() if v is not None},
+    })
     stamp = date.today().isoformat()
     return StreamingResponse(
         audit_svc.export_csv(user.tenant_id, **filters),

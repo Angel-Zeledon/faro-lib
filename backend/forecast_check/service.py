@@ -64,6 +64,29 @@ def _champion_forecasts(tenant_id: str, session_id: str) -> dict[str, dict[str, 
     return out
 
 
+def graded_group_cols(group_keys, training_result: Optional[dict]) -> list:
+    """The columns actuals are keyed by, so they line up with the forecast.
+
+    A session that maps a store column keys its actuals `sku│store`. When its
+    run summed the stores before training (`store_rollup` on the result), the
+    forecast is keyed by the SKU alone, so per-store actuals never matched a
+    single forecast and grading reported "no matching series" forever. Grading
+    on the SKU sums the actuals across stores — the same total the model was
+    trained on. Pure.
+    """
+    keys = [k for k in (group_keys or []) if k]
+    if len(keys) >= 2 and (training_result or {}).get("store_rollup"):
+        return keys[:1]
+    return keys
+
+
+def grading_group_cols(tenant_id: str, session_id: str, cols: dict) -> list:
+    """`graded_group_cols` for one stored session."""
+    return graded_group_cols(
+        cols.get("group_keys"),
+        session_store.get_training_result(tenant_id, session_id))
+
+
 def _all_datasets(tenant_id: str) -> list[dict]:
     """Every dataset the tenant has, newest first (paged so none is missed)."""
     out: list[dict] = []
@@ -189,6 +212,7 @@ def forecast_vs_actual(
             return {**base, "status": "no_overlap" if others else "no_later_upload",
                     "source": None, "overlap": None, "result": None}
 
+    group_cols = grading_group_cols(tenant_id, session_id, cols)
     best = None
     last_reason = "no_overlap"
     last_ds = None
@@ -197,7 +221,7 @@ def forecast_vs_actual(
         try:
             loaded = load_actual_series(
                 ds["file_path"], cols["date"], cols["target"],
-                list(cols["group_keys"]), target_freq)
+                group_cols, target_freq)
         except Exception as e:  # an unreadable file is a reason, not a 500
             log.warning("forecast_vs_actual: could not read dataset %s: %s", ds["id"], e)
             last_reason = "unreadable"

@@ -73,28 +73,112 @@ def _reject_oversized_upload(size_bytes: int) -> None:
 
 
 def _make_sql_engine(cfg: dict, statement_timeout_ms: int = 30_000):
+    """Engine for the CUSTOMER's database, opened read-only where the driver
+    allows it. Never call `.connect()` on it directly to run user SQL — go
+    through `_read_only_rows`, which also validates the statement and always
+    rolls back.
+
+    What each engine guarantees (the statement check in `sql_guard` runs on
+    all of them; this is the second layer):
+
+    * postgresql — every transaction of the session is READ ONLY
+      (`default_transaction_read_only`), so even a COMMIT that slipped through
+      cannot persist a write; plus a server-side `statement_timeout`.
+    * mysql — `SET SESSION TRANSACTION READ ONLY` on connect; a client-side
+      read timeout (there is no server timeout that works on both MySQL and
+      MariaDB, so a runaway query may keep running server-side until it ends).
+    * oracle — `SET TRANSACTION READ ONLY` at the start of each transaction
+      (in `_read_only_rows`) and a driver call timeout.
+    * mssql — NO read-only session exists in SQL Server. The statement check
+      and the rollback are the only guards; the customer should connect with
+      a login that only has `db_datareader`. A driver query timeout is set.
+    """
     import sqlalchemy
+    from sqlalchemy import event
+    from sqlalchemy.pool import NullPool
     conn_str = _build_conn_str(cfg)
     engine_type = cfg.get("engine", "postgresql")
+    timeout_s = max(1, statement_timeout_ms // 1000)
     # Timeout keywords are driver-specific: psycopg2/pymysql take
     # connect_timeout, but pyodbc rejects it (its login timeout is `timeout`).
     if engine_type == "postgresql":
         connect_args: dict = {
             "connect_timeout": 15,
-            "options": f"-c statement_timeout={statement_timeout_ms}",
+            "options": (
+                f"-c statement_timeout={statement_timeout_ms} "
+                "-c default_transaction_read_only=on"
+            ),
         }
     elif engine_type == "mysql":
-        timeout_s = max(1, statement_timeout_ms // 1000)
         connect_args = {
             "connect_timeout": 15,
             "read_timeout": timeout_s,
             "write_timeout": timeout_s,
+            "init_command": "SET SESSION TRANSACTION READ ONLY",
         }
     elif engine_type == "mssql":
         connect_args = {"timeout": 15}
     else:
         connect_args = {}
-    return sqlalchemy.create_engine(conn_str, connect_args=connect_args, pool_pre_ping=True)
+    # NullPool: each call opens and closes its own connection. These engines
+    # were never disposed, so a pooled connection to the customer's server
+    # stayed open until garbage collection.
+    engine = sqlalchemy.create_engine(
+        conn_str, connect_args=connect_args, poolclass=NullPool,
+    )
+
+    if engine_type in ("mssql", "oracle"):
+        @event.listens_for(engine, "connect")
+        def _set_query_timeout(dbapi_connection, _record):  # pragma: no cover - driver specific
+            try:
+                if engine_type == "mssql":
+                    dbapi_connection.timeout = timeout_s          # pyodbc, seconds
+                else:
+                    dbapi_connection.call_timeout = statement_timeout_ms  # cx_Oracle/oracledb, ms
+            except Exception as exc:  # noqa: BLE001
+                log.warning("SQL source: could not set a query timeout: %s", exc)
+    return engine
+
+
+from contextlib import contextmanager  # noqa: E402  (kept next to its only user)
+
+
+@contextmanager
+def _read_only_rows(cfg: dict, sql: str, statement_timeout_ms: int, *, stream: bool = False):
+    """Validate `sql`, run it on the customer's database inside a read-only
+    transaction, yield the SQLAlchemy result, and ALWAYS roll back.
+
+    The single door every user- or saved-query execution goes through: the
+    preview, the analysis load, execute, export and materialize. A statement
+    that is not one plain read never reaches a connection.
+    """
+    import sqlalchemy
+
+    from backend.datasources.sql_guard import validate_read_only_sql
+
+    engine_type = cfg.get("engine", "postgresql")
+    statement = validate_read_only_sql(sql, engine_type)
+    engine = _make_sql_engine(cfg, statement_timeout_ms=statement_timeout_ms)
+    try:
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                if engine_type == "postgresql":
+                    conn.execute(sqlalchemy.text("SET TRANSACTION READ ONLY"))
+                elif engine_type == "oracle":
+                    conn.execute(sqlalchemy.text("SET TRANSACTION READ ONLY"))
+                runner = conn.execution_options(stream_results=True) if stream else conn
+                yield runner.execute(sqlalchemy.text(statement))
+            finally:
+                # Never commit: whatever the statement did, it is undone. A
+                # rollback that fails (connection already gone) must not hide
+                # the original error; closing the connection rolls back too.
+                try:
+                    trans.rollback()
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("SQL source: rollback failed: %s", exc)
+    finally:
+        engine.dispose()
 
 
 def _fernet():
@@ -395,10 +479,8 @@ def test_sql_connection(tenant_id: str, source_id: str) -> dict:
         raise ValueError(f"Data source {source_id} not found")
     cfg = existing.get("sql_config") or {}
     try:
-        import sqlalchemy
-        engine = _make_sql_engine(cfg, statement_timeout_ms=5_000)
-        with engine.connect() as conn:
-            conn.execute(sqlalchemy.text("SELECT 1"))
+        with _read_only_rows(cfg, "SELECT 1", statement_timeout_ms=5_000):
+            pass
         execute(
             "UPDATE datasets SET connection_status='connected', updated_at=NOW() WHERE id=%s AND tenant_id=%s",
             (source_id, tenant_id),
@@ -424,10 +506,7 @@ def execute_sql_query(tenant_id: str, source_id: str, sql: str, limit: int = 500
         )
     cfg = existing.get("sql_config") or {}
     try:
-        import sqlalchemy
-        engine = _make_sql_engine(cfg, statement_timeout_ms=30_000)
-        with engine.connect() as conn:
-            result = conn.execute(sqlalchemy.text(sql))
+        with _read_only_rows(cfg, sql, statement_timeout_ms=30_000) as result:
             rows = result.fetchmany(limit)
             columns = list(result.keys())
         data = [dict(zip(columns, row)) for row in rows]
@@ -491,10 +570,12 @@ def materialize_sql_source(
 
     import csv as _csv
 
-    import sqlalchemy
-
+    from backend.datasources.sql_guard import validate_read_only_sql
     from backend.storage import paths
     from backend.utils.csv_safe import csv_safe
+
+    # Refuse before a directory is created for a dataset that will not exist.
+    validate_read_only_sql(query_sql, (src.get("sql_config") or {}).get("engine", "postgresql"))
 
     max_rows = settings.sql_materialize_max_rows
     new_id = generate_id("ds")
@@ -506,11 +587,8 @@ def materialize_sql_source(
     row_count = 0
     columns: list[str] = []
     try:
-        engine = _make_sql_engine(cfg=src.get("sql_config") or {}, statement_timeout_ms=120_000)
-        with engine.connect() as conn:
-            result = conn.execution_options(stream_results=True).execute(
-                sqlalchemy.text(query_sql)
-            )
+        with _read_only_rows(src.get("sql_config") or {}, query_sql,
+                             statement_timeout_ms=120_000, stream=True) as result:
             columns = [str(c) for c in result.keys()]
             with open(tmp_path, "w", newline="", encoding="utf-8") as f:
                 writer = _csv.writer(f)
@@ -590,8 +668,9 @@ def materialize_sql_source(
     return _public(get_source(tenant_id, new_id))
 
 
-def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = None) -> bytes:
-    """Run a SQL source's query and return the FULL result as an .xlsx workbook.
+def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = None) -> tuple[bytes, int]:
+    """Run a SQL source's query and return the FULL result as an .xlsx workbook,
+    with the number of data rows it holds (for the audit trail).
 
     Same streaming fetch and row ceiling as materialize (refuse, never
     truncate). Text cells go through the formula-injection guard — Excel
@@ -621,7 +700,6 @@ def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = N
 
     import io
 
-    import sqlalchemy
     from openpyxl import Workbook
 
     from backend.utils.csv_safe import csv_safe
@@ -629,11 +707,8 @@ def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = N
     max_rows = settings.sql_materialize_max_rows
     row_count = 0
     try:
-        engine = _make_sql_engine(cfg=src.get("sql_config") or {}, statement_timeout_ms=120_000)
-        with engine.connect() as conn:
-            result = conn.execution_options(stream_results=True).execute(
-                sqlalchemy.text(query_sql)
-            )
+        with _read_only_rows(src.get("sql_config") or {}, query_sql,
+                             statement_timeout_ms=120_000, stream=True) as result:
             columns = [str(c) for c in result.keys()]
             wb = Workbook(write_only=True)
             ws = wb.create_sheet(title="data")
@@ -672,10 +747,16 @@ def export_sql_query_xlsx(tenant_id: str, source_id: str, sql: Optional[str] = N
 
     buf = io.BytesIO()
     wb.save(buf)
-    return buf.getvalue()
+    return buf.getvalue(), row_count
 
 
 def save_sql_query(tenant_id: str, source_id: str, sql: str) -> dict:
+    """Store the query a source's preview, analysis and scheduled refresh will
+    run later — possibly for a viewer, or unattended. It is checked now, so a
+    statement that would be refused at run time is never stored."""
+    from backend.datasources.sql_guard import validate_read_only_sql
+    src = get_source(tenant_id, source_id) or {}
+    validate_read_only_sql(sql, (src.get("sql_config") or {}).get("engine", "postgresql"))
     execute(
         "UPDATE datasets SET saved_query=%s, updated_at=NOW() WHERE id=%s AND tenant_id=%s",
         (sql, source_id, tenant_id),
@@ -1024,10 +1105,7 @@ def load_dataframe(tenant_id: str, source_id: str, sheet: Optional[str] = None, 
                 status_code=_REJECTED,
             )
         cfg = src.get("sql_config") or {}
-        import sqlalchemy
-        eng = _make_sql_engine(cfg, statement_timeout_ms=60_000)
-        with eng.connect() as conn:
-            result = conn.execute(sqlalchemy.text(saved_q))
+        with _read_only_rows(cfg, saved_q, statement_timeout_ms=60_000) as result:
             rows = result.fetchmany(max_rows)
             cols = list(result.keys())
         return dataframe_from_records(rows, cols)

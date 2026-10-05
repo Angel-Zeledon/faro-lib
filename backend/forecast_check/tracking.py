@@ -39,7 +39,7 @@ from backend.dataframes.actuals import load_actual_series
 from backend.datasets.service import get_dataset
 from backend.db import session_store
 from backend.db.connection import execute, query, query_one
-from backend.forecast_check.service import _champion_forecasts
+from backend.forecast_check.service import _champion_forecasts, grading_group_cols
 from backend.service_config.resolver import effective
 from backend.workers.runner import build_engine_config
 
@@ -122,7 +122,8 @@ def track_session(tenant_id: str, session: dict, dataset: dict) -> Optional[dict
     cols = cfg["columns"]
     loaded = load_actual_series(
         dataset["file_path"], cols["date"], cols["target"],
-        list(cols["group_keys"]), (cfg.get("granularity") or {}).get("target_freq"))
+        grading_group_cols(tenant_id, session_id, cols),
+        (cfg.get("granularity") or {}).get("target_freq"))
     if "error" in loaded:
         return None
     if not any(d in (loaded["series"].get(sku) or {})

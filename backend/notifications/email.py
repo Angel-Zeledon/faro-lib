@@ -983,12 +983,12 @@ def send_monthly_roi_email(to: str, report: dict, roi_url: str,
             _PRIMARY,
         ))
 
-    risks = report.get("stockout_risks_handled")
+    risks = report.get("urgent_lines_ordered")
     if risks:
         tiles.append(_recap_metric_block(
             f"{risks}",
-            render_es("roi_email_metric_risks_label"),
-            render_es("roi_email_metric_risks_note"),
+            render_es("roi_email_metric_urgent_lines_label"),
+            render_es("roi_email_metric_urgent_lines_note"),
             _RED,
         ))
 

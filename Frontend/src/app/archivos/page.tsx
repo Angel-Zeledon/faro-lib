@@ -32,6 +32,7 @@ import DataTabs from '@/components/layout/DataTabs'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { MobileList, MobileCard, MobileTabs, useMobileHeader } from '@/components/mobile'
 import StickyActionBar from '@/components/mobile/StickyActionBar'
+import { getUser } from '@/lib/auth'
 
 /** Phone: rows of a result set as cards, `PAGE` at a time. A spreadsheet of
  *  arbitrary width cannot be read at 360px; one record per card can. */
@@ -1940,6 +1941,10 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  {testing ? <Spinner size={14} /> : <Link2 size={14} />} {t('data.btn_test_connection')}
  </button>
  </div>
+ ) : getUser()?.role === 'viewer' ? (
+ // Running SQL on the company's database is analyst-or-above on the
+ // server; say so here instead of letting every button answer 403.
+ <p style={{ color: C.muted, fontSize: 13, padding: '24px 0' }}>{t('data.sql_editor_viewer_note')}</p>
  ) : (
  <SqlEditorPanel source={source} onSaved={onUpdated} onDatasetCreated={onDatasetCreated} />
  )

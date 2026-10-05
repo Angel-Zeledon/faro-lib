@@ -73,11 +73,12 @@ def _pick_actuals(tenant_id: str, session: dict, cols: dict, target_freq,
         if not to_try:
             return None, None, "no_data_yet"
 
+    group_cols = fc_service.grading_group_cols(tenant_id, session["id"], cols)
     best, best_n, reason = None, 0, "no_data_yet"
     for ds in to_try:
         try:
             loaded = load_actual_series(ds["file_path"], cols["date"], cols["target"],
-                                        list(cols["group_keys"]), target_freq)
+                                        group_cols, target_freq)
         except Exception as exc:  # an unreadable file is a reason, not a 500
             log.warning("adjustment value: could not read dataset %s: %s", ds["id"], exc)
             reason = "unreadable"

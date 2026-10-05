@@ -132,10 +132,10 @@ DOCS: dict[tuple[str, str], tuple[str, str]] = {
         "Columns and rows of the source, for editing and saving as a new source."),
     ("POST", "/data-sources/{source_id}/execute-query"): (
         "Run a SQL query against a SQL source",
-        "Executes a read query on the customer's database and returns up to `limit` rows."),
+        "Executes ONE read statement (SELECT or WITH ... SELECT) on the customer's database, inside a read-only transaction that is always rolled back, and returns up to `limit` rows. Needs a `write`-scope key: it runs caller-written SQL on the customer's database. Anything else is refused with `sql_multiple_statements`, `sql_not_a_select`, `sql_forbidden_keyword`, `sql_forbidden_function` or `sql_unsupported_syntax`."),
     ("POST", "/data-sources/{source_id}/export-query"): (
         "Export a SQL query as Excel",
-        "Runs the query and returns the result as an .xlsx file."),
+        "Runs the query (same read-only rules as execute-query) and returns the result as an .xlsx file. Needs a `write`-scope key."),
     ("POST", "/data-sources/{source_id}/file"): (
         "Replace a data source's file",
         "Uploads a new file (multipart) IN PLACE: the source keeps its id and column mapping, so the next training run needs no reconfiguration. The nightly-export endpoint."),

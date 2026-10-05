@@ -196,8 +196,17 @@ def get(tenant_id: str, commitment_id: str) -> dict:
 
 
 def list_for_tenant(tenant_id: str, *, sku: Optional[str] = None,
-                    status: Optional[str] = None, limit: int = 500) -> list[dict]:
+                    status: Optional[str] = None, limit: int = 500,
+                    warehouse_ids: Optional[frozenset] = None) -> list[dict]:
+    """`warehouse_ids`: None = every commitment (a company-wide caller); a set =
+    only commitments naming one of those warehouses — unassigned (company-wide)
+    commitments are excluded, and an empty set returns nothing."""
     clauses, params = ["c.tenant_id = %s"], [tenant_id]
+    if warehouse_ids is not None:
+        if not warehouse_ids:
+            return []
+        clauses.append("c.warehouse_id = ANY(%s)")
+        params.append(sorted(warehouse_ids))
     if sku:
         clauses.append("c.sku = %s")
         params.append(sku)
@@ -504,7 +513,12 @@ def summarize_by_customer(items: list[dict]) -> list[dict]:
                                                   g["customer"] or "~"))
 
 
-def annotate_risk(tenant_id: str, items: list[dict]) -> list[dict]:
+def _fold(name: Optional[str]) -> str:
+    return (name or "").strip().casefold()
+
+
+def annotate_risk(tenant_id: str, items: list[dict],
+                  warehouse_names: Optional[frozenset] = None) -> list[dict]:
     """Add the risk verdict to `list_for_tenant` items, in place. Only OPEN items
     get one; closed ones carry `at_risk: None`. Reads stock, open purchase
     orders / transfers and the lead-time cascade ONCE for the tenant (the same
@@ -514,6 +528,12 @@ def annotate_risk(tenant_id: str, items: list[dict]) -> list[dict]:
     product, so it is assumed to land within the SKU's lead time from today (it
     was already placed, so that is the latest it should arrive); a transfer in
     transit counts as available now.
+
+    `warehouse_names`: None = company-wide (stock and arrivals of every
+    warehouse). A set = a warehouse-scoped caller: only those warehouses' stock
+    and arrivals count, so the verdict never leans on stock the caller cannot
+    see; a SKU with no stock row inside the scope gets no verdict (None), not
+    the company's.
     """
     for i in items:
         i.update({"at_risk": None, "shortfall": None, "covered_units": None,
@@ -527,6 +547,9 @@ def annotate_risk(tenant_id: str, items: list[dict]) -> list[dict]:
 
     today = date.today()
     stock_rows = list_stock(tenant_id)
+    allowed = None if warehouse_names is None else {_fold(n) for n in warehouse_names}
+    if allowed is not None:
+        stock_rows = [r for r in stock_rows if _fold(r.get("warehouse")) in allowed]
     stock: dict[str, float] = {}
     for r in stock_rows:
         if r.get("sku") and r.get("current_stock") is not None:
@@ -534,6 +557,8 @@ def annotate_risk(tenant_id: str, items: list[dict]) -> list[dict]:
     planning = resolve_planning_inputs(tenant_id, stock_rows)
     incoming: dict[str, list[dict]] = {}
     for d in get_incoming_detail(tenant_id):
+        if allowed is not None and _fold(d.get("warehouse")) not in allowed:
+            continue
         incoming.setdefault(d["sku"], []).append(d)
 
     by_sku: dict[str, list[dict]] = {}

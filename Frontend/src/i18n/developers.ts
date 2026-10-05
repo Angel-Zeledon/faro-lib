@@ -230,6 +230,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       tags: {
         'ai-insights': 'Narrativas con IA',
         alerts: 'Alertas',
+        'bi-datasets': 'Datos planos para BI',
         analyst: 'Analista',
         artifacts: 'Artefactos de entrenamiento',
         configuration: 'Configuración de sesión',
@@ -441,6 +442,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
       tags: {
         'ai-insights': 'AI narratives',
         alerts: 'Alerts',
+        'bi-datasets': 'Flat datasets for BI',
         analyst: 'Analyst',
         artifacts: 'Training artifacts',
         configuration: 'Session configuration',

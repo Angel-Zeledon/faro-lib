@@ -325,14 +325,13 @@ def _tenants_with_completed_sessions() -> list[str]:
 
 
 def _recipients(tenant_id: str) -> list[dict]:
-    """Admins/managers, with the id needed to attribute the delivery outcome."""
-    return [
-        dict(r) for r in query(
-            """SELECT id, email, whatsapp_number FROM users
-               WHERE tenant_id = %s AND role IN ('admin', 'analyst')""",
-            (tenant_id,),
-        )
-    ]
+    """Active, company-wide admins/analysts, with the id needed to attribute
+    the delivery outcome. The reminder names lagging warehouses, so a user
+    limited to some warehouses is withheld from it (see
+    `inventory.service.get_tenant_alert_recipients`), and a deactivated user
+    no longer receives it."""
+    from backend.inventory.service import get_tenant_alert_recipients
+    return get_tenant_alert_recipients(tenant_id)
 
 
 def _last_reminder_at(tenant_id: str) -> Optional[datetime]:
@@ -417,6 +416,8 @@ def run_daily_freshness_reminders(now: Optional[datetime] = None) -> int:
             recipients = _recipients(tid)
             if not recipients:
                 continue
+            from backend.inventory.service import record_digest_withheld
+            record_digest_withheld(tid, "freshness_reminder")
 
             sales_age = freshness["sales"]["age_days"]
             stock_age = freshness["stock"]["age_days"]

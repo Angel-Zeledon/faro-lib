@@ -33,6 +33,8 @@ export const FREE_PLAN = {
   users: 2,
   warehouses: 1,
   apiCallsPerDay: 0,
+  // Model trainings per calendar day (plans.py max_trainings_per_day).
+  trainingsPerDay: 1,
 } as const
 
 // A month is counted as 30 days wherever a per-day allowance meets a monthly
@@ -41,14 +43,16 @@ export const DAYS_PER_MONTH = 30
 
 // ── Full: a monthly base plus what goes past what the base includes ─────────
 // First plan with the API, MCP and the WhatsApp bot, and still limited
-// (plans.py PAID: 500 SKUs, 3 users, 2 warehouses, 2,000 API calls a day).
+// (plans.py PAID: 1,000 SKUs, 5 users, 3 warehouses, 2,000 API calls a day,
+// 10 trainings a day).
 export const FULL_PLAN = {
   baseMonthly: 59,
   included: {
-    skus: 500,
-    users: 3,
-    warehouses: 2,
+    skus: 1_000,
+    users: 5,
+    warehouses: 3,
     apiCallsPerDay: 2_000,
+    trainingsPerDay: 10,
   },
   // Each add-on is priced per block: `price` for every started `per` units
   // above what the base includes. API blocks are 1,000 calls a MONTH (the

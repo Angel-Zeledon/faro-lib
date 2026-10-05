@@ -1109,7 +1109,7 @@ export interface ScheduleRun {
   status: string; created_at: string
   started_at: string | null; completed_at: string | null; error: string | null
   /** Why a run did not train (`no_new_data`, `still_running`,
-   *  `source_refresh_failed`, `launch_failed`); null on a run that started.
+   *  `source_refresh_failed`, `launch_failed`, `training_cap_reached`); null on a run that started.
    *  Rendered through `schedule.run_reason.<code>`. */
   reason?: string | null
   reason_params?: Record<string, string | number>
@@ -1528,7 +1528,7 @@ export const getCommittedDemand = (opts?: { sku?: string; status?: import('./typ
   if (opts?.status) q.set('status', opts.status)
   if (opts?.limit) q.set('limit', String(opts.limit))
   const qs = q.toString()
-  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[] }>(
+  return request<{ statuses: import('./types').CommittedDemandStatus[]; items: import('./types').CommittedDemand[]; by_customer: import('./types').CommittedDemandCustomer[]; scope?: 'company' | 'warehouses' }>(
     'GET', `/committed-demand${qs ? `?${qs}` : ''}`)
 }
 export const createCommittedDemand = (body: import('./types').CommittedDemandInput) =>

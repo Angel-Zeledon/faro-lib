@@ -62,6 +62,9 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("POST", "/data-sources/{source_id}/materialize"): _r("dataset.materialized", "dataset", "source_id"),
     ("POST", "/data-sources/{source_id}/save-as-new"): _r("dataset.created", "dataset", "source_id"),
     ("POST", "/data-sources/{source_id}/export-query"): _r("export.query", "dataset", "source_id"),
+    # Caller-written SQL run on the customer's database: who, which source,
+    # a hash of the statement and the row count (the handler's note).
+    ("POST", "/data-sources/{source_id}/execute-query"): _r("dataset.query_run", "dataset", "source_id"),
     ("DELETE", "/data-sources/{source_id}"):        _r("dataset.deleted", "dataset", "source_id"),
     # users (invites, role changes and deactivation are recorded by their own events)
     ("PATCH", "/users/{user_id}/permissions"):      _r("user.permissions_changed", "user", "user_id"),
@@ -97,6 +100,11 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # data leaving the product
     ("GET", "/tenant/export"):                      _r("export.tenant_data", "tenant"),
     ("GET", "/inventory/status/export-po"):         _r("export.purchase_orders", "purchase_order"),
+    # Documents a buyer forwards to other people. Each handler notes what left
+    # (rows or bytes, format) so the row answers "what did they take".
+    ("GET", "/inventory/report/pdf"):               _r("export.inventory_pdf", "session"),
+    ("GET", "/sessions/{session_id}/reports/{format}"): _r("export.session_report", "session", "session_id"),
+    ("GET", "/audit/export"):                       _r("export.audit_log", "audit_log"),
 }
 
 # Rows that already carry who/what, mapped onto the audit shape for reading.

@@ -151,12 +151,25 @@ def _read_dataset_dates(tenant_id: str, session_id: str) -> list[str]:
         return []
 
 
-def _enqueue(tenant_id: str, session_id: str, user_id: str) -> str:
-    """create_job + set_last_job + transition to QUEUED; returns job_id."""
+def _enqueue(tenant_id: str, session_id: str, user_id: str,
+             count_as_training: bool = False) -> str:
+    """create_job + set_last_job + transition to QUEUED; returns job_id.
+
+    `count_as_training=True` is the head of a launch (the base session of a
+    family): the daily training ceiling is checked and the job inserted under
+    the tenant's advisory lock, so two simultaneous launches cannot both pass
+    a ceiling of one. Raises 403 PLAN_LIMIT_REACHED, creating nothing."""
     from backend.training import job_service
     from backend.sessions import service as session_svc
 
-    job = job_service.create_job(tenant_id, session_id, user_id)
+    if count_as_training:
+        from backend.entitlements.service import limit_guard
+        from backend.training import daily_cap
+        with limit_guard(tenant_id) as conn:
+            daily_cap.ensure_can_train(tenant_id, conn=conn)
+            job = job_service.create_job(tenant_id, session_id, user_id, conn=conn)
+    else:
+        job = job_service.create_job(tenant_id, session_id, user_id)
     session_svc.set_last_job(tenant_id, session_id, job["id"])
     try:
         session_svc.transition(tenant_id, session_id, "QUEUED", "training")
@@ -222,6 +235,16 @@ def launch_training_family(
             status="error",
         )
         raise
+
+    # The daily training ceiling, as a PRE-check: refusing here creates nothing
+    # (no sibling sessions, no rewritten config). The check that actually holds
+    # against two simultaneous launches is the one taken with the base job's
+    # insert in `_enqueue`. Back-tests are verification runs and are exempt.
+    counts_as_training = not (session_svc.get_session(tenant_id, base_session_id)
+                              or {}).get("is_backtest")
+    if counts_as_training:
+        from backend.training import daily_cap
+        daily_cap.ensure_can_train(tenant_id)
 
     dates = _read_dataset_dates(tenant_id, base_session_id)
     need = None
@@ -298,7 +321,20 @@ def launch_training_family(
         members.append({"session_id": sib_id, "granularity": spec["granularity"]})
 
     # Enqueue base FIRST (finest grain -> semaforo usable soonest), then siblings.
-    base_job_id = _enqueue(tenant_id, base_session_id, user_id)
+    try:
+        base_job_id = _enqueue(tenant_id, base_session_id, user_id,
+                               count_as_training=counts_as_training)
+    except Exception:
+        # Lost the race for the last training of the day (or the insert failed):
+        # the siblings made above would hold saved-forecast slots for a run
+        # that will never start. Archived, never deleted (sessions are permanent).
+        for m in members[1:]:
+            try:
+                session_svc.archive_session(tenant_id, m["session_id"], user_id)
+            except Exception:  # noqa: BLE001
+                log.warning("family: could not archive the unlaunched sibling %s",
+                            m["session_id"], exc_info=True)
+        raise
     members[0]["job_id"] = base_job_id
     for m in members[1:]:
         m["job_id"] = _enqueue(tenant_id, m["session_id"], user_id)
