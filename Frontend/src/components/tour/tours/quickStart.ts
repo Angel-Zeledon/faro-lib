@@ -5,16 +5,13 @@ export const quickStartTour: TourDefinition = {
   route: '/ventas',
   name: 'name',
   autoStart: true,
+  // Four steps: upload, columns, what happens while you wait, the result. The
+  // steps about the plan options, the starting tabs, the example file and the
+  // demo are no longer in the tour (their copy stays below, unused): the options
+  // are folded away by default, and the others point at things the screen already
+  // labels. A step whose anchor is not visible is skipped by the tour engine.
   steps: [
-    { title: 'intro_title', body: 'intro_body', visual: 'pipeline' },
-    { anchor: 'qs.steps', title: 'steps_title', body: 'steps_body' },
-    { anchor: 'qs.name', title: 'name_title', body: 'name_body' },
-    { anchor: 'qs.horizon', title: 'horizon_title', body: 'horizon_body' },
-    { anchor: 'qs.granularity', title: 'granularity_title', body: 'granularity_body' },
-    { anchor: 'qs.tabs', title: 'tabs_title', body: 'tabs_body' },
     { anchor: 'qs.upload', title: 'upload_title', body: 'upload_body' },
-    { anchor: 'qs.example', title: 'example_title', body: 'example_body', visual: 'sales_table' },
-    { anchor: 'qs.demo', title: 'demo_title', body: 'demo_body' },
     { title: 'mapping_title', body: 'mapping_body', visual: 'column_map' },
     { title: 'training_title', body: 'training_body' },
     { title: 'wait_title', body: 'wait_body' },
@@ -40,8 +37,8 @@ export const quickStartTour: TourDefinition = {
       example_body: 'Tres columnas y una fila por producto y fecha. Nada más.\n\nLo que hace que falle casi siempre es esto: fechas escritas de dos maneras en el mismo archivo, cantidades con símbolo de moneda o separador de miles («$1,250» no es un número), una fila de totales al final, y el mismo producto escrito de dos formas («SKU-001» y «sku 001» se vuelven dos productos distintos y ninguno junta historia suficiente).\n\nSi prefieres partir de algo que ya está bien armado, el botón de plantilla que está aquí arriba te descarga este mismo ejemplo en CSV.',
       demo_title: 'Probar sin archivo',
       demo_body: 'Si aún no tienes tu exportación a la mano, este botón carga ventas ficticias de 5 productos, entrena de verdad y te deja en el semáforo en un par de minutos.\n\nSirve para ver cómo se lee el resultado antes de invertir tiempo preparando tus datos. No toca nada tuyo: crea su propio entrenamiento aparte, y el nombre, el horizonte y el detalle que elegiste arriba también se le aplican.',
-      mapping_title: 'Paso 2: decirnos qué columna es cuál',
-      mapping_body: 'Cuando el archivo suba verás una lista de campos con un desplegable al lado. Sólo tres son obligatorios y van marcados con ★: SKU (el código del producto), Fecha y Demanda (las unidades vendidas).\n\nEl resto son opcionales y te decimos qué valor asumimos si los dejas en «no está en el archivo» — por ejemplo, lead time 15 días. Mapear Costo y Precio si los tienes hace que después el semáforo pueda hablarte de dinero, no sólo de unidades.\n\nRevisa Fecha con especial cuidado: si apuntamos a la columna equivocada el entrenamiento no falla, simplemente aprende una historia que no ocurrió.',
+      mapping_title: 'Las columnas: te preguntamos solo si dudamos',
+      mapping_body: 'Si reconocemos con seguridad la fecha, el producto y la cantidad vendida, seguimos solos y te mostramos cuáles usamos, con un botón «Cambiar columnas». Si dudamos de alguna, verás una lista de campos con un desplegable al lado. Sólo tres son obligatorios y van marcados con ★: el código del producto, la Fecha y la Demanda (las unidades vendidas).\n\nEl resto son opcionales y te decimos qué valor asumimos si los dejas en «no está en el archivo» — por ejemplo, lead time 15 días. Mapear Costo y Precio si los tienes hace que después el semáforo pueda hablarte de dinero, no sólo de unidades.\n\nRevisa Fecha con especial cuidado: si apuntamos a la columna equivocada el entrenamiento no falla, simplemente aprende una historia que no ocurrió.',
       training_title: 'Qué pasa mientras esperas',
       training_body: 'No entrenamos un modelo: entrenamos varios y nos quedamos con el mejor para cada producto, uno por uno.\n\nUn producto de venta estable y otro que se vende a saltos no se predicen igual, así que a cada uno le toca el modelo que mejor le funcionó a él.\n\nY no nos creemos el resultado sin comprobarlo: cada modelo se mide contra trozos de tu propio historial que no vio al entrenar, y contra métodos ingenuos («vende lo mismo que ayer»). Un modelo que no le gana a eso no merece decidir tus compras.',
       wait_title: 'Puedes cerrar la pestaña',
@@ -67,8 +64,8 @@ export const quickStartTour: TourDefinition = {
       example_body: 'Three columns and one row per product and date. Nothing more.\n\nWhat breaks it almost every time: dates written two different ways in the same file, quantities carrying a currency symbol or thousands separator ("$1,250" is not a number), a totals row at the bottom, and the same product spelled two ways ("SKU-001" and "sku 001" become two separate products and neither gathers enough history).\n\nIf you would rather start from something already correct, the template button just above downloads this same example as a CSV.',
       demo_title: 'Try it without a file',
       demo_body: 'If you do not have your export handy yet, this button loads fictional sales for 5 products, really trains on them, and drops you on the stock signal in a couple of minutes.\n\nIt is there so you can see how the result reads before investing time preparing your own data. It touches nothing of yours: it creates its own separate training, and the name, horizon and detail level you chose above apply to it too.',
-      mapping_title: 'Step 2: telling us which column is which',
-      mapping_body: 'Once the file uploads you will see a list of fields, each with a dropdown beside it. Only three are required and they are marked with ★: SKU (the product code), Date, and Demand (the units sold).\n\nThe rest are optional and we tell you what we assume if you leave them as "not in the file" — lead time of 15 days, for example. Mapping Cost and Price when you have them is what later lets the stock signal talk to you in money, not only in units.\n\nCheck Date with particular care: if we point at the wrong column the training does not fail, it simply learns a history that never happened.',
+      mapping_title: 'The columns: we only ask when we are unsure',
+      mapping_body: 'If we recognise the date, the product and the quantity sold with certainty, we carry on by ourselves and show which columns we used, with a "Change columns" button. If we doubt one, you will see a list of fields, each with a dropdown beside it. Only three are required and they are marked with ★: the product code, the Date, and the Demand (the units sold).\n\nThe rest are optional and we tell you what we assume if you leave them as "not in the file" — lead time of 15 days, for example. Mapping Cost and Price when you have them is what later lets the stock signal talk to you in money, not only in units.\n\nCheck Date with particular care: if we point at the wrong column the training does not fail, it simply learns a history that never happened.',
       training_title: 'What happens while you wait',
       training_body: 'We do not train one model: we train several and keep the best one for each product, individually.\n\nA steady seller and a lumpy one are not forecast the same way, so each gets the model that actually worked for it.\n\nAnd we do not take the result on faith: every model is scored against slices of your own history it never saw while training, and against naive methods ("sells the same as yesterday"). A model that cannot beat that does not get to decide your purchasing.',
       wait_title: 'You can close the tab',

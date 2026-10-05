@@ -6,7 +6,7 @@ import {
  chooseColumnsCanonical, setFeatures, setModels, setValidationConfig,
  setBusinessConfig, startTraining, getJob,
  startDemoQuickstart, listDatasets, getSessionSummaries, getColumnsConfig,
- getDataGate, setRemediations, getActiveTraining,
+ getDataGate, setRemediations, getActiveTraining, getTenantTimezone,
 } from '@/lib/api'
 import type { TrainingFamily } from '@/lib/api'
 import {
@@ -411,6 +411,29 @@ const HORIZON_PRESETS = [
  { days: 180, labelKey: 'qs.plan_horizon_6m' },
 ] as const
 
+// What the engine really accepts, read from the backend (not guessed):
+//  · the API takes 1..365 days (`user_horizon_days`, ge=1 le=365);
+//  · each grain forecasts at most GENEROUS_REACH steps (daily 90, weekly 26,
+//    monthly 12) and at least 2 steps, whatever was asked — so a longer request
+//    is silently shortened, which is why the options say so out loud;
+//  · a week is 7 days and a month 30 (DAYS_PER_PERIOD).
+const HORIZON_MAX_DAYS = 365
+const HORIZON_UNIT_DAYS = { days: 1, weeks: 7, months: 30 } as const
+type HorizonUnit = keyof typeof HORIZON_UNIT_DAYS
+// The grain's reach in days, and the shortest span it can forecast (2 steps).
+const GRAIN_REACH_DAYS: Record<Exclude<Granularity, 'auto'>, number> = { daily: 90, weekly: 182, monthly: 360 }
+const GRAIN_MIN_DAYS: Record<Exclude<Granularity, 'auto'>, number> = { daily: 2, weekly: 14, monthly: 60 }
+// Units that make sense for each detail level: months for a daily forecast and
+// days for a monthly one would both be a span the grain cannot express.
+const UNITS_FOR_GRAIN: Record<Granularity, HorizonUnit[]> = {
+ auto: ['days', 'weeks', 'months'],
+ daily: ['days', 'weeks', 'months'],
+ weekly: ['weeks', 'months'],
+ monthly: ['months'],
+}
+// Beyond a third of the history, a forecast reads as precise and is not.
+const HISTORY_FRACTION = 3
+
 const GRANULARITY_OPTIONS: { value: Granularity; labelKey: string }[] = [
  { value: 'auto',    labelKey: 'qs.plan_granularity_auto' },
  { value: 'daily',   labelKey: 'qs.plan_granularity_daily' },
@@ -446,6 +469,52 @@ const HOLIDAY_COUNTRIES = [
  { code: 'US', labelKey: 'qs.country_US' },
 ] as const
 
+// Decides whether the profiler's reading of the file is certain enough to skip
+// the "confirm columns" step. Anything short of certain returns null and the
+// step stays on screen: a wrongly guessed date or quantity column does not make
+// the training fail, it makes it learn a history that never happened.
+//
+// Certain means ALL of: the three required fields each have exactly one
+// candidate column that is an exact name match; no two fields claim the same
+// column; and no optional field has only a weak (partial-name) guess, because
+// that is a column the person may want to map and would never be asked about.
+const CERTAIN_CONFIDENCE = 0.95
+const REQUIRED_FIELDS = ['sku', 'date', 'demand'] as const
+
+function detectedWithCertainty(
+ suggestions: CanonicalMapping,
+): Record<string, string | null> | null {
+ const out: Record<string, string | null> = Object.fromEntries(
+  CANONICAL_FIELDS.map(f => [f.name, null]),
+ )
+ const used = new Set<string>()
+ for (const field of CANONICAL_FIELDS) {
+  const sug = suggestions[field.name]
+  const required = (REQUIRED_FIELDS as readonly string[]).includes(field.name)
+  if (required) {
+   if (!sug?.top || sug.confidence < CERTAIN_CONFIDENCE || sug.candidates.length !== 1) return null
+  } else if (sug?.top && sug.confidence < 0.7) {
+   return null
+  } else if (!sug?.top) {
+   continue
+  }
+  const col = sug.top as string
+  if (used.has(col)) return null
+  used.add(col)
+  out[field.name] = col
+ }
+ return out
+}
+
+// Days between the first and last date of the uploaded file, or null when the
+// profile does not say.
+function historyDaysOf(insp: InspectionResult): number | null {
+ const a = Date.parse(insp.profile?.stats?.date_min ?? '')
+ const b = Date.parse(insp.profile?.stats?.date_max ?? '')
+ if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return null
+ return Math.round((b - a) / 86400000) + 1
+}
+
 function Chip({ label, selected, disabled, onClick }: {
  label: string; selected: boolean; disabled: boolean; onClick: () => void
 }) {
@@ -473,6 +542,14 @@ function Chip({ label, selected, disabled, onClick }: {
  )
 }
 
+// "45 days" / "12 weeks" / "9 months": the largest whole unit, so the same
+// number reads the same wherever it is shown.
+function spanText(days: number, t: (k: string, p?: Record<string, string | number>) => string): string {
+ if (days >= 60 && days % 30 === 0) { const n = days / 30; return t(n === 1 ? 'qs.span_month' : 'qs.span_months', { n }) }
+ if (days >= 14 && days % 7 === 0) { const n = days / 7; return t(n === 1 ? 'qs.span_week' : 'qs.span_weeks', { n }) }
+ return t(days === 1 ? 'qs.span_day' : 'qs.span_days', { n: days })
+}
+
 function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, onGranularity,
                         country, onCountry, busy }: {
  name: string; onName: (v: string) => void
@@ -483,6 +560,32 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
 }) {
  const { t } = useLanguage()
  const narrow = useIsNarrow()
+ // Custom horizon: a number and a unit. Presets stay as one-click shortcuts;
+ // typing here replaces them, picking one clears this.
+ const [rawN, setRawN] = useState('')
+ const [unit, setUnit] = useState<HorizonUnit>('weeks')
+ const allowedUnits = UNITS_FOR_GRAIN[granularity]
+ const unitNow: HorizonUnit = allowedUnits.includes(unit) ? unit : allowedUnits[0]
+ const typedN = parseInt(rawN, 10)
+ const typedDays = Number.isFinite(typedN) && typedN >= 1 ? typedN * HORIZON_UNIT_DAYS[unitNow] : null
+ const applyCustom = (n: string, u: HorizonUnit) => {
+  const v = parseInt(n, 10)
+  if (!Number.isFinite(v) || v < 1) return
+  onHorizonDays(Math.min(HORIZON_MAX_DAYS, v * HORIZON_UNIT_DAYS[u]))
+ }
+ const grainKey = granularity === 'auto' ? null : granularity
+ const horizonNote: string | null =
+  typedDays !== null && typedDays > HORIZON_MAX_DAYS
+   ? t('qs.horizon_max_note', { max: spanText(HORIZON_MAX_DAYS, t) })
+   : grainKey && horizonDays > GRAIN_REACH_DAYS[grainKey]
+    ? t('qs.horizon_cap_note', {
+        grain: t(`qs.plan_granularity_${grainKey}`).toLowerCase(), max: spanText(GRAIN_REACH_DAYS[grainKey], t),
+      })
+    : grainKey && horizonDays < GRAIN_MIN_DAYS[grainKey]
+     ? t('qs.horizon_min_note', { min: spanText(GRAIN_MIN_DAYS[grainKey], t) })
+     : !grainKey && horizonDays > GRAIN_REACH_DAYS.daily
+      ? t('qs.horizon_cap_auto', { daily: spanText(GRAIN_REACH_DAYS.daily, t), weekly: spanText(GRAIN_REACH_DAYS.weekly, t) })
+      : null
  const fieldN: React.CSSProperties = narrow ? { fontSize: 16, minHeight: 44, boxSizing: 'border-box', borderRadius: 10 } : {}
  const labelStyle: React.CSSProperties = {
  fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6,
@@ -518,9 +621,45 @@ function PlanSettings({ name, onName, horizonDays, onHorizonDays, granularity, o
   label={t(p.labelKey)}
   selected={horizonDays === p.days}
   disabled={busy}
-  onClick={() => onHorizonDays(p.days)}
+  onClick={() => { setRawN(''); onHorizonDays(p.days) }}
  />
  ))}
+ </div>
+ <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 10 }}>
+ <label htmlFor="qs-horizon-n" style={{ fontSize: 12, color: 'var(--dim)' }}>{t('qs.horizon_custom_label')}</label>
+ <input
+  id="qs-horizon-n"
+  type="number"
+  inputMode="numeric"
+  min={1}
+  value={rawN}
+  disabled={busy}
+  placeholder={t('qs.horizon_custom_placeholder')}
+  onChange={e => { setRawN(e.target.value); applyCustom(e.target.value, unitNow) }}
+  style={{
+  width: 84, padding: '7px 10px', borderRadius: 8,
+  border: '1px solid var(--border)', background: 'var(--surface)',
+  color: 'var(--text)', fontSize: 13,
+  ...fieldN,
+  }}
+ />
+ <select
+  aria-label={t('qs.horizon_custom_label')}
+  value={unitNow}
+  disabled={busy}
+  onChange={e => { const u = e.target.value as HorizonUnit; setUnit(u); applyCustom(rawN, u) }}
+  style={{
+  padding: '7px 10px', borderRadius: 8,
+  border: '1px solid var(--border)', background: 'var(--surface)',
+  color: 'var(--text)', fontSize: 13,
+  ...fieldN,
+  }}
+ >
+  {allowedUnits.map(u => <option key={u} value={u}>{t(`qs.horizon_unit_${u}`)}</option>)}
+ </select>
+ </div>
+ <div style={{ fontSize: 12, color: horizonNote ? '#92400e' : 'var(--dim)', marginTop: 6, lineHeight: 1.5 }}>
+ {horizonNote ?? t('qs.horizon_history_tip')}
  </div>
  </div>
  <div data-tour="qs.granularity">
@@ -626,6 +765,21 @@ function QuickStartPageContent() {
  // It was Colombia before, only because the first calendar was Colombian.
  // A default for a NEW run; a session that already stored a country keeps it.
  const [holidayCountry, setHolidayCountry] = useState('CR')
+ // The account's own country replaces the default above, but never over a
+ // choice the person already made in the options.
+ const countryTouchedRef = useRef(false)
+ const chooseCountry = (code: string) => {
+  countryTouchedRef.current = true
+  setHolidayCountry(code)
+ }
+ // Set when the columns were detected with certainty and the mapping step was
+ // skipped: the training screen then names them and offers "Change columns".
+ // Days of history in the uploaded file, once inspected. Drives the "your
+ // horizon is long for this much history" note and keeps the column step open.
+ const [historyDays, setHistoryDays] = useState<number | null>(null)
+ const [autoMapped, setAutoMapped] = useState<Record<string, string | null> | null>(null)
+ // Bumped to retire a running poll loop (see pollFamily and handleChangeColumns).
+ const pollGenRef = useRef(0)
 
  // Inspection result
  const [inspection, setInspection] = useState<InspectionResult | null>(null)
@@ -755,6 +909,20 @@ function QuickStartPageContent() {
  return () => { cancelled = true }
  }, [step, sessionId])
 
+ // Country for the holiday calendar: the account already names one (its
+ // timezone's country). A failed read keeps the default — the options still
+ // show which country will be used, so nothing is hidden.
+ useEffect(() => {
+ getTenantTimezone()
+ .then(r => {
+ const code = r.current?.country
+ if (code && !countryTouchedRef.current && HOLIDAY_COUNTRIES.some(c => c.code === code)) {
+  setHolidayCountry(code)
+ }
+ })
+ .catch(() => { /* default country stays */ })
+ }, [])
+
  // Load previously uploaded datasets once — a failure just keeps the reuse
  // tab hidden, the upload path is unaffected.
  useEffect(() => {
@@ -802,7 +970,10 @@ function QuickStartPageContent() {
  const startFromDataset = async (dsId: string, keepMapping = false) => {
  setError(null)
  setBusy(true)
+ setAutoMapped(null)
  trainLaunchedRef.current = false
+ // True once training was handed off: the training screen owns `busy` then.
+ let handedOff = false
  try {
  const session = await createSession(sessionName.trim() || undefined)
  setSessionId(session.session_id)
@@ -812,6 +983,11 @@ function QuickStartPageContent() {
  const insp = await inspectSession(session.session_id)
  setInspection(insp)
  setDatasetId(dsId)
+ const hist = historyDaysOf(insp)
+ setHistoryDays(hist)
+ // A horizon longer than a third of the history is unreliable: do not skip the
+ // column step, so the person sees the note before anything is trained.
+ const horizonTooLong = hist !== null && horizonDays > Math.floor(hist / HISTORY_FRACTION)
 
  if (!keepMapping) {
   // The monthly upload is last month's file with new rows, so the mapping
@@ -831,10 +1007,17 @@ function QuickStartPageContent() {
   const missing = named.filter(col => !available.has(col))
 
   if (previous && named.length > 0 && missing.length === 0) {
-   setMapping(Object.fromEntries(
+   const reusedMap: Record<string, string | null> = Object.fromEntries(
     CANONICAL_FIELDS.map(f => [f.name, previous.mapping[f.name] ?? null]),
-   ))
+   )
+   setMapping(reusedMap)
    setReusedMapping({ from: previous.name, missing: [] })
+   // The person confirmed exactly these columns last time and the file still
+   // has every one of them: nothing is left to ask.
+   if (!horizonTooLong && REQUIRED_FIELDS.every(f => reusedMap[f])) {
+    handedOff = await autoConfirm(session.session_id, reusedMap)
+    if (handedOff) return
+   }
   } else {
    const suggestions: CanonicalMapping = insp.canonical_suggestions ?? {}
    const next: Record<string, string | null> =
@@ -847,6 +1030,11 @@ function QuickStartPageContent() {
    setReusedMapping(
     previous && missing.length > 0 ? { from: previous.name, missing } : null,
    )
+   const certain = !horizonTooLong && (!previous || missing.length === 0) ? detectedWithCertainty(suggestions) : null
+   if (certain) {
+    handedOff = await autoConfirm(session.session_id, certain)
+    if (handedOff) return
+   }
   }
  }
 
@@ -855,8 +1043,39 @@ function QuickStartPageContent() {
  setError(errorDetail(e) || t('qs.reuse_err_attach'))
  setStep(1)
  } finally {
- setBusy(false)
+ if (!handedOff) setBusy(false)
  }
+ }
+
+ // Skips the mapping step: confirms the mapping and launches training. When the
+ // gate still has questions or blocks the file, nothing launches and the person
+ // lands on the mapping step, where those answers live.
+ const autoConfirm = async (
+  sid: string, map: Record<string, string | null>,
+ ): Promise<boolean> => {
+  const launched = await confirmMapping(sid, map, true)
+  if (launched) {
+   setAutoMapped(map)
+   setMapping(map)
+  } else {
+   setStep(2)
+  }
+  return launched
+ }
+
+ // "Change columns" on the training screen: the file is already on the server,
+ // so open a fresh session over it with the mapping the person is looking at,
+ // and retire the poll loop of the run that was started on the skipped step.
+ const handleChangeColumns = () => {
+  if (!datasetId) return
+  pollGenRef.current++
+  setError(null)
+  setTrainMsg('')
+  setTrainPct(null)
+  setMultiPeriod(false)
+  setRetryNote(true)
+  setStep(1)
+  void startFromDataset(datasetId, true)
  }
 
  // Reuse tab: pick a previously uploaded dataset and jump to column mapping.
@@ -980,7 +1199,14 @@ function QuickStartPageContent() {
  // ── Step 2: Confirm columns → trigger training ───────────────────────────────
  const handleConfirm = async () => {
  if (!sessionId || !inspection) return
+ await confirmMapping(sessionId, mapping, false)
+ }
 
+ // Returns true when training was launched. `detached` hands the progress poll
+ // off without awaiting it (the auto-confirm path returns to its caller at once).
+ const confirmMapping = async (
+  sessionId: string, mapping: Record<string, string | null>, detached: boolean,
+ ): Promise<boolean> => {
  setError(null)
  setBusy(true)
 
@@ -1006,7 +1232,7 @@ function QuickStartPageContent() {
  // mapping screen, where DataIssuesPanel says why.
  if ((liveGate.blocking_fatal?.length ?? 0) > 0) {
   setBusy(false)
-  return
+  return false
  }
 
  // Fixable, and unanswered: the questions have just appeared below the
@@ -1016,7 +1242,7 @@ function QuickStartPageContent() {
  )
  if (stillUnresolved.length > 0) {
   setBusy(false)
-  return
+  return false
  }
 
  // Only send answers to findings the file STILL has. A choice made against an
@@ -1089,7 +1315,9 @@ function QuickStartPageContent() {
  trainLaunchedRef.current = true
 
  // Poll the whole family
- await pollFamily(res.job_id, res.family)
+ if (detached) void pollFamily(res.job_id, res.family)
+ else await pollFamily(res.job_id, res.family)
+ return true
  } catch (e: unknown) {
  const msg = errorDetail(e) || t('qs.err_config')
  setError(msg)
@@ -1106,6 +1334,7 @@ function QuickStartPageContent() {
    catch { /* the message above already says what failed */ }
   }
  }
+ return false
  }
  }
 
@@ -1133,10 +1362,12 @@ function QuickStartPageContent() {
  // this tab forever. 3s/poll × 600 ≈ 30 min, well above normal training.
  const MAX_POLLS = 600
  let attempts = 0
+ const gen = ++pollGenRef.current
 
  const poll = async (): Promise<void> => {
- // The user left. Stop polling and, above all, do not navigate.
- if (unmountedRef.current) return
+ // The user left, or asked to change the columns (a newer run replaces
+ // this one). Stop polling and, above all, do not navigate.
+ if (unmountedRef.current || gen !== pollGenRef.current) return
  try {
  const jobs = await Promise.all(memberJobIds.map(id => getJob(id)))
  const baseJob = jobs.find(j => j.id === baseJobId) ?? jobs[0]
@@ -1176,9 +1407,9 @@ function QuickStartPageContent() {
  // mounts with the new value. Deliberately scoped to the user's OWN
  // just-finished run: the app is never re-pointed at a session that finished
  // in the background while the user was mid-task somewhere else.
- if (unmountedRef.current) return
+ if (unmountedRef.current || gen !== pollGenRef.current) return
  await planningCtx?.reload()
- if (unmountedRef.current) return
+ if (unmountedRef.current || gen !== pollGenRef.current) return
  router.push('/compras')
  return
  }
@@ -1194,7 +1425,7 @@ function QuickStartPageContent() {
  }
  // Still running, poll again
  await new Promise(res => setTimeout(res, 3000))
- if (unmountedRef.current) return
+ if (unmountedRef.current || gen !== pollGenRef.current) return
  return poll()
  } catch (e: unknown) {
  const msg = errorDetail(e) || t('qs.err_status')
@@ -1411,16 +1642,6 @@ function QuickStartPageContent() {
  {' '}<strong style={{ color: 'var(--text)' }}>{t('qs.upload_desc_bold')}</strong>
  </p>
 
- {/* Plan settings: name + horizon + granularity + holiday calendar.
- Applied to both the file-upload path and the one-click demo below. */}
- <PlanSettings
- name={sessionName} onName={setSessionName}
- horizonDays={horizonDays} onHorizonDays={setHorizonDays}
- granularity={granularity} onGranularity={setGranularity}
- country={holidayCountry} onCountry={setHolidayCountry}
- busy={busy}
- />
-
  {/* Source selector: upload a new file vs reuse a previously uploaded
  dataset. The reuse tab only exists once the tenant has datasets. */}
  {(datasets.length > 0 || clonableSessions.length > 0) && (
@@ -1480,6 +1701,35 @@ function QuickStartPageContent() {
  )}
  </>
  )}
+
+ {/* Plan settings: name + horizon + detail + holiday calendar. Closed by
+ default — the defaults (shown beside the title) fit most files — and
+ applied to the file-upload path, the reuse tabs and the demo alike. */}
+ <details data-tour="qs.options" style={{ marginTop: 16 }}>
+ <summary style={{
+ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text)',
+ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+ ...(narrow ? { minHeight: 44 } : { padding: '4px 0' }),
+ }}>
+ {t('qs.options_title')}
+ <span style={{ fontWeight: 400, color: 'var(--dim)', fontSize: 12 }}>
+ {[
+ spanText(horizonDays, t),
+ t(GRANULARITY_OPTIONS.find(o => o.value === granularity)?.labelKey ?? 'qs.plan_granularity_auto'),
+ t(HOLIDAY_COUNTRIES.find(c => c.code === holidayCountry)?.labelKey ?? 'qs.country_CR'),
+ ].join(' · ')}
+ </span>
+ </summary>
+ <div style={{ marginTop: 14 }}>
+ <PlanSettings
+ name={sessionName} onName={setSessionName}
+ horizonDays={horizonDays} onHorizonDays={setHorizonDays}
+ granularity={granularity} onGranularity={setGranularity}
+ country={holidayCountry} onCountry={chooseCountry}
+ busy={busy}
+ />
+ </div>
+ </details>
 
  {/* Shared between both tabs: upload errors AND attach/inspect errors
  from the reuse path land here. */}
@@ -1560,6 +1810,21 @@ function QuickStartPageContent() {
  <p style={{ fontSize: 14, color: 'var(--dim)', margin: '0 0 20px', lineHeight: 1.6 }}>
  {t('qs.confirm_desc')}
  </p>
+
+ {/* Calm warning, never a block: the engine can forecast this horizon, the
+ numbers just get less reliable the further past the history they reach. */}
+ {historyDays !== null && horizonDays > Math.floor(historyDays / HISTORY_FRACTION) && (
+ <div style={{
+ marginBottom: 16, padding: '8px 14px', background: 'rgba(217,119,6,0.07)',
+ border: '1px solid #d9770655', borderRadius: 8, fontSize: 13, color: 'var(--text)', lineHeight: 1.55,
+ }}>
+ {t('qs.horizon_history_warn', {
+  history: spanText(historyDays, t),
+  max: spanText(Math.max(1, Math.floor(historyDays / HISTORY_FRACTION)), t),
+  chosen: spanText(horizonDays, t),
+ })}
+ </div>
+ )}
 
  {/* After a retry the dataset is reused server-side — tell the user
  no re-upload happened so the jump back here isn't confusing. */}
@@ -1776,6 +2041,32 @@ function QuickStartPageContent() {
  </p>
 
  {!error && <TrainingLoader message={trainMsg} pct={trainPct} multiPeriod={multiPeriod} />}
+
+ {/* The mapping step was skipped because the columns were certain: say
+ which ones were used, and keep the way back to the mapping open. */}
+ {autoMapped && (
+ <div style={{
+ marginTop: 20, padding: '10px 14px', borderRadius: 8,
+ border: '1px solid var(--border)', background: 'var(--surface-2)',
+ fontSize: 13, color: 'var(--text)', lineHeight: 1.55, textAlign: 'left',
+ }}>
+ {t('qs.mapping_auto_summary', {
+  sku: autoMapped.sku ?? '', date: autoMapped.date ?? '', demand: autoMapped.demand ?? '',
+ })}
+ {' '}
+ <button
+  type="button"
+  onClick={handleChangeColumns}
+  style={{
+  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+  color: 'var(--accent)', fontWeight: 700, fontSize: 13, textDecoration: 'underline',
+  ...(narrow ? { minHeight: 44 } : {}),
+  }}
+ >
+  {t('qs.change_columns')}
+ </button>
+ </div>
+ )}
 
  {error && (
  <div style={{ marginTop: 20 }}>
