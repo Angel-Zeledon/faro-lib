@@ -2779,6 +2779,12 @@ def get_inventory_status_by_warehouse(
     # whole tenant, applied beside the events below and always named on the row.
     from backend.inventory import forecast_adjustment_service as _fa_svc
     adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
+    # Committed customer orders, same source as the company-wide view. A
+    # commitment names a warehouse by its ID while this loop walks names, so the
+    # name is translated once here.
+    from backend.inventory import committed_demand_service as _cd_svc
+    committed_by_sku = _cd_svc.active_by_sku(tenant_id)
+    wh_id_by_name = {w["name"]: w["id"] for w in wh_svc.list_warehouses(tenant_id)}
 
     items: list[dict] = []
     for sku in all_skus:
@@ -2897,7 +2903,7 @@ def get_inventory_status_by_warehouse(
                     _rp_days = _resolve_review_period_days(supplier, review_period_map)
                     _committed_units, committed_applied = _cd_svc.committed_units(
                         committed_by_sku[sku], today, lead_time + _rp_days,
-                        warehouse_id=wh,
+                        warehouse_id=wh_id_by_name.get(wh, wh),
                         share=0.0 if demand_mode == "store" else share)
                     avg_daily_eff += _cd_svc.extra_rate(
                         _committed_units,
