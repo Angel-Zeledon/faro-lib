@@ -584,13 +584,14 @@ SOCIAL_LOGIN = Service(
     # simply do not get a button. Google first: the cheapest to set up.
     requires_any=(
         ("google_oauth_client_id", "google_oauth_client_secret"),
+        ("microsoft_oauth_client_id", "microsoft_oauth_client_secret"),
         ("facebook_oauth_app_id", "facebook_oauth_app_secret"),
         ("apple_oauth_service_id", "apple_oauth_team_id",
          "apple_oauth_key_id", "apple_oauth_private_key"),
     ),
-    summary="Sign in with Google, Apple or Facebook, next to email + password.",
+    summary="Sign in with Google, Microsoft, Apple or Facebook, next to email + password.",
     what_breaks=(
-        "The 'Continue with Google / Apple / Facebook' buttons disappear from "
+        "The 'Continue with Google / Microsoft / Apple / Facebook' buttons disappear from "
         "the login and signup screens; email + password keeps working exactly "
         "as before. People who only ever signed in with a provider must use "
         "'forgot password' to set one. Off by default — a source install shows "
@@ -603,13 +604,18 @@ SOCIAL_LOGIN = Service(
         "offered. Every provider console asks for the redirect (callback) URL, "
         "which is built from FRONTEND_URL:\n\n"
         f"    {_CALLBACK.format(provider='google')}\n"
+        f"    {_CALLBACK.format(provider='microsoft')}\n"
         f"    {_CALLBACK.format(provider='facebook')}\n"
         f"    {_CALLBACK.format(provider='apple')}\n\n"
         "Step-by-step console instructions: `docs/social-login.md`. An existing "
         "account is linked only through an email address the PROVIDER says it "
         "verified; when the local account had never verified that address, its "
         "password is removed on linking, because whoever chose it never proved "
-        "they own the mailbox."
+        "they own the mailbox. Microsoft does not verify its `email` claim, so "
+        "an address counts as verified only when Microsoft sends `xms_edov` "
+        "(add it as an optional ID-token claim in the app registration) or "
+        "`email_verified`; without it Microsoft sign-in cannot create or link "
+        "an account, only sign in an identity linked earlier."
     ),
     fields=(
         ConfigField(
@@ -631,6 +637,25 @@ SOCIAL_LOGIN = Service(
             doc="Client secret of that Google OAuth client. Without it (or the "
                 "ID) the Google button is not shown.",
             example="GOCSPX-...",
+        ),
+        ConfigField(
+            key="microsoft_oauth_client_id", env="MICROSOFT_OAUTH_CLIENT_ID",
+            doc="Application (client) ID of a Microsoft Entra app registration "
+                "whose supported account types are 'Accounts in any "
+                "organizational directory and personal Microsoft accounts'. "
+                "Web redirect URI: " + _CALLBACK.format(provider="microsoft")
+                + ". Add the optional ID-token claim `xms_edov`, or Microsoft "
+                "sign-in cannot create or link accounts.",
+            example="00000000-0000-0000-0000-000000000000",
+        ),
+        ConfigField(
+            key="microsoft_oauth_client_secret", env="MICROSOFT_OAUTH_CLIENT_SECRET",
+            secret=True,
+            doc="Client secret VALUE (not the secret ID) of that app "
+                "registration. It expires (24 months at most): renew it before "
+                "then or the Microsoft button starts failing. Without it (or "
+                "the ID) the Microsoft button is not shown.",
+            example="abc8Q~...",
         ),
         ConfigField(
             key="facebook_oauth_app_id", env="FACEBOOK_OAUTH_APP_ID",

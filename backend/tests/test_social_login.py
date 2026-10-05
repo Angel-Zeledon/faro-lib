@@ -1,4 +1,4 @@
-"""Social sign-in (Google, Apple, Facebook) — backend/auth/social/.
+"""Social sign-in (Google, Microsoft, Apple, Facebook) — backend/auth/social/.
 
 Every provider is faked with an `httpx.MockTransport`: the token endpoint, the
 JWKS and the Graph API answer from this file, and ID tokens are signed with a
@@ -67,9 +67,11 @@ class FakeProviders:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         url = str(request.url).split("?")[0]
-        if url in (providers.GOOGLE_JWKS_URL, providers.APPLE_JWKS_URL):
+        if url in (providers.GOOGLE_JWKS_URL, providers.APPLE_JWKS_URL,
+                   providers.MICROSOFT_JWKS_URL):
             return httpx.Response(200, json={"keys": [_JWK]})
-        if url in (providers.GOOGLE_TOKEN_URL, providers.APPLE_TOKEN_URL):
+        if url in (providers.GOOGLE_TOKEN_URL, providers.APPLE_TOKEN_URL,
+                   providers.MICROSOFT_TOKEN_URL):
             return httpx.Response(200, json={"id_token": self.id_token, "access_token": "x"})
         if url == providers.FACEBOOK_TOKEN_URL:
             return httpx.Response(200, json={"access_token": "fb-access-token"})
@@ -100,6 +102,7 @@ def social_off(monkeypatch, client):
     _set(monkeypatch,
          social_login_enabled=False,
          google_oauth_client_id="", google_oauth_client_secret="",
+         microsoft_oauth_client_id="", microsoft_oauth_client_secret="",
          facebook_oauth_app_id="", facebook_oauth_app_secret="",
          apple_oauth_service_id="", apple_oauth_team_id="",
          apple_oauth_key_id="", apple_oauth_private_key="",
@@ -115,6 +118,8 @@ def all_on(monkeypatch, social_off):
          social_login_enabled=True,
          google_oauth_client_id="google-client.apps.googleusercontent.com",
          google_oauth_client_secret="google-secret",
+         microsoft_oauth_client_id="11111111-2222-3333-4444-555555555555",
+         microsoft_oauth_client_secret="ms-secret",
          facebook_oauth_app_id="fb-app-id", facebook_oauth_app_secret="fb-app-secret",
          apple_oauth_service_id="es.stockai.signin", apple_oauth_team_id="TEAM123456",
          apple_oauth_key_id="KEY1234567", apple_oauth_private_key=_APPLE_PEM)
@@ -195,10 +200,22 @@ class TestProvidersEndpoint:
         monkeypatch.setattr("backend.config.settings.social_login_enabled", False)
         assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == []
 
-    def test_all_three_when_configured(self, client, all_on):
+    def test_all_four_when_configured_in_display_order(self, client, all_on):
+        assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == [
+            "google", "microsoft", "apple", "facebook",
+        ]
+
+    def test_a_half_configured_microsoft_is_not_offered(self, client, all_on, monkeypatch):
+        monkeypatch.setattr("backend.config.settings.microsoft_oauth_client_secret", "")
         assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == [
             "google", "apple", "facebook",
         ]
+
+    def test_microsoft_alone_is_offered_without_the_others(self, client, social_off, monkeypatch):
+        _set(monkeypatch, social_login_enabled=True,
+             microsoft_oauth_client_id="11111111-2222-3333-4444-555555555555",
+             microsoft_oauth_client_secret="ms-secret")
+        assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == ["microsoft"]
 
     def test_a_half_configured_provider_is_not_offered(self, client, all_on, monkeypatch):
         monkeypatch.setattr("backend.config.settings.facebook_oauth_app_secret", "")
@@ -207,7 +224,7 @@ class TestProvidersEndpoint:
     def test_an_apple_key_that_does_not_parse_is_not_offered(self, client, all_on, monkeypatch):
         monkeypatch.setattr("backend.config.settings.apple_oauth_private_key", "not a key")
         assert client.get("/api/v1/auth/providers").json()["data"]["providers"] == [
-            "google", "facebook",
+            "google", "microsoft", "facebook",
         ]
 
     def test_an_apple_key_pasted_on_one_line_still_works(self, client, all_on, monkeypatch):
@@ -253,6 +270,23 @@ class TestStart:
         assert row["binding_hash"] == hashlib.sha256(binding.encode()).hexdigest()
         # Raw state is never stored.
         assert query_one("SELECT 1 FROM oauth_flows WHERE state_hash = %s", (p["state"],)) is None
+
+    def test_microsoft_redirect_carries_state_pkce_and_nonce(self, client, all_on):
+        loc, p, binding = _start(client, "microsoft")
+        assert loc.startswith("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?")
+        assert p["client_id"] == "11111111-2222-3333-4444-555555555555"
+        assert p["redirect_uri"] == f"{FRONTEND}/api/v1/auth/oauth/microsoft/callback"
+        assert p["response_type"] == "code"
+        assert set(p["scope"].split()) == {"openid", "email", "profile"}
+        assert p["code_challenge_method"] == "S256"
+        assert binding, "the browser-binding cookie was not set"
+        row = query_one(
+            "SELECT * FROM oauth_flows WHERE state_hash = %s",
+            (hashlib.sha256(p["state"].encode()).hexdigest(),),
+        )
+        assert row is not None and row["provider"] == "microsoft"
+        assert row["nonce"] == p["nonce"]
+        assert p["code_challenge"] == providers.pkce_challenge(row["code_verifier"])
 
     def test_apple_uses_form_post(self, client, all_on):
         loc, p, _ = _start(client, "apple")
@@ -493,6 +527,226 @@ class TestGoogleCallback:
         fake.id_token = _google_token(p, email)
         assert _error_of(_callback(client, "google", p, binding)) == "oauth_terms_required"
         assert query_one("SELECT 1 FROM users WHERE email = %s", (email,)) is None
+
+
+# ── Microsoft ────────────────────────────────────────────────────────────────
+
+_MS_TID = "9188040d-6c67-4c5b-b112-36a304b66dad"   # the personal-accounts tenant
+
+
+def _ms_token(params, email, *, sub=None, tid=_MS_TID, iss=None, aud=None, nonce=None,
+              edov=None, email_verified=None, key=_RSA, exp_delta=600, kid=_KID):
+    """An ID token shaped like Microsoft's: tenant-specific issuer, no
+    `email_verified`, and an optional `xms_edov`."""
+    now = int(time.time())
+    claims = {
+        "iss": iss or f"https://login.microsoftonline.com/{tid}/v2.0",
+        "aud": aud or settings.microsoft_oauth_client_id,
+        "sub": sub or f"ms-{uuid4().hex}", "tid": tid, "ver": "2.0",
+        "nonce": nonce or params["nonce"], "iat": now, "exp": now + exp_delta,
+        "name": "Marta Gomez",
+    }
+    if email is not None:
+        claims["email"] = email
+    if edov is not None:
+        claims["xms_edov"] = edov
+    if email_verified is not None:
+        claims["email_verified"] = email_verified
+    return jwt.encode(claims, key, algorithm="RS256", headers={"kid": kid})
+
+
+class TestMicrosoft:
+    def test_new_person_with_a_domain_verified_email_gets_a_tenant_and_an_admin(
+        self, client, all_on, fake, cleanup_emails,
+    ):
+        email = f"ms-{uuid4().hex[:8]}@contoso-test.com"
+        cleanup_emails.append(email)
+        _, p, binding = _start(client, "microsoft", intent="signup")
+        sub = f"ms-{uuid4().hex}"
+        fake.id_token = _ms_token(p, email, sub=sub, tid=str(uuid4()), edov=True)
+        loc = _callback(client, "microsoft", p, binding)
+        code = _handoff_code(loc)
+
+        user = query_one("SELECT * FROM users WHERE email = %s", (email,))
+        assert user is not None and user["role"] == "admin"
+        assert user["email_verified"] is True and user["has_password"] is False
+        assert query_one("SELECT 1 FROM tenants WHERE id = %s", (user["tenant_id"],)) is not None
+        ident = query("SELECT * FROM user_identities WHERE user_id = %s", (user["id"],))
+        assert len(ident) == 1
+        assert ident[0]["provider"] == "microsoft" and ident[0]["subject"] == sub
+        assert ident[0]["tenant_id"] == user["tenant_id"]
+        # The token request carried the secret and our PKCE verifier.
+        req = next(r for r in fake.requests if str(r.url) == providers.MICROSOFT_TOKEN_URL)
+        assert b"code_verifier=" in req.content and b"client_secret=ms-secret" in req.content
+        r = client.post("/api/v1/auth/oauth/exchange", json={"code": code})
+        assert r.status_code == 200 and r.json()["data"]["is_new_account"] is True
+
+    def test_a_string_true_xms_edov_counts_as_verified(
+        self, client, all_on, fake, cleanup_emails,
+    ):
+        email = f"ms-{uuid4().hex[:8]}@contoso-test.com"
+        cleanup_emails.append(email)
+        _, p, b = _start(client, "microsoft", intent="signup")
+        fake.id_token = _ms_token(p, email, edov="true")
+        _handoff_code(_callback(client, "microsoft", p, b))
+        assert query_one("SELECT 1 FROM users WHERE email = %s", (email,)) is not None
+
+    @pytest.mark.parametrize("claims", [
+        {},                              # Microsoft's default: no proof at all
+        {"edov": False},                 # the tenant does NOT own the domain
+        {"edov": "false"},
+        {"email_verified": False},
+    ])
+    def test_an_email_microsoft_did_not_verify_creates_nothing(
+        self, client, all_on, fake, claims,
+    ):
+        email = f"unv-{uuid4().hex[:8]}@contoso-test.com"
+        users = query_one("SELECT COUNT(*) AS n FROM users")["n"]
+        idents = query_one("SELECT COUNT(*) AS n FROM user_identities")["n"]
+        _, p, b = _start(client, "microsoft", intent="signup")
+        fake.id_token = _ms_token(p, email, **claims)
+        assert _error_of(_callback(client, "microsoft", p, b)) == "oauth_email_unverified"
+        assert query_one("SELECT 1 FROM users WHERE email = %s", (email,)) is None
+        assert query_one("SELECT COUNT(*) AS n FROM users")["n"] == users
+        assert query_one("SELECT COUNT(*) AS n FROM user_identities")["n"] == idents
+
+    def test_an_unverified_microsoft_claim_never_links_an_existing_account(
+        self, client, all_on, fake, registered_user,
+    ):
+        """nOAuth: an attacker's directory sets `email` to the victim's address."""
+        uid = registered_user["user"]["id"]
+        _, p, b = _start(client, "microsoft")
+        fake.id_token = _ms_token(p, registered_user["email"])   # no xms_edov
+        assert _error_of(_callback(client, "microsoft", p, b)) == "oauth_email_unverified"
+        assert query_one(
+            "SELECT 1 FROM user_identities WHERE user_id = %s", (uid,),
+        ) is None
+        row = query_one("SELECT has_password FROM users WHERE id = %s", (uid,))
+        assert row["has_password"] is True, "a refused link must not touch the account"
+
+    def test_a_verified_claim_links_an_existing_verified_account(
+        self, client, all_on, fake, registered_user,
+    ):
+        uid = registered_user["user"]["id"]
+        _, p, b = _start(client, "microsoft")
+        fake.id_token = _ms_token(p, registered_user["email"].upper(), edov=True)
+        code = _handoff_code(_callback(client, "microsoft", p, b))
+        assert query_one(
+            "SELECT 1 FROM user_identities WHERE user_id = %s AND provider = 'microsoft'", (uid,),
+        ) is not None
+        r = client.post("/api/v1/auth/oauth/exchange", json={"code": code})
+        assert r.json()["data"]["user"]["id"] == uid
+
+    def test_an_already_linked_identity_signs_in_without_an_email_claim(
+        self, client, all_on, fake, registered_user,
+    ):
+        """Work accounts often carry no `email`; a linked `sub` must still work."""
+        sub = f"ms-{uuid4().hex}"
+        _, p, b = _start(client, "microsoft")
+        fake.id_token = _ms_token(p, registered_user["email"], sub=sub, edov=True)
+        _handoff_code(_callback(client, "microsoft", p, b))
+        _, p, b = _start(client, "microsoft")
+        fake.id_token = _ms_token(p, None, sub=sub)
+        code = _handoff_code(_callback(client, "microsoft", p, b))
+        r = client.post("/api/v1/auth/oauth/exchange", json={"code": code})
+        assert r.json()["data"]["user"]["id"] == registered_user["user"]["id"]
+
+    def test_no_email_and_no_link_asks_for_another_method(self, client, all_on, fake):
+        _, p, b = _start(client, "microsoft")
+        sub = f"ms-{uuid4().hex}"
+        fake.id_token = _ms_token(p, None, sub=sub)
+        assert _error_of(_callback(client, "microsoft", p, b)) == "oauth_email_missing"
+        assert query_one("SELECT 1 FROM user_identities WHERE subject = %s", (sub,)) is None
+
+    @pytest.mark.parametrize("bad", [
+        "aud", "nonce", "signature", "expired", "issuer_of_another_tenant",
+        "v1_issuer", "tid_not_a_guid", "unknown_kid",
+    ])
+    def test_an_id_token_that_fails_validation_is_refused(self, client, all_on, fake, bad):
+        email = f"bad-{uuid4().hex[:8]}@contoso-test.com"
+        _, p, b = _start(client, "microsoft", intent="signup")
+        kw: dict = {"edov": True}
+        if bad == "aud":
+            kw["aud"] = "someone-elses-client"
+        elif bad == "nonce":
+            kw["nonce"] = "a-different-nonce"
+        elif bad == "signature":
+            kw["key"] = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        elif bad == "expired":
+            kw["exp_delta"] = -3600
+        elif bad == "issuer_of_another_tenant":
+            kw["iss"] = f"https://login.microsoftonline.com/{uuid4()}/v2.0"
+        elif bad == "v1_issuer":
+            kw["iss"] = f"https://sts.windows.net/{_MS_TID}/"
+        elif bad == "tid_not_a_guid":
+            kw["tid"] = "common"
+            kw["iss"] = "https://login.microsoftonline.com/common/v2.0"
+        elif bad == "unknown_kid":
+            kw["kid"] = "rotated-away"
+        fake.id_token = _ms_token(p, email, **kw)
+        assert _error_of(_callback(client, "microsoft", p, b)) == "oauth_token_invalid"
+        assert query_one("SELECT 1 FROM users WHERE email = %s", (email,)) is None
+
+    def test_a_token_for_a_non_rs256_algorithm_is_refused(self, client, all_on, fake):
+        _, p, b = _start(client, "microsoft")
+        now = int(time.time())
+        fake.id_token = jwt.encode(
+            {"iss": f"https://login.microsoftonline.com/{_MS_TID}/v2.0",
+             "aud": settings.microsoft_oauth_client_id, "sub": "x", "tid": _MS_TID,
+             "nonce": p["nonce"], "iat": now, "exp": now + 600, "email": "a@b.co",
+             "xms_edov": True},
+            "shared-secret-shared-secret-shared-secret", algorithm="HS256",
+            headers={"kid": _KID},
+        )
+        assert _error_of(_callback(client, "microsoft", p, b)) == "oauth_token_invalid"
+
+    def test_verify_id_token_needs_an_issuer_rule(self):
+        with pytest.raises(ValueError):
+            providers.verify_id_token(
+                "x.y.z", jwks_url=providers.MICROSOFT_JWKS_URL, issuers=None,
+                audience="a", nonce="n",
+            )
+
+    def test_a_replayed_state_is_refused(self, client, all_on, fake, cleanup_emails):
+        email = f"replay-{uuid4().hex[:8]}@contoso-test.com"
+        cleanup_emails.append(email)
+        _, p, b = _start(client, "microsoft", intent="signup")
+        fake.id_token = _ms_token(p, email, edov=True)
+        _handoff_code(_callback(client, "microsoft", p, b))
+        assert _error_of(_callback(client, "microsoft", p, b)) == "oauth_state_invalid"
+
+    def test_a_callback_from_another_browser_is_refused(self, client, all_on, fake):
+        email = f"csrf-{uuid4().hex[:8]}@contoso-test.com"
+        _, p, _binding = _start(client, "microsoft", intent="signup")
+        fake.id_token = _ms_token(p, email, edov=True)
+        assert _error_of(_callback(client, "microsoft", p, None)) == "oauth_state_invalid"
+        assert query_one("SELECT 1 FROM users WHERE email = %s", (email,)) is None
+
+    def test_a_state_started_for_google_cannot_complete_a_microsoft_callback(
+        self, client, all_on, fake,
+    ):
+        _, p, b = _start(client, "google")
+        fake.id_token = _ms_token(p, "x@contoso-test.com", edov=True)
+        assert _error_of(_callback(client, "microsoft", p, b)) == "oauth_state_invalid"
+
+    def test_no_new_account_without_the_terms_statement(self, client, all_on, fake):
+        email = f"noterms-{uuid4().hex[:8]}@contoso-test.com"
+        _, p, b = _start(client, "microsoft", intent="login", terms=0)
+        fake.id_token = _ms_token(p, email, edov=True)
+        assert _error_of(_callback(client, "microsoft", p, b)) == "oauth_terms_required"
+        assert query_one("SELECT 1 FROM users WHERE email = %s", (email,)) is None
+
+    def test_the_probe_reads_invalid_grant_as_a_working_client(self, all_on, monkeypatch):
+        def handler(request):
+            assert str(request.url) == providers.MICROSOFT_TOKEN_URL
+            return httpx.Response(400, json={"error": "invalid_grant"})
+        monkeypatch.setattr(providers, "_transport", httpx.MockTransport(handler))
+        assert providers.probe_provider("microsoft") == "ok"
+
+    def test_the_probe_reads_invalid_client_as_a_wrong_secret(self, all_on, monkeypatch):
+        monkeypatch.setattr(providers, "_transport", httpx.MockTransport(
+            lambda r: httpx.Response(401, json={"error": "invalid_client"})))
+        assert providers.probe_provider("microsoft") == "auth_failed"
 
 
 # ── Facebook ─────────────────────────────────────────────────────────────────

@@ -282,7 +282,7 @@ def probe_secret_storage(tenant_id: str | None = None) -> ProbeResult:
 def probe_social_login(tenant_id: str | None = None) -> ProbeResult:
     """Each configured provider is asked whether it recognises our client.
 
-    Google and Apple get a deliberately bogus authorization code: a known
+    Google, Microsoft and Apple get a deliberately bogus authorization code: a known
     client is answered `invalid_grant`, an unknown one `invalid_client`.
     Facebook issues an app access token for a correct id/secret pair. Nobody
     is signed in and nothing is sent to anyone. `extra.providers` carries the
