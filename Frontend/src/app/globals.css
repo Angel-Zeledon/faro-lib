@@ -628,9 +628,9 @@
 .auth-eye {
   all: unset;
   position: absolute;
-  right: 12px;
+  right: 2px;                         /* the 44px box sits INSIDE the field: icon ~24px from the edge */
   top: 50%;
-  transform: translate(50%, -50%);   /* the 44px box is centred on right:12px */
+  transform: translateY(-50%);
   width: 44px;
   height: 44px;
   display: flex;
@@ -702,7 +702,7 @@
               background 0.22s ease, transform 0.22s ease;
 }
 /* The eye toggle sits over the right edge of the password field. */
-.auth-field input.auth-input-affix { padding-right: 40px; }
+.auth-field input.auth-input-affix { padding-right: 48px; }
 
 .auth-field input.auth-input::placeholder {
   color: #a1a1aa;
