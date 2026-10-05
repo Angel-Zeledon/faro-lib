@@ -989,7 +989,10 @@ def inventory_status(
     # sorting and paging; recomputed only when an input changed — see
     # backend/inventory/status_snapshot.py). None means the snapshot could not
     # be trusted or built, and the live computation below answers instead.
-    if not by_warehouse:
+    # A warehouse-scoped caller never reads it: the snapshot is the company-wide
+    # aggregate (stock and demand summed over every warehouse), and the scoped
+    # branch below is what restricts rows to the caller's warehouses.
+    if not by_warehouse and not wscope.is_scoped(user):
         snap = status_snapshot.read_status(
             user.tenant_id, session_id, service_level, period,
             signal=signal, supplier=supplier, skus=skus, q=q,
