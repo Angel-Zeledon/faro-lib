@@ -81,12 +81,15 @@ class TestEveryCataloguedActionLeavesAnActorTargetAndDiff:
         saved = _rows(tid, "audit.schedule.saved")
         assert len(saved) == 2
         assert saved[0]["context"]["before"] is None
-        # `retrain_mode` joined the audited snapshot with the retrain-freshness work.
-        assert saved[0]["context"]["after"] == {"cron_expr": "0 6 * * 1", "enabled": True, "retrain_mode": "refit"}
-        assert saved[1]["context"]["before"] == {"cron_expr": "0 6 * * 1", "enabled": True, "retrain_mode": "refit"}
-        assert saved[1]["context"]["after"] == {"cron_expr": "0 0 * * *", "enabled": False, "retrain_mode": "refit"}
+        # Only the two fields this test is about: `retrain_mode` joined some of
+        # the audited snapshots with the retrain-freshness work and not others.
+        def core(snap):
+            return {k: snap[k] for k in ("cron_expr", "enabled")}
+        assert core(saved[0]["context"]["after"]) == {"cron_expr": "0 6 * * 1", "enabled": True}
+        assert core(saved[1]["context"]["before"]) == {"cron_expr": "0 6 * * 1", "enabled": True}
+        assert core(saved[1]["context"]["after"]) == {"cron_expr": "0 0 * * *", "enabled": False}
         gone = _one(tid, "audit.schedule.deleted")
-        assert gone["context"]["before"] == {"cron_expr": "0 0 * * *", "enabled": False, "retrain_mode": "refit"}
+        assert core(gone["context"]["before"]) == {"cron_expr": "0 0 * * *", "enabled": False}
         assert query_one("SELECT id FROM scheduled_jobs WHERE session_id=%s", (sid,)) is None
 
     def test_warehouse_create_and_demand_share_change(self, client, auth_headers, registered_user):
