@@ -15,7 +15,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: [
-        '/$', '/precios$', '/como-funciona$', '/preguntas-frecuentes$', '/seguridad$', '/desarrolladores$', '/privacidad$', '/terminos$', '/cookies$', '/aviso-legal$', '/legal$', '/uso-aceptable$', '/procesamiento-de-datos$', '/ia$', '/divulgacion-responsable$', '/accesibilidad$', '/condiciones-comerciales$', '/licencia$', '/.well-known/', '/google*.html$', '/docs',
+        '/$', '/precios$', '/como-funciona$', '/preguntas-frecuentes$', '/seguridad$', '/desarrolladores$', '/industrias$', '/industrias/consumo-masivo$', '/industrias/ferreteria$', '/industrias/farmacia$', '/industrias/autopartes$', '/industrias/retail$', '/stockai-vs-excel$', '/como-se-calcula$', '/integraciones$', '/novedades$', '/privacidad$', '/terminos$', '/cookies$', '/aviso-legal$', '/legal$', '/uso-aceptable$', '/procesamiento-de-datos$', '/ia$', '/divulgacion-responsable$', '/accesibilidad$', '/condiciones-comerciales$', '/licencia$', '/.well-known/', '/google*.html$', '/docs',
         '/_next/', '/*.png', '/*.jpg', '/*.webp', '/*.svg', '/*.pdf'],
       disallow: ['/'],
     },

@@ -5,11 +5,12 @@ import { isAuthenticated, tryRefresh } from '@/lib/auth'
 import Spinner from '@/components/ui/Spinner'
 import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 import { LEGAL_PUBLIC_PATHS } from '@/components/landing/legalPaths'
+import { CONTENT_PUBLIC_PATHS } from '@/components/landing/contentPaths'
 
 // The landing's public subpages are listed too. ConditionalShell already keeps
 // them out of the app shell (and so out of this guard); naming them here means
 // they stay public even if that ever changes.
-const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', '/auth/callback', ...Object.values(SUBPAGE_PATHS), ...LEGAL_PUBLIC_PATHS, '/desarrolladores', '/docs']
+const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', '/auth/callback', ...Object.values(SUBPAGE_PATHS), ...LEGAL_PUBLIC_PATHS, ...CONTENT_PUBLIC_PATHS, '/desarrolladores', '/docs']
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router   = useRouter()

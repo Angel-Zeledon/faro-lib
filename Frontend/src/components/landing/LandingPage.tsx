@@ -27,6 +27,9 @@ import { LandingStyles, Section, Tag, H2, H3, Lead, Check, Dash, Scroller, useSc
 import { Nav, Footer } from '@/components/landing/chrome'
 import { DecideSection, PricingSection, TrustSection, FaqAccordion, FinalSection, MorningSection, FeaturesSection } from '@/components/landing/sections'
 import { EngineFlow, ModelsSection, ENGINE_CSS } from '@/components/landing/engine'
+import { HomeTour, HomeAudience } from '@/components/landing/HomeExtras'
+import { LANDING_CONTENT } from '@/i18n/landingContent'
+import { CONTENT_PATHS, INDUSTRIES_HUB_PATH } from '@/components/landing/contentPaths'
 
 const HOME = { onHome: true } as const
 
@@ -57,6 +60,7 @@ function HeroTitle({ lines }: { lines: string[] }) {
 export default function LandingPage() {
   const { lang } = useLanguage()
   const L = LANDING[lang]
+  const HOME_LINKS = LANDING_CONTENT[lang].home
 
   const PROBLEMS   = L.problem.items
   const CASES      = L.cases.items
@@ -199,6 +203,8 @@ export default function LandingPage() {
      here, the chapters in a dialog. See components/landing/ScreenGuide. */}
  <ScreenGuide tour={L.tour} manual={L.manual} lang={lang} primaryClass="btn-primary" />
  <Link href="/como-funciona" className="lp-more">{L.how.more}</Link>
+ <br />
+ <Link href={CONTENT_PATHS.method} className="lp-more">{HOME_LINKS.methodMore}</Link>
  </Section>
 
  {/* ── THE MODELS ───────────────────────────────────────────────────── */}
@@ -206,6 +212,9 @@ export default function LandingPage() {
 
  {/* ── EVERY FEATURE, GROUPED ───────────────────────────────────────── */}
  <FeaturesSection />
+
+ {/* ── THE APP, INSIDE: three real screens ───────────────────────────── */}
+ <HomeTour />
 
  {/* ── INDUSTRIES ───────────────────────────────────────────────────── */}
  <Section id="casos" alt>
@@ -240,6 +249,7 @@ export default function LandingPage() {
  ))}
  </div>
  </div>
+ <Link href={INDUSTRIES_HUB_PATH} className="lp-more">{HOME_LINKS.casesMore}</Link>
  </Section>
 
  {/* "Qué incluye" (four roles and eight feature cards) was removed on
@@ -273,6 +283,7 @@ export default function LandingPage() {
  ))}
  </div>
  </Scroller>
+ <Link href={CONTENT_PATHS.excel} className="lp-more">{HOME_LINKS.compareMore}</Link>
  </Section>
 
  {/* ── HOW IT DECIDES ───────────────────────────────────────────────── */}
@@ -306,6 +317,9 @@ export default function LandingPage() {
  </div>
  </div>
  </Section>
+
+ {/* ── WHO IT IS FOR, AND WHO IT IS NOT ─────────────────────────────── */}
+ <HomeAudience />
 
  {/* ── PRICE ────────────────────────────────────────────────────────── */}
  <PricingSection />
