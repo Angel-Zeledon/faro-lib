@@ -161,6 +161,26 @@ EVENTS: dict[str, EventSpec] = {
         detail_keys=("reference",),
     ),
 
+    # ── Sales received by e-mail (backend/inbound_email/) ────────────────────
+    "inbound_email.ingested": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("filename", "email"),
+    ),
+    # The file is stored but nobody has said which column is the date, the
+    # product and the quantity of THIS file. Never guessed: the user confirms
+    # the columns in the app.
+    "inbound_email.needs_review": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("filename", "email"),
+    ),
+    # A teammate mailed a file and it was not taken (too big, unreadable,
+    # over the plan's ceiling). Strangers never reach this: they are logged
+    # and never answered.
+    "inbound_email.rejected": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("filename", "email"),
+    ),
+
     # ── Data the tenant put in ───────────────────────────────────────────────
     "data.stock_imported": EventSpec(
         kind="data", severity=INFO,
@@ -281,6 +301,12 @@ REASONS: tuple[str, ...] = (
     "reversed_by_user",
     # a person cancelled the order themselves
     "cancelled_by_user",
+    # sales received by e-mail
+    "inbound_columns_unconfirmed",
+    "inbound_unreadable_file",
+    "inbound_file_too_large",
+    "inbound_duplicate_file",
+    "inbound_no_usable_attachment",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

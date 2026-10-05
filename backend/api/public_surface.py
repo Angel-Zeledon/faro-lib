@@ -73,6 +73,8 @@ INTERNAL_TAGS: dict[str, str] = {
     # should be able to do that unattended.
     "inventory-cancellation": "cancelling / reopening a PO from the /pedidos screen",
     "trial": "unauthenticated trial signup",
+    "inbound-email": "the tenant's private sales-by-e-mail address is a credential, and its allow-list is edited by an administrator on the Datos screen",
+    "inbound-webhook": "the mail provider's webhook, authenticated by a shared-secret signature, not by key",
     "whatsapp": "Twilio's inbound webhook, authenticated by signature, not by key",
     "models": "unauthenticated catalogue of model names",
     "health": "load-balancer probe",

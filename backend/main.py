@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router, service_config as service_config_router
+from backend.api.v1 import alerts as alerts_router, auth, sessions, datasets, datasources, configuration, training, forecasts, artifacts, reports, analyst, chats, users, preferences, activity, models as models_router, documents, api_keys, webhooks, schedule, inventory as inventory_router, ai_insights, demo, entitlements, tenant_data, planning as planning_router, whatsapp as whatsapp_router, scenarios as scenarios_router, freshness as freshness_router, messages as messages_router, service_config as service_config_router, inbound_email as inbound_email_router
 from backend.error_codes import describe_http_error
 from backend.errors import AppError
 from backend.db.connection import PoolExhausted
@@ -386,6 +386,8 @@ from backend.api.v1 import timezone as timezone_router  # noqa: E402
 app.include_router(timezone_router.router, prefix=_PREFIX)
 app.include_router(tenant_data.router,     prefix=_PREFIX)
 app.include_router(whatsapp_router.router, prefix=_PREFIX)
+app.include_router(inbound_email_router.router, prefix=_PREFIX)
+app.include_router(inbound_email_router.webhook_router, prefix=_PREFIX)
 app.include_router(freshness_router.router, prefix=_PREFIX)
 app.include_router(alerts_router.router,    prefix=_PREFIX)
 app.include_router(messages_router.router,  prefix=_PREFIX)

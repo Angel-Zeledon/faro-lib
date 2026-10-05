@@ -2353,3 +2353,11 @@ export const getAuditTrail = (q: AuditQuery & { limit?: number; offset?: number 
 export const getAuditFilters = () => request<AuditFilters>('GET', '/audit/filters', undefined, { silent: true })
 export const downloadAuditCsv = (q: AuditQuery = {}) =>
   downloadBlob(`/audit/export?${auditQs(q)}`, `audit-${new Date().toISOString().slice(0, 10)}.csv`)
+
+// ── Sales by e-mail (admin only) ──────────────────────────────────────────────
+export const getInboundEmail = () =>
+  request<import('./types').InboundEmailState>('GET', '/inbound-email')
+export const setInboundEmailSenders = (emails: string[]) =>
+  request<import('./types').InboundEmailState>('PUT', '/inbound-email/senders', { emails })
+export const regenerateInboundEmail = () =>
+  request<import('./types').InboundEmailState>('POST', '/inbound-email/regenerate')

@@ -35,7 +35,9 @@ def _enforce_dataset_size(tenant_id: str, size_bytes: int) -> None:
         )
 
 
-async def upload_dataset(tenant_id: str, user_id: str, file: UploadFile) -> dict:
+async def upload_dataset(
+    tenant_id: str, user_id: str, file: UploadFile, *, track: bool = True,
+) -> dict:
     suffix = Path(file.filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise ValueError(
@@ -74,8 +76,12 @@ async def upload_dataset(tenant_id: str, user_id: str, file: UploadFile) -> dict
     )
     # A sales file just landed: grade the live forecasts against it in the
     # background (notification only; see forecast_check/tracking.py).
-    from backend.datasources.service import _track_new_sales
-    _track_new_sales(tenant_id, dataset_id)
+    # `track=False` is for a file whose columns nobody has confirmed yet (a sales
+    # report that arrived by e-mail with a different header): grading forecasts
+    # against it would be guessing a mapping.
+    if track:
+        from backend.datasources.service import _track_new_sales
+        _track_new_sales(tenant_id, dataset_id)
     return get_dataset(tenant_id, dataset_id)
 
 

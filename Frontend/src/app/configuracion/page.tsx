@@ -31,6 +31,7 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { SCREENS, canSee, type Screen } from '@/components/layout/navItems'
 import { useTenantFacts, type TenantFacts } from '@/hooks/useTenantFacts'
 import LegalLinks from '@/components/legal/LegalLinks'
+import InboundEmailCard from '@/components/inbound/InboundEmailCard'
 
 interface Row { screen: Screen; descKey: string }
 interface Section { id: string; titleKey: string; rows: Row[] }
@@ -127,6 +128,13 @@ export default function SettingsHubPage() {
               />
             )
           })}
+          {/* Sales by e-mail: the address is a credential, so only an admin
+              sees the card (the endpoints refuse everybody else too). */}
+          {s.id === 'data' && user?.role === 'admin' && (
+            <div style={{ borderTop: '1px solid var(--border)' }}>
+              <InboundEmailCard />
+            </div>
+          )}
         </HubSection>
       ))}
 

@@ -1857,6 +1857,44 @@ _ENTERPRISE = [
     ("create_session_accuracy_tracking_idx",
      "CREATE INDEX IF NOT EXISTS idx_session_accuracy_tracking_tenant "
      "ON session_accuracy_tracking (tenant_id)"),
+
+    # Sales by e-mail (backend/inbound_email/). One private address per tenant:
+    # `token` is the secret half of sales+<token>@<domain>, so it is unique and
+    # is NEVER exported. Regenerating it overwrites the column, which is what
+    # makes the old address stop working. `allowed_senders` is the admin's
+    # allow-list on top of the tenant's own verified analyst/admin users.
+    ("create_inbound_email_addresses",
+     """CREATE TABLE IF NOT EXISTS inbound_email_addresses (
+         tenant_id       TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         token           TEXT NOT NULL UNIQUE,
+         allowed_senders JSONB NOT NULL DEFAULT '[]',
+         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         rotated_at      TIMESTAMPTZ
+     )"""),
+    # One row per received attachment (or per message with none). The unique
+    # key is what makes a provider's retry a no-op: the claim INSERT either
+    # wins or does nothing. `attachment_sha256` is '' for a message with no
+    # attachment so the key stays total.
+    ("create_inbound_email_messages",
+     """CREATE TABLE IF NOT EXISTS inbound_email_messages (
+         id                TEXT PRIMARY KEY,
+         tenant_id         TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         message_id        TEXT NOT NULL,
+         sender            TEXT NOT NULL DEFAULT '',
+         filename          TEXT,
+         attachment_sha256 TEXT NOT NULL DEFAULT '',
+         size_bytes        BIGINT,
+         outcome           TEXT NOT NULL DEFAULT 'processing',
+         reason            TEXT,
+         reason_params     JSONB NOT NULL DEFAULT '{}',
+         dataset_id        TEXT,
+         retrain           TEXT,
+         received_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         UNIQUE (tenant_id, message_id, attachment_sha256)
+     )"""),
+    ("create_inbound_email_messages_idx",
+     "CREATE INDEX IF NOT EXISTS idx_inbound_email_messages_tenant "
+     "ON inbound_email_messages (tenant_id, received_at DESC)"),
 ]
 _MIGRATIONS += _ENTERPRISE
 

@@ -22,7 +22,7 @@ import type { Lang } from './translations'
 /** Service keys, exactly as `backend/service_config/registry.py` declares them. */
 export type ServiceKey =
   | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
-  | 'secret_storage' | 'contact' | 'social_login' | 'worker' | 'limits' | 'api_surface'
+  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'worker' | 'limits' | 'api_surface'
 
 /** Field keys, exactly as the registry declares them (= `Settings` attributes). */
 export type FieldKey =
@@ -42,6 +42,7 @@ export type FieldKey =
   | 'facebook_oauth_app_id' | 'facebook_oauth_app_secret'
   | 'apple_oauth_service_id' | 'apple_oauth_team_id' | 'apple_oauth_key_id'
   | 'apple_oauth_private_key'
+  | 'inbound_email_domain' | 'inbound_email_secret'
   | 'worker_enabled' | 'scheduler_enabled' | 'worker_id'
   | 'max_concurrent_jobs' | 'worker_poll_interval_seconds'
   | 'max_upload_size_mb' | 'dataset_editor_max_rows' | 'dataset_editor_max_mb'
@@ -181,6 +182,12 @@ const es: ServiceConfigCopy = {
       whatBreaks: 'Desaparecen los botones «Continuar con Google / Apple / Facebook» del inicio de sesión y del registro; correo y contraseña siguen funcionando igual. Quien solo entraba con un proveedor debe usar «¿Olvidaste tu contraseña?» para crear una. Viene apagado: una instalación nueva muestra solo el formulario de correo hasta que configuras un proveedor Y enciendes SOCIAL_LOGIN_ENABLED.',
       note: 'Cada proveedor muestra su botón solo con el interruptor encendido y TODOS sus campos llenos; uno a medias nunca se ofrece. La URL de redirección que pide cada consola sale de FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/oauth/google/callback, <FRONTEND_URL>/api/v1/auth/oauth/facebook/callback y <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Paso a paso: docs/social-login.md. Una cuenta existente solo se vincula por un correo que el PROVEEDOR verificó; si aquí ese correo nunca se había verificado, se le quita la contraseña al vincular, porque quien la eligió nunca demostró ser dueño del buzón.',
     },
+    inbound_email: {
+      name: 'Ventas por correo',
+      summary: 'Recibir archivos de ventas reenviados por correo a una dirección privada de cada cuenta.',
+      whatBreaks: 'La tarjeta «Ventas por correo» avisa que esta instalación todavía no puede recibir correo, y POST /api/v1/inbound/email responde el error estructurado `inbound_email_disabled`. Todo lo demás sigue igual: los archivos se suben a mano.',
+      note: 'Necesita un proveedor de correo que reenvíe el correo entrante a un webhook (Postmark, Mailgun, Resend o un relay) y un registro MX para el dominio de entrada. El webhook se autentica con INBOUND_EMAIL_SECRET: una cabecera HMAC `X-StockAI-Signature` o HTTP Basic cuya contraseña es el secreto. Paso a paso: docs/inbound-email.md.',
+    },
     worker: {
       name: 'Worker y tareas programadas',
       summary: 'Worker de entrenamiento y los ciclos programados.',
@@ -245,6 +252,8 @@ const es: ServiceConfigCopy = {
     apple_oauth_team_id: 'Team ID de 10 caracteres de Apple Developer; firma el client secret que este servidor genera en cada inicio de sesión con Apple.',
     apple_oauth_key_id: 'Key ID de la llave privada de Sign in with Apple (.p8).',
     apple_oauth_private_key: 'Contenido del archivo .p8, con las líneas BEGIN/END. Pegarlo en una sola línea está bien: los saltos de línea se reconstruyen. Sin ella no se le puede pedir un token a Apple y su botón no aparece.',
+    inbound_email_domain: 'Dominio donde viven las direcciones de cada cuenta (sales+<token>@<dominio>). Su registro MX debe apuntar a tu proveedor de correo entrante.',
+    inbound_email_secret: 'Secreto compartido que autentica las llamadas del webhook del proveedor. Usa una cadena larga y aleatoria; si lo cambias, actualiza también el webhook del proveedor.',
     worker_enabled: 'Corre en este proceso el ciclo que toma y entrena los trabajos.',
     scheduler_enabled: 'Corre los ciclos programados: trabajos agendados, alertas diarias y corte mensual. Solo una instancia puede tenerlo encendido.',
     worker_id: 'Identidad con la que se toman trabajos y se recuperan los que quedaron corriendo tras una caída. Vacío usa el nombre del host — dale un id FIJO a un worker de larga vida para que sus trabajos huérfanos se sigan reconociendo después de recrear el contenedor.',
@@ -370,6 +379,12 @@ const en: ServiceConfigCopy = {
       whatBreaks: 'The "Continue with Google / Apple / Facebook" buttons disappear from the login and signup screens; email + password keeps working exactly as before. People who only signed in with a provider must use "Forgot password?" to set one. Off by default: a new install shows only the email form until you configure a provider AND turn SOCIAL_LOGIN_ENABLED on.',
       note: 'Each provider shows its button only when the switch is on AND every one of its fields is set; a half-filled provider is never offered. The redirect URL each console asks for is built from FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/oauth/google/callback, <FRONTEND_URL>/api/v1/auth/oauth/facebook/callback and <FRONTEND_URL>/api/v1/auth/oauth/apple/callback. Step by step: docs/social-login.md. An existing account is linked only through an email the PROVIDER verified; if that email had never been verified here, its password is removed on linking, because whoever chose it never proved they own the mailbox.',
     },
+    inbound_email: {
+      name: 'Sales by e-mail',
+      summary: 'Receive sales files forwarded by e-mail to a private per-account address.',
+      whatBreaks: 'The "Sales by e-mail" card says this installation cannot receive e-mail yet, and POST /api/v1/inbound/email answers the structured `inbound_email_disabled` error. Everything else keeps working: files are still uploaded by hand.',
+      note: 'Needs a mail provider that can forward inbound mail to a webhook (Postmark, Mailgun, Resend or a relay) and an MX record for the inbound domain. The webhook is authenticated by INBOUND_EMAIL_SECRET: an `X-StockAI-Signature` HMAC header or HTTP Basic auth whose password is the secret. Step by step: docs/inbound-email.md.',
+    },
     worker: {
       name: 'Worker and scheduled jobs',
       summary: 'Training worker and the scheduled loops.',
@@ -434,6 +449,8 @@ const en: ServiceConfigCopy = {
     apple_oauth_team_id: '10-character Apple Developer Team ID; the issuer of the client secret this server signs for every Apple sign-in.',
     apple_oauth_key_id: 'Key ID of the Sign in with Apple private key (.p8).',
     apple_oauth_private_key: 'Contents of the .p8 key file, BEGIN/END lines included. Pasting it on one line is fine; the line breaks are restored. Without it Apple cannot be asked for a token and its button is not shown.',
+    inbound_email_domain: 'Domain the per-account addresses live on (sales+<token>@<domain>). Its MX record must point at your inbound mail provider.',
+    inbound_email_secret: 'Shared secret that authenticates the webhook calls from the mail provider. Use a long random string; changing it requires updating the webhook settings at the provider too.',
     worker_enabled: 'Runs the job-claim and training loop in this process.',
     scheduler_enabled: 'Runs the scheduled loops: scheduled jobs, daily alerts, monthly snapshot. Exactly one instance may have this on.',
     worker_id: 'Identity used to claim jobs and to recover the ones left running after a crash. Empty falls back to the host name — give a long-lived worker a FIXED id so its orphans are still recognised after the container is recreated.',

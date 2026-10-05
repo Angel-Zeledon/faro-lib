@@ -169,6 +169,19 @@ def _read_df(source: _Source, fmt: Optional[str], nrows: Optional[int]) -> pd.Da
     return read_csv_any_encoding(buf, nrows=nrows, sep=_csv_sep(source))
 
 
+def peek_columns(content: bytes, suffix: str) -> list[str]:
+    """Column names of an in-memory table file, read from its first rows only.
+
+    Used by the e-mail ingest, which has to decide whether a file matches the
+    last confirmed mapping BEFORE it stores anything. Refuses a file with a NUL
+    byte (ValueError, same message as every other reader); any other failure to
+    parse also surfaces as an exception for the caller to report.
+    """
+    fmt = {".xlsx": "excel", ".xls": "excel", ".json": "json",
+           ".parquet": "parquet"}.get(suffix.lower(), "csv")
+    return [str(c) for c in _read_df(content, fmt, 5).columns]
+
+
 def read_rows(source: _Source, fmt: Optional[str] = None,
               nrows: Optional[int] = None) -> list[dict]:
     """Read a tabular file/bytes into plain row dicts. NaN -> None."""

@@ -2445,3 +2445,27 @@ export interface ScenarioRunResult {
     service_level:   number
   }
 }
+
+// ── Sales by e-mail (Configuración > Datos) ───────────────────────────────────
+export type InboundOutcome = 'ingested' | 'needs_review' | 'rejected' | 'processing'
+
+export interface InboundEmailMessage {
+  id:            string
+  sender:        string
+  filename:      string | null
+  outcome:       InboundOutcome
+  reason:        string | null
+  reason_params: Record<string, unknown>
+  dataset_id:    string | null
+  /** 'none' | 'launched' | 'skipped' | 'failed': what happened to a scheduled retrain. */
+  retrain:       string | null
+  received_at:   string
+}
+
+export interface InboundEmailState {
+  /** False when this installation has no inbound mail domain and secret. */
+  enabled:         boolean
+  address:         string | null
+  allowed_senders: string[]
+  messages:        InboundEmailMessage[]
+}
