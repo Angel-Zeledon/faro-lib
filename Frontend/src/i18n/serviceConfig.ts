@@ -23,6 +23,7 @@ import type { Lang } from './translations'
 export type ServiceKey =
   | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
   | 'secret_storage' | 'contact' | 'billing' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'api_surface' | 'operations'
+  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'sql_sources' | 'api_surface' | 'operations'
 
 /** Field keys, exactly as the registry declares them (= `Settings` attributes). */
 export type FieldKey =
@@ -52,6 +53,7 @@ export type FieldKey =
   | 'max_upload_size_mb' | 'dataset_editor_max_rows' | 'dataset_editor_max_mb'
   | 'sql_materialize_max_rows' | 'accuracy_degradation_threshold_pct'
   | 'reforecast_full_refit_days'
+  | 'sql_sources_allow_private_hosts' | 'sql_sources_max_concurrent_per_tenant'
   | 'public_api_only'
   // Operations thresholds (installation status panel)
   | 'ops_queue_wait_degraded_minutes' | 'ops_running_job_degraded_minutes'
@@ -242,6 +244,12 @@ const es: ServiceConfigCopy = {
       whatBreaks: 'No se apaga nada. Son rechazos, no funciones: pasarse de uno siempre es un rechazo explicado, nunca un recorte silencioso.',
       note: 'Son techos de infraestructura y NO son los límites comerciales del plan. Esos viven en `backend/entitlements/plans.py`.',
     },
+    sql_sources: {
+      name: 'Bases de datos de clientes',
+      summary: 'Conexiones a las bases de datos propias de cada cliente (fuentes SQL).',
+      whatBreaks: 'No se apaga nada. Deciden a qué direcciones de red puede conectarse una fuente SQL y cuántas conexiones puede tener abiertas un mismo cliente; una dirección rechazada o los cupos llenos siempre se explican en pantalla, nunca fallan en silencio.',
+      note: 'En el servicio alojado las redes privadas quedan rechazadas: un cliente no debe poder apuntar una «base de datos» a la red interna de este servidor. Una instalación propia que se conecta a un ERP en su red local pone SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true. Las direcciones link-local y de metadatos de la nube (169.254.0.0/16, fe80::/10 y las IP de metadatos conocidas) se rechazan siempre.',
+    },
     api_surface: {
       name: 'Modo solo-API',
       summary: 'Modo de solo API pública.',
@@ -322,6 +330,8 @@ const es: ServiceConfigCopy = {
     dataset_editor_max_rows: 'Filas que el editor de datos abre. Se revisa contra el conteo guardado ANTES de leer el archivo, así que uno enorme nunca se carga en memoria solo para descubrir que no cabía.',
     dataset_editor_max_mb: 'El mismo resguardo, por tamaño de archivo.',
     sql_materialize_max_rows: 'Tope de filas al convertir una consulta SQL en un archivo. Pasarse es un rechazo, nunca un recorte.',
+    sql_sources_allow_private_hosts: 'Deja que las fuentes SQL se conecten a direcciones locales y de redes privadas (RFC 1918, CGNAT, IPv6 de uso local). Apagado por defecto; enciéndelo solo en una instalación propia cuyas bases de datos estén en su propia red.',
+    sql_sources_max_concurrent_per_tenant: 'Conexiones que un mismo cliente puede tener abiertas a la vez hacia sus bases de datos (pruebas, consultas, exportaciones, actualizaciones). La siguiente espera hasta 10 segundos y luego se rechaza con un mensaje claro.',
     accuracy_degradation_threshold_pct: 'Cuánto peor (en porcentaje relativo) debe rendir un pronóstico contra las ventas reales, comparado con su precisión al entrenarse, para que la app avise una sola vez. Es solo un aviso: nada se reentrena solo.',
     reforecast_full_refit_days: 'Edad en días a partir de la cual un reentrenamiento programado en modo «actualizar a diario, reajustar periódicamente» deja de usar los modelos guardados y los entrena de nuevo. Con menos edad, las ventas nuevas solo adelantan el pronóstico.',
     public_api_only: 'Servir en esta instancia únicamente la superficie pública de integración.',
@@ -503,6 +513,12 @@ const en: ServiceConfigCopy = {
       whatBreaks: 'Nothing turns off. These are refusals, not features: exceeding one is always a stated rejection, never a silent truncation.',
       note: 'These are infrastructure ceilings and NOT the commercial tier limits. Those live in `backend/entitlements/plans.py`.',
     },
+    sql_sources: {
+      name: 'Customer databases',
+      summary: 'Connections to customers’ own databases (SQL data sources).',
+      whatBreaks: 'Nothing turns off. They decide which network addresses a SQL data source may reach and how many connections one tenant may hold open at once; a refused address or a full set of slots is always explained on screen, never a silent failure.',
+      note: 'Hosted deployments keep private hosts refused: a tenant must not be able to point a “database” at this server’s own network. A self-hosted installation that connects to an ERP database on its LAN sets SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true. Link-local and cloud metadata addresses (169.254.0.0/16, fe80::/10 and the known metadata IPs) are refused either way.',
+    },
     api_surface: {
       name: 'Public-API-only mode',
       summary: 'Public-API-only mode.',
@@ -583,6 +599,8 @@ const en: ServiceConfigCopy = {
     dataset_editor_max_rows: 'Rows the in-app data editor will open. Checked against the stored row count BEFORE reading the file, so a huge one is never loaded into memory just to find out it did not fit.',
     dataset_editor_max_mb: 'The same guard, by file size.',
     sql_materialize_max_rows: 'Row ceiling when turning a SQL query into a file. Exceeding it is a refusal, never a truncation.',
+    sql_sources_allow_private_hosts: 'Let SQL data sources connect to loopback and private-network addresses (RFC 1918, CGNAT, IPv6 unique-local). Off by default; turn it on only on a self-hosted installation whose databases live on its own network.',
+    sql_sources_max_concurrent_per_tenant: 'Connections one tenant may have open to its databases at the same time (tests, queries, exports, refreshes). The next one waits up to 10 seconds, then is refused with a clear message.',
     accuracy_degradation_threshold_pct: 'How much worse (relative percent) a forecast must perform against real sales, compared with its accuracy at training, before the app raises its single alert. A notice only: nothing retrains by itself.',
     reforecast_full_refit_days: 'Age in days after which a scheduled retrain set to "update daily, refit periodically" stops using the stored models and trains them again. Younger than that, new sales only advance the forecast.',
     public_api_only: 'Serve only the public integration surface on this instance.',

@@ -328,6 +328,19 @@ These are infrastructure ceilings and are NOT the commercial tier limits. Per-te
 | `ACCURACY_DEGRADATION_THRESHOLD_PCT` | `25.0` | environment only | How much worse (in percent, relative) a session's forecast must be doing against real sales than it did at training time before the app raises its one 'forecast is degrading' alert. 25 means a realised WAPE of 25% over the training WAPE (and at least 5 points worse); it is a notification only, nothing retrains by itself. |
 | `REFORECAST_FULL_REFIT_DAYS` | `7` | environment only | Age, in days, past which a scheduled retrain set to 're-forecast daily, refit periodically' stops re-forecasting from the stored models and trains them again. Younger than this, new sales only advance the forecast (seconds, no retraining); at or beyond it the models are refitted. |
 
+## `sql_sources` - Connections to customers' own databases (SQL data sources).
+
+*Kind:* deployment. *Editable from the panel:* no. *Per tenant:* no. *Connection test:* no.
+
+**What is lost without it:** Nothing turns off. These decide which network addresses a SQL data source may reach and how many connections one tenant may hold open at once; a refused address or a full set of slots is always a stated refusal on the screen, never a silent failure.
+
+Hosted deployments keep private hosts refused: a tenant must not be able to point a 'database' at this server's own network. A self-hosted installation that connects to an ERP database on its LAN sets SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true. Link-local and cloud metadata addresses (169.254.0.0/16, fe80::/10 and the known metadata IPs) are refused either way.
+
+| Variable | Default | Notes | What it does |
+|---|---|---|---|
+| `SQL_SOURCES_ALLOW_PRIVATE_HOSTS` | `false` | environment only | Let SQL data sources connect to loopback and private-network addresses (RFC 1918, CGNAT, IPv6 unique-local). Off by default; turn it on only on a self-hosted installation whose databases live on its own network. |
+| `SQL_SOURCES_MAX_CONCURRENT_PER_TENANT` | `4` | environment only | Connections one tenant may have open to its databases at the same time (tests, queries, exports, refreshes). The next one waits up to 10 seconds, then is refused with a clear message. |
+
 ## `api_surface` - Public-API-only mode.
 
 *Kind:* deployment. *Editable from the panel:* no. *Per tenant:* no. *Connection test:* no.

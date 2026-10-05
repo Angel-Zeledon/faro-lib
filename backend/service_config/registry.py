@@ -1129,6 +1129,47 @@ OPERATIONS = Service(
 )
 
 
+SQL_SOURCES = Service(
+    key="sql_sources",
+    kind="deployment",
+    editable=False,
+    summary="Connections to customers' own databases (SQL data sources).",
+    what_breaks=(
+        "Nothing turns off. These decide which network addresses a SQL data "
+        "source may reach and how many connections one tenant may hold open "
+        "at once; a refused address or a full set of slots is always a stated "
+        "refusal on the screen, never a silent failure."
+    ),
+    docs_note=(
+        "Hosted deployments keep private hosts refused: a tenant must not be "
+        "able to point a 'database' at this server's own network. A "
+        "self-hosted installation that connects to an ERP database on its "
+        "LAN sets SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true. Link-local and cloud "
+        "metadata addresses (169.254.0.0/16, fe80::/10 and the known metadata "
+        "IPs) are refused either way."
+    ),
+    fields=(
+        ConfigField(
+            key="sql_sources_allow_private_hosts",
+            env="SQL_SOURCES_ALLOW_PRIVATE_HOSTS", kind="bool", editable=False,
+            doc="Let SQL data sources connect to loopback and private-network "
+                "addresses (RFC 1918, CGNAT, IPv6 unique-local). Off by default; "
+                "turn it on only on a self-hosted installation whose databases "
+                "live on its own network.",
+            default="false", example="false",
+        ),
+        ConfigField(
+            key="sql_sources_max_concurrent_per_tenant",
+            env="SQL_SOURCES_MAX_CONCURRENT_PER_TENANT", kind="int", editable=False,
+            doc="Connections one tenant may have open to its databases at the "
+                "same time (tests, queries, exports, refreshes). The next one "
+                "waits up to 10 seconds, then is refused with a clear message.",
+            default="4", example="4",
+        ),
+    ),
+)
+
+
 SERVICES: tuple[Service, ...] = (
     CORE,
     LLM,
@@ -1144,6 +1185,7 @@ SERVICES: tuple[Service, ...] = (
     ENTERPRISE_SSO,
     WORKER,
     LIMITS,
+    SQL_SOURCES,
     API_SURFACE,
     OPERATIONS,
 )

@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, field_validator
 from backend import audit
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.datasources import service as svc
-from backend.datasources.service import SQL_ENGINES
 from backend.errors import AppError
 from backend.schemas.common import ok
 
@@ -17,43 +16,49 @@ log = logging.getLogger(__name__)
 
 # ── Request models ─────────────────────────────────────────────────────────────
 
-class CreateSqlSourceRequest(BaseModel):
-    name:        str
-    host:        str
-    port:        int         = Field(ge=1, le=65535)
-    database:    str
-    username:    str
-    password:    str
-    engine:      str
-    description: Optional[str] = None
+class _SqlConnectionFields(BaseModel):
+    """The connection fields. Every one is optional at the HTTP layer: a
+    pasted `connection_string` may supply them, and on an edit an omitted
+    field keeps its stored value. `backend/datasources/connection.py`
+    validates the result and answers with a coded error."""
+    host:                Optional[str] = Field(default=None, max_length=260)
+    port:                Optional[int] = Field(default=None, ge=1, le=65535)
+    database:            Optional[str] = Field(default=None, max_length=128)
+    username:            Optional[str] = Field(default=None, max_length=128)
+    password:            Optional[str] = Field(default=None, max_length=1024)
+    engine:              Optional[str] = Field(default=None, max_length=20)
+    ssl_mode:            Optional[str] = Field(default=None, max_length=20)
+    # PEM text of the server's CA certificate; stored encrypted.
+    ssl_ca:              Optional[str] = Field(default=None, max_length=70_000)
+    connect_timeout_s:   Optional[int] = None
+    statement_timeout_s: Optional[int] = None
+    connection_string:   Optional[str] = Field(default=None, max_length=4096)
 
-    @field_validator("engine")
+
+class CreateSqlSourceRequest(_SqlConnectionFields):
+    name:        str = Field(min_length=1, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("name")
     @classmethod
-    def _valid_engine(cls, v: str) -> str:
-        if v not in SQL_ENGINES:
-            raise ValueError(f"Unsupported engine '{v}'. Options: {sorted(SQL_ENGINES)}")
-        return v
+    def _name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name cannot be empty")
+        return v.strip()
 
 
-class UpdateSqlConfigRequest(BaseModel):
-    host:     str
-    port:     int = Field(ge=1, le=65535)
-    database: str
-    username: str
-    engine:   str
-    password: Optional[str] = None
+class UpdateSqlConfigRequest(_SqlConnectionFields):
+    clear_ssl_ca: bool = False
 
-    @field_validator("engine")
-    @classmethod
-    def _valid_engine(cls, v: str) -> str:
-        if v not in SQL_ENGINES:
-            raise ValueError(f"Unsupported engine '{v}'. Options: {sorted(SQL_ENGINES)}")
-        return v
+
+class ParseConnectionStringRequest(BaseModel):
+    connection_string: str = Field(min_length=1, max_length=4096)
 
 
 class ExecuteQueryRequest(BaseModel):
-    sql:   str
-    limit: int = Field(default=500, ge=1, le=5000)
+    sql:    str
+    limit:  int = Field(default=500, ge=1, le=5000)
+    offset: int = Field(default=0, ge=0, le=svc.MAX_QUERY_OFFSET)
 
     @field_validator("sql")
     @classmethod
@@ -66,6 +71,11 @@ class ExecuteQueryRequest(BaseModel):
 class MaterializeRequest(BaseModel):
     sql:  Optional[str] = None   # defaults to the source's saved query
     name: Optional[str] = None   # defaults to "<source name> (SQL)" — UI sends localized
+
+
+class ExportQueryRequest(BaseModel):
+    sql:    Optional[str] = None   # defaults to the source's saved query
+    format: str = Field(default="xlsx", pattern="^(xlsx|csv)$")
 
 
 class SaveQueryRequest(BaseModel):
@@ -172,6 +182,18 @@ async def create_file_source(
 
 # ── Create SQL source ──────────────────────────────────────────────────────────
 
+@router.post("/sql/parse")
+def parse_connection_string(
+    body: ParseConnectionStringRequest,
+    # Only someone who may create a connection needs to read one apart.
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    """Read a pasted connection string (URL, JDBC, ADO.NET or libpq) into the
+    form's fields. The password is never sent back — only whether the string
+    had one; the form sends the string again on save."""
+    return ok(svc.parse_connection_string_public(body.connection_string))
+
+
 @router.post("/sql")
 def create_sql_source(
     body: CreateSqlSourceRequest,
@@ -192,11 +214,16 @@ def create_sql_source(
             password=body.password,
             engine=body.engine,
             description=body.description,
+            ssl_mode=body.ssl_mode,
+            ssl_ca=body.ssl_ca,
+            connect_timeout_s=body.connect_timeout_s,
+            statement_timeout_s=body.statement_timeout_s,
+            connection_string=body.connection_string,
         )
-        # Host and database name only: the password never leaves the service.
+        # Where it points, never the password or the certificate itself.
+        stored = svc.get_source(user.tenant_id, src["id"]) or {}
         audit.note(request, target_id=src.get("id"), label=body.name,
-                   after={"engine": body.engine, "host": body.host,
-                          "database": body.database})
+                   after=svc.connection_summary(stored.get("sql_config") or {}))
         return ok(src)
     except ValueError as e:
         raise _service_error(e)
@@ -224,9 +251,10 @@ async def replace_file(
 def update_sql_config(
     source_id: str,
     body: UpdateSqlConfigRequest,
+    request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    _ds_or_404(user.tenant_id, source_id)
+    before = _ds_or_404(user.tenant_id, source_id)
     try:
         src = svc.update_sql_config(
             tenant_id=user.tenant_id,
@@ -237,10 +265,24 @@ def update_sql_config(
             username=body.username,
             password=body.password,
             engine=body.engine,
+            ssl_mode=body.ssl_mode,
+            ssl_ca=body.ssl_ca,
+            clear_ssl_ca=body.clear_ssl_ca,
+            connect_timeout_s=body.connect_timeout_s,
+            statement_timeout_s=body.statement_timeout_s,
+            connection_string=body.connection_string,
         )
-        return ok(src)
     except ValueError as e:
         raise _service_error(e)
+    after = (svc.get_source(user.tenant_id, source_id) or {}).get("sql_config") or {}
+    old = before.get("sql_config") or {}
+    audit.note(request, label=before.get("name"),
+               before=svc.connection_summary(old),
+               after={**svc.connection_summary(after),
+                      # Whether a secret changed — never the secret.
+                      "password_changed": after.get("password_enc") != old.get("password_enc"),
+                      "ssl_ca_changed": after.get("ssl_ca_enc") != old.get("ssl_ca_enc")})
+    return ok(src)
 
 
 # ── Test SQL connection ────────────────────────────────────────────────────────
@@ -248,14 +290,57 @@ def update_sql_config(
 @router.post("/{source_id}/test-connection")
 def test_connection(
     source_id: str,
+    request: Request,
     # Not a read: the probe stores its verdict in `datasets.connection_status`,
     # which gates execute-query and materialize for everybody. A viewer must not
     # be able to flip it (nor to make the server open connections on demand).
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    _ds_or_404(user.tenant_id, source_id)
-    result = svc.test_sql_connection(user.tenant_id, source_id)
+    """Staged connection test: dns, tcp, tls, auth, privileges, select,
+    tables — each ok / warning / failed / skipped with a code. See
+    `backend/datasources/probe.py`."""
+    src = _ds_or_404(user.tenant_id, source_id)
+    try:
+        result = svc.test_sql_connection(user.tenant_id, source_id)
+    except ValueError as e:
+        raise _service_error(e)
+    audit.note(request, label=src.get("name"),
+               after={"ok": result.get("ok"), "failed_stage": result.get("failed_stage"),
+                      "error": result.get("error"),
+                      "can_write": (result.get("write_access") or {}).get("can_write")})
     return ok(result)
+
+
+# ── Schema browser ─────────────────────────────────────────────────────────────
+
+@router.get("/{source_id}/schema")
+def get_schema(
+    source_id: str,
+    refresh: bool = Query(False),
+    # Opens a connection to the customer's database: same bar as running a
+    # query there.
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    _ds_or_404(user.tenant_id, source_id)
+    try:
+        return ok(svc.get_schema(user.tenant_id, source_id, refresh=refresh))
+    except ValueError as e:
+        raise _service_error(e)
+
+
+@router.get("/{source_id}/schema/columns")
+def get_schema_columns(
+    source_id: str,
+    table: str = Query(..., min_length=1, max_length=256),
+    schema: str = Query("", max_length=256),
+    refresh: bool = Query(False),
+    user: CurrentUser = Depends(require_analyst_or_above),
+):
+    _ds_or_404(user.tenant_id, source_id)
+    try:
+        return ok(svc.get_table_columns(user.tenant_id, source_id, schema, table, refresh=refresh))
+    except ValueError as e:
+        raise _service_error(e)
 
 
 # ── Execute SQL query ──────────────────────────────────────────────────────────
@@ -275,7 +360,8 @@ def execute_query(
     from backend.datasources.sql_guard import statement_hash
     _ds_or_404(user.tenant_id, source_id)
     try:
-        result = svc.execute_sql_query(user.tenant_id, source_id, body.sql, limit=body.limit)
+        result = svc.execute_sql_query(user.tenant_id, source_id, body.sql,
+                                       limit=body.limit, offset=body.offset)
     except ValueError as e:
         raise _service_error(e)
     # The trail records WHICH statement ran (a hash, not the text — a query
@@ -314,26 +400,31 @@ def materialize_source(
 @router.post("/{source_id}/export-query")
 def export_query(
     source_id: str,
-    body: MaterializeRequest,
+    body: ExportQueryRequest,
     request: Request,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
-    from fastapi.responses import Response
+    """The FULL result as .xlsx (default) or .csv, under the same row ceiling
+    as materialize. The result is read completely before the response starts
+    (so a failure is still a coded error), then streamed from a spool file."""
+    from fastapi.responses import StreamingResponse
 
     from backend.datasources.sql_guard import statement_hash
 
     src = _ds_or_404(user.tenant_id, source_id)
     try:
-        content, rows = svc.export_sql_query_xlsx(user.tenant_id, source_id, sql=body.sql)
+        out = svc.export_sql_query(user.tenant_id, source_id, sql=body.sql, fmt=body.format)
     except ValueError as e:
         raise _service_error(e)
     ran = (body.sql or src.get("saved_query") or "").strip()
     audit.note(request, label=src.get("name"),
-               after={"statement_sha256": statement_hash(ran), "rows": rows})
-    return Response(
-        content=content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="query-result.xlsx"'},
+               after={"statement_sha256": statement_hash(ran), "rows": out.rows,
+                      "format": out.extension})
+    return StreamingResponse(
+        out.chunks(),
+        media_type=out.media_type,
+        headers={"Content-Disposition": f'attachment; filename="query-result.{out.extension}"',
+                 "X-Row-Count": str(out.rows)},
     )
 
 
