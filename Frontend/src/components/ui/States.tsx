@@ -258,7 +258,9 @@ export function ErrorState({ error, onRetry, compact }: {
   const errorDetail = useErrorDetail()
   const kind = errorKindOf(error)
   const copy = ERROR_COPY[kind]
-  const detail = errorDetail(error)
+  // The generic server message restates the title; a detail that only repeats it adds nothing.
+  const rawDetail = errorDetail(error)
+  const detail = rawDetail && rawDetail.trim().toLowerCase().startsWith(t(copy.title).trim().toLowerCase()) ? '' : rawDetail
   const showRetry = Boolean(onRetry) && copy.retryable
   const reportBug = useFeedback()
   // Only failures on our side are worth a report; the rest say what to do.
@@ -281,7 +283,7 @@ export function ErrorState({ error, onRetry, compact }: {
       <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 7 }}>
         {t(copy.title)}
       </div>
-      <p style={{ fontSize: 13, color: C.muted, margin: '0 0 6px', lineHeight: 1.6 }}>
+      <p style={{ fontSize: 13, color: C.muted, margin: detail ? '0 0 6px' : '0 0 18px', lineHeight: 1.6 }}>
         {t(copy.body)}
       </p>
 

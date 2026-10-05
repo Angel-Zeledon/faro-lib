@@ -1637,14 +1637,14 @@ export default function HoyPage() {
     justifyContent: 'space-between', gap: 24, marginBottom: 32,
    }}>
     <div style={{ minWidth: 0 }}>
-     <h1 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', color: C.text, margin: '0 0 8px' }}>
+     <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', color: C.text, margin: '0 0 8px' }}>
       {t('hoy.greeting_good_morning')}{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ''}.
       {cart.length > 0 && totalPending > 0 && (
        <span style={{ fontSize: 14, fontWeight: 400, color: C.dim, marginLeft: 12 }}>
         {t('hoy.greeting_pending_actions_prefix')} {totalPending} {t('hoy.greeting_pending_actions_suffix')}
        </span>
       )}
-     </h1>
+     </h2>
      {briefing ? (
       <p data-tour={overduePOs.length > 0 ? 'hoy.receptions' : undefined} style={{ fontSize: 13, color: C.dim, margin: 0, lineHeight: 1.6 }}>
        {t('hoy.date_today_prefix')} {formatDateES(briefing.date, lang)}.{' '}
@@ -1677,11 +1677,11 @@ export default function HoyPage() {
         </>
        ) : null}
       </p>
-     ) : (
+     ) : error == null ? (
       <p style={{ fontSize: 13, color: C.dim, margin: 0 }}>
        {t('hoy.date_loading')}
       </p>
-     )}
+     ) : null}
     </div>
 
     {/* The tour anchor sits on this wrapper, not inside DataFreshness: that
