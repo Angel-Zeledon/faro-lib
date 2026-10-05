@@ -127,6 +127,16 @@ async def inbound(request: Request, background: BackgroundTasks):
 
     ctx = ToolContext(tenant_id=sender["tenant_id"], user_id=sender["user_id"], role=sender["role"])
 
+    # A user limited to some warehouses is not served by the bot: its tools read
+    # and write stock tenant-wide, and answering "only with their warehouses"
+    # would mean re-scoping every one of them. Said plainly instead of leaking
+    # company figures into a chat.
+    from backend.auth import warehouse_scope as wscope
+    from backend.auth.guards import CurrentUser
+    if wscope.is_scoped(CurrentUser(ctx.user_id, ctx.tenant_id, ctx.role)):
+        send_whatsapp(phone, render_es("wa_scoped_user"), tenant_id=ctx.tenant_id)
+        return Response(status_code=200)
+
     # 2. Idempotency — a repeated MessageSid (Twilio retry) is a no-op.
     if message_sid and cs.is_duplicate(ctx.tenant_id, ctx.user_id, message_sid):
         return Response(status_code=200)

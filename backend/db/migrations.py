@@ -2138,6 +2138,64 @@ _STATUS_SNAPSHOT = [
 _MIGRATIONS += _STATUS_SNAPSHOT
 
 
+# ── Enterprise access (2026-10-05): per-tenant OIDC sign-on, warehouse scopes ─
+_ENTERPRISE_ACCESS = [
+    # One OpenID Connect provider per tenant (backend/auth/sso/). The client
+    # secret is stored ONLY as Fernet ciphertext (service_config/crypto.py).
+    # The three endpoints are copied from the provider's discovery document at
+    # save time, so a sign-in never trusts a URL read at request time.
+    ("create_sso_providers",
+     """CREATE TABLE IF NOT EXISTS sso_providers (
+         tenant_id              TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         issuer                 TEXT NOT NULL,
+         client_id              TEXT NOT NULL,
+         client_secret_enc      TEXT NOT NULL,
+         authorization_endpoint TEXT NOT NULL,
+         token_endpoint         TEXT NOT NULL,
+         jwks_uri               TEXT NOT NULL,
+         token_auth_method      TEXT NOT NULL DEFAULT 'client_secret_basic',
+         allowed_domains        JSONB NOT NULL DEFAULT '[]',
+         default_role           TEXT NOT NULL DEFAULT 'viewer',
+         enforce_sso            BOOLEAN NOT NULL DEFAULT FALSE,
+         groups_claim           TEXT,
+         group_roles            JSONB NOT NULL DEFAULT '{}',
+         enabled                BOOLEAN NOT NULL DEFAULT TRUE,
+         created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_by             TEXT
+     )"""),
+    # A domain belongs to exactly one tenant, instance-wide. That is what makes
+    # "which tenant does this e-mail sign in to" a lookup with one answer.
+    ("create_sso_domains",
+     """CREATE TABLE IF NOT EXISTS sso_domains (
+         domain     TEXT PRIMARY KEY,
+         tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_sso_domains_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS idx_sso_domains_tenant ON sso_domains (tenant_id)"),
+    # Warehouse scope. NULL = every warehouse (all existing rows). A JSON array
+    # of warehouse ids = only those; an EMPTY array = none at all. Deleting a
+    # warehouse therefore can only ever shrink a scope, never widen it.
+    # Guarded by a catalog check, not ADD COLUMN IF NOT EXISTS, for the lock
+    # reason written above `add_users_has_password`.
+    ("add_users_warehouse_scope",
+     """DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'users'
+               AND column_name = 'warehouse_scope'
+          ) THEN
+            ALTER TABLE users ADD COLUMN warehouse_scope JSONB;
+          END IF;
+        END $$"""),
+    ("add_api_keys_warehouse_scope",
+     "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS warehouse_scope JSONB"),
+]
+_MIGRATIONS += _ENTERPRISE_ACCESS
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.

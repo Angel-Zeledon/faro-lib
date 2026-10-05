@@ -35,6 +35,27 @@ is running.
 
 ### Added
 
+* **Enterprise single sign-on (OpenID Connect), off by default.** A tenant
+  admin connects their company's identity provider (issuer with discovery,
+  client id and secret - stored encrypted - allowed e-mail domains, the role
+  new people get, an optional groups claim mapped to roles); people then use
+  "Entrar con tu empresa" on the login page, which asks for the work e-mail,
+  finds the tenant that owns the domain and goes to the provider
+  (Authorization Code + PKCE + state + nonce, ID token verified against the
+  provider's JWKS). Accounts are created just-in-time inside that tenant only,
+  never as administrators, within the plan's user ceiling. "Require it" refuses
+  passwords for those domains, and can only be switched on after an admin has
+  signed in through the provider. The installation switch is
+  `ENTERPRISE_SSO_ENABLED` (default `false`); with it off the screens show only
+  e-mail + password. OpenID Connect only - there is no SAML.
+* **Per-user and per-API-key warehouse access.** An administrator can limit a
+  person (or mint an API key) to some warehouses; the default stays "all". A
+  limited caller sees and changes only their warehouses' stock, transfers,
+  receptions, purchase orders and imports (403 `warehouse_out_of_scope`
+  otherwise), is shown their own warehouses' figures instead of company totals,
+  and is refused the screens that can only show company totals
+  (`warehouse_scope_company_totals`). Migration is additive
+  (`users.warehouse_scope`, `api_keys.warehouse_scope`).
 * **An MCP server, so a customer's AI client can read their tenant.**
   `POST /api/v1/mcp` speaks the Model Context Protocol over the same
   `sk_live_*` key and the same 120-per-minute ceiling as the REST API, with

@@ -713,6 +713,44 @@ INBOUND_EMAIL = Service(
 )
 
 
+ENTERPRISE_SSO = Service(
+    key="enterprise_sso",
+    kind="external",
+    switch="enterprise_sso_enabled",
+    # The one thing the feature cannot run without: the redirect URI and every
+    # link back to the app are built from it.
+    borrows=("frontend_url",),
+    summary="Company sign-in through the customer's own OpenID Connect provider.",
+    what_breaks=(
+        "The 'Sign in with your company' option disappears from the login "
+        "screen and tenant admins cannot configure a provider. Email + password "
+        "keeps working for everyone, and any 'enforce SSO' setting a tenant "
+        "already saved is suspended while this is off (so nobody is locked "
+        "out). Off by default - a source install shows only the email form."
+    ),
+    docs_note=(
+        "Each tenant admin configures their own provider (issuer URL, client "
+        "id and secret, allowed e-mail domains) in the app; the secret is "
+        "stored encrypted and so needs secret storage to be available. The "
+        "redirect URI to register at the identity provider is built from "
+        "FRONTEND_URL:\n\n"
+        "    <FRONTEND_URL>/api/v1/auth/sso/callback\n\n"
+        "People are created just-in-time inside the tenant that owns their "
+        "e-mail domain, never as administrators. Only OpenID Connect is "
+        "supported (no SAML)."
+    ),
+    fields=(
+        ConfigField(
+            key="enterprise_sso_enabled", env="ENTERPRISE_SSO_ENABLED", kind="bool",
+            doc="Master switch for enterprise single sign-on. False hides the "
+                "company sign-in option and suspends every tenant's provider "
+                "and 'enforce SSO' setting without deleting them.",
+            default="false", example="false",
+        ),
+    ),
+)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Deployment — reported, never editable from the panel. These decide the shape
 # of the deployment, and a running process cannot change its own shape.
@@ -973,6 +1011,7 @@ SERVICES: tuple[Service, ...] = (
     CONTACT,
     SOCIAL_LOGIN,
     INBOUND_EMAIL,
+    ENTERPRISE_SSO,
     WORKER,
     LIMITS,
     API_SURFACE,

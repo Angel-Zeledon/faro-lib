@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from backend.activity.events import record_event
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, require_analyst_or_above
 from backend.inventory import po_cancel_service as cancel_svc
 from backend.inventory.roi_service import format_po_number
@@ -27,6 +28,7 @@ def cancel_po(
     po_log_id: str,
     body: Optional[CancelRequest] = None,
     user: CurrentUser = Depends(require_analyst_or_above),
+    _scope: None = Depends(wscope.po_guard),
 ):
     """Cancel an order nothing was received against. Its units stop counting
     as on the way, so the semáforo may ask for them again; it leaves the
@@ -48,6 +50,7 @@ def cancel_po(
 def uncancel_po(
     po_log_id: str,
     user: CurrentUser = Depends(require_analyst_or_above),
+    _scope: None = Depends(wscope.po_guard),
 ):
     """The undo of cancel: the order counts as on the way again."""
     result = cancel_svc.uncancel(user.tenant_id, po_log_id, user.user_id)

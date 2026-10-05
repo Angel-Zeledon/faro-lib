@@ -17,6 +17,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.inventory import signal_thresholds as svc
 from backend.schemas.common import ok
@@ -78,6 +79,7 @@ def preview_thresholds(
     body: PreviewBody,
     user: CurrentUser = Depends(get_current_user),
 ):
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.sessions import planning_service
 
     session_id = body.session_id or planning_service.resolve_active_session(user.tenant_id)

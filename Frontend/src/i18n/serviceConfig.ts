@@ -22,8 +22,7 @@ import type { Lang } from './translations'
 /** Service keys, exactly as `backend/service_config/registry.py` declares them. */
 export type ServiceKey =
   | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
-  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'worker' | 'limits' | 'api_surface'
-  | 'secret_storage' | 'contact' | 'social_login' | 'worker' | 'limits' | 'api_surface' | 'operations'
+  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'api_surface' | 'operations'
 
 /** Field keys, exactly as the registry declares them (= `Settings` attributes). */
 export type FieldKey =
@@ -44,6 +43,7 @@ export type FieldKey =
   | 'apple_oauth_service_id' | 'apple_oauth_team_id' | 'apple_oauth_key_id'
   | 'apple_oauth_private_key'
   | 'inbound_email_domain' | 'inbound_email_secret'
+  | 'enterprise_sso_enabled'
   | 'worker_enabled' | 'scheduler_enabled' | 'worker_id'
   | 'max_concurrent_jobs' | 'worker_poll_interval_seconds'
   | 'max_upload_size_mb' | 'dataset_editor_max_rows' | 'dataset_editor_max_mb'
@@ -215,6 +215,12 @@ const es: ServiceConfigCopy = {
       whatBreaks: 'La tarjeta «Ventas por correo» avisa que esta instalación todavía no puede recibir correo, y POST /api/v1/inbound/email responde el error estructurado `inbound_email_disabled`. Todo lo demás sigue igual: los archivos se suben a mano.',
       note: 'Necesita un proveedor de correo que reenvíe el correo entrante a un webhook (Postmark, Mailgun, Resend o un relay) y un registro MX para el dominio de entrada. El webhook se autentica con INBOUND_EMAIL_SECRET: una cabecera HMAC `X-StockAI-Signature` o HTTP Basic cuya contraseña es el secreto. Paso a paso: docs/inbound-email.md.',
     },
+    enterprise_sso: {
+      name: 'Inicio de sesión de empresa (OpenID Connect)',
+      summary: 'Cada empresa entra con su propio proveedor de identidad, además de correo y contraseña.',
+      whatBreaks: 'Desaparece «Entrar con tu empresa» del inicio de sesión y los administradores de cada empresa no pueden configurar un proveedor. Correo y contraseña siguen funcionando para todos, y cualquier «exigir inicio de sesión de empresa» que una empresa ya hubiera guardado queda suspendido mientras esto esté apagado (nadie se queda fuera). Viene apagado: una instalación nueva muestra solo el formulario de correo.',
+      note: 'Cada administrador configura su proveedor dentro de la app (emisor, Client ID y secreto, dominios de correo); el secreto se guarda cifrado, así que necesita almacenamiento de secretos. La URL de redirección que se registra en el proveedor sale de FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. Las personas se crean al entrar, solo dentro de la empresa dueña de su dominio y nunca como administradores. Solo OpenID Connect: no hay SAML.',
+    },
     worker: {
       name: 'Worker y tareas programadas',
       summary: 'Worker de entrenamiento y los ciclos programados.',
@@ -277,6 +283,7 @@ const es: ServiceConfigCopy = {
     contact_whatsapp: 'E.164 sin el «+», como lo quiere wa.me.',
     contact_email: 'Dirección que abre el botón de «escríbenos».',
     upgrade_notify_email: 'A dónde se envían por correo las solicitudes de más espacio. Si está vacío usa CONTACT_EMAIL. La solicitud también queda guardada en la base, así que un correo fallido nunca pierde el pedido.',
+    enterprise_sso_enabled: 'Interruptor general del inicio de sesión de empresa. En false oculta la opción y suspende el proveedor y el «exigir» de cada empresa sin borrarlos.',
     social_login_enabled: 'Interruptor general. En false oculta todos los botones sin borrar las credenciales de abajo, para pausar y reanudar la función.',
     google_oauth_client_id: 'ID de cliente OAuth de tipo «Aplicación web» en Google Cloud Console. URI de redirección autorizado: <FRONTEND_URL>/api/v1/auth/oauth/google/callback.',
     google_oauth_client_secret: 'Secreto de ese cliente OAuth de Google. Sin él (o sin el ID) no aparece el botón de Google.',
@@ -454,6 +461,12 @@ const en: ServiceConfigCopy = {
       whatBreaks: 'The "Sales by e-mail" card says this installation cannot receive e-mail yet, and POST /api/v1/inbound/email answers the structured `inbound_email_disabled` error. Everything else keeps working: files are still uploaded by hand.',
       note: 'Needs a mail provider that can forward inbound mail to a webhook (Postmark, Mailgun, Resend or a relay) and an MX record for the inbound domain. The webhook is authenticated by INBOUND_EMAIL_SECRET: an `X-StockAI-Signature` HMAC header or HTTP Basic auth whose password is the secret. Step by step: docs/inbound-email.md.',
     },
+    enterprise_sso: {
+      name: 'Company sign-in (OpenID Connect)',
+      summary: 'Each company signs in with its own identity provider, next to email + password.',
+      whatBreaks: 'The "Sign in with your company" option disappears from the login screen and each company\'s administrators cannot configure a provider. Email + password keeps working for everyone, and any "require company sign-in" a company already saved is suspended while this is off (so nobody is locked out). Off by default: a new install shows only the email form.',
+      note: 'Each administrator configures their provider inside the app (issuer, Client ID and secret, email domains); the secret is stored encrypted, so it needs secret storage. The redirect URL registered at the provider is built from FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. People are created when they sign in, only inside the company that owns their domain and never as administrators. OpenID Connect only: there is no SAML.',
+    },
     worker: {
       name: 'Worker and scheduled jobs',
       summary: 'Training worker and the scheduled loops.',
@@ -516,6 +529,7 @@ const en: ServiceConfigCopy = {
     contact_whatsapp: 'E.164 without the "+", the way wa.me wants it.',
     contact_email: 'Address the "write to us" button opens.',
     upgrade_notify_email: 'Where in-app requests for more room are emailed. Falls back to CONTACT_EMAIL when empty. The request is also stored, so a failed email never loses the ask.',
+    enterprise_sso_enabled: 'Master switch for company sign-in. False hides the option and suspends every company\'s provider and "require" setting without deleting them.',
     social_login_enabled: 'Master switch. False hides every social button without deleting the credentials below, so the feature can be paused and resumed.',
     google_oauth_client_id: 'OAuth client ID of a "Web application" client in Google Cloud Console. Authorized redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/google/callback.',
     google_oauth_client_secret: 'Client secret of that Google OAuth client. Without it (or the ID) the Google button is not shown.',

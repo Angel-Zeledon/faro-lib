@@ -31,6 +31,7 @@ from backend.auth.guards import (
     CurrentUser, get_current_user, require_analyst_or_above,
     require_verified_analyst_or_above,
 )
+from backend.auth import warehouse_scope as wscope
 from backend.config import settings
 from backend.errors import AppError
 from backend.sessions import planning_service
@@ -110,7 +111,7 @@ class StockPatch(BaseModel):
 
 @router.get("/stock")
 def list_stock(user: CurrentUser = Depends(get_current_user)):
-    return ok(svc.list_stock(user.tenant_id))
+    return ok(wscope.filter_rows(user, svc.list_stock(user.tenant_id)))
 
 
 @router.get("/stock/page")
@@ -124,6 +125,16 @@ def list_stock_page(
 ):
     """Stock rows searched, filtered by warehouse and paged on the server. The
     plain `/stock` list stays whole for the screens that need every row."""
+    if wscope.is_scoped(user):
+        # Paged over the caller's warehouses only: `total` must not count rows
+        # they cannot see.
+        if warehouse:
+            wscope.require_in_scope(user, wh_svc.resolve_canonical_name(user.tenant_id, warehouse))
+        everything = svc.list_stock_page(user.tenant_id, limit=10**9, offset=0,
+                                         q=q, warehouse=warehouse)["items"]
+        rows = wscope.filter_rows(user, everything)
+        return ok({"items": rows[offset:offset + limit], "total": len(rows),
+                   "limit": limit, "offset": offset})
     return ok(svc.list_stock_page(user.tenant_id, limit=limit, offset=offset,
                                   q=q, warehouse=warehouse))
 
@@ -144,6 +155,13 @@ def lookup_stock(
 @router.get("/stock/{sku}")
 def get_stock(sku: str, user: CurrentUser = Depends(get_current_user)):
     row = svc.get_stock(user.tenant_id, sku)
+    if wscope.is_scoped(user):
+        # The row returned must be one of the caller's, not whichever the
+        # database happens to find first.
+        mine = wscope.filter_rows(user, [
+            svc.get_stock(user.tenant_id, sku, warehouse=w)
+            for w in svc.list_stock_warehouses(user.tenant_id, sku)])
+        row = mine[0] if mine else None
     if not row:
         raise AppError(
             "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
@@ -164,6 +182,7 @@ def upsert_stock(
     # the same (sku, warehouse) row svc.upsert_stock will actually write —
     # 'norte' with an existing 'Norte' is an update, not a new location.
     warehouse = wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse)
+    wscope.require_in_scope(user, warehouse)
 
     data = body.model_dump(exclude_none=True)
     # Only what the caller ACTUALLY SENT is written — on a new row as much as
@@ -249,6 +268,11 @@ def patch_stock(
                                 there is no safe guess to make for the caller.
     """
     warehouses = svc.list_stock_warehouses(user.tenant_id, sku)
+    if wscope.is_scoped(user):
+        # Only the caller's rows exist as far as they are concerned; an SKU
+        # held elsewhere reads as not found, and the "name one of them" help
+        # never lists warehouses they may not see.
+        warehouses = [w for w in warehouses if wscope.in_scope(user, w)]
     if not warehouses:
         raise AppError(
             "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
@@ -257,6 +281,7 @@ def patch_stock(
 
     if body.warehouse is not None:
         target = wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse)
+        wscope.require_in_scope(user, target)
         if target not in warehouses:
             raise AppError(
                 "stock_sku_not_found_in_warehouse",
@@ -275,6 +300,7 @@ def patch_stock(
             params={"sku": sku, "warehouses": ", ".join(warehouses)},
         )
 
+    wscope.require_in_scope(user, target)
     data = body.model_dump(exclude_none=True)
     data.pop("warehouse", None)
     if not data:
@@ -285,6 +311,8 @@ def patch_stock(
 
 @router.delete("/stock/{sku}", status_code=204)
 def delete_stock(sku: str, user: CurrentUser = Depends(require_analyst_or_above)):
+    # Deleting a SKU removes its rows in EVERY warehouse.
+    wscope.require_company_wide(user)
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
         raise AppError(
@@ -694,6 +722,10 @@ async def bulk_import(
         }
         for r in rows:
             r["warehouse"] = resolved_wh[r.get("warehouse")]
+        # A sheet that writes to any warehouse outside the caller's scope is
+        # refused whole: importing "the rows you may" would report success for a
+        # file that was only partly applied.
+        wscope.require_all_in_scope(user, sorted({r["warehouse"] for r in rows}))
 
         # Collapse duplicate (sku, warehouse) rows, and COUNT them.
         #
@@ -878,6 +910,7 @@ def setup_gaps(
     `basis` says so explicitly, and falls back to "units" when the tenant has
     given us no money figure at all rather than pretending otherwise.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory import setup_gaps_service as gaps_svc
 
     if not session_id:
@@ -990,8 +1023,14 @@ def inventory_status(
 
     # Both views share the source-then-filter shape; only the response
     # envelope differs.
-    if by_warehouse:
-        items = svc.get_inventory_status_by_warehouse(user.tenant_id, session_id, service_level, period)
+    scoped = wscope.is_scoped(user)
+    if by_warehouse or scoped:
+        # A scoped caller always gets the per-warehouse computation, restricted
+        # to their warehouses: the tenant-wide row blends in stock and demand of
+        # warehouses they may not see. `scoped_status_rows` also removes any
+        # transfer pointing at a warehouse outside the scope.
+        items = wscope.scoped_status_rows(user, svc.get_inventory_status_by_warehouse(
+            user.tenant_id, session_id, service_level, period))
     else:
         items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
 
@@ -1046,6 +1085,10 @@ def inventory_status(
         "coverage_unit": _COVERAGE_UNIT.get(period, "day"),
         "items": shown,
         "page": page,
+        # Present only for a scoped caller: the rows are per (sku, warehouse)
+        # over these warehouses, not one row per SKU for the company.
+        **({"scope": {"warehouses": sorted(wscope.scope_names(user) or []),
+                      "rows_are_per_warehouse": True}} if scoped else {}),
         "excluded_skus": svc.get_excluded_skus(user.tenant_id, session_id),
         "summary": {
             "total_skus":    len(items),
@@ -1101,6 +1144,7 @@ def create_shrinkage(
 
     # record_shrinkage raises AppError (own status_code + code + params) on bad
     # state/input; it propagates to the AppError handler in backend/main.py.
+    wscope.require_in_scope(user, wh_svc.resolve_canonical_name(user.tenant_id, body.warehouse))
     row = shrinkage_svc.record_shrinkage(
         user.tenant_id, body.sku, body.quantity, body.reason,
         user_id=user.user_id, warehouse=body.warehouse, notes=body.notes,
@@ -1130,6 +1174,10 @@ def list_shrinkage(
 ):
     """Recent history of recorded shrinkage (input to the future monthly summary)."""
     from backend.inventory import shrinkage_service as shrinkage_svc
+    if wscope.is_scoped(user):
+        # Filter after the cut would return fewer than `limit` rows; read wider.
+        rows = shrinkage_svc.list_shrinkage(user.tenant_id, sku=sku, limit=200)
+        return ok(wscope.filter_rows(user, rows)[:limit])
     return ok(shrinkage_svc.list_shrinkage(user.tenant_id, sku=sku, limit=limit))
 
 
@@ -1164,6 +1212,21 @@ def get_stock_history(
             status_code=404, params={"sku": sku},
         )
     canonical = wh_svc.resolve_canonical_name(user.tenant_id, warehouse) if warehouse else None
+    if canonical:
+        wscope.require_in_scope(user, canonical)
+    if canonical is None and wscope.is_scoped(user):
+        # No warehouse named: the level over THEIR warehouses, never the
+        # company's. An SKU they hold nowhere is simply not found.
+        mine = [w for w in svc.list_stock_warehouses(user.tenant_id, sku)
+                if wscope.in_scope(user, w)]
+        if not mine:
+            raise AppError(
+                "stock_sku_not_found", f"SKU '{sku}' not found in inventory",
+                status_code=404, params={"sku": sku},
+            )
+        from backend.inventory import scoped_views
+        history = scoped_views.stock_history_over(user.tenant_id, sku, days, mine)
+        return ok({"sku": sku, "days": days, "warehouse": None, "history": history})
     history = svc.get_stock_history(user.tenant_id, sku, days=days, warehouse=canonical)
     return ok({"sku": sku, "days": days, "warehouse": canonical, "history": history})
 
@@ -1180,7 +1243,11 @@ def dashboard_summary(
     Returns only the summary counts without the full item list.
     """
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
-    items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
+    if wscope.is_scoped(user):
+        items = wscope.scoped_status_rows(user, svc.get_inventory_status_by_warehouse(
+            user.tenant_id, session_id, 0.95, period))
+    else:
+        items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
     total_value = sum(i["inventory_value"] for i in items if i.get("inventory_value"))
     return ok({
         "session_id":   session_id,
@@ -1510,6 +1577,7 @@ def download_pdf_report(
     user: CurrentUser = Depends(get_current_user),
 ):
     """Generates and streams a one-page executive PDF inventory summary."""
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
     try:
         pdf_bytes = svc.generate_inventory_pdf(user.tenant_id, session_id, service_level, period)
@@ -1599,6 +1667,10 @@ def log_po(
     )
 
     idempotency_key = validate_idempotency_key(idempotency_key)
+    # Where the order arrives: the caller's own warehouse, never a default that
+    # lands outside their scope (`scoped_destination` names one or refuses).
+    po_destination = wscope.scoped_destination(
+        user, body.destination_warehouse if body else None)
     decisions_recorded = bool(body and body.items)
     if idempotency_key and not decisions_recorded:
         # The no-body path re-derives the lines from the CURRENT semaforo,
@@ -1619,7 +1691,7 @@ def log_po(
         # nothing to order and /pedidos showed them an order for two SKUs they
         # never saw (stability 11.7, found walking the screen — the export
         # itself was already scoped).
-        destination = body.destination_warehouse if body else None
+        destination = po_destination
         if destination:
             canonical = wh_svc.resolve_canonical_name(user.tenant_id, destination)
             rows = svc.get_inventory_status_by_warehouse(
@@ -1634,7 +1706,7 @@ def log_po(
 
     record = log_po_generation(
         user.tenant_id, session_id, po_items,
-        destination_warehouse=body.destination_warehouse if body else None,
+        destination_warehouse=po_destination,
         # The order is recorded either way; only the ADOPTION reading is
         # withheld. Nobody told us what the buyer decided here — the server
         # re-derived the list — so counting all of it as "followed" was the
@@ -1701,11 +1773,12 @@ def create_manual_po(
     supplier = sup_svc.get_supplier(user.tenant_id, body.supplier_id)
     if not supplier:
         raise AppError("supplier_not_found", "Supplier not found", status_code=404)
+    manual_destination = wscope.scoped_destination(user, body.destination_warehouse)
 
     record = create_po_svc(
         user.tenant_id, supplier,
         [l.model_dump() for l in body.lines],
-        destination_warehouse=body.destination_warehouse,
+        destination_warehouse=manual_destination,
         idempotency_key=idempotency_key,
     )
     return ok(_po_response(record, response))
@@ -1714,6 +1787,7 @@ def create_manual_po(
 @router.get("/roi")
 def get_roi(user: CurrentUser = Depends(get_current_user)):
     """Returns accumulated ROI metrics across all time."""
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory.roi_service import get_roi_summary
     return ok(get_roi_summary(user.tenant_id))
 
@@ -1724,6 +1798,7 @@ def get_roi_monthly(
     user: CurrentUser = Depends(get_current_user),
 ):
     """Last N months: orders, stockout risks handled, adoption, capital freed from overstock."""
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory.roi_service import get_monthly_summary
     return ok(get_monthly_summary(user.tenant_id, months))
 
@@ -1736,6 +1811,7 @@ def get_roi_month_report(
 ):
     """Recap of a single calendar month (feature 3.2). Defaults to the month
     that just closed — the same period the monthly recap email covers."""
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from datetime import datetime, timezone
 
     from backend.inventory.roi_service import get_month_report, previous_month
@@ -1754,7 +1830,11 @@ def po_history(
     from backend.inventory import po_approval_service as approval_svc
     from backend.inventory.roi_service import get_po_history
     # `approval` is added only for a tenant with an approval rule.
-    return ok(approval_svc.annotate_orders(user.tenant_id, get_po_history(user.tenant_id, limit)))
+    if wscope.is_scoped(user):
+        rows = wscope.filter_po_rows(user, get_po_history(user.tenant_id, 10_000))[:limit]
+    else:
+        rows = get_po_history(user.tenant_id, limit)
+    return ok(approval_svc.annotate_orders(user.tenant_id, rows))
 
 
 @router.get("/po-history/page")
@@ -1770,8 +1850,13 @@ def po_history_page(
     filtered set; `awaiting_reception` counts every open order of the tenant."""
     from backend.inventory import po_approval_service as approval_svc
     from backend.inventory.roi_service import get_po_history_page
-    page = get_po_history_page(user.tenant_id, limit=limit, offset=offset,
-                               status=status, q=q)
+    if wscope.is_scoped(user):
+        from backend.inventory import scoped_views
+        page = scoped_views.po_history_page(user, limit=limit, offset=offset,
+                                            status=status, q=q)
+    else:
+        page = get_po_history_page(user.tenant_id, limit=limit, offset=offset,
+                                   status=status, q=q)
     page["items"] = approval_svc.annotate_orders(user.tenant_id, page["items"])
     return ok(page)
 
@@ -1793,6 +1878,7 @@ class ReceptionRequest(BaseModel):
 def po_items(po_log_id: str, user: CurrentUser = Depends(get_current_user)):
     """Lines of a PO with ordered vs received quantities (reception form)."""
     from backend.inventory import reception_service as rec_svc
+    wscope.require_po_in_scope(user, po_log_id)
     po = rec_svc.get_po(user.tenant_id, po_log_id)
     if not po:
         raise AppError("po_not_found", "Purchase order not found", status_code=404)
@@ -1819,6 +1905,8 @@ def receive_po(
     from datetime import datetime as _dt
     from backend.inventory import reception_service as rec_svc
 
+    # Receiving adds stock to the order's destination warehouse.
+    wscope.require_po_in_scope(user, po_log_id)
     received_at = None
     if body and body.received_at:
         try:
@@ -1907,7 +1995,8 @@ def po_overdue(user: CurrentUser = Depends(get_current_user)):
     recorded. Powers the /hoy 'did it arrive?' nudge.
     """
     from backend.inventory import reception_service as rec_svc
-    return ok(rec_svc.get_overdue_receptions(user.tenant_id))
+    return ok(wscope.filter_po_rows(
+        user, rec_svc.get_overdue_receptions(user.tenant_id), key="po_log_id"))
 
 
 # ── PO → supplier (feature 2.2) ──────────────────────────────────────────────
@@ -1959,6 +2048,7 @@ def send_po_to_suppliers(
     from backend.notifications import email as email_mod
     from backend.notifications import whatsapp as wa_mod
 
+    wscope.require_po_in_scope(user, po_log_id)
     po = rec_svc.get_po(user.tenant_id, po_log_id)
     if not po:
         raise AppError("po_not_found", "Purchase order not found", status_code=404)
@@ -2118,6 +2208,7 @@ def send_po_to_self(
     from backend.notifications import whatsapp as wa_mod
     from backend.users import service as user_svc
 
+    wscope.require_po_in_scope(user, po_log_id)
     po = rec_svc.get_po(user.tenant_id, po_log_id)
     if not po:
         raise AppError("po_not_found", "Purchase order not found", status_code=404)
@@ -2228,6 +2319,7 @@ def evaluate_price_breaks(
     Falls back to the session's own recommended quantities when no cart is sent,
     which is what the daily briefing surface needs.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
     status_items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
 
@@ -2281,6 +2373,7 @@ def cash_calendar(
     Invoices falling due from POs already sent, dated by each supplier's credit
     terms. Read-only, so viewers may call it.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     return ok(cash_service.get_payables(user.tenant_id, horizon_days))
 
 
@@ -2300,6 +2393,7 @@ def cash_calendar_fit(
     for: the optimizer says what to buy at minimum cost, this says whether the
     business can pay for it in the window it lands in.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     budget = body.budget if body else None
     # None on the cart path: nothing was solved, so there is no plan to qualify.
     plan_status: Optional[str] = None
@@ -2616,7 +2710,7 @@ class WarehouseCreate(BaseModel):
 
 @router.get("/warehouses")
 def list_warehouses(user: CurrentUser = Depends(get_current_user)):
-    return ok(wh_svc.list_warehouses(user.tenant_id))
+    return ok(wscope.filter_rows(user, wh_svc.list_warehouses(user.tenant_id), key="name"))
 
 
 @router.post(
@@ -2624,6 +2718,9 @@ def list_warehouses(user: CurrentUser = Depends(get_current_user)):
 )
 def create_warehouse(body: WarehouseCreate, request: Request,
                      user: CurrentUser = Depends(require_analyst_or_above)):
+    # A new warehouse changes the company's structure, which a user limited to
+    # some warehouses does not own.
+    wscope.require_company_wide(user)
     if not (body.name or "").strip():
         raise AppError(
             "warehouse_name_required", "Warehouse name is required", status_code=422,
@@ -2668,6 +2765,9 @@ def patch_warehouse(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """Set or clear the manual demand share for one warehouse (feature 5.4)."""
+    # A share redistributes demand between warehouses, so it moves the figures
+    # of the ones outside a scope too.
+    wscope.require_company_wide(user)
     previous = wh_svc.get_warehouse_by_name(user.tenant_id, name) or {}
     try:
         row = wh_svc.set_demand_share(user.tenant_id, name, body.demand_share)
@@ -2696,7 +2796,12 @@ def list_transfer_lanes(user: CurrentUser = Depends(get_current_user)):
     """Configured lanes only. A pair with no row falls back to the documented
     default (lead_time_days=1, cost_per_unit=0, fixed_cost=0) everywhere it is
     consumed — see backend/inventory/transfer_lane_service.py."""
-    return ok(lane_svc.list_lanes(user.tenant_id))
+    lanes = lane_svc.list_lanes(user.tenant_id)
+    if wscope.is_scoped(user):
+        # A lane is visible from either end; the other end is shown by name only.
+        lanes = [l for l in lanes if wscope.in_scope(user, l.get("from_warehouse"))
+                 or wscope.in_scope(user, l.get("to_warehouse"))]
+    return ok(lanes)
 
 
 @router.put(
@@ -2706,6 +2811,8 @@ def upsert_transfer_lane(
     body: TransferLaneUpsert,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    # A lane joins two warehouses and shapes the network's transfer advice.
+    wscope.require_company_wide(user)
     try:
         row = lane_svc.upsert_lane(
             user.tenant_id, body.from_warehouse, body.to_warehouse,
@@ -2725,6 +2832,7 @@ def delete_transfer_lane(
 ):
     """Names travel as query params, not path segments: a warehouse name may
     contain a slash and would break path matching once encoded."""
+    wscope.require_company_wide(user)
     if not lane_svc.delete_lane(user.tenant_id, from_warehouse, to_warehouse):
         raise AppError(
             "transfer_lane_not_found", "Transfer lane not found", status_code=404,
@@ -2769,6 +2877,16 @@ def _svc_error(e: ValueError) -> Exception:
                          detail=msg)
 
 
+def _require_transfer_end_in_scope(user: CurrentUser, transfer_id: str, end: str) -> None:
+    """403 unless the end of the transfer this action works on is the caller's.
+    A transfer that does not exist is left for the service's own 404."""
+    if not wscope.is_scoped(user):
+        return
+    t = tr_svc.get_transfer(user.tenant_id, transfer_id)
+    if t:
+        wscope.require_in_scope(user, t.get(end))
+
+
 @router.post(
     "/transfers", status_code=201,
 )
@@ -2776,6 +2894,8 @@ def create_transfer(
     body: TransferCreate,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    # Shipping takes stock OUT of the origin: that is the warehouse being acted on.
+    wscope.require_in_scope(user, wh_svc.resolve_canonical_name(user.tenant_id, body.from_warehouse))
     try:
         t = tr_svc.create_transfer(
             user.tenant_id, user.user_id, body.from_warehouse, body.to_warehouse,
@@ -2802,7 +2922,12 @@ def list_transfers(
     status: Optional[str] = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
 ):
-    return ok(tr_svc.list_transfers(user.tenant_id, status))
+    rows = tr_svc.list_transfers(user.tenant_id, status)
+    if wscope.is_scoped(user):
+        # Visible from either end: the receiving side must see what is coming.
+        rows = [t for t in rows if wscope.in_scope(user, t.get("from_warehouse"))
+                or wscope.in_scope(user, t.get("to_warehouse"))]
+    return ok(rows)
 
 
 @router.post(
@@ -2813,6 +2938,7 @@ def receive_transfer(
     body: TransferReceive,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    _require_transfer_end_in_scope(user, transfer_id, "to_warehouse")   # stock is added there
     try:
         t = tr_svc.receive_transfer(user.tenant_id, transfer_id, body.lines)
     except ValueError as e:
@@ -2827,6 +2953,7 @@ def cancel_transfer(
     transfer_id: str,
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    _require_transfer_end_in_scope(user, transfer_id, "from_warehouse")  # stock goes back there
     try:
         t = tr_svc.cancel_transfer(user.tenant_id, transfer_id)
     except ValueError as e:
@@ -2842,6 +2969,7 @@ def close_transfer(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """Close a partial transfer, writing the missing units off as shrinkage."""
+    _require_transfer_end_in_scope(user, transfer_id, "to_warehouse")
     try:
         t = tr_svc.close_transfer(user.tenant_id, transfer_id, user.user_id)
     except ValueError as e:
@@ -2893,6 +3021,7 @@ def send_alert_now(
     """
     # Same grain the 8:00 loop uses, so the test send previews the real thing
     # rather than a differently-computed one.
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
     items = svc.get_inventory_status(user.tenant_id, session_id, period=period)
     critical = [i for i in items if i["signal"] == "PEDIR_YA"]
@@ -2970,6 +3099,7 @@ def morning_briefing(
     tenant's ACTIVE planning period — coverage and the signal in that unit —
     so /hoy agrees with /inventory (a weekly session must be read as weekly).
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     if not session_id:
         session_id = planning_service.resolve_active_session(user.tenant_id)
         if not session_id:
@@ -3001,6 +3131,7 @@ def set_product_type(
     product_type: str = Query(..., description="finished_good | semi_finished | component | raw_material | packaging | service"),
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     existing = svc.get_stock(user.tenant_id, sku)
     if not existing:
         raise AppError(
@@ -3107,6 +3238,7 @@ def dead_capital(
     `window_days`, ranked worst first by money, with the tenant's total at the
     top. Needs no session — it reads real stock-level history, not a forecast.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     session_id = planning_service.resolve_active_session(user.tenant_id)
     result = dead_capital_svc.get_dead_capital(
         user.tenant_id, window_days=window_days, session_id=session_id)
@@ -3224,9 +3356,13 @@ def export_po(
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
     if warehouse:
         canonical = wh_svc.resolve_canonical_name(user.tenant_id, warehouse)
+        wscope.require_in_scope(user, canonical)
         rows = svc.get_inventory_status_by_warehouse(
             user.tenant_id, session_id, service_level, period)
         items = [i for i in rows if i.get("warehouse") == canonical]
+    elif wscope.is_scoped(user):
+        items = wscope.scoped_status_rows(user, svc.get_inventory_status_by_warehouse(
+            user.tenant_id, session_id, service_level, period))
     else:
         items = svc.get_inventory_status(user.tenant_id, session_id, service_level, period)
     po_items = [i for i in items if i["signal"] in include_signals and (i.get("recommended_qty") or 0) > 0]
@@ -3310,6 +3446,7 @@ def optimize_inventory(
     recommended inter-warehouse transfers, collapsed to one total per
     line over the full horizon.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     plan = planning_service.get_planning(user.tenant_id)
     period = plan.get("period", "daily")
     if not session_id:

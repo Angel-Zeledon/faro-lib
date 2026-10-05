@@ -27,6 +27,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 
+from backend.auth import warehouse_scope as wscope
+
 from backend.activity.events import record_event
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.db.connection import query, query_one
@@ -516,6 +518,12 @@ async def po_import(
         raise _missing_columns(missing)
     if not groups:
         raise _no_valid_rows(errors, columns, used, [], blank)
+
+    # Every order in the file arrives at some warehouse; all of them must be the
+    # caller's. Refused whole, before any order is written: a file applied in
+    # part would report success for rows it silently skipped.
+    for g in groups:
+        wscope.require_destination_in_scope(user, g["warehouse"])
 
     created, replayed, write_errors = await asyncio.to_thread(
         _write_orders, user.tenant_id, groups)

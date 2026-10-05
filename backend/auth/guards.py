@@ -28,7 +28,10 @@ security = HTTPBearer()
 
 
 class CurrentUser:
-    __slots__ = ("user_id", "tenant_id", "role", "email_verified", "api_key_id")
+    # `scope_cache` is the warehouse scope resolved once per request
+    # (backend/auth/warehouse_scope.py); unset until something asks for it.
+    __slots__ = ("user_id", "tenant_id", "role", "email_verified", "api_key_id",
+                 "scope_cache")
 
     def __init__(
         self, user_id: str, tenant_id: str, role: str, email_verified: bool = True,

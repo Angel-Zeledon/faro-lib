@@ -300,6 +300,18 @@ async def login(body: LoginRequest):
         # distinguishing them would make login an account-enumeration oracle.
         raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
 
+    # A company that made single sign-on mandatory for this address's domain has
+    # no password door. Refused BEFORE the password is looked at, so a correct
+    # one proves nothing and the answer does not depend on it; the same fact is
+    # public at /auth/sso/discover, so this reveals nothing new.
+    from backend.auth.sso import service as sso_service
+    if sso_service.enforced_for(entry["tenant_id"], body.email):
+        raise AppError(
+            "sso_required",
+            "Your company requires signing in with its identity provider.",
+            status_code=403,
+        )
+
     user = user_svc.verify_credentials(entry["tenant_id"], body.email, body.password)
     if not user:
         raise AppError("invalid_credentials", "Invalid credentials", status_code=401)

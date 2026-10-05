@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.api.v1.currency import currency_of
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user
 from backend.schemas.common import ok
 from backend.sessions import planning_service
@@ -61,6 +62,7 @@ def morning_narrative(
     Generates an executive morning briefing narrative from the inventory briefing data.
     Adapts language and focus to the business profile.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory.service import get_morning_briefing
     from backend.ai.narrative_service import generate_morning_narrative
 
@@ -90,6 +92,7 @@ def inventory_insight(
     """
     Generates a concise insight about the current inventory state.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory.service import get_inventory_status
     from backend.ai.narrative_service import generate_inventory_insight
 
@@ -113,6 +116,7 @@ def forecast_explanation(
     """
     Explains a specific SKU's inventory signal and recommendation in plain language.
     """
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     from backend.inventory.service import get_inventory_status
     from backend.ai.narrative_service import generate_forecast_explanation
 

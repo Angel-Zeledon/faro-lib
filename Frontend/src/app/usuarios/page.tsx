@@ -9,9 +9,12 @@ import { getUser } from '@/lib/auth'
 import {
   listAdminUsers, createAdminUser, updateAdminUser,
   deleteAdminUser, setUserStatus,
-  resendVerification,
+  resendVerification, listWarehouses,
   type AdminUser,
 } from '@/lib/api'
+import type { Warehouse } from '@/lib/types'
+import { WarehouseScope } from '@/components/users/WarehouseScope'
+import { SsoSettings } from '@/components/users/SsoSettings'
 import Card from '@/components/ui/Card'
 import { thStyle } from '@/components/ui/Table'
 import Input, { Field, Select } from '@/components/ui/Input'
@@ -500,6 +503,16 @@ export default function UsersPage() {
   const [editUser,   setEditUser]       = useState<AdminUser | null>(null)
   const [deleteUser, setDeleteUser]     = useState<AdminUser | null>(null)
   const [loadError,  setLoadError]      = useState<string | null>(null)
+  // The "Bodegas" control appears only when there is something to choose from.
+  const [warehouses, setWarehouses]     = useState<Warehouse[]>([])
+
+  useEffect(() => {
+    let alive = true
+    listWarehouses()
+      .then(w => { if (alive) setWarehouses(w) })
+      .catch(() => { if (alive) setWarehouses([]) })
+    return () => { alive = false }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -690,6 +703,9 @@ export default function UsersPage() {
                 )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{u.email}</div>
+              {warehouses.length >= 2 && (
+                <WarehouseScope user={u} warehouses={warehouses} onChanged={load} />
+              )}
             </div>
             <div data-tour={idx === 0 ? 'users.status' : undefined}><StatusBadge status={u.status} /></div>
             <div data-tour={idx === 0 ? 'users.role' : undefined}><RoleBadge role={u.role} /></div>
@@ -747,6 +763,8 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      <SsoSettings />
 
       {/* Modals */}
       {showCreate && (

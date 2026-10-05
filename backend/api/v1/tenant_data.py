@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, require_admin
 from backend.schemas.common import ok
 from backend.tenants import data_export
@@ -29,6 +30,7 @@ class DeleteTenantRequest(BaseModel):
 @router.get("/export")
 def export_tenant_data(user: CurrentUser = Depends(require_admin)):
     """Streams a ZIP with every table this tenant owns, scoped to tenant_id."""
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     try:
         zip_bytes = data_export.build_export_zip(user.tenant_id)
     except ValueError as exc:
@@ -45,6 +47,7 @@ def export_tenant_data(user: CurrentUser = Depends(require_admin)):
 @router.delete("")
 def delete_tenant_data(body: DeleteTenantRequest, user: CurrentUser = Depends(require_admin)):
     """Cascade-deletes the caller's tenant and ALL of its data. Irreversible."""
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     tenant = get_tenant(user.tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")

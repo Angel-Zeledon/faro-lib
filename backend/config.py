@@ -237,6 +237,11 @@ class Settings(BaseSettings):
     # webhook is authenticated with. Environment only (see the registry).
     inbound_email_domain: str = ""
     inbound_email_secret: str = ""
+    # Enterprise single sign-on (OpenID Connect, one provider per tenant). OFF
+    # unless the instance operator turns it on, exactly like social login: a
+    # source install shows only email + password. Each tenant's own provider
+    # settings live in `sso_providers`, not here — see backend/auth/sso/.
+    enterprise_sso_enabled: bool = False
 
     # Fernet key for every secret `/instalacion` stores. The name is
     # historical — renaming it would orphan every deployment's stored secrets.

@@ -21,6 +21,7 @@ does not have to touch.
 from fastapi import APIRouter, Depends
 
 from backend.activity.events import record_event
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, require_analyst_or_above
 from backend.inventory import reception_service as rec_svc
 from backend.inventory.roi_service import format_po_number
@@ -33,6 +34,7 @@ router = APIRouter(prefix="/inventory/po", tags=["inventory-reversals"])
 def unreceive_po(
     po_log_id: str,
     user: CurrentUser = Depends(require_analyst_or_above),
+    _scope: None = Depends(wscope.po_guard),
 ):
     """
     Undo a reception: take the received units back out of stock, reset the
@@ -63,6 +65,7 @@ def unreceive_po(
 def unsend_po(
     po_log_id: str,
     user: CurrentUser = Depends(require_analyst_or_above),
+    _scope: None = Depends(wscope.po_guard),
 ):
     """
     Undo `mark_po_sent`: clear `sent_at` so the order stops counting as

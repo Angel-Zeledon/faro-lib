@@ -16,6 +16,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, require_analyst_or_above
 from backend.config import settings
 from backend.db import session_store
@@ -99,6 +100,7 @@ def demo_quickstart(
     user: CurrentUser = Depends(require_analyst_or_above),
 ):
     """Seed a complete demo session and start training. Returns {session_id, job_id}."""
+    wscope.require_company_wide(user)  # company totals: not for a warehouse-scoped user
     if not _DEMO_CSV.exists():
         raise HTTPException(status_code=503, detail="Demo dataset not bundled on this server")
 
