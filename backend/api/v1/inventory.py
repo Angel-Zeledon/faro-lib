@@ -2004,6 +2004,10 @@ def po_overdue(user: CurrentUser = Depends(get_current_user)):
 
 # ── PO → supplier (feature 2.2) ──────────────────────────────────────────────
 
+# Letters, digits, `_` and `-` only: no glob metacharacter, no path separator.
+_PO_PDF_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+
+
 @router.get("/po/{po_log_id}/pdf/{supplier_slug}")
 def download_po_pdf(po_log_id: str, supplier_slug: str):
     """
@@ -2014,6 +2018,14 @@ def download_po_pdf(po_log_id: str, supplier_slug: str):
     sensitive than what's already emailed to the same supplier.
     """
     from backend.storage import paths as storage_paths
+
+    # Both URL parts go into a file-search pattern below, so they must be plain
+    # identifiers. Without this, `/po/*/pdf/*` was the pattern `*/*_*.pdf` and
+    # served the first PO PDF of ANY tenant to anybody (found 2026-10-05); `[`,
+    # `?`, `..` and `/` would have stepped through the rest. The unguessable id is
+    # the only credential this route has, so it must match exactly or not at all.
+    if not (_PO_PDF_ID.fullmatch(po_log_id or "") and _PO_PDF_ID.fullmatch(supplier_slug or "")):
+        raise AppError("po_pdf_not_found", "Purchase order PDF not found", status_code=404)
 
     # po_log_id is not tenant-scoped here on purpose (see docstring) — we
     # don't have a tenant to scope by without auth, so we search every
