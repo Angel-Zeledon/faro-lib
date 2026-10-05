@@ -35,6 +35,7 @@ import {
 import { SessionSelector } from '@/components/forecast/SessionSelector'
 import { SkuCard } from '@/components/forecast/SkuCard'
 import { ChartPanel } from '@/components/forecast/ChartPanel'
+import CompareView from '@/components/forecast/CompareView'
 import { SalesPatternPanel } from '@/components/forecast/SalesPatternPanel'
 import { MetricsTable } from '@/components/forecast/MetricsTable'
 import {
@@ -98,11 +99,8 @@ export default function SkusPage() {
   const showTechnical = view === 'tech'
   // Compare mode
   const [compareMode,    setCompareMode]    = useState(false)
-  const [cmpSessionId,   setCmpSessionId]   = useState<string | null>(null)
-  const [cmpMetrics,     setCmpMetrics]     = useState<MetricRow[]>([])
-  const [cmpSku,         setCmpSku]         = useState<string | null>(null)
-  const [cmpLoading,     setCmpLoading]     = useState(false)
-  const [cmpError,       setCmpError]       = useState<string | null>(null)
+  // Sessions compared against the open one; CompareView draws them all on one chart.
+  const [cmpSessionIds,  setCmpSessionIds]  = useState<string[]>([])
   // Metrics/Quality only exist as tabs in the technical view — switching to
   // the buyer view while one of them is active would otherwise leave `tab`
   // pointing at a tab no longer in the TabBar.
@@ -113,7 +111,7 @@ export default function SkusPage() {
   // (the same way its own button does) rather than leaving a split chart the
   // buyer view has no button to undo.
   useEffect(() => {
-    if (!showTechnical && compareMode) { setCompareMode(false); setCmpSessionId(null) }
+    if (!showTechnical && compareMode) { setCompareMode(false); setCmpSessionIds([]) }
   }, [showTechnical, compareMode])
   // Phones show the SKU list and one SKU at a time (PronosticosMobile); this
   // is whether that one SKU is open. Desktop shows both panes and ignores it.
@@ -263,10 +261,6 @@ export default function SkusPage() {
   // Any change to what is being listed sends you back to the first page.
   useEffect(() => { setSkuListPage(1) }, [search, sessionId])
 
-  const cmpSkus = useMemo(() =>
-    Array.from(new Set(cmpMetrics.map(r => r.sku).filter(Boolean) as string[]))
-  , [cmpMetrics])
-
   const skuMetrics   = useMemo(() => metrics.filter(r => r.sku === selectedSku), [metrics, selectedSku])
   const skuInventory = useMemo(() => inventory.find(r => r.sku === selectedSku), [inventory, selectedSku])
   const skuQuality   = useMemo(() => selectedSku ? quality[selectedSku] : undefined, [quality, selectedSku])
@@ -327,27 +321,6 @@ export default function SkusPage() {
     return Math.max(0, Math.round((1 - best.wape) * 100))
   }, [skuMetrics])
 
-  // Load compare session metrics
-  useEffect(() => {
-    if (!cmpSessionId) { setCmpMetrics([]); setCmpSku(null); setCmpError(null); return }
-    setCmpLoading(true)
-    setCmpError(null)
-    getMetrics(cmpSessionId)
-      .then(m => {
-        setCmpMetrics(m.rows)
-        const first = Array.from(new Set(m.rows.map((r: MetricRow) => r.sku).filter(Boolean) as string[]))[0]
-        setCmpSku(first ?? null)
-      })
-      .catch((e: { status?: number } & Error) => {
-        const msg = e?.status === 404 ? t('skus.err_session_not_found')
-          : e?.status === 403 ? t('skus.err_access_denied')
-          : t('skus.err_load_session_metrics')
-        setCmpError(msg)
-        setCmpMetrics([])
-      })
-      .finally(() => setCmpLoading(false))
-  }, [cmpSessionId, t])
-
   // Bulk export all SKUs
   const handleBulkExport = useCallback(async () => {
     if (!sessionId || !skus.length) return
@@ -389,7 +362,7 @@ export default function SkusPage() {
         sessions={sessions}
         sessLoading={sessLoading}
         sessionId={sessionId}
-        onSelectSession={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false) }}
+        onSelectSession={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false); setCmpSessionIds([]) }}
         onRefresh={() => { const id = sessionId; setSessionId(null); setTimeout(() => setSessionId(id), 10) }}
         sessError={sessError}
         onRetrySessions={reloadSessions}
@@ -422,14 +395,11 @@ export default function SkusPage() {
         showSkuStats={showSkuStats}
         onToggleSkuStats={() => setShowSkuStats(v => !v)}
         compareMode={compareMode}
-        onToggleCompare={() => { setCompareMode(v => !v); if (compareMode) setCmpSessionId(null) }}
-        cmpSessionId={cmpSessionId}
-        onCmpSession={id => { setCmpSessionId(id); setCmpSku(null) }}
-        cmpSkus={cmpSkus}
-        cmpSku={cmpSku}
-        onCmpSku={setCmpSku}
-        cmpLoading={cmpLoading}
-        cmpError={cmpError}
+        onToggleCompare={() => { setCompareMode(v => !v); if (compareMode) setCmpSessionIds([]) }}
+        cmpSessionIds={cmpSessionIds}
+        onCmpSessionIds={setCmpSessionIds}
+        skus={skus}
+        onSku={setSelectedSku}
         bulkExporting={bulkExporting}
         bulkProgress={bulkProgress}
         bulkFailed={bulkFailed}
@@ -494,7 +464,7 @@ export default function SkusPage() {
           {sessionId && showTechnical && (
             <button
               data-tour="skus.compare"
-              onClick={() => { setCompareMode(v => !v); if (compareMode) setCmpSessionId(null) }}
+              onClick={() => { setCompareMode(v => !v); if (compareMode) setCmpSessionIds([]) }}
               title={t('skus.compare_sessions_title')}
               style={{
                 all: 'unset', cursor: 'pointer',
@@ -510,7 +480,7 @@ export default function SkusPage() {
           )}
 
           {sessLoading ? <Spinner size={13} /> : (
-            <SessionSelector tourAnchor="skus.session" sessions={sessions} selected={sessionId} onSelect={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false) }} />
+            <SessionSelector tourAnchor="skus.session" sessions={sessions} selected={sessionId} onSelect={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false); setCmpSessionIds([]) }} />
           )}
           {sessionId && (
             <Button
@@ -522,47 +492,6 @@ export default function SkusPage() {
           )}
         </div>
       </div>
-
-      {/* Compare bar */}
-      {compareMode && sessionId && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
-          background: 'color-mix(in srgb, var(--accent) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
-          borderRadius: 8, marginBottom: 12, flexWrap: 'wrap',
-        }}>
-          <GitCompare size={12} color="var(--accent)" />
-          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{t('skus.comparing_with_label')}</span>
-          <SessionSelector
-            sessions={sessions}
-            selected={cmpSessionId}
-            onSelect={id => { setCmpSessionId(id); setCmpSku(null) }}
-            selectId="skus-compare-session-select"
-            name="skus_compare_session"
-            compact
-          />
-          {cmpSkus.length > 0 && (
-            <>
-              <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('skus.sku_label')}</span>
-              <div style={{ position: 'relative' }}>
-                <select
-                  className="form-select"
-                  value={cmpSku ?? ''}
-                  onChange={e => setCmpSku(e.target.value)}
-                  style={{ paddingRight: 28, minWidth: 140, fontSize: 11, height: 28 }}
-                >
-                  <option value="" disabled>{t('skus.select_sku_placeholder')}</option>
-                  {cmpSkus.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--dim)' }} />
-              </div>
-            </>
-          )}
-          {cmpLoading && <Spinner size={12} />}
-          {cmpError && (
-            <span style={{ fontSize: 11, color: '#D07878' }}>{cmpError}</span>
-          )}
-        </div>
-      )}
 
       {/* Session list failed: retry reloads it. Partial-result failures carry
           their own composed sentence naming which parts are missing. */}
@@ -754,33 +683,19 @@ export default function SkusPage() {
 
               <div style={{ flex: 1, overflow: tab === 'Forecast' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {tab === 'Forecast' && sessionId && (
-                  compareMode && cmpSessionId && cmpSku ? (
-                    /* Split compare view */
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                      {/* Top: primary session */}
-                      <div style={{ flex: 1, minHeight: 0, borderBottom: '2px solid var(--accent)', position: 'relative' }}>
-                        <div style={{
-                          position: 'absolute', top: 6, left: 12, zIndex: 5,
-                          fontSize: 10, fontWeight: 600, color: 'var(--accent)',
-                          background: 'color-mix(in srgb, var(--accent) 12%, transparent)', padding: '2px 7px', borderRadius: 4,
-                        }}>
-                          A · {sessions.find(s => s.session_id === sessionId)?.name ?? sessionId}
-                        </div>
-                        <ChartPanel key={`${sessionId}-${selectedSku}`} sessionId={sessionId} sku={selectedSku} isDark={isDark} quality={skuQuality} showTechnical={showTechnical} />
-                      </div>
-                      {/* Bottom: compare session */}
-                      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-                        <div style={{
-                          position: 'absolute', top: 6, left: 12, zIndex: 5,
-                          fontSize: 10, fontWeight: 600, color: '#2E8B62',
-                          background: 'rgba(46,139,98,0.12)', padding: '2px 7px', borderRadius: 4,
-                        }}>
-                          B · {sessions.find(s => s.session_id === cmpSessionId)?.name ?? cmpSessionId}
-                        </div>
-                        {/* No quality prop: the compare session's quality report
-                            isn't fetched — the reliability tile degrades to '—'. */}
-                        <ChartPanel key={`${cmpSessionId}-${cmpSku}`} sessionId={cmpSessionId} sku={cmpSku} isDark={isDark} showTechnical={showTechnical} />
-                      </div>
+                  compareMode ? (
+                    /* One chart, one time axis, every compared session on it */
+                    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                      <CompareView
+                        sessions={sessions}
+                        primaryId={sessionId}
+                        extraIds={cmpSessionIds}
+                        onExtraIds={setCmpSessionIds}
+                        skus={skus}
+                        sku={selectedSku}
+                        onSku={setSelectedSku}
+                        isDark={isDark}
+                      />
                     </div>
                   ) : (
                     <ChartPanel key={`${sessionId}-${selectedSku}`} tourAnchor="skus.chart" sessionId={sessionId} sku={selectedSku} isDark={isDark} quality={skuQuality} showTechnical={showTechnical} onSeeOrder={() => setTab('Inventory')} />

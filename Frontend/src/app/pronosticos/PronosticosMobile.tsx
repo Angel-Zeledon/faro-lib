@@ -41,6 +41,7 @@ import { seriesTypeLabel } from '@/lib/enumLabels'
 import { SERIES_COLOR, pct, reliabilityInfo } from '@/components/forecast/shared'
 import { SessionSelector } from '@/components/forecast/SessionSelector'
 import { ChartPanel } from '@/components/forecast/ChartPanel'
+import CompareView from '@/components/forecast/CompareView'
 import { SalesPatternPanel } from '@/components/forecast/SalesPatternPanel'
 import { MetricsTable } from '@/components/forecast/MetricsTable'
 import { QualityTab, QualityWarningList } from '@/components/forecast/QualityPanel'
@@ -99,13 +100,11 @@ export interface PronosticosMobileProps {
 
   compareMode: boolean
   onToggleCompare: () => void
-  cmpSessionId: string | null
-  onCmpSession: (id: string) => void
-  cmpSkus: string[]
-  cmpSku: string | null
-  onCmpSku: (sku: string) => void
-  cmpLoading: boolean
-  cmpError: string | null
+  cmpSessionIds: string[]
+  onCmpSessionIds: (ids: string[]) => void
+  /** Every SKU of the open session, for the comparison's own SKU picker. */
+  skus: string[]
+  onSku: (sku: string) => void
 
   bulkExporting: boolean
   bulkProgress: number
@@ -200,34 +199,6 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
               {p.compareMode ? <X size={16} aria-hidden="true" /> : <GitCompare size={16} aria-hidden="true" />}
               {p.compareMode ? t('skus.mobile_compare_stop') : t('skus.btn_compare')}
             </button>
-            {p.compareMode && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
-                <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('skus.compare_sessions_title')}</div>
-                <SessionSelector
-                  sessions={p.sessions}
-                  selected={p.cmpSessionId}
-                  onSelect={p.onCmpSession}
-                  selectId="skus-compare-session-select-mobile"
-                  name="skus_compare_session_mobile"
-                />
-                {p.cmpSkus.length > 0 && (
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--muted)' }}>
-                    {t('skus.sku_label')}
-                    <select
-                      className="form-select"
-                      value={p.cmpSku ?? ''}
-                      onChange={e => p.onCmpSku(e.target.value)}
-                      style={{ fontSize: 16, minHeight: TAP }}
-                    >
-                      <option value="" disabled>{t('skus.select_sku_placeholder')}</option>
-                      {p.cmpSkus.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </label>
-                )}
-                {p.cmpLoading && <Spinner size={14} />}
-                {p.cmpError && <div style={{ fontSize: 13, color: 'var(--signal-order-now-fg)' }}>{p.cmpError}</div>}
-              </div>
-            )}
           </>
         )}
       </div>
@@ -251,8 +222,7 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
     const skuQuality = p.quality[sku]
     const color = SERIES_COLOR[skuQuality?.series_type ?? 'unknown'] ?? SERIES_COLOR.unknown
     const signal = p.signalForSku(sku)
-    const comparing = p.compareMode && !!p.cmpSessionId && !!p.cmpSku
-    const sessionName = (id: string | null) => p.sessions.find(s => s.session_id === id)?.name ?? id
+    const comparing = p.compareMode && !!p.sessionId
 
     return (
       <div key="detail" className="mobile-push-enter" style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
@@ -314,13 +284,16 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
         >
           {p.tab === 'Forecast' && p.sessionId && (
             comparing ? (
-              <>
-                <CompareLabel tone="a">A · {sessionName(p.sessionId)}</CompareLabel>
-                <ChartPanel key={`${p.sessionId}-${sku}`} sessionId={p.sessionId} sku={sku} isDark={p.isDark} quality={skuQuality} showTechnical={p.showTechnical} />
-                <div style={{ height: 2, background: 'var(--accent)' }} />
-                <CompareLabel tone="b">B · {sessionName(p.cmpSessionId)} · {p.cmpSku}</CompareLabel>
-                <ChartPanel key={`${p.cmpSessionId}-${p.cmpSku}`} sessionId={p.cmpSessionId!} sku={p.cmpSku!} isDark={p.isDark} showTechnical={p.showTechnical} />
-              </>
+              <CompareView
+                sessions={p.sessions}
+                primaryId={p.sessionId}
+                extraIds={p.cmpSessionIds}
+                onExtraIds={p.onCmpSessionIds}
+                skus={p.skus}
+                sku={sku}
+                onSku={p.onSku}
+                isDark={p.isDark}
+              />
             ) : (
               <ChartPanel
                 key={`${p.sessionId}-${sku}`}
@@ -486,21 +459,6 @@ export default function PronosticosMobile(p: PronosticosMobileProps) {
 
       <PolicyBacktestPanel backtest={p.policyBacktest} catalogueSize={p.catalogueSize} />
       {options}
-    </div>
-  )
-}
-
-function CompareLabel({ tone, children }: { tone: 'a' | 'b'; children: React.ReactNode }) {
-  const a = tone === 'a'
-  return (
-    <div style={{
-      margin: '10px 12px 0', alignSelf: 'flex-start', maxWidth: 'calc(100% - 24px)',
-      fontSize: 12, fontWeight: 600, padding: '3px 8px', borderRadius: 6,
-      color: a ? 'var(--accent)' : '#2E8B62',
-      background: a ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'rgba(46,139,98,0.12)',
-      overflow: 'hidden', overflowWrap: 'anywhere',
-    }}>
-      {children}
     </div>
   )
 }

@@ -2,8 +2,8 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 219,
-  "read": 138,
+  "total": 220,
+  "read": 139,
   "write": 81
  },
  "limits": {
@@ -2931,6 +2931,38 @@
        "type": "string",
        "description": "Filter by model name",
        "example": "model"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ]
+    },
+    {
+     "id": "get-sessions-session_id-forecast-total",
+     "method": "GET",
+     "path": "/sessions/{session_id}/forecast-total",
+     "tag": "forecasts",
+     "scope": "read",
+     "summary": "Get Forecast Total",
+     "description": "The whole catalogue as one series: every SKU's champion forecast and history summed per date. Feeds the session-comparison chart's \"all SKUs\" option, where two sessions are only comparable as totals.",
+     "parameters": [
+      {
+       "name": "session_id",
+       "in": "path",
+       "required": true,
+       "type": "string",
+       "description": "",
+       "example": "<session_id>"
+      },
+      {
+       "name": "granularity",
+       "in": "query",
+       "required": false,
+       "type": "string",
+       "description": "",
+       "example": "granularity"
       }
      ],
      "request_body": null,

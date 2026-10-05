@@ -588,6 +588,98 @@ def get_sku_intelligence(
     })
 
 
+@router.get("/sessions/{session_id}/forecast-total")
+def get_forecast_total(
+    session_id: str,
+    granularity: Optional[str] = Query(None),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """The whole catalogue as one series: every SKU's champion forecast and
+    history summed per date. Feeds the session-comparison chart's "all SKUs"
+    option, where two sessions are only comparable as totals.
+
+    Same envelope as `sku-intelligence` so one client reads both. Quantile
+    bands are omitted on purpose: percentiles of independent SKUs do not add.
+    `accuracy_wape` is the mean of each SKU's champion WAPE.
+    """
+    _require_completed(user.tenant_id, session_id)
+    result = session_store.get_training_result(user.tenant_id, session_id)
+    if not result:
+        raise AppError(
+            "training_results_not_found", "Training results not found", status_code=404,
+        )
+    forecasts_data = session_store.get_forecasts(user.tenant_id, session_id) or {}
+    metrics_rows = result.get("metrics", {}).get("rows", [])
+    rows_by_sku: dict[str, list[dict]] = {}
+    for r in metrics_rows:
+        rows_by_sku.setdefault(r.get("sku"), []).append(r)
+
+    from backend.inventory.service import best_model_by_sku
+    from backend.utils.temporal_agg import (
+        _FREQ_ORDER, detect_frequency, available_granularities as _avail_gran,
+        aggregate_historical, aggregate_forecast,
+    )
+
+    hist_tot: dict[str, float] = {}
+    fc_tot: dict[str, float] = {}
+    wapes: list[float] = []
+    n_skus = 0
+    for sku, models in forecasts_data.items():
+        if not isinstance(models, dict) or not models:
+            continue
+        sku_rows = rows_by_sku.get(sku, [])
+        champion = best_model_by_sku(sku_rows).get(sku) if sku_rows else None
+        if champion not in models:
+            champion = next(iter(models.keys()))
+        raw = models.get(champion)
+        if isinstance(raw, dict):
+            fc, hist = raw.get("forecast", []), raw.get("historical", [])
+        elif isinstance(raw, list):
+            fc, hist = raw, []
+        else:
+            continue
+        hist = _historical_for_sku(user.tenant_id, session_id, sku) or list(hist)
+        n_skus += 1
+        for p in hist:
+            if isinstance(p.get("value"), (int, float)):
+                hist_tot[p["date"]] = hist_tot.get(p["date"], 0.0) + p["value"]
+        for p in fc:
+            if isinstance(p, dict) and isinstance(p.get("value"), (int, float)):
+                fc_tot[p["date"]] = fc_tot.get(p["date"], 0.0) + p["value"]
+        champ_row = next((r for r in sku_rows if r.get("model") == champion), None)
+        w = champ_row.get("wape") if champ_row else None
+        if isinstance(w, (int, float)) and 0 <= w < 1e6:
+            wapes.append(float(w))
+
+    historical_raw = [{"date": d, "value": v} for d, v in sorted(hist_tot.items())]
+    forecast_raw = [{"date": d, "value": v} for d, v in sorted(fc_tot.items())]
+    hist_freq = detect_frequency([p["date"] for p in historical_raw])
+    fc_freq = detect_frequency([p["date"] for p in forecast_raw]) if len(forecast_raw) >= 2 else hist_freq
+    base_freq = fc_freq if _FREQ_ORDER.index(fc_freq) > _FREQ_ORDER.index(hist_freq) else hist_freq
+    valid_gran = _avail_gran(base_freq, len(historical_raw))
+    gran = granularity if granularity in valid_gran else base_freq
+    if gran != hist_freq:
+        historical_raw = aggregate_historical(historical_raw, gran, agg="sum")
+    if gran != fc_freq:
+        forecast_raw = aggregate_forecast(forecast_raw, gran, agg="sum")
+
+    return ok({
+        "sku":                     "__total__",
+        "model":                   None,
+        "available_models":        [],
+        "original_freq":           base_freq,
+        "applied_granularity":     gran,
+        "available_granularities": valid_gran,
+        "historical":              historical_raw,
+        "forecast":                _enrich_forecast_points(forecast_raw),
+        "metrics":                 [],
+        "quality":                 None,
+        "stats":                   None,
+        "n_skus":                  n_skus,
+        "accuracy_wape":           (sum(wapes) / len(wapes)) if wapes else None,
+    })
+
+
 # ── Series decomposition ───────────────────────────────────────────────────────
 
 def _session_granularity(tenant_id: str, session_id: str, session: dict) -> Optional[str]:

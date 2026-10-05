@@ -1423,6 +1423,20 @@ export const getSkuIntelligence = (
   )
 }
 
+/** The whole catalogue summed into one series (champion forecast per SKU), in
+ *  the same envelope as `getSkuIntelligence`. Feeds the session comparison's
+ *  "all SKUs" option. */
+export const getForecastTotal = (
+  sessionId: string,
+  params?: { granularity?: string },
+  opts?: RequestOpts,
+) => {
+  const qs = params?.granularity ? `?granularity=${encodeURIComponent(params.granularity)}` : ''
+  return request<import('./types').ForecastTotalData>(
+    'GET', `/sessions/${sessionId}/forecast-total${qs}`, undefined, opts,
+  )
+}
+
 /** STL split of one SKU's history into trend / seasonal / residual.
  *
  *  Refuses rather than degrades: too little history comes back as a 422 with
