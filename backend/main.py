@@ -347,6 +347,10 @@ from backend.api.v1 import sso as sso_router  # noqa: E402
 app.include_router(sso_router.router, prefix=_PREFIX)
 app.include_router(users.router,         prefix=_PREFIX)
 app.include_router(sessions.router,      prefix=_PREFIX)
+# BEFORE the upload router: its `/datasets/{dataset_id}` would swallow the fixed
+# `/datasets/inventory-status`-style paths of the flat BI feeds.
+from backend.api.v1 import bi_datasets as bi_datasets_router  # noqa: E402
+app.include_router(bi_datasets_router.router, prefix=_PREFIX)
 app.include_router(datasets.router,      prefix=_PREFIX)
 app.include_router(datasources.router,   prefix=_PREFIX)
 app.include_router(configuration.router, prefix=_PREFIX)
