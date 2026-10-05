@@ -21,6 +21,16 @@ import type { Lang } from './translations'
 export type GuideKey = 'distributors' | 'reorderPoint' | 'safetyStock' | 'forecast' | 'about'
 
 export interface GuideSection { h: string; p: string[]; list?: string[] }
+
+/**
+ * A boxed block inside a guide: a formula, a worked example or the one thing to
+ * keep. `section` is the index into `sections`; `after` is how many of that
+ * section's paragraphs come before the box (0 = the box opens the section).
+ * `lines` are set one per row, so a calculation reads as a calculation. The
+ * numbers in an example are invented and the paragraph above says so.
+ */
+export type GuideCalloutKind = 'formula' | 'example' | 'takeaway'
+export interface GuideCallout { kind: GuideCalloutKind; section: number; after: number; label: string; lines: string[] }
 export interface GuideFaq { q: string; a: string }
 
 export interface Guide {
@@ -33,6 +43,8 @@ export interface Guide {
   metaTitle: string
   metaDesc: string
   sections: GuideSection[]
+  /** Boxed formulas, worked examples and takeaways. Required (empty if none) so a language cannot silently skip them. */
+  callouts: GuideCallout[]
   faqTitle: string
   faq: GuideFaq[]
   /** The closing call to action: a sentence above the two buttons. */
@@ -113,6 +125,9 @@ const es: GuidesCopy = {
           ],
         },
       ],
+      callouts: [
+        { kind: 'takeaway', section: 0, after: 2, label: 'En resumen', lines: ['Entran tus ventas y tus existencias; sale una lista de qué pedir, cuánto y a qué proveedor. La orden la revisas y la envías tú.'] },
+      ],
       faqTitle: 'Preguntas sobre StockAI',
       faq: [
         { q: '¿Qué es StockAI?', a: 'Es un software web de compras de inventario para distribuidores, mayoristas y comercios. Lee tus ventas y tus existencias y te dice qué pedir, cuánto y a qué proveedor.' },
@@ -177,6 +192,9 @@ const es: GuidesCopy = {
           ],
         },
       ],
+      callouts: [
+        { kind: 'takeaway', section: 0, after: 2, label: 'En resumen', lines: ['El inventario de un distribuidor se juega en la compra, no en el conteo: cuánto pedir de cada producto, cuándo y a qué proveedor.'] },
+      ],
       faqTitle: 'Preguntas frecuentes sobre software de inventario para distribuidores',
       faq: [
         { q: '¿Qué diferencia hay entre controlar el inventario y planear las compras?', a: 'Controlar es saber cuánto hay; planear es decidir cuánto, cuándo y a quién pedir. StockAI se concentra en lo segundo: toma las existencias que ya registras en tu sistema y las cruza con el pronóstico y el plazo del proveedor.' },
@@ -205,16 +223,14 @@ const es: GuidesCopy = {
         {
           h: 'La fórmula',
           p: [
-            'Punto de reorden = demanda durante el plazo de entrega + stock de seguridad.',
             'La demanda durante el plazo es la venta diaria promedio multiplicada por los días que tarda el proveedor. El stock de seguridad es el colchón; cómo se calcula tiene su propia guía: [stock de seguridad](/stock-de-seguridad).',
           ],
         },
         {
           h: 'Un ejemplo con números',
           p: [
-            'Los números de este ejemplo son inventados, para ilustrar la regla. Un producto se vende en promedio 20 unidades por día. El proveedor tarda 9 días en entregar. El colchón de seguridad calculado es de 30 unidades.',
-            'Demanda durante el plazo: 20 × 9 = 180 unidades. Punto de reorden: 180 + 30 = 210 unidades. Expresado en días de cobertura, 210 ÷ 20 = 10,5 días.',
-            'Hoy hay 150 unidades y nada en camino. La cobertura es 150 ÷ 20 = 7,5 días: ya está por debajo del punto de reorden, así que toca pedir. La cantidad sugerida es lo que falta para cubrir el plazo con el colchón: 180 + 30 − 150 − 0 en camino = 60 unidades.',
+            'Los números de este ejemplo son inventados, para ilustrar la regla. Un producto se vende en promedio 20 unidades por día. El proveedor tarda 9 días en entregar. El colchón de seguridad calculado es de 30 unidades. Hoy hay 150 unidades y nada en camino.',
+            'La cobertura de hoy ya está por debajo del punto de reorden, así que toca pedir. La cantidad sugerida es lo que falta para cubrir el plazo con el colchón.',
           ],
         },
         {
@@ -241,6 +257,10 @@ const es: GuidesCopy = {
             'Para diez productos estables, una hoja de cálculo alcanza. Con cientos o miles de códigos, un plazo distinto por proveedor y demanda que cambia, recalcular todo cada semana deja de ser realista. Para ese caso está StockAI, y puedes comparar los dos enfoques en [StockAI vs. Excel](/stockai-vs-excel).',
           ],
         },
+      ],
+      callouts: [
+        { kind: 'formula', section: 1, after: 0, label: 'Fórmula', lines: ['Punto de reorden = demanda durante el plazo de entrega + stock de seguridad'] },
+        { kind: 'example', section: 2, after: 1, label: 'Ejemplo resuelto', lines: ['Demanda durante el plazo: 20 × 9 = 180 unidades', 'Punto de reorden: 180 + 30 = 210 unidades', 'En días de cobertura: 210 ÷ 20 = 10,5 días', 'Cobertura de hoy: 150 ÷ 20 = 7,5 días', 'Cantidad sugerida: 180 + 30 − 150 − 0 en camino = 60 unidades'] },
       ],
       faqTitle: 'Preguntas frecuentes sobre el punto de reorden',
       faq: [
@@ -270,8 +290,7 @@ const es: GuidesCopy = {
         {
           h: 'La fórmula',
           p: [
-            'Stock de seguridad = z × σ, donde z depende del nivel de servicio que quieres y σ mide la incertidumbre durante el plazo de entrega.',
-            'Con demanda variable y un plazo fijo, σ = desviación diaria de la venta × raíz del plazo en días. Si además el proveedor es irregular, se suma una segunda fuente de incertidumbre, y las dos se combinan en cuadratura: σ = raíz de (plazo × desviación de la venta² + venta diaria² × desviación del plazo²).',
+            'Aquí z depende del nivel de servicio que quieres y σ mide la incertidumbre durante el plazo de entrega. Con demanda variable y un plazo fijo, solo cuenta la variación de la venta; si además el proveedor es irregular, se suma una segunda fuente de incertidumbre y las dos se combinan en cuadratura.',
             'El nivel de servicio es la probabilidad de no quedarte sin producto durante un ciclo de reposición. Valores usuales de z: 1,28 para 90 %, 1,645 para 95 %, 2,05 para 98 % y 2,33 para 99 %. StockAI parte de 95 %.',
           ],
         },
@@ -279,8 +298,7 @@ const es: GuidesCopy = {
           h: 'Un ejemplo con números',
           p: [
             'Los números son inventados, para ilustrar la regla. Un producto vende 20 unidades por día con una desviación de 6 unidades por día, y el proveedor tarda 9 días. Con 95 % de nivel de servicio:',
-            'Solo demanda variable: 1,645 × 6 × √9 = 1,645 × 6 × 3 ≈ 30 unidades.',
-            'Ahora supón que el proveedor es irregular: su plazo varía unos 2 días. El segundo término es 1,645 × 20 × 2 ≈ 66. Combinados en cuadratura: raíz de (30² + 66²) ≈ 72 unidades. El atraso del proveedor pesó más que la variación de la venta, y esa es la razón de medirlo en lugar de suponer que siempre cumple.',
+            'Ahora supón que el proveedor es irregular: su plazo varía unos 2 días. El atraso del proveedor pesó más que la variación de la venta, y esa es la razón de medirlo en lugar de suponer que siempre cumple.',
           ],
         },
         {
@@ -306,6 +324,10 @@ const es: GuidesCopy = {
             'Un colchón enorme parece seguro, pero es dinero parado y producto que envejece. Uno insuficiente produce quiebres y ventas perdidas. Por eso conviene fijar el nivel de servicio por producto según qué tanto duele quedarse sin él, y revisar el sobrestock que se acumula: [software de inventario para distribuidores](/software-de-inventario-para-distribuidores).',
           ],
         },
+      ],
+      callouts: [
+        { kind: 'formula', section: 1, after: 0, label: 'Fórmula', lines: ['Stock de seguridad = z × σ', 'Plazo fijo: σ = desviación diaria de la venta × √(plazo en días)', 'Proveedor irregular: σ = √(plazo × desviación de la venta² + venta diaria² × desviación del plazo²)'] },
+        { kind: 'example', section: 2, after: 1, label: 'Ejemplo resuelto', lines: ['Solo demanda variable: 1,645 × 6 × √9 = 1,645 × 6 × 3 ≈ 30 unidades', 'Atraso del proveedor (plazo variable de unos 2 días): 1,645 × 20 × 2 ≈ 66', 'Las dos combinadas en cuadratura: √(30² + 66²) ≈ 72 unidades'] },
       ],
       faqTitle: 'Preguntas frecuentes sobre el stock de seguridad',
       faq: [
@@ -371,6 +393,9 @@ const es: GuidesCopy = {
             'Sobre fechas que el modelo no vio, producto por producto, y contra lo que de verdad se vendió después. StockAI muestra el error de cada producto, no un único porcentaje para todo el catálogo, y no publica una cifra de precisión de marketing: la que ves es la de tus datos.',
           ],
         },
+      ],
+      callouts: [
+        { kind: 'takeaway', section: 1, after: 1, label: 'En resumen', lines: ['Ningún método sirve para todos los productos: cada producto tiene su propia competencia entre modelos, y gana el que menos cuesta equivocarse.'] },
       ],
       faqTitle: 'Preguntas frecuentes sobre el pronóstico de demanda',
       faq: [
@@ -442,6 +467,9 @@ const en: GuidesCopy = {
           ],
         },
       ],
+      callouts: [
+        { kind: 'takeaway', section: 0, after: 2, label: 'The short version', lines: ['Your sales and stock go in; a list of what to order, how much and from which supplier comes out. You review and send the order.'] },
+      ],
       faqTitle: 'Questions about StockAI',
       faq: [
         { q: 'What is StockAI?', a: 'It is web software for inventory purchasing, for distributors, wholesalers and shops. It reads your sales and stock and tells you what to order, how much and from which supplier.' },
@@ -505,6 +533,9 @@ const en: GuidesCopy = {
           ],
         },
       ],
+      callouts: [
+        { kind: 'takeaway', section: 0, after: 2, label: 'The short version', lines: ['A distributor’s inventory is won or lost in the purchase, not the count: how much of each product to order, when and from which supplier.'] },
+      ],
       faqTitle: 'Frequently asked questions about inventory software for distributors',
       faq: [
         { q: 'What is the difference between controlling inventory and planning purchases?', a: 'Controlling is knowing how much there is; planning is deciding how much, when and from whom to order. StockAI focuses on the second: it takes the stock you already record in your system and crosses it with the forecast and the supplier’s lead time.' },
@@ -532,16 +563,14 @@ const en: GuidesCopy = {
         {
           h: 'The formula',
           p: [
-            'Reorder point = demand during lead time + safety stock.',
             'Demand during lead time is average daily sales times the days the supplier takes. Safety stock is the cushion; how it is computed has its own guide: [safety stock](/stock-de-seguridad).',
           ],
         },
         {
           h: 'An example with numbers',
           p: [
-            'The numbers in this example are invented, to illustrate the rule. A product sells 20 units a day on average. The supplier takes 9 days to deliver. The computed safety cushion is 30 units.',
-            'Demand during lead time: 20 × 9 = 180 units. Reorder point: 180 + 30 = 210 units. In days of cover, 210 ÷ 20 = 10.5 days.',
-            'Today there are 150 units and nothing on its way. Cover is 150 ÷ 20 = 7.5 days: already below the reorder point, so it is time to order. The suggested quantity is what is missing to cover the lead time plus the cushion: 180 + 30 − 150 − 0 on its way = 60 units.',
+            'The numbers in this example are invented, to illustrate the rule. A product sells 20 units a day on average. The supplier takes 9 days to deliver. The computed safety cushion is 30 units. Today there are 150 units and nothing on its way.',
+            'Today’s cover is already below the reorder point, so it is time to order. The suggested quantity is what is missing to cover the lead time plus the cushion.',
           ],
         },
         {
@@ -568,6 +597,10 @@ const en: GuidesCopy = {
             'For ten stable products, a spreadsheet is enough. With hundreds or thousands of codes, a different lead time per supplier and changing demand, recalculating everything every week stops being realistic. That is the case StockAI is for, and you can compare both approaches in [StockAI vs. Excel](/stockai-vs-excel).',
           ],
         },
+      ],
+      callouts: [
+        { kind: 'formula', section: 1, after: 0, label: 'Formula', lines: ['Reorder point = demand during lead time + safety stock'] },
+        { kind: 'example', section: 2, after: 1, label: 'Worked example', lines: ['Demand during lead time: 20 × 9 = 180 units', 'Reorder point: 180 + 30 = 210 units', 'In days of cover: 210 ÷ 20 = 10.5 days', 'Today’s cover: 150 ÷ 20 = 7.5 days', 'Suggested quantity: 180 + 30 − 150 − 0 on its way = 60 units'] },
       ],
       faqTitle: 'Frequently asked questions about the reorder point',
       faq: [
@@ -596,8 +629,7 @@ const en: GuidesCopy = {
         {
           h: 'The formula',
           p: [
-            'Safety stock = z × σ, where z depends on the service level you want and σ measures the uncertainty during the lead time.',
-            'With variable demand and a fixed lead time, σ = daily standard deviation of sales × square root of the lead time in days. If the supplier is also irregular, a second source of uncertainty is added, and the two combine in quadrature: σ = square root of (lead time × sales deviation² + daily sales² × lead-time deviation²).',
+            'Here z depends on the service level you want and σ measures the uncertainty during the lead time. With variable demand and a fixed lead time, only the variation in sales counts; if the supplier is also irregular, a second source of uncertainty is added and the two combine in quadrature.',
             'The service level is the probability of not running out during a replenishment cycle. Usual z values: 1.28 for 90%, 1.645 for 95%, 2.05 for 98% and 2.33 for 99%. StockAI starts at 95%.',
           ],
         },
@@ -605,8 +637,7 @@ const en: GuidesCopy = {
           h: 'An example with numbers',
           p: [
             'The numbers are invented, to illustrate the rule. A product sells 20 units a day with a deviation of 6 units a day, and the supplier takes 9 days. At a 95% service level:',
-            'Variable demand only: 1.645 × 6 × √9 = 1.645 × 6 × 3 ≈ 30 units.',
-            'Now suppose the supplier is irregular: its lead time varies by about 2 days. The second term is 1.645 × 20 × 2 ≈ 66. Combined in quadrature: square root of (30² + 66²) ≈ 72 units. The supplier’s lateness weighed more than the variation in sales, which is the reason to measure it instead of assuming it always delivers on time.',
+            'Now suppose the supplier is irregular: its lead time varies by about 2 days. The supplier’s lateness weighed more than the variation in sales, which is the reason to measure it instead of assuming it always delivers on time.',
           ],
         },
         {
@@ -632,6 +663,10 @@ const en: GuidesCopy = {
             'A huge cushion looks safe, but it is money tied up and ageing product. An insufficient one produces stockouts and lost sales. That is why the service level should be set per product by how much running out hurts, and the overstock that builds up should be reviewed: [inventory software for distributors](/software-de-inventario-para-distribuidores).',
           ],
         },
+      ],
+      callouts: [
+        { kind: 'formula', section: 1, after: 0, label: 'Formula', lines: ['Safety stock = z × σ', 'Fixed lead time: σ = daily standard deviation of sales × √(lead time in days)', 'Irregular supplier: σ = √(lead time × sales deviation² + daily sales² × lead-time deviation²)'] },
+        { kind: 'example', section: 2, after: 1, label: 'Worked example', lines: ['Variable demand only: 1.645 × 6 × √9 = 1.645 × 6 × 3 ≈ 30 units', 'Supplier lateness (lead time varying by about 2 days): 1.645 × 20 × 2 ≈ 66', 'Both combined in quadrature: √(30² + 66²) ≈ 72 units'] },
       ],
       faqTitle: 'Frequently asked questions about safety stock',
       faq: [
@@ -696,6 +731,9 @@ const en: GuidesCopy = {
             'On dates the model did not see, product by product, and against what actually sold afterwards. StockAI shows each product’s error, not one percentage for the whole catalogue, and does not publish a marketing accuracy figure: the one you see is your data’s.',
           ],
         },
+      ],
+      callouts: [
+        { kind: 'takeaway', section: 1, after: 1, label: 'The short version', lines: ['No single method fits every product: each product gets its own competition between models, and the one that is least costly to be wrong with wins.'] },
       ],
       faqTitle: 'Frequently asked questions about demand forecasting',
       faq: [

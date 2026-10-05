@@ -16,7 +16,7 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: '*',
       allow: [
         '/$', '/precios$', '/como-funciona$', '/preguntas-frecuentes$', '/seguridad$', '/desarrolladores$', '/industrias$', '/industrias/consumo-masivo$', '/industrias/ferreteria$', '/industrias/farmacia$', '/industrias/autopartes$', '/industrias/retail$', '/stockai-vs-excel$', '/como-se-calcula$', '/que-es-stockai$', '/software-de-inventario-para-distribuidores$', '/como-calcular-el-punto-de-reorden$', '/stock-de-seguridad$', '/pronostico-de-demanda-para-compras$','/integraciones$', '/novedades$', '/privacidad$', '/terminos$', '/cookies$', '/aviso-legal$', '/legal$', '/uso-aceptable$', '/procesamiento-de-datos$', '/ia$', '/login$', '/signup$', '/prueba$', '/divulgacion-responsable$', '/accesibilidad$', '/condiciones-comerciales$', '/licencia$', '/.well-known/', '/google*.html$', '/docs',
-        '/_next/', '/*.png', '/*.jpg', '/*.webp', '/*.svg', '/*.pdf'],
+        '/sitemap.xml$', '/_next/', '/*.png', '/*.jpg', '/*.webp', '/*.svg', '/*.pdf'],
       disallow: ['/'],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,

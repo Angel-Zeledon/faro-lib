@@ -26,6 +26,12 @@ import {
 export const CP_CSS = `
 .cp-grid { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 20px; margin-top: 8px; }
 .cp-grid .lp-card { height: 100%; }
+/* A row of three that ends with two cards: the pair splits the full width instead of leaving a hole. */
+.cp-grid.is-tail2, .cp-hub.is-tail2 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.cp-grid.is-tail2 > *, .cp-hub.is-tail2 > * { grid-column: span 2; }
+.cp-grid.is-tail2 > :nth-last-child(-n+2), .cp-hub.is-tail2 > :nth-last-child(-n+2) { grid-column: span 3; }
+.cp-grid.is-tail1 > :last-child { grid-column: 1 / -1; }
+.cp-grid + .cp-note, .cp-hub + .cp-note { margin-top: 28px; }
 .cp-stack { display: grid; gap: 14px; max-width: 760px; }
 .cp-badge { display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--lp-border); background: var(--lp-glass); font-size: 12px; font-weight: 700; letter-spacing: 0.02em; color: var(--lp-muted); }
 .cp-badge.is-soon { color: var(--lp-accent); border-color: var(--lp-accent-bd); }
@@ -52,6 +58,37 @@ export const CP_CSS = `
 .cp-log ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .cp-log ul li { position: relative; padding-left: 18px; font-size: 14.5px; color: var(--lp-body); line-height: 1.65; }
 .cp-log ul li::before { content: ''; position: absolute; left: 0; top: 0.75em; width: 6px; height: 6px; border-radius: 50%; background: var(--lp-accent); }
+/* Article sections (the guides): the heading sits in a rail on wide screens so the text column keeps a readable line length and the page uses its width. */
+.sec.gd-sec { padding: 76px 0; }
+.gd-grid { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 56px; align-items: start; }
+.gd-head { position: sticky; top: 104px; }
+.gd-head .lp-h2 { font-size: clamp(26px, 2.5vw, 34px); margin: 0; }
+.gd-body > :last-child { margin-bottom: 0; }
+/* Callouts: a formula, a worked example or the one thing to keep. Three looks for three jobs, no icons. */
+.gd-callout { margin: 22px 0 26px; max-width: 68ch; font-size: 16px; border-radius: 14px; padding: 18px 22px 20px; position: relative; }
+.gd-callout-label { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--lp-accent); letter-spacing: 0.01em; }
+.gd-callout-lines { list-style: none; margin: 0; padding: 0; }
+.gd-callout-lines li { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gd-callout.is-formula { background: var(--lp-accent-bg); border: 1px solid var(--lp-accent-bd); border-left: 4px solid var(--lp-accent); }
+.gd-callout.is-formula .gd-callout-lines li { font-family: var(--font-brand), system-ui, sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.45; color: var(--lp-text); padding: 4px 0; }
+.gd-callout.is-formula .gd-callout-lines li + li { font-size: 15px; font-weight: 500; letter-spacing: -0.005em; color: var(--lp-body); }
+.gd-callout.is-example { background: var(--lp-bg2); border: 1px solid var(--lp-border); }
+.sec-alt .gd-callout.is-example { background: var(--lp-bg); }
+.gd-callout.is-example .gd-callout-lines li { font-size: 15px; line-height: 1.55; color: var(--lp-text); padding: 9px 0; border-top: 1px solid var(--lp-border); }
+.gd-callout.is-example .gd-callout-lines li:last-child { font-weight: 700; }
+.gd-callout.is-takeaway { background: var(--lp-strip); border: 1px solid rgba(255,255,255,0.08); }
+.gd-callout.is-takeaway .gd-callout-label { color: var(--lp-beam); }
+.gd-callout.is-takeaway .gd-callout-lines li { font-family: var(--font-brand), system-ui, sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.4; color: #fff; text-wrap: pretty; }
+@media (max-width: 640px) {
+ .gd-callout { padding: 16px 16px 18px; }
+ .gd-callout.is-formula .gd-callout-lines li, .gd-callout.is-takeaway .gd-callout-lines li { font-size: 17px; }
+}
+@media (max-width: 960px) {
+ .sec.gd-sec { padding: 56px 0; }
+ .gd-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+ .gd-head { position: static; }
+ .gd-head .lp-h2 { font-size: clamp(28px, 3.6vw, 42px); margin: 0 0 16px; }
+}
 .cp-audience { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .cp-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 28px; }
 .cp-pills a { font-size: 13.5px; font-weight: 600; color: var(--lp-body); text-decoration: none; padding: 7px 14px; min-height: 36px; display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--lp-border); background: var(--lp-glass); transition: border-color 160ms ease, color 160ms ease; }
@@ -61,8 +98,10 @@ export const CP_CSS = `
 .cp-tour h3 { font-family: var(--font-brand), system-ui, sans-serif; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; color: var(--lp-text); margin: 16px 0 6px; }
 .cp-tour p { font-size: 14px; color: var(--lp-body); line-height: 1.65; margin: 0; }
 @media (max-width: 900px) {
- .cp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
- .cp-hub, .cp-tour { grid-template-columns: minmax(0, 1fr); }
+ .cp-grid, .cp-grid.is-tail2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ .cp-grid:not(.is-tail1) > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+ .cp-grid.is-tail2 > *, .cp-grid.is-tail2 > :nth-last-child(-n+2), .cp-hub.is-tail2 > *, .cp-hub.is-tail2 > :nth-last-child(-n+2) { grid-column: auto; }
+ .cp-hub, .cp-hub.is-tail2, .cp-tour { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
  .cp-grid, .cp-audience { grid-template-columns: minmax(0, 1fr); }
@@ -141,8 +180,11 @@ export function ContentShell({ title, intro, crumbs, related, children }: {
 }
 
 function Cards({ items, cols = 3 }: { items: { title: string; desc: string; tag?: string; soon?: boolean }[]; cols?: number }) {
+  // Four cards read better as a 2x2 than as three plus an orphan.
+  const columns = cols === 3 && items.length === 4 ? 2 : cols
+  const tail = columns === 3 && items.length % 3 === 2 ? ' is-tail2' : columns === 3 && items.length > 4 && items.length % 3 === 1 ? ' is-tail1' : ''
   return (
-    <div className="cp-grid" style={{ '--cols': cols } as React.CSSProperties}>
+    <div className={`cp-grid${tail}`} style={{ '--cols': columns } as React.CSSProperties}>
       {items.map(({ title, desc, tag, soon }) => (
         <div key={title} className="lp-card" data-reveal>
           {tag && <div style={{ marginBottom: 12 }}><span className={`cp-badge${soon ? ' is-soon' : ''}`}>{tag}</span></div>}
@@ -183,7 +225,7 @@ export function IndustriesHubPage() {
     >
       <Section>
         <Lead maxWidth={680}>{H.lead}</Lead>
-        <ul className="cp-hub">
+        <ul className={`cp-hub${INDUSTRY_ORDER.length % 3 === 2 ? ' is-tail2' : ''}`}>
           {INDUSTRY_ORDER.map(k => {
             const I = C.industries.items[k]
             return (

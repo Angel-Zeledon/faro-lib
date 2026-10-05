@@ -22,7 +22,7 @@ export function HomeTour() {
   const C = LANDING_CONTENT[lang].home
   const screens = LANDING[lang].tour.chapters[0].screens.slice(0, TOUR_SCREENS)
   return (
-    <Section id="aplicacion">
+    <Section id="aplicacion" alt>
       <style dangerouslySetInnerHTML={{ __html: CP_CSS }} />
       <Tag>{C.tourTag}</Tag>
       <H2>{C.tourTitle}</H2>
@@ -62,7 +62,7 @@ export function HomeAudience() {
     ...GUIDE_ORDER.map((k): [string, string] => [GUIDE_PATHS[k], GUIDES[lang].items[k].label]),
   ]
   return (
-    <Section id="para-quien" alt>
+    <Section id="para-quien">
       <style dangerouslySetInnerHTML={{ __html: CP_CSS }} />
       <Tag>{H.audienceTag}</Tag>
       <H2>{H.audienceTitle}</H2>
