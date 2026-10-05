@@ -15,6 +15,7 @@ import SignalBadge from '@/components/ui/SignalBadge'
 import Spinner from '@/components/ui/Spinner'
 import RunWarningsPanel from '@/components/ui/RunWarningsPanel'
 import { useTenantFacts, has } from '@/hooks/useTenantFacts'
+import ReforecastAction from '@/components/forecast/ReforecastAction'
 import {
   EmptyState, InlineError, LoadingState, SkeletonTable,
 } from '@/components/ui/States'
@@ -523,6 +524,7 @@ export default function SkusPage() {
       {/* Data problems the engine found while training. They never abort a run,
           so this is the only place the user can learn the accuracy above is
           inflated by leakage. Collapsed to one line so the chart stays in view. */}
+      <ReforecastAction sessionId={sessionId} />
       <RunWarningsPanel sessionId={sessionId} collapsible />
       {/* How the forecast was produced and what the ordering policy would have
           done are an analyst's questions: one collapsed line, technical view. */}

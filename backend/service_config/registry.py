@@ -825,6 +825,16 @@ LIMITS = Service(
                 "itself.",
             default="25.0", example="25.0",
         ),
+        ConfigField(
+            key="reforecast_full_refit_days", env="REFORECAST_FULL_REFIT_DAYS",
+            kind="int", editable=False,
+            doc="Age, in days, past which a scheduled retrain set to "
+                "'re-forecast daily, refit periodically' stops re-forecasting "
+                "from the stored models and trains them again. Younger than "
+                "this, new sales only advance the forecast (seconds, no "
+                "retraining); at or beyond it the models are refitted.",
+            default="7", example="7",
+        ),
     ),
 )
 

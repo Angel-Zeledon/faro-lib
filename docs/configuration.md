@@ -273,6 +273,7 @@ These are infrastructure ceilings and are NOT the commercial tier limits. Per-te
 | `DATASET_EDITOR_MAX_MB` | `10` | environment only | Same guard, by file size. |
 | `SQL_MATERIALIZE_MAX_ROWS` | `500000` | environment only | Row ceiling when snapshotting a SQL data source into a CSV dataset. Exceeding it is a refusal, never a truncation. |
 | `ACCURACY_DEGRADATION_THRESHOLD_PCT` | `25.0` | environment only | How much worse (in percent, relative) a session's forecast must be doing against real sales than it did at training time before the app raises its one 'forecast is degrading' alert. 25 means a realised WAPE of 25% over the training WAPE (and at least 5 points worse); it is a notification only, nothing retrains by itself. |
+| `REFORECAST_FULL_REFIT_DAYS` | `7` | environment only | Age, in days, past which a scheduled retrain set to 're-forecast daily, refit periodically' stops re-forecasting from the stored models and trains them again. Younger than this, new sales only advance the forecast (seconds, no retraining); at or beyond it the models are refitted. |
 
 ## `api_surface` - Public-API-only mode.
 

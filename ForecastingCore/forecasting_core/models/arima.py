@@ -55,6 +55,10 @@ def run_arima_core(df, dt, target, group, train_ratio, min_rows, seasonal_period
                 result["p90"] = np.maximum(0.0, ci.iloc[:, 1].values)
                 in_sample = model.predict(start=0, end=cut - 1)
                 result["residuals"] = series.iloc[:cut].values - in_sample.values
+                # The fitted parameters, kept so `reforecast` can run the model
+                # over newer history WITHOUT re-estimating them.
+                result["state"] = {"kind": "arima", "order": [int(x) for x in order],
+                                   "params": np.asarray(full_model.params, dtype=float)}
             results[key] = result
         except Exception as e:
             log.warning(f"ARIMA failed SKU={sku}: {e}")

@@ -121,6 +121,9 @@ def run_croston_core(df, dt, target, group, train_ratio, min_rows, seasonal_peri
                 result["forecast"] = croston_forecast(series, alpha=alpha, n_ahead=horizon)
                 train_preds = croston_forecast(series[:cut], alpha=alpha, n_ahead=len(series[:cut]))
                 result["residuals"] = series[:cut] - train_preds
+                # Croston has one fixed smoothing constant and no fitted state:
+                # `reforecast` re-runs it over the newer history.
+                result["state"] = {"kind": "croston", "alpha": float(alpha)}
             results[key] = result
         except Exception as e:
             log.warning(f"Croston failed SKU={sku}: {e}")
