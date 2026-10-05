@@ -15,27 +15,25 @@ import SignalBadge from '@/components/ui/SignalBadge'
 import Spinner from '@/components/ui/Spinner'
 import RunWarningsPanel from '@/components/ui/RunWarningsPanel'
 import { useTenantFacts, has } from '@/hooks/useTenantFacts'
-import RunLineagePanel from '@/components/ui/RunLineagePanel'
 import {
   EmptyState, InlineError, LoadingState, SkeletonTable,
 } from '@/components/ui/States'
 import Button from '@/components/ui/Button'
-import Pagination, { usePage } from '@/components/table/Pagination'
 import { usePlanning } from '@/contexts/PlanningContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { seriesTypeLabel } from '@/lib/enumLabels'
 import {
-  Search, Package, ChevronDown, RefreshCw,
+  Package, RefreshCw,
   GitCompare, FileSpreadsheet, Loader2,
 } from 'lucide-react'
 // The screen's panels. They lived in this file until it passed 3,400 lines;
 // they moved out unchanged when the page was split into a buyer view and a
 // technical view (docs/stability.md section 18).
 import {
-  SERIES_COLOR, ACTION_SIGNAL, EMPTY_METRICS, makeChampionRank, pct,
+  SERIES_COLOR, ACTION_SIGNAL, championError, pct,
 } from '@/components/forecast/shared'
 import { SessionSelector } from '@/components/forecast/SessionSelector'
-import { SkuCard } from '@/components/forecast/SkuCard'
+import { SkuList, sortSkus, type SkuRowInfo, type SkuSort } from '@/components/forecast/SkuList'
 import { ChartPanel } from '@/components/forecast/ChartPanel'
 import CompareView from '@/components/forecast/CompareView'
 import { SalesPatternPanel } from '@/components/forecast/SalesPatternPanel'
@@ -44,7 +42,7 @@ import {
   QualityTab, QualityWarningList, useQualityWarnings,
 } from '@/components/forecast/QualityPanel'
 import { InventoryPanel } from '@/components/forecast/InventoryPanel'
-import { PolicyBacktestPanel } from '@/components/forecast/PolicyBacktestPanel'
+import { RunDetails } from '@/components/forecast/RunDetails'
 import { PanelPlaceholder, TabBar } from '@/components/forecast/PanelChrome'
 import { ViewToggle, useForecastView } from '@/components/forecast/ViewToggle'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
@@ -87,7 +85,10 @@ export default function SkusPage() {
   const [demandRisk,     setDemandRisk]     = useState<Record<string, DemandRiskEntry>>({})
   const [loading,        setLoading]        = useState(false)
   const [search,         setSearch]         = useState('')
-  const [skuListPage,    setSkuListPage]    = useState(1)
+  const [sort,           setSort]           = useState<SkuSort>('urgency')
+  // Technical view: the run's provenance and the policy backtest sit behind one
+  // disclosure instead of stacking above and below the chart.
+  const [showRunDetails, setShowRunDetails] = useState(false)
   const [selectedSku,    setSelectedSku]    = useState<string | null>(null)
   const [tab,            setTab]            = useState('Forecast')
   const [sessLoading,    setSessLoading]    = useState(true)
@@ -116,13 +117,9 @@ export default function SkusPage() {
   useEffect(() => {
     if (!showTechnical && compareMode) { setCompareMode(false); setCmpSessionIds([]) }
   }, [showTechnical, compareMode])
-  // Phones show the SKU list and one SKU at a time (PronosticosMobile); this
-  // is whether that one SKU is open. Desktop shows both panes and ignores it.
+  // Phones get one screen (PronosticosMobile): the chart, with the product
+  // picker in a bottom sheet. Desktop shows the list beside it.
   const narrow = useIsNarrow()
-  const [mobileDetail,   setMobileDetail]   = useState(false)
-  // A different session is a different catalogue: go back to its list rather
-  // than opening whichever SKU the load auto-selects.
-  useEffect(() => { setMobileDetail(false) }, [sessionId])
   // Bulk export
   const [bulkExporting,  setBulkExporting]  = useState(false)
   const [bulkProgress,   setBulkProgress]   = useState(0)
@@ -227,18 +224,11 @@ export default function SkusPage() {
       setInvStatus(status.items ?? [])
       setCoverageUnit(status.coverage_unit)
       setQuality(q as QualityReport)
-      const skus = Array.from(new Set(rows.map(r => r.sku).filter(Boolean) as string[]))
-      if (skus.length) setSelectedSku(skus[0])
       if (failedParts.length) {
         setLoadError(`${t('skus.err_load_failed_prefix')}: ${failedParts.join(', ')}. ${t('skus.err_load_failed_suffix')}`)
       }
     }).finally(() => setLoading(false))
   }, [sessionId, t])
-
-  const skus = useMemo(() =>
-    Array.from(new Set(metrics.map(r => r.sku).filter(Boolean) as string[]))
-      .filter(s => s.toLowerCase().includes(search.toLowerCase()))
-  , [metrics, search])
 
   // One pass instead of one full scan of `metrics` per card. With 2.000 SKUs
   // and ~4 rows each, the per-card `metrics.filter(...)` was 2.000 × 8.000
@@ -259,17 +249,59 @@ export default function SkusPage() {
     () => new Map(inventory.map(r => [r.sku, r])),
     [inventory],
   )
+  const statusBySku  = useMemo(() => new Map(invStatus.map(i => [i.sku, i])), [invStatus])
 
-  const skuPage = usePage(skus, skuListPage, setSkuListPage)
-  // Any change to what is being listed sends you back to the first page.
-  useEffect(() => { setSkuListPage(1) }, [search, sessionId])
+  // Resolve the semáforo for a SKU: prefer the live inventory_stock signal,
+  // fall back to the training-time recommendation when no live row exists.
+  const signalForSku = useCallback((sku: string): InventorySignal | undefined => {
+    const live = statusBySku.get(sku)
+    if (live) return live.signal
+    const rec = recBySku.get(sku)
+    return rec ? ACTION_SIGNAL[rec.action] : undefined
+  }, [statusBySku, recBySku])
+
+  // Everything a list row shows, computed once per load instead of per render.
+  // Display only: the signal, quantity and coverage are the API's own.
+  const rowInfo = useMemo(() => {
+    const map = new Map<string, SkuRowInfo>()
+    metricsBySku.forEach((rows, sku) => {
+      const live = statusBySku.get(sku)
+      const qty = live?.recommended_qty ?? null
+      map.set(sku, {
+        signal: signalForSku(sku),
+        qty,
+        spark: (live?.stock_history ?? []).slice(-30).map(h => h.stock),
+        accuracy: championError(rows).accuracy,
+        impact: (qty ?? 0) * (live?.unit_cost ?? 1),
+        coverage: live?.coverage_days ?? null,
+        name: live?.display_name ?? null,
+      })
+    })
+    return map
+  }, [metricsBySku, statusBySku, signalForSku])
+
+  // The whole catalogue, then what the search lets through, in the chosen order.
+  const catalogue = useMemo(() => Array.from(metricsBySku.keys()), [metricsBySku])
+  const skus = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const matched = q
+      ? catalogue.filter(s => s.toLowerCase().includes(q) || (rowInfo.get(s)?.name ?? '').toLowerCase().includes(q))
+      : catalogue
+    return sortSkus(matched, rowInfo, sort)
+  }, [catalogue, search, rowInfo, sort])
+
+  // Land on the product that needs attention first, not on whichever the file
+  // listed first. A manual pick is never overridden.
+  useEffect(() => {
+    if (!selectedSku && !loading && sessionId && skus.length) setSelectedSku(skus[0])
+  }, [selectedSku, loading, sessionId, skus])
+
 
   const skuMetrics   = useMemo(() => metrics.filter(r => r.sku === selectedSku), [metrics, selectedSku])
   const skuInventory = useMemo(() => inventory.find(r => r.sku === selectedSku), [inventory, selectedSku])
   const skuQuality   = useMemo(() => selectedSku ? quality[selectedSku] : undefined, [quality, selectedSku])
   const qualityWarnings = useQualityWarnings()
   const skuWarnings  = skuQuality ? qualityWarnings(skuQuality) : []
-  const statusBySku  = useMemo(() => new Map(invStatus.map(i => [i.sku, i])), [invStatus])
   const skuStatus    = useMemo(() => selectedSku ? statusBySku.get(selectedSku) : undefined, [statusBySku, selectedSku])
   // Both keyed by the raw SKU, and both legitimately missing for a SKU whose
   // model produced no rolling-origin backtest — the Inventory tab simply omits
@@ -282,14 +314,6 @@ export default function SkusPage() {
     () => (selectedSku ? demandRisk[selectedSku] : undefined),
     [demandRisk, selectedSku],
   )
-  // Resolve the semáforo for a SKU: prefer the live inventory_stock signal,
-  // fall back to the training-time recommendation when no live row exists.
-  const signalForSku = useCallback((sku: string): InventorySignal | undefined => {
-    const live = statusBySku.get(sku)
-    if (live) return live.signal
-    const rec = recBySku.get(sku)
-    return rec ? ACTION_SIGNAL[rec.action] : undefined
-  }, [statusBySku, recBySku])
   const seriesType   = skuQuality?.series_type ?? 'unknown'
   const skuColor     = SERIES_COLOR[seriesType] ?? SERIES_COLOR.unknown
   // Accuracy (1 − WAPE) of the model this SKU's chart is actually drawn from —
@@ -297,32 +321,7 @@ export default function SkusPage() {
   // not by WAPE: picking the lowest-WAPE row here would quote the accuracy of a
   // model the user is not looking at, and the two differ whenever being short
   // costs more than being long.
-  const skuAccuracy  = useMemo(() => {
-    // The metric is chosen over ALL of this SKU's rows — narrowing the set
-    // first would let a session pick a different metric here than the table
-    // beside it.
-    const accuracyRank = makeChampionRank(skuMetrics)
-    // The champion is picked BEFORE asking whether it has a WAPE. Filtering on
-    // WAPE first quoted the runner-up's accuracy whenever the model the orders
-    // come from had none; the server's compute_session_accuracy leaves such a
-    // SKU out instead, and so does this (math audit 2026-10-01).
-    const best = skuMetrics
-      .filter(r => r.type !== 'baseline')
-      .sort((a, b) => (accuracyRank(a) ?? Infinity) - (accuracyRank(b) ?? Infinity))[0]
-    if (best?.wape == null) return null
-    // WAPE divides by total real demand, so a SKU that never sold scores a
-    // meaningless 0 error and would proudly report "100%" over a flat line of
-    // zeros. Both errors landing on exactly 0 means there was no signal to be
-    // accurate about — show nothing rather than false confidence.
-    if (best.wape === 0 && (best.mae ?? 0) === 0) return null
-    // The other face of that 0/0: no demand in the window and a forecast that
-    // was not exactly zero gives the engine's sum|e| / 1e-8 — a WAPE in the
-    // hundreds of millions that measures nothing (backend _WAPE_UNDEFINED).
-    if (!Number.isFinite(best.wape) || best.wape >= 1e6) return null
-    // Clamped at 0 like the server's compute_session_accuracy: WAPE can exceed
-    // 1, and a WAPE of 1.4 printed "Precisión -40%" (math audit 2026-10-01).
-    return Math.max(0, Math.round((1 - best.wape) * 100))
-  }, [skuMetrics])
+  const skuAccuracy  = useMemo(() => championError(skuMetrics).accuracy, [skuMetrics])
 
   // Bulk export all SKUs
   const handleBulkExport = useCallback(async () => {
@@ -356,6 +355,30 @@ export default function SkusPage() {
     }
   }, [sessionId, skus])
 
+  const refresh = useCallback(() => {
+    const id = sessionId
+    setSessionId(null)
+    setTimeout(() => setSessionId(id), 10)
+  }, [sessionId])
+  const pickSku = useCallback((sku: string) => { setSelectedSku(sku); setTab('Forecast') }, [])
+
+  // One list, two homes: a column on desktop, a bottom sheet on phones.
+  const renderList = (touch: boolean, afterPick?: () => void) => (
+    <SkuList
+      items={skus}
+      total={catalogue.length}
+      info={rowInfo}
+      search={search}
+      onSearch={setSearch}
+      sort={sort}
+      onSort={setSort}
+      selected={selectedSku}
+      onSelect={sku => { pickSku(sku); afterPick?.() }}
+      touch={touch}
+      height={touch ? 'min(62vh, 520px)' : undefined}
+    />
+  )
+
   if (narrow) {
     return (
       <PronosticosMobile
@@ -366,24 +389,18 @@ export default function SkusPage() {
         sessLoading={sessLoading}
         sessionId={sessionId}
         onSelectSession={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false); setCmpSessionIds([]) }}
-        onRefresh={() => { const id = sessionId; setSessionId(null); setTimeout(() => setSessionId(id), 10) }}
+        onRefresh={refresh}
         sessError={sessError}
         onRetrySessions={reloadSessions}
         onDismissSessError={() => setSessError(null)}
         loadError={loadError}
         onDismissLoadError={() => setLoadError(null)}
         loading={loading}
-        search={search}
-        onSearch={setSearch}
-        skuCount={skus.length}
-        page={skuPage}
-        onPage={setSkuListPage}
+        catalogueCount={catalogue.length}
+        renderList={renderList}
         quality={quality}
         signalForSku={signalForSku}
         selectedSku={selectedSku}
-        detailOpen={mobileDetail}
-        onOpenSku={sku => { setSelectedSku(sku); setTab('Forecast'); setMobileDetail(true) }}
-        onCloseDetail={() => setMobileDetail(false)}
         tab={tab}
         onTab={setTab}
         isDark={isDark}
@@ -413,31 +430,28 @@ export default function SkusPage() {
     )
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px - var(--section-tabs-h, 0px))' }}>
+  const noProducts = !!sessionId && !loading && catalogue.length === 0
+  const displayName = skuStatus?.display_name && skuStatus.display_name !== selectedSku ? skuStatus.display_name : null
 
-      {/* Top toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between', paddingBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* The top bar and the tab strip already say "Pronósticos": the
-              toolbar leads with the count. */}
-          {skus.length > 0 && (
-            <span style={{ fontSize: 11, color: 'var(--dim)' }}>
-              {skus.length} {skus.length !== 1 ? t('skus.skus_count_plural') : t('skus.skus_count_singular')}
-            </span>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 56px - var(--section-tabs-h, 0px))' }}>
+
+      {/* Top toolbar. The top bar and the tab strip already say "Pronósticos",
+          so it carries only the controls. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between', paddingBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <ViewToggle value={view} onChange={setView} />
+          {showTechnical && (
+            <Link href="/precision" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none' }}>
+              {t('precision.link_from_forecasts')}
+            </Link>
           )}
-          <div style={{ marginLeft: 8 }}>
-            <ViewToggle value={view} onChange={setView} />
-          </div>
-          <Link href="/precision" style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>
-            {t('precision.link_from_forecasts')}
-          </Link>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Bulk export — technical view. Kept on screen while a run is in
               progress even if the viewer switches away, so its progress and
               its failure count are never hidden mid-export. */}
-          {sessionId && skus.length > 0 && (showTechnical || bulkExporting) && (
+          {sessionId && catalogue.length > 0 && (showTechnical || bulkExporting) && (
             <button
               onClick={handleBulkExport}
               disabled={bulkExporting}
@@ -486,10 +500,7 @@ export default function SkusPage() {
             <SessionSelector tourAnchor="skus.session" sessions={sessions} selected={sessionId} onSelect={id => { setSessionId(id); setTab('Forecast'); setCompareMode(false); setCmpSessionIds([]) }} />
           )}
           {sessionId && (
-            <Button
-              variant="ghost" size="sm" icon={<RefreshCw size={12} />}
-              onClick={() => { const id = sessionId; setSessionId(null); setTimeout(() => setSessionId(id), 10) }}
-            >
+            <Button variant="ghost" size="sm" icon={<RefreshCw size={12} />} onClick={refresh}>
               {t('skus.btn_refresh')}
             </Button>
           )}
@@ -505,107 +516,69 @@ export default function SkusPage() {
       )}
       {loadError && (
         <div style={{ marginBottom: 12 }}>
-          <InlineError error={new Error(loadError)} onDismiss={() => setLoadError(null)} />
+          <InlineError error={new Error(loadError)} onRetry={refresh} onDismiss={() => setLoadError(null)} />
         </div>
       )}
 
       {/* Data problems the engine found while training. They never abort a run,
           so this is the only place the user can learn the accuracy above is
-          inflated by leakage. */}
-      {/* Collapsed to one line: it used to run ~600px above the chart, which
-          is why a page called "Predicciones" opened with no prediction in
-          view. The finding keeps its colour and its click; it gives up the room. */}
+          inflated by leakage. Collapsed to one line so the chart stays in view. */}
       <RunWarningsPanel sessionId={sessionId} collapsible />
-      {/* How the forecast was produced (fingerprints, config JSON) is an
-          analyst's question: the buyer view does not carry it. */}
-      {showTechnical && <RunLineagePanel sessionId={sessionId} />}
+      {/* How the forecast was produced and what the ordering policy would have
+          done are an analyst's questions: one collapsed line, technical view. */}
+      {showTechnical && (
+        <RunDetails sessionId={sessionId} backtest={policyBacktest} catalogueSize={metricsBySku.size} />
+      )}
 
+      {/* `minHeight` is a floor, not decoration: this row is `flex: 1`, i.e. it
+          takes whatever is LEFT OVER after the panels above it, and those grow
+          with how much the engine has to report. Without a floor the row once
+          resolved to 0 and the cards' `overflow: hidden` clipped the chart away.
+          The floor is the chart plus its answers, so the more StockAI has to say
+          about the data the more the page scrolls, instead of the graph
+          silently disappearing. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 16, flex: 1, minHeight: 700 }}>
 
-      {/* Body */}
-      {/* `minHeight` is a floor, not decoration. This row is `flex: 1`, i.e. it
-          takes whatever is LEFT OVER after the two panels above it — and those
-          two grow with how much the engine has to report. On a run with a long
-          warnings list and a backtest, nothing was left over: the row resolved
-          to 0, `minHeight: 0` allowed exactly that, and the cards' `overflow:
-          hidden` clipped the chart away. Measured: a 300px canvas alive inside
-          a container measuring 0, on a page where the user could find no graph
-          at all. The floor is the chart (300) plus its toolbar and stats strip,
-          so the more StockAI has to say about the data the more the page scrolls —
-          instead of the graph silently disappearing. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, flex: 1, minHeight: 640 }}>
-
-        {/* SKU list */}
+        {/* Product list */}
         <div style={{
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+          position: 'sticky', top: 0, alignSelf: 'start', height: 'min(calc(100vh - 140px), 760px)', minHeight: 420,
         }}>
-          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--dim)' }} />
-              <input
-                data-tour="skus.search"
-                type="text"
-                placeholder={t('skus.search_placeholder')}
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="form-input"
-                style={{ paddingLeft: 26, fontSize: 12 }}
+          {!sessionId ? (
+            /* Nothing trained yet: point at the action that creates the data. */
+            <div style={{ padding: 14 }}>
+              <EmptyState
+                compact
+                icon={<Package size={20} />}
+                title={t('skus.empty_title')}
+                body={t('skus.empty_body')}
+                actions={[{ label: t('skus.empty_cta'), href: '/ventas' }]}
               />
             </div>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {!sessionId ? (
-              /* Nothing trained yet: point at the action that creates the data. */
-              <div style={{ padding: 14 }}>
-                <EmptyState
-                  compact
-                  icon={<Package size={20} />}
-                  title={t('skus.empty_title')}
-                  body={t('skus.empty_body')}
-                  actions={[{ label: t('skus.empty_cta'), href: '/ventas' }]}
-                />
-              </div>
-            ) : loading ? (
-              <div style={{ padding: 12 }}>
-                <LoadingState label={t('skus.loading_label')}>
-                  <SkeletonTable rows={7} columns={1} />
-                </LoadingState>
-              </div>
-            ) : skus.length === 0 ? (
-              <PanelPlaceholder message={t('skus.empty_no_skus_found')} />
-            ) : (
-              skuPage.rows.map((sku, idx) => (
-                <SkuCard
-                  key={sku}
-                  tourAnchor={idx === 0 ? 'skus.card' : undefined}
-                  sku={sku}
-                  quality={quality[sku]}
-                  metrics={metricsBySku.get(sku) ?? EMPTY_METRICS}
-                  signal={signalForSku(sku)}
-                  selected={sku === selectedSku}
-                  onClick={() => { setSelectedSku(sku); setTab('Forecast') }}
-                  showTechnical={showTechnical}
-                />
-              ))
-            )}
-          </div>
-          {/* One page of cards at a time: a 2.000-SKU catalogue rendered every
-              card at once, and each card carries an SVG sparkline and a badge. */}
-          <Pagination
-            page={skuPage.page}
-            pageCount={skuPage.pageCount}
-            offset={skuPage.offset}
-            total={skuPage.total}
-            rowsOnPage={skuPage.rows.length}
-            onPage={setSkuListPage}
-            label="SKU"
-          />
+          ) : loading ? (
+            <div style={{ padding: 12 }}>
+              <LoadingState label={t('skus.loading_label')}>
+                <SkeletonTable rows={7} columns={1} />
+              </LoadingState>
+            </div>
+          ) : noProducts ? (
+            <div style={{ padding: 14 }}>
+              <EmptyState
+                compact
+                icon={<Package size={20} />}
+                title={t('skus.empty_no_skus_found')}
+                body={t('skus.empty_no_products_body')}
+                actions={[{ label: t('skus.empty_cta'), href: '/ventas' }]}
+              />
+            </div>
+          ) : renderList(false)}
         </div>
 
         {/* Detail panel */}
         <div style={{
           background: 'var(--surface)', border: '1px solid var(--border)',
-          borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+          borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0,
         }}>
           {!selectedSku ? (
             <PanelPlaceholder message={sessionId ? t('skus.empty_select_sku_from_list') : t('skus.empty_no_session_selected')} />
@@ -614,25 +587,28 @@ export default function SkusPage() {
               {/* SKU header */}
               <div data-tour="skus.header" style={{
                 padding: '14px 16px', borderBottom: '1px solid var(--border)',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                   <div style={{
-                    width: 30, height: 30, borderRadius: 8,
+                    width: 32, height: 32, borderRadius: 9, flexShrink: 0,
                     background: skuColor + '18',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
-                    <Package size={13} color={skuColor} />
+                    <Package size={14} color={skuColor} />
                   </div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{selectedSku}</div>
-                    <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 1 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                      {selectedSku}
+                      {displayName && <span style={{ fontWeight: 400, color: 'var(--dim)', fontSize: 13, marginLeft: 8 }}>{displayName}</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 1 }}>
                       {skuQuality ? (
                         <>
                           <span style={{ color: skuColor }}>{seriesTypeLabel(t, skuQuality.series_type)}</span>
                           {/* Row count and quality score are the Quality tab's
                               numbers; the buyer view says the same thing as a
-                              reliability word in the stats strip. */}
+                              confidence cue under the chart. */}
                           {showTechnical && (
                             <>
                               {' · '}
@@ -644,7 +620,7 @@ export default function SkusPage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   {/* Backtest accuracy is a model's score — technical view.
                       Section 18: a number a buyer cannot act on. */}
                   {showTechnical && skuAccuracy != null && (
@@ -671,8 +647,7 @@ export default function SkusPage() {
               <TabBar
                 tourAnchor="skus.tabs"
                 // Metrics and Quality are an analyst's tabs, not a buyer's —
-                // they exist only in the technical view, same as the rest of
-                // the Forecast tab's stat tiles below.
+                // they exist only in the technical view.
                 tabs={showTechnical
                   ? ['Forecast', 'Pattern', 'Metrics', 'Quality', 'Inventory']
                   : ['Forecast', 'Pattern', 'Inventory']}
@@ -687,7 +662,7 @@ export default function SkusPage() {
                 }[tabKey] ?? tabKey)}
               />
 
-              <div style={{ flex: 1, overflow: tab === 'Forecast' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div style={{ flex: 1, overflow: tab === 'Forecast' && showTechnical ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {tab === 'Forecast' && sessionId && (
                   compareMode ? (
                     /* One chart, one time axis, every compared session on it */
@@ -704,7 +679,14 @@ export default function SkusPage() {
                       />
                     </div>
                   ) : (
-                    <ChartPanel key={`${sessionId}-${selectedSku}`} tourAnchor="skus.chart" sessionId={sessionId} sku={selectedSku} isDark={isDark} quality={skuQuality} showTechnical={showTechnical} onSeeOrder={() => setTab('Inventory')} />
+                    <ChartPanel
+                      key={`${sessionId}-${selectedSku}`}
+                      tourAnchor="skus.chart"
+                      sessionId={sessionId} sku={selectedSku} isDark={isDark}
+                      quality={skuQuality} showTechnical={showTechnical}
+                      onSeeOrder={() => setTab('Inventory')}
+                      status={skuStatus} coverageUnit={coverageUnit}
+                    />
                   )
                 )}
                 {tab === 'Pattern' && sessionId && (
@@ -743,17 +725,6 @@ export default function SkusPage() {
           )}
         </div>
       </div>
-
-      {/* What the purchasing policy would have produced over real past demand,
-          against the same policy driven by "order what we ordered last time".
-          Renders nothing when the run has no backtest to report.
-          Below the chart on purpose: it qualifies the forecast, so it reads
-          after it instead of standing between the user and it. */}
-      {showTechnical && (
-        <div style={{ marginTop: 16 }}>
-          <PolicyBacktestPanel backtest={policyBacktest} catalogueSize={metricsBySku.size} />
-        </div>
-      )}
     </div>
   )
 }
