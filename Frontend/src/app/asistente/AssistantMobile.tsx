@@ -412,6 +412,9 @@ function Composer({ input, onInput, onSend, busy, disabled, placeholder, chips, 
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 132)}px`
+    // Scroll only once the cap is reached; below it a rounding pixel would draw
+    // a scrollbar inside the one-line field.
+    el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden'
   }, [input])
   const canSend = !!input.trim() && !busy && !disabled
 

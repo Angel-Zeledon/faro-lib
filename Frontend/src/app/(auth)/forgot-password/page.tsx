@@ -180,7 +180,7 @@ export default function ForgotPasswordPage() {
                 <input
                   id="forgot-email" name="email"
                   type="email" required value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="you@company.com" style={_input}
+                  placeholder={t('auth.ph_email')} style={_input}
                   onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
                   onBlur={e => (e.target.style.borderColor = 'var(--surface)')}
                 />

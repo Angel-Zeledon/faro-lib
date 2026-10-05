@@ -93,7 +93,7 @@ function VerifyEmailContent() {
                   <input
                     id="resend-email" name="email" type="email" required
                     value={resendEmail} onChange={e => setResendEmail(e.target.value)}
-                    placeholder="you@company.com"
+                    placeholder={t('auth.ph_email')}
                     style={{
                       flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '9px 11px',
                       background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
