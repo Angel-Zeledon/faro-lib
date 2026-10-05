@@ -22,7 +22,7 @@ from forecasting_core.validation.modes import ValidationMode, ValidationResult
 
 _STAT_MODELS  = {"arima", "ets", "prophet"}
 _ML_MODELS    = {"lightgbm", "xgboost"}
-_CROSTON_MODELS = {"croston"}
+_CROSTON_MODELS = {"croston", "tsb", "adida", "imapa"}
 _DL_MODELS    = {"lstm"}
 
 LSTM_WINDOW = 14
@@ -116,7 +116,8 @@ def _check_one(
 
     if model in _CROSTON_MODELS:
         if zero_ratio < interp_thr * 0.5:
-            return (f"Croston is designed for intermittent series "
+            name = "Croston" if model == "croston" else model.upper()
+            return (f"{name} is designed for intermittent series "
                     f"(zero_ratio={zero_ratio:.0%} < {interp_thr * 0.5:.0%}); "
                     "use a different model for dense demand")
 

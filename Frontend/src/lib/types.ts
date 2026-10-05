@@ -780,9 +780,11 @@ export interface ActivityLogsResponse {
 // ── Platform Models ───────────────────────────────────────────────────────────
 export interface PlatformModel {
   name:        string
-  category:    'ML' | 'Statistical' | 'Deep Learning'
+  category:    'Global' | 'ML' | 'Statistical' | 'Deep Learning'
   status:      'available' | 'beta' | 'disabled'
   description: string
+  // English, for API readers; the UI renders `models.<name>.recommended_for`.
+  recommended_for?: string
 }
 
 // ── Statistical Analysis ──────────────────────────────────────────────────────

@@ -22,7 +22,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,7 @@ import pandas as pd
 from . import report
 from .baselines import BASELINES
 from .datasets import Dataset, DatasetUnavailable, load_dataset, synthetic_retail
-from .engine_runner import DEFAULT_MODELS, run_engine
+from .engine_runner import DEFAULT_MODELS, ML_MODEL_NAMES, run_engine
 from .metrics import classify_segment, score_forecast
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -61,7 +61,12 @@ def origin_cuts(ds: Dataset, origins: int) -> List[pd.Timestamp]:
 
 
 def evaluate(ds: Dataset, origins: int, models: List[str], chunk: int,
-             budget_s: Optional[float], log=print) -> dict:
+             budget_s: Optional[float], log=print, routing: bool = True,
+             objective_variants: Sequence[str] = ()) -> dict:
+    """``objective_variants`` (e.g. ``("tweedie",)``) re-runs the ML models in
+    ``models`` on the SAME training frames with that opt-in
+    ``intermittent_objective`` and records them as ``model:<name>+<variant>``.
+    The champion / ``engine`` row always comes from the base run."""
     t0 = time.time()
     h, season = ds.horizon, ds.season
     cuts = origin_cuts(ds, origins)
@@ -92,9 +97,21 @@ def evaluate(ds: Dataset, origins: int, models: List[str], chunk: int,
                 hold[s] = (tr["demand"].to_numpy(), te["demand"].to_numpy(), te["date"].to_numpy())
             if not hold:
                 continue
-            res = run_engine(pd.concat(train_parts, ignore_index=True), h, season, models)
+            train_df = pd.concat(train_parts, ignore_index=True)
+            res = run_engine(train_df, h, season, models, routing=routing)
             if res["error"]:
                 engine_errors.append(res["error"])
+            ml_in_run = [m for m in models if m in ML_MODEL_NAMES]
+            variant_fc = {}
+            for v in objective_variants:
+                if not ml_in_run:
+                    break
+                vres = run_engine(train_df, h, season, ml_in_run,
+                                  model_params={m: {"intermittent_objective": v} for m in ml_in_run},
+                                  routing=routing)
+                if vres["error"]:
+                    engine_errors.append(f"[{v}] {vres['error']}")
+                variant_fc[v] = vres["forecasts"]
             for s, (hist, y, te_dates) in hold.items():
                 rec = {"series": s, "origin": oi, "origin_end": str(cut.date()),
                        "segment": classify_segment(hist), "methods": {},
@@ -119,6 +136,11 @@ def evaluate(ds: Dataset, origins: int, models: List[str], chunk: int,
                     for mname, mv in fs.items():
                         rec["methods"][f"model:{mname}"] = score_forecast(
                             y, mv["point"], hist, season)
+                    for v, vfc in variant_fc.items():
+                        for mname, mv in (vfc.get(s) or {}).items():
+                            if mname in ML_MODEL_NAMES:
+                                rec["methods"][f"model:{mname}+{v}"] = score_forecast(
+                                    y, mv["point"], hist, season)
                 else:
                     rec["engine_failed"] = True
                 records.append(rec)
@@ -135,6 +157,7 @@ def evaluate(ds: Dataset, origins: int, models: List[str], chunk: int,
         "n_engine_failed": n_failed, "stopped_early_for_budget": stopped_early,
         "engine_errors": sorted(set(engine_errors))[:5],
         "models_requested": models, "runtime_s": round(time.time() - t0, 1),
+        "routing": routing, "objective_variants": list(objective_variants),
     }
     return {"meta": meta, "aggregate": agg, "champion_mix": mix, "records": records}
 
@@ -167,7 +190,52 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--time-budget-min", type=float, default=15.0)
     ap.add_argument("--out", default=None, help="JSON output path")
     ap.add_argument("--no-records", action="store_true", help="omit per-series records from JSON")
+    ap.add_argument("--routing", choices=("on", "off"), default="on",
+                    help="off = every declared model on every series (same-series comparison)")
+    ap.add_argument("--objective-variants", default="",
+                    help="comma list of intermittent_objective values to also run the ML "
+                         "models with, e.g. 'tweedie' or 'tweedie,poisson'")
+    ap.add_argument("--tag", default="", help="suffix for the output file name")
+    ap.add_argument("--rerender", default=None,
+                    help="re-aggregate an existing result JSON (with records) and rewrite "
+                         "its .md, without re-running any model")
     args = ap.parse_args(argv)
+
+    if args.rerender:
+        # One path: re-aggregate it in place. Several (comma-separated) plus
+        # --out: POOL their records (e.g. two seeds) into a new .md/.json.
+        paths = [Path(p) for p in args.rerender.split(",") if p]
+        payloads = [json.loads(p.read_text(encoding="utf-8")) for p in paths]
+        if any("records" not in p for p in payloads):
+            print("cannot rerender: a JSON was written with --no-records")
+            return 2
+        if len(paths) > 1 and not args.out:
+            print("pooling several results needs --out")
+            return 2
+        payload = dict(payloads[0])
+        records = [r for p in payloads for r in p["records"]]
+        payload["records"] = records
+        payload["aggregate"] = report.aggregate(records)
+        payload["champion_mix"] = report.champion_mix(records)
+        meta = dict(payload["meta"])
+        if len(paths) > 1:
+            meta.update({
+                "n_series": sum(p["meta"]["n_series"] for p in payloads),
+                "n_scored": sum(p["meta"]["n_scored"] for p in payloads),
+                "n_engine_failed": sum(p["meta"]["n_engine_failed"] for p in payloads),
+                "pooled_from": [str(p.name) for p in paths],
+            })
+        payload["meta"] = meta
+        d = payload.get("dataset") or {}
+        label = f"{d.get('name')} ({d.get('source')})" if len(paths) == 1 else \
+            f"{d.get('name')} (pooled: {', '.join(meta['pooled_from'])})"
+        md = report.to_markdown(label, payload["aggregate"], payload["champion_mix"], meta)
+        out = Path(args.out) if args.out else paths[0]
+        out.write_text(json.dumps(payload, indent=1, default=lambda o: None if (
+            isinstance(o, float) and not math.isfinite(o)) else str(o)), encoding="utf-8")
+        out.with_suffix(".md").write_text(md, encoding="utf-8")
+        print(md)
+        return 0
 
     if args.max_series > 300:
         print("note: capping --max-series at 300 (resource rule)")
@@ -188,7 +256,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     models = [m for m in args.models.split(",") if m]
     print(f"dataset={ds.name} series={ds.n_series} freq={ds.freq} h={ds.horizon} "
           f"season={ds.season} models={models}")
-    result = evaluate(ds, args.origins, models, args.chunk, args.time_budget_min * 60)
+    variants = [v for v in args.objective_variants.split(",") if v]
+    result = evaluate(ds, args.origins, models, args.chunk, args.time_budget_min * 60,
+                      routing=args.routing == "on", objective_variants=variants)
     result["dataset"] = {"name": ds.name, "source": ds.source, "seed": args.seed,
                          "requested": args.dataset, "fallback": fallback, "notes": ds.notes}
     result["versions"] = _versions()
@@ -198,7 +268,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     md = report.to_markdown(label, result["aggregate"], result["champion_mix"], result["meta"])
     print(md)
     RESULTS_DIR.mkdir(exist_ok=True)
-    out = Path(args.out) if args.out else RESULTS_DIR / f"{ds.name.replace(':', '_')}_{args.seed}.json"
+    tag = f"_{args.tag}" if args.tag else ""
+    out = Path(args.out) if args.out else RESULTS_DIR / f"{ds.name.replace(':', '_')}_{args.seed}{tag}.json"
     payload = dict(result)
     if args.no_records:
         payload.pop("records")

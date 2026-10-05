@@ -63,6 +63,9 @@ JOB_STAGES: Tuple[Tuple[str, float], ...] = JOB_PRE_STAGES + ENGINE_STAGES + JOB
 # further than a Croston one.
 STAT_MODEL_COST: Dict[str, float] = {
     "croston": 0.3,
+    "tsb": 0.3,
+    "adida": 0.3,
+    "imapa": 0.5,
     "ets": 1.0,
     "arima": 2.0,
     "sarimax": 3.0,
