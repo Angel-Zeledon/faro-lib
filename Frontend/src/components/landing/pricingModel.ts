@@ -43,6 +43,21 @@ export const FULL_PLAN = {
   },
 } as const
 
+// ── Corporate: a position for large accounts, quoted in a conversation ───────
+// Added by the owner's decision of 2026-10-05: a corporate band starting at
+// $890 a month on an ANNUAL contract, aimed at companies that order and buy
+// months or years ahead. It is a position, not a different product: every
+// feature stays in every plan (CLAUDE.md), and nothing here is a quantity —
+// the ceilings (SKUs, users, warehouses) are "larger, agreed in the quote",
+// so no included amount is invented. `from` semantics: this is where the
+// quote starts, never a list price; there is no checkout. Deliberately NOT
+// used by estimate(): the calculator prices the full plan only.
+export const CORPORATE_PLAN = {
+  baseMonthly: 890,
+  billing: 'annual-contract',
+  from: true,
+} as const
+
 // The ranges the calculator's sliders cover. A number typed into the box can
 // go past the slider's end; the estimate keeps counting.
 export const CALC_RANGES = {

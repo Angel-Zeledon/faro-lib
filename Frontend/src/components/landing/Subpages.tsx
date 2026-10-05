@@ -155,7 +155,7 @@ export function PricingPage() {
   return (
     <SubpageShell page="pricing" chrome={{ onHome: false, localAnchors: ['precio', 'funciones', 'contacto'] }}>
       <style dangerouslySetInnerHTML={{ __html: CALC_CSS }} />
-      <PricingSection calcHref="#calculadora" />
+      <PricingSection calcHref="#calculadora" showCorporate />
       <PricingCalculator />
       {/* What every tier gets — the whole list, since no feature is gated. */}
       <FeaturesSection />

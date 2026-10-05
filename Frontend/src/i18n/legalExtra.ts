@@ -16,7 +16,8 @@
  * Where each factual claim comes from (keep in step with the code):
  *   limits, trial 24 h, paid ceilings       backend/entitlements/plans.py
  *   over-limit keeps data, blocks additions backend/entitlements/service.py enforce_limit
- *   price estimate ($59 base, add-ons)      Frontend/src/components/landing/pricingModel.ts
+ *   price estimate ($59 base, add-ons;      Frontend/src/components/landing/pricingModel.ts
+ *   corporate band from $890, annual)       (FULL_PLAN, CORPORATE_PLAN; owner's decision 2026-10-05)
  *   120 calls/min per key                   terms (legal.ts) / API rate limiter
  *   tenant isolation, roles, bcrypt, Fernet backend/auth/*, backend/service_config/crypto.py
  *   export ZIP / full erasure (admin)       backend/api/v1/tenant_data.py, backend/tenants/data_export.py
@@ -649,6 +650,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
                 ['Usuarios adicionales', 'USD 7 por usuario'],
                 ['Bodegas adicionales', 'USD 10 por bodega'],
                 ['Llamadas a la API adicionales', 'USD 2,50 por cada bloque de 1.000'],
+                ['Plan corporativo', 'Desde USD 890 al mes, con contrato anual; los topes más amplios se acuerdan en la cotización'],
               ],
             },
           },
@@ -1432,6 +1434,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
                 ['Additional users', 'USD 7 per user'],
                 ['Additional warehouses', 'USD 10 per warehouse'],
                 ['Additional API calls', 'USD 2.50 per block of 1,000'],
+                ['Corporate plan', 'From USD 890 a month, on an annual contract; the larger ceilings are agreed in the quote'],
               ],
             },
           },
