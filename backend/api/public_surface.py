@@ -92,6 +92,9 @@ INTERNAL_ROUTES: dict[tuple[str, str], str] = {
         "mails the signed-in person; a key has no inbox",
     ("POST", "/alerts/read"):
         "marks alerts read for the signed-in person",
+    ("GET", "/planning/horizon-need"):
+        "a wizard-only preview of what the next launch would train; the launch "
+        "response and the session's forecast_cfg carry the same facts",
     ("POST", "/entitlements/upgrade-request"):
         "a person asking to talk to us about limits; it names who to answer",
 }

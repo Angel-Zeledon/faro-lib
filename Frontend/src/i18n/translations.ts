@@ -4950,6 +4950,9 @@ export const translations = {
     'qs.horizon_cap_note': 'Con detalle {grain} llegamos hasta {max}. Para planificar más lejos, elige un detalle más grueso.',
     'qs.horizon_min_note': 'Con este detalle lo más corto que podemos pronosticar es {min}: usaremos eso.',
     'qs.horizon_cap_auto': 'Si tu archivo es diario, el pronóstico diario llega hasta {daily}; el semanal, hasta {weekly}.',
+    'qs.horizon_extended': 'Ampliaremos el horizonte a {span}: el proveedor {who} necesita plazo de entrega + revisión = {required} días ({lead} + {review}), más un margen de seguridad. Nunca lo acortamos si elegiste un plazo mayor.',
+    'qs.horizon_extended_sku': 'Ampliaremos el horizonte a {span}: el producto {who} necesita plazo de entrega + revisión = {required} días ({lead} + {review}), más un margen de seguridad. Nunca lo acortamos si elegiste un plazo mayor.',
+    'qs.horizon_extended_capped': 'Lo que necesitas supera el máximo de {max}, así que el horizonte se queda ahí.',
     'qs.horizon_history_warn': 'Con {history} de historial recomendamos planificar hasta {max}, y elegiste {chosen}: las cifras de los últimos meses serían poco fiables. Puedes seguir igual, o volver y elegir un plazo más corto.',
 
     // ── Server-paged inventory and suppliers ───────────────────────────────────
@@ -10362,6 +10365,9 @@ export const translations = {
     'qs.horizon_cap_note': 'At {grain} detail we reach up to {max}. To plan further out, pick a coarser detail.',
     'qs.horizon_min_note': 'At this detail the shortest we can forecast is {min}: we will use that.',
     'qs.horizon_cap_auto': 'If your file is daily, the daily forecast reaches {daily}; the weekly one, {weekly}.',
+    'qs.horizon_extended': 'We will extend the horizon to {span}: supplier {who} needs lead time + review = {required} days ({lead} + {review}), plus a safety margin. We never shorten it if you chose a longer period.',
+    'qs.horizon_extended_sku': 'We will extend the horizon to {span}: product {who} needs lead time + review = {required} days ({lead} + {review}), plus a safety margin. We never shorten it if you chose a longer period.',
+    'qs.horizon_extended_capped': 'What you need exceeds the {max} maximum, so the horizon stops there.',
     'qs.horizon_history_warn': 'With {history} of history we recommend planning up to {max}, and you chose {chosen}: the numbers for the later months would be unreliable. You can carry on anyway, or go back and choose a shorter period.',
 
     // ── Server-paged inventory and suppliers ───────────────────────────────────
