@@ -7,6 +7,7 @@
 //! alone.
 
 mod activity;
+mod allocation;
 mod audit;
 mod auth;
 mod config;

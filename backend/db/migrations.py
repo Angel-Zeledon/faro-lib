@@ -2056,6 +2056,8 @@ from backend.inventory.purchase_budget_migrations import MIGRATIONS as _PURCHASE
 _MIGRATIONS += _PURCHASE_BUDGETS
 from backend.inventory.po_confirmation_migrations import MIGRATIONS as _PO_CONFIRMATIONS  # noqa: E402
 _MIGRATIONS += _PO_CONFIRMATIONS
+from backend.inventory.stock_allocation_migrations import MIGRATIONS as _STOCK_ALLOCATION  # noqa: E402
+_MIGRATIONS += _STOCK_ALLOCATION
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

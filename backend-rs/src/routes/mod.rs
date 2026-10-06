@@ -11,6 +11,7 @@ pub mod webhooks;
 pub mod po_cancellation;
 pub mod po_payments;
 pub mod signal_thresholds;
+pub mod stock_allocation;
 
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
@@ -70,6 +71,14 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // Stock allocation among committed customers: new routes, Rust only.
+        .route("/api/v1/allocation/priorities",
+            get(stock_allocation::get_priorities).put(stock_allocation::put_priorities))
+        .route("/api/v1/allocation/preview", post(stock_allocation::preview))
+        .route("/api/v1/allocation/apply", post(stock_allocation::apply))
+        .route("/api/v1/allocation/release", post(stock_allocation::release))
+        .route("/api/v1/allocation/reservations", get(stock_allocation::reservations))
+        .route("/api/v1/allocation/overview", get(stock_allocation::overview))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }
