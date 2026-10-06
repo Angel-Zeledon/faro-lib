@@ -1146,6 +1146,25 @@ def run_capabilities(args, db, secret) -> list:
         set_rows(inst, {}, {})
         phase("rag missing its index",
               _cap_expect(email=True, online_payments=True), _cap_expect(email=True, online_payments=True))
+
+        # GET /auth/sso/availability: public; the instance switch only.
+        sso_route = "GET /auth/sso/availability"
+        sso_path = f"{ct.API}/auth/sso/availability"
+        for label, rows_, want in (("no row, environment default", {}, False),
+                                   ("stored true", {"enterprise_sso_enabled": "true"}, True),
+                                   ("stored on", {"enterprise_sso_enabled": "On"}, True),
+                                   ("stored false", {"enterprise_sso_enabled": "false"}, False),
+                                   ("junk stored value falls back to the default", {"enterprise_sso_enabled": "perhaps"}, False)):
+            set_rows(rows_, {}, {})
+            for who, tok in (("anonymous", None), ("with a bogus bearer", "not.a.token"),
+                             ("with a valid token", ct.auth_for(fa, "viewer"))):
+                def check(rp, rr, want=want):
+                    ok_ = rp.status == 200 and rp.body.get("data") == {"enabled": want}
+                    return [] if ok_ else [f"the Python answer is not the scenario: want enabled={want}, got {rp.status} {rp.body}"]
+                res = compare(ct, args, f"sso availability [{label}]: {who}", sso_route, "GET", sso_path,
+                              token_py=tok, token_rs=tok, exact=True, check=check)
+                if res:
+                    out.append(res)
     finally:
         cur.execute("DELETE FROM service_config WHERE updated_by = 'contract-w2b'")
         ct.erase_fixture(args.python, fa)

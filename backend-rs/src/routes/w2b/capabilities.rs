@@ -88,6 +88,7 @@ const FIELDS: &[Field] = &[
     f("paypal_mode", "PAYPAL_MODE", Kind::Str, "sandbox", true, false),
     f("billing_price_usd_full", "BILLING_PRICE_USD_FULL", Kind::Float, "59.0", true, false),
     // `editable=False` services: the environment is the only layer.
+    f("enterprise_sso_enabled", "ENTERPRISE_SSO_ENABLED", Kind::Bool, "false", true, false),
     f("worker_enabled", "WORKER_ENABLED", Kind::Bool, "true", false, false),
     f("scheduler_enabled", "SCHEDULER_ENABLED", Kind::Bool, "true", false, false),
 ];
@@ -267,6 +268,19 @@ pub async fn get_capabilities(
     Ok(ok(capabilities(&resolver)))
 }
 
+/// `GET /api/v1/auth/sso/availability` (backend/api/v1/sso.py): does this
+/// installation offer company sign-in at all. Public, no token read, instance
+/// scope: `bool(effective().enterprise_sso_enabled)`. The only piece of the
+/// `auth` tag moved in wave 2b, because it reads configuration and nothing else.
+pub async fn sso_availability(State(state): State<AppState>) -> Json<Value> {
+    let resolver = Resolver {
+        settings: &state.settings,
+        instance: rows(&state.pool, &state.settings, None).await,
+        tenant: HashMap::new(),
+    };
+    ok(json!({"enabled": resolver.on("enterprise_sso_enabled")}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,6 +354,15 @@ mod tests {
         let mut live = paypal.to_vec();
         live.push(("paypal_mode", " LIVE "));
         assert_eq!(capabilities(&resolver(&s, &live, &[]))["online_payments"], true);
+    }
+
+    #[test]
+    fn sso_switch_is_off_until_stored_or_set() {
+        let off = settings(&[]);
+        assert!(!resolver(&off, &[], &[]).on("enterprise_sso_enabled"));
+        assert!(resolver(&off, &[("enterprise_sso_enabled", "true")], &[]).on("enterprise_sso_enabled"));
+        assert!(resolver(&settings(&[("ENTERPRISE_SSO_ENABLED", "true")]), &[("enterprise_sso_enabled", "perhaps")], &[])
+            .on("enterprise_sso_enabled"));
     }
 
     #[test]
