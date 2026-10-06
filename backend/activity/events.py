@@ -509,6 +509,15 @@ EVENTS: dict[str, EventSpec] = {
     "account.sso_config_removed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("issuer",),
     ),
+    # SAML sign-on (backend/auth/saml/) is the sibling of the OIDC provider and
+    # records the same sign-in events above; only its configuration differs.
+    "account.saml_config_changed": EventSpec(
+        kind="account", severity=WARNING,
+        detail_keys=("idp_entity_id", "enabled", "enforce_sso", "domains"),
+    ),
+    "account.saml_config_removed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("idp_entity_id",),
+    ),
     "account.warehouse_scope_changed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email", "warehouses"),
     ),

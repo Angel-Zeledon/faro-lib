@@ -24,6 +24,7 @@ mod pycompat;
 mod pyjson;
 mod query;
 mod routes;
+mod saml;
 mod service_config;
 mod state;
 mod validation;

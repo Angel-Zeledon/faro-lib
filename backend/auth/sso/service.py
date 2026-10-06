@@ -150,7 +150,12 @@ def enforced_for(tenant_id: str, email: str | None) -> bool:
     """True when this tenant has made SSO mandatory for this e-mail's domain."""
     domain = email_domain(email)
     row = active_row_for_domain(domain)
-    return bool(row and row["tenant_id"] == tenant_id and row["enforce_sso"])
+    if row and row["tenant_id"] == tenant_id and row["enforce_sso"]:
+        return True
+    # The SAML sibling (backend/auth/saml/): same rule, same switch.
+    from backend.auth.saml import service as saml
+    srow = saml.active_row_for_domain(domain)
+    return bool(srow and srow["tenant_id"] == tenant_id and srow["enforce_sso"])
 
 
 # ── Saving configuration ─────────────────────────────────────────────────────
@@ -226,6 +231,12 @@ def save_config(
     domains = normalize_domains(allowed_domains)
     claim, rules = _clean_group_rules(groups_claim, group_roles)
 
+    if query_one("SELECT 1 AS ok FROM saml_providers WHERE tenant_id = %s", (tenant_id,)):
+        raise AppError(
+            "sso_protocol_conflict",
+            "This account already uses SAML sign-in. Remove it before configuring OpenID Connect.",
+            status_code=409,
+        )
     existing = get_row(tenant_id)
     secret = (client_secret or "").strip()
     if not secret and not existing:
@@ -395,11 +406,13 @@ def role_from_groups(row: dict, claims: dict) -> str | None:
     return None
 
 
-def _link(user: dict, tenant_id: str, subject: str, email: str) -> None:
+def _link(user: dict, tenant_id: str, subject: str, email: str,
+          provider: str | None = None) -> None:
     execute(
         """INSERT INTO user_identities (id, user_id, tenant_id, provider, subject, email, last_used_at)
            VALUES (%s, %s, %s, %s, %s, %s, NOW())""",
-        (generate_id("uid"), user["id"], tenant_id, provider_name(tenant_id), subject, email),
+        (generate_id("uid"), user["id"], tenant_id, provider or provider_name(tenant_id),
+         subject, email),
     )
 
 
@@ -434,18 +447,22 @@ def _create_user(row: dict, claims: oidc.SsoClaims, role: str) -> dict:
     return user_svc.get_user(tenant_id, created["id"])
 
 
-def resolve_user(row: dict, claims: oidc.SsoClaims) -> tuple[dict, bool, str | None]:
+def resolve_user(row: dict, claims, *, provider: str | None = None) -> tuple[dict, bool, str | None]:
     """The tenant's user for these claims: (user, created_now, previous_role).
 
     Order: a linked identity; else the same e-mail inside THIS tenant; else a
     new person - unless the e-mail already belongs to another tenant, which is
     never touched or reused.
+
+    `provider` names the identity namespace (`user_identities.provider`); it is
+    the OIDC one unless the SAML sign-in passes its own, so a `sub` and a NameID
+    that happen to be equal are never the same identity.
     """
     from backend.auth.password import hash_password
     from backend.users import service as user_svc
 
     tenant_id = row["tenant_id"]
-    name = provider_name(tenant_id)
+    name = provider or provider_name(tenant_id)
     mapped = role_from_groups(row, claims.raw)
     wanted_role = mapped or row["default_role"]
 
@@ -485,7 +502,7 @@ def resolve_user(row: dict, claims: oidc.SsoClaims) -> tuple[dict, bool, str | N
                 (hash_password(secrets.token_urlsafe(48)), existing["id"]),
             )
             execute("DELETE FROM refresh_tokens WHERE user_id = %s", (existing["id"],))
-        _link(existing, tenant_id, claims.subject, claims.email)
+        _link(existing, tenant_id, claims.subject, claims.email, name)
         return user_svc.get_user(tenant_id, existing["id"]), False, None
 
     try:
@@ -500,7 +517,7 @@ def resolve_user(row: dict, claims: oidc.SsoClaims) -> tuple[dict, bool, str | N
         if not raced:
             raise
         user = raced
-    _link(user, tenant_id, claims.subject, claims.email)
+    _link(user, tenant_id, claims.subject, claims.email, name)
     return user, True, None
 
 
@@ -596,6 +613,9 @@ def _audit(row: dict, user: dict, claims: oidc.SsoClaims, created: bool,
                      reason="mapped_from_identity_provider_groups")
     record_event(tenant_id, user["id"], "account.sso_sign_in", resource=user["id"],
                  details={"email": user["email"]})
+
+
+audit_sign_in = _audit  # the SAML sign-in records the same events
 
 
 def record_refusal(tenant_id: str | None, code: str, email: str | None = None) -> None:

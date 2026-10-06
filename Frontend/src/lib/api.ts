@@ -1129,15 +1129,20 @@ export interface SsoConfig {
 export const getSsoAvailability = () =>
   request<{ enabled: boolean }>('GET', '/auth/sso/availability', undefined, { silent: true })
 
-/** Does this work e-mail sign in through a company provider? */
+/** Does this work e-mail sign in through a company provider? `protocol` is
+ *  present only for a SAML tenant; absent means OpenID Connect. */
 export const ssoDiscover = (email: string) =>
-  request<{ available: boolean; enforced: boolean }>(
+  request<{ available: boolean; enforced: boolean; protocol?: 'saml' }>(
     'POST', '/auth/sso/discover', { email }, { silent: true })
 
 /** Where the browser goes to start a company sign-in: a navigation, not a
  *  fetch, because the provider's page has to take over the window. */
 export const ssoStartUrl = (email: string) =>
   `/api/v1/auth/sso/start?email=${encodeURIComponent(email)}`
+
+/** Same, for a SAML tenant (backend/auth/saml/). */
+export const samlStartUrl = (email: string) =>
+  `/api/v1/auth/saml/start?email=${encodeURIComponent(email)}`
 
 export const getSsoConfig = () =>
   request<{
@@ -1161,6 +1166,57 @@ export const saveSsoConfig = (body: {
 
 export const deleteSsoConfig = () =>
   request<{ removed: boolean }>('DELETE', '/auth/sso/config')
+
+// ── Enterprise single sign-on over SAML 2.0 (configuration is served by the
+// Rust API; the sign-in endpoints are Python) ─────────────────────────────────
+export interface SamlCertificate {
+  fingerprint_sha256: string | null
+  not_after: string | null
+  expired: boolean | null
+}
+export interface SamlConfig {
+  idp_entity_id: string
+  sso_url: string
+  certificates: SamlCertificate[]
+  allowed_domains: string[]
+  default_role: 'analyst' | 'viewer'
+  enforce_sso: boolean
+  email_attribute: string | null
+  groups_attribute: string | null
+  group_roles: Record<string, 'analyst' | 'viewer'>
+  enabled: boolean
+  /** An administrator has signed in through THIS provider (enforcement needs it). */
+  admin_signed_in: boolean
+  updated_at: string | null
+}
+
+export const getSamlConfig = () =>
+  request<{
+    instance_enabled: boolean
+    sp: { entity_id: string; acs_url: string }
+    config: SamlConfig | null
+  }>('GET', '/auth/saml/config')
+
+export const saveSamlConfig = (body: {
+  /** Either the pasted metadata XML, or the three explicit fields; both absent keeps the stored provider. */
+  metadata_xml?: string | null
+  idp_entity_id?: string | null
+  sso_url?: string | null
+  certificates?: string[] | null
+  allowed_domains: string[]
+  default_role: 'analyst' | 'viewer'
+  enforce_sso: boolean
+  email_attribute: string | null
+  groups_attribute: string | null
+  group_roles: Record<string, 'analyst' | 'viewer'>
+  enabled: boolean
+}) => request<{ config: SamlConfig }>('PUT', '/auth/saml/config', body)
+
+export const deleteSamlConfig = () =>
+  request<{ removed: boolean }>('DELETE', '/auth/saml/config')
+
+export const downloadSamlSpMetadata = () =>
+  downloadBlob('/auth/saml/sp-metadata', 'stockai-saml-sp-metadata.xml')
 
 // ── SCIM provisioning (admin side; the protocol itself is for the IdP) ──────
 export interface ScimTokenInfo {

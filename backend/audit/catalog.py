@@ -171,6 +171,8 @@ LEGACY: dict[str, tuple[str, str]] = {
     "account.session_policy_changed":  ("session_policy", "session_policy.changed"),
     "account.user_locked_out":         ("user", "user.locked_out"),
     "account.user_unlocked":           ("user", "user.unlocked"),
+    "account.saml_config_changed":     ("sso_config", "sso_config.changed"),
+    "account.saml_config_removed":      ("sso_config", "sso_config.removed"),
     "account.api_key_created":         ("api_key", "api_key.created"),
     "account.api_key_revoked":         ("api_key", "api_key.revoked"),
     "purchase.order_generated":        ("purchase_order", "purchase_order.created"),

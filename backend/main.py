@@ -345,6 +345,10 @@ from backend.api.v1 import social_auth as social_auth_router  # noqa: E402
 app.include_router(social_auth_router.router, prefix=_PREFIX)
 from backend.api.v1 import sso as sso_router  # noqa: E402
 app.include_router(sso_router.router, prefix=_PREFIX)
+# SAML 2.0 sign-in (backend/auth/saml/). Only /start and /acs live here: the
+# configuration routes are Rust-only (docs/rust-migration.md).
+from backend.api.v1 import saml as saml_router  # noqa: E402
+app.include_router(saml_router.router, prefix=_PREFIX)
 # SCIM 2.0 provisioning (backend/scim/): its own bearer token, never a JWT or
 # an API key. Answers 401 until a tenant admin mints a token.
 from backend.api.v1 import scim as scim_router  # noqa: E402

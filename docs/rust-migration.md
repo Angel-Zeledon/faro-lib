@@ -1651,3 +1651,84 @@ Python endpoints, the audit trail on both services. Rust unit tests: 14 new
 (134 pass in the crate). Not contract-verified: `TRIAL_EXPIRED` on the write
 routes, and the run used `TESTING_MODE=true` (the auth-rate limiter is off).
 
+## 10. SAML 2.0 single sign-on: the first group NEW in Rust (2026-10-06)
+
+Branch `feat/saml`. Owner-approved feature, sibling of the OIDC sign-in
+(`backend/auth/sso/`), off by default behind the same
+`ENTERPRISE_SSO_ENABLED` switch. It is the first route group written in Rust
+that **has no Python twin**, so it has no failover and no contract diff:
+`deploy/rust-api/routes.d/50-saml-config.caddy.example` names `api-rs` alone.
+
+### Who does what
+
+| Piece | Language | Why |
+|---|---|---|
+| `GET/PUT/DELETE /auth/saml/config`, `GET /auth/saml/sp-metadata` | **Rust** (`routes/saml.rs`, `saml/`) | DB-only admin routes; metadata import and certificate checks are not trust decisions |
+| `GET /auth/saml/start`, `POST /auth/saml/acs` | Python (`api/v1/saml.py`) | They end in session issuance, which stays Python this pass |
+| Assertion validation (XML parsing, signature, conditions) | **Python** (`auth/saml/`) | See below: it could not be proven identical in two languages |
+| Schema (`saml_providers`), "require SSO" on the password and social paths, discover | Python | Python owns the schema and still serves those paths |
+
+**The validation core is Python, and this is a decision for the owner to
+confirm.** The task allowed Rust only if differential tests could show the two
+implementations identical. There is no XML-signature library in either
+language's dependency set here (no lxml/xmlsec/signxml in the backend venv, no
+xmldsig crate cached), so each side would be a hand-written exclusive
+canonicalizer plus verifier; two of those agreeing on every hostile document is
+a claim the tests cannot make, and a disagreement would be a security hole in
+exactly one language. One implementation, attacked hard (`test_saml_xmlsig.py`,
+92 cases written against hand-canonicalized documents, not against the code
+itself), is the safer shape. Moving it to Rust later means writing the
+differential harness first.
+
+### Data and rules
+
+* `saml_providers` (additive migration, no secret column: a SAML provider is a
+  public signing certificate). Domains live in the existing `sso_domains`, so
+  "a domain belongs to one tenant" has one table and one answer.
+* One protocol per tenant: Rust refuses `sso_protocol_conflict` while an OIDC
+  row exists, Python's OIDC save refuses it while a SAML row exists.
+* SP-initiated only. The AuthnRequest id is the stored flow's nonce
+  (`oauth_flows`, single use, ten minutes, bound to the browser by a cookie,
+  `SameSite=None; Secure` over https because the ACS is a cross-site POST). An
+  unsolicited (IdP-initiated) response has no request to answer and is refused.
+* Per-tenant audience: `<FRONTEND_URL>/api/v1/auth/saml/sp/<tenant_id>`; ACS
+  `<FRONTEND_URL>/api/v1/auth/saml/acs`. The two formulas exist in both
+  languages and are compared by the contract run.
+* Accepted: a signature (RSA-SHA256/384/512, exclusive c14n, enveloped) on the
+  Response, the Assertion, or both, verified against the tenant's stored
+  certificates only (KeyInfo is ignored); not accepted, and refused with a
+  stable code rather than guessed: SHA-1, other transforms, encrypted
+  assertions, more than one Assertion, a Signature anywhere else, DOCTYPE or
+  non-UTF-8 documents, transient NameIDs, unknown Conditions.
+* Tenant model as OIDC: just-in-time users, never administrators (also clamped
+  on read, so a hand-edited row cannot mint one), role from an attribute
+  mapping limited to analyst/viewer, "require SSO" only after an admin signed
+  in through this very configuration. Extra lock-out guard (Rust): a request
+  that changes which provider is trusted (entity ID, sign-on URL, or a
+  certificate set sharing nothing with the stored one) cannot also require SSO;
+  a rollover (old + new certificates together) is allowed.
+* Events: `account.saml_config_changed` / `account.saml_config_removed`
+  (activity feed, audit trail as `sso_config.changed/removed`), Rust mirrors in
+  `activity.rs`, `audit/catalog.rs` (sizes now 75 / 29 / 110 / 114) and
+  `routes/r1/alerts.rs`. Sign-ins reuse the OIDC `account.sso_*` events.
+
+### Not done, on purpose
+
+* No metadata URL import: the admin pastes XML (a URL would be a server-side
+  request to an address a customer chose).
+* No encrypted assertions, no ECDSA, no signed AuthnRequests, no single logout,
+  no IdP-initiated flow.
+* SCIM still requires an OIDC row (`scim_requires_sso`): a SAML tenant cannot
+  enable SCIM yet.
+
+### Verification (local, disposable Postgres on its own port)
+
+* `cargo test`: all green, 33 new unit tests (`saml::cert`, `saml::metadata`,
+  `saml::rules`, `routes::saml`), including a test that re-reads the Python
+  free-mail list so the two cannot drift.
+* `pytest`: `test_saml_xmlsig.py` (92), `test_saml_sso.py` (46), plus the
+  existing SSO, audit, route-audit and tenant-erasure suites.
+* `tests/contract/contract_test.py --only saml`: 78 cases against a real
+  Python and a real Rust server on one database: every refusal checks the rows
+  with SQL, a certificate stored by Rust verifies a signature in Python, and
+  "require SSO" set through Rust closes Python's password door.

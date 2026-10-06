@@ -18,6 +18,7 @@ pub mod po_cancellation;
 pub mod po_approvals;
 pub mod po_delegations;
 pub mod po_payments;
+pub mod saml;
 pub mod signal_thresholds;
 pub mod w2b;
 pub mod w3;
@@ -111,6 +112,12 @@ pub fn router() -> Router<AppState> {
             get(session_policy::get_policy).put(session_policy::put_policy).delete(session_policy::reset_policy),
         )
         .route("/api/v1/session-policy/unlock/{user_id}", post(session_policy::unlock))
+        // SAML 2.0 SSO configuration (NEW in Rust, no Python twin, no failover).
+        .route(
+            "/api/v1/auth/saml/config",
+            get(saml::get_config).put(saml::put_config).delete(saml::delete_config),
+        )
+        .route("/api/v1/auth/saml/sp-metadata", get(saml::sp_metadata))
         // After every route above: records (method, matched template) for the
         // custom-role permission check in auth::current_user.
         .route_layer(axum::middleware::from_fn(crate::auth::permissions::record_route))

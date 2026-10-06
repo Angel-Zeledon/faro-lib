@@ -17,7 +17,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Building2 } from 'lucide-react'
-import { getSsoAvailability, ssoDiscover, ssoStartUrl } from '@/lib/api'
+import { getSsoAvailability, ssoDiscover, ssoStartUrl, samlStartUrl } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 export function SsoSignIn({ initialEmail = '', forceOpen = false }: {
@@ -61,7 +61,7 @@ export function SsoSignIn({ initialEmail = '', forceOpen = false }: {
     try {
       const r = await ssoDiscover(value)
       if (r.available) {
-        window.location.href = ssoStartUrl(value)
+        window.location.href = r.protocol === 'saml' ? samlStartUrl(value) : ssoStartUrl(value)
         return
       }
       setNote(t('auth.sso_not_available_for_email'))

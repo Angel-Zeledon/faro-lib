@@ -251,6 +251,7 @@ _DELETE_ORDER: list[str] = [
     # belongs to a tenant".
     "sso_domains",
     "sso_providers",
+    "saml_providers",   # 2026-10-06, cascades from tenants like its OIDC sibling
     # SCIM (2026-10-05): all three cascade from tenants (the links also from
     # users); listed for the same reason. Links before `users` below.
     "scim_events",

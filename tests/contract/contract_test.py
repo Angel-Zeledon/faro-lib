@@ -5065,6 +5065,515 @@ def run_session_policy(args, fx: Fixture, db) -> list:
     finally:
         reset_policy_rows()
     return sp.results
+# ── SAML 2.0 single sign-on: Rust configuration + Python sign-in ────────────
+#
+# NOT a differential section: the configuration routes exist only in Rust (no
+# Python twin), so there is nothing to diff them against. What this proves
+# instead is the part a unit test cannot: the rows Rust writes are the rows
+# Python reads. A certificate Rust accepted must verify a signature in Python,
+# the domain Rust claimed must route a Python login, "require SSO" set through
+# Rust must close Python's password door, and every refusal must leave the
+# database exactly as it was (asserted with SQL, not with the response).
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):  # noqa: D401 - hand the 3xx back to the caller
+        return None
+
+
+_NO_FOLLOW = urllib.request.build_opener(_NoRedirect)
+
+
+def http_nofollow(base: str, method: str, path: str, *, raw_body: Optional[bytes] = None,
+                  content_type: Optional[str] = None, headers: Optional[dict] = None) -> Resp:
+    """`http`, but a 3xx comes back as an answer instead of being followed."""
+    req = urllib.request.Request(base.rstrip("/") + path, data=raw_body, method=method)
+    if raw_body is not None and content_type:
+        req.add_header("Content-Type", content_type)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with _NO_FOLLOW.open(req, timeout=HTTP_TIMEOUT) as r:
+            raw, status, hdrs = r.read(), r.status, dict(r.headers)
+    except urllib.error.HTTPError as e:
+        raw, status, hdrs = e.read(), e.code, dict(e.headers)
+    return Resp(status, None, raw, {k.lower(): v for k, v in hdrs.items()})
+
+
+def run_saml(args, fx: Fixture, db) -> list:
+    route = "SAML (Rust config + Python sign-in)"
+    out: list = []
+
+    def record(name: str, problems: list) -> None:
+        out.append((Case(name, "-", "-", route=route), "FAIL" if problems else "PASS", problems))
+
+    if db is None:
+        return [(Case("saml (all)", "-", "-", route=route), "SKIP",
+                 ["needs --db: every refusal is checked against the rows"])]
+    try:
+        import io
+        import xml.etree.ElementTree as ET
+        import zlib
+        from pathlib import Path
+        from urllib.parse import parse_qs, urlencode, urlparse
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from backend.tests import saml_fixtures as sf  # needs the `cryptography` package
+    except Exception as exc:  # noqa: BLE001
+        return [(Case("saml (all)", "-", "-", route=route), "SKIP",
+                 [f"needs the backend's `cryptography` package and tests/saml_fixtures.py: {exc}"])]
+
+    cur = db.cursor()
+    py, rs = args.python, args.rust
+    cfg_path = f"{API}/auth/saml/config"
+    domain = "stockai.demo"
+    frontend = "http://localhost:5000"
+    sp_entity = f"{frontend}/api/v1/auth/saml/sp/{fx.tenant_id}"
+    acs = f"{frontend}/api/v1/auth/saml/acs"
+    idp = sf.FakeIdp()
+    idp2 = sf.FakeIdp()
+    idp2_entity = "https://idp2.example-saml.test/metadata"
+    created_tenants: list = []
+
+    def tok(who="admin"):
+        return auth_for(fx, who)
+
+    def row():
+        cur.execute("""SELECT idp_entity_id, sso_url, idp_certificates, allowed_domains, default_role,
+                              enforce_sso, email_attribute, groups_attribute, group_roles, enabled
+                         FROM saml_providers WHERE tenant_id = %s""", (fx.tenant_id,))
+        r = cur.fetchone()
+        return None if r is None else dict(zip(
+            ("entity", "url", "certs", "domains", "role", "enforce", "email_attr", "groups_attr",
+             "group_roles", "enabled"), r))
+
+    def domains():
+        cur.execute("SELECT domain FROM sso_domains WHERE tenant_id = %s ORDER BY domain", (fx.tenant_id,))
+        return [r[0] for r in cur.fetchall()]
+
+    def identities():
+        cur.execute("SELECT user_id, provider, subject FROM user_identities WHERE provider = %s",
+                    (f"saml:{fx.tenant_id}",))
+        return cur.fetchall()
+
+    def events(action):
+        cur.execute("""SELECT user_id, resource, context, status FROM activity_logs
+                        WHERE tenant_id = %s AND action = %s ORDER BY created_at""", (fx.tenant_id, action))
+        return cur.fetchall()
+
+    def put(body, who="admin", base=None):
+        return http(base or rs, "PUT", cfg_path, token=tok(who), body=body)
+
+    def good(**over):
+        body = {"idp_entity_id": idp.entity_id, "sso_url": idp.sso_url, "certificates": [idp.cert_b64],
+                "allowed_domains": [domain], "default_role": "viewer", "enforce_sso": False,
+                "email_attribute": None, "groups_attribute": None, "group_roles": {}, "enabled": True}
+        body.update(over)
+        return {k: v for k, v in body.items() if v is not Ellipsis}
+
+    def refused(name, resp, status, code, before):
+        problems = []
+        if resp.status != status:
+            problems.append(f"status {resp.status}, expected {status}: {resp.body}")
+        got = (resp.body or {}).get("error_code") if isinstance(resp.body, dict) else None
+        if code and got != code:
+            problems.append(f"error_code {got!r}, expected {code!r}")
+        after = (row(), domains(), identities())
+        if after != before:
+            problems.append(f"state changed by a refused request: {before} -> {after}")
+        record(name, problems)
+
+    def snap():
+        return (row(), domains(), identities())
+
+    # Start from nothing (a crashed earlier run may have left a row).
+    cur.execute("DELETE FROM user_identities WHERE provider = %s", (f"saml:{fx.tenant_id}",))
+    cur.execute("DELETE FROM saml_providers WHERE tenant_id = %s", (fx.tenant_id,))
+    cur.execute("DELETE FROM sso_domains WHERE tenant_id = %s", (fx.tenant_id,))
+    cur.execute("DELETE FROM service_config WHERE field = 'enterprise_sso_enabled' AND tenant_id IS NULL")
+    empty = snap()
+
+    # ── who may call it ────────────────────────────────────────────────────
+    for method, path, body in (("GET", cfg_path, None), ("PUT", cfg_path, good()),
+                               ("DELETE", cfg_path, None), ("GET", f"{API}/auth/saml/sp-metadata", None)):
+        for who, status, code in (("none", 401, None), ("viewer", 403, "role_not_permitted"),
+                                  ("analyst", 403, "role_not_permitted"),
+                                  ("key_write", 403, "api_key_route_not_exposed")):
+            if who.startswith("key_") and tok(who) is None:
+                continue
+            r = http(rs, method, path, token=tok(who), body=body)
+            problems = []
+            if r.status != status:
+                problems.append(f"status {r.status}, expected {status}: {r.body}")
+            if code and (r.body or {}).get("error_code") != code:
+                problems.append(f"error_code {(r.body or {}).get('error_code')!r}, expected {code!r}")
+            if snap() != empty:
+                problems.append("state changed by a denied request")
+            record(f"saml {method} {path.rsplit('/', 1)[1]} as {who} denied", problems)
+
+    # ── GET: nothing configured, what the IdP needs ────────────────────────
+    r = http(rs, "GET", cfg_path, token=tok())
+    d = (r.body or {}).get("data", {})
+    record("saml get empty", [] if (r.status == 200 and d.get("config") is None and d.get("instance_enabled") is True
+                                    and d.get("sp") == {"entity_id": sp_entity, "acs_url": acs})
+           else [f"{r.status} {r.body}"])
+    r = http_nofollow(rs, "GET", f"{API}/auth/saml/sp-metadata", headers={"Authorization": f"Bearer {tok()}"})
+    problems = []
+    if r.status != 200 or "samlmetadata+xml" not in r.headers.get("content-type", ""):
+        problems.append(f"{r.status} {r.headers.get('content-type')}")
+    else:
+        root = ET.fromstring(r.raw)
+        md = "{urn:oasis:names:tc:SAML:2.0:metadata}"
+        loc = root.find(f"{md}SPSSODescriptor/{md}AssertionConsumerService")
+        if root.get("entityID") != sp_entity or loc is None or loc.get("Location") != acs \
+                or not loc.get("Binding", "").endswith("HTTP-POST"):
+            problems.append(f"metadata content: {r.raw[:300]!r}")
+    record("saml sp-metadata", problems)
+
+    # ── PUT: every refusal, with the state untouched ───────────────────────
+    for name, body, status, code in [
+        ("saml put no IdP at all", good(idp_entity_id=Ellipsis, sso_url=Ellipsis, certificates=Ellipsis),
+         422, "saml_config_incomplete"),
+        ("saml put half an IdP", good(certificates=Ellipsis), 422, "saml_config_incomplete"),
+        ("saml put metadata and fields", good(metadata_xml="<x/>"), 422, "saml_idp_source_ambiguous"),
+        ("saml put junk metadata", {**good(idp_entity_id=Ellipsis, sso_url=Ellipsis, certificates=Ellipsis),
+                                    "metadata_xml": "<EntityDescriptor"}, 422, "saml_metadata_invalid"),
+        ("saml put http sso url", good(sso_url="http://idp.example-saml.test/sso"), 422, "saml_sso_url_invalid"),
+        ("saml put url with credentials", good(sso_url="https://u:p@idp.example-saml.test/sso"), 422,
+         "saml_sso_url_invalid"),
+        ("saml put entity id with space", good(idp_entity_id="two words"), 422, "saml_entity_id_invalid"),
+        ("saml put garbage certificate", good(certificates=["garbage"]), 422, "saml_certificate_invalid"),
+        ("saml put no certificate", good(certificates=[]), 422, "saml_metadata_no_certificate"),
+        ("saml put free-mail domain", good(allowed_domains=[domain, "gmail.com"]), 422, "sso_domain_not_allowed"),
+        ("saml put invalid domain", good(allowed_domains=["nodot"]), 422, "sso_domain_invalid"),
+        ("saml put no domain", good(allowed_domains=[]), 422, "sso_domain_required"),
+        ("saml put domain admin does not own", good(allowed_domains=["other-company.example.com"]), 422,
+         "sso_domain_not_owned"),
+        ("saml put admin default role", good(default_role="admin"), 422, "sso_default_role_invalid"),
+        ("saml put group maps to admin", good(groups_attribute="groups", group_roles={"Root": "admin"}), 422,
+         "sso_group_role_invalid"),
+        ("saml put groups without attribute", good(group_roles={"Ops": "analyst"}), 422,
+         "saml_groups_attribute_required"),
+        ("saml put bad attribute name", good(email_attribute="has space"), 422, "saml_email_attribute_invalid"),
+        ("saml put enforce before anyone signed in", good(enforce_sso=True), 409, "sso_enforce_needs_admin_sign_in"),
+        ("saml put body not an object", [1, 2], 422, "validation_error"),
+    ]:
+        refused(name, http(rs, "PUT", cfg_path, token=tok(), body=body), status, code, empty)
+    r = http(rs, "PUT", cfg_path, token=tok(), raw_body=b"{nope")
+    refused("saml put invalid json", r, 422, "validation_error", empty)
+
+    # Certificates this build must refuse, made on the spot.
+    from cryptography import x509 as cx
+    from cryptography.hazmat.primitives import hashes as ch, serialization as cs
+    from cryptography.hazmat.primitives.asymmetric import ec as cec, rsa as crsa
+    import datetime as _dt
+    import base64 as _b64
+
+    def make_cert(key, days_from=-2, days_to=3650):
+        n = cx.Name([cx.NameAttribute(cx.oid.NameOID.COMMON_NAME, "contract.example")])
+        now = _dt.datetime.now(_dt.timezone.utc)
+        c = (cx.CertificateBuilder().subject_name(n).issuer_name(n).public_key(key.public_key())
+             .serial_number(cx.random_serial_number()).not_valid_before(now + _dt.timedelta(days=days_from))
+             .not_valid_after(now + _dt.timedelta(days=days_to)).sign(key, ch.SHA256()))
+        return _b64.b64encode(c.public_bytes(cs.Encoding.DER)).decode()
+
+    weak = make_cert(crsa.generate_private_key(65537, 1024))
+    ec = make_cert(cec.generate_private_key(cec.SECP256R1()))
+    expired = make_cert(crsa.generate_private_key(65537, 2048), days_from=-400, days_to=-30)
+    for name, certs, code in [("saml put weak certificate", [weak], "saml_certificate_weak"),
+                              ("saml put EC certificate", [ec], "saml_certificate_unsupported"),
+                              ("saml put expired certificate", [expired], "saml_certificate_expired"),
+                              ("saml put one bad among good", [idp.cert_b64, "nope"], "saml_certificate_invalid")]:
+        refused(name, put(good(certificates=certs)), 422, code, empty)
+
+    # ── the instance switch ────────────────────────────────────────────────
+    cur.execute("""INSERT INTO service_config (id, tenant_id, service, field, value_plain)
+                   VALUES (%s, NULL, 'enterprise_sso', 'enterprise_sso_enabled', 'false')""",
+                (f"sc_{secrets.token_hex(6)}",))
+    try:
+        refused("saml put with the instance switch off", put(good()), 409, "sso_instance_disabled", empty)
+        r = http(rs, "GET", f"{API}/auth/saml/sp-metadata", token=tok())
+        record("saml sp-metadata with the switch off",
+               [] if (r.status == 409 and (r.body or {}).get("error_code") == "sso_instance_disabled")
+               else [f"{r.status} {r.body}"])
+        r = http(rs, "GET", cfg_path, token=tok())
+        record("saml get with the switch off still says so",
+               [] if (r.status == 200 and r.body["data"]["instance_enabled"] is False) else [f"{r.status} {r.body}"])
+    finally:
+        cur.execute("DELETE FROM service_config WHERE field = 'enterprise_sso_enabled' AND tenant_id IS NULL")
+
+    # ── a good save, and exactly what it wrote ─────────────────────────────
+    r = put(good(default_role="analyst", email_attribute="mail", groups_attribute="groups",
+                 group_roles={" Planners ": "analyst"}))
+    got, problems = row(), []
+    if r.status != 200:
+        problems.append(f"{r.status} {r.body}")
+    else:
+        if not got or got["entity"] != idp.entity_id or got["url"] != idp.sso_url:
+            problems.append(f"row: {got}")
+        elif (got["certs"] != [idp.cert_b64] or got["domains"] != [domain] or got["role"] != "analyst"
+              or got["email_attr"] != "mail" or got["groups_attr"] != "groups"
+              or got["group_roles"] != {"Planners": "analyst"} or got["enforce"] or not got["enabled"]):
+            problems.append(f"row columns: {got}")
+        if domains() != [domain]:
+            problems.append(f"sso_domains: {domains()}")
+        ev = events("account.saml_config_changed")
+        if len(ev) != 1 or ev[0][1] != "saml" or ev[0][3] != "success":
+            problems.append(f"activity rows: {ev}")
+        else:
+            ctx = ev[0][2]
+            if ctx.get("reason") != "changed_by_an_account_admin" or ctx.get("severity") != "warning" \
+                    or ctx.get("idp_entity_id") != idp.entity_id or ctx.get("domains") != domain:
+                problems.append(f"activity context: {ctx}")
+        cfg = r.body["data"]["config"]
+        c0 = cfg["certificates"][0]
+        if len(cfg["certificates"]) != 1 or len(c0["fingerprint_sha256"] or "") != 64 or c0["expired"] is not False \
+                or cfg["admin_signed_in"] is not False or cfg["group_roles"] != {"Planners": "analyst"}:
+            problems.append(f"view: {cfg}")
+        if idp.cert_b64 in json.dumps(r.body):
+            problems.append("the response echoes the stored certificate body")
+    record("saml put good (fields)", problems)
+    state_a = snap()
+
+    # An update that names no IdP keeps the stored one.
+    r = put(good(idp_entity_id=Ellipsis, sso_url=Ellipsis, certificates=Ellipsis, default_role="viewer"))
+    after = row()
+    record("saml put keeps the stored IdP when none is given",
+           [] if (r.status == 200 and after and after["role"] == "viewer" and after["certs"] == [idp.cert_b64]
+                  and after["entity"] == idp.entity_id) else [f"{r.status} {r.body} {after}"])
+
+    # Metadata import, and an entity change.
+    md = (f'<?xml version="1.0"?><md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" '
+          f'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="{idp2_entity}">'
+          f'<md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">'
+          f'<md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{idp2.cert_b64}'
+          f'</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>'
+          f'<md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" '
+          f'Location="https://idp2.example-saml.test/sso"/></md:IDPSSODescriptor></md:EntityDescriptor>')
+    meta_body = good(idp_entity_id=Ellipsis, sso_url=Ellipsis, certificates=Ellipsis)
+    r = put({**meta_body, "metadata_xml": md})
+    after = row()
+    record("saml put from metadata",
+           [] if (r.status == 200 and after and after["entity"] == idp2_entity
+                  and after["url"] == "https://idp2.example-saml.test/sso" and after["certs"] == [idp2.cert_b64])
+           else [f"{r.status} {r.body} {after}"])
+    xxe = md.replace('<?xml version="1.0"?>', '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]>')
+    before = snap()
+    refused("saml put metadata with a DOCTYPE", put({**meta_body, "metadata_xml": xxe}), 422,
+            "saml_metadata_invalid", before)
+    post_only = md.replace("HTTP-Redirect", "HTTP-POST")
+    refused("saml put metadata without a Redirect binding", put({**meta_body, "metadata_xml": post_only}), 422,
+            "saml_metadata_no_redirect_binding", before)
+    # Back to the first IdP for the sign-in walk.
+    r = put(good(default_role="viewer", groups_attribute="groups", group_roles={"Planners": "analyst"}))
+    record("saml put back to the first IdP", [] if r.status == 200 and row()["entity"] == idp.entity_id
+           else [f"{r.status} {r.body}"])
+
+    # ── domain claimed by somebody else ────────────────────────────────────
+    other = make_fixture(py, fx.secret)
+    created_tenants.append(other)
+    cur.execute("INSERT INTO sso_domains (domain, tenant_id) VALUES ('taken-by-other.example.com', %s)",
+                (other.tenant_id,))
+    before = snap()
+    r = put(good(allowed_domains=[domain, "taken-by-other.example.com"], default_role="viewer"))
+    refused("saml put a domain another tenant holds", r, 409, "sso_domain_taken", before)
+    cur.execute("DELETE FROM sso_domains WHERE tenant_id = %s", (other.tenant_id,))
+
+    # ── Python reads what Rust wrote ───────────────────────────────────────
+    r = http(py, "POST", f"{API}/auth/sso/discover", body={"email": f"someone@{domain}"})
+    record("saml python discover routes the domain",
+           [] if (r.status == 200 and r.body["data"] == {"available": True, "enforced": False, "protocol": "saml"})
+           else [f"{r.status} {r.body}"])
+
+    def start_and_post(email, *, response_email=None, key_idp=None, tamper=None, sign="assertion",
+                       assertion_kw=None, binding_override=None):
+        s = http_nofollow(py, "GET", f"{API}/auth/saml/start?email={email}")
+        if s.status != 302 or "idp.example-saml.test" not in s.headers.get("location", ""):
+            return s, None, f"start answered {s.status} {s.headers.get('location')}"
+        q = {k: v[0] for k, v in parse_qs(urlparse(s.headers["location"]).query).items()}
+        authn = zlib.decompress(_b64.b64decode(q["SAMLRequest"]), -15).decode()
+        req_id = ET.fromstring(authn).get("ID")
+        cookie = s.headers.get("set-cookie", "").split(";")[0]
+        xml = (key_idp or idp).signed_response(
+            request_id=req_id, sp_entity=sp_entity, acs=acs, email=response_email or email, sign=sign,
+            assertion_kw=assertion_kw)
+        if tamper:
+            xml = tamper(xml)
+        form = urlencode({"SAMLResponse": sf.b64(xml), "RelayState": q["RelayState"]}).encode()
+        a = http_nofollow(py, "POST", f"{API}/auth/saml/acs", raw_body=form,
+                          content_type="application/x-www-form-urlencoded",
+                          headers={"Cookie": binding_override if binding_override is not None else cookie})
+        return s, a, ""
+
+    def users_with(email):
+        cur.execute("SELECT COUNT(*) FROM users WHERE email = %s", (email,))
+        return cur.fetchone()[0]
+
+    # A forged signature, a tampered body and a missing cookie sign nobody in.
+    new_person = f"newhire-{secrets.token_hex(3)}@{domain}"
+    for name, kw, code in [
+        ("saml acs forged signature", dict(key_idp=sf.FakeIdp()), "saml_signature_invalid"),
+        ("saml acs tampered after signing", dict(tamper=lambda x: x.replace(new_person, "admin-" + new_person)),
+         "saml_signature_invalid"),
+        ("saml acs wrong audience", dict(assertion_kw=dict(audience="https://other.example/sp")),
+         "saml_audience_mismatch"),
+        ("saml acs missing cookie", dict(binding_override=""), "oauth_state_invalid"),
+    ]:
+        s, a, err = start_and_post(new_person, **kw)
+        problems = [err] if err else []
+        if a is not None:
+            loc = a.headers.get("location", "")
+            if a.status != 303 or f"oauth_error={code}" not in loc:
+                problems.append(f"{a.status} {loc}")
+        if users_with(new_person):
+            problems.append("a refused response created a user")
+        if identities():
+            problems.append("a refused response linked an identity")
+        record(name, problems)
+
+    # A good sign-in: the stored certificate verifies in Python, the person is created
+    # as a viewer in THIS tenant, and the one-time code trades for tokens.
+    s, a, err = start_and_post(new_person)
+    problems = [err] if err else []
+    code_value = ""
+    if a is not None:
+        loc = a.headers.get("location", "")
+        if a.status != 303 or "/auth/callback#code=" not in loc:
+            problems.append(f"{a.status} {loc}")
+        else:
+            code_value = loc.split("#code=", 1)[1]
+    cur.execute("SELECT tenant_id, role, has_password, email_verified FROM users WHERE email = %s", (new_person,))
+    u = cur.fetchone()
+    if u != (fx.tenant_id, "viewer", False, True):
+        problems.append(f"created user: {u}")
+    if [i[1] for i in identities()] != [f"saml:{fx.tenant_id}"]:
+        problems.append(f"identities: {identities()}")
+    if code_value:
+        ex = http(py, "POST", f"{API}/auth/oauth/exchange", body={"code": code_value})
+        if ex.status != 200 or ex.body["data"]["user"]["email"] != new_person:
+            problems.append(f"exchange: {ex.status} {ex.body}")
+    record("saml acs signs a new person in (Rust cert, Python verify)", problems)
+
+    # A group maps to a role, and replaying the same POST does nothing.
+    planner = f"planner-{secrets.token_hex(3)}@{domain}"
+    s, a, err = start_and_post(planner, assertion_kw=dict(attributes={"mail": [planner], "groups": ["Planners"]}))
+    cur.execute("SELECT role FROM users WHERE email = %s", (planner,))
+    r1 = cur.fetchone()
+    record("saml acs maps a group to analyst", [] if (a is not None and a.status == 303 and r1 == ("analyst",))
+           else [f"{err} {a and a.headers.get('location')} {r1}"])
+
+    # The admin signs in through SAML: now enforcement may be switched on.
+    s, a, err = start_and_post(fx.admin_email)
+    problems = [err] if err else []
+    if a is None or "/auth/callback#code=" not in a.headers.get("location", ""):
+        problems.append(f"admin sign-in: {a and a.status} {a and a.headers.get('location')}")
+    cur.execute("SELECT role FROM users WHERE id = %s", (fx.admin_id,))
+    if cur.fetchone() != ("admin",):
+        problems.append("the admin's role changed")
+    record("saml admin signs in", problems)
+    r = http(rs, "GET", cfg_path, token=tok())
+    record("saml get reports the admin signed in",
+           [] if r.body["data"]["config"]["admin_signed_in"] is True else [str(r.body)])
+
+    # ── enforcement ────────────────────────────────────────────────────────
+    r = put(good(enforce_sso=True, default_role="viewer", groups_attribute="groups",
+                 group_roles={"Planners": "analyst"}))
+    record("saml put enforce after the admin signed in", [] if (r.status == 200 and row()["enforce"] is True)
+           else [f"{r.status} {r.body}"])
+    r = http(py, "POST", f"{API}/auth/login", body={"email": fx.admin_email, "password": fx.admin_password})
+    record("saml enforced: python password door is closed",
+           [] if (r.status == 403 and r.body.get("error_code") == "sso_required" and "access_token" not in json.dumps(r.body))
+           else [f"{r.status} {r.body}"])
+    r = http(py, "POST", f"{API}/auth/sso/discover", body={"email": fx.admin_email})
+    record("saml enforced: discover says so",
+           [] if r.body["data"] == {"available": True, "enforced": True, "protocol": "saml"} else [str(r.body)])
+
+    # Changing WHICH provider is trusted while it is required would lock everybody out.
+    keep = snap()
+    refused("saml enforced: sign-on URL change refused",
+            put(good(enforce_sso=True, sso_url="https://other-sso.example-saml.test/sso",
+                     groups_attribute="groups", group_roles={"Planners": "analyst"})),
+            409, "sso_enforce_needs_admin_sign_in", keep)
+    refused("saml enforced: replacing every certificate refused",
+            put(good(enforce_sso=True, certificates=[idp2.cert_b64], groups_attribute="groups",
+                     group_roles={"Planners": "analyst"})),
+            409, "sso_enforce_needs_admin_sign_in", keep)
+    refused("saml enforced: entity change refused",
+            put(good(enforce_sso=True, idp_entity_id=idp2_entity, groups_attribute="groups",
+                     group_roles={"Planners": "analyst"})),
+            409, "sso_enforce_needs_admin_sign_in", keep)
+    # A certificate rollover (new + old together) keeps the proof valid.
+    r = put(good(enforce_sso=True, certificates=[idp.cert_b64, idp2.cert_b64], groups_attribute="groups",
+                 group_roles={"Planners": "analyst"}))
+    record("saml enforced: certificate rollover (old + new) is allowed",
+           [] if (r.status == 200 and row()["certs"] == [idp.cert_b64, idp2.cert_b64]) else [f"{r.status} {r.body}"])
+    # Enforce needs the provider enabled.
+    before = snap()
+    refused("saml enforce with the provider disabled",
+            put(good(enforce_sso=True, enabled=False, certificates=[idp.cert_b64, idp2.cert_b64],
+                     groups_attribute="groups", group_roles={"Planners": "analyst"})),
+            422, "sso_enforce_needs_enabled", before)
+    # Turn enforcement off, swap the entity: identities are wiped and the proof is gone.
+    r = put(good(enforce_sso=False, idp_entity_id=idp2_entity, certificates=[idp.cert_b64],
+                 groups_attribute="groups", group_roles={"Planners": "analyst"}))
+    problems = []
+    if r.status != 200 or row()["entity"] != idp2_entity:
+        problems.append(f"{r.status} {r.body}")
+    if identities():
+        problems.append(f"identities survived an entity change: {identities()}")
+    record("saml entity change wipes the identities", problems)
+    r = http(py, "POST", f"{API}/auth/login", body={"email": fx.admin_email, "password": fx.admin_password})
+    record("saml not enforced again: password works", [] if r.status == 200 else [f"{r.status} {r.body}"])
+    before = snap()
+    refused("saml enforce again needs a new admin sign-in",
+            put(good(enforce_sso=True, idp_entity_id=idp2_entity, certificates=[idp.cert_b64],
+                     groups_attribute="groups", group_roles={"Planners": "analyst"})),
+            409, "sso_enforce_needs_admin_sign_in", before)
+
+    # ── one protocol per tenant ────────────────────────────────────────────
+    keep = snap()
+    body = {"issuer": "https://oidc.example-sso.test", "client_id": "c", "client_secret": "s",
+            "allowed_domains": [domain], "default_role": "viewer", "enforce_sso": False,
+            "groups_claim": None, "group_roles": {}, "enabled": True}
+    r = http(py, "PUT", f"{API}/auth/sso/config", token=tok(), body=body)
+    problems = [] if (r.status == 409 and r.body.get("error_code") == "sso_protocol_conflict") else [f"{r.status} {r.body}"]
+    cur.execute("SELECT COUNT(*) FROM sso_providers WHERE tenant_id = %s", (fx.tenant_id,))
+    if cur.fetchone()[0] != 0 or snap() != keep:
+        problems.append("OIDC save changed state")
+    record("saml: python OIDC save refused while SAML exists", problems)
+
+    # ── delete ─────────────────────────────────────────────────────────────
+    r = http(rs, "DELETE", cfg_path, token=tok("viewer"))
+    record("saml delete as viewer changes nothing", [] if (r.status == 403 and snap() == keep) else [f"{r.status}"])
+    r = http(rs, "DELETE", cfg_path, token=tok())
+    problems = []
+    if r.status != 200 or r.body["data"] != {"removed": True}:
+        problems.append(f"{r.status} {r.body}")
+    if snap() != (None, [], []):
+        problems.append(f"rows left behind: {snap()}")
+    ev = events("account.saml_config_removed")
+    if len(ev) != 1 or ev[0][2].get("idp_entity_id") != idp2_entity or ev[0][2].get("reason") != "changed_by_an_account_admin":
+        problems.append(f"activity: {ev}")
+    record("saml delete", problems)
+    r = http(rs, "DELETE", cfg_path, token=tok())
+    record("saml delete again is a 404", [] if (r.status == 404 and r.body.get("error_code") == "sso_not_configured")
+           else [f"{r.status} {r.body}"])
+    r = http(py, "POST", f"{API}/auth/sso/discover", body={"email": fx.admin_email})
+    record("saml deleted: discover offers nothing", [] if r.body["data"] == {"available": False, "enforced": False}
+           else [str(r.body)])
+
+    # And an OIDC row blocks the Rust save the same way.
+    cur.execute("""INSERT INTO sso_providers (tenant_id, issuer, client_id, client_secret_enc, authorization_endpoint,
+                       token_endpoint, jwks_uri, allowed_domains)
+                   VALUES (%s, 'https://i.test', 'c', 'x', 'https://i.test/a', 'https://i.test/t',
+                           'https://i.test/j', %s::jsonb)""", (fx.tenant_id, json.dumps([domain])))
+    try:
+        refused("saml put refused while an OIDC provider exists", put(good()), 409, "sso_protocol_conflict", (None, [], []))
+    finally:
+        cur.execute("DELETE FROM sso_providers WHERE tenant_id = %s", (fx.tenant_id,))
+
+    for t in created_tenants:
+        erase_fixture(py, t)
+    cur.execute("DELETE FROM sso_domains WHERE tenant_id = %s", (fx.tenant_id,))
+    return out
 
 
 def run(args) -> int:
@@ -5089,10 +5598,14 @@ def run(args) -> int:
     try:
         # Each implementation edits a row it created itself, so a PATCH on one
         # side never changes what the other side's PATCH starts from.
-        cd = {"py": seed_commitment(args.python, fx), "rs": seed_commitment(args.rust, fx)}
+        # `--only saml` runs just the SAML section (the differential cases and
+        # the other sections need a database both services share and take long).
+        only_saml = args.only == "saml"
+        cd = ({"py": "", "rs": ""} if only_saml
+              else {"py": seed_commitment(args.python, fx), "rs": seed_commitment(args.rust, fx)})
         # R2 (sessions / schedule / spike edits) needs --db to seed its rows.
-        ph = r2_prepare(args.python, args.rust, fx, db) if db is not None else {}
-        for case in build_cases(fx) + (build_r2_cases(fx, ph) + build_w1b_session_cases(fx, ph) + build_w1b_manifest_cases(fx, ph) if ph else []):
+        ph = r2_prepare(args.python, args.rust, fx, db) if (db is not None and not only_saml) else {}
+        for case in ([] if only_saml else build_cases(fx) + (build_r2_cases(fx, ph) + build_w1b_session_cases(fx, ph) + build_w1b_manifest_cases(fx, ph) if ph else [])):
             if args.only and args.only not in case.name:
                 continue
             token = auth_for(fx, case.who)
@@ -5132,26 +5645,28 @@ def run(args) -> int:
                       f"\nRS {rr.status} {json.dumps(rr.body)[:1500]}")
             hard = [p for p in problems if not p.startswith("(")]
             results.append((case, "FAIL" if hard else "PASS", problems))
-        results += run_r3(args, fx, db)
-        results += run_r4(args, fx, db)
-        results += run_ip_allowlist(args, fx, db)
-        results += run_cd_resync(args, fx, db)
-        results += run_outbox(args, fx, db)
-        import w2b_cases  # noqa: PLC0415 - wave 2b section, its own file
-        results += w2b_cases.run_w2b(args, secret, db)
-        import w3_cases  # wave 3 (inventory hub): its own file, its own tenants
-        results += w3_cases.run_w3(args, fx, db, sys.modules[__name__])
-        results += run_delegation(args, fx, db)
-        results += cf_outlook_cases.run_cf(args, fx, db, sys.modules[__name__])
-        results += run_portal(args, fx, db)
-        # MFA (tests/contract/mfa_cases.py): Rust-only routes + the Python login challenge.
-        from mfa_cases import run_mfa  # noqa: PLC0415
-        results += run_mfa(sys.modules[__name__], args, fx, db)
-        results += run_fx_section(args, fx, db)
-        # Custom roles (Rust-only routes + enforcement on both): own file.
-        from custom_roles_cases import run_custom_roles
-        results += run_custom_roles(args, fx, db)
-        results += run_session_policy(args, fx, db)
+        if not only_saml:
+            results += run_r3(args, fx, db)
+            results += run_r4(args, fx, db)
+            results += run_ip_allowlist(args, fx, db)
+            results += run_cd_resync(args, fx, db)
+            results += run_outbox(args, fx, db)
+            import w2b_cases  # noqa: PLC0415 - wave 2b section, its own file
+            results += w2b_cases.run_w2b(args, secret, db)
+            import w3_cases  # wave 3 (inventory hub): its own file, its own tenants
+            results += w3_cases.run_w3(args, fx, db, sys.modules[__name__])
+            results += run_delegation(args, fx, db)
+            results += cf_outlook_cases.run_cf(args, fx, db, sys.modules[__name__])
+            results += run_portal(args, fx, db)
+            # MFA (tests/contract/mfa_cases.py): Rust-only routes + the Python login challenge.
+            from mfa_cases import run_mfa  # noqa: PLC0415
+            results += run_mfa(sys.modules[__name__], args, fx, db)
+            results += run_fx_section(args, fx, db)
+            # Custom roles (Rust-only routes + enforcement on both): own file.
+            from custom_roles_cases import run_custom_roles
+            results += run_custom_roles(args, fx, db)
+            results += run_session_policy(args, fx, db)
+        results += run_saml(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

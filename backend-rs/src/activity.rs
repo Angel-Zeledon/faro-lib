@@ -84,6 +84,8 @@ pub enum Event {
     CustomRoleAssigned,
     SessionPolicyChanged,
     UserUnlocked,
+    SamlConfigChanged,
+    SamlConfigRemoved,
 }
 
 impl Event {
@@ -143,6 +145,11 @@ impl Event {
             Event::CustomRoleAssigned => ("account.custom_role_assigned", "account", "warning", &["email", "role_name"]),
             Event::SessionPolicyChanged => ("account.session_policy_changed", "account", "warning", &["settings"]),
             Event::UserUnlocked => ("account.user_unlocked", "account", "warning", &["email"]),
+            Event::SamlConfigChanged => (
+                "account.saml_config_changed", "account", "warning",
+                &["idp_entity_id", "enabled", "enforce_sso", "domains"],
+            ),
+            Event::SamlConfigRemoved => ("account.saml_config_removed", "account", "warning", &["idp_entity_id"]),
         }
     }
 }

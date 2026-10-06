@@ -863,7 +863,7 @@ ENTERPRISE_SSO = Service(
     # The one thing the feature cannot run without: the redirect URI and every
     # link back to the app are built from it.
     borrows=("frontend_url",),
-    summary="Company sign-in through the customer's own OpenID Connect provider.",
+    summary="Company sign-in through the customer's own identity provider (OpenID Connect or SAML 2.0).",
     what_breaks=(
         "The 'Sign in with your company' option disappears from the login "
         "screen and tenant admins cannot configure a provider. Email + password "
@@ -879,8 +879,13 @@ ENTERPRISE_SSO = Service(
         "FRONTEND_URL:\n\n"
         "    <FRONTEND_URL>/api/v1/auth/sso/callback\n\n"
         "People are created just-in-time inside the tenant that owns their "
-        "e-mail domain, never as administrators. Only OpenID Connect is "
-        "supported (no SAML)."
+        "e-mail domain, never as administrators.\n\n"
+        "SAML 2.0 is the second protocol (SP-initiated, signed assertions): "
+        "the tenant admin pastes the identity provider's metadata and "
+        "registers StockAI there with the entity ID and ACS URL the app shows "
+        "(the ACS URL is <FRONTEND_URL>/api/v1/auth/saml/acs). SAML needs no "
+        "secret, only the provider's public signing certificate. A tenant "
+        "uses one protocol or the other."
     ),
     fields=(
         ConfigField(

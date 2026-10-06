@@ -18,6 +18,7 @@ import { SsoSettings } from '@/components/users/SsoSettings'
 import { IpAllowlistSettings } from '@/components/users/IpAllowlistSettings'
 import { RolesPanel, CustomRoleSelect } from '@/components/users/RolesPanel'
 import { SessionPolicyCard } from '@/components/users/SessionPolicySettings'
+import { SamlSettings } from '@/components/users/SamlSettings'
 import Card from '@/components/ui/Card'
 import { thStyle } from '@/components/ui/Table'
 import Input, { Field, Select } from '@/components/ui/Input'
@@ -783,6 +784,7 @@ export default function UsersPage() {
       <SsoSettings />
       <IpAllowlistSettings />
       <SessionPolicyCard />
+      <SamlSettings />
 
       {/* Modals */}
       {showCreate && (
