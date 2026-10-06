@@ -285,6 +285,8 @@ def delete_user(tenant_id: str, user_id: str) -> None:
     execute("DELETE FROM refresh_tokens WHERE user_id = %s", (user_id,))
     execute("DELETE FROM user_permissions WHERE user_id = %s", (user_id,))
     execute("DELETE FROM pw_change_codes WHERE user_id = %s", (user_id,))
+    for table in ("user_mfa_recovery_codes", "user_mfa", "mfa_challenges"):
+        execute(f"DELETE FROM {table} WHERE user_id = %s", (user_id,))
     execute(
         "DELETE FROM users WHERE id = %s AND tenant_id = %s",
         (user_id, tenant_id),

@@ -57,6 +57,11 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    MfaEnrolled,
+    MfaDisabled,
+    MfaRecoveryCodesRegenerated,
+    MfaReset,
+    MfaPolicyChanged,
 }
 
 impl Event {
@@ -79,6 +84,11 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::MfaEnrolled => ("account.mfa_enrolled", "account", "info", &[]),
+            Event::MfaDisabled => ("account.mfa_disabled", "account", "warning", &[]),
+            Event::MfaRecoveryCodesRegenerated => ("account.mfa_recovery_codes_regenerated", "account", "info", &[]),
+            Event::MfaReset => ("account.mfa_reset", "account", "warning", &["email"]),
+            Event::MfaPolicyChanged => ("account.mfa_policy_changed", "account", "warning", &["mfa_required"]),
         }
     }
 }

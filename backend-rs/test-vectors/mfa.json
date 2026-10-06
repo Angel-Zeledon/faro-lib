@@ -1,0 +1,67 @@
+{
+  "rfc6238": {
+    "secret_ascii": "12345678901234567890",
+    "secret_base32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+    "cases": [
+      {
+        "time": 59,
+        "code8": "94287082"
+      },
+      {
+        "time": 1111111109,
+        "code8": "07081804"
+      },
+      {
+        "time": 1111111111,
+        "code8": "14050471"
+      },
+      {
+        "time": 1234567890,
+        "code8": "89005924"
+      },
+      {
+        "time": 2000000000,
+        "code8": "69279037"
+      },
+      {
+        "time": 20000000000,
+        "code8": "65353130"
+      }
+    ]
+  },
+  "window": {
+    "secret_base32": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+    "now": 1111111111,
+    "accepted_offsets": [
+      -1,
+      0,
+      1
+    ],
+    "rejected_offsets": [
+      -2,
+      2
+    ]
+  },
+  "recovery": {
+    "secret_key": "test-secret-key-for-vectors",
+    "cases": [
+      {
+        "code": "ABCDE-FGHJK",
+        "hash": "46ceca1b44981dc2291d759b141ce478c5cdad1cb9c86cb0d8ecd58fd088bcaa"
+      },
+      {
+        "code": "abcde fghjk",
+        "hash": "46ceca1b44981dc2291d759b141ce478c5cdad1cb9c86cb0d8ecd58fd088bcaa"
+      },
+      {
+        "code": "23456-789AB",
+        "hash": "d36b2073cf533166876dfc32f56bf7af2228904e8a6525c211ae430e6df32771"
+      }
+    ]
+  },
+  "fernet": {
+    "key": "7hVTklLfNtpUoj1CWzayRDUo402YQgiuosk8RPzTLKc=",
+    "token": "gAAAAABqxP5KbI7alfZrjdyV-uIiswHZ21YxnhbgvQwUkY6v-DuJ89sPZ8rTJaKjrITCP2YU5NDGkgFdaNaqgl8BjiueASOpB2LmO99X9-3WkQIuUkwZPlo=",
+    "plaintext": "JBSWY3DPEHPK3PXP"
+  }
+}

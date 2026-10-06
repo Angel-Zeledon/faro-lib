@@ -68,6 +68,8 @@ pub const ROUTES: &[AuditRoute] = &[
     r("POST", "/webhooks/{webhook_id}/rotate-secret", "webhook.secret_rotated", "webhook", Some("webhook_id")),
     r("POST", "/webhooks/{webhook_id}/test", "webhook.tested", "webhook", Some("webhook_id")),
     r("POST", "/webhooks/{webhook_id}/enable", "webhook.enabled", "webhook", Some("webhook_id")),
+    r("PUT", "/mfa/policy", "config.changed", "setting", None),
+    r("POST", "/mfa/users/{user_id}/reset", "user.mfa_reset", "user", Some("user_id")),
     r("POST", "/documents", "document.created", "document", None),
     r("DELETE", "/documents/{doc_id}", "document.deleted", "document", Some("doc_id")),
     r("POST", "/feedback", "feedback.sent", "feedback", None),
@@ -230,11 +232,11 @@ mod tests {
     fn vocabularies_have_the_python_sizes() {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
-        assert_eq!(ROUTES.len(), 56);
+        assert_eq!(ROUTES.len(), 58);
         assert_eq!(LEGACY.len(), 73);
         assert_eq!(target_types().len(), 28);
-        assert_eq!(audit_actions().len(), 108);
-        assert_eq!(all_stored_actions().len(), 112);
+        assert_eq!(audit_actions().len(), 109);
+        assert_eq!(all_stored_actions().len(), 113);
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),

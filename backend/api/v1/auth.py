@@ -26,7 +26,7 @@ from backend.db.connection import execute, query_one
 from backend.errors import AppError
 from backend.schemas.auth import (
     ForgotPasswordRequest, ForgotPasswordVerifyRequest,
-    LoginRequest, RefreshRequest,
+    LoginRequest, MfaVerifyRequest, RefreshRequest,
     ResendVerificationRequest, ResetPasswordRequest, SignupRequest,
     VerifyEmailRequest,
 )
@@ -349,7 +349,35 @@ async def login(body: LoginRequest):
             params={"status": user_status},
         )
 
-    user_svc.update_last_login(entry["tenant_id"], user["id"])
+    # Second factor. Only this password door asks for it: social and
+    # enterprise sign-ins carry the identity provider's own proof (and policy)
+    # and never reach here; API keys are machine credentials. A user with an
+    # active enrollment, or in a tenant that REQUIRES MFA, gets no session yet:
+    # the answer is a challenge, and `/auth/mfa/verify` mints the tokens.
+    from backend.auth import mfa as mfa_svc
+    if mfa_svc.active_enrollment(user["id"]):
+        raw, ttl = mfa_svc.create_challenge(user["id"], user["tenant_id"], mfa_svc.PURPOSE_LOGIN)
+        return ok({
+            "mfa_required": True,
+            "mfa_token": raw,
+            "methods": ["totp", "recovery_code"],
+            "expires_in": ttl,
+        })
+    if mfa_svc.tenant_requires_mfa(user["tenant_id"]):
+        raw, ttl = mfa_svc.create_challenge(user["id"], user["tenant_id"], mfa_svc.PURPOSE_ENROLL)
+        return ok({
+            "mfa_enrollment_required": True,
+            "enrollment_token": raw,
+            "expires_in": ttl,
+        })
+
+    return ok(_complete_login(user, email_verified))
+
+
+def _complete_login(user: dict, email_verified: bool) -> dict:
+    """Stamp the login and mint the token pair. The one place that does it for
+    the password door, with or without a second factor in front."""
+    user_svc.update_last_login(user["tenant_id"], user["id"])
 
     access_token = create_access_token(
         user["id"], user["tenant_id"], user["role"], email_verified=email_verified,
@@ -357,7 +385,7 @@ async def login(body: LoginRequest):
     raw_refresh, hashed_refresh = create_refresh_token()
     user_svc.add_refresh_token(user["tenant_id"], user["id"], hashed_refresh)
 
-    return ok({
+    return {
         "access_token": access_token,
         "refresh_token": raw_refresh,
         "token_type": "bearer",
@@ -372,7 +400,70 @@ async def login(body: LoginRequest):
             # and to offer the resend, without decoding the token itself.
             "email_verified": email_verified,
         },
-    })
+    }
+
+
+@router.post("/mfa/verify")
+async def mfa_verify(body: MfaVerifyRequest):
+    """Second step of a password login: the challenge token plus a code.
+
+    The code is a 6-digit authenticator code or a recovery code. Throttled the
+    way the reset OTP is: per-user in `auth_rate_events`, and per challenge by
+    an atomic attempt counter (five guesses, then the challenge is dead and the
+    user signs in again, which is itself rate limited).
+    """
+    from backend.auth import mfa as mfa_svc
+
+    challenge = mfa_svc.claim_attempt(body.mfa_token, mfa_svc.PURPOSE_LOGIN)
+    if not challenge:
+        raise AppError(
+            "mfa_challenge_invalid",
+            "This sign-in step has expired or was already used. Sign in again.",
+            status_code=401,
+        )
+    _check_rate(f"mfa:{challenge['user_id']}", max_attempts=10, window_secs=600)
+
+    method = mfa_svc.verify_second_factor(challenge["user_id"], body.code)
+    if method is None:
+        raise AppError("mfa_code_invalid", "Invalid or already used code.", status_code=401)
+    if not mfa_svc.consume(challenge["token_hash"]):
+        # Two requests raced with this token and the other one won.
+        raise AppError(
+            "mfa_challenge_invalid",
+            "This sign-in step has expired or was already used. Sign in again.",
+            status_code=401,
+        )
+
+    user = query_one("SELECT * FROM users WHERE id = %s", (challenge["user_id"],))
+    if not user:
+        raise AppError("mfa_challenge_invalid", "Account no longer exists.", status_code=401)
+    # State may have changed in the few minutes between the password and the
+    # code: re-check what the password step checked.
+    if (user.get("status") or "active") != "active":
+        raise AppError(
+            "account_not_active",
+            "Account is not active. Contact your administrator.",
+            status_code=403,
+            params={"status": user.get("status") or ""},
+        )
+    from backend.tenants.service import get_tenant
+    from backend.trial.service import is_expired_trial
+    if is_expired_trial(get_tenant(user["tenant_id"])):
+        raise AppError(
+            "trial_account_expired",
+            "This trial account has ended. Start a new one from the home page.",
+            status_code=403,
+        )
+
+    if method == "recovery":
+        from backend.activity.events import record_event
+        record_event(
+            user["tenant_id"], user["id"], "account.mfa_recovery_code_used",
+            details={"remaining": mfa_svc.recovery_codes_remaining(user["id"])},
+            reason="recovery_code_used_to_sign_in",
+        )
+
+    return ok(_complete_login(user, bool(user.get("email_verified"))))
 
 
 @router.post("/refresh")

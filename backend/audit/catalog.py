@@ -120,6 +120,20 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("POST", "/billing/portal"):                    _r("billing.portal_opened", "billing"),
 }
 
+
+# Routes that exist ONLY in the Rust service (backend-rs/), so FastAPI has no
+# such route to match. They are audited by the Rust handler through the same
+# entry shape (`audit::record`), and they are part of ROUTES so the filter
+# vocabulary is one list. `test_every_catalogued_route_is_a_real_route` allows
+# exactly these.
+RUST_ONLY_ROUTES: dict[tuple[str, str], AuditRoute] = {
+    # Two-step sign-in: an admin changes the tenant policy, or clears a
+    # locked-out person's enrollment (backend-rs/src/routes/mfa/).
+    ("PUT", "/mfa/policy"):                         _r("config.changed", "setting"),
+    ("POST", "/mfa/users/{user_id}/reset"):         _r("user.mfa_reset", "user", "user_id"),
+}
+ROUTES.update(RUST_ONLY_ROUTES)
+
 # Rows that already carry who/what, mapped onto the audit shape for reading.
 # legacy action -> (target_type, audit action name)
 LEGACY: dict[str, tuple[str, str]] = {

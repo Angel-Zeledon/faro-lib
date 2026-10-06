@@ -477,6 +477,28 @@ EVENTS: dict[str, EventSpec] = {
     "account.scim_settings_changed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("manage_admins",),
     ),
+    # Two-step sign-in (backend/auth/mfa.py, backend-rs/src/routes/mfa/). Turning
+    # it off, resetting somebody's, using a recovery code and changing the
+    # tenant policy are the moments an owner is asked "who did that?", so they
+    # are warnings; enrolling and renewing the recovery codes are history.
+    "account.mfa_enrolled": EventSpec(
+        kind="account", severity=INFO, detail_keys=(),
+    ),
+    "account.mfa_disabled": EventSpec(
+        kind="account", severity=WARNING, detail_keys=(),
+    ),
+    "account.mfa_recovery_codes_regenerated": EventSpec(
+        kind="account", severity=INFO, detail_keys=(),
+    ),
+    "account.mfa_recovery_code_used": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("remaining",),
+    ),
+    "account.mfa_reset": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
+    "account.mfa_policy_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("mfa_required",),
+    ),
 
     # ── Paying for the plan (backend/billing/) ───────────────────────────────
     # Written by a VERIFIED provider webhook (or the hourly sweep applying what
@@ -549,6 +571,11 @@ REASONS: tuple[str, ...] = (
     # asked for that was refused (the code is a param)
     "provisioned_by_identity_provider",
     "scim_request_refused",
+    # two-step sign-in: the person turned it off themselves, an admin cleared a
+    # locked-out person's enrollment, and a one-time recovery code opened a login
+    "mfa_disabled_by_the_user",
+    "mfa_reset_by_an_account_admin",
+    "recovery_code_used_to_sign_in",
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",
