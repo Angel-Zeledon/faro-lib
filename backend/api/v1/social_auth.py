@@ -248,7 +248,8 @@ def my_identities(user: CurrentUser = Depends(get_current_user)):
     rows = query(
         """SELECT provider, email, created_at, last_used_at FROM user_identities
             WHERE user_id = %s AND tenant_id = %s
-              AND provider NOT LIKE 'sso:%%' ORDER BY created_at""",
+              AND provider NOT LIKE 'sso:%%' AND provider NOT LIKE 'saml:%%'
+            ORDER BY created_at""",
         (user.user_id, user.tenant_id),
     )
     me = query_one(

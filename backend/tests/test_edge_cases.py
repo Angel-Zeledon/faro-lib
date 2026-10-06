@@ -40,6 +40,8 @@ UNAUTHENTICATED = {
     "POST /api/v1/auth/sso/discover": "finds the company sign-in for an e-mail domain before login",
     "GET /api/v1/auth/sso/start": "starts the company sign-in redirect",
     "GET /api/v1/auth/sso/callback": "the identity provider's redirect back; validated by the signed state",
+    "GET /api/v1/auth/saml/start": "starts the SAML company sign-in redirect",
+    "POST /api/v1/auth/saml/acs": "the identity provider's signed POST back; single-use RelayState + browser cookie + XML signature are the credential",
     "GET /api/v1/billing/offer": "the public price shown on the pricing page",
     "POST /api/v1/billing/stripe/webhook": "authenticated by the provider's signature over the raw body",
     "POST /api/v1/billing/paypal/webhook": "authenticated by PayPal's verify-webhook-signature call",

@@ -2226,6 +2226,34 @@ _ENTERPRISE_ACCESS = [
 _MIGRATIONS += _ENTERPRISE_ACCESS
 
 
+# ── SAML 2.0 single sign-on (2026-10-06): the sibling of the OIDC provider ───
+# One SAML identity provider per tenant (backend/auth/saml/). Public data only:
+# the IdP's signing certificates are public keys, so there is no secret column.
+# Domains are NOT stored here: they live in `sso_domains`, shared with OIDC, so
+# "a domain belongs to one tenant" has one table and one answer. A tenant has
+# EITHER an OIDC provider or a SAML one, never both (both writers refuse).
+_SAML = [
+    ("create_saml_providers",
+     """CREATE TABLE IF NOT EXISTS saml_providers (
+         tenant_id        TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         idp_entity_id    TEXT NOT NULL,
+         sso_url          TEXT NOT NULL,
+         idp_certificates JSONB NOT NULL DEFAULT '[]',
+         allowed_domains  JSONB NOT NULL DEFAULT '[]',
+         default_role     TEXT NOT NULL DEFAULT 'viewer',
+         enforce_sso      BOOLEAN NOT NULL DEFAULT FALSE,
+         email_attribute  TEXT,
+         groups_attribute TEXT,
+         group_roles      JSONB NOT NULL DEFAULT '{}',
+         enabled          BOOLEAN NOT NULL DEFAULT TRUE,
+         created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_by       TEXT
+     )"""),
+]
+_MIGRATIONS += _SAML
+
+
 # ── "Send feedback" (2026-10-05) ─────────────────────────────────────────────
 # What a signed-in person typed into the feedback dialog, plus the facts they
 # saw on the confirmation step. The screenshot is a FILE under storage/feedback/

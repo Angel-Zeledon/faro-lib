@@ -145,6 +145,8 @@ LEGACY: dict[str, tuple[str, str]] = {
     "account.scim_token_created":      ("scim_token", "scim_token.created"),
     "account.scim_token_revoked":      ("scim_token", "scim_token.revoked"),
     "account.scim_settings_changed":   ("scim_token", "scim_token.changed"),
+    "account.saml_config_changed":     ("sso_config", "sso_config.changed"),
+    "account.saml_config_removed":      ("sso_config", "sso_config.removed"),
     "account.api_key_created":         ("api_key", "api_key.created"),
     "account.api_key_revoked":         ("api_key", "api_key.revoked"),
     "purchase.order_generated":        ("purchase_order", "purchase_order.created"),
