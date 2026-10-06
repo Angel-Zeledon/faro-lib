@@ -528,3 +528,84 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. Two-step sign-in (MFA): the first NEW routes, and the first without a Python failover
+
+Owner-approved feature, 2026-10-06: TOTP (RFC 6238, authenticator apps) plus
+single-use recovery codes, optionally REQUIRED per tenant by an admin.
+
+**Split.** Auth stays in Python this pass, so the sign-in half is Python:
+`POST /auth/login` answers `mfa_required` (an opaque challenge token, 5 minutes)
+instead of the token pair when the user has an active enrollment, and
+`mfa_enrollment_required` (an enrollment token, 15 minutes, no session) when the
+tenant requires MFA and the user has none. `POST /auth/mfa/verify` takes the
+challenge plus a code and mints the same token pair a password-only login
+always minted (`backend/auth/mfa.py`, `backend/api/v1/auth.py`). The management
+half is Rust, under `/api/v1/mfa/` (`backend-rs/src/routes/mfa/`): status,
+`enroll/begin`, `enroll/confirm`, `disable`, `recovery-codes/regenerate`,
+`GET|PUT policy`, `users/{id}/reset`.
+
+**No Python failover.** These routes have no Python twin, so
+`deploy/rust-api/routes.d/45-mfa.caddy.example` lists `api-rs` as the only
+upstream: with the Rust service down they answer 502, not a Python 404. The
+login challenge keeps working without them. With no rows in `user_mfa` and
+`tenants.mfa_required` false, login is exactly what it was, which is the
+rollback: delete the rows and clear the flag.
+
+**Bit-for-bit agreement.** `backend-rs/test-vectors/mfa.json` is read by the
+Rust unit tests and by `backend/tests/test_mfa.py`: the RFC 6238 appendix B
+SHA-1 vectors (and RFC 4226 appendix D), the acceptance window (one step each
+side), the recovery-code HMAC for fixed codes, and a Fernet token written by
+Python's `cryptography` that Rust must decrypt.
+
+**What is stored.** `user_mfa` (secret Fernet-encrypted under the key every
+stored secret uses, status `pending|active`, `last_used_step`),
+`user_mfa_recovery_codes` (HMAC-SHA256 of the code keyed with `SECRET_KEY`,
+`used_at`), `mfa_challenges` (SHA-256 of the opaque token, purpose, attempts),
+`tenants.mfa_required`. All additive; erased with the tenant and the user, and
+left out of the data export. The Rust service reads the Fernet key from
+`INTEGRATIONS_SECRET_KEY` or the file Python generates, and never creates it:
+with neither, enrollment answers `503 mfa_unavailable` out loud.
+
+**Properties, each pinned by a test.** A time-step is accepted once
+(compare-and-set on `last_used_step`; a replay across the two services is
+refused); a recovery code is burned by compare-and-set; five guesses per
+challenge counted by one atomic UPDATE, and ten per user per ten minutes in
+`auth_rate_events` under the key `mfa:<user_id>`, shared by both services;
+requiring MFA is refused (`mfa_admin_not_enrolled`) unless the acting admin is
+enrolled, and enabling it ends the sessions of password users who are not
+enrolled yet; an admin reset also ends that user's sessions; disabling is
+refused while the tenant requires MFA. `refresh_tokens` rotation and
+`sessions_invalid_before` are untouched (they are only written, the same way a
+password change writes them).
+
+**Exempt on purpose, and tested** (`test_mfa.py::TestExemptions`): social and
+enterprise (OIDC) sign-ins follow the identity provider's own MFA and policy,
+so neither an enrollment nor a tenant requiring MFA stops
+`/auth/oauth/exchange`; API keys (`sk_live_*`) are machine credentials and are
+unaffected (the `/mfa` routes themselves are `Exposure::Internal`, so a key is
+refused there).
+
+**Events and audit.** `account.mfa_enrolled`, `_disabled`,
+`_recovery_codes_regenerated`, `_recovery_code_used`, `_reset`,
+`_policy_changed` in `backend/activity/events.py`, mirrored in `activity.rs` and
+`routes/r1/alerts.rs` (the parity test re-reads the Python source). Two
+catalogued routes, `PUT /mfa/policy` (`config.changed`) and
+`POST /mfa/users/{user_id}/reset` (`user.mfa_reset`), live in
+`RUST_ONLY_ROUTES` of `backend/audit/catalog.py` so the Python "every
+catalogued route is real" test skips exactly them. Size asserts moved to ROUTES
+58, audit actions 109, stored actions 113.
+
+**Results (2026-10-06, this worktree, throwaway Postgres 18 on a private port,
+Python dev API on :8071, Rust debug build on :8062, plus a second Rust with
+`TESTING_MODE=false` on :8063).** `tests/contract/mfa_cases.py`: 15 cases, 15
+PASS (permission pairs, keys refused, encrypted secret decrypted by Python's
+Fernet, HMACs only, replay across services, recovery code once across
+services, policy and session cuts, audit and event rows, the enrollment-token
+flow end to end, five-guess burn, cross-tenant 404, the Rust throttle).
+`backend/tests/test_mfa.py`: 35 pass. `cargo test`: 129 pass, 2 ignored.
+The QR code is drawn in the browser by `Frontend/src/lib/qr.ts` (no
+dependency, no external service); `npm run check:qr` decodes its output with a
+separately written reader (format word, both copies, every Reed-Solomon block,
+payload round trip) for versions 1 to 10. A real authenticator app scanning the
+code was NOT tested (none was available).

@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Copy, Check, Download, ShieldCheck } from 'lucide-react'
 import Spinner from '@/components/ui/Spinner'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -182,6 +182,17 @@ export default function MfaEnrollFlow({ variant, enrollmentToken, onEnrolled, on
   const [codes, setCodes] = useState<string[] | null>(null)
   const [signInAgain, setSignInAgain] = useState(false)
 
+  // Begin on arrival: "Turn on" already said what the person wants. The ref
+  // keeps React's dev double-mount from minting two secrets, of which only the
+  // later one would be the server's.
+  const started = useRef(false)
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    begin()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function begin() {
     setBusy(true); setError(null)
     try {
@@ -219,11 +230,14 @@ export default function MfaEnrollFlow({ variant, enrollmentToken, onEnrolled, on
   if (!start) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {busy && <Spinner size={16} />}
         {error && <ErrorLine text={error} />}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <PrimaryButton variant={variant} onClick={begin} loading={busy}>{t('mfa.begin')}</PrimaryButton>
-          {onCancel && <GhostButton variant={variant} onClick={onCancel}>{t('mfa.cancel')}</GhostButton>}
-        </div>
+        {error && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <PrimaryButton variant={variant} onClick={begin} loading={busy}>{t('mfa.begin')}</PrimaryButton>
+            {onCancel && <GhostButton variant={variant} onClick={onCancel}>{t('mfa.cancel')}</GhostButton>}
+          </div>
+        )}
       </div>
     )
   }
