@@ -37,6 +37,14 @@ MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 # ── Deliberate exceptions ─────────────────────────────────────────────────────
 # Keyed by "METHOD /path" exactly as FastAPI reports it. The value is why.
 PUBLIC = {
+    "POST /api/v1/scim/v2/Users": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PUT /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PATCH /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "DELETE /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "POST /api/v1/scim/v2/Groups": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PUT /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PATCH /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "DELETE /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
     "POST /api/v1/billing/stripe/webhook": "authenticated by the provider's signature (HMAC) over the raw body",
     "POST /api/v1/billing/paypal/webhook": "authenticated by PayPal's verify-webhook-signature call",
     "POST /api/v1/auth/login": "you cannot be authorised before you log in",
