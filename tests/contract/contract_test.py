@@ -825,8 +825,20 @@ def r1_seed_trainings(fx, db, side):
 
 
 def r1_check_one_training(fx, rp, rr, db):
+    """One of the R1 seeds counts, plus whatever other sections of this run
+    launched in the tenant just now (R2 seeds a job of its own), counted with
+    `daily_cap.count_trainings_today`'s conditions."""
+    other = _r1_exec(db, """SELECT COUNT(*) FROM jobs j
+                              JOIN sessions s ON s.id = j.session_id AND s.tenant_id = j.tenant_id
+                             WHERE j.tenant_id = %s AND j.id NOT LIKE 'job_ct%%'
+                               AND j.created_at >= NOW() - INTERVAL '2 hours'
+                               AND NOT s.is_backtest AND NOT s.is_reforecast
+                               AND (s.family_id IS NULL OR s.family_id = s.id)
+                               AND NOT (j.started_at IS NULL AND j.status IN ('FAILED', 'CANCELLED'))""",
+                     (fx.tenant_id,)).fetchone()[0]
+    want = 1 + other
     got = [r.body["data"]["usage"].get("trainings_today") if r.status == 200 else None for r in (rp, rr)]
-    return [] if got == [1, 1] else [f"trainings_today python={got[0]} rust={got[1]} (expected 1)"]
+    return [] if got == [want, want] else [f"trainings_today python={got[0]} rust={got[1]} (expected {want})"]
 
 
 def r1_both(*setups):
@@ -1557,7 +1569,10 @@ def run_r3(args, fx: Fixture, db) -> list:
                 cur.execute("""INSERT INTO webhook_deliveries
                                    (tenant_id, webhook_id, event_id, event_type, is_test, payload, status,
                                     attempts, last_status_code, last_error, next_attempt_at, created_at)
-                               VALUES (%s, %s, %s, %s, %s, '{}', %s, %s, %s, %s, NOW(), NOW() - %s * INTERVAL '1 minute')""",
+                               VALUES (%s, %s, %s, %s, %s, '{}', %s, %s, %s, %s,
+                                       -- not due for a day: the live Python delivery loop
+                                       -- would otherwise claim the pending row mid-case
+                                       NOW() + INTERVAL '1 day', NOW() - %s * INTERVAL '1 minute')""",
                             (fx.tenant_id, h_all, f"evt_r3_{i}", "webhook.test" if test else "job.failed", test, st,
                              i + 1, 200 if st == "delivered" else 503, None if st == "delivered" else "HTTP 503", i))
 
@@ -2640,13 +2655,25 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
         problems = []
         if rp.status != rr.status:
             problems.append(f"status python={rp.status} rust={rr.status}")
-        problems += diff(normalize(rp.body, CD_VOLATILE), normalize(rr.body, CD_VOLATILE))
-        problems += [f"state {p}" for p in diff(states["py"], states["rs"])]
+        problems += diff(normalize(_cd_mask(rp.body, "py"), CD_VOLATILE),
+                         normalize(_cd_mask(rr.body, "rs"), CD_VOLATILE))
+        problems += [f"state {p}" for p in diff(_cd_mask(states["py"], "py"), _cd_mask(states["rs"], "rs"))]
         if args.dump:
             print(f"\n--- {name}\nPY {rp.status} {json.dumps(rp.body)[:1500]}\nRS {rr.status} "
                   f"{json.dumps(rr.body)[:1500]}\nSTATE {json.dumps(states, default=str)[:1500]}")
         out.append((Case(name, method, path, who=who, route=route), "FAIL" if problems else "PASS", problems))
         return rp, rr
+
+    # The release key (tenant, root, sku, release date) is unique, so each
+    # side's contract row has its own root id, masked in every comparison.
+    roots = {side: f"root-{tag}-{side}" for side in ("py", "rs")}
+
+    def _cd_mask(value, side):
+        if isinstance(value, dict):
+            return {k: _cd_mask(v, side) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_cd_mask(v, side) for v in value]
+        return "<root>" if value == roots[side] else value
 
     C, B, P, S = ("POST /committed-demand", "POST /committed-demand/bulk",
                   "PATCH /committed-demand/{id}", "POST /committed-demand/{id}/status")
@@ -2682,7 +2709,7 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
             cur.execute("""UPDATE committed_demand SET source = 'contract', contract_id = %s,
                                   contract_root_id = %s, contract_release_date = %s
                             WHERE id = %s""",
-                        (f"sc-{tag}", f"root-{tag}", future, contract[side]))
+                        (f"sc-{tag}", roots[side], future, contract[side]))
         pair("cdx contract patch locked sku", P, "PATCH", f"{cd}/{{id}}", contract,
              body={"sku": "OTHER", "quantity": 5}, state=True)
         pair("cdx contract patch locked warehouse", P, "PATCH", f"{cd}/{{id}}", contract,
