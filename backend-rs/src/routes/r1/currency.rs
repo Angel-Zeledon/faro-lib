@@ -113,7 +113,7 @@ pub(crate) fn supported_or_default<'a>(
 }
 
 /// `currency_of`.
-async fn currency_of(pool: &PgPool, tenant_id: &str) -> Result<Value, ApiError> {
+pub(crate) async fn currency_of(pool: &PgPool, tenant_id: &str) -> Result<Value, ApiError> {
     let settings = get_settings(pool, tenant_id).await?;
     let code = supported_or_default(settings.get("currency"), |c| entry(c).is_some(), DEFAULT_CODE)?;
     entry(&code).ok_or_else(ApiError::internal)

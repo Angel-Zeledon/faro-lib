@@ -30,6 +30,7 @@ use crate::error::ApiError;
 use crate::fulfillment::core::{
     self, Arrival, ArrivalKind, Commitment, Outcome, SkuLeadSource,
 };
+use crate::fulfillment::money::ContractPrice;
 use crate::pycompat::py_strip;
 use crate::routes::po_payments::format_po_number;
 
@@ -57,6 +58,9 @@ pub struct CommitmentRow {
     pub contract_root_id: Option<String>,
     pub contract_reference: Option<String>,
     pub contract_customer: Option<String>,
+    /// What the contract that materialised this row says its SKU costs the
+    /// customer (money at risk); `Absent` for a manual commitment.
+    pub contract_price: ContractPrice,
 }
 
 /// What stands behind one arrival, for the detail view.
@@ -84,6 +88,10 @@ pub struct SkuReport {
     pub stock: Option<f64>,
     pub stock_rows: Vec<StockRow>,
     pub supplier: Option<String>,
+    /// `inventory_stock.sale_price` / `unit_cost` of the representative
+    /// warehouse row (the one lead times read), when set.
+    pub sale_price: Option<f64>,
+    pub unit_cost: Option<f64>,
     pub lead: Option<(i64, SkuLeadSource)>,
     pub arrivals: Vec<Arrival>,
     pub meta: Vec<ArrivalMeta>,
@@ -128,6 +136,8 @@ struct RawStock {
     category: Option<String>,
     lead_time_days: Option<i64>,
     lead_time_declared: bool,
+    sale_price: Option<f64>,
+    unit_cost: Option<f64>,
 }
 
 pub async fn load(
@@ -149,7 +159,7 @@ pub async fn load(
     let rows = sqlx::query(
         "SELECT c.id, c.sku, c.warehouse_id, c.delivery_date, c.quantity::float8 AS quantity,
                 c.probability::float8 AS probability, c.customer, c.on_top_of_base, c.note, c.source,
-                c.contract_root_id, sc.reference AS contract_reference,
+                c.contract_root_id, c.contract_id, sc.reference AS contract_reference,
                 sc.customer AS contract_customer
            FROM committed_demand c
            LEFT JOIN supply_contracts sc
@@ -162,6 +172,7 @@ pub async fn load(
     .bind(scope_warehouse_ids.as_ref())
     .fetch_all(pool)
     .await?;
+    let mut contract_ids: Vec<Option<String>> = Vec::new();
     for r in &rows {
         loaded.rows.push(CommitmentRow {
             id: r.try_get("id")?,
@@ -177,11 +188,14 @@ pub async fn load(
             contract_root_id: r.try_get("contract_root_id")?,
             contract_reference: r.try_get("contract_reference")?,
             contract_customer: r.try_get("contract_customer")?,
+            contract_price: ContractPrice::Absent,
         });
+        contract_ids.push(r.try_get::<Option<String>, _>("contract_id")?);
     }
     if loaded.rows.is_empty() {
         return Ok(loaded);
     }
+    apply_contract_prices(pool, tenant_id, &mut loaded.rows, &contract_ids).await?;
     let skus: Vec<String> = {
         let mut seen = HashSet::new();
         loaded.rows.iter().filter(|r| seen.insert(r.sku.clone())).map(|r| r.sku.clone()).collect()
@@ -190,7 +204,8 @@ pub async fn load(
     // ── Stock, summed over the caller's warehouses ──────────────────────────
     let stock_rows = sqlx::query(
         "SELECT sku, warehouse, current_stock::float8 AS current_stock, supplier, category,
-                lead_time_days, lead_time_set_by
+                lead_time_days, lead_time_set_by, sale_price::float8 AS sale_price,
+                unit_cost::float8 AS unit_cost
            FROM inventory_stock WHERE tenant_id = $1 AND sku = ANY($2) ORDER BY sku, warehouse",
     )
     .bind(tenant_id)
@@ -212,6 +227,8 @@ pub async fn load(
             category: r.try_get("category")?,
             lead_time_days: r.try_get::<Option<i32>, _>("lead_time_days")?.map(i64::from),
             lead_time_declared: declared.is_some_and(|s| !s.is_empty()),
+            sale_price: r.try_get("sale_price")?,
+            unit_cost: r.try_get("unit_cost")?,
         });
     }
     let default_wh = wscope::tenant_default(pool, tenant_id).await?;
@@ -245,7 +262,11 @@ pub async fn load(
         };
         let mut supplier: Option<String> = None;
         let mut lead = None;
+        let mut sale_price = None;
+        let mut unit_cost = None;
         if let Some((_, rep)) = pick_representative(&per_wh, &default_wh) {
+            sale_price = rep.sale_price;
+            unit_cost = rep.unit_cost;
             supplier = rep.supplier.clone().filter(|s| !s.is_empty()).or_else(|| primary.get(sku).cloned());
             let rule = rule_hit(&rules, supplier.as_deref(), rep.category.as_deref());
             let learned_avg = supplier.as_deref().and_then(|s| {
@@ -324,10 +345,64 @@ pub async fn load(
         let served: Vec<usize> = outcomes.iter().map(|o| by_id[o.id.as_str()]).collect();
         loaded.reports.insert(
             sku.clone(),
-            SkuReport { stock, stock_rows, supplier, lead, arrivals, meta, served, outcomes },
+            SkuReport { stock, stock_rows, supplier, sale_price, unit_cost, lead, arrivals, meta, served, outcomes },
         );
     }
     Ok(loaded)
+}
+
+/// The unit price each contract-sourced commitment carries: the line of ITS
+/// contract revision (`committed_demand.contract_id`) for its SKU. Lines name
+/// each SKU once; if one names it twice with different prices, or a price that
+/// is not a number, the answer is `Conflict` (money then says "not available").
+async fn apply_contract_prices(
+    pool: &PgPool,
+    tenant_id: &str,
+    rows: &mut [CommitmentRow],
+    contract_ids: &[Option<String>],
+) -> Result<(), ApiError> {
+    let ids: Vec<String> = {
+        let mut seen = HashSet::new();
+        contract_ids.iter().flatten().filter(|i| seen.insert((*i).clone())).cloned().collect()
+    };
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let found = sqlx::query("SELECT id, lines FROM supply_contracts WHERE tenant_id = $1 AND id = ANY($2)")
+        .bind(tenant_id)
+        .bind(&ids)
+        .fetch_all(pool)
+        .await?;
+    let mut lines_of: HashMap<String, serde_json::Value> = HashMap::new();
+    for r in &found {
+        let id: String = r.try_get("id")?;
+        let lines: serde_json::Value = r.try_get("lines")?;
+        lines_of.insert(id, lines);
+    }
+    for (row, cid) in rows.iter_mut().zip(contract_ids) {
+        let Some(lines) = cid.as_ref().and_then(|c| lines_of.get(c)) else { continue };
+        row.contract_price = contract_line_price(lines, &row.sku);
+    }
+    Ok(())
+}
+
+/// The price of `sku` on a contract's `lines` ([{sku, total_quantity, unit_price}]).
+pub fn contract_line_price(lines: &serde_json::Value, sku: &str) -> ContractPrice {
+    let Some(arr) = lines.as_array() else { return ContractPrice::Absent };
+    let mut found: Option<f64> = None;
+    for line in arr.iter().filter(|l| l.get("sku").and_then(|s| s.as_str()) == Some(sku)) {
+        match line.get("unit_price") {
+            None | Some(serde_json::Value::Null) => continue,
+            Some(v) => {
+                let Some(p) = v.as_f64() else { return ContractPrice::Conflict };
+                match found {
+                    Some(prev) if prev != p => return ContractPrice::Conflict,
+                    _ => found = Some(p),
+                }
+            }
+        }
+    }
+    found.map(ContractPrice::Set).unwrap_or(ContractPrice::Absent)
 }
 
 // ── Lead-time reads ──────────────────────────────────────────────────────────
@@ -595,4 +670,32 @@ async fn transfers_in_transit(pool: &PgPool, tenant_id: &str, skus: &[String]) -
         });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn contract_line_price_reads_the_skus_line_only() {
+        let lines = json!([{"sku": "A", "total_quantity": 10, "unit_price": 9.5},
+                           {"sku": "B", "total_quantity": 5, "unit_price": null},
+                           {"sku": "C", "total_quantity": 5}]);
+        assert_eq!(contract_line_price(&lines, "A"), ContractPrice::Set(9.5));
+        assert_eq!(contract_line_price(&lines, "B"), ContractPrice::Absent);
+        assert_eq!(contract_line_price(&lines, "C"), ContractPrice::Absent);
+        assert_eq!(contract_line_price(&lines, "Z"), ContractPrice::Absent);
+    }
+
+    #[test]
+    fn a_duplicated_or_non_numeric_contract_price_is_a_conflict() {
+        let dup = json!([{"sku": "A", "unit_price": 1.0}, {"sku": "A", "unit_price": 2.0}]);
+        assert_eq!(contract_line_price(&dup, "A"), ContractPrice::Conflict);
+        let same = json!([{"sku": "A", "unit_price": 2.0}, {"sku": "A", "unit_price": 2.0}]);
+        assert_eq!(contract_line_price(&same, "A"), ContractPrice::Set(2.0));
+        let text = json!([{"sku": "A", "unit_price": "9.5"}]);
+        assert_eq!(contract_line_price(&text, "A"), ContractPrice::Conflict);
+        assert_eq!(contract_line_price(&json!({"x": 1}), "A"), ContractPrice::Absent);
+    }
 }
