@@ -983,6 +983,8 @@ export interface AdminUser {
   tenant_id: string
   /** Warehouse ids the person is limited to. null = every warehouse. */
   warehouse_scope?: string[] | null
+  /** Custom role (backend/auth/permissions.py). null = none: the built-in role alone decides. */
+  custom_role_id?: string | null
 }
 
 export const listAdminUsers = (params?: {
@@ -1223,6 +1225,38 @@ export const saveSchedule = (sessionId: string, cronExpr: string, enabled: boole
 
 export const deleteSchedule = (sessionId: string) =>
   request<{ deleted: string }>('DELETE', `/sessions/${sessionId}/schedule`)
+
+// ── Custom roles (Rust-only routes; permissions enforced on every request) ────
+export interface CustomRole {
+  id: string
+  name: string
+  description: string
+  permissions: string[]
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  user_count: number
+}
+export interface MyRoles {
+  role: string
+  restricted: boolean
+  custom_role: { id: string; name: string | null } | null
+  permissions: string[]
+}
+export const listCustomRoles = () =>
+  request<{ roles: CustomRole[] }>('GET', '/roles', undefined, { silent: true })
+export const listRolePermissions = () =>
+  request<{ permissions: { name: string; description: string }[] }>('GET', '/roles/permissions', undefined, { silent: true })
+export const createCustomRole = (body: { name: string; description?: string; permissions: string[] }) =>
+  request<CustomRole>('POST', '/roles', body)
+export const updateCustomRole = (id: string, body: { name?: string; description?: string; permissions?: string[] }) =>
+  request<CustomRole>('PATCH', `/roles/${id}`, body)
+export const deleteCustomRole = (id: string) =>
+  request<{ deleted: string }>('DELETE', `/roles/${id}`)
+export const assignCustomRole = (userId: string, customRoleId: string | null) =>
+  request<{ user_id: string; custom_role: { id: string; name: string } | null }>(
+    'PUT', `/users/${userId}/custom-role`, { custom_role_id: customRoleId })
+export const getMyRoles = () => request<MyRoles>('GET', '/roles/me', undefined, { silent: true })
 
 export const getUserPermissions = (id: string) =>
   request<{ user_id: string; permissions: string[]; all_permissions: string[] }>('GET', `/users/${id}/permissions`)
