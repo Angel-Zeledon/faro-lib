@@ -8319,6 +8319,13 @@
          "type": "string",
          "max_length": 500,
          "nullable": true
+        },
+        {
+         "name": "cost_center_id",
+         "required": false,
+         "type": "string",
+         "max_length": 64,
+         "nullable": true
         }
        ],
        "nullable": true

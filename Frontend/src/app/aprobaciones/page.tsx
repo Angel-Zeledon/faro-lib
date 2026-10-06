@@ -16,6 +16,7 @@ import {
 } from '@/lib/api'
 import type { POApprovalRule, POApprovalSettings, Supplier, Warehouse } from '@/lib/types'
 import Card from '@/components/ui/Card'
+import CostCentersAndChains from '@/components/po/CostCentersAndChains'
 import Input, { Field, Select } from '@/components/ui/Input'
 import { LoadingState, useErrorDetail } from '@/components/ui/States'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
@@ -184,6 +185,8 @@ export default function ApprovalsSettingsPage() {
           </button>
         </div>
       </Card>
+
+      <CostCentersAndChains />
     </div>
   )
 }

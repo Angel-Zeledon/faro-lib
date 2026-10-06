@@ -1,0 +1,91 @@
+# DISABLED EXAMPLE. Rename to 43-cost-centers-chains.caddy inside the gateway's
+# /etc/caddy/routes.d/ to turn cost centers and approval chains on.
+#
+# Cost centers, approval chains and an order's cost-center attribution
+# (backend-rs/src/routes/cost_centers.rs): eight routes, written in Rust ONLY.
+#
+#   GET   /api/v1/cost-centers
+#   POST  /api/v1/cost-centers
+#   GET   /api/v1/cost-centers/spend
+#   PATCH /api/v1/cost-centers/{id}
+#   GET   /api/v1/approval-chains
+#   POST  /api/v1/approval-chains
+#   POST  /api/v1/approval-chains/evaluate
+#   PATCH /api/v1/approval-chains/{id}
+#   PUT   /api/v1/inventory/po/{id}/cost-center
+#
+# THERE IS NO PYTHON FAILOVER for this group. Python has no implementation of
+# these paths, so the upstream list names ONLY api-rs: if the Rust container is
+# down the screen gets a 502 (not a silent 404 from Python, which would look
+# like "the feature does not exist"), and moving this file to routes.d/off/
+# makes the paths answer Python's own 404: the cost-center and chain cards on
+# /aprobaciones show an error and the cart's cost-center picker disappears.
+#
+# What keeps working without Rust, and it matters: the DECISION path. Python's
+# approval routes (request, approve, reject, pending), the send gate and the
+# budget cap read the rows Rust wrote (cost_centers, approval_chains,
+# approval_chain_bands, po_approval_steps, inventory_po_log.cost_center_id) and
+# apply the same rules, level by level, fail closed. An order whose chain
+# cannot be resolved stays unsendable whether or not this file is enabled.
+# Only managing centers and chains, the spend report and re-attributing an
+# order need Rust. Python's POST /inventory/log-po keeps accepting a
+# cost_center_id.
+#
+# Everything else under /inventory/po/{id}/ (approval/..., send, ...) stays on
+# Python, so the matches name exactly these methods and paths.
+
+@rs_cost_centers_collection {
+	method GET POST
+	path /api/v1/cost-centers /api/v1/approval-chains
+}
+@rs_cost_centers_spend {
+	method GET
+	path /api/v1/cost-centers/spend
+}
+@rs_cost_centers_item {
+	method PATCH
+	path_regexp ^/api/v1/(cost-centers|approval-chains)/[^/]+$
+}
+@rs_chains_evaluate {
+	method POST
+	path /api/v1/approval-chains/evaluate
+}
+@rs_po_cost_center {
+	method PUT
+	path_regexp ^/api/v1/inventory/po/[^/]+/cost-center$
+}
+handle @rs_cost_centers_collection {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_cost_centers_spend {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_cost_centers_item {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_chains_evaluate {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_po_cost_center {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

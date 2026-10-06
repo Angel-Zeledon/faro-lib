@@ -528,3 +528,147 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. New Rust-only routes: cost centers and chained approvals
+
+Owner-approved feature (2026-10-06): cost-center budgets with chained
+approvals, built on the purchase budgets (`a760918`) and the PO approval
+workflow (`fecbc5a`). Written the way the strangler-fig plan asks for NEW
+work: the routes and the evaluation core are Rust, the schema stays Python's,
+and Python enforces the same rules on the paths it still serves.
+
+**Routes (Rust only, no Python failover).** `backend-rs/src/routes/cost_centers.rs`:
+
+| Route | Who | What |
+|---|---|---|
+| `GET /cost-centers` | any signed-in user | the tree, flat, with path, depth and whether it has an active chain |
+| `POST /cost-centers` | admin (not a warehouse-scoped one) | code (unique ignoring case), name, optional active parent |
+| `PATCH /cost-centers/{id}` | admin | code, name, parent (no cycles, depth <= 32), active. A no-op writes no event |
+| `GET /cost-centers/spend` | any user without a warehouse scope | ordered value per center and period (own, rolled up to ancestors, lines with no cost counted apart, orders with no center apart) and the cost-center budgets running |
+| `GET /approval-chains` | any signed-in user | chains, bands, levels with the names of the people, and who can be named |
+| `POST /approval-chains` | admin | name, optional center (none = the DEFAULT chain), bands |
+| `PATCH /approval-chains/{id}` | admin | name, active, bands (replaced as a set). The center cannot change |
+| `POST /approval-chains/evaluate` | any signed-in user | what the chain says about (center, amount, escalate), the core's answer verbatim |
+| `PUT /inventory/po/{id}/cost-center` | analyst + the order's warehouse guard | attribute an order to a center, or clear it |
+
+Gateway file: `deploy/rust-api/routes.d/43-cost-centers-chains.caddy.example`.
+**There is no Python failover**: with Rust down these paths answer 502, with the
+file in `routes.d/off/` they answer Python's 404 and the cards on `/aprobaciones`
+and the cart's picker show an error or disappear. Centers and chains are never
+deleted (orders, budgets and approvals point at them); they are paused.
+Writes are company-wide settings (a warehouse-scoped admin is refused), the tag
+is INTERNAL (no API key reaches them), and every write is one transaction under
+a per-tenant advisory lock (a cycle cannot be built by two concurrent
+reparentings; a unique partial index allows one ACTIVE chain per center).
+
+**Model.**
+* A chain belongs to one center (and covers its descendants that have no chain
+  of their own, nearest ancestor first) or to none: the DEFAULT chain, which
+  covers every other order, orders with no center included.
+* A chain has BANDS: from `min_amount` up, the order needs the band's LEVELS,
+  in order. A level is a role (`analyst` accepts analysts and admins, `admin`
+  only admins) or 1 to 20 named people (active admins or analysts). At most 10
+  bands and 5 levels. Below the lowest band nothing is required. The `+0.005`
+  tolerance is the one the rules already use.
+* Spend is attributed through `inventory_po_log.cost_center_id`, chosen when the
+  order is created (`POST /inventory/log-po` accepts `cost_center_id`) or set
+  afterwards by the Rust `PUT`. A budget with `scope_type = cost_center` (the
+  existing budget ledger, one new scope) covers its center and every center
+  below it; the existing hard cap, administrator override and audit rows apply
+  unchanged. The cart's budget preview takes the center too.
+* An order that went past ANY budget when it was created is stamped
+  `chain_escalate` and then needs the chain's TOP band whatever its value.
+
+**Fail closed (the rule this feature must never break).** Once a tenant has an
+active chain, an order that cannot be resolved is not auto-approved and cannot
+leave by any send path: no center and no default chain (`no_cost_center`), a
+center that is unknown, paused or in a cyclic tree (`cost_center_invalid`), a
+center no chain covers and no default (`no_chain`), a chain with ANY malformed
+band or level (`chain_invalid`), or an order whose value is unknown
+(`amount_unknown`). The answer is `409 po_approval_chain_unresolved` with the
+reason, and the order row says `chain_unresolved`. With no active chain the
+whole feature is invisible: no new key in any response and no change in any
+answer.
+
+**What Python does** (`backend/inventory/po_chain_service.py`, with a one-line
+hook each in `po_approval_service.py`: `requirement`, `assert_sendable`,
+`describe`, `request_approval`, `decide`, `annotate_orders`; plus the inbox and
+the decision event in `api/v1/po_approvals.py`):
+* `requirement()` lays the chain over the rule-based answer.
+* `request_approval` snapshots the chain (levels and a fingerprint) on the
+  request and opens one `po_approval_steps` row per level. It refuses, before
+  writing anything, a chain nobody else can staff: a different eligible person
+  per level, never the requester, matched (not greedy).
+* `decide` goes level by level. The requester never approves a level, nobody
+  approves two levels of one request (a repeated click is a no-op, never a
+  second signature), a level is decided by someone who fits it, a rejection at
+  any level rejects the order (with a reason), and only the LAST level makes it
+  approved (the `purchase_order.approved` webhook and the requester's mail go
+  then). An earlier level records `purchase.approval_level_approved`, never
+  "approved".
+* The request keeps the levels it was asked under. If the order, its center or
+  the chain changes so the fingerprint differs, the open request cannot be
+  decided (`po_approval_chain_changed`) and asking again replaces it (the old
+  row stays, `rejected` with `superseded:chain_changed`). An approval made under
+  another fingerprint no longer counts, and an order approved the old way is
+  asked again when a chain arrives.
+* Schema (additive, `cost_center_migrations.py`): `cost_centers`,
+  `approval_chains`, `approval_chain_bands`, `po_approval_steps`, four columns
+  on `po_approvals` (the chain snapshot) and two on `inventory_po_log`, and the
+  budget scope check now allows `cost_center`. All are in the tenant export and
+  the erase order.
+
+**Core in two languages.** `backend/inventory/cost_center_chain_core.py` and
+`backend-rs/src/chain.rs` are one rule written twice (Python must apply it on
+the decision path; Rust serves the preview and the management). They are held
+together by (1) `tests/contract/chain_fixtures.json`, 900 seeded cases answered
+by the Python core and replayed by `cargo test fixtures_agree_with_python`
+(regenerate with `tests/contract/gen_chain_fixtures.py` whenever a rule changes
+on either side), and (2) `tests/contract/chain_differential.py`, which writes
+seeded configurations into a throwaway tenant's tables and compares Rust's
+`POST /approval-chains/evaluate` with Python's loaders plus core on the same
+database, so it covers the two row loaders as well.
+
+**Composition with delegation (`feat/approval-delegation`, read, not edited).**
+That branch lets an approver lend their authority for a date range and checks
+it in `decide` through `po_delegation_service.authority_for`, which today asks
+`is_approver(delegator)`. For a chained request the single predicate is
+`cost_center_chain_core.level_eligible(level, person)`. Intended composition,
+to implement when both are merged:
+1. a substitute may decide the OPEN level iff the delegator would be eligible
+   for it (role or named) and the delegation's own limits hold (dates, the
+   delegator's warehouse scope, the delegator is not the requester);
+2. a delegation never skips a level and never lets one person sign two levels:
+   compare BOTH the substitute and the delegator with the earlier deciders;
+3. the step records `decided_by` = the substitute and the delegation in the
+   same columns that branch adds to `po_approvals` (`decided_on_behalf_of`,
+   `delegation_id`): add them to `po_approval_steps` in that merge, and
+   `decorate` / `merge_inbox` call the same predicate with the delegator row, so
+   the substitute's inbox and `can_decide` agree with `decide`;
+4. a delegation is never transitive: lending a level does not lend the
+   delegator's own delegations.
+
+Textual conflicts to expect: `po_approval_service.py` (`describe`, `decide`,
+`list_pending`, which both branches touch), `po_approvals.py`,
+`activity/events.py`, `audit/catalog.py`, `routes/mod.rs`, `activity.rs`,
+`r1/alerts.rs`, the audit size asserts (together: LEGACY 81, target types 31,
+audit actions 116, stored actions 120) and `contract_test.py` (each adds one
+`results +=` line).
+
+**Decision rules for the owner to confirm.**
+1. Strictness: once any chain is active, orders with no center need a DEFAULT
+   chain or they cannot be sent. The screen warns when none exists.
+2. Editing a chain voids the approvals of orders still waiting to be sent (they
+   are asked again) and freezes open requests until they are re-requested.
+3. Cost-center budgets are checked when the order is PLACED, so an order cannot
+   be re-attributed into or out of a center that has a budget (the Rust `PUT`
+   refuses it); the cart's picker is the way in. Recommendations belong to no
+   center, so the funding plan has no lines for a cost-center budget (a warning
+   says so).
+4. Over-budget escalation goes to the top band for ANY budget exceeded (soft
+   ones too), and is permanent for that order.
+5. A role level accepts that role or above; named people must be active admins
+   or analysts when the chain is saved. A named person deactivated later leaves
+   the level unfillable until the chain is edited.
+6. The requester may reject their own order only if they fit the open level; they
+   can never approve a level.

@@ -245,7 +245,7 @@ fn clean_text(f: &Field<String>, field: &str) -> Result<Option<String>, ApiError
 fn parent_problem(p: &str) -> ApiError {
     match p {
         "cycle" => err("cost_center_parent_invalid", "A cost center cannot sit under itself or one of its own children", 409,
-            json!({"problem": "cycle"})),
+            json!({"problem": "cycle", "max_depth": chain::MAX_DEPTH})),
         _ => err("cost_center_parent_invalid", "The cost center tree would be too deep", 409,
             json!({"problem": "too_deep", "max_depth": chain::MAX_DEPTH})),
     }
