@@ -56,6 +56,20 @@ _MODELS = [
         "description": "Croston's method — specialized for intermittent/sparse demand",
     },
     {
+        # Opt-in only: it is in no default selection and the router never adds
+        # it (routing narrows the user's selection, it never grows it). On the
+        # synthetic benchmark it ties with Croston on ordinary intermittent
+        # demand; what it adds is a forecast that fades when a product stops
+        # selling, where Croston keeps forecasting its last rate.
+        "name":        "tsb",
+        "category":    "Statistical",
+        "status":      "available",
+        "description": "TSB (Teunter-Syntetos-Babai) — intermittent demand whose "
+                       "forecast decays when a product stops selling",
+        "recommended_for": "Discontinued or end-of-life products and intermittent "
+                           "demand; not selected by default",
+    },
+    {
         "name":        "lstm",
         "category":    "Deep Learning",
         "status":      "beta",
