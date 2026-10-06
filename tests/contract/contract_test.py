@@ -2314,11 +2314,16 @@ def build_r4_cases(env: R4Env) -> list[R4Case]:
                capture=cap, route=unpay),
         R4Case("unpay not found", "POST", f"{API}/inventory/po/nope-123/mark-unpaid", route=unpay),
         # ── cancellation ───────────────────────────────────────────────────
+        # Both cancel cases also capture the purchase_order.cancelled webhook
+        # deliveries queued for the order: one on the real cancel, none on
+        # the idempotent repeat.
         R4Case("cancel with reason", "POST", f"{po}/cancel", who="analyst", po=("cancel-seq", sent),
-               body={"reason": "  supplier closed  "}, capture=r4_capture_po_history("cancelled"),
+               body={"reason": "  supplier closed  "},
+               prepare=lambda env, side: ensure_contract_hook(env.fx, env.db),
+               capture=with_hook_deliveries(r4_capture_po_history("cancelled"), "po_log_id"),
                route=cancel),
         R4Case("cancel again is idempotent", "POST", f"{po}/cancel", po=("cancel-seq", sent),
-               body={"reason": "another"}, capture=cap, route=cancel),
+               body={"reason": "another"}, capture=with_hook_deliveries(cap, "po_log_id"), route=cancel),
         R4Case("pay a cancelled order", "POST", f"{po}/mark-paid", po=("cancel-seq", sent),
                capture=cap, route=pay),
         R4Case("uncancel analyst", "POST", f"{po}/uncancel", who="analyst", po=("cancel-seq", sent),
@@ -2508,6 +2513,204 @@ def run_r4(args, fx: Fixture, db) -> list:
     return results
 
 
+# ── Webhook deliveries queued by a migrated write ───────────────────────────
+#
+# One hook per throwaway tenant, subscribed to the events a migrated route
+# emits. Its URL is on a reserved `.invalid` name: the Python delivery loop
+# may try it, and the name never resolves, so nothing leaves the machine.
+
+HOOK_EVENTS = ["purchase_order.cancelled", "commitment.fulfilled"]
+
+
+def ensure_contract_hook(fx: Fixture, db) -> None:
+    if getattr(fx, "hook_id", None):
+        return
+    cur = db.cursor()
+    cur.execute("""INSERT INTO webhooks (id, tenant_id, url, events, secret, created_by)
+                   VALUES (gen_random_uuid()::text, %s, 'https://contract-harness.invalid/hook', %s, %s, %s)
+                   RETURNING id""", (fx.tenant_id, HOOK_EVENTS, secrets.token_hex(32), fx.admin_id))
+    fx.hook_id = cur.fetchone()[0]
+
+
+# Keys of `data` that name the per-side object or the moment: masked.
+HOOK_SIDE_KEYS = {"po_log_id", "po_number", "commitment_id", "cancelled_at", "fulfilled_at"}
+
+
+def hook_deliveries(db, tenant_id: str, id_key: str, obj_id: str, since) -> list:
+    """Deliveries queued since `since` whose data names `obj_id`: type,
+    is_test, envelope keys and data (side-specific values masked)."""
+    cur = db.cursor()
+    cur.execute("""SELECT event_type, is_test, payload FROM webhook_deliveries
+                    WHERE tenant_id = %s AND created_at >= %s
+                      AND (payload::jsonb -> 'data' ->> %s) = %s
+                    ORDER BY created_at""", (tenant_id, since, id_key, obj_id))
+    out = []
+    for event_type, is_test, payload in cur.fetchall():
+        env = json.loads(payload)
+        data = {k: ("<side>" if k in HOOK_SIDE_KEYS and v is not None else v)
+                for k, v in env.get("data", {}).items()}
+        out.append({"event_type": event_type, "is_test": is_test, "envelope_keys": list(env),
+                    "type": env.get("type"), "api_version": env.get("api_version"),
+                    "tenant_is_ours": env.get("tenant_id") == tenant_id,
+                    "id_shape": bool(str(env.get("id", "")).startswith("evt_")
+                                     and len(env.get("id", "")) == 36),
+                    "compact": "\": " not in payload and "\", " not in payload,
+                    "data_keys": list(env.get("data", {})), "data": data})
+    return out
+
+
+def with_hook_deliveries(inner: Callable, id_key: str) -> Callable:
+    def capture(env, side, obj_id, since):
+        return {"state": inner(env, side, obj_id, since),
+                "webhooks": hook_deliveries(env.db, env.fx.tenant_id, id_key, obj_id, since)}
+    return capture
+
+
+# ── Committed demand: main's warehouse-scope and contract rules ─────────────
+#
+# Each side acts on its own commitment (created through its own service), so
+# a write on one side never changes what the other starts from. Contract rows
+# are made by setting the contract columns directly: materialising one goes
+# through `supply_contract_service`, which no migrated route calls.
+
+CD_VOLATILE = {"id", "created_at", "updated_at", "status_changed_at", "contract_withdrawn_at"}
+
+
+def run_cd_resync(args, fx: Fixture, db) -> list:
+    if db is None:
+        return [(Case("cd resync (all)", "-", "-", route="(committed demand resync)"), "SKIP",
+                 ["needs --db: the rows are seeded and checked in the database"])]
+    out: list = []
+    cur = db.cursor()
+    ensure_contract_hook(fx, db)
+    tag = secrets.token_hex(3)
+    wh = {}
+    for name in ("CD-Norte", "CD-Sur"):
+        cur.execute("""INSERT INTO warehouses (tenant_id, name) VALUES (%s, %s)
+                       ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id""",
+                    (fx.tenant_id, name))
+        wh[name] = cur.fetchone()[0]
+    r = http(args.python, "POST", f"{API}/users", token=auth_for(fx, "admin"), body={
+        "email": f"contract-{tag}-cdscoped@stockai.demo", "role": "analyst", "full_name": "Contract cd scoped"})
+    if r.status != 201:
+        return [(Case("cd resync setup", "-", "-", route="(committed demand resync)"), "FAIL",
+                 [f"creating the scoped analyst failed: {r.status} {r.body}"])]
+    uid = r.body["data"]["user"]["id"]
+    r = http(args.python, "PUT", f"{API}/users/{uid}/warehouse-scope", token=auth_for(fx, "admin"),
+             body={"warehouse_ids": [wh["CD-Norte"]]})
+    if r.status != 200:
+        return [(Case("cd resync setup", "-", "-", route="(committed demand resync)"), "FAIL",
+                 [f"scoping the analyst failed: {r.status} {r.body}"])]
+    fx.tokens["cd_scoped"] = mint_access_token(fx.secret, uid, fx.tenant_id, "analyst")
+    future = today_plus(45)
+
+    def seed(base, **extra):
+        body = {"sku": f"CT-RS-{tag}", "delivery_date": future, "quantity": 10, "customer": "Delta",
+                "probability": 0.7, **extra}
+        rr = http(base, "POST", f"{API}/committed-demand", token=auth_for(fx, "admin"), body=body)
+        if rr.status != 201:
+            raise SystemExit(f"seeding a commitment on {base} failed: {rr.status} {rr.body}")
+        return rr.body["data"]["id"]
+
+    def row(cid):
+        cur.execute("""SELECT sku, warehouse_id, quantity::float8, customer, probability::float8, status,
+                              status_changed_by, source, contract_root_id, contract_withdrawn_at IS NOT NULL
+                         FROM committed_demand WHERE id = %s""", (cid,))
+        return cur.fetchone()
+
+    def since():
+        cur.execute("SELECT clock_timestamp()")
+        return cur.fetchone()[0]
+
+    def pair(name, route, method, path, ids=None, *, who="admin", body=None, state=False, hooks=False):
+        """`path` may hold "{id}", replaced by each side's own commitment."""
+        resps, states = {}, {}
+        for side, base in (("py", args.python), ("rs", args.rust)):
+            oid = ids[side] if ids else None
+            t0 = since()
+            rr = http(base, method, path.replace("{id}", oid or ""), token=auth_for(fx, who), body=body)
+            resps[side] = rr
+            st = {}
+            if state and oid:
+                st["row"] = list(row(oid))
+            if hooks and oid:
+                st["webhooks"] = hook_deliveries(db, fx.tenant_id, "commitment_id", oid, t0)
+            states[side] = st
+        rp, rr = resps["py"], resps["rs"]
+        problems = []
+        if rp.status != rr.status:
+            problems.append(f"status python={rp.status} rust={rr.status}")
+        problems += diff(normalize(rp.body, CD_VOLATILE), normalize(rr.body, CD_VOLATILE))
+        problems += [f"state {p}" for p in diff(states["py"], states["rs"])]
+        if args.dump:
+            print(f"\n--- {name}\nPY {rp.status} {json.dumps(rp.body)[:1500]}\nRS {rr.status} "
+                  f"{json.dumps(rr.body)[:1500]}\nSTATE {json.dumps(states, default=str)[:1500]}")
+        out.append((Case(name, method, path, who=who, route=route), "FAIL" if problems else "PASS", problems))
+        return rp, rr
+
+    C, B, P, S = ("POST /committed-demand", "POST /committed-demand/bulk",
+                  "PATCH /committed-demand/{id}", "POST /committed-demand/{id}/status")
+    cd = f"{API}/committed-demand"
+    try:
+        # ── warehouse scope ────────────────────────────────────────────────
+        base = {"sku": f"CT-SC-{tag}", "delivery_date": future, "quantity": 2}
+        pair("cdx scoped create without warehouse", C, "POST", cd, who="cd_scoped", body=base)
+        pair("cdx scoped create blank warehouse", C, "POST", cd, who="cd_scoped",
+             body={**base, "warehouse_id": "   "})
+        pair("cdx scoped create other warehouse", C, "POST", cd, who="cd_scoped",
+             body={**base, "warehouse_id": wh["CD-Sur"]})
+        pair("cdx scoped create unknown warehouse", C, "POST", cd, who="cd_scoped",
+             body={**base, "warehouse_id": "wh-nowhere"})
+        rp, rr = pair("cdx scoped create own warehouse", C, "POST", cd, who="cd_scoped",
+                      body={**base, "warehouse_id": wh["CD-Norte"]})
+        own = {"py": (rp.body or {}).get("data", {}).get("id"), "rs": (rr.body or {}).get("data", {}).get("id")}
+        pair("cdx scoped bulk with a company-wide row", B, "POST", f"{cd}/bulk", who="cd_scoped",
+             body={"rows": [{**base, "warehouse_id": wh["CD-Norte"]}, base]})
+        company = {"py": seed(args.python), "rs": seed(args.rust)}
+        pair("cdx scoped patch company-wide row", P, "PATCH", f"{cd}/{{id}}", company, who="cd_scoped",
+             body={"quantity": 3}, state=True)
+        pair("cdx scoped status company-wide row", S, "POST", f"{cd}/{{id}}/status", company,
+             who="cd_scoped", body={"status": "cancelled"}, state=True)
+        if own["py"] and own["rs"]:
+            pair("cdx scoped move own row out of scope", P, "PATCH", f"{cd}/{{id}}", own, who="cd_scoped",
+                 body={"warehouse_id": wh["CD-Sur"]}, state=True)
+            pair("cdx scoped edit own row", P, "PATCH", f"{cd}/{{id}}", own, who="cd_scoped",
+                 body={"quantity": 4}, state=True)
+        # ── contract-materialised rows ─────────────────────────────────────
+        contract = {"py": seed(args.python), "rs": seed(args.rust)}
+        for side in ("py", "rs"):
+            cur.execute("""UPDATE committed_demand SET source = 'contract', contract_id = %s,
+                                  contract_root_id = %s, contract_release_date = %s
+                            WHERE id = %s""",
+                        (f"sc-{tag}", f"root-{tag}", future, contract[side]))
+        pair("cdx contract patch locked sku", P, "PATCH", f"{cd}/{{id}}", contract,
+             body={"sku": "OTHER", "quantity": 5}, state=True)
+        pair("cdx contract patch locked warehouse", P, "PATCH", f"{cd}/{{id}}", contract,
+             body={"warehouse_id": wh["CD-Norte"]}, state=True)
+        pair("cdx contract patch same values allowed", P, "PATCH", f"{cd}/{{id}}", contract,
+             body={"customer": "Delta", "probability": 0.7, "warehouse_id": None, "quantity": 6}, state=True)
+        pair("cdx contract patch null customer locked", P, "PATCH", f"{cd}/{{id}}", contract,
+             body={"customer": None}, state=True)
+        pair("cdx contract fulfilled emits", S, "POST", f"{cd}/{{id}}/status", contract,
+             body={"status": "fulfilled"}, state=True, hooks=True)
+        pair("cdx contract fulfilled again emits nothing", S, "POST", f"{cd}/{{id}}/status", contract,
+             body={"status": "fulfilled"}, state=True, hooks=True)
+        pair("cdx contract reopen without a live contract", S, "POST", f"{cd}/{{id}}/status", contract,
+             body={"status": "open"}, state=True)
+        for side in ("py", "rs"):
+            cur.execute("UPDATE committed_demand SET contract_withdrawn_at = NOW() WHERE id = %s",
+                        (contract[side],))
+        pair("cdx withdrawn status refused", S, "POST", f"{cd}/{{id}}/status", contract,
+             body={"status": "cancelled"}, state=True)
+        manual = {"py": seed(args.python, warehouse_id=wh["CD-Norte"]),
+                  "rs": seed(args.rust, warehouse_id=wh["CD-Norte"])}
+        pair("cdx manual fulfilled emits with warehouse", S, "POST", f"{cd}/{{id}}/status", manual,
+             body={"status": "fulfilled"}, state=True, hooks=True)
+    finally:
+        cur.execute("UPDATE users SET warehouse_scope = NULL WHERE id = %s", (uid,))
+    return out
+
+
 def run(args) -> int:
     env = read_env_file(args.env_file) if args.env_file else {}
     secret = os.environ.get("SECRET_KEY") or env.get("SECRET_KEY")
@@ -2575,6 +2778,7 @@ def run(args) -> int:
             results.append((case, "FAIL" if hard else "PASS", problems))
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
+        results += run_cd_resync(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

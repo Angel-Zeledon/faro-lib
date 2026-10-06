@@ -100,54 +100,40 @@ access log, NUL-path guard, 404/405 envelopes. Plus `GET /health`.
 
 **Wave 1: DB-only, self-contained (started).** No engine, no pandas, no
 notification, no file storage, no hub.
-* Done: `GET /entitlements`; committed-demand `POST`, `POST /bulk`,
-  `PATCH /{id}`, `POST /{id}/status`.
-* Done (R1, `routes/r1/`, 98/98 contract cases): preferences GET/PATCH.
-* Done (R1): activity `GET /me/activity`, `GET /me/activity/action-types`.
-* Done (R1): `GET /models` (unauthenticated, as in Python).
-* Done (R1): alerts `GET /alerts`, `/alerts/activity`, `/alerts/kinds`, `POST /alerts/read`.
-* Done (R1): currency GET/PATCH (PATCH writes the `audit.config.changed` row).
-* Done (R1): timezone GET only. `PATCH /tenant/timezone` stays Python: it re-anchors schedules with croniter.
-* Synced to main (R1): `GET /entitlements` (Full 1000/5/3, `max_trainings_per_day`, `trainings_today`), `tsb` model, new events, `X-API-Key` header.
-* Done (R2): sessions `GET /sessions`, `GET /sessions/summary`, `GET /{id}`, `DELETE /{id}` (archives), `POST /{id}/restore`; 107/107 contract cases.
-* Done (R2): all five schedule routes; croniter 6.2.2 + zoneinfo ported (`routes/schedule/`), 1992 differential cron cases and every zone transition 2025-2075 match; non-ASCII digits in a cron are a known gap.
-* Done (R2): spike_edits, all three routes. Not done: `POST /sessions` and `PATCH /sessions/{id}` (stay Python).
-* Next, in this order: preferences, activity, alerts, timezone, currency,
-  models, po_payments, po_cancellation, webhooks CRUD (dispatch stays
-  Python), api_keys, audit. Each one needs the audit-route
-* Done (R4): `POST /inventory/po/{id}/mark-paid`, `/mark-unpaid`,
-  `/cancel`, `/uncancel` (with the warehouse-scope PO guard ported in
-  `backend-rs/src/auth/warehouse_scope.rs`); `GET`, `PUT`, `DELETE
-  /inventory/signal-thresholds` (with the `audit.config.changed` row
-  `AuditMiddleware` writes). Contract: 132 cases in the full run, 131 passed.
-  The one failure (`cancel` with a `text/plain` body: Python's 422 `input` is
-  the bytes repr `"b'stop it'"`) is fixed and covered by a unit test. Its
-  contract rerun did not finish: another run erased the fixture tenant.
-  Not migrated: `POST /inventory/signal-thresholds/preview`, which runs the
-  semáforo (inventory hub). There are no other stock-defaults HTTP routes:
-  `stock_defaults_service` is only called internally.
-* Next, in this order: preferences, activity, alerts, timezone, currency,
-  models, spike_edits, sessions (read and
-  archive/restore; not `/train`), schedule, webhooks CRUD (dispatch stays
-  Python), api_keys, audit. Roughly 60 routes. Each one needs the audit-route
-  catalogue (`backend/audit/catalog.py`) ported for its paths, because
-  `AuditMiddleware` writes `audit.*` rows for catalogued routes.
-* Done (R3): webhooks, the 2592d73 API (scoped hooks, delivery log):
-  `GET`, `GET /events`, `DELETE /{id}`, `POST /{id}/enable`,
-  `POST /{id}/rotate-secret`, `GET /{id}/deliveries`. `POST /webhooks`
-  (its SSRF guard resolves the target host), `POST /{id}/test` (wakes the
-  in-process delivery worker) and delivery stay Python;
+* Done (foundation): `GET /health`, `GET /entitlements`; committed-demand
+  `POST`, `POST /bulk`, `PATCH /{id}`, `POST /{id}/status`, resynced with
+  main: the contract columns in every row, the warehouse-scope rules, the
+  lock on contract-materialised fields, the withdrawn and inactive-contract
+  guards, and the `commitment.fulfilled` webhook. `GET /committed-demand`
+  stays Python (at-risk verdict = inventory hub).
+* Done (R1, `routes/r1/`): preferences GET/PATCH; `GET /me/activity`,
+  `GET /me/activity/action-types`; `GET /models`; alerts `GET /alerts`,
+  `/alerts/activity`, `/alerts/kinds`, `POST /alerts/read`; currency GET/PATCH;
+  timezone GET. `PATCH /tenant/timezone` stays Python for now (it re-anchors
+  schedules; the croniter port from R2 makes it a candidate).
+* Done (R2): sessions `GET /sessions`, `GET /sessions/summary`, `GET /{id}`,
+  `DELETE /{id}` (archives), `POST /{id}/restore`; the five schedule routes
+  (croniter 6.2.2 + zoneinfo ported in `routes/schedule/`; non-ASCII digits in
+  a cron are a known gap); spike_edits, all three routes. `POST /sessions` and
+  `PATCH /sessions/{id}` stay Python.
+* Done (R3): webhooks `GET`, `GET /events`, `DELETE /{id}`,
+  `POST /{id}/enable`, `POST /{id}/rotate-secret`, `GET /{id}/deliveries`;
   api-keys `POST`, `GET`, `GET /usage`, `DELETE /{id}`; audit `GET`,
-  `GET /filters`, `GET /export`. The whole audit catalogue
-  (`backend/audit/catalog.py`, ROUTES and LEGACY) is ported as data in
-  `backend-rs/src/audit/`, with the middleware's row writer
-  (`audit::record`), so the next catalogued route only calls it.
-  `GET /sessions/{id}/manifest` and `GET /training/run-durations` (same
-  Python file, tag `sessions`, lineage) are not part of it.
-* Next, in this order: preferences, activity, alerts, timezone, currency,
-  models, spike_edits, po_payments, po_cancellation, sessions (read and
-  archive/restore; not `/train`), schedule. Each catalogued one calls
-  `audit::record` with its route template.
+  `GET /filters`, `GET /export`. `POST /webhooks` (SSRF host check),
+  `POST /webhooks/{id}/test` (wakes the in-process worker) and delivery stay
+  Python.
+* Done (R4): `POST /inventory/po/{id}/mark-paid`, `/mark-unpaid`, `/cancel`
+  (queues `purchase_order.cancelled` as main does), `/uncancel`; `GET`, `PUT`,
+  `DELETE /inventory/signal-thresholds`. `POST /inventory/signal-thresholds/preview`
+  stays Python (semaforo).
+* Shared modules, one implementation each: `audit/` (the whole
+  `backend/audit/catalog.py` as data, and `audit::record`, the
+  `AuditMiddleware` writer every catalogued Rust route calls with its route
+  template); `auth/warehouse_scope.rs`; `limits.rs`; `activity.rs` (the
+  `Event` specs every Rust route records through); `webhook_events.rs` (the
+  emit half of `backend/webhooks/service.py`: it only inserts
+  `webhook_deliveries` rows, which Python's delivery loop sends).
+* Next: the rest of the Wave 1 list in the table above.
 
 **Wave 2: DB plus side effects and security.** auth / social / sso, users,
 messages, po_approvals, entitlements upgrade-request, trial, freshness,
