@@ -414,7 +414,7 @@ def claim_due(limit: int = CLAIM_BATCH) -> list[dict]:
     """Take due deliveries. Claiming counts the attempt and pushes
     `next_attempt_at` out by a lease, so a worker that dies mid-delivery has its
     rows picked up again later, and two workers never take the same row."""
-    return query(
+    rows = query(
         """UPDATE webhook_deliveries d
               SET attempts = d.attempts + 1,
                   last_attempt_at = NOW(),
@@ -427,6 +427,8 @@ def claim_due(limit: int = CLAIM_BATCH) -> list[dict]:
                  FOR UPDATE SKIP LOCKED)
         RETURNING d.*""",
         (str(policy.CLAIM_LEASE_SECONDS), limit))
+    # UPDATE ... RETURNING has no row order; deliver oldest first.
+    return sorted(rows, key=lambda r: r["created_at"])
 
 
 def deliver_one(row: dict) -> str:
