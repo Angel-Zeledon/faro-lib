@@ -2807,6 +2807,9 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        # S&OP consensus: Rust-only routes, asserted against the database (consensus_cases.py).
+        from consensus_cases import run_consensus  # noqa: PLC0415
+        results += run_consensus(args, fx, db, sys.modules[__name__])
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
