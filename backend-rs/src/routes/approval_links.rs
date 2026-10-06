@@ -409,6 +409,12 @@ async fn view_data(state: &AppState, r: &Resolved) -> Result<Value, ApiError> {
     }))
 }
 
+/// The page's data, after the rate limit. Reads only: it writes no row.
+pub(crate) async fn view_with_token(state: &AppState, token: &str) -> Result<Value, ApiError> {
+    let r = resolve(state, token).await?;
+    view_data(state, &r).await
+}
+
 pub async fn view(
     State(state): State<AppState>,
     peer: Option<Extension<ConnectInfo<SocketAddr>>>,
@@ -418,8 +424,7 @@ pub async fn view(
     let peer = peer.map(|Extension(ConnectInfo(a))| a);
     async {
         limit(&state, &headers, peer, &token, false).await?;
-        let r = resolve(&state, &token).await?;
-        Ok(guarded(ok(view_data(&state, &r).await?)))
+        Ok(guarded(ok(view_with_token(&state, &token).await?)))
     }
     .await
     .map_err(no_store)
@@ -458,28 +463,35 @@ pub async fn decide(
     let peer = peer.map(|Extension(ConnectInfo(a))| a);
     async {
         limit(&state, &headers, peer, &token, true).await?;
-        let r = resolve(&state, &token).await?;
-        let (decision, comment) = parse_decision(&bytes)?;
-        let result = po_approvals::decide_core(
-            &state, &r.user.tenant_id, &r.user.user_id, &r.po.id, decision, comment,
-            Some(ViaLink { link_id: &r.link_id }),
-        )
-        .await;
-        match result {
-            Ok(_) => Ok(guarded(ok(json!({
-                "decided": true,
-                "decision": decision,
-                "reference": format_po_number(r.po.po_number, &r.po.id),
-            })))),
-            // A request that is no longer open is, for this link, a used link.
-            Err(e) if matches!(e.code(), Some("po_approval_already_decided" | "po_approval_not_requested" | "po_not_found")) => {
-                Err(not_found())
-            }
-            Err(e) => Err(e),
-        }
+        Ok(guarded(ok(decide_with_token(&state, &token, &bytes).await?)))
     }
     .await
     .map_err(no_store)
+}
+
+/// The decision itself, after the rate limit: resolve the link, validate the
+/// body, decide through the in-app path with the link spent in the same
+/// transaction.
+pub(crate) async fn decide_with_token(state: &AppState, token: &str, raw: &[u8]) -> Result<Value, ApiError> {
+    let r = resolve(state, token).await?;
+    let (decision, comment) = parse_decision(raw)?;
+    let result = po_approvals::decide_core(
+        state, &r.user.tenant_id, &r.user.user_id, &r.po.id, decision, comment,
+        Some(ViaLink { link_id: &r.link_id }),
+    )
+    .await;
+    match result {
+        Ok(_) => Ok(json!({
+            "decided": true,
+            "decision": decision,
+            "reference": format_po_number(r.po.po_number, &r.po.id),
+        })),
+        // A request that is no longer open is, for this link, a used link.
+        Err(e) if matches!(e.code(), Some("po_approval_already_decided" | "po_approval_not_requested" | "po_not_found")) => {
+            Err(not_found())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 // ── Internal: issue and revoke ───────────────────────────────────────────────
@@ -542,9 +554,15 @@ pub async fn issue(
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     let user = po_writer(&state, &actors, &headers, ROUTE, &po_log_id).await?;
+    issue_core(&state, &user, &po_log_id).await.map(ok)
+}
+
+/// Rotate and queue the links of the open request of one order.
+pub(crate) async fn issue_core(state: &AppState, user: &CurrentUser, po_log_id: &str) -> Result<Value, ApiError> {
+    let po_log_id = po_log_id.to_string();
     let pool = &state.pool;
     let tenant = &user.tenant_id;
-    if !enabled(&state) {
+    if !enabled(state) {
         return Err(disabled());
     }
     let po = po_approvals::get_po(pool, tenant, &po_log_id).await?;
@@ -562,7 +580,7 @@ pub async fn issue(
         .filter(|a| a.id != open.requested_by)
         .collect();
     let ids: Vec<String> = recipients.iter().map(|a| a.id.clone()).collect();
-    let numbers = whatsapp_numbers(&state, tenant, &ids).await?;
+    let numbers = whatsapp_numbers(state, tenant, &ids).await?;
 
     let (mut email_queued, mut wa_queued, mut links) = (0usize, 0usize, 0usize);
     for a in &recipients {
@@ -629,12 +647,12 @@ pub async fn issue(
         record_event(pool, tenant, &user.user_id, Event::ApprovalLinksSent, Some(&po_log_id), d).await;
     }
     // "queued", not "sent": the Python worker delivers (docs/rust-migration.md, outbox).
-    Ok(ok(json!({
+    Ok(json!({
         "po_log_id": po_log_id,
         "approvers": recipients.len(),
         "links": links,
         "queued": {"email": email_queued, "whatsapp": wa_queued},
-    })))
+    }))
 }
 
 pub async fn revoke(
@@ -644,6 +662,12 @@ pub async fn revoke(
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     let user = po_writer(&state, &actors, &headers, ROUTE, &po_log_id).await?;
+    revoke_core(&state, &user, &po_log_id).await.map(ok)
+}
+
+/// Kill every open link of one order.
+pub(crate) async fn revoke_core(state: &AppState, user: &CurrentUser, po_log_id: &str) -> Result<Value, ApiError> {
+    let po_log_id = po_log_id.to_string();
     let pool = &state.pool;
     let tenant = &user.tenant_id;
     let po = po_approvals::get_po(pool, tenant, &po_log_id).await?;
@@ -664,7 +688,7 @@ pub async fn revoke(
         d.insert("count".into(), json!(revoked.len()));
         record_event(pool, tenant, &user.user_id, Event::ApprovalLinksRevoked, Some(&po_log_id), d).await;
     }
-    Ok(ok(json!({"po_log_id": po_log_id, "revoked": revoked.len()})))
+    Ok(json!({"po_log_id": po_log_id, "revoked": revoked.len()}))
 }
 
 #[cfg(test)]

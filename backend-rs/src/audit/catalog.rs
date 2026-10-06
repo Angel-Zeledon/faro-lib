@@ -228,15 +228,38 @@ pub fn stored_for_action(action: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// The sizes are COMPUTED from `backend/audit/catalog.py` (the source of
+    /// truth), not copied into this file: a new audit action no longer needs a
+    /// magic number edited on this side, and a one-sided edit still fails.
     #[test]
     fn vocabularies_have_the_python_sizes() {
-        // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
-        //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
-        assert_eq!(ROUTES.len(), 56);
-        assert_eq!(LEGACY.len(), 73);
-        assert_eq!(target_types().len(), 28);
-        assert_eq!(audit_actions().len(), 108);
-        assert_eq!(all_stored_actions().len(), 112);
+        use std::collections::BTreeSet;
+        let src = include_str!("../../../backend/audit/catalog.py").replace("\r\n", "\n");
+        let routes_block = src.split("ROUTES: dict").nth(1).unwrap().split("\n}\n").next().unwrap();
+        let legacy_block = src.split("LEGACY: dict").nth(1).unwrap().split("\n}\n").next().unwrap();
+        let route_re = regex::Regex::new(r#"\("(\w+)",\s*"[^"]+"\):\s*_r\("([\w.]+)",\s*"(\w+)""#).unwrap();
+        let legacy_re = regex::Regex::new(r#""([\w.]+)":\s*\("(\w+)",\s*"([\w.]+)"\)"#).unwrap();
+        let py_routes: Vec<(String, String)> =
+            route_re.captures_iter(routes_block).map(|c| (c[2].to_string(), c[3].to_string())).collect();
+        let py_legacy: Vec<(String, String, String)> = legacy_re
+            .captures_iter(legacy_block)
+            .map(|c| (c[1].to_string(), c[2].to_string(), c[3].to_string()))
+            .collect();
+        assert_eq!(ROUTES.len(), py_routes.len(), "ROUTES differ from backend/audit/catalog.py");
+        assert_eq!(LEGACY.len(), py_legacy.len(), "LEGACY differs from backend/audit/catalog.py");
+        let targets: BTreeSet<&str> = py_routes.iter().map(|r| r.1.as_str())
+            .chain(py_legacy.iter().map(|l| l.1.as_str())).collect();
+        let actions: BTreeSet<&str> = py_routes.iter().map(|r| r.0.as_str())
+            .chain(py_legacy.iter().map(|l| l.2.as_str())).collect();
+        let stored: BTreeSet<String> = py_routes.iter().map(|r| format!("audit.{}", r.0))
+            .chain(py_legacy.iter().map(|l| l.0.clone())).collect();
+        assert_eq!(target_types().len(), targets.len());
+        assert_eq!(audit_actions().len(), actions.len());
+        assert_eq!(all_stored_actions().len(), stored.len());
+        // and the entries themselves, not only how many
+        let ours: BTreeSet<(String, String, String)> =
+            LEGACY.iter().map(|(s, t, a)| (s.to_string(), t.to_string(), a.to_string())).collect();
+        assert_eq!(ours, py_legacy.into_iter().collect::<BTreeSet<_>>());
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),
