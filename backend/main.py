@@ -393,6 +393,8 @@ from backend.api.v1 import forecast_adjustments as forecast_adjustments_router  
 app.include_router(forecast_adjustments_router.router, prefix=_PREFIX)
 from backend.api.v1 import committed_demand as committed_demand_router  # noqa: E402
 app.include_router(committed_demand_router.router, prefix=_PREFIX)
+from backend.api.v1 import purchase_budget as purchase_budget_router  # noqa: E402
+app.include_router(purchase_budget_router.router, prefix=_PREFIX)
 from backend.api.v1 import supply_contracts as supply_contracts_router  # noqa: E402
 app.include_router(supply_contracts_router.router, prefix=_PREFIX)
 from backend.api.v1 import demand_plans as demand_plans_router  # noqa: E402

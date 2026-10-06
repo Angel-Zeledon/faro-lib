@@ -30,6 +30,8 @@ import { useWarehouses, defaultWarehouse } from '@/components/inventory/Warehous
 import { coverageUnitLabel, daysPerUnit } from '@/lib/period'
 import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
+import BudgetPanel, { BudgetChip, type BudgetNote } from '@/components/inventory/BudgetPanel'
+import BudgetCartCheck from '@/components/inventory/BudgetCartCheck'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import DataFreshness from '@/components/ui/DataFreshness'
 import StaleDataBanner from '@/components/ui/StaleDataBanner'
@@ -241,8 +243,10 @@ function LeadTimeLearning({ item }: { item: ActionItem }) {
 }
 
 // ── ActionCard component ──────────────────────────────────────────────────────
-function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers, onChangeSupplier, canDecide, tourAnchor, tourAnchors, stale = false, noContact = false, lateAlert = null }: {
+function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers, onChangeSupplier, canDecide, tourAnchor, tourAnchors, stale = false, noContact = false, lateAlert = null, budgetNote = null }: {
  item:        ActionItem
+ /** Where the purchase budget puts this line: funded, partly, or deferred. */
+ budgetNote?: BudgetNote | null
  /** This line's supplier has no email or WhatsApp: an order would skip it. */
  stale?:      boolean
  noContact?:  boolean
@@ -366,6 +370,7 @@ function ActionCard({ item, onApprove, onReject, onUndo, onChangeQty, suppliers,
         </Link>
        </span>
       )}
+      {budgetNote && <BudgetChip note={budgetNote} />}
       {lateAlert && (
        <span style={{ fontSize: 12, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
         <Clock size={12} aria-hidden="true" />
@@ -861,6 +866,11 @@ export default function HoyPage() {
  const [priceBreaks, setPriceBreaks] = useState<PriceBreakEvaluation | null>(null)
  const [cashCalendar, setCashCalendar] = useState<CashCalendar | null>(null)
  const [cashBudget, setCashBudget] = useState<number | null>(null)
+ // Purchase budget: the per-SKU annotation of the plan, and the reason an
+ // order that exceeds a budget goes out with (see BudgetCartCheck).
+ const [budgetNotes, setBudgetNotes] = useState<Record<string, BudgetNote>>({})
+ const [budgetReason, setBudgetReason] = useState('')
+ const [budgetReload, setBudgetReload] = useState(0)
  const [cashFit, setCashFit] = useState<CashFitResult | null>(null)
  const [cashFitBusy, setCashFitBusy] = useState(false)
 
@@ -1110,6 +1120,10 @@ export default function HoyPage() {
  }
 
  const approved   = cart.filter(i => (i.status === 'approved' || i.status === 'modified') && i.qty > 0)
+ const budgetCheckLines = approved.map(i => ({
+  sku: i.sku, qty: i.qty, unit_cost: i.unit_cost ?? null,
+  supplier: i.supplier, supplier_id: i.supplier_id,
+ }))
  const totalValue = approved.reduce((s, i) => s + i.qty * (i.unit_cost ?? 0), 0)
  // Lines with no cost on file are NOT zero-cost lines; the total above leaves
  // them out and must say so, or ten priced units and fifty unpriced ones read
@@ -1299,8 +1313,14 @@ export default function HoyPage() {
    const entry = await logPOGeneration(
     sessionId, decisions, destination,
     { silent: true, headers: { 'Idempotency-Key': pendingSubmission.current.key } },
+    budgetReason,
    )
    pendingSubmission.current = null
+   setBudgetReason('')
+   setBudgetReload(n => n + 1)
+   if (entry.budget_warnings && entry.budget_warnings.length > 0) {
+    addToast(t('budget.toast_over_title'), t('budget.toast_over_body'), 'info', { duration: 10000 })
+   }
    const ref = entry.po_number ? `OC-${String(entry.po_number).padStart(6, '0')}` : entry.id
    // The lines just ordered leave the cart for good: the bar disappears with
    // them, and each card says which order it is on instead of offering the
@@ -1345,6 +1365,10 @@ export default function HoyPage() {
    // another session.
    if (e instanceof ApiError && e.kind === 'permission') {
     addToast(t('states.err_permission_title'), t('states.err_permission_body'), 'error')
+   } else if (e instanceof ApiError && (e.code === 'purchase_budget_hard_cap' || e.code === 'purchase_budget_override_requires_admin')) {
+    // Refused by a hard-capped budget: the cart stays as it is, and the
+    // reason box above it (admins) is where the way forward is.
+    addToast(t('budget.toast_blocked_title'), errorDetail(e), 'error', { duration: 12000 })
    } else if (e instanceof ApiError && e.code === 'po_idempotency_key_reused') {
     // The key belongs to a different cart: a fresh one next time.
     pendingSubmission.current = null
@@ -1549,6 +1573,7 @@ export default function HoyPage() {
        : i,
      ))}
      onGenerate={downloadOC}
+     budgetNotes={budgetNotes}
      generating={submitting}
      canDecide={canEdit}
      multiWarehouse={multi}
@@ -1572,6 +1597,7 @@ export default function HoyPage() {
      loadedAtText={loadedAt ? timeSince(loadedAt, t) : null}
      intro={<>
       {narrativeNode}
+      <BudgetPanel sessionId={sessionId} onNotes={setBudgetNotes} reloadToken={budgetReload} />
       {(briefing?.transfer_suggestions?.length ?? 0) > 0 && (
        <div style={{ marginBottom: 14, minWidth: 0 }}>
         <TransferSuggestions suggestions={briefing?.transfer_suggestions ?? []} canApprove={canEdit} />
@@ -1579,6 +1605,8 @@ export default function HoyPage() {
       )}
      </>}
      cartPanels={<>
+      <BudgetCartCheck lines={budgetCheckLines} destination={multi ? destWarehouse || undefined : undefined}
+       reason={budgetReason} onReason={setBudgetReason} />
       {priceBreaks && (
        <PriceBreakPanel
         opportunities={priceBreaks.opportunities}
@@ -1798,6 +1826,10 @@ export default function HoyPage() {
          </div>
         )}
 
+        {/* Purchase budget: burn against the calendar and what to fund first.
+            Annotates the lines below; it never changes a quantity. */}
+        <BudgetPanel sessionId={sessionId} onNotes={setBudgetNotes} reloadToken={budgetReload} />
+
         {/* The hero: what to order today, as one calm list. Rows share a
             container and are separated by hairlines, so they line up and have
             the same rhythm; the status colour is only the small dot in each. */}
@@ -1817,6 +1849,7 @@ export default function HoyPage() {
              stale={semaphoreStale}
              noContact={!!item.supplier && noContactNames.has(item.supplier.toLowerCase())}
              lateAlert={item.supplier ? lateBySupplier.get(item.supplier.toLowerCase()) ?? null : null}
+             budgetNote={budgetNotes[item.sku] ?? null}
              tourAnchor={idx === 0 ? 'hoy.why' : undefined}
              tourAnchors={idx === 0 ? { supplier: 'hoy.supplier', qty: 'hoy.qty', decide: 'hoy.decide' } : undefined}
              onApprove={() => approveItem(item.sku)}
@@ -1848,6 +1881,7 @@ export default function HoyPage() {
              stale={semaphoreStale}
              noContact={!!item.supplier && noContactNames.has(item.supplier.toLowerCase())}
              lateAlert={item.supplier ? lateBySupplier.get(item.supplier.toLowerCase()) ?? null : null}
+             budgetNote={budgetNotes[item.sku] ?? null}
              onApprove={() => approveItem(item.sku)}
              onReject={() => rejectItem(item.sku)}
              onUndo={() => unapproveItem(item.sku)}
@@ -1880,6 +1914,11 @@ export default function HoyPage() {
 
         {/* Price breaks (3.5) and cash calendar (3.6) — both judged against
             the cart as it stands, so they sit right above it. */}
+        {approved.length > 0 && (
+         <BudgetCartCheck lines={budgetCheckLines} destination={multi ? destWarehouse || undefined : undefined}
+          reason={budgetReason} onReason={setBudgetReason} />
+        )}
+
         {approved.length > 0 && priceBreaks && (
          <PriceBreakPanel
           opportunities={priceBreaks.opportunities}

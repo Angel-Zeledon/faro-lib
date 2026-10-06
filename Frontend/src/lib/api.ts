@@ -1569,6 +1569,30 @@ export const updateCommittedDemand = (id: string, body: Partial<import('./types'
   request<import('./types').CommittedDemand>('PATCH', `/committed-demand/${encodeURIComponent(id)}`, body)
 export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
   request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
+// ── Purchase budgets (a cap on purchasing spend) ────────────────────────────
+export const listBudgets = (includeInactive = false) =>
+  request<{ items: import('./types').PurchaseBudget[]; scope: 'company' | 'warehouses'; currency: string }>(
+    'GET', `/inventory/budgets${includeInactive ? '?include_inactive=true' : ''}`)
+export const createBudget = (body: import('./types').BudgetInput) =>
+  request<import('./types').PurchaseBudget>('POST', '/inventory/budgets', body)
+export const reviseBudget = (rootId: string, expectedRevision: number, changes: Partial<import('./types').BudgetInput>) =>
+  request<import('./types').PurchaseBudget>(
+    'PATCH', `/inventory/budgets/${encodeURIComponent(rootId)}`, { expected_revision: expectedRevision, ...changes })
+export const getBudgetStatus = (budgetId?: string, opts?: RequestOpts) =>
+  request<import('./types').BudgetStatus>(
+    'GET', `/inventory/budget/status${budgetId ? `?budget_id=${encodeURIComponent(budgetId)}` : ''}`, undefined, opts)
+export const getBudgetPlan = (budgetId?: string, sessionId?: string, opts?: RequestOpts) =>
+  request<import('./types').BudgetPlan>(
+    'POST', '/inventory/budget/plan', { budget_id: budgetId ?? null, session_id: sessionId ?? null }, opts)
+export const checkBudgetOrder = (
+  lines: { sku: string; qty: number; unit_cost: number | null; supplier?: string | null; supplier_id?: string | null }[],
+  destinationWarehouse?: string,
+  opts?: RequestOpts,
+) =>
+  request<{ exceeded: import('./types').BudgetExceeded[] }>(
+    'POST', '/inventory/budget/check',
+    { lines, destination_warehouse: destinationWarehouse ?? null }, opts)
+
 // ── Blanket supply contracts (their releases become committed demand) ───────
 export const getSupplyContracts = () =>
   request<{ statuses: import('./types').SupplyContractStatus[]; items: import('./types').SupplyContract[] }>('GET', '/supply-contracts')
@@ -1738,12 +1762,14 @@ export const logPOGeneration = (
   items?: POLineDecision[],
   destinationWarehouse?: string,
   opts?: RequestOpts,
+  budgetOverrideReason?: string,
 ) => {
   // destination_warehouse omitted = tenant default warehouse (mono-warehouse
   // tenants never send it, so their behavior is byte-identical to before 5.4).
-  const body: { items?: POLineDecision[]; destination_warehouse?: string } = {}
+  const body: { items?: POLineDecision[]; destination_warehouse?: string; budget_override_reason?: string } = {}
   if (items && items.length) body.items = items
   if (destinationWarehouse) body.destination_warehouse = destinationWarehouse
+  if (budgetOverrideReason && budgetOverrideReason.trim()) body.budget_override_reason = budgetOverrideReason.trim()
   return request<POLogEntry>(
     'POST',
     `/inventory/log-po?session_id=${sessionId}`,

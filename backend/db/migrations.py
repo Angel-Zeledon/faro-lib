@@ -2050,6 +2050,8 @@ from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  #
 _MIGRATIONS += _SKU_ANALOGIES
 from backend.inventory.demand_plan_migrations import MIGRATIONS as _DEMAND_PLANS  # noqa: E402
 _MIGRATIONS += _DEMAND_PLANS
+from backend.inventory.purchase_budget_migrations import MIGRATIONS as _PURCHASE_BUDGETS  # noqa: E402
+_MIGRATIONS += _PURCHASE_BUDGETS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
