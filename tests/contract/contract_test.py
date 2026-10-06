@@ -2739,6 +2739,282 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
     return out
 
 
+# ── Cost centers and approval chains: Rust-only routes, honoured by Python ───
+#
+# Centers, chains, the evaluate preview, the spend report and the order's
+# attribution exist ONLY in Rust (no Python route, no failover), so there is
+# nothing to diff on those. What the harness pins is the cross-service
+# contract: what Rust writes, Python's approval decision path (still Python)
+# honours level by level, and fails closed on what cannot be resolved. Every
+# refusal also leaves the database as it was. Needs --db. The seeded
+# differential of the evaluator itself is tests/contract/chain_differential.py.
+
+CENTERS = f"{API}/cost-centers"
+CHAINS = f"{API}/approval-chains"
+
+
+def run_cost_centers(args, fx: Fixture, db) -> list:
+    if db is None:
+        print("cost-center cases skipped: they need --db")
+        return []
+    results = []
+    cur = db.cursor()
+    route = "cost centers / approval chains"
+
+    def record(name: str, problems: list) -> None:
+        results.append((R4Case(name, "-", "-", route=route), "FAIL" if problems else "PASS", problems))
+
+    def expect(name: str, r: Resp, status: int, code: Optional[str] = None, extra=None) -> None:
+        problems = []
+        if r.status != status:
+            problems.append(f"status {r.status} (wanted {status}): {json.dumps(r.body)[:300]}")
+        elif code and (r.body or {}).get("error_code") != code:
+            problems.append(f"error_code {(r.body or {}).get('error_code')!r} (wanted {code!r})")
+        if extra and not problems:
+            problems += extra()
+        record(name, problems)
+
+    def count(table: str) -> int:
+        cur.execute(f"SELECT COUNT(*) FROM {table} WHERE tenant_id = %s", (fx.tenant_id,))
+        return cur.fetchone()[0]
+
+    def events(action: str, resource: Optional[str] = None) -> list:
+        sql = "SELECT user_id, context FROM activity_logs WHERE tenant_id = %s AND action = %s"
+        params = [fx.tenant_id, action]
+        if resource:
+            sql += " AND resource = %s"
+            params.append(resource)
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+    def rows(sql: str, params=()) -> list:
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+    admin, analyst, viewer = (auth_for(fx, w) for w in ("admin", "analyst", "viewer"))
+    tag = secrets.token_hex(3).upper()
+    r = http(args.python, "POST", f"{API}/users", token=admin, body={
+        "email": f"contract-{tag.lower()}-cc@stockai.demo", "role": "analyst", "full_name": "Contract level two"})
+    if r.status != 201:
+        record("setup: create the second approver", [f"{r.status} {r.body}"])
+        return results
+    sub_id = r.body["data"]["user"]["id"]
+    sub = mint_access_token(fx.secret, sub_id, fx.tenant_id, "analyst")
+    cur.execute("UPDATE users SET status = 'active' WHERE id IN (%s, %s, %s)",
+                (fx.analyst_id, sub_id, fx.viewer_id))
+
+    # ── centers ──
+    body = {"code": f"OPS{tag}", "name": "Operations"}
+    n0 = count("cost_centers")
+    expect("viewer cannot create a center", http(args.rust, "POST", CENTERS, token=viewer, body=body),
+           403, "role_not_permitted")
+    expect("an analyst cannot create a center", http(args.rust, "POST", CENTERS, token=analyst, body=body),
+           403, "role_not_permitted")
+    expect("missing fields are a 422", http(args.rust, "POST", CENTERS, token=admin, body={}), 422, "validation_error")
+    expect("a blank name is refused", http(args.rust, "POST", CENTERS, token=admin,
+           body={"code": "X", "name": "   "}), 422, "cost_center_invalid")
+    expect("an unknown parent is a 404", http(args.rust, "POST", CENTERS, token=admin,
+           body={**body, "parent_id": "nope"}), 404, "cost_center_not_found")
+    record("refused center creates wrote nothing", [] if count("cost_centers") == n0 else ["a row was written"])
+    if fx.write_key:
+        expect("an API key never reaches the centers", http(args.rust, "POST", CENTERS, token=fx.write_key,
+               body=body), 403, "api_key_route_not_exposed")
+    r = http(args.rust, "POST", CENTERS, token=admin, body=body)
+
+    def center_ok():
+        row = rows("SELECT code, name, parent_id, active, created_by FROM cost_centers WHERE id = %s",
+                   (r.body["data"]["id"],))
+        problems = [] if row == [(f"OPS{tag}", "Operations", None, True, fx.admin_id)] else [f"row {row}"]
+        ev = events("cost_center.created", r.body["data"]["id"])
+        if len(ev) != 1 or ev[0][1].get("code") != f"OPS{tag}":
+            problems.append(f"events {ev}")
+        return problems
+    expect("an admin creates a center", r, 201, extra=center_ok)
+    ops = r.body["data"]["id"]
+    expect("the code is unique ignoring case", http(args.rust, "POST", CENTERS, token=admin,
+           body={"code": f"ops{tag.lower()}", "name": "Again"}), 409, "cost_center_code_taken")
+    r = http(args.rust, "POST", CENTERS, token=admin, body={"code": f"NORTH{tag}", "name": "North", "parent_id": ops})
+    expect("a child center", r, 201)
+    north = r.body["data"]["id"]
+    r = http(args.rust, "POST", CENTERS, token=admin, body={"code": f"OLD{tag}", "name": "Retired"})
+    old = r.body["data"]["id"]
+    expect("a center is deactivated, never deleted", http(args.rust, "PATCH", f"{CENTERS}/{old}", token=admin,
+           body={"active": False}), 200, extra=lambda: [] if events("cost_center.updated", old) else ["no event"])
+    expect("no new children under an inactive center", http(args.rust, "POST", CENTERS, token=admin,
+           body={"code": f"K{tag}", "name": "K", "parent_id": old}), 409, "cost_center_inactive")
+    expect("a cycle is refused", http(args.rust, "PATCH", f"{CENTERS}/{ops}", token=admin,
+           body={"parent_id": north}), 409, "cost_center_parent_invalid")
+    record("a refused reparent changed nothing",
+           [] if rows("SELECT parent_id FROM cost_centers WHERE id = %s", (ops,)) == [(None,)] else ["parent moved"])
+    n_ev = len(events("cost_center.updated"))
+    expect("a no-op patch changes nothing", http(args.rust, "PATCH", f"{CENTERS}/{north}", token=admin,
+           body={"name": "North"}), 200,
+           extra=lambda: [] if len(events("cost_center.updated")) == n_ev else ["event for a no-op"])
+    expect("viewer cannot patch", http(args.rust, "PATCH", f"{CENTERS}/{north}", token=viewer,
+           body={"name": "Hacked"}), 403, "role_not_permitted")
+    expect("an unknown center is a 404", http(args.rust, "PATCH", f"{CENTERS}/nope", token=admin,
+           body={"name": "x"}), 404, "cost_center_not_found")
+    lst = http(args.rust, "GET", CENTERS, token=viewer)
+    expect("anybody lists the tree, children under parents", lst, 200, extra=lambda: (
+        [] if [(i["id"], i["depth"]) for i in lst.body["data"]["items"] if i["id"] in (ops, north)] == [(ops, 0), (north, 1)]
+        and any(i["path"] == f"OPS{tag} / NORTH{tag}" for i in lst.body["data"]["items"])
+        else [f"list {json.dumps(lst.body)[:400]}"]))
+
+    # ── chains ──
+    level_a, level_b = {"kind": "users", "user_ids": [fx.analyst_id]}, {"kind": "users", "user_ids": [sub_id]}
+    chain_body = {"name": "Operations chain", "cost_center_id": ops,
+                  "bands": [{"min_amount": 500, "levels": [level_a, level_b]}]}
+    c0 = count("approval_chains")
+    expect("viewer cannot create a chain", http(args.rust, "POST", CHAINS, token=viewer, body=chain_body),
+           403, "role_not_permitted")
+    expect("a level that is not a role or users", http(args.rust, "POST", CHAINS, token=admin, body={
+        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "x"}]}]}), 422, "approval_chain_invalid")
+    expect("a role that cannot approve", http(args.rust, "POST", CHAINS, token=admin, body={
+        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "role", "role": "viewer"}]}]}),
+        422, "approval_chain_invalid")
+    expect("a named viewer is refused", http(args.rust, "POST", CHAINS, token=admin, body={
+        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "users", "user_ids": [fx.viewer_id]}]}]}),
+        422, "approval_chain_user_invalid")
+    expect("an unknown center is a 404", http(args.rust, "POST", CHAINS, token=admin,
+           body={**chain_body, "cost_center_id": "nope"}), 404, "cost_center_not_found")
+    expect("an inactive center is refused", http(args.rust, "POST", CHAINS, token=admin,
+           body={**chain_body, "cost_center_id": old}), 409, "cost_center_inactive")
+    record("refused chain creates wrote nothing", [] if count("approval_chains") == c0 else ["a row was written"])
+    r = http(args.rust, "POST", CHAINS, token=admin, body=chain_body)
+
+    def chain_ok():
+        got = rows("SELECT c.name, c.cost_center_id, c.active, b.min_amount, b.levels FROM approval_chains c "
+                   "JOIN approval_chain_bands b ON b.chain_id = c.id WHERE c.id = %s", (r.body["data"]["id"],))
+        problems = [] if got == [("Operations chain", ops, True, 500.0, [level_a, level_b])] else [f"rows {got}"]
+        if len(events("approval_chain.created", r.body["data"]["id"])) != 1:
+            problems.append("event count")
+        return problems
+    expect("an admin creates a two-level chain", r, 201, extra=chain_ok)
+    chain_id = r.body["data"]["id"]
+    expect("one active chain per center", http(args.rust, "POST", CHAINS, token=admin, body=chain_body),
+           409, "approval_chain_center_taken")
+    lst = http(args.rust, "GET", CHAINS, token=viewer)
+    expect("anybody lists chains with the names of the people", lst, 200, extra=lambda: (
+        [] if [u["id"] for u in lst.body["data"]["items"][0]["bands"][0]["levels"][1]["users"]] == [sub_id]
+        and sub_id in [c["id"] for c in lst.body["data"]["candidates"]]
+        and fx.viewer_id not in [c["id"] for c in lst.body["data"]["candidates"]]
+        else [f"list {json.dumps(lst.body)[:500]}"]))
+
+    def ev(who, **b):
+        return http(args.rust, "POST", f"{CHAINS}/evaluate", token=who, body=b)
+
+    def verdict(name, r, state, reason=None, **more):
+        d = (r.body or {}).get("data") or {}
+        want = {"state": state, "reason": reason, **more}
+        got = {k: d.get(k) for k in want}
+        expect(name, r, 200, extra=lambda: [] if got == want else [f"wanted {want}, got {d}"])
+
+    verdict("evaluate: a child uses its parent's chain", ev(viewer, cost_center_id=north, amount=600),
+            "required", None, chain_id=chain_id)
+    verdict("evaluate: no center and no default fails closed", ev(analyst, amount=600),
+            "unresolved", "no_cost_center")
+    verdict("evaluate: an unknown value fails closed", ev(analyst, cost_center_id=ops),
+            "unresolved", "amount_unknown")
+    verdict("evaluate: an inactive center fails closed", ev(analyst, cost_center_id=old, amount=900),
+            "unresolved", "cost_center_invalid")
+    verdict("evaluate: below every band needs nothing", ev(analyst, cost_center_id=ops, amount=10), "not_required")
+    verdict("evaluate: an over-budget order takes the top band",
+            ev(analyst, cost_center_id=ops, amount=10, escalate=True), "required", None, escalated=True)
+    expect("evaluate: a bad body is a 422", ev(analyst, amount="lots"), 422, "validation_error")
+
+    # ── an order, end to end ──
+    def seed_po(suffix: str) -> str:
+        po_id = _r4_seed_po(db, fx.tenant_id, fx.admin_id, f"CC-{tag}-{suffix}", {"sent": False, "qty": 10})
+        cur.execute("UPDATE inventory_po_items SET unit_cost = 100 WHERE po_log_id = %s", (po_id,))
+        return po_id
+
+    def po_row(p):
+        return rows("SELECT cost_center_id, approval_status, approved_amount FROM inventory_po_log WHERE id = %s",
+                    (p,))[0]
+
+    def request(who, p):
+        return http(args.python, "POST", f"{API}/inventory/po/{p}/approval/request", token=who, body={})
+
+    def approve(who, p):
+        return http(args.python, "POST", f"{API}/inventory/po/{p}/approval/approve", token=who, body={})
+
+    def put(who, p, center):
+        return http(args.rust, "PUT", f"{API}/inventory/po/{p}/cost-center", token=who,
+                    body={"cost_center_id": center})
+
+    po = seed_po("A")                                                    # 10 x 100 = 1000
+    n_app = count("po_approvals")
+    expect("python: an order with no center cannot ask (fails closed)", request(admin, po), 409,
+           "po_approval_chain_unresolved", extra=lambda: (
+               [] if count("po_approvals") == n_app and po_row(po)[1] is None else ["state written"]))
+    expect("viewer cannot attribute an order", put(viewer, po, north), 403, "role_not_permitted")
+    expect("an unknown center is a 404", put(analyst, po, "nope"), 404, "cost_center_not_found")
+    expect("an inactive center is refused", put(analyst, po, old), 409, "cost_center_inactive")
+    expect("an unknown order is a 404", http(args.rust, "PUT", f"{API}/inventory/po/nope/cost-center",
+           token=analyst, body={"cost_center_id": north}), 404, "po_not_found")
+    record("refused attributions wrote nothing", [] if po_row(po)[0] is None else ["center written"])
+    expect("an analyst attributes the order", put(analyst, po, north), 200, extra=lambda: (
+        [] if po_row(po)[0] == north and len(events("purchase.order_cost_center_set", po)) == 1
+        else [f"row {po_row(po)} events {events('purchase.order_cost_center_set', po)}"]))
+    expect("attributing again is a no-op", put(analyst, po, north), 200, extra=lambda: (
+        [] if len(events("purchase.order_cost_center_set", po)) == 1 else ["a second event"]))
+
+    expect("python: now it asks, with a pending step per level", request(admin, po), 200, extra=lambda: (
+        [] if rows("SELECT s.level_no, s.status FROM po_approval_steps s JOIN po_approvals a ON a.id = s.approval_id "
+                   "WHERE a.po_log_id = %s ORDER BY 1", (po,)) == [(1, "pending"), (2, "pending")]
+        and po_row(po)[1] == "pending_approval" else ["steps or status wrong"]))
+    expect("a pending order's center is locked", put(analyst, po, ops), 409, "po_cost_center_locked",
+           extra=lambda: [] if po_row(po)[0] == north else ["center moved"])
+    expect("python: level two cannot jump the queue", approve(sub, po), 403, "po_approval_chain_wrong_level",
+           extra=lambda: [] if po_row(po)[1] == "pending_approval" else ["state moved"])
+    expect("python: the requester never approves a level", approve(admin, po), 403)
+    expect("python: level one approves, the order is NOT approved yet", approve(analyst, po), 200, extra=lambda: (
+        [] if po_row(po)[1] == "pending_approval" and len(events("purchase.approval_level_approved", po)) == 1
+        and not events("purchase.approval_approved", po) else [f"row {po_row(po)}"]))
+    expect("python: level two approves, now it is approved", approve(sub, po), 200, extra=lambda: (
+        [] if po_row(po)[1] == "approved" and po_row(po)[2] == 1000.0
+        and len(events("purchase.approval_approved", po)) == 1 else [f"row {po_row(po)}"]))
+
+    # ── spend and budgets ──
+    r = http(args.rust, "GET", f"{CENTERS}/spend", token=analyst)
+    expect("spend: the child's order counts for the child and rolls up to the parent", r, 200, extra=lambda: (
+        [] if (lambda items: items[north]["own_ordered"] == 1000.0 and items[ops]["rolled_up_ordered"] == 1000.0
+               and items[ops]["own_ordered"] == 0.0)({i["id"]: i for i in r.body["data"]["items"]})
+        else [f"spend {json.dumps(r.body['data'])[:500]}"]))
+    expect("spend: a backwards period is refused",
+           http(args.rust, "GET", f"{CENTERS}/spend?from=2026-02-01&to=2026-01-01", token=analyst),
+           422, "cost_center_period_invalid")
+    r = http(args.python, "POST", f"{API}/inventory/budgets", token=admin, body={
+        "period_type": "month", "period_start": today_plus(0), "amount": 5000.0,
+        "scope_type": "cost_center", "scope_value": ops})
+    expect("python: a budget scoped to a cost center", r, 201)
+    po2 = seed_po("B")
+    expect("a budgeted center cannot be assigned afterwards (the cap is checked at placement)",
+           put(analyst, po2, north), 409, "po_cost_center_budgeted",
+           extra=lambda: [] if po_row(po2)[0] is None else ["center written"])
+    r = http(args.rust, "GET", f"{CENTERS}/spend", token=analyst)
+    expect("spend: lists the budget on its center", r, 200, extra=lambda: (
+        [] if any(i["id"] == ops and i["budgets"] and i["budgets"][0]["amount"] == 5000.0
+                  for i in r.body["data"]["items"]) else ["budget missing"]))
+
+    # ── editing chains ──
+    expect("viewer cannot edit a chain", http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=viewer,
+           body={"name": "x"}), 403, "role_not_permitted")
+    expect("an unknown chain is a 404", http(args.rust, "PATCH", f"{CHAINS}/nope", token=admin,
+           body={"name": "x"}), 404, "approval_chain_not_found")
+    r = http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=admin, body={"bands": [
+        {"min_amount": 500, "levels": [level_b]}, {"min_amount": 5000, "levels": [level_a, level_b]}]})
+    expect("an admin replaces the bands", r, 200, extra=lambda: (
+        [] if rows("SELECT COUNT(*) FROM approval_chain_bands WHERE chain_id = %s", (chain_id,)) == [(2,)]
+        and len(events("approval_chain.updated", chain_id)) == 1 else ["bands/events"]))
+    po3 = seed_po("C")
+    expect("an admin switches the last chain off", http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=admin,
+           body={"active": False}), 200)
+    expect("python: with no active chain a chain asks nothing of the order", request(admin, po3), 409,
+           "po_approval_not_required")
+    return results
+
+
 def run(args) -> int:
     env = read_env_file(args.env_file) if args.env_file else {}
     secret = os.environ.get("SECRET_KEY") or env.get("SECRET_KEY")
@@ -2807,6 +3083,7 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        results += run_cost_centers(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
