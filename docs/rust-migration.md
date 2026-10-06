@@ -601,3 +601,63 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+### Scheduled reports by email (NEW routes, Rust-only; branch feat/scheduled-reports)
+
+A feature born in Rust, per section 1's rule for new work: the management
+routes are in `backend-rs/src/routes/scheduled_reports/`, the schema and the
+sending loop stay in Python.
+
+**Rust owns**: CRUD, pause/resume, run history, the per-tenant external
+allow-list, preview-now (renders for the caller, sends and stores nothing) and
+the public signed unsubscribe (`GET`/`POST /api/v1/public/report-unsubscribe`).
+Next-run arithmetic reuses the `croniter` port in `routes/schedule`.
+
+**Python owns**: the additive schema (`backend/scheduled_reports/migrations.py`,
+tables `report_schedules`, `report_schedule_recipients`, `report_schedule_runs`,
+`report_allowed_recipients`; note `report_runs` is the report generator's, not
+ours), the `report-scheduler` worker loop, and the report BODY. Python builds it
+because every section stands on code that stays in Python (the budget, committed
+demand and supplier scorecard read paths and the email locale catalogue); a Rust
+copy would have to be kept equal by hand and a preview that differed from the mail
+is worse than none. Rust's preview therefore calls
+`POST ${PYTHON_API_URL}/internal/scheduled-reports/render`, HMAC-signed with
+`SECRET_KEY` (60 s window, not under `/api/v1`, never proxied by the frontend).
+If Python is down the preview answers 503; nothing else in the feature needs it.
+
+**No Python failover.** Rust is the only implementation of these paths; a second
+`reverse_proxy` upstream would answer them with Python's 404. Gateway example:
+`deploy/rust-api/routes.d/44-scheduled-reports.caddy.example`. If api-rs is down,
+schedules cannot be edited, but due reports still go out (the worker never calls
+the routes).
+
+**Worker guarantees** (`backend/scheduled_reports/service.py`):
+claim with `FOR UPDATE SKIP LOCKED`; one `report_schedule_runs` row per
+(schedule, local-minute period key) enforced by a unique index, so three
+concurrent passes or a restart that lost the `next_run_at` advance make exactly
+one run and one mail per eligible recipient; recipients are re-checked against
+the tenant's active users at send time (a removed or suspended user is skipped and
+recorded in the run, never mailed); a tenant that changes time zone is re-anchored
+instead of firing at the old wall clock; a run later than its catch-up window
+(weekly 12 h, monthly 48 h) is recorded as skipped, not sent late; no mail
+transport means a FAILED run, never "queued"; three consecutive failures pause the
+schedule with `scheduled_report.auto_paused`; stale `building` runs are re-driven
+and given up on at the third try. Sections with no data say "not available"; no
+number is ever defaulted. `/health` lists the `scheduled_reports` loop freshness
+in both services.
+
+**Tests** (local throwaway Postgres on a random port, UTC; Python API and Rust API
+on random ports): `cargo test` 143 passed (3 ignored, pre-existing; includes the
+activity/audit catalogue parity tests computed from the Python source);
+`backend/tests/test_scheduled_reports.py` 62 passed (plus `test_audit_trail.py`
+and `test_worker_topology.py`, 86 together); contract file
+`tests/contract/scheduled_reports_contract.py` 73/73 (permission pair on every
+write, second tenant isolation, the real worker pass in subprocesses with a
+recording transport, double-send guard, DST and zone change, deactivated
+recipient). One contract case was time-dependent (its first period shared a
+wall-clock minute with an earlier case's period and was rightly skipped); fixed by
+offsetting it 30 minutes.
+
+**Divergences**: none against Python (nothing to diverge from). Decision rule for
+the owner: external recipients can only be addresses an admin put on the
+allow-list; removing an address from the list stops mail to it at the next run.
