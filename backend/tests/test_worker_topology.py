@@ -38,7 +38,7 @@ class TestEnabledComponents:
         assert worker.enabled_components() == [
             "job-worker", "job-scheduler", "inventory-alerts",
             "overstock-snapshot", "operator-digest", "trial-reaper", "billing-sweep",
-            "webhook-deliveries", "outbox-drain", "audit-stream",
+            "webhook-deliveries", "outbox-drain", "audit-stream", "report-scheduler",
         ]
 
     def test_api_only_instance_runs_nothing(self, monkeypatch):

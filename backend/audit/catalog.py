@@ -118,6 +118,17 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # webhook as a `billing.*` event (LEGACY below), with "system" as actor.
     ("POST", "/billing/checkout"):                  _r("billing.checkout_started", "billing"),
     ("POST", "/billing/portal"):                    _r("billing.portal_opened", "billing"),
+    # Scheduled management reports (served by the Rust API; the catalogue is
+    # shared data). Who defined, changed, paused or removed a recurring report,
+    # and which external address an admin allowed to receive them.
+    ("POST", "/scheduled-reports"):                 _r("report_schedule.created", "report_schedule"),
+    ("PATCH", "/scheduled-reports/{schedule_id}"):  _r("report_schedule.updated", "report_schedule", "schedule_id"),
+    ("DELETE", "/scheduled-reports/{schedule_id}"): _r("report_schedule.deleted", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/{schedule_id}/pause"):  _r("report_schedule.paused", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/{schedule_id}/resume"): _r("report_schedule.resumed", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/allowed-recipients"):   _r("report_recipient.allowed", "report_recipient"),
+    ("DELETE", "/scheduled-reports/allowed-recipients/{email}"):
+        _r("report_recipient.removed", "report_recipient", "email"),
 }
 
 
@@ -273,7 +284,24 @@ LEGACY: dict[str, tuple[str, str]] = {
     "billing.payment_failed":          ("billing", "billing.payment_failed"),
     "billing.subscription_changed":    ("billing", "billing.subscription_changed"),
     "audit_stream.auto_disabled":      ("audit_stream", "audit_stream.auto_disabled"),
+    # Written by the report worker and by the unsubscribe link (actor "system").
+    "scheduled_report.auto_paused":    ("report_schedule", "report_schedule.auto_paused"),
+    "scheduled_report.unsubscribed":   ("report_schedule", "report_schedule.unsubscribed"),
 }
+
+# Catalogue entries whose route exists ONLY in the Rust API (new routes have no
+# Python implementation: docs/rust-migration.md). `test_audit_trail` checks every
+# other entry against the FastAPI routes; these are checked by a Rust unit test
+# that reads this tuple and asserts the Rust router serves each one.
+RUST_ONLY: tuple[tuple[str, str], ...] = (
+    ("POST", "/scheduled-reports"),
+    ("PATCH", "/scheduled-reports/{schedule_id}"),
+    ("DELETE", "/scheduled-reports/{schedule_id}"),
+    ("POST", "/scheduled-reports/{schedule_id}/pause"),
+    ("POST", "/scheduled-reports/{schedule_id}/resume"),
+    ("POST", "/scheduled-reports/allowed-recipients"),
+    ("DELETE", "/scheduled-reports/allowed-recipients/{email}"),
+)
 
 # The target types the trail can be filtered by.
 TARGET_TYPES = sorted({r.target_type for r in ROUTES.values()}

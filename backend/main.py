@@ -448,6 +448,10 @@ app.include_router(service_config_router.router, prefix=_PREFIX)
 from backend.api.v1 import audit as audit_router  # noqa: E402
 app.include_router(audit_router.router, prefix=_PREFIX)
 app.include_router(audit_router.manifest_router, prefix=_PREFIX)
+# Service-to-service (the Rust API's report preview): not under /api/v1, so the
+# frontend proxy never reaches it, and HMAC-authenticated.
+from backend.scheduled_reports import internal_api as scheduled_reports_internal  # noqa: E402
+app.include_router(scheduled_reports_internal.router)
 app.include_router(ws_router)
 
 

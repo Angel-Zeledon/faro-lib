@@ -112,6 +112,8 @@ pub enum Event {
     ConsensusVersionRejected,
     ConsensusVersionWithdrawn,
     ConsensusRuleChanged,
+    ScheduledReportUnsubscribed,
+    ScheduledReportAutoPaused,
 }
 
 impl Event {
@@ -210,6 +212,12 @@ impl Event {
             Event::ConsensusVersionRejected => ("consensus.version_rejected", "training", "info", &["plan_name", "decision_comment"]),
             Event::ConsensusVersionWithdrawn => ("consensus.version_withdrawn", "training", "info", &["plan_name", "decision_comment"]),
             Event::ConsensusRuleChanged => ("consensus.rule_changed", "training", "info", &["rule"]),
+            Event::ScheduledReportUnsubscribed => (
+                "scheduled_report.unsubscribed", "data", "info", &["schedule_name", "email"],
+            ),
+            Event::ScheduledReportAutoPaused => (
+                "scheduled_report.auto_paused", "data", "warning", &["schedule_name", "failures"],
+            ),
         }
     }
 }

@@ -7690,6 +7690,8 @@ def run(args) -> int:
         # S&OP consensus: Rust-only routes, asserted against the database (consensus_cases.py).
         from consensus_cases import run_consensus  # noqa: PLC0415
         results += run_consensus(args, fx, db, sys.modules[__name__])
+        import scheduled_reports_contract  # own file, same directory (sys.path[0] is this script's)
+        results += scheduled_reports_contract.run(args, fx, db, sys.modules[__name__])
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

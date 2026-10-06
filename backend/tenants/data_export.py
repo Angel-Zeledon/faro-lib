@@ -159,6 +159,12 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
      "last_attempt_at, last_success_at, delivered_records, created_by, created_at, "
      "updated_at, secret_rotated_at"),
     ("audit_stream_deliveries", "audit_stream_deliveries", "*"),
+    # Scheduled management reports: the definition, who gets it, the external
+    # addresses an admin allowed, and what each period sent.
+    ("report_schedules", "report_schedules", "*"),
+    ("report_schedule_recipients", "report_schedule_recipients", "*"),
+    ("report_external_allowlist", "report_external_allowlist", "*"),
+    ("report_schedule_runs", "report_schedule_runs", "*"),
     ("user_permissions", "user_permissions", "*"),
     ("custom_roles", "custom_roles", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
@@ -384,6 +390,10 @@ _DELETE_ORDER: list[str] = [
     "inbound_email_addresses",
     "webhook_deliveries",
     "outbound_messages",
+    "report_schedule_runs",
+    "report_schedule_recipients",
+    "report_schedules",
+    "report_external_allowlist",
     "webhook_transition_state",
     "audit_stream_deliveries",
     "audit_streams",

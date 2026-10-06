@@ -15,7 +15,10 @@ const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', 
   // slash: `/proveedores` (the suppliers screen) is NOT public.
   '/proveedor/',
   // The customer's read-only portal page: a link in a message, no account.
-  '/cliente/']
+  '/cliente/',
+  // The unsubscribe link at the foot of a scheduled report: a link in an email,
+  // possibly to an address with no account.
+  '/reportes-programados/baja']
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router   = useRouter()

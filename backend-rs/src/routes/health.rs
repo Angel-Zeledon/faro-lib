@@ -15,7 +15,7 @@ use crate::service_config;
 use crate::state::AppState;
 
 /// `backend/workers/loop_state.py::LOOPS`, in order.
-const LOOPS: [&str; 4] = ["inventory_alerts", "monthly_overstock", "operator_digest", "recurring_deliveries"];
+const LOOPS: [&str; 5] = ["inventory_alerts", "monthly_overstock", "operator_digest", "recurring_deliveries", "scheduled_reports"];
 
 type LoopRow = (String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<String>, Option<String>);
 

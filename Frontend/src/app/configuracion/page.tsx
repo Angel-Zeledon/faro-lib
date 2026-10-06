@@ -55,6 +55,7 @@ const SECTIONS: Section[] = [
   ] },
   { id: 'connect', titleKey: 'hub.connect_title', rows: [
     { screen: screen('/automatizacion'), descKey: 'hub.automation_desc' },
+    { screen: screen('/reportes-programados'), descKey: 'hub.scheduled_reports_desc' },
     { screen: screen('/api'),            descKey: 'hub.api_desc' },
   ] },
   { id: 'activity', titleKey: 'hub.activity_title', rows: [

@@ -2101,6 +2101,8 @@ _MIGRATIONS += _STOCK_ALLOCATION
 # S&OP forecast consensus: after demand plans, whose approvers it reuses.
 from backend.inventory.consensus_migrations import MIGRATIONS as _CONSENSUS  # noqa: E402
 _MIGRATIONS += _CONSENSUS
+from backend.scheduled_reports.migrations import MIGRATIONS as _SCHEDULED_REPORTS  # noqa: E402
+_MIGRATIONS += _SCHEDULED_REPORTS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

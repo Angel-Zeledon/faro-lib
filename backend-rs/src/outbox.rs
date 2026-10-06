@@ -68,6 +68,7 @@ pub const KINDS: &[Kind] = &[
         required: &["po_log_id", "amount", "approved"],
         optional: &["requester_id", "decider_id", "comment"],
     },
+    Kind { channel: Channel::Email, name: "scheduled_report", required: &["run_id", "recipient_id"], optional: &[] },
     Kind { channel: Channel::Whatsapp, name: "verification_code", required: &["code"], optional: &[] },
 ];
 

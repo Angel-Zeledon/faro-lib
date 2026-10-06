@@ -211,6 +211,11 @@ const EVENTS: &[Spec] = &[
     ("billing.plan_downgraded", "billing", CRITICAL, &["provider", "tier", "previous_tier"]),
     ("billing.payment_failed", "billing", WARNING, &["provider", "grace_until"]),
     ("billing.subscription_changed", "billing", INFO, &["provider", "status", "renews_at"]),
+    ("scheduled_report.queued", "data", INFO, &["schedule_name", "recipients", "skipped"]),
+    ("scheduled_report.failed", "data", WARNING, &["schedule_name"]),
+    ("scheduled_report.auto_paused", "data", WARNING, &["schedule_name", "failures"]),
+    ("scheduled_report.skipped", "data", WARNING, &["schedule_name"]),
+    ("scheduled_report.unsubscribed", "data", INFO, &["schedule_name", "email"]),
 ];
 
 fn event(action: &str) -> Option<&'static Spec> {

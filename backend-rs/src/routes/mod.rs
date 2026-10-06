@@ -15,6 +15,7 @@ pub mod ip_allowlist;
 pub mod mfa;
 pub mod r1;
 pub mod schedule;
+pub mod scheduled_reports;
 pub mod sessions;
 pub mod spike_edits;
 pub mod webhooks;
@@ -71,7 +72,6 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/supply-contracts/{root_id}/renew", post(contract_renewals::renew))
         .merge(r1::router())
         .merge(w3::router())
-        .merge(sessions::router()).merge(lineage::router()).merge(po_approvals::router()).merge(schedule::router()).merge(spike_edits::router())
         .merge(commitment_outlook::router())
         // Two-step sign-in management (new routes, no Python twin).
         .merge(mfa::router())
@@ -82,6 +82,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/tenant/currency/convert", post(fx_rates::convert))
         // S&OP forecast consensus: new routes, Rust only (no Python twin, no failover).
         .merge(consensus::router())
+        .merge(sessions::router()).merge(lineage::router()).merge(reception_reversals::router()).merge(po_approvals::router()).merge(schedule::router()).merge(scheduled_reports::router()).merge(spike_edits::router())
         // R3: API keys, webhook subscriptions, audit trail reads.
         .route("/api/v1/api-keys", post(api_keys::create).get(api_keys::list))
         .route("/api/v1/api-keys/usage", get(api_keys::usage).delete(api_keys::revoke_literal_usage))

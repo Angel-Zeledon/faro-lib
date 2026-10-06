@@ -648,6 +648,30 @@ def _audit_stream_loop() -> None:
     run_loop()
 
 
+# Scheduled management reports (backend/scheduled_reports/service.py). One pass a
+# minute claims due schedules (FOR UPDATE SKIP LOCKED, one run per schedule per
+# local period), builds the report and hands each recipient's mail to the
+# outbox. The pass writes its own freshness row, so /health shows a loop that
+# stopped. Exactly one scheduler runs the cron loops, and the claim is safe even
+# if a second one does.
+def _report_scheduler_loop() -> None:
+    log.info("Report scheduler loop started")
+    from backend.scheduled_reports import catalog
+    while True:
+        now = datetime.now(timezone.utc)
+        try:
+            from backend.scheduled_reports.service import process_due
+            made = process_due(now)
+            if made:
+                log.info("Report scheduler: %d run(s) made", made)
+            loop_state.mark_run(loop_state.SCHEDULED_REPORTS, now)
+        except Exception as e:
+            log.error("Report scheduler error: %s", e, exc_info=True)
+            loop_state.mark_run(loop_state.SCHEDULED_REPORTS, now,
+                                status=loop_state.STATUS_FAILED, error=type(e).__name__)
+        time.sleep(catalog.POLL_SECONDS)
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -662,7 +686,7 @@ def enabled_components() -> list[str]:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
             "operator-digest", "trial-reaper", "billing-sweep",
-            "webhook-deliveries", "outbox-drain", "audit-stream",
+            "webhook-deliveries", "outbox-drain", "audit-stream", "report-scheduler",
         ]
     return components
 
@@ -677,6 +701,7 @@ _COMPONENT_TARGETS = {
     "webhook-deliveries": _webhook_delivery_loop,
     "outbox-drain":       _outbox_drain_loop,
     "audit-stream":       _audit_stream_loop,
+    "report-scheduler":   _report_scheduler_loop,
 }
 
 

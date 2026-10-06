@@ -93,6 +93,7 @@ INTERNAL_TAGS: dict[str, str] = {
     "billing-webhook": "Stripe's and PayPal's webhooks (authenticated by the provider's signature, not by key) and the public offer the pricing page reads",
     "inbound-email": "the tenant's private sales-by-e-mail address is a credential, and its allow-list is edited by an administrator on the Datos screen",
     "inbound-webhook": "the mail provider's webhook, authenticated by a shared-secret signature, not by key",
+    "internal-render": "service-to-service report rendering for the Rust API, authenticated by an HMAC of the installation secret and mounted outside /api/v1; never a key",
     "whatsapp": "Twilio's inbound webhook, authenticated by signature, not by key",
     "models": "unauthenticated catalogue of model names",
     "health": "load-balancer probe",
