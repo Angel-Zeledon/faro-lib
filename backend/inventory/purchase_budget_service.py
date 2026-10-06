@@ -114,12 +114,25 @@ def visible(scope: Optional[frozenset], row: dict) -> bool:
     return row["scope_type"] == "warehouse" and row["scope_value"] in scope
 
 
-def require_writable(scope: Optional[frozenset], terms: dict) -> None:
-    if not visible(scope, terms):
-        raise AppError(
-            "purchase_budget_scope_denied",
-            "A user limited to some warehouses can only manage budgets scoped to those warehouses.",
-            status_code=403)
+def require_writable(scope: Optional[frozenset], terms: dict, tenant_id: Optional[str] = None) -> None:
+    """Refuse TERMS (a budget about to be written) outside the caller's scope.
+
+    No object is revealed here, so the codebase's 403s apply: a warehouse the
+    caller cannot use is `warehouse_out_of_scope`; a company, supplier or
+    category budget governs every warehouse, so it is a company-wide setting
+    (`warehouse_scope_company_setting`). An EXISTING budget outside the scope is
+    a different case: it does not exist for the caller (404, see `revise`)."""
+    if visible(scope, terms):
+        return
+    if terms["scope_type"] == "warehouse":
+        from backend.auth import warehouse_scope as wscope
+        row = query_one("SELECT name FROM warehouses WHERE id = %s AND tenant_id = %s",
+                        (terms["scope_value"], tenant_id)) if tenant_id else None
+        raise wscope.denied(row["name"] if row else terms["scope_value"])
+    raise AppError(
+        "warehouse_scope_company_setting",
+        "Only a user with access to every warehouse can change this setting.",
+        status_code=403)
 
 
 # ── Reading / names ──────────────────────────────────────────────────────────
@@ -272,7 +285,7 @@ def _lock_tenant(conn, tenant_id: str) -> None:
 
 def create(tenant_id: str, user_id: str, scope: Optional[frozenset], raw: dict) -> dict:
     t = clean_terms(raw)
-    require_writable(scope, t)
+    require_writable(scope, t, tenant_id)
     if scope is not None:
         t["parent_root_id"] = None  # a scoped user cannot see a company-wide parent
     new_id = uuid.uuid4().hex
@@ -291,7 +304,8 @@ def revise(tenant_id: str, user_id: str, scope: Optional[frozenset], root_id: st
     with transaction() as conn:
         _lock_tenant(conn, tenant_id)
         cur = _current(tenant_id, root_id, conn=conn, lock=True)
-        require_writable(scope, cur)
+        if not visible(scope, cur):  # out of scope = does not exist for this caller
+            raise AppError("purchase_budget_not_found", "Budget not found", status_code=404)
         if int(expected_revision) != int(cur["revision"]):
             raise AppError("purchase_budget_stale",
                            "Somebody changed this budget meanwhile; reload it and try again",
@@ -299,7 +313,7 @@ def revise(tenant_id: str, user_id: str, scope: Optional[frozenset], root_id: st
         if scope is not None:
             changes = {k: v for k, v in changes.items() if k != "parent_root_id"}
         t = clean_terms(changes, current=cur)
-        require_writable(scope, t)
+        require_writable(scope, t, tenant_id)
         _validate_scope_target(tenant_id, t, conn)
         _validate_parent(tenant_id, root_id, t["parent_root_id"], conn)
         _check_overlap(tenant_id, root_id, t, conn)
