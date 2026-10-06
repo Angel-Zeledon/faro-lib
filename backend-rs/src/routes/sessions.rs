@@ -9,9 +9,11 @@
 //! * `POST /sessions/{id}/restore`    back into the working list, under the
 //!                                    `max_sessions` ceiling
 //!
-//! NOT migrated, stays on Python: `POST /sessions` (it is catalogued in the
-//! audit trail and creates the `session_configs` row the wizard owns),
-//! `PATCH /sessions/{id}`, and everything under `/sessions/{id}/...` that
+//! * `POST /sessions`                create (ceiling + session row + the empty
+//!                                    `session_configs` row), audit `session.created`
+//! * `PATCH /sessions/{id}`           name / description / tags, audit `session.updated`
+//!
+//! NOT migrated, stays on Python: everything under `/sessions/{id}/...` that
 //! trains, configures or reads results (it touches the engine or `storage/`).
 //!
 //! The rule this file must never break (CLAUDE.md, 2026-10-04): nothing here
@@ -20,6 +22,7 @@
 //! The small query-string and row helpers at the bottom are shared by the
 //! schedule and spike-edit modules, which read the same kind of rows.
 
+use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
@@ -38,7 +41,8 @@ use crate::error::ApiError;
 use crate::pycompat::{isoformat_date, isoformat_utc, py_strip};
 use crate::routes::ok;
 use crate::state::AppState;
-use crate::validation::{str_field, Errors, Field, StrRules};
+use crate::audit::{self, Note};
+use crate::validation::{self, body_object, str_field, Errors, Field, StrRules};
 
 /// The `sessions` tag is exposed: a read key reads, a write key archives.
 pub const ROUTE_READ: RouteAuth = RouteAuth { exposure: Exposure::Exposed { write: false }, is_mcp: false };
@@ -329,17 +333,184 @@ async fn count_sessions(
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
-/// The migrated session routes. `POST /sessions` and `PATCH /sessions/{id}`
-/// are NOT here; the proxy routes them to Python by method.
+/// The migrated session routes.
 pub fn router() -> axum::Router<AppState> {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/api/v1/sessions", get(list_sessions))
+        .route("/api/v1/sessions", get(list_sessions).post(create))
         // DELETE on the literal path: Starlette falls through to
         // DELETE /{session_id} with the id "summary" (a 404 session_not_found).
-        .route("/api/v1/sessions/summary", get(list_session_summaries).delete(archive_summary_literal))
-        .route("/api/v1/sessions/{session_id}", get(get_one).delete(archive))
+        .route("/api/v1/sessions/summary", get(list_session_summaries).delete(archive_summary_literal).patch(update_summary_literal))
+        .route("/api/v1/sessions/{session_id}", get(get_one).patch(update).delete(archive))
         .route("/api/v1/sessions/{session_id}/restore", post(restore))
+}
+
+// ── Create and update ────────────────────────────────────────────────────────
+
+const NAME_RULES: StrRules = StrRules { min_length: Some(1), max_length: Some(200), pattern: None };
+const DESCRIPTION_RULES: StrRules = StrRules { min_length: None, max_length: Some(2000), pattern: None };
+const MAX_TAGS: usize = 50;
+
+/// `List[str]` with `max_length=50`. `None` when absent (or null, when
+/// nullable) or invalid (the error is recorded).
+fn tags_field(errs: &mut Errors, obj: &Map<String, Value>, name: &str, nullable: bool) -> Option<Vec<String>> {
+    let at = validation::loc(&[json!("body")], name);
+    match obj.get(name) {
+        None => None,
+        Some(Value::Null) if nullable => None,
+        Some(Value::Array(items)) => {
+            // pydantic checks max_length before it looks at any item.
+            if items.len() > MAX_TAGS {
+                errs.push("too_long", &at,
+                    format!("List should have at most {MAX_TAGS} items after validation, not {}", items.len()),
+                    &Value::Array(items.clone()),
+                    Some(json!({"field_type": "List", "max_length": MAX_TAGS, "actual_length": items.len()})));
+                return None;
+            }
+            let mut out = Vec::new();
+            let mut ok_items = true;
+            for (i, item) in items.iter().enumerate() {
+                match item {
+                    Value::String(s) => out.push(s.clone()),
+                    other => {
+                        let mut l = at.clone();
+                        l.push(json!(i));
+                        errs.push("string_type", &l, "Input should be a valid string".into(), other, None);
+                        ok_items = false;
+                    }
+                }
+            }
+            if ok_items { Some(out) } else { None }
+        }
+        Some(other) => {
+            errs.push("list_type", &at, "Input should be a valid list".into(), other, None);
+            None
+        }
+    }
+}
+
+fn tags_json(tags: &[String]) -> Value {
+    Value::Array(tags.iter().cloned().map(Value::String).collect())
+}
+
+/// `POST /sessions`: a new DRAFT session under the `max_sessions` ceiling.
+pub async fn create(
+    State(state): State<AppState>,
+    Extension(actors): Extension<RequestActors>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let content_type = headers.get(axum::http::header::CONTENT_TYPE).and_then(|v| v.to_str().ok());
+    let body = validation::read_body(content_type, &bytes)?;
+    let user = auth::current_user(&state, &headers, ROUTE_WRITE, &actors).await?;
+    auth::require_analyst_or_above(&state, &user).await?;
+    let obj = body_object(&body)?;
+    let mut errs = Errors::default();
+    let p = [json!("body")];
+    let name = str_field(&mut errs, &obj, &p, "name", true, false, &NAME_RULES);
+    let description = str_field(&mut errs, &obj, &p, "description", false, true, &DESCRIPTION_RULES);
+    let tags = tags_field(&mut errs, &obj, "tags", false);
+    errs.into_result()?;
+    let Field::Value(name) = name else { return Err(ApiError::internal()) };
+    let description = match description { Field::Value(d) => Some(d), _ => None };
+
+    // limit_guard: the count and the insert under one per-tenant lock.
+    let mut tx = state.pool.begin().await?;
+    limits::take_tenant_lock(&mut tx, &user.tenant_id).await?;
+    let current = count_sessions(&mut tx, &user.tenant_id, "active").await?;
+    if let Err(e) = limits::enforce_limit(&state.pool, &mut tx, state.settings.testing_mode, &user.tenant_id,
+        "max_sessions", current, 1).await
+    {
+        drop(tx);
+        return Err(e);
+    }
+    let session_id = crate::activity::generate_id("sess");
+    // Python runs these two on their own pooled connections, inside the lock.
+    sqlx::query(
+        "INSERT INTO sessions (id, tenant_id, name, description, status, pipeline_step, \
+         created_by, created_at, updated_at, tags, version) \
+         VALUES ($1, $2, $3, $4, 'DRAFT', 'upload', $5, NOW(), NOW(), $6, 1)",
+    )
+    .bind(&session_id)
+    .bind(&user.tenant_id)
+    .bind(&name)
+    .bind(&description)
+    .bind(&user.user_id)
+    .bind(tags_json(&tags.unwrap_or_default()))
+    .execute(&state.pool)
+    .await?;
+    sqlx::query("INSERT INTO session_configs (session_id, tenant_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+        .bind(&session_id)
+        .bind(&user.tenant_id)
+        .execute(&state.pool)
+        .await?;
+    let session = get_session(&state.pool, &user.tenant_id, &session_id).await?;
+    tx.commit().await?;
+    let note = Note {
+        target_id: Some(session_id.clone()),
+        label: Some(name.clone()),
+        before: None,
+        after: Some(json!({"name": name})),
+    };
+    audit::record(&state, &actors, "POST", "/sessions", None, note, 201).await;
+    Ok((StatusCode::CREATED, ok(session.map(Value::Object).unwrap_or(Value::Null))))
+}
+
+/// `PATCH /sessions/{id}`: name, description and tags. A null or absent field
+/// is left as it was (there is no way to clear a description but "").
+pub async fn update(
+    State(state): State<AppState>,
+    Extension(actors): Extension<RequestActors>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let content_type = headers.get(axum::http::header::CONTENT_TYPE).and_then(|v| v.to_str().ok());
+    let body = validation::read_body(content_type, &bytes)?;
+    let user = auth::current_user(&state, &headers, ROUTE_WRITE, &actors).await?;
+    auth::require_analyst_or_above(&state, &user).await?;
+    let obj = body_object(&body)?;
+    let mut errs = Errors::default();
+    let p = [json!("body")];
+    let name = str_field(&mut errs, &obj, &p, "name", false, true, &NAME_RULES);
+    let description = str_field(&mut errs, &obj, &p, "description", false, true, &DESCRIPTION_RULES);
+    let tags = tags_field(&mut errs, &obj, "tags", true);
+    errs.into_result()?;
+
+    let s = get_session(&state.pool, &user.tenant_id, &session_id)
+        .await?
+        .ok_or_else(session_not_found)?;
+    let name = match name { Field::Value(v) => Some(v), _ => None };
+    let description = match description { Field::Value(v) => Some(v), _ => None };
+    if name.is_some() || description.is_some() || tags.is_some() {
+        // Only the supplied columns are in the SET clause, in Python's order.
+        let mut sets: Vec<String> = Vec::new();
+        let mut n = 0;
+        for (present, col) in [(name.is_some(), "name"), (description.is_some(), "description"), (tags.is_some(), "tags")] {
+            if present {
+                n += 1;
+                sets.push(format!("{col} = ${n}"));
+            }
+        }
+        let sql = format!("UPDATE sessions SET {}, updated_at = NOW() WHERE id = ${} AND tenant_id = ${}",
+            sets.join(", "), n + 1, n + 2);
+        let mut q = sqlx::query(&sql);
+        if let Some(v) = &name { q = q.bind(v); }
+        if let Some(v) = &description { q = q.bind(v); }
+        if let Some(v) = &tags { q = q.bind(tags_json(v)); }
+        q.bind(&session_id).bind(&user.tenant_id).execute(&state.pool).await?;
+    }
+    let after = get_session(&state.pool, &user.tenant_id, &session_id).await?;
+    let pick = |m: &Map<String, Value>, k: &str| m.get(k).cloned().unwrap_or(Value::Null);
+    let a = after.clone().unwrap_or_default();
+    let note = Note {
+        target_id: None,
+        label: match pick(if after.is_some() { &a } else { &s }, "name") { Value::String(v) => Some(v), _ => None },
+        before: Some(json!({"name": pick(&s, "name"), "description": pick(&s, "description"), "tags": pick(&s, "tags")})),
+        after: Some(json!({"name": pick(&a, "name"), "description": pick(&a, "description"), "tags": pick(&a, "tags")})),
+    };
+    audit::record(&state, &actors, "PATCH", "/sessions/{session_id}", Some(&session_id), note, 200).await;
+    Ok(ok(after.map(Value::Object).unwrap_or(Value::Null)))
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -350,6 +521,16 @@ pub async fn archive_summary_literal(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     archive(state, actors, Path("summary".to_string()), headers).await
+}
+
+/// PATCH on the literal path: the same fall-through to `PATCH /{session_id}`.
+pub async fn update_summary_literal(
+    state: State<AppState>,
+    actors: Extension<RequestActors>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    update(state, actors, Path("summary".to_string()), headers, bytes).await
 }
 
 pub async fn list_sessions(

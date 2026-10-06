@@ -6,9 +6,9 @@
 # routers. Every path is EXACT (no prefix match), and each matcher names its
 # methods, so nothing else under these paths can leak to Rust.
 #
-# PATCH /api/v1/tenant/timezone stays on Python: it re-anchors armed
-# schedules with croniter in the new zone (see r1/timezone.rs). Only GET of
-# that path is listed below.
+# PATCH /api/v1/tenant/timezone re-anchors armed schedules with the croniter
+# port in routes/schedule/, so it only belongs here together with the
+# schedule group's cron engine (it is the same binary, nothing else to move).
 
 @rs_r1_get {
 	method GET
@@ -26,7 +26,7 @@ handle @rs_r1_get {
 
 @rs_r1_patch {
 	method PATCH
-	path /api/v1/me/preferences /api/v1/tenant/currency
+	path /api/v1/me/preferences /api/v1/tenant/currency /api/v1/tenant/timezone
 }
 handle @rs_r1_patch {
 	reverse_proxy api-rs:8021 api:8010 {

@@ -590,7 +590,7 @@ def r2_prepare(py: str, rs: str, fx: Fixture, db) -> dict:
     }
     for k, v in shared.items():
         ph[f"{{s_{k}}}"] = (v, v)
-    for k in ("arch", "archkey", "restore", "sched", "spike"):
+    for k in ("arch", "archkey", "restore", "sched", "spike", "patch"):
         ph[f"{{s_{k}}}"] = (_r2_session(py, fx, f"CT R2 {k}"), _r2_session(py, fx, f"CT R2 {k}"))
     for sid in (shared["archived"], *ph["{s_restore}"]):
         r = http(py, "DELETE", f"{API}/sessions/{sid}", token=fx.admin_token)
@@ -1374,6 +1374,148 @@ def build_r2_cases(fx: Fixture, ph: dict) -> list[Case]:
         Case("r2 spike list after revert", "GET", f"{S}/{{s_spike}}/spike-edits?include_reverted=1",
              route="GET " + spk, volatile={"dataset_id", "reverted_at", "applied_at"}),
     ]
+
+# ── Wave 1b: POST /sessions, PATCH /sessions/{id} ────────────────────────────
+
+SESSION_COLS = "name, description, status, pipeline_step, created_by, tags, version, archived_at, dataset_id"
+
+
+def _strip_target(rows_):
+    return [{**x, "context": {k: v for k, v in x["context"].items() if k != "target_id"}} for x in rows_]
+
+
+def w1b_check_created(name: str, expect: int):
+    """`expect` sessions called `name` exist (one per side that created one),
+    with the same columns, each with its session_configs row and the same
+    `audit.session.created` row."""
+    def check(fx, rp, rr, db):
+        cur = db.cursor()
+        cur.execute(f"SELECT id, {SESSION_COLS} FROM sessions WHERE tenant_id = %s AND name = %s ORDER BY created_at",
+                    (fx.tenant_id, name))
+        rows = cur.fetchall()
+        problems = []
+        if len(rows) != expect:
+            return [f"{len(rows)} session(s) named {name!r}, expected {expect}"]
+        if expect == 2:
+            if rows[0][1:] != rows[1][1:]:
+                problems.append(f"session rows differ: python={rows[0][1:]} rust={rows[1][1:]}")
+            audits = []
+            for r in rows:
+                cur.execute("SELECT 1 FROM session_configs WHERE session_id = %s AND tenant_id = %s",
+                            (r[0], fx.tenant_id))
+                if cur.fetchone() is None:
+                    problems.append(f"no session_configs row for {r[0]}")
+                audits.append(_activity(db, fx.tenant_id, r[0], "audit.session.created"))
+            if len(audits[0]) != 1 or _strip_target(audits[0]) != _strip_target(audits[1]):
+                problems.append(f"audit.session.created rows differ or are missing: {audits}")
+            for r, a in zip(rows, audits):
+                if a and a[0]["context"].get("target_id") != r[0]:
+                    problems.append("audit target_id is not the new session id")
+        return problems
+    return check
+
+
+def w1b_check_patched(key: str, ph: dict, expect_audit: int):
+    def check(fx, rp, rr, db):
+        sp, sr = ph[key]
+        cur = db.cursor()
+        out = []
+        for sid in (sp, sr):
+            cur.execute(f"SELECT {SESSION_COLS} FROM sessions WHERE id = %s", (sid,))
+            out.append(cur.fetchone())
+        problems = [] if out[0] == out[1] else [f"session rows differ: python={out[0]} rust={out[1]}"]
+        ea = _activity(db, fx.tenant_id, sp, "audit.session.updated")
+        eb = _activity(db, fx.tenant_id, sr, "audit.session.updated")
+        if _strip_target(ea) != _strip_target(eb) or len(ea) != expect_audit:
+            problems.append(f"audit.session.updated rows: python={ea} rust={eb} (expected {expect_audit})")
+        return problems
+    return check
+
+
+def build_w1b_session_cases(fx: Fixture, ph: dict) -> list[Case]:
+    S = f"{API}/sessions"
+    cr, up = "POST /sessions", "PATCH /sessions/{id}"
+    sv = {"session_id"}
+    # Each success case runs on both sides, each creating a session with the same unique name.
+    created = {"id", "session_id", "created_at", "updated_at"}
+    upd = sv | {"updated_at"}
+    P = f"{S}/{{s_patch}}"
+    return [
+        Case("w1b create analyst", "POST", S, who="analyst", route=cr, volatile=created,
+             body={"name": "CT W1B full", "description": "d", "tags": ["a", "b"]},
+             state_check=w1b_check_created("CT W1B full", 2)),
+        Case("w1b create minimal admin", "POST", S, route=cr, volatile=created, body={"name": " CT W1B min "},
+             state_check=w1b_check_created(" CT W1B min ", 2)),
+        Case("w1b create null description", "POST", S, who="key_write", route=cr, volatile=created,
+             body={"name": "CT W1B key", "description": None, "tags": []},
+             state_check=w1b_check_created("CT W1B key", 2)),
+        Case("w1b create unicode", "POST", S, route=cr, volatile=created,
+             body={"name": "Pronóstico ☃ CT W1B", "tags": ["ñ"]},
+             state_check=w1b_check_created("Pronóstico ☃ CT W1B", 2)),
+        Case("w1b create max lengths", "POST", S, route=cr, volatile=created,
+             body={"name": "n" * 200, "description": "d" * 2000, "tags": ["t"] * 50},
+             state_check=w1b_check_created("n" * 200, 2)),
+        Case("w1b create viewer denied", "POST", S, who="viewer", route=cr, body={"name": "CT W1B viewer"},
+             state_check=w1b_check_created("CT W1B viewer", 0)),
+        Case("w1b create read key denied", "POST", S, who="key_read", route=cr, body={"name": "CT W1B rk"},
+             state_check=w1b_check_created("CT W1B rk", 0)),
+        Case("w1b create no auth", "POST", S, who="none", route=cr, body={"name": "CT W1B none"}),
+        Case("w1b create expired token", "POST", S, who="expired", route=cr, body={"name": "CT W1B exp"}),
+        Case("w1b create empty name", "POST", S, route=cr, body={"name": ""},
+             state_check=w1b_check_created("", 0)),
+        Case("w1b create name too long", "POST", S, route=cr, body={"name": "n" * 201}),
+        Case("w1b create description too long", "POST", S, route=cr, body={"name": "x", "description": "d" * 2001}),
+        Case("w1b create too many tags", "POST", S, route=cr, body={"name": "x", "tags": ["t"] * 51}),
+        Case("w1b create bad tag types", "POST", S, route=cr, body={"name": "x", "tags": ["ok", 5, None, ["z"]]}),
+        Case("w1b create too many bad tags", "POST", S, route=cr, body={"name": "x", "tags": [1] * 51}),
+        Case("w1b create tags null", "POST", S, route=cr, body={"name": "x", "tags": None}),
+        Case("w1b create tags not a list", "POST", S, route=cr, body={"name": "x", "tags": "abc"}),
+        Case("w1b create name wrong type", "POST", S, route=cr, body={"name": 5, "description": 7}),
+        Case("w1b create missing name", "POST", S, route=cr, body={"description": "only"}),
+        Case("w1b create no body", "POST", S, route=cr),
+        Case("w1b create body is a list", "POST", S, route=cr, body=["x"]),
+        Case("w1b create invalid json", "POST", S, route=cr, raw_body=b"{nope", volatile={"ctx", "loc"}),
+        Case("w1b create text/plain body", "POST", S, route=cr, raw_body=b'{"name": "x"}', content_type="text/plain"),
+        Case("w1b create nul in name", "POST", S, route=cr, body={"name": "a\u0000b"}),
+        # ── PATCH ─────────────────────────────────────────────────────────
+        Case("w1b patch name analyst", "PATCH", P, who="analyst", route=up, volatile=upd,
+             body={"name": "CT W1B renamed"}, state_check=w1b_check_patched("{s_patch}", ph, 1)),
+        Case("w1b patch description and tags", "PATCH", P, route=up, volatile=upd,
+             body={"description": "new d", "tags": ["x", "y", "z"]}, state_check=w1b_check_patched("{s_patch}", ph, 2)),
+        Case("w1b patch tags empty", "PATCH", P, who="key_write", route=up, volatile=upd, body={"tags": []},
+             state_check=w1b_check_patched("{s_patch}", ph, 3)),
+        Case("w1b patch nulls change nothing", "PATCH", P, route=up, volatile=upd,
+             body={"name": None, "description": None, "tags": None},
+             state_check=w1b_check_patched("{s_patch}", ph, 4)),
+        Case("w1b patch empty body object", "PATCH", P, route=up, volatile=upd, body={},
+             state_check=w1b_check_patched("{s_patch}", ph, 5)),
+        Case("w1b patch unknown field ignored", "PATCH", P, route=up, volatile=upd,
+             body={"status": "COMPLETED", "name": "CT W1B kept"}, state_check=w1b_check_patched("{s_patch}", ph, 6)),
+        Case("w1b patch clear description", "PATCH", P, route=up, volatile=upd, body={"description": ""},
+             state_check=w1b_check_patched("{s_patch}", ph, 7)),
+        Case("w1b patch viewer denied", "PATCH", P, who="viewer", route=up, body={"name": "nope"},
+             state_check=w1b_check_patched("{s_patch}", ph, 7)),
+        Case("w1b patch read key denied", "PATCH", P, who="key_read", route=up, body={"name": "nope"},
+             state_check=w1b_check_patched("{s_patch}", ph, 7)),
+        Case("w1b patch no auth", "PATCH", P, who="none", route=up, body={"name": "nope"}),
+        Case("w1b patch not found", "PATCH", f"{S}/sess_nope", route=up, body={"name": "nope"}),
+        Case("w1b patch wrong tenant", "PATCH", f"{S}/{{s_other_tenant}}", route=up, body={"name": "nope"}),
+        Case("w1b patch validation beats not found", "PATCH", f"{S}/sess_nope", route=up,
+             body={"name": "", "tags": ["a", 1]}),
+        Case("w1b patch name empty", "PATCH", P, route=up, body={"name": ""},
+             state_check=w1b_check_patched("{s_patch}", ph, 7)),
+        Case("w1b patch name too long", "PATCH", P, route=up, body={"name": "n" * 201}),
+        Case("w1b patch description too long", "PATCH", P, route=up, body={"description": "d" * 2001}),
+        Case("w1b patch too many tags", "PATCH", P, route=up, body={"tags": ["t"] * 51}),
+        Case("w1b patch bad tag types", "PATCH", P, route=up, body={"tags": [1, "a", 2.5]}),
+        Case("w1b patch tags not a list", "PATCH", P, route=up, body={"tags": {"a": 1}}),
+        Case("w1b patch wrong types", "PATCH", P, route=up, body={"name": 5, "description": []}),
+        Case("w1b patch no body", "PATCH", P, route=up),
+        Case("w1b patch invalid json", "PATCH", P, route=up, raw_body=b"[1,", volatile={"ctx", "loc"}),
+        Case("w1b patch literal summary", "PATCH", f"{S}/summary", route=up, body={"name": "nope"}),
+        Case("w1b patch then get", "GET", P, route="GET /sessions/{id}", volatile=upd),
+    ]
+
 # ── R3: webhooks CRUD, API keys, audit trail reads ───────────────────────────
 #
 # A sequence rather than a flat list: keys minted by one service are used on
@@ -2857,7 +2999,7 @@ def run(args) -> int:
         cd = {"py": seed_commitment(args.python, fx), "rs": seed_commitment(args.rust, fx)}
         # R2 (sessions / schedule / spike edits) needs --db to seed its rows.
         ph = r2_prepare(args.python, args.rust, fx, db) if db is not None else {}
-        for case in build_cases(fx) + (build_r2_cases(fx, ph) if ph else []):
+        for case in build_cases(fx) + (build_r2_cases(fx, ph) + build_w1b_session_cases(fx, ph) if ph else []):
             if args.only and args.only not in case.name:
                 continue
             token = auth_for(fx, case.who)
