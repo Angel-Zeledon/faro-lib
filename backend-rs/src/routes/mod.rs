@@ -9,6 +9,7 @@ pub mod sessions;
 pub mod spike_edits;
 pub mod webhooks;
 pub mod po_cancellation;
+pub mod po_delegations;
 pub mod po_payments;
 pub mod signal_thresholds;
 
@@ -70,6 +71,9 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // NEW (Rust only, no Python route): purchase-order approval delegation.
+        .route("/api/v1/inventory/po-approval/delegations", get(po_delegations::list).post(po_delegations::create))
+        .route("/api/v1/inventory/po-approval/delegations/{delegation_id}/revoke", post(po_delegations::revoke))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }
