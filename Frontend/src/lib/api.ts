@@ -1671,6 +1671,17 @@ export const setSupplyContractStatus = (rootId: string, status: 'active' | 'clos
   request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/status`,
     { status, expected_revision: expectedRevision })
 
+// Renewal tracking (served by the Rust API only; see docs/rust-migration.md).
+export const getContractRenewals = (withinDays = 90, bucket?: import('./types').ContractRenewalBucket) =>
+  request<import('./types').ContractRenewalList>(
+    'GET', `/supply-contracts/renewals?within_days=${withinDays}${bucket ? `&bucket=${bucket}` : ''}`)
+export const getContractComparison = (rootId: string) =>
+  request<import('./types').ContractComparisonResponse>(
+    'GET', `/supply-contracts/${encodeURIComponent(rootId)}/comparison`)
+export const renewSupplyContract = (rootId: string, expectedRevision: number) =>
+  request<import('./types').ContractRenewResult>(
+    'POST', `/supply-contracts/${encodeURIComponent(rootId)}/renew`, { expected_revision: expectedRevision })
+
 // ── Demand plan versions (a frozen plan and its sign-off; changes no purchase) ─
 export const listDemandPlans = () =>
   request<import('./types').DemandPlanList>('GET', '/demand-plans')
