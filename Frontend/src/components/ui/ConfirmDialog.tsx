@@ -27,6 +27,28 @@ export interface ConfirmOptions {
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
+  /** An optional tick box inside the question (e.g. "also ask the supplier to
+   *  confirm"). The promise still resolves to a plain yes/no; the box reports
+   *  its value through `onChange`, so the caller keeps the choice (and can
+   *  remember it) without the dialog knowing what it means. */
+  checkbox?: { label: string; hint?: string; checked: boolean; onChange: (checked: boolean) => void }
+}
+
+function ConfirmCheckbox({ spec }: { spec: NonNullable<ConfirmOptions['checkbox']> }) {
+  const [checked, setChecked] = useState(spec.checked)
+  return (
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '0 0 20px', cursor: 'pointer' }}>
+      <input
+        type="checkbox" checked={checked}
+        onChange={(e) => { setChecked(e.target.checked); spec.onChange(e.target.checked) }}
+        style={{ marginTop: 3, width: 16, height: 16, accentColor: 'var(--accent)' }}
+      />
+      <span style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--text)' }}>
+        <span style={{ fontWeight: 600 }}>{spec.label}</span>
+        {spec.hint && <span style={{ display: 'block', color: 'var(--dim)', fontSize: 12.5 }}>{spec.hint}</span>}
+      </span>
+    </label>
+  )
 }
 
 type ConfirmFn = (opts: ConfirmOptions) => Promise<boolean>
@@ -153,6 +175,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 {opts.message}
               </p>
             )}
+            {opts.checkbox && <ConfirmCheckbox spec={opts.checkbox} />}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button
                 onClick={() => close(false)}

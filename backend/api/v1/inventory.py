@@ -1981,8 +1981,11 @@ def receive_po(
 @router.get("/suppliers/scorecard")
 def supplier_scorecard(user: CurrentUser = Depends(get_current_user)):
     """Per-supplier performance: real lead time range, on-time rate, fill rate."""
+    from backend.inventory import po_confirmation_service as confirm_svc
     from backend.inventory import reception_service as rec_svc
-    return ok(rec_svc.get_supplier_scorecard(user.tenant_id))
+    # + "promised vs real": how often accepted supplier promises were kept.
+    return ok(confirm_svc.attach_promise_stats(
+        user.tenant_id, rec_svc.get_supplier_scorecard(user.tenant_id)))
 
 
 @router.get("/suppliers/contact-health")
@@ -2074,9 +2077,18 @@ def download_po_pdf(po_log_id: str, supplier_slug: str):
     raise AppError("po_pdf_not_found", "Purchase order PDF not found", status_code=404)
 
 
+class SendPORequest(BaseModel):
+    # Ask each supplier to confirm quantities and delivery dates through a
+    # secure link in the message. Off when the body is omitted, so an existing
+    # integration keeps sending exactly what it sent before; the app's checkbox
+    # (default on, remembered) sends it.
+    request_confirmation: bool = False
+
+
 @router.post("/po/{po_log_id}/send", status_code=200)
 def send_po_to_suppliers(
     po_log_id: str,
+    body: Optional[SendPORequest] = None,
     # Verified email required: this leaves the tenant, reaching third-party
     # suppliers by email and WhatsApp in the account's name.
     user: CurrentUser = Depends(require_verified_analyst_or_above),
@@ -2086,6 +2098,10 @@ def send_po_to_suppliers(
     grouping the PO's lines by supplier name (a PO can span more than one
     supplier). Lines with no supplier name, or whose supplier has no
     saved contact info, are skipped and reported back — never a 500.
+
+    With `request_confirmation`, each supplier's message also carries a secure
+    link where they confirm the quantity and delivery date of each line (e-mail
+    always; WhatsApp text only on plans that include the WhatsApp bot).
     """
     from backend.inventory import reception_service as rec_svc
     from backend.inventory.roi_service import format_po_number
@@ -2132,6 +2148,17 @@ def send_po_to_suppliers(
     # document per supplier and each document formats two amounts per line.
     po_currency = currency_of(user.tenant_id)
 
+    # Supplier confirmation links (optional, see SendPORequest).
+    from backend.entitlements.service import tenant_has_feature
+    from backend.inventory import po_confirmation_service as confirm_svc
+    from backend.preferences.service import get_preferences
+    wants_confirmation = bool(body and body.request_confirmation)
+    confirmation_links: list[dict] = []
+    confirmation_failed: list[str] = []
+    wa_entitled = tenant_has_feature(user.tenant_id, "whatsapp_bot") if wants_confirmation else False
+    buyer_language = (get_preferences(user.tenant_id, user.user_id).get("language")
+                      if wants_confirmation else "es")
+
     for supplier_name, supplier_items in by_supplier.items():
         # The buyer's explicit pick wins over the free-text name on the line.
         picked_id = next(
@@ -2148,8 +2175,32 @@ def send_po_to_suppliers(
             skipped.append({"supplier": supplier_name, "reason": "no_contact_details"})
             continue
 
-        pdf_path = po_pdf.generate_po_pdf(user.tenant_id, po_log_id, supplier_name,
-                                          supplier_items, po_meta, po_currency)
+        # The supplier's confirmation link. E-mail always carries it; the
+        # WhatsApp TEXT carries it only on plans that include the WhatsApp bot
+        # (the same gate the bot's own messages use). A supplier reachable only by
+        # a WhatsApp the plan does not cover gets no link at all, rather than a
+        # credential delivered through a channel the tenant has not got.
+        confirm_url = None
+        confirm_expires_text = None
+        link_in_whatsapp = False
+        if wants_confirmation:
+            link_in_whatsapp = bool(supplier.get("whatsapp")) and wa_entitled
+            if supplier.get("email") or link_in_whatsapp:
+                try:
+                    token, link_req = confirm_svc.issue_link(
+                        user.tenant_id, po, supplier_name, user.user_id, buyer_language)
+                    confirm_url = confirm_svc.portal_url(token)
+                    confirm_expires_text = link_req["expires_at"].date().isoformat()
+                except Exception:   # noqa: BLE001 — the order still goes out; the buyer is told
+                    log.exception("[po-confirmation] could not issue a link tenant=%s po=%s",
+                                  user.tenant_id, po_log_id)
+                    confirmation_failed.append(supplier_name)
+
+        pdf_path = po_pdf.generate_po_pdf(
+            user.tenant_id, po_log_id, supplier_name, supplier_items,
+            {**po_meta, "confirm_url": confirm_url, "language": buyer_language}
+            if confirm_url else po_meta,
+            po_currency)
         pdf_bytes = pdf_path.read_bytes()
         slug = po_pdf.slugify_supplier_name(supplier_name)
 
@@ -2160,16 +2211,27 @@ def send_po_to_suppliers(
                 items=supplier_items, pdf_bytes=pdf_bytes, pdf_filename=pdf_path.name,
                 po_ref=format_po_number(po.get("po_number"), po_log_id),
                 tenant_id=user.tenant_id,
+                confirm_url=confirm_url, confirm_expires_text=confirm_expires_text,
+                language=buyer_language,
             )
 
         whatsapp_ok = False
         if supplier.get("whatsapp"):
             media_url = f"{settings.frontend_url}/api/v1/inventory/po/{po_log_id}/pdf/{slug}"
-            text = wa_mod.build_po_supplier_text(supplier_name, po_log_id, supplier_items)
+            text = wa_mod.build_po_supplier_text(
+                supplier_name, po_log_id, supplier_items,
+                confirm_url=confirm_url if link_in_whatsapp else None,
+                language=buyer_language)
             whatsapp_ok = wa_mod.send_whatsapp(supplier["whatsapp"], text,
                                                media_url=media_url,
                                                tenant_id=user.tenant_id)
 
+        if confirm_url:
+            confirmation_links.append({
+                "supplier": supplier_name,
+                "email": bool(email_ok and supplier.get("email")),
+                "whatsapp": bool(whatsapp_ok and link_in_whatsapp),
+            })
         if email_ok or whatsapp_ok:
             sent.append({"supplier": supplier_name, "email": email_ok, "whatsapp": whatsapp_ok})
         else:
@@ -2229,7 +2291,13 @@ def send_po_to_suppliers(
             details={"reference": reference, "skipped": unreached},
         )
 
-    return ok({"sent": sent, "skipped": skipped, "unresolved": unresolved})
+    result = {"sent": sent, "skipped": skipped, "unresolved": unresolved}
+    if wants_confirmation:
+        # Said out loud: the buyer asked for links, so the answer states which
+        # suppliers actually received one and which could not get one.
+        result["confirmation_links"] = confirmation_links
+        result["confirmation_failed"] = confirmation_failed
+    return ok(result)
 
 
 @router.post("/po/{po_log_id}/send-to-me", status_code=200)

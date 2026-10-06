@@ -10,7 +10,7 @@ Recipient numbers come from users.whatsapp_number (E.164, e.g. +573001234567).
 
 import logging
 
-from backend.notifications.locale import coverage_short, render_es
+from backend.notifications.locale import coverage_short, render, render_es
 from backend.service_config.resolver import effective
 
 log = logging.getLogger(__name__)
@@ -265,8 +265,12 @@ def _line_label(item: dict) -> str:
     return str(item.get("display_name") or item.get("sku") or "")
 
 
-def build_po_supplier_text(supplier_name: str, po_log_id: str, items: list[dict]) -> str:
-    """Short WhatsApp message accompanying a PO PDF sent to a supplier."""
+def build_po_supplier_text(supplier_name: str, po_log_id: str, items: list[dict],
+                           confirm_url: str | None = None,
+                           language: str = "es") -> str:
+    """Short WhatsApp message accompanying a PO PDF sent to a supplier.
+    `confirm_url` adds the supplier's confirmation link (a credential: only the
+    message to that supplier carries it)."""
     n = len(items)
     lines = [
         render_es("po_supplier_header", supplier=supplier_name),
@@ -280,6 +284,8 @@ def build_po_supplier_text(supplier_name: str, po_log_id: str, items: list[dict]
     if n > 10:
         lines.append(render_es("po_supplier_more", n=n - 10))
     lines.append(render_es("po_supplier_footer", reference=po_log_id))
+    if confirm_url:
+        lines.append(render(language, "po_confirm_whatsapp", url=confirm_url))
     return "\n".join(lines)
 
 

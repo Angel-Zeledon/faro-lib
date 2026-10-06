@@ -51,6 +51,9 @@ import { renderExplanation } from '@/lib/explanationCopy'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { ErrorState, LoadingState, SkeletonCards, useErrorDetail } from '@/components/ui/States'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import {
+  RequestConfirmationCheckbox, useRequestConfirmationPref, confirmationNote,
+} from '@/components/po/SupplierConfirmation'
 import { RequestApprovalButton, usePOApproval } from '@/components/po/POApproval'
 import {
   SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
@@ -971,6 +974,7 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
   // Only a tenant with an approval rule ever gets `required`: for everybody
   // else this is `null`/not required and the sheet is what it always was.
   const { data: approval, reload: reloadApproval } = usePOApproval(shown?.id)
+  const [requestConfirmation, setRequestConfirmation] = useRequestConfirmationPref()
   if (!shown) return null
   const bySupplier = Object.entries(lines.reduce<Record<string, ActionItem[]>>((acc, i) => {
     const key = i.supplier || ''
@@ -1027,6 +1031,9 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
               {t('roi.send_po_unresolved')} {(sendResult.unresolved ?? []).map(u => u.sku).join(', ')}
             </div>
           )}
+          {confirmationNote(sendResult, t) && (
+            <div style={{ fontSize: 13, color: C.muted }}>{confirmationNote(sendResult, t)}</div>
+          )}
         </div>
       ) : (
         approval?.required ? (
@@ -1041,6 +1048,7 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
               {t('hoy.generate_send_failed')} {errorDetail(sendError)}
             </div>
           )}
+          <RequestConfirmationCheckbox checked={requestConfirmation} onChange={setRequestConfirmation} />
           <button
             className="mobile-btn mobile-btn-primary"
             onClick={onSendNow}

@@ -193,6 +193,31 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=CRITICAL,
         detail_keys=("reference", "skipped"),
     ),
+    # The supplier answered the confirmation link (inventory/po_confirmation_
+    # service.py). Everything confirmed is history; a proposed change or a
+    # declined line needs the buyer's decision, so it reaches the bell.
+    "purchase.supplier_confirmed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "supplier", "confirmed"),
+    ),
+    "purchase.supplier_changes_proposed": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference", "supplier", "confirmed", "changed", "declined"),
+    ),
+    # A person accepted a supplier's promised date: it now drives that order's
+    # expected arrival. Recorded under their name, because it moves a decision.
+    "purchase.supplier_change_accepted": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "supplier", "sku", "promised_date"),
+    ),
+    "purchase.supplier_link_reopened": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "supplier"),
+    ),
+    "purchase.supplier_link_revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "supplier"),
+    ),
     "purchase.reception_recorded": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("reference", "sku_count", "units", "warehouse"),
@@ -443,6 +468,9 @@ REASONS: tuple[str, ...] = (
     "supplier_has_no_contact",
     "no_transport_configured",
     "transport_error",
+    # a supplier answered the confirmation link with a different date/quantity
+    # or declined a line; nothing applies until the buyer accepts it
+    "supplier_proposed_changes",
     # ceilings
     "plan_limit_reached",
     # account and access — the WHY of a role change or a new machine credential

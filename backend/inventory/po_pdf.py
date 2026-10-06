@@ -14,7 +14,7 @@ from pathlib import Path
 
 from backend.storage import paths
 from backend.formatting import money
-from backend.notifications.locale import render_es
+from backend.notifications.locale import render, render_es
 
 log = logging.getLogger(__name__)
 
@@ -117,6 +117,18 @@ def generate_po_pdf(
         story.append(t)
         story.append(Spacer(1, 0.2*inch))
 
+        # The supplier's confirmation link, when the buyer asked for one. The
+        # url is escaped for reportlab's mini-XML: it is a link, not markup.
+        confirm_url = po_meta.get("confirm_url")
+        if confirm_url:
+            from xml.sax.saxutils import escape as _xml_escape, quoteattr as _xml_attr
+            story.append(Paragraph(
+                f'{_xml_escape(render(po_meta.get("language") or "es", "po_confirm_pdf_cta"))} '
+                f'<a href={_xml_attr(confirm_url)} color="#4f46e5">{_xml_escape(confirm_url)}</a>',
+                body,
+            ))
+            story.append(Spacer(1, 0.15*inch))
+
         story.append(Paragraph(render_es("po_pdf_section_lines"), h2))
         header = [render_es("po_pdf_col_sku"), render_es("po_pdf_col_product"),
                   render_es("po_pdf_col_qty"), render_es("po_pdf_col_unit_cost"),
@@ -162,6 +174,10 @@ def generate_po_pdf(
             f"{render_es('po_pdf_date')}: {po_meta.get('generated_at', 'N/A')}",
             "",
         ]
+        if po_meta.get("confirm_url"):
+            lines.append(f"{render(po_meta.get('language') or 'es', 'po_confirm_pdf_cta')} "
+                         f"{po_meta['confirm_url']}")
+            lines.append("")
         for i in items:
             qty = i.get("final_qty") or 0
             cost = i.get("unit_cost")

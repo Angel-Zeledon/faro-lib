@@ -55,6 +55,12 @@ UNAUTHENTICATED = {
     # The landing visitor has no account yet: this mints a throwaway one. It
     # reads no tenant's data; abuse is bounded in backend/trial/service.py.
     "POST /api/v1/trial": "creates a 24-hour trial account for a visitor",
+    # A supplier answers a purchase order from the link in the message, with no
+    # account. The 256-bit link token is the credential (only its hash is
+    # stored); every bad link answers one identical 404 and both routes are rate
+    # limited. See backend/api/v1/supplier_portal.py.
+    "GET /api/v1/supplier-portal/{token}": "the supplier's link token is the credential",
+    "POST /api/v1/supplier-portal/{token}/confirm": "the supplier's link token is the credential",
     # Machine callers authorised by request signature, not by a user token.
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
     # Deliberate: Twilio's MediaUrl fetch cannot carry a Bearer token, and the

@@ -40,6 +40,7 @@ PUBLIC = {
     "POST /api/v1/auth/login": "you cannot be authorised before you log in",
     "POST /api/v1/auth/signup": "creates the account and its tenant",
     "POST /api/v1/trial": "the landing visitor has no account yet; it creates one",
+    "POST /api/v1/supplier-portal/{token}/confirm": "a supplier answers a purchase order from the link in the message, no account; the 256-bit link token is the credential",
     "POST /api/v1/auth/refresh": "the refresh token IS the credential",
     "POST /api/v1/auth/logout": "revoking your own session needs no role",
     "POST /api/v1/auth/forgot-password": "you are locked out by definition",

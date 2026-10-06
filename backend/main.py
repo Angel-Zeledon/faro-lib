@@ -406,6 +406,12 @@ app.include_router(ai_insights.router,     prefix=_PREFIX)
 app.include_router(demo.router,            prefix=_PREFIX)
 from backend.api.v1 import trial as trial_router  # noqa: E402
 app.include_router(trial_router.router,    prefix=_PREFIX)
+# The supplier's confirmation page (public: the link is the credential) and the
+# buyer's side of it (read the answers, accept a change).
+from backend.api.v1 import supplier_portal as supplier_portal_router  # noqa: E402
+app.include_router(supplier_portal_router.router, prefix=_PREFIX)
+from backend.api.v1 import po_confirmations as po_confirmations_router  # noqa: E402
+app.include_router(po_confirmations_router.router, prefix=_PREFIX)
 app.include_router(entitlements.router,    prefix=_PREFIX)
 from backend.api.v1 import feedback as feedback_router  # noqa: E402
 app.include_router(feedback_router.router, prefix=_PREFIX)
