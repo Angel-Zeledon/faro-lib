@@ -142,7 +142,7 @@ const SERVICES: &[ServiceDef] = &[
 /// The Fernet key in effect: `INTEGRATIONS_SECRET_KEY`, else the file the
 /// Python app generates under `storage/`. Never created from here: a second
 /// writer of that file is exactly what `crypto.py` warns against.
-fn fernet(settings: &Settings) -> Option<fernet::Fernet> {
+pub(crate) fn fernet(settings: &Settings) -> Option<fernet::Fernet> {
     let key = if !settings.integrations_secret_key.is_empty() {
         settings.integrations_secret_key.clone()
     } else {

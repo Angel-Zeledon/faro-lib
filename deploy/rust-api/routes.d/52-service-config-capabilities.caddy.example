@@ -1,0 +1,25 @@
+# DISABLED EXAMPLE. Rename to 52-service-config-capabilities.caddy inside the
+# gateway's /etc/caddy/routes.d/ to send this route to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# Wave 2b (backend-rs/src/routes/w2b/capabilities.rs): ONLY
+# GET /api/v1/service-config/capabilities. The other ten service-config routes
+# MUST stay on Python: the panel's "last check" is the result of the last probe,
+# which lives in the memory of the Python process, and every write forgets it
+# there. Do not add a prefix match such as /api/v1/service-config/*.
+# 26/26 contract cases (tests/contract/w2b_cases.py), including tenant rows,
+# instance rows and Fernet-encrypted secrets stored by the harness.
+
+@rs_capabilities {
+	method GET
+	path /api/v1/service-config/capabilities
+}
+handle @rs_capabilities {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

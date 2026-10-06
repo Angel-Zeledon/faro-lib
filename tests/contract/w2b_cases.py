@@ -1014,6 +1014,145 @@ def _tables_case(ct, db):
                     "-", "-", route="DELETE /tenant"), "FAIL" if problems else "PASS", problems)
 
 
+# ── 5. service-config capabilities ───────────────────────────────────────────
+
+def _cap_expect(**overrides):
+    base = {"assistant": False, "ai_narrative": False, "documents_search": False, "email": False,
+            "whatsapp": False, "sms": False, "whatsapp_bot": False,
+            "contact_channels": {"whatsapp": False, "email": False}, "online_payments": False,
+            "background_worker": False, "scheduled_jobs": False}
+    base.update(overrides)
+    return base
+
+
+def _cap_check(expected: dict):
+    def check(rp, rr):
+        data = rp.body.get("data") if isinstance(rp.body, dict) else None
+        if rp.status != 200 or data != expected:
+            return [f"the Python answer is not what the scenario says it must be: want {expected}, "
+                    f"got {rp.status} {data}"]
+        return []
+    return check
+
+
+def _fernet(env: dict):
+    key = env.get("INTEGRATIONS_SECRET_KEY")
+    if not key:
+        return None
+    try:
+        from cryptography.fernet import Fernet  # noqa: PLC0415
+        return Fernet(key.encode())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def run_capabilities(args, db, secret) -> list:
+    import time  # noqa: PLC0415
+    ct = _ct()
+    env = ct.read_env_file(args.env_file) if args.env_file else {}
+    fer = _fernet(env)
+    out: list = []
+    route = "GET /service-config/capabilities"
+    if fer is None:
+        return [(ct.Case("capabilities (all)", "-", "-", route=route), "SKIP",
+                 ["needs INTEGRATIONS_SECRET_KEY in --env-file (both services must share it) and `cryptography`"])]
+    fa = ct.make_fixture(args.python, secret)
+    fb = ct.make_fixture(args.python, secret)
+    cur = db.cursor()
+    path = f"{ct.API}/service-config/capabilities"
+    secret_fields = {"deepseek_api_key", "resend_api_key", "stripe_secret_key", "stripe_webhook_secret",
+                     "twilio_auth_token", "paypal_client_secret", "smtp_pass"}
+    try:
+        def set_rows(instance: dict, tenant_a: dict, tenant_b: dict):
+            cur.execute("DELETE FROM service_config WHERE updated_by = 'contract-w2b'")
+            for tid, rows in ((None, instance), (fa.tenant_id, tenant_a), (fb.tenant_id, tenant_b)):
+                for field, value in rows.items():
+                    enc = fer.encrypt(value.encode()).decode() if field in secret_fields else None
+                    cur.execute("""INSERT INTO service_config (id, tenant_id, service, field, value_plain,
+                                                               value_encrypted, updated_by)
+                                   VALUES (%s, %s, 'ct', %s, %s, %s, 'contract-w2b')""",
+                                (f"sc_ct_{secrets.token_hex(5)}", tid, field, None if enc else value, enc))
+            # Python caches the override table for 10 seconds per process.
+            time.sleep(11)
+
+        def phase(label, a_expect, b_expect, with_auth_cases=False):
+            for who_label, fx, who, expect in (("tenant A admin", fa, "admin", a_expect),
+                                               ("tenant A viewer", fa, "viewer", a_expect),
+                                               ("tenant B analyst", fb, "analyst", b_expect)):
+                tok = ct.auth_for(fx, who)
+                res = compare(ct, args, f"capabilities [{label}]: {who_label}", route, "GET", path,
+                              token_py=tok, token_rs=tok, exact=True, check=_cap_check(expect))
+                if res:
+                    out.append(res)
+            if with_auth_cases:
+                for who in ("none", "bad_signature", "expired", "key_read", "key_write"):
+                    tok = ct.auth_for(fa, who)
+                    if who.startswith("key_") and tok is None:
+                        continue
+                    res = compare(ct, args, f"capabilities [{label}]: as {who}", route, "GET", path,
+                                  token_py=tok, token_rs=tok, exact=True)
+                    if res:
+                        out.append(res)
+
+        # A. nothing configured (both services share the environment).
+        set_rows({}, {}, {})
+        phase("nothing configured", _cap_expect(), _cap_expect(), with_auth_cases=True)
+
+        # B. instance channels + a tenant that brought its own WhatsApp.
+        inst = {"deepseek_api_key": "dk-1234567890", "resend_api_key": "re_abcdef",
+                "contact_whatsapp": "+50688887777", "stripe_secret_key": "sk_test_x",
+                "stripe_webhook_secret": "whsec_x", "stripe_price_id_full": "price_x"}
+        ten_a = {"twilio_account_sid": "AC123", "twilio_auth_token": "tok", "twilio_whatsapp_from": "+14155550100",
+                 "twilio_sms_from": "+14155550101"}
+        set_rows(inst, ten_a, {"whatsapp_bot_generic_mode": "true"})
+        phase("instance llm+email+stripe, tenant A twilio",
+              _cap_expect(assistant=True, ai_narrative=True, email=True, whatsapp=True, sms=True, whatsapp_bot=True,
+                          contact_channels={"whatsapp": True, "email": False}, online_payments=True),
+              _cap_expect(assistant=True, ai_narrative=True, email=True,
+                          contact_channels={"whatsapp": True, "email": False}, online_payments=True))
+
+        # C1. no LLM: the bot lives on generic mode only where the tenant says so; half an SMTP
+        #     login; a tenant row for an instance-only field is ignored; PayPal with a bad mode.
+        inst = {"smtp_user": "u", "paypal_client_id": "a", "paypal_client_secret": "b", "paypal_webhook_id": "c",
+                "paypal_plan_id_full": "d", "paypal_mode": "prod", "not_a_registry_field": "ignored"}
+        ten_a = {"twilio_account_sid": "AC123", "twilio_auth_token": "tok", "twilio_whatsapp_from": "+14155550100",
+                 "whatsapp_bot_generic_mode": "true"}
+        ten_b = {"deepseek_api_key": "tenant-cannot-bring-an-llm", "whatsapp_bot_generic_mode": "perhaps"}
+        set_rows(inst, ten_a, ten_b)
+        phase("no llm, half smtp, bad paypal mode", _cap_expect(whatsapp=True, whatsapp_bot=True), _cap_expect())
+
+        # C2. smtp complete, PayPal valid with a padded mixed-case mode, but a zero price.
+        inst = {"smtp_user": "u", "smtp_pass": "p", "paypal_client_id": "a", "paypal_client_secret": "b",
+                "paypal_webhook_id": "c", "paypal_plan_id_full": "d", "paypal_mode": " LiVe ",
+                "billing_price_usd_full": "0", "voyageai_api_key": "v", "pinecone_api_key": "p",
+                "pinecone_index": "i"}
+        set_rows(inst, {}, {})
+        phase("smtp pair, zero price, rag complete",
+              _cap_expect(email=True, documents_search=True), _cap_expect(email=True, documents_search=True))
+
+        # C3. a real price turns PayPal on; a junk stored float is ignored (the default price
+        #     applies); RAG missing one field is off.
+        inst["billing_price_usd_full"] = "12.5"
+        set_rows(inst, {}, {})
+        phase("paypal valid, price 12.5",
+              _cap_expect(email=True, documents_search=True, online_payments=True),
+              _cap_expect(email=True, documents_search=True, online_payments=True))
+        inst["billing_price_usd_full"] = "abc"
+        set_rows(inst, {}, {})
+        phase("junk price is ignored",
+              _cap_expect(email=True, documents_search=True, online_payments=True),
+              _cap_expect(email=True, documents_search=True, online_payments=True))
+        inst.pop("pinecone_index")
+        set_rows(inst, {}, {})
+        phase("rag missing its index",
+              _cap_expect(email=True, online_payments=True), _cap_expect(email=True, online_payments=True))
+    finally:
+        cur.execute("DELETE FROM service_config WHERE updated_by = 'contract-w2b'")
+        ct.erase_fixture(args.python, fa)
+        ct.erase_fixture(args.python, fb)
+    return out
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def run_w2b(args, secret: str, db) -> list:
@@ -1021,7 +1160,7 @@ def run_w2b(args, secret: str, db) -> list:
     if db is None:
         return [(ct.Case("w2b (all)", "-", "-", route="W2B"), "SKIP",
                  ["wave 2b needs --db: seeding, row counts and storage checks are read from the database"])]
-    wanted = (getattr(args, "sections", None) or "freshness,export,erase").split(",")
+    wanted = (getattr(args, "sections", None) or "freshness,export,erase,capabilities").split(",")
     out = []
     if "freshness" in wanted:
         out += run_freshness(args, db, secret)
@@ -1029,6 +1168,8 @@ def run_w2b(args, secret: str, db) -> list:
         out += run_export(args, db, secret)
     if "erase" in wanted:
         out += run_erase(args, db, secret)
+    if "capabilities" in wanted:
+        out += run_capabilities(args, db, secret)
     return out
 
 
@@ -1044,7 +1185,7 @@ def main() -> None:
     ap.add_argument("--env-file", default="backend/.env")
     ap.add_argument("--db", default=None)
     ap.add_argument("--only", default=None)
-    ap.add_argument("--sections", default="freshness,export,erase")
+    ap.add_argument("--sections", default="freshness,export,erase,capabilities")
     args = ap.parse_args()
     secret = ct.read_env_file(args.env_file)["SECRET_KEY"]
     import psycopg2
