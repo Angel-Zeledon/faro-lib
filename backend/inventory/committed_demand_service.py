@@ -296,7 +296,13 @@ def set_status(tenant_id: str, commitment_id: str, user_id: str, status: str) ->
                   updated_at = NOW()
             WHERE id = %s AND tenant_id = %s AND contract_withdrawn_at IS NULL""",
         (status, user_id, commitment_id, tenant_id))
-    return get(tenant_id, commitment_id)
+    updated = get(tenant_id, commitment_id)
+    if status == "fulfilled" and current.get("status") != "fulfilled":
+        # Once per real transition: closing an already-fulfilled row emits nothing.
+        from backend.webhooks.service import emit_commitment_event
+        emit_commitment_event(tenant_id, "commitment.fulfilled", updated,
+                              fulfilled_at=updated.get("status_changed_at"))
+    return updated
 
 
 # ── Reaching the recommendation ──────────────────────────────────────────────

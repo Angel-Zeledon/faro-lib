@@ -394,6 +394,12 @@ EVENTS: dict[str, EventSpec] = {
     "account.warehouse_scope_changed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email", "warehouses"),
     ),
+    # An outbound webhook that failed on several different days was switched
+    # off (backend/webhooks/service.py). Warning, with the host so the admin
+    # knows which receiver to fix before re-enabling it.
+    "webhook.auto_disabled": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("host",),
+    ),
 
     # ── Paying for the plan (backend/billing/) ───────────────────────────────
     # Written by a VERIFIED provider webhook (or the hourly sweep applying what
@@ -481,6 +487,8 @@ REASONS: tuple[str, ...] = (
     # connected databases: the scheduled refresh could not read the source;
     # `reason_params.error_code` names the failure for the screen to explain
     "sql_source_refresh_failed",
+    # an outbound webhook gave up on `days` different days in a row
+    "webhook_failing_for_days",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )
