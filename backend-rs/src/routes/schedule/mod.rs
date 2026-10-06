@@ -99,7 +99,7 @@ fn validate_body(obj: &Map<String, Value>) -> Result<SaveScheduleRequest, ApiErr
 // ── Time zone and next run ───────────────────────────────────────────────────
 
 /// `timezone.timezone_of` + `zoneinfo_of`: the tenant's supported zone.
-async fn tenant_zone(state: &AppState, tenant_id: &str) -> Result<tz::Zone, ApiError> {
+pub(crate) async fn tenant_zone(state: &AppState, tenant_id: &str) -> Result<tz::Zone, ApiError> {
     let row: Option<(Option<Value>,)> = sqlx::query_as("SELECT settings FROM tenants WHERE id = $1")
         .bind(tenant_id)
         .fetch_optional(&state.pool)
@@ -128,7 +128,7 @@ async fn tenant_zone(state: &AppState, tenant_id: &str) -> Result<tz::Zone, ApiE
 /// `_next_run`: the next firing, read in the tenant's zone, as a UTC instant.
 /// The +24h fallback is Python's last resort (no match within 50 years, e.g.
 /// February 31st), logged as loudly as Python logs it.
-fn next_run(cron_expr: &str, zone: &tz::Zone, now: DateTime<Utc>, tenant_id: &str) -> DateTime<Utc> {
+pub(crate) fn next_run(cron_expr: &str, zone: &tz::Zone, now: DateTime<Utc>, tenant_id: &str) -> DateTime<Utc> {
     let computed = cron::expand(cron_expr)
         .map_err(|e| e.0)
         .and_then(|ex| cron::next_after(&ex, now.naive_utc(), zone).map_err(|_| "failed to find next date".into()));

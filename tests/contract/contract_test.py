@@ -743,6 +743,65 @@ def r1_check_currency_write(expected_code):
     return check
 
 
+# timezone PATCH: schedules are re-anchored ---------------------------------
+
+TZ_SCHEDULES = (("sched_ct_tz_weekly", "0 6 * * 1", True), ("sched_ct_tz_daily", "30 23 * * *", True),
+                ("sched_ct_tz_off", "0 6 * * 1", False))
+
+
+def _tz_schedule_rows(db, tenant_id):
+    return _r1_exec(db, "SELECT id, cron_expr, next_run, enabled FROM scheduled_jobs "
+                        "WHERE tenant_id = %s AND id LIKE 'sched_ct_tz_%%' ORDER BY id", (tenant_id,)).fetchall()
+
+
+def r1_tz_setup(zone):
+    """Settings back to `zone` and three schedules (two armed, one off) whose
+    next_run is a sentinel in the year 2000, so only a re-anchor can move it."""
+    base = r1_settings_reset("timezone", zone)
+
+    def setup(fx, db, side):
+        base(fx, db, side)
+        if side == "rs":
+            _r1_scratch(fx)["tz_rows_py"] = _tz_schedule_rows(db, fx.tenant_id)
+        _r1_exec(db, "DELETE FROM scheduled_jobs WHERE tenant_id = %s AND id LIKE 'sched_ct_tz_%%'", (fx.tenant_id,))
+        for sid, cron_expr, enabled in TZ_SCHEDULES:
+            _r1_exec(db, """INSERT INTO scheduled_jobs (id, tenant_id, session_id, cron_expr, next_run, enabled,
+                                                        retrain_mode)
+                            VALUES (%s, %s, %s, %s, '2000-01-01T00:00:00+00', %s, 'refit')""",
+                     (sid, fx.tenant_id, "sess_" + sid, cron_expr, enabled))
+    return setup
+
+
+def r1_check_tz_write(expected_zone, moved):
+    def check(fx, rp, rr, db):
+        problems = []
+        a, b = _r1_scratch(fx).get("settings_py"), _settings(db, fx.tenant_id)
+        if a != b:
+            problems.append(f"tenants.settings differ: python={a} rust={b}")
+        if rp.status != 200 or rr.status != 200:
+            return problems + [f"expected 200 on both sides: python={rp.status} rust={rr.status}"]
+        if (b or {}).get("timezone") != expected_zone:
+            problems.append(f"settings.timezone is {(b or {}).get('timezone')!r}")
+        for side in (rp, rr):
+            if side.body["data"].get("schedules_rescheduled") != moved:
+                problems.append(f"schedules_rescheduled is {side.body['data'].get('schedules_rescheduled')}")
+        pr, rr_ = _r1_scratch(fx).get("tz_rows_py"), _tz_schedule_rows(db, fx.tenant_id)
+        if pr != rr_:
+            problems.append(f"scheduled_jobs differ: python={pr} rust={rr_}")
+        for row in rr_:
+            armed = row[3]
+            sentinel = row[2].year < 2001
+            if armed and sentinel:
+                problems.append(f"armed schedule {row[0]} was not re-anchored")
+            if not armed and not sentinel:
+                problems.append(f"disabled schedule {row[0]} was moved")
+        rows = _audit_rows(db, fx.tenant_id)
+        if len(rows) != 2 or rows[0] != rows[1]:
+            problems.append(f"audit rows differ or are missing: {rows}")
+        return problems
+    return check
+
+
 def r2_check_unchanged(key: str, archived: bool, ph: dict):
     def check(fx, rp, rr, db):
         out = []
@@ -1011,7 +1070,41 @@ def build_r1_cases(fx: Fixture) -> list[Case]:
              setup=r1_settings_reset("currency", "XXX")),
         Case("r1 currency get list stored", "GET", cur, route=R["cur_get"],
              setup=r1_settings_reset("currency", ["USD"])),
-        # ── timezone (GET only; PATCH stays on Python) ─────────────────────
+        # ── timezone ───────────────────────────────────────────────────────
+        Case("r1 timezone patch admin madrid", "PATCH", tz, body={"timezone": " Europe/Madrid "},
+             route="PATCH /tenant/timezone", setup=r1_tz_setup("America/Costa_Rica"),
+             state_check=r1_check_tz_write("Europe/Madrid", 2)),
+        Case("r1 timezone patch to santiago", "PATCH", tz, body={"timezone": "America/Santiago"},
+             route="PATCH /tenant/timezone", setup=r1_tz_setup("Europe/Madrid"),
+             state_check=r1_check_tz_write("America/Santiago", 2)),
+        Case("r1 timezone patch to utc from nothing", "PATCH", tz, body={"timezone": "UTC"},
+             route="PATCH /tenant/timezone", setup=r1_tz_setup("Mars/Base"),
+             state_check=r1_check_tz_write("UTC", 2)),
+        Case("r1 timezone patch analyst denied", "PATCH", tz, who="analyst", body={"timezone": "UTC"},
+             route="PATCH /tenant/timezone", setup=r1_tz_setup("Europe/Madrid"),
+             state_check=r1_check_no_audit_and_settings),
+        Case("r1 timezone patch viewer denied", "PATCH", tz, who="viewer", body={"timezone": "UTC"},
+             route="PATCH /tenant/timezone", setup=r1_tz_setup("Europe/Madrid"),
+             state_check=r1_check_no_audit_and_settings),
+        Case("r1 timezone patch write key", "PATCH", tz, who="key_write", body={"timezone": "UTC"},
+             route="PATCH /tenant/timezone"),
+        Case("r1 timezone patch read key", "PATCH", tz, who="key_read", body={"timezone": "UTC"},
+             route="PATCH /tenant/timezone"),
+        Case("r1 timezone patch no auth", "PATCH", tz, who="none", body={"timezone": "UTC"},
+             route="PATCH /tenant/timezone"),
+        Case("r1 timezone patch unsupported", "PATCH", tz, body={"timezone": "Europe/Paris"},
+             route="PATCH /tenant/timezone", setup=r1_tz_setup("Europe/Madrid"),
+             state_check=r1_check_no_audit_and_settings),
+        Case("r1 timezone patch lowercase utc", "PATCH", tz, body={"timezone": "utc"},
+             route="PATCH /tenant/timezone", setup=r1_tz_setup("Europe/Madrid"),
+             state_check=r1_check_no_audit_and_settings),
+        Case("r1 timezone patch not a string", "PATCH", tz, body={"timezone": 5}, route="PATCH /tenant/timezone"),
+        Case("r1 timezone patch missing", "PATCH", tz, body={"tz": "UTC"}, route="PATCH /tenant/timezone"),
+        Case("r1 timezone patch no body", "PATCH", tz, route="PATCH /tenant/timezone"),
+        Case("r1 timezone patch invalid json", "PATCH", tz, raw_body=b"[1,", route="PATCH /tenant/timezone",
+             volatile={"ctx", "loc"}),
+        Case("r1 timezone patch wrong tenant", "PATCH", tz, who=other, body={"timezone": "UTC"},
+             route="PATCH /tenant/timezone"),
         Case("r1 timezone get default", "GET", tz, who="viewer", route=R["tz_get"],
              setup=r1_settings_reset("timezone", remove=True)),
         Case("r1 timezone get utc", "GET", tz, who="analyst", route=R["tz_get"],

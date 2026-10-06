@@ -7,7 +7,7 @@
 //! | `api/v1/models.py`         | `models`        | GET `/models`                             |
 //! | `api/v1/alerts.py`         | `alerts`        | GET `/alerts`, `/alerts/activity`, `/alerts/kinds`; POST `/alerts/read` |
 //! | `api/v1/currency.py`       | `currency`      | GET, PATCH `/tenant/currency`             |
-//! | `api/v1/timezone.py`       | `timezone`      | GET `/tenant/timezone` (PATCH stays Python, see the module) |
+//! | `api/v1/timezone.py`       | `timezone`      | GET, PATCH `/tenant/timezone` |
 //!
 //! Kept in one sub-router so the group is ONE line in `routes/mod.rs` and in
 //! the proxy (`deploy/rust-api/routes.d/30-settings-reads.caddy.example`).
@@ -36,5 +36,5 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/alerts/kinds", get(alerts::list_kinds))
         .route("/api/v1/alerts/read", post(alerts::mark_alerts_read))
         .route("/api/v1/tenant/currency", get(currency::get_currency).patch(currency::set_currency))
-        .route("/api/v1/tenant/timezone", get(timezone::get_timezone))
+        .route("/api/v1/tenant/timezone", get(timezone::get_timezone).patch(timezone::set_timezone))
 }
