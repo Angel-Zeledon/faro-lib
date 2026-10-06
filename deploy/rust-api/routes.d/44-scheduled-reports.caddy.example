@@ -1,0 +1,43 @@
+# DISABLED EXAMPLE. Rename to 44-scheduled-reports.caddy inside the gateway's
+# /etc/caddy/routes.d/ to turn the feature on; move it to off/ and
+# `caddy reload` to take it off.
+#
+# backend-rs/src/routes/scheduled_reports/: NEW routes. They exist only in
+# Rust, so unlike the other groups there is NO Python failover here: a
+# `reverse_proxy` with a second upstream would answer these paths with
+# Python's 404. If api-rs is down, scheduled-report management is down (the
+# worker that SENDS the reports is Python and keeps running; it does not use
+# these routes).
+#
+# Needs, on the Python side: the `report-scheduler` and `outbox-drain` worker
+# loops (SCHEDULER_ENABLED=true on exactly one instance). The preview route
+# calls `${PYTHON_API_URL:-http://127.0.0.1:8010}/internal/scheduled-reports/render`
+# (plain http, private network, HMAC-signed with SECRET_KEY); set PYTHON_API_URL
+# on api-rs when Python is not on localhost.
+#
+# The unsubscribe link in every report email lands on the frontend page
+# /reportes-programados/baja, which calls /api/public/report-unsubscribe: that
+# route is PUBLIC (the signed token is the credential), which is why it is a
+# separate matcher.
+
+@rs_scheduled_reports {
+	path_regexp ^/api/v1/scheduled-reports(/.*)?$
+}
+@rs_report_unsubscribe {
+	path /api/v1/public/report-unsubscribe
+	method GET POST
+}
+handle @rs_scheduled_reports {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_report_unsubscribe {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

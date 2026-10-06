@@ -51,6 +51,9 @@ services:
       # Python's pool is 20; Postgres default max_connections is 100 and the
       # workers hold their own. Ten is plenty for the routes migrated so far.
       RUST_API_DB_MAX_CONNECTIONS: "10"
+      # Scheduled reports: the preview route asks the Python builder over the
+      # private network (plain http, HMAC-signed). Not needed for anything else.
+      PYTHON_API_URL: http://api:8010
       # Read-only: only to find instance_secret.key when INTEGRATIONS_SECRET_KEY
       # is not set (stored panel secrets are decrypted with it).
       STORAGE_PATH: /app/storage
