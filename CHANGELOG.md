@@ -48,6 +48,18 @@ is running.
   signed in through the provider. The installation switch is
   `ENTERPRISE_SSO_ENABLED` (default `false`); with it off the screens show only
   e-mail + password. OpenID Connect only - there is no SAML.
+* **SAML 2.0 company sign-in, the second protocol, off by default.** Same
+  tenant model and the same `ENTERPRISE_SSO_ENABLED` switch as OpenID Connect
+  (a tenant uses one or the other): the admin pastes the identity provider's
+  metadata, registers StockAI there with the entity ID and ACS URL the app
+  shows (or downloads StockAI's metadata), and people sign in from the same
+  "Entrar con tu empresa" button. SP-initiated, signed assertions only
+  (RSA-SHA256+, SHA-1 refused, no encrypted assertions), audience / recipient /
+  destination / `InResponseTo` / validity-window checks, and signature-wrapping
+  defenses. No secret to store: only the provider's public signing certificate.
+  The configuration routes are served by the Rust API (see
+  `docs/rust-migration.md`, section 10); migration is additive
+  (`saml_providers`).
 * **Per-user and per-API-key warehouse access.** An administrator can limit a
   person (or mint an API key) to some warehouses; the default stays "all". A
   limited caller sees and changes only their warehouses' stock, transfers,

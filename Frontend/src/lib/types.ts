@@ -1214,6 +1214,124 @@ export interface CommittedDemand {
   contract_release_date?: string | null
 }
 
+export type OutlookVerdict = 'on_track' | 'at_risk' | 'will_miss' | 'insufficient_data'
+
+/** Money at risk of one commitment. Amounts are exact decimal STRINGS in the
+ *  tenant base currency; null means "not available" (see `status`), never 0. */
+export interface OutlookMoney {
+  status: 'computed' | 'no_price' | 'no_shortfall' | 'not_applicable'
+  amount_at_risk: string | null
+  margin_at_risk: string | null
+  margin_status: 'computed' | 'no_cost' | 'no_price' | 'no_shortfall' | 'not_applicable'
+  /** The shortfall is a lower bound, so the amount is "at least". */
+  is_minimum: boolean
+  unit_price: string | null
+  price_source: 'contract' | 'sku' | null
+  unit_cost: string | null
+}
+
+export interface OutlookMoneyTotals {
+  /** at_risk + will_miss rows. */
+  eligible: number
+  computed: number
+  excluded_no_price: number
+  excluded_no_shortfall: number
+  amount_at_risk: string
+  has_minimum: boolean
+  margin_rows: number
+  margin_at_risk: string
+  margin_excluded: number
+}
+
+export interface OutlookReason {
+  /** Stable code; the sentence is `outlook.reason.<code>` with these figures. */
+  code: string
+  params: Record<string, unknown>
+}
+
+/** One open commitment's fulfillment outlook (Rust route, no Python twin). */
+export interface CommitmentOutlook {
+  id: string
+  sku: string
+  warehouse_id: string | null
+  delivery_date: string
+  overdue: boolean
+  quantity: number
+  probability: number
+  customer: string | null
+  note: string | null
+  source: 'manual' | 'contract'
+  contract_reference: string | null
+  verdict: OutlookVerdict
+  reason: OutlookReason
+  expected_units: number
+  cumulative_units: number
+  /** null when the figure does not exist: never a zero standing in for it. */
+  shortfall_units: number | null
+  /** The shortfall is a lower bound (undated units were counted as arriving). */
+  shortfall_is_minimum: boolean
+  undated_units: number
+  cover_date: string | null
+  cover_source: 'stock' | 'incoming' | 'purchase_order' | 'new_order' | null
+  late_days: number | null
+  latest_safe_order_date: string | null
+  order_date_passed: boolean | null
+  stock: number | null
+  lead_time_days: number | null
+  lead_time_source: 'learned' | 'sku' | 'rule' | null
+  money: OutlookMoney | null
+}
+
+export interface OutlookSummary {
+  total: number
+  on_track: number
+  at_risk: number
+  will_miss: number
+  insufficient_data: number
+  units: number
+  shortfall_units: number
+  shortfall_has_minimum: boolean
+  first_problem_date: string | null
+  money: OutlookMoneyTotals
+}
+
+export interface OutlookList {
+  as_of: string
+  scope: 'company' | 'warehouses'
+  total: number
+  items: CommitmentOutlook[]
+  summary: OutlookSummary
+}
+
+export interface OutlookTenantSummary {
+  as_of: string
+  scope: 'company' | 'warehouses'
+  summary: OutlookSummary
+  by_customer: { customer: string | null; summary: OutlookSummary }[]
+  by_contract: { contract_root_id: string; reference: string | null; customer: string | null; summary: OutlookSummary }[]
+  data_gaps: { reason: string; commitments: number; units: number; skus: string[] | null }[]
+}
+
+export interface OutlookDetail {
+  as_of: string
+  scope: 'company' | 'warehouses'
+  commitment: CommitmentOutlook
+  competing: { id: string; customer: string | null; delivery_date: string; units: number; cumulative_units: number; is_this: boolean }[]
+  later_commitments: number
+  supply: {
+    stock: number | null
+    stock_by_warehouse: { warehouse: string; current_stock: number }[]
+    arrivals: {
+      kind: 'po' | 'transfer'; reference: string; supplier: string | null; warehouse: string; qty: number
+      date: string | null; expected_date: string | null
+      source: 'supplier_promise' | 'lead_time' | 'overdue' | 'no_lead_time' | 'transfer'
+      counted: boolean
+    }[]
+    lead_time_days: number | null
+    lead_time_source: 'learned' | 'sku' | 'rule' | null
+  }
+}
+
 export type SupplyContractStatus = 'draft' | 'active' | 'closed' | 'cancelled'
 export type SupplyContractScheduleKind = 'monthly' | 'weekly' | 'explicit'
 
@@ -1242,6 +1360,11 @@ export interface SupplyContractTerms {
   warehouse_id?: string | null
   on_top_of_base: boolean
   note?: string | null
+  /** Renewal tracking. Omitted on a revision = keep the current values. */
+  notice_days?: number | null
+  auto_renew?: boolean
+  /** null = nobody chose: the product default (60/30/7) applies. */
+  renewal_lead_days?: number[] | null
 }
 
 /** fulfilled / open / cancelled come from the release's commitment;
@@ -1287,9 +1410,104 @@ export interface SupplyContract extends SupplyContractTerms {
   horizon_days: number
   period_ended: boolean
   progress: SupplyContractProgress
+  renewal_lead_days_effective?: number[]
+  renewal_lead_days_is_default?: boolean
+  renewed_from_root_id?: string | null
   revisions?: { id: string; revision: number; status: SupplyContractStatus; created_by_name: string | null; created_at: string }[]
   materialised?: number
   withdrawn?: number
+}
+
+export type ContractRenewalBucket = 'expired' | 'notice_passed' | 'due_soon' | 'upcoming'
+
+export interface ContractRenewalView {
+  expiry_date: string
+  days_to_expiry: number
+  notice_days: number | null
+  notice_deadline: string | null
+  days_to_notice: number | null
+  auto_renew: boolean
+  bucket: ContractRenewalBucket
+}
+
+/** Committed units against delivered units over the term (the server's maths). */
+export interface ContractComparisonSummary {
+  committed_units: number
+  due_to_date: number
+  delivered_units: number
+  shortfall_to_date: number
+  /** delivered / due to date; null when nothing is due yet (never an invented 100%). */
+  fill_rate_pct: number | null
+  term_fill_pct: number | null
+  late_deliveries: number
+  overdue_open: number
+  fulfilled_undated: number
+}
+
+export interface ContractComparison extends ContractComparisonSummary {
+  late_units: number
+  max_days_late: number
+  remaining_units: number
+  overdue_open_units: number
+  lines: {
+    sku: string; committed: number; due_to_date: number; delivered: number
+    fill_rate_pct: number | null; late_deliveries: number; late_units: number
+  }[]
+}
+
+export interface ContractRenewalItem {
+  root_id: string
+  revision: number
+  customer: string
+  reference: string | null
+  status: SupplyContractStatus
+  warehouse_id: string | null
+  warehouse_name: string | null
+  period_start: string
+  period_end: string
+  renewal: ContractRenewalView
+  renewal_lead_days: number[] | null
+  renewal_lead_days_effective: number[]
+  renewal_lead_days_is_default: boolean
+  comparison: ContractComparisonSummary
+}
+
+export interface ContractRenewalList {
+  today: string
+  within_days: number
+  default_lead_days: number[]
+  items: ContractRenewalItem[]
+  later_count: number
+  hidden_renewed: number
+  filtered_out_by_bucket: number
+}
+
+export interface ContractComparisonResponse {
+  root_id: string
+  revision: number
+  customer: string
+  status: SupplyContractStatus
+  period_start: string
+  period_end: string
+  tolerance_pct: number
+  term_days: number
+  elapsed_days: number
+  renewal: ContractRenewalView | null
+  renewed_to_root_id: string | null
+  renewed_from_root_id: string | null
+  comparison: ContractComparison
+}
+
+export interface ContractRenewResult {
+  root_id: string
+  revision: number
+  status: 'draft'
+  customer: string
+  renewed_from_root_id: string
+  period_start: string
+  period_end: string
+  releases: number | null
+  prices_carried: boolean
 }
 
 /** One line of the "by customer" summary of open commitments. */
@@ -1300,6 +1518,107 @@ export interface CommittedDemandCustomer {
   unknown: number
   shortfall: number
   first_safe_order_date: string | null
+}
+
+// ── Stock allocation among committed customers (advisory) ──────────────────
+
+export interface AllocationPriority { customer: string; customer_key: string; tier: number }
+export interface AllocationUnassignedCustomer { customer: string; customer_key: string; open_commitments: number; units: number }
+export interface AllocationPriorities {
+  default_tier: number
+  tiers: number[]
+  priorities: AllocationPriority[]
+  fair_share_tiers: number[]
+  unassigned_customers: AllocationUnassignedCustomer[]
+  commitments_without_customer: number
+}
+export interface AllocationArrival {
+  kind: 'po' | 'transfer' | 'what_if'
+  reference: string | null
+  quantity: number
+  date: string | null
+  source: string
+}
+export interface AllocationLine {
+  commitment_id: string
+  customer: string | null
+  tier: number
+  tier_source: 'customer' | 'default'
+  delivery_date: string
+  overdue: boolean
+  quantity: number
+  probability: number
+  units: number
+  allocated: number | null
+  short: number | null
+  reserved: number | null
+  reservation_stale: 'commitment_changed' | 'commitment_closed' | null
+}
+export interface AllocationCustomerRow {
+  customer: string | null
+  tier: number
+  commitments: number
+  units: number
+  allocated: number | null
+  short: number | null
+}
+export interface AllocationPreview {
+  sku: string
+  as_of: string
+  scope: 'company'
+  status: 'ok' | 'stock_unknown'
+  contested: boolean
+  advisory: true
+  what_if: boolean
+  stock: number | null
+  incoming: AllocationArrival[]
+  incoming_not_counted: AllocationArrival[]
+  fair_share_tiers: number[]
+  totals: { demand: number; allocated: number | null; short: number | null; commitments: number; commitments_short: number | null }
+  customers: AllocationCustomerRow[]
+  lines: AllocationLine[]
+  result_hash: string
+}
+export interface AllocationWhatIf {
+  sku: string
+  tier_overrides?: { customer: string; tier: number }[]
+  fair_share_tiers?: number[]
+  extra_arrivals?: { date: string; quantity: number }[]
+}
+export interface AllocationOverviewItem {
+  sku: string
+  commitments: number
+  commitments_short: number
+  customers_short: number
+  demand: number
+  allocated: number
+  short: number
+  has_reservations: boolean
+}
+export interface AllocationOverview {
+  as_of: string
+  advisory: true
+  skus_with_commitments: number
+  contested: AllocationOverviewItem[]
+  stock_unknown: { sku: string; commitments: number; demand: number }[]
+  too_many_commitments: { sku: string; open: number }[]
+  fair_share_tiers: number[]
+}
+export interface AllocationReservation {
+  id: string
+  run_id: string
+  sku: string
+  commitment_id: string
+  customer: string | null
+  tier: number
+  delivery_date: string
+  units: number
+  reserved: number
+  short: number
+  created_by: string
+  created_at: string
+  stale: boolean
+  stale_reason: 'commitment_changed' | 'commitment_closed' | null
 }
 
 // ── Demand plan versions ─────────────────────────────────────────────────────
@@ -2022,7 +2341,7 @@ export interface IncomingSource {
 
 // ── Purchase budgets (a cap on purchasing spend) ─────────────────────────────
 export type BudgetPeriodType = 'month' | 'quarter' | 'custom'
-export type BudgetScopeType = 'company' | 'warehouse' | 'supplier' | 'category'
+export type BudgetScopeType = 'company' | 'warehouse' | 'supplier' | 'category' | 'cost_center'
 
 export interface PurchaseBudget {
   id: string
@@ -2160,6 +2479,37 @@ export interface BudgetExceeded {
   remaining?: number
   over_by?: number
   unknown_cost_lines?: number
+  /** False when the entry is only flagged because part of the order is priced in
+   *  a currency with no exchange rate (so its value cannot be fully known). */
+  exceeds?: boolean
+  /** Lines priced in another currency that could not be converted (no rate). */
+  unconverted_lines?: number
+}
+
+export interface ExchangeRate {
+  id: string
+  currency: string
+  base_currency: string
+  /** Exact decimal as text: 1 unit of `currency` = `rate` units of `base_currency`. */
+  rate: string
+  effective_date: string
+  source_note: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  /** The row used today for its currency (a later-dated rate is not in force yet). */
+  in_force?: boolean
+}
+
+export interface ExchangeRateList {
+  base_currency: string
+  items: ExchangeRate[]
+  total: number
+  limit: number
+  offset: number
+  /** Rates entered under an earlier base currency: they no longer apply. */
+  other_base_count: number
+  supported: string[]
 }
 
 export interface POLogEntry {
@@ -2175,6 +2525,9 @@ export interface POLogEntry {
   sku_count:         number
   total_units:       number
   total_value:       number | null
+  /** Costed lines priced in another currency that had no exchange rate when the
+   *  order was written: `total_value` leaves them out. */
+  fx_unconverted_lines?: number
   skus_order_now:     number
   skus_order_soon: number
   // Adoption metrics (present once a cart with decisions is logged)
@@ -2206,7 +2559,7 @@ export interface POLogEntry {
 
 // ── PO approval (opt-in workflow) ────────────────────────────────────────────
 export type POApprovalStatus =
-  'not_required' | 'approval_needed' | 'pending_approval' | 'approved' | 'rejected'
+  'not_required' | 'approval_needed' | 'pending_approval' | 'approved' | 'rejected' | 'chain_unresolved'
 export interface POApprovalBadge { required: boolean; status: POApprovalStatus }
 export interface POApprovalEntry {
   id: string
@@ -2220,8 +2573,33 @@ export interface POApprovalEntry {
   decided_by_name: string | null
   decided_at: string | null
   comment: string | null
+  /** Set when a substitute decided: the approver they stood in for. */
+  decided_on_behalf_of?: string | null
+  decided_on_behalf_of_name?: string | null
+  /** One per level, only on a request made under an approval chain. */
+  steps?: ChainStep[]
+  /** null = decided in the app; 'message' = through a decision link in an email or WhatsApp message */
+  decided_channel?: 'message' | null
 }
+export type POApprovalDelegationStatus = 'active' | 'scheduled' | 'expired' | 'revoked'
+export interface POApprovalDelegation {
+  id: string
+  delegator_id: string
+  delegator_name: string | null
+  delegate_id: string
+  delegate_name: string | null
+  starts_on: string
+  ends_on: string
+  note: string | null
+  status: POApprovalDelegationStatus
+  created_at: string
+  revoked_at: string | null
+}
+/** A colleague an approver may name as a substitute. */
+export interface POApprovalDelegationCandidate { id: string; name: string; role: string }
 export interface POApproval extends POApprovalBadge {
+  /** What the chain says about this order (only when the tenant has one). */
+  chain?: ChainResolution
   po_log_id: string
   amount: number | null
   amount_known: boolean | null
@@ -2257,6 +2635,9 @@ export interface POApprovalPendingItem {
   requested_at: string
   note: string | null
   can_decide: boolean
+  /** Only for a request under an approval chain: the level now open and how many there are. */
+  level_no?: number | null
+  levels_total?: number
 }
 
 // ── Forecast adjustments and their measured value ────────────────────────────
@@ -2374,6 +2755,151 @@ export interface AdjustmentValueAdded {
   aggregate: ValueAddedGroup | null
   by_user: (ValueAddedGroup & { user: string; name: string | null })[]
   by_reason: (ValueAddedGroup & { reason: AdjustmentReason })[]
+}
+
+// ── S&OP forecast consensus (routes served by the Rust API) ──────────────────
+export type ConsensusFunction = 'sales' | 'finance' | 'operations'
+export type ConsensusRuleName = 'priority' | 'weighted'
+/** Percentages are integer basis points (1 bp = 0.01%) end to end. */
+export interface ConsensusRule {
+  rule: ConsensusRuleName
+  priority: ConsensusFunction[]
+  weights: Record<ConsensusFunction, number>
+  cap_down_bp: number
+  cap_up_bp: number
+}
+export interface ConsensusMember { user_id: string; name: string | null }
+export interface ConsensusSettings {
+  configured: boolean
+  settings: ConsensusRule
+  updated: { by: string; at: string } | null
+  functions: ConsensusFunction[]
+  reasons: string[]
+  members: Record<ConsensusFunction, ConsensusMember[]>
+  my_functions: ConsensusFunction[]
+  can_submit: Record<ConsensusFunction, boolean>
+  can_approve: boolean
+  approver_count: number
+  candidates: { user_id: string; name: string | null; role: string }[] | null
+}
+export interface ConsensusSubmission {
+  id: string
+  session_id: string
+  sku: string
+  function: ConsensusFunction
+  start_date: string
+  end_date: string
+  pct_bp: number
+  reason_code: string
+  reason_note: string | null
+  revision: number
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  superseded_by: string | null
+  superseded_at: string | null
+}
+export interface ConsensusSubmissionList {
+  functions: ConsensusFunction[]
+  reasons: string[]
+  items: ConsensusSubmission[]
+  total: number
+  limit: number
+  offset: number
+  my_functions: ConsensusFunction[]
+  can_submit: Record<ConsensusFunction, boolean>
+}
+export interface ConsensusLineInput {
+  function: ConsensusFunction
+  pct_bp: number
+  submission_id: string
+  capped: boolean
+}
+export interface ConsensusLine {
+  sku: string
+  start_date: string
+  end_date: string
+  pct_bp: number
+  source: ConsensusFunction | null
+  inputs: ConsensusLineInput[]
+}
+export interface ConsensusLinePage { items: ConsensusLine[]; total: number; offset: number; limit: number }
+export interface ConsensusPreview {
+  rule: ConsensusRule
+  n_submissions: number
+  sku_count: number
+  line_count: number
+  lines: ConsensusLinePage
+}
+export type ConsensusStatus = 'proposed' | 'approved' | 'rejected' | 'withdrawn' | 'superseded'
+export interface ConsensusVersion {
+  id: string
+  session_id: string
+  session_name: string | null
+  name: string
+  note: string | null
+  rule: ConsensusRule
+  line_count: number
+  sku_count: number
+  status: ConsensusStatus
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  decided_by: string | null
+  decided_by_name: string | null
+  decided_at: string | null
+  decision_comment: string | null
+  self_approved: boolean
+}
+export interface ConsensusEvent {
+  id: number
+  from_status: string | null
+  to_status: ConsensusStatus
+  actor_id: string
+  actor_name: string | null
+  comment: string | null
+  created_at: string
+}
+export interface ConsensusVersionDetail extends ConsensusVersion {
+  lines: ConsensusLinePage
+  /** Inputs of this version that were revised after it was proposed. */
+  revised_inputs: number
+  /** Every period of it has already passed. */
+  expired: boolean
+  events: ConsensusEvent[]
+  approver_count: number
+  can_approve: boolean
+}
+export interface ConsensusVersionList {
+  items: ConsensusVersion[]
+  statuses: ConsensusStatus[]
+  approver_count: number
+  can_approve: boolean
+  max_versions: number
+}
+export type ConsensusFva_ = ValueAddedGroup & { actual_total: number }
+export interface ConsensusFva {
+  session_id: string
+  status: 'ok' | 'no_adjustments' | 'no_evidence'
+  n_submissions: number
+  n_neutral: number
+  n_ungraded: number
+  n_graded_submissions: number
+  evidence: { rows: number; first_period: string | null; last_period: string | null; dataset_id: string | null; refreshed_at: string | null } | null
+  by_function: (ConsensusFva_ & { function: ConsensusFunction })[]
+  by_user: (ConsensusFva_ & { user: string; name: string | null })[]
+  by_reason: (ConsensusFva_ & { reason: string })[]
+  by_submission: (ConsensusFva_ & { submission_id: string; submission: ConsensusSubmission | null })[]
+  consensus: {
+    version_id: string; name: string; status: ConsensusStatus; decided_at: string | null
+    decided_by_name: string | null; line_count: number; fva: ConsensusFva_
+  }[]
+}
+export interface ConsensusEvidenceRefresh {
+  session_id: string
+  status: string
+  rows: number
+  source: { dataset_id: string; name: string } | null
 }
 
 // A line of a PO as stored server-side, with reception progress.
@@ -2846,6 +3372,8 @@ export interface SkuSupplier {
   supplier_id:    string
   is_primary:     boolean
   unit_cost:      number | null
+  /** ISO code `unit_cost` is quoted in; null = the company's own currency. */
+  currency?:      string | null
   moq:            number
   lead_time_days: number | null  // override; null = use supplier default
   notes:          string | null
@@ -3461,10 +3989,246 @@ export interface InboundEmailMessage {
   received_at:   string
 }
 
+/** `GET /audit-stream`. Never carries the signing secret (only create and rotate return it, once). */
+export type AuditStreamState =
+  | { configured: false }
+  | {
+      configured: true
+      url: string
+      host: string | null
+      enabled: boolean
+      disabled_at: string | null
+      /** 'manual' | 'failing_for_days' | 'host_refused' */
+      disabled_reason: string | null
+      batch_size: number
+      /** "<transaction>:<sequence>", the position of the last record delivered. */
+      cursor: string
+      pending_records: number
+      pending_capped: boolean
+      lag_seconds: number | null
+      delivered_records: number
+      consecutive_failures: number
+      failure_days: number
+      last_error: string | null
+      last_status_code: number | null
+      last_attempt_at: string | null
+      last_success_at: string | null
+      next_attempt_at: string | null
+      test_pending: boolean
+      secret_rotated_at: string | null
+      created_at: string
+      updated_at: string
+      /** Present only on the response that created the destination. */
+      secret?: string
+    }
+
+export interface AuditStreamDelivery {
+  id:           string
+  kind:         'batch' | 'test'
+  status:       'delivered' | 'failed' | 'superseded'
+  records:      number
+  bytes:        number
+  first_cursor: string | null
+  last_cursor:  string | null
+  status_code:  number | null
+  error:        string | null
+  duration_ms:  number | null
+  created_at:   string
+}
+
 export interface InboundEmailState {
   /** False when this installation has no inbound mail domain and secret. */
   enabled:         boolean
   address:         string | null
   allowed_senders: string[]
   messages:        InboundEmailMessage[]
+}
+
+// ── Customer portal ──────────────────────────────────────────────────────────
+export type CustomerPortalStatus = 'active' | 'expired' | 'revoked'
+
+export interface CustomerPortalCustomer { customer: string; open_commitments: number; commitments: number }
+
+export interface CustomerPortalLink {
+  id: string
+  customer: string
+  language: 'es' | 'en'
+  share_dates: boolean
+  status: CustomerPortalStatus
+  expires_at: string
+  revoked_at: string | null
+  created_by: string
+  created_at: string
+  last_viewed_at: string | null
+  reopened_at: string | null
+  commitments: number
+  received: number
+  objections: number
+}
+
+/** Returned once, at creation: only the hash of `token` is kept server-side. */
+export interface CustomerPortalCreated { link: CustomerPortalLink; token: string; url: string }
+
+export type CustomerPortalAnswer = 'received' | 'date_objection'
+
+export interface CustomerPortalDetail {
+  link: CustomerPortalLink
+  commitments: {
+    id: string; sku: string; description: string; quantity: number
+    requested_date: string; status: 'open' | 'fulfilled' | 'cancelled'
+    promised_date: string | null
+    response: CustomerPortalAnswer | null; response_comment: string | null; responded_at: string | null
+  }[]
+  events: { id: string; commitment_id: string; response: CustomerPortalAnswer; comment: string | null; created_at: string }[]
+}
+
+/** What the customer's page receives: a whitelist, never stock, costs or other customers. */
+export interface CustomerPortalPublicView {
+  company: string
+  customer: string
+  language: 'es' | 'en'
+  share_dates: boolean
+  expires_at: string
+  commitments: {
+    id: string; sku: string; description: string; quantity: number
+    requested_date: string; status: 'open' | 'fulfilled' | 'cancelled'
+    promised_date?: string
+    my_response: CustomerPortalAnswer | null
+  }[]
+// ── Cost centers and approval chains (served by the Rust API only) ───────────
+export interface CostCenter {
+  id: string
+  code: string
+  name: string
+  parent_id: string | null
+  active: boolean
+  depth?: number
+  path?: string
+  chain_id?: string | null
+  created_at: string
+  updated_at: string
+}
+export type ChainLevel =
+  | { kind: 'role'; role: 'admin' | 'analyst' }
+  | { kind: 'users'; user_ids: string[]; users?: { id: string; name: string | null }[] }
+export interface ChainBand { min_amount: number; levels: ChainLevel[] }
+export interface ApprovalChain {
+  id: string
+  name: string
+  cost_center_id: string | null
+  cost_center_code: string | null
+  cost_center_name: string | null
+  active: boolean
+  bands: ChainBand[]
+  created_at: string
+  updated_at: string
+}
+export interface ChainCandidate { id: string; name: string; role: string }
+export type ChainUnresolvedReason =
+  'no_cost_center' | 'no_chain' | 'cost_center_invalid' | 'chain_invalid' | 'amount_unknown'
+export interface ChainResolution {
+  state: 'not_required' | 'required' | 'unresolved'
+  reason: ChainUnresolvedReason | null
+  chain_id: string | null
+  min_amount: number | null
+  levels: ChainLevel[] | null
+  fingerprint: string | null
+  escalated: boolean
+  cost_center_id: string | null
+}
+export interface ChainStep {
+  level_no: number
+  level: ChainLevel
+  status: 'pending' | 'approved' | 'rejected'
+  decided_by: string | null
+  decided_by_name: string | null
+  decided_at: string | null
+  comment: string | null
+}
+export interface CostCenterSpendRow {
+  id: string
+  code: string
+  name: string
+  parent_id: string | null
+  active: boolean
+  own_ordered: number
+  rolled_up_ordered: number
+  unknown_cost_lines: number
+  orders: number
+  budgets: { root_id: string; amount: number; currency: string; hard_cap: boolean; period_start: string; period_end: string }[]
+}
+export interface CostCenterSpend {
+  from: string
+  to: string
+  items: CostCenterSpendRow[]
+  unattributed: { ordered: number; unknown_cost_lines: number; orders: number }
+// ── Recurring delivery schedules (Rust service; their rows are committed demand) ──
+export type RecurringDeliveryFrequency = 'weekly' | 'fortnightly' | 'semimonthly' | 'monthly'
+export type RecurringDeliveryStatus = 'active' | 'paused' | 'cancelled'
+export type RecurringDeliveryShiftRule = 'skip' | 'before' | 'after'
+
+export interface RecurringDeliveryTerms {
+  customer: string
+  reference?: string | null
+  sku: string
+  warehouse_id?: string | null
+  quantity: number
+  frequency: RecurringDeliveryFrequency
+  weekday?: number | null
+  day_of_month?: number | null
+  start_date: string
+  end_date: string
+  holiday_dates: string[]
+  avoid_weekends: boolean
+  shift_rule: RecurringDeliveryShiftRule
+  horizon_days?: number
+  on_top_of_base: boolean
+  note?: string | null
+}
+
+export interface RecurringDeliveryRow {
+  id: string
+  nominal_date: string | null
+  delivery_date: string
+  quantity: number
+  status: 'open' | 'fulfilled' | 'cancelled'
+}
+
+export interface RecurringDelivery extends RecurringDeliveryTerms {
+  id: string
+  status: RecurringDeliveryStatus
+  revision: number
+  warehouse_name: string | null
+  effective_horizon_days: number
+  created_by: string
+  created_at: string
+  updated_at: string
+  last_materialised_at: string | null
+  last_materialise_error: string | null
+  period_ended: boolean
+  progress: {
+    open: number
+    open_units: number
+    fulfilled: number
+    delivered_units: number
+    cancelled: number
+    overdue: number
+    /** Deliveries owed inside the horizon that are not commitments yet. */
+    missing: number
+    next_delivery: { date: string; quantity: number } | null
+  }
+  deliveries?: RecurringDeliveryRow[]
+  /** Only on the answer to a write. */
+  materialised?: number
+  updated?: number
+  withdrawn?: number
+}
+
+export interface RecurringDeliveryPreview {
+  deliveries: { nominal_date: string; delivery_date: string; shifted: boolean; past: boolean }[]
+  total: number
+  truncated: boolean
+  skipped: number
+  quantity: number
+  total_units: number
 }

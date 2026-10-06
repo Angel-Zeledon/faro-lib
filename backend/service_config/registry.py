@@ -201,6 +201,20 @@ CORE = Service(
             default="development", example="development",
         ),
         ConfigField(
+            key="trusted_proxy_hops", env="TRUSTED_PROXY_HOPS", kind="int",
+            editable=False,
+            doc="How many reverse proxies in front of the API append to "
+                "X-Forwarded-For (public proxy, web server, internal gateway). "
+                "The client address the per-tenant IP allowlist judges is the "
+                "entry that many hops from the right of the header chain; "
+                "anything a client writes further left is ignored. 0 (default) "
+                "uses the socket peer and ignores the header, which behind a "
+                "proxy makes every caller look like the proxy: set it before a "
+                "tenant enables an allowlist, and keep the API port reachable "
+                "only through the proxies.",
+            default="0", example="0",
+        ),
+        ConfigField(
             key="app_name", env="APP_NAME", editable=False,
             doc="Product name in email subjects and the API's OpenAPI title.",
             default="ForecastPlatform", example="StockAI",
@@ -849,7 +863,7 @@ ENTERPRISE_SSO = Service(
     # The one thing the feature cannot run without: the redirect URI and every
     # link back to the app are built from it.
     borrows=("frontend_url",),
-    summary="Company sign-in through the customer's own OpenID Connect provider.",
+    summary="Company sign-in through the customer's own identity provider (OpenID Connect or SAML 2.0).",
     what_breaks=(
         "The 'Sign in with your company' option disappears from the login "
         "screen and tenant admins cannot configure a provider. Email + password "
@@ -865,8 +879,13 @@ ENTERPRISE_SSO = Service(
         "FRONTEND_URL:\n\n"
         "    <FRONTEND_URL>/api/v1/auth/sso/callback\n\n"
         "People are created just-in-time inside the tenant that owns their "
-        "e-mail domain, never as administrators. Only OpenID Connect is "
-        "supported (no SAML)."
+        "e-mail domain, never as administrators.\n\n"
+        "SAML 2.0 is the second protocol (SP-initiated, signed assertions): "
+        "the tenant admin pastes the identity provider's metadata and "
+        "registers StockAI there with the entity ID and ACS URL the app shows "
+        "(the ACS URL is <FRONTEND_URL>/api/v1/auth/saml/acs). SAML needs no "
+        "secret, only the provider's public signing certificate. A tenant "
+        "uses one protocol or the other."
     ),
     fields=(
         ConfigField(
@@ -1027,6 +1046,15 @@ API_SURFACE = Service(
             key="public_api_only", env="PUBLIC_API_ONLY", kind="bool",
             editable=False,
             doc="Serve only the public integration surface on this instance.",
+            default="false", example="false",
+        ),
+        ConfigField(
+            key="approval_links_enabled", env="APPROVAL_LINKS_ENABLED", kind="bool",
+            editable=False,
+            doc="Put a one-time decision link in purchase-order approval requests, so an "
+                "approver can approve or reject from the message. Turn it on only once "
+                "the Rust API group that serves the decision page is routed: with it off "
+                "no link is issued and approvals behave exactly as before.",
             default="false", example="false",
         ),
     ),

@@ -1,0 +1,27 @@
+# DISABLED EXAMPLE. Rename to 50-session-policy.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust.
+#
+# Per-tenant session and password policy admin routes (backend-rs/src/routes/
+# session_policy.rs): GET / PUT / DELETE /session-policy and
+# POST /session-policy/unlock/{user_id}.
+#
+# THESE ROUTES HAVE NO PYTHON TWIN, so there is no `api:8010` failover here:
+# Python answers 404 for these paths. With this file in routes.d/off/ (or the
+# Rust container down) the policy screen cannot load or save, and nothing else
+# changes: Python keeps ENFORCING whatever policy is already stored (login,
+# refresh, password change and its own JWT guard), and the Rust guard enforces
+# the token half on every route that api-rs serves. Enforcement therefore does
+# not depend on this file being active.
+
+@rs_session_policy {
+	method GET PUT DELETE POST
+	path /api/v1/session-policy /api/v1/session-policy/unlock/*
+}
+handle @rs_session_policy {
+	reverse_proxy api-rs:8021 {
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

@@ -381,9 +381,22 @@ def send_account_setup_email(to: str, full_name: str, setup_url: str) -> bool:
 def send_po_approval_request_email(
     *, to: str, approver_name: str, requester_name: str, po_ref: str,
     amount_text: str, url: str, tenant_id: str | None = None,
+    decision_url: str | None = None,
 ) -> bool:
     """Tell an approver an order is waiting for their decision. Only tenants
-    that configured an approval rule ever send this. Returns True on success."""
+    that configured an approval rule ever send this. Returns True on success.
+
+    `decision_url` (a one-time decision link, see
+    `inventory/po_approval_link_service.py`) adds a second button that opens the
+    confirmation page; without it the mail is exactly what it always was."""
+    decide = ""
+    if decision_url:
+        from backend.inventory.po_approval_link_service import LINK_TTL_HOURS
+        decide = (
+            _button(render_es("po_approval_request_decide_cta"), decision_url)
+            + f'<p style="color:{_DIM};margin:0 0 20px;font-size:13px;">'
+            + render_es("po_approval_request_decide_note", hours=LINK_TTL_HOURS) + "</p>"
+        )
     html = _base_html(
         render_es("po_approval_request_title"),
         f"""
@@ -395,6 +408,7 @@ def send_po_approval_request_email(
                      ref=po_ref, amount=amount_text)}
         </p>
         {_button(render_es("po_approval_request_cta"), url)}
+        {decide}
         """,
     )
     try:

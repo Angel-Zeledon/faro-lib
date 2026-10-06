@@ -29,7 +29,7 @@ export type ServiceKey =
 export type FieldKey =
   | 'secret_key' | 'database_url' | 'frontend_url' | 'allowed_origins'
   | 'instance_admin_emails' | 'environment' | 'app_name' | 'app_version'
-  | 'access_token_expire_minutes' | 'algorithm' | 'storage_path' | 'testing_mode'
+  | 'trusted_proxy_hops' | 'access_token_expire_minutes' | 'algorithm' | 'storage_path' | 'testing_mode'
   | 'deepseek_api_key' | 'deepseek_model' | 'deepseek_base_url'
   | 'resend_api_key' | 'email_from' | 'smtp_server' | 'smtp_port'
   | 'smtp_user' | 'smtp_pass'
@@ -227,10 +227,10 @@ const es: ServiceConfigCopy = {
       note: 'Necesita un proveedor de correo que reenvíe el correo entrante a un webhook (Postmark, Mailgun, Resend o un relay) y un registro MX para el dominio de entrada. El webhook se autentica con INBOUND_EMAIL_SECRET: una cabecera HMAC `X-StockAI-Signature` o HTTP Basic cuya contraseña es el secreto. Paso a paso: docs/inbound-email.md.',
     },
     enterprise_sso: {
-      name: 'Inicio de sesión de empresa (OpenID Connect)',
+      name: 'Inicio de sesión de empresa (OpenID Connect y SAML)',
       summary: 'Cada empresa entra con su propio proveedor de identidad, además de correo y contraseña.',
       whatBreaks: 'Desaparece «Entrar con tu empresa» del inicio de sesión y los administradores de cada empresa no pueden configurar un proveedor. Correo y contraseña siguen funcionando para todos, y cualquier «exigir inicio de sesión de empresa» que una empresa ya hubiera guardado queda suspendido mientras esto esté apagado (nadie se queda fuera). Viene apagado: una instalación nueva muestra solo el formulario de correo.',
-      note: 'Cada administrador configura su proveedor dentro de la app (emisor, Client ID y secreto, dominios de correo); el secreto se guarda cifrado, así que necesita almacenamiento de secretos. La URL de redirección que se registra en el proveedor sale de FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. Las personas se crean al entrar, solo dentro de la empresa dueña de su dominio y nunca como administradores. Solo OpenID Connect: no hay SAML.',
+      note: 'Cada administrador configura su proveedor dentro de la app (emisor, Client ID y secreto, dominios de correo); el secreto se guarda cifrado, así que necesita almacenamiento de secretos. La URL de redirección que se registra en el proveedor sale de FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. Las personas se crean al entrar, solo dentro de la empresa dueña de su dominio y nunca como administradores. Con SAML 2.0 no hay secreto: el administrador pega la metadata del proveedor y registra StockAI allí con el entity ID y la URL ACS que muestra la app (la URL ACS es <FRONTEND_URL>/api/v1/auth/saml/acs). Una empresa usa un protocolo o el otro.',
     },
     worker: {
       name: 'Worker y tareas programadas',
@@ -273,6 +273,7 @@ const es: ServiceConfigCopy = {
     environment: 'development | staging | production. En producción el servidor se NIEGA a arrancar con TESTING_MODE=true.',
     app_name: 'Nombre del producto en los asuntos de correo y en el título de la documentación de la API.',
     app_version: 'Versión que reportan /health y el documento OpenAPI.',
+    trusted_proxy_hops: 'Cuántos proxies delante de la API agregan su dirección a X-Forwarded-For (proxy público, servidor web, pasarela interna). La lista de IP permitidas juzga la dirección que está a esa cantidad de saltos desde la derecha; lo que el cliente escriba más a la izquierda se ignora. Con 0 (por defecto) se usa la conexión directa y se ignora la cabecera: detrás de un proxy todos parecen el proxy, así que configúralo antes de que una cuenta active la lista.',
     access_token_expire_minutes: 'Duración del token de acceso. El frontend lo renueva en silencio, así que esto es una ventana de seguridad, no de experiencia.',
     algorithm: 'Algoritmo de firma del JWT. Déjalo en HS256 salvo que también cambies el material de la llave.',
     storage_path: 'Carpeta con los archivos subidos, los artefactos de modelo y los documentos. Postgres guarda los metadatos; acá están los bytes. NO entra en el respaldo de la base — respáldala aparte.',
@@ -496,10 +497,10 @@ const en: ServiceConfigCopy = {
       note: 'Needs a mail provider that can forward inbound mail to a webhook (Postmark, Mailgun, Resend or a relay) and an MX record for the inbound domain. The webhook is authenticated by INBOUND_EMAIL_SECRET: an `X-StockAI-Signature` HMAC header or HTTP Basic auth whose password is the secret. Step by step: docs/inbound-email.md.',
     },
     enterprise_sso: {
-      name: 'Company sign-in (OpenID Connect)',
+      name: 'Company sign-in (OpenID Connect and SAML)',
       summary: 'Each company signs in with its own identity provider, next to email + password.',
       whatBreaks: 'The "Sign in with your company" option disappears from the login screen and each company\'s administrators cannot configure a provider. Email + password keeps working for everyone, and any "require company sign-in" a company already saved is suspended while this is off (so nobody is locked out). Off by default: a new install shows only the email form.',
-      note: 'Each administrator configures their provider inside the app (issuer, Client ID and secret, email domains); the secret is stored encrypted, so it needs secret storage. The redirect URL registered at the provider is built from FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. People are created when they sign in, only inside the company that owns their domain and never as administrators. OpenID Connect only: there is no SAML.',
+      note: 'Each administrator configures their provider inside the app (issuer, Client ID and secret, email domains); the secret is stored encrypted, so it needs secret storage. The redirect URL registered at the provider is built from FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. People are created when they sign in, only inside the company that owns their domain and never as administrators. With SAML 2.0 there is no secret: the administrator pastes the provider's metadata and registers StockAI there with the entity ID and ACS URL the app shows (the ACS URL is <FRONTEND_URL>/api/v1/auth/saml/acs). A company uses one protocol or the other.',
     },
     worker: {
       name: 'Worker and scheduled jobs',
@@ -542,6 +543,7 @@ const en: ServiceConfigCopy = {
     environment: 'development | staging | production. In production the server REFUSES to boot with TESTING_MODE=true.',
     app_name: 'Product name in email subjects and in the API documentation title.',
     app_version: 'Version reported by /health and the OpenAPI document.',
+    trusted_proxy_hops: 'How many reverse proxies in front of the API append to X-Forwarded-For (public proxy, web server, internal gateway). The IP allowlist judges the address that many hops from the right; anything a client writes further left is ignored. With 0 (default) the direct connection is used and the header is ignored: behind a proxy everyone looks like the proxy, so set it before an account turns the list on.',
     access_token_expire_minutes: 'Access-token lifetime. The frontend refreshes silently, so this is a security window, not a UX one.',
     algorithm: 'JWT signing algorithm. Leave it at HS256 unless you are also changing the key material.',
     storage_path: 'Directory holding uploaded files, model artifacts and documents. Postgres holds the metadata; these are the bytes. It is NOT in the database backup — back it up separately.',

@@ -1,0 +1,71 @@
+# DISABLED EXAMPLE. Rename to 33-sessions.caddy inside the
+# gateway's /etc/caddy/routes.d/ to send this group to Rust; move it to off/
+# and `caddy reload` to send it back to Python.
+#
+# backend-rs/src/routes/sessions.rs:
+#   GET    /api/v1/sessions
+#   GET    /api/v1/sessions/summary
+#   GET    /api/v1/sessions/{id}
+#   DELETE /api/v1/sessions/{id}            (ARCHIVES; never deletes)
+#   POST   /api/v1/sessions/{id}/restore
+#   POST   /api/v1/sessions                 (create, under the max_sessions ceiling)
+#   PATCH  /api/v1/sessions/{id}            (name / description / tags)
+#
+# Stays on Python: every other path under /api/v1/sessions/{id}/ (training, configuration,
+# results, artifacts, reports...). That is why these matchers are exact
+# regular expressions and never a `/api/v1/sessions/*` prefix: a prefix would
+# capture dozens of engine routes the Rust service does not have.
+
+@rs_sessions_list {
+	method GET
+	path /api/v1/sessions /api/v1/sessions/summary
+}
+@rs_sessions_create {
+	method POST
+	path /api/v1/sessions
+}
+@rs_sessions_one {
+	method GET PATCH DELETE
+	path_regexp ^/api/v1/sessions/[^/]+$
+}
+@rs_sessions_restore {
+	method POST
+	path_regexp ^/api/v1/sessions/[^/]+/restore$
+}
+
+handle @rs_sessions_list {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_sessions_create {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_sessions_one {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_sessions_restore {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

@@ -582,6 +582,11 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
               </td>
               <td style={{ padding: '11px 14px', color: entry.total_value ? C.green : C.dim, fontFamily: 'monospace', fontWeight: entry.total_value ? 600 : 400 }}>
                 {entry.total_value != null ? formatMoney(entry.total_value) : '—'}
+                {!!entry.fx_unconverted_lines && (
+                  <span style={{ display: 'block', fontFamily: 'inherit', fontWeight: 400, fontSize: 11, color: 'var(--warning)', marginTop: 2 }}>
+                    {t('fx.po_unconverted', { n: entry.fx_unconverted_lines })}
+                  </span>
+                )}
               </td>
               <td style={{ padding: '11px 14px', minWidth: 280 }}>
                 {(() => {

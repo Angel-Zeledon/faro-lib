@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from typing import Any, Iterable, Optional
 
 PERIOD_TYPES = ("month", "quarter", "custom")
-SCOPE_TYPES = ("company", "warehouse", "supplier", "category")
+SCOPE_TYPES = ("company", "warehouse", "supplier", "category", "cost_center")
 MAX_PERIOD_DAYS = 3660
 OPEN_RECEPTION = ("pending", "partial", "not_received")
 
@@ -146,6 +146,10 @@ def scope_matcher(scope_type: str, scope_names: dict[str, Any]):
     if scope_type == "category":
         want = _fold(scope_names.get("category"))
         return lambda row: bool(want) and _fold(row.get("category")) == want
+    if scope_type == "cost_center":
+        # `cost_center_ids`: the budget's center and every center below it.
+        ids = frozenset(scope_names.get("cost_center_ids") or ())
+        return lambda row: bool(ids) and row.get("cost_center_id") in ids
     raise ValueError(f"unknown scope type {scope_type!r}")
 
 
@@ -155,9 +159,15 @@ def ordered_value(rows: Iterable[dict], matches) -> dict[str, Any]:
     Each row: `value` (qty x unit cost, or None when the line has no cost),
     `open` (bool: the order is not fully received yet), plus whatever the
     matcher reads. Lines with no cost are COUNTED, never treated as zero: the
-    caller shows the count next to the figure."""
+    caller shows the count next to the figure.
+
+    A line in another currency that could not be converted (no exchange rate)
+    has `value` None and `unconverted` True: counted apart as
+    `unconverted_lines` (the key exists only when there is one, so a tenant with
+    one currency reads exactly what it always did), never valued at 1.0."""
     spent = committed = 0.0
     unknown = 0
+    unconverted = 0
     lines = 0
     for row in rows:
         if not matches(row):
@@ -165,14 +175,20 @@ def ordered_value(rows: Iterable[dict], matches) -> dict[str, Any]:
         lines += 1
         value = row.get("value")
         if value is None:
-            unknown += 1
+            if row.get("unconverted"):
+                unconverted += 1
+            else:
+                unknown += 1
             continue
         if row.get("open"):
             committed += float(value)
         else:
             spent += float(value)
-    return {"spent": round(spent, 2), "committed": round(committed, 2),
-            "unknown_cost_lines": unknown, "lines": lines}
+    out = {"spent": round(spent, 2), "committed": round(committed, 2),
+           "unknown_cost_lines": unknown, "lines": lines}
+    if unconverted:
+        out["unconverted_lines"] = unconverted
+    return out
 
 
 def order_check(order_value: float, free: float, unknown_cost_lines: int = 0) -> dict[str, Any]:

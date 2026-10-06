@@ -1,0 +1,24 @@
+# DISABLED EXAMPLE. Rename to 20-committed-demand-writes.caddy inside the
+# gateway's /etc/caddy/routes.d/ to send this group to Rust.
+#
+# The four WRITES of committed demand (backend-rs/src/routes/committed_demand.rs).
+# GET /api/v1/committed-demand stays on Python: it computes the at-risk
+# verdict from the inventory hub (lead-time cascade), which is not migrated.
+# Routing by METHOD as well as path is what lets one resource be split.
+
+# A trailing `*` is a prefix match in Caddy. The Rust router serves exactly
+# POST /, POST /bulk, PATCH /{id} and POST /{id}/status under it; any other
+# POST/PATCH path under the prefix gets the same 404/405 envelope Python gives.
+@rs_committed_demand_writes {
+	method POST PATCH
+	path /api/v1/committed-demand /api/v1/committed-demand/*
+}
+handle @rs_committed_demand_writes {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

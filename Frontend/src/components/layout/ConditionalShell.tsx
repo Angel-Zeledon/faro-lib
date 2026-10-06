@@ -22,9 +22,13 @@ export default function ConditionalShell({ children }: { children: React.ReactNo
   // A supplier answering a purchase order from the link in a message: no app
   // shell, no sign-in. The trailing slash matters — `/proveedores` is the
   // signed-in suppliers screen and must keep its shell.
-  const isSupplierPortal = pathname.startsWith('/proveedor/')
+  const isSupplierPortal = pathname.startsWith('/proveedor/') || pathname.startsWith('/cliente/') || pathname.startsWith('/aprobar/')
+  // The unsubscribe page of a scheduled report: same, a link in an email.
+  const isReportUnsubscribe = pathname.startsWith('/reportes-programados/baja')
+  // (/aprobar/<token>, the approval decision page, is the same kind of page: a
+  // link in a message, no shell, no sign-in.)
   const isLanding = LANDING_PATHS.includes(pathname) || pathname === '/docs' || pathname.startsWith('/docs/')
-    || isSupplierPortal
+    || isSupplierPortal || isReportUnsubscribe
 
   // The one-time notice about browser storage rides on the landing and the
   // app shells; the sign-in screens keep it off their submit buttons (see
@@ -34,7 +38,7 @@ export default function ConditionalShell({ children }: { children: React.ReactNo
   return (
     <FeedbackProvider>
       <Shell isAuth={isAuth} isLanding={isLanding}>{children}</Shell>
-      <StorageNotice suppress={isAuth || isSupplierPortal} />
+      <StorageNotice suppress={isAuth || isSupplierPortal || isReportUnsubscribe} />
     </FeedbackProvider>
   )
 }

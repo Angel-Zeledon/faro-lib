@@ -190,7 +190,7 @@ def purchase_order_lines(user: CurrentUser, params: dict, page: int, limit: int)
                    p.destination_warehouse, i.warehouse AS line_warehouse,
                    i.supplier, i.sku, i.display_name, i.signal,
                    i.status AS line_status, i.recommended_qty, i.final_qty,
-                   i.received_qty, i.unit_cost
+                   i.received_qty, i.unit_cost, i.currency, i.value_base
               {_PO_LINE_FROM}
              WHERE {clause}
              ORDER BY p.generated_at, p.id, i.supplier NULLS LAST, i.sku, i.id
@@ -204,12 +204,20 @@ def purchase_order_lines(user: CurrentUser, params: dict, page: int, limit: int)
         final = float(r["final_qty"] or 0)
         received = float(r["received_qty"] or 0)
         cost = r["unit_cost"]
+        # A line in another currency is valued at what it was converted to when the
+        # order was written (null when it had no rate); `currency` says which
+        # currency `unit_cost` itself is in.
+        if r["currency"]:
+            line_value = (None if cost is None or r["value_base"] is None
+                          else round(float(r["value_base"]), 2))
+        else:
+            line_value = round(final * float(cost), 2) if cost is not None else None
         out.append({
-            **r,
+            **{k: v for k, v in r.items() if k != "value_base"},
             "destination_warehouse": (r["destination_warehouse"] or "").strip() or default_wh,
             "is_ordered": ordered,
             "outstanding_qty": max(0.0, final - received) if ordered else 0.0,
-            "line_value": round(final * float(cost), 2) if cost is not None else None,
+            "line_value": line_value,
         })
     return out, info
 
@@ -229,7 +237,7 @@ def receptions(user: CurrentUser, params: dict, page: int, limit: int):
                    p.received_at, p.generated_at AS ordered_at,
                    p.reception_status, p.cancelled_at,
                    i.supplier, i.sku, i.display_name, i.warehouse,
-                   i.final_qty, i.received_qty, i.unit_cost
+                   i.final_qty, i.received_qty, i.unit_cost, i.currency, i.fx_rate
               {_PO_LINE_FROM}
              WHERE {clause}
              ORDER BY p.received_at NULLS FIRST, p.id, i.sku, i.id
@@ -246,12 +254,19 @@ def receptions(user: CurrentUser, params: dict, page: int, limit: int):
             # The formula reception_service.receive_po learns lead times with.
             days = round(max(0.0, (r["received_at"] - r["ordered_at"]).total_seconds()
                              / 86400.0), 2)
+        if r["currency"]:
+            # Converted at the rate recorded on the line, never a later one.
+            from backend.fx import reference as fx_ref
+            received_value = (None if cost is None or r["fx_rate"] is None
+                              else float(fx_ref.convert_line(received, cost, r["fx_rate"])))
+        else:
+            received_value = round(received * float(cost), 2) if cost is not None else None
         out.append({
-            **r,
+            **{k: v for k, v in r.items() if k != "fx_rate"},
             "days_to_last_reception": days,
             "po_cancelled": r["cancelled_at"] is not None,
             "outstanding_qty": max(0.0, final - received),
-            "received_value": round(received * float(cost), 2) if cost is not None else None,
+            "received_value": received_value,
         })
     return out, info
 

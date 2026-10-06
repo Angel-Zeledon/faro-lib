@@ -201,14 +201,17 @@ def set_approver(tenant_id: str, user_id: str, can_approve: bool) -> dict:
 def _order_facts(tenant_id: str, po: dict) -> dict:
     """Value, warehouses and suppliers of the ordered lines."""
     lines = query(
-        """SELECT i.supplier, i.supplier_id, i.warehouse, i.final_qty, i.unit_cost
+        """SELECT i.supplier, i.supplier_id, i.warehouse, i.final_qty, i.unit_cost,
+                  i.currency, i.value_base
              FROM inventory_po_items i
             WHERE i.po_log_id = %s AND i.tenant_id = %s
               AND i.status IN ('approved', 'modified')""",
         (po["id"], tenant_id),
     )
-    priced = [float(l["final_qty"] or 0) * float(l["unit_cost"])
-              for l in lines if l.get("unit_cost") is not None]
+    # In the tenant's own currency; a foreign line counts for the value recorded
+    # when the order was written, and not at all when it had no rate.
+    from backend.fx.service import line_base_value
+    priced = [v for v in (line_base_value(l) for l in lines) if v is not None]
     warehouses = {(l.get("warehouse") or "").strip().lower() for l in lines}
     if po.get("destination_warehouse"):
         warehouses.add(str(po["destination_warehouse"]).strip().lower())
@@ -234,8 +237,19 @@ def _rule_matches(rule: dict, amount: float, facts: dict) -> bool:
 
 
 def requirement(tenant_id: str, po: dict, rules: Optional[list[dict]] = None,
-                facts: Optional[dict] = None) -> dict:
-    """What approval means for this order right now.
+                facts: Optional[dict] = None, chain_ctx: Optional[dict] = None) -> dict:
+    """The rule-based requirement, then the approval chain laid over it (see
+    `po_chain_service.overlay`: with no active chain it returns this untouched).
+    `chain_ctx` is a preloaded `po_chain_service.context()` for a caller walking
+    a list."""
+    from backend.inventory import po_chain_service as chains
+    base = _rule_requirement(tenant_id, po, rules, facts)
+    return chains.overlay(tenant_id, po, base, facts, chain_ctx)
+
+
+def _rule_requirement(tenant_id: str, po: dict, rules: Optional[list[dict]] = None,
+                      facts: Optional[dict] = None) -> dict:
+    """What the approval RULES mean for this order right now.
 
     `status`: not_required | approval_needed (never asked) | pending_approval |
     approved | rejected. `required` is True for every status but not_required
@@ -282,7 +296,8 @@ def assert_sendable(tenant_id: str, po_log_id: Optional[str] = None,
     The single enforcement point. Cheap when no rule exists (one indexed read),
     which is every tenant that has not opted in.
     """
-    if not has_active_rules(tenant_id):
+    from backend.inventory import po_chain_service as chains
+    if not has_active_rules(tenant_id) and not chains.chains_active(tenant_id):
         return
     if po is None:
         po = query_one("SELECT * FROM inventory_po_log WHERE id = %s AND tenant_id = %s",
@@ -291,6 +306,8 @@ def assert_sendable(tenant_id: str, po_log_id: Optional[str] = None,
             return            # the caller reports "not found" in its own words
     req = requirement(tenant_id, po)
     if req["required"]:
+        if req["status"] == chains.STATUS_UNRESOLVED:
+            raise chains.unresolved_error(req)
         raise AppError(
             "po_approval_required",
             "This order needs approval before it can be sent",
@@ -323,12 +340,15 @@ def _latest(po_log_id: str) -> Optional[dict]:
 def history(tenant_id: str, po_log_id: str) -> list[dict]:
     rows = query(
         """SELECT a.id, a.status, a.amount, a.requested_by, a.requested_at, a.request_note,
-                  a.decided_by, a.decided_at, a.comment,
+                  a.decided_by, a.decided_at, a.comment, a.decided_channel,
+                  a.decided_on_behalf_of, a.delegation_id,
                   rq.full_name AS requested_by_name, rq.email AS requested_by_email,
-                  dc.full_name AS decided_by_name, dc.email AS decided_by_email
+                  dc.full_name AS decided_by_name, dc.email AS decided_by_email,
+                  ob.full_name AS on_behalf_full_name, ob.email AS on_behalf_email
              FROM po_approvals a
              LEFT JOIN users rq ON rq.id = a.requested_by
              LEFT JOIN users dc ON dc.id = a.decided_by
+             LEFT JOIN users ob ON ob.id = a.decided_on_behalf_of
             WHERE a.po_log_id = %s AND a.tenant_id = %s
             ORDER BY a.requested_at DESC, a.id DESC""",
         (po_log_id, tenant_id),
@@ -340,6 +360,8 @@ def history(tenant_id: str, po_log_id: str) -> list[dict]:
                                            "email": d.pop("requested_by_email")})
         d["decided_by_name"] = _name_of({"full_name": d.pop("decided_by_name"),
                                          "email": d.pop("decided_by_email")})
+        d["decided_on_behalf_of_name"] = _name_of({"full_name": d.pop("on_behalf_full_name"),
+                                                   "email": d.pop("on_behalf_email")})
         d["requested_at"] = _iso(d["requested_at"])
         d["decided_at"] = _iso(d["decided_at"])
         out.append(d)
@@ -355,14 +377,24 @@ def describe(tenant_id: str, po_log_id: str, user_id: Optional[str] = None) -> d
     open_request = next((h for h in hist if h["status"] == "requested"), None)
     can_decide = False
     if open_request and user_id:
-        can_decide = _may_decide(tenant_id, user_id, open_request, req)
-    return {"po_log_id": po_log_id, **req, "history": hist,
-            "open_request": open_request, "can_decide": can_decide}
+        can_decide = _may_decide(tenant_id, user_id, open_request, req, po)
+    from backend.inventory import po_chain_service as chains
+    return chains.decorate(tenant_id, po, user_id, {
+        "po_log_id": po_log_id, **req, "history": hist,
+        "open_request": open_request, "can_decide": can_decide})
 
 
-def _may_decide(tenant_id: str, user_id: str, request_row: dict, req: dict) -> bool:
+def _may_decide(tenant_id: str, user_id: str, request_row: dict, req: dict,
+                po: Optional[dict] = None) -> bool:
     if not is_approver(tenant_id, user_id):
-        return False
+        # A substitute may decide only what their delegation reaches, and never
+        # their own request above the self-approval limit.
+        if po is None:
+            return False
+        from backend.inventory import po_delegation_service as delegations
+        via, _ = delegations.authority_for(tenant_id, user_id, po, request_row, req)
+        if via is None:
+            return False
     if request_row["requested_by"] != user_id:
         return True
     below = req.get("self_approve_below")
@@ -377,6 +409,12 @@ def request_approval(tenant_id: str, po_log_id: str, user_id: str,
         raise AppError("po_cancelled",
                        "This order was cancelled; reopen it before sending it",
                        status_code=409)
+    req = requirement(tenant_id, po)
+    from backend.inventory import po_chain_service as chains
+    handled = chains.on_request(tenant_id, po_log_id, po, req, user_id, note)
+    if handled is not None:
+        return handled
+    po = _get_po(tenant_id, po_log_id)      # a stale open request may have been replaced
     req = requirement(tenant_id, po)
     if req["status"] == APPROVED:
         return {**describe(tenant_id, po_log_id, user_id), "changed": False, "notified": 0}
@@ -399,7 +437,7 @@ def request_approval(tenant_id: str, po_log_id: str, user_id: str,
     clean_note = (note or "").strip()[:MAX_COMMENT_LENGTH] or None
     try:
         with transaction() as conn:
-            query_one(
+            created = query_one(
                 """INSERT INTO po_approvals
                        (tenant_id, po_log_id, status, amount, rule_id, requested_by, request_note)
                    VALUES (%s, %s, 'requested', %s, %s, %s, %s) RETURNING id""",
@@ -419,16 +457,27 @@ def request_approval(tenant_id: str, po_log_id: str, user_id: str,
 
     log.info("[po-approval] REQUEST tenant=%s po=%s by=%s amount=%s",
              tenant_id, po_log_id, user_id, amount)
-    notified = _notify_approvers(tenant_id, po, amount, user_id, eligible)
+    notified = _notify_approvers(tenant_id, po, amount, user_id, eligible,
+                                 approval_id=created["id"])
     return {**describe(tenant_id, po_log_id, user_id), "changed": True, "notified": notified}
 
 
+DECISION_CHANNELS = (None, "message")
+
+
 def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
-           comment: Optional[str] = None) -> dict:
+           comment: Optional[str] = None, *, channel: Optional[str] = None) -> dict:
     """Approve or reject the open request. Idempotent: repeating the decision
-    that was already taken changes nothing; the opposite one is refused."""
+    that was already taken changes nothing; the opposite one is refused.
+
+    `channel` is how the decision reached us: None = the app, `message` = a
+    decision link in an email or WhatsApp message (`po_approval_link_service`).
+    The rules are the same for both: this one function is the only place an
+    approval is decided, so a link can never do what the app would refuse."""
     if decision not in ("approved", "rejected"):
         raise ValueError(decision)
+    if channel not in DECISION_CHANNELS:
+        raise ValueError(channel)
     po = _get_po(tenant_id, po_log_id)
     clean_comment = (comment or "").strip()[:MAX_COMMENT_LENGTH] or None
     if decision == "rejected" and (clean_comment is None
@@ -447,10 +496,25 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
                        "This request was already decided", status_code=409,
                        params={"decision": latest["status"]})
 
+    from backend.inventory import po_chain_service as chains
+    chained = chains.route_decision(tenant_id, po, latest, user_id, decision, clean_comment)
+    if chained is not None:
+        return chained
     req = requirement(tenant_id, po)
+    via = None   # the delegation this decision stands on, when the person is a substitute
     if not is_approver(tenant_id, user_id):
-        raise AppError("po_approval_not_approver",
-                       "You are not allowed to approve orders", status_code=403)
+        from backend.inventory import po_delegation_service as delegations
+        via, had_delegation = delegations.authority_for(
+            tenant_id, user_id, po, latest, req, decision)
+        if via is None and had_delegation:
+            # A delegation is in force but does not reach THIS order (the
+            # delegator's warehouses, their own order, no longer an approver).
+            raise AppError("po_approval_delegation_not_permitted",
+                           "Your delegation does not allow you to decide this order",
+                           status_code=403)
+        if via is None:
+            raise AppError("po_approval_not_approver",
+                           "You are not allowed to approve orders", status_code=403)
     own = latest["requested_by"] == user_id
     below = req.get("self_approve_below")
     if own and decision == "approved" and not (
@@ -464,11 +528,19 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
     with transaction() as conn:
         won = query_one(
             """UPDATE po_approvals
-                  SET status = %s, decided_by = %s, decided_at = NOW(), comment = %s
+                  SET status = %s, decided_by = %s, decided_at = NOW(), comment = %s,
+                      decided_on_behalf_of = %s, delegation_id = %s, decided_channel = %s
                 WHERE id = %s AND tenant_id = %s AND status = 'requested'
             RETURNING id""",
-            (decision, user_id, clean_comment, latest["id"], tenant_id), conn=conn)
+            (decision, user_id, clean_comment,
+             via["delegator_id"] if via else None, via["id"] if via else None,
+             channel, latest["id"], tenant_id), conn=conn)
         if won is not None:
+            # A decided request needs no more links: every open one, for every
+            # approver and channel, dies with the decision (in the same
+            # transaction, so no link outlives it).
+            from backend.inventory import po_approval_link_service as links
+            links.revoke_open(tenant_id, latest["id"], reason="decided", conn=conn)
             execute(
                 """UPDATE inventory_po_log
                       SET approval_status = %s, approved_amount = %s
@@ -495,14 +567,17 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
                       float(latest["amount"]), user_id)
     return {**describe(tenant_id, po_log_id, user_id), "changed": True,
             "po_number": po.get("po_number"), "amount": float(latest["amount"]),
-            "comment": clean_comment}
+            "comment": clean_comment, "channel": channel,
+            "on_behalf_of_name": via["delegator_name"] if via else None}
 
 
 def list_pending(tenant_id: str, user_id: str) -> dict:
     """The approver's inbox: open requests on orders that can still be acted on.
     A person who cannot approve gets an empty list, not an error: the same call
     feeds the attention rows for everyone."""
-    if not is_approver(tenant_id, user_id):
+    from backend.inventory import po_delegation_service as delegations
+    own = is_approver(tenant_id, user_id)
+    if not own and not delegations.active_for_delegate(tenant_id, user_id):
         return {"is_approver": False, "items": []}
     rows = query(
         """SELECT a.id AS approval_id, a.po_log_id, a.amount, a.requested_by,
@@ -535,8 +610,12 @@ def list_pending(tenant_id: str, user_id: str) -> dict:
             "requested_by_name": _name_of({"full_name": r["requested_by_name"],
                                            "email": r["requested_by_email"]}),
             "requested_at": _iso(r["requested_at"]), "note": r["request_note"],
-            "can_decide": _may_decide(tenant_id, user_id, req_row, req),
+            "can_decide": _may_decide(tenant_id, user_id, req_row, req, po),
         })
+    if not own:
+        # A substitute sees only the orders their delegation lets them decide.
+        items = [i for i in items if i["can_decide"]]
+        return {"is_approver": False, "is_delegate": True, "items": items}
     return {"is_approver": True, "items": items}
 
 
@@ -544,11 +623,22 @@ def annotate_orders(tenant_id: str, rows: list[dict]) -> list[dict]:
     """Add `approval` ({required, status}) to PO history rows. No rule, no work:
     the rows come back untouched and carry no `approval` key at all."""
     rules = list_rules(tenant_id)
-    if not any(r["active"] for r in rules) or not rows:
+    from backend.inventory import po_chain_service as chains
+    chain_ctx = chains.context(tenant_id)
+    if (not any(r["active"] for r in rules) and chain_ctx is None) or not rows:
         return rows
     ids = [r["id"] for r in rows]
+    # The listing queries select explicit columns, so the cost center and the
+    # escalation flag are not on the rows: read them here. A row that silently
+    # lacked them would look centerless and come out "unresolved".
+    centers = {}
+    if chain_ctx is not None:
+        centers = {c["id"]: c for c in query(
+            "SELECT id, cost_center_id, chain_escalate FROM inventory_po_log "
+            "WHERE tenant_id = %s AND id = ANY(%s)", (tenant_id, ids))}
     lines = query(
-        """SELECT po_log_id, supplier, supplier_id, warehouse, final_qty, unit_cost
+        """SELECT po_log_id, supplier, supplier_id, warehouse, final_qty, unit_cost,
+                  currency, value_base
              FROM inventory_po_items
             WHERE tenant_id = %s AND po_log_id = ANY(%s)
               AND status IN ('approved', 'modified')""",
@@ -559,8 +649,8 @@ def annotate_orders(tenant_id: str, rows: list[dict]) -> list[dict]:
     out = []
     for r in rows:
         po_lines = by_po.get(r["id"], [])
-        priced = [float(l["final_qty"] or 0) * float(l["unit_cost"])
-                  for l in po_lines if l.get("unit_cost") is not None]
+        from backend.fx.service import line_base_value
+        priced = [v for v in (line_base_value(l) for l in po_lines) if v is not None]
         whs = {(l.get("warehouse") or "").strip().lower() for l in po_lines}
         if r.get("destination_warehouse"):
             whs.add(str(r["destination_warehouse"]).strip().lower())
@@ -571,7 +661,8 @@ def annotate_orders(tenant_id: str, rows: list[dict]) -> list[dict]:
             "supplier_names": {(l.get("supplier") or "").strip().lower()
                                for l in po_lines if (l.get("supplier") or "").strip()},
         }
-        req = requirement(tenant_id, r, rules=rules, facts=facts)
+        po_view = {**r, **{k: centers[r["id"]][k] for k in ("cost_center_id", "chain_escalate")}}             if r["id"] in centers else r
+        req = requirement(tenant_id, po_view, rules=rules, facts=facts, chain_ctx=chain_ctx)
         out.append({**r, "approval": {"required": req["required"], "status": req["status"]}})
     return out
 
@@ -590,25 +681,43 @@ def _amount_text(tenant_id: str, amount: float) -> str:
 
 
 def _notify_approvers(tenant_id: str, po: dict, amount: float, requester_id: str,
-                      eligible: list[dict]) -> int:
+                      eligible: list[dict], approval_id: Optional[str] = None) -> int:
     """Email every approver who can decide this order, through the existing
     transport. The bell reaches them through the attention rows (the pending
     list is derived live), so this is the push for somebody not looking at the
     app. Returns how many mails left; a failure is logged, never raised: the
     request itself is already written."""
+    from backend.inventory import po_approval_link_service as links
     from backend.inventory.roi_service import format_po_number
     from backend.notifications import email as email_mod
     requester = query_one("SELECT full_name, email FROM users WHERE id = %s", (requester_id,))
     ref = format_po_number(po.get("po_number"), po["id"])
-    sent = 0
-    for a in eligible:
-        if a["id"] == requester_id:
-            continue
+    recipients = [a for a in eligible if a["id"] != requester_id]
+    # One decision link per approver (and WhatsApp number), only where the
+    # installation turned the feature on; a failure here never blocks the
+    # request mail: the approver still has the app link.
+    issued: list[dict] = []
+    if approval_id and links.enabled():
         try:
+            issued = links.issue_links(tenant_id, po["id"], approval_id, recipients,
+                                       created_by=requester_id)
+        except Exception:   # noqa: BLE001 - see the docstring
+            log.exception("[po-approval] decision links failed tenant=%s po=%s", tenant_id, po["id"])
+    if issued:
+        links.queue_whatsapp_links(tenant_id, po["id"], amount, issued, created_by=requester_id)
+        from backend.activity.events import record_event
+        record_event(tenant_id, requester_id, "purchase.approval_links_sent", resource=po["id"],
+                     details={"reference": ref, "count": len(issued)})
+    email_token = {i["approver_id"]: i["token"] for i in issued if i["channel"] == "email"}
+    sent = 0
+    for a in recipients:
+        try:
+            token = email_token.get(a["id"])
             if email_mod.send_po_approval_request_email(
                     to=a["email"], approver_name=_name_of(a) or "", requester_name=_name_of(requester) or "",
                     po_ref=ref, amount_text=_amount_text(tenant_id, amount),
-                    url=_order_link(po["id"]), tenant_id=tenant_id):
+                    url=_order_link(po["id"]), tenant_id=tenant_id,
+                    decision_url=links.decision_url(token) if token else None):
                 sent += 1
         except Exception:   # noqa: BLE001 — see the docstring
             log.exception("[po-approval] approver email failed tenant=%s po=%s", tenant_id, po["id"])

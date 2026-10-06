@@ -150,6 +150,34 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=INFO,
         detail_keys=("plan_name",),
     ),
+    # S&OP forecast consensus (routes in backend-rs/src/routes/consensus.rs): a
+    # function's adjustment of the statistical forecast, the tenant's rule, and
+    # the sign-off of a frozen consensus. Unlike a demand plan, an APPROVED
+    # consensus is read by planning (inventory/forecast_adjustment_service.py).
+    "consensus.adjustment_submitted": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "function", "adjustment", "adjustment_reason"),
+    ),
+    "consensus.version_proposed": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "skus", "lines"),
+    ),
+    "consensus.version_approved": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment", "superseded"),
+    ),
+    "consensus.version_rejected": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment"),
+    ),
+    "consensus.version_withdrawn": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment"),
+    ),
+    "consensus.rule_changed": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("rule",),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     # Customer orders placed ahead of time, entered by a person. They move the
@@ -166,6 +194,56 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("sku", "status"),
     ),
+    # The customer portal (backend-rs/src/routes/customer_portal.rs): a private,
+    # read-only link where a corporate customer sees their own commitments. The
+    # tenant's acts carry the person's name; the customer's two answers are
+    # recorded under the person who made the link, and never change a commitment.
+    "customer_portal.link_created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer",),
+    ),
+    "customer_portal.link_revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer",),
+    ),
+    "customer_portal.link_reopened": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer",),
+    ),
+    "customer_portal.link_updated": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer",),
+    ),
+    "customer_portal.promise_set": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku", "promised_date"),
+    ),
+    "customer_portal.received": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku"),
+    ),
+    # The customer says the date does not work: a person must read the comment
+    # and decide, so it reaches the bell.
+    "customer_portal.date_objected": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("customer", "sku", "delivery_date"),
+    ),
+    # Stock allocation among committed customers (backend-rs, advisory data): who
+    # changed the customer priority order, who recorded reservations for a SKU
+    # and how many units stayed short, and who released them. None of these
+    # moves a stock row.
+    "allocation.priorities_changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customers",),
+    ),
+    "allocation.applied": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("sku", "reserved", "short"),
+    ),
+    "allocation.released": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("sku", "reservations"),
+    ),
     # Blanket contracts: every save is a new revision, so the feed names who
     # created, revised, activated, closed or cancelled one.
     "supply_contract.created": EventSpec(
@@ -180,9 +258,52 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("customer", "lines", "revision", "status"),
     ),
+    # Recurring delivery schedules (backend-rs, routes/recurring_deliveries.rs):
+    # who created, edited, paused or cancelled a standing delivery instruction.
+    "recurring_delivery.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku", "quantity", "frequency", "revision", "status"),
+    ),
+    "recurring_delivery.revised": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku", "quantity", "frequency", "revision", "status"),
+    ),
+    "recurring_delivery.status_changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku", "quantity", "frequency", "revision", "status"),
+    ),
+    # A person renewed a contract: the next term was created as a new draft
+    # contract (the detail renewed_from is the lineage it renews).
+    "supply_contract.renewed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status", "renewed_from"),
+    ),
+    # Raised by the daily pass (inventory/contract_renewal_alerts.py) at each
+    # alert lead time before an ACTIVE contract's notice deadline / end date,
+    # and once when it ended while still active. A warning: somebody has to
+    # decide, and an expired contract the buyer still plans against is silent.
+    "supply_contract.renewal_due": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("customer", "days_left", "lead_days", "expiry_date",
+                     "notice_deadline", "auto_renew"),
+    ),
     # Purchase budgets (inventory/purchase_budget_service.py): who set or changed
     # a cap, and every order that went past what a cap had left (with the reason
     # a person gave, when an administrator overrode a hard cap).
+    # Exchange rates (backend-rs/src/routes/fx_rates.rs): who entered, changed
+    # or removed a rate that purchase totals and budget checks convert with.
+    "currency_rate.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("currency", "rate", "effective_date"),
+    ),
+    "currency_rate.changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("currency", "rate", "effective_date"),
+    ),
+    "currency_rate.deleted": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("currency", "rate", "effective_date"),
+    ),
     "purchase_budget.created": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("budget_scope", "amount", "period"),
@@ -289,13 +410,67 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("reference", "value"),
     ),
+    # `on_behalf_of` names the approver a substitute stood in for (approval
+    # delegation); absent when the approver decided for themselves.
     "purchase.approval_approved": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("reference", "value", "decision_comment"),
+        detail_keys=("reference", "value", "decision_comment", "on_behalf_of", "channel"),
     ),
     "purchase.approval_rejected": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("reference", "value", "decision_comment"),
+        detail_keys=("reference", "value", "decision_comment", "on_behalf_of", "channel"),
+    ),
+    # An approver named a substitute for a date range, or ended that early. The
+    # actor is the delegator; `delegate` is the substitute's name.
+    "approval_delegation.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("delegate", "starts_on", "ends_on"),
+    ),
+    "approval_delegation.revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("delegate",),
+    ),
+    # Cost centers and approval chains (inventory/po_chain_service.py; the
+    # management routes are Rust). A chained order is approved only when its
+    # LAST level approves; each earlier level is recorded here instead, so the
+    # feed never says "approved" about an order that still waits for somebody.
+    "purchase.approval_level_approved": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "value", "level", "decision_comment"),
+    ),
+    "purchase.order_cost_center_set": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "cost_center"),
+    ),
+    "cost_center.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("code", "cost_center_name"),
+    ),
+    "cost_center.updated": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("code", "cost_center_name", "active"),
+    ),
+    "approval_chain.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("chain_name", "levels"),
+    ),
+    "approval_chain.updated": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("chain_name", "levels", "active"),
+    ),
+    # `channel` (on approved / rejected above) is how the decision was taken:
+    # absent for the app, `message` for a decision link in an email or WhatsApp
+    # message.
+    # Decision links (approve or reject from a message). Sent and revoked are
+    # acts of a person on an order, so the trail shows them; the decision itself
+    # is the approval_approved / approval_rejected event above.
+    "purchase.approval_links_sent": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "count"),
+    ),
+    "purchase.approval_links_revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "count"),
     ),
 
     # ── Sales received by e-mail (backend/inbound_email/) ────────────────────
@@ -394,11 +569,46 @@ EVENTS: dict[str, EventSpec] = {
     "account.user_deactivated": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email",),
     ),
+    # Custom roles (backend/auth/permissions.py): changing what a role may do,
+    # or who holds it, changes who can do what, so each one reaches the bell.
+    "account.custom_role_created": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("role_name",),
+    ),
+    "account.custom_role_updated": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("role_name",),
+    ),
+    "account.custom_role_deleted": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("role_name",),
+    ),
+    "account.custom_role_assigned": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "role_name"),
+    ),
     "account.api_key_created": EventSpec(
         kind="account", severity=WARNING, detail_keys=("key_name", "role"),
     ),
     "account.api_key_revoked": EventSpec(
         kind="account", severity=WARNING, detail_keys=("key_name",),
+    ),
+    # Organization hierarchy (backend/organizations/): a holding reading its
+    # subsidiaries through an explicit, two-sided link. `label` is the holding's
+    # own name for the subsidiary, `member` the holding's person who got or lost
+    # access. Recorded by the Rust routes (backend-rs/src/activity.rs mirrors
+    # these specs). Ending a link is a warning: whoever depended on the
+    # consolidated view, or whoever gave access to it, should see why it stopped.
+    "org.link_created": EventSpec(
+        kind="account", severity=INFO, detail_keys=("label",),
+    ),
+    "org.link_accepted": EventSpec(
+        kind="account", severity=INFO, detail_keys=("label",),
+    ),
+    "org.link_revoked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("label",),
+    ),
+    "org.grant_added": EventSpec(
+        kind="account", severity=INFO, detail_keys=("label", "member"),
+    ),
+    "org.grant_removed": EventSpec(
+        kind="account", severity=INFO, detail_keys=("label", "member"),
     ),
     # Social sign-in (backend/auth/social/). A new way into an account is a
     # warning, not history: "I did not link Google" is something only the owner
@@ -435,6 +645,15 @@ EVENTS: dict[str, EventSpec] = {
     "account.sso_config_removed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("issuer",),
     ),
+    # SAML sign-on (backend/auth/saml/) is the sibling of the OIDC provider and
+    # records the same sign-in events above; only its configuration differs.
+    "account.saml_config_changed": EventSpec(
+        kind="account", severity=WARNING,
+        detail_keys=("idp_entity_id", "enabled", "enforce_sso", "domains"),
+    ),
+    "account.saml_config_removed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("idp_entity_id",),
+    ),
     "account.warehouse_scope_changed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email", "warehouses"),
     ),
@@ -442,6 +661,13 @@ EVENTS: dict[str, EventSpec] = {
     # off (backend/webhooks/service.py). Warning, with the host so the admin
     # knows which receiver to fix before re-enabling it.
     "webhook.auto_disabled": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("host",),
+    ),
+    # The continuous audit export (backend/audit_stream/) failed on several
+    # different days, or its address was refused, and was switched off. Warning:
+    # the customer's SIEM no longer receives the trail until an admin re-enables
+    # it (the cursor is kept, so nothing is skipped).
+    "audit_stream.auto_disabled": EventSpec(
         kind="account", severity=WARNING, detail_keys=("host",),
     ),
     # SCIM provisioning (backend/scim/). The actor is "scim": the company's
@@ -477,6 +703,55 @@ EVENTS: dict[str, EventSpec] = {
     "account.scim_settings_changed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("manage_admins",),
     ),
+    # Two-step sign-in (backend/auth/mfa.py, backend-rs/src/routes/mfa/). Turning
+    # it off, resetting somebody's, using a recovery code and changing the
+    # tenant policy are the moments an owner is asked "who did that?", so they
+    # are warnings; enrolling and renewing the recovery codes are history.
+    "account.mfa_enrolled": EventSpec(
+        kind="account", severity=INFO, detail_keys=(),
+    ),
+    "account.mfa_disabled": EventSpec(
+        kind="account", severity=WARNING, detail_keys=(),
+    ),
+    "account.mfa_recovery_codes_regenerated": EventSpec(
+        kind="account", severity=INFO, detail_keys=(),
+    ),
+    "account.mfa_recovery_code_used": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("remaining",),
+    ),
+    "account.mfa_reset": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
+    "account.mfa_policy_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("mfa_required",),
+    ),
+
+    # IP allowlist (backend/ip_allowlist/, and the Rust admin routes). A change
+    # to who may reach the account is a warning (an admin did it, and "I did not
+    # do that" is only noticed if it is shown). What was done is carried by the
+    # reason (entry added / removed, policy enabled / disabled), so no detail is
+    # a bare code the feed would print untranslated. A refusal names the address
+    # that was turned away; the actor says whether it was a person or a key.
+    "account.ip_allowlist_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("cidr", "label"),
+    ),
+    "account.ip_access_refused": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("ip",),
+    ),
+    # Session and password policy (backend/auth/session_policy.py; the admin
+    # routes live in the Rust API). A change to what every person of the tenant
+    # must satisfy is a warning, with the names of the settings that moved (never
+    # a value that could weaken a guess); a lockout is the thing an admin is
+    # asked about the next morning, and an unlock says who lifted it.
+    "account.session_policy_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("settings",),
+    ),
+    "account.user_locked_out": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "attempts"),
+    ),
+    "account.user_unlocked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
 
     # ── Paying for the plan (backend/billing/) ───────────────────────────────
     # Written by a VERIFIED provider webhook (or the hourly sweep applying what
@@ -502,6 +777,35 @@ EVENTS: dict[str, EventSpec] = {
     "billing.subscription_changed": EventSpec(
         kind="billing", severity=INFO,
         detail_keys=("provider", "status", "renews_at"),
+    ),
+    # ── Scheduled management reports (backend/scheduled_reports/) ────────────
+    # "queued" is what is true: the report was built and handed to the outbox.
+    # Whether the mail then left is the outbox's row, shown in the run history.
+    "scheduled_report.queued": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("schedule_name", "recipients", "skipped"),
+    ),
+    # The report could not be built or could not be handed over at all.
+    "scheduled_report.failed": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("schedule_name",),
+    ),
+    # Stopped after repeated failures (or with nobody left to send to): the
+    # management team stops receiving it until somebody resumes it.
+    "scheduled_report.auto_paused": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("schedule_name", "failures"),
+    ),
+    # A due run that the worker could not make in time (it was down for longer
+    # than the catch-up window). Skipped, not sent late.
+    "scheduled_report.skipped": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("schedule_name",),
+    ),
+    # Somebody used the link in a report to stop receiving it.
+    "scheduled_report.unsubscribed": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("schedule_name", "email"),
     ),
 }
 
@@ -529,12 +833,17 @@ REASONS: tuple[str, ...] = (
     # a supplier answered the confirmation link with a different date/quantity
     # or declined a line; nothing applies until the buyer accepts it
     "supplier_proposed_changes",
+    # a customer said, on the customer portal, that a commitment's date does not
+    # work; the commitment itself is unchanged until a person edits it
+    "customer_date_objection",
     # ceilings
     "plan_limit_reached",
     # account and access — the WHY of a role change or a new machine credential
     # is that a person with admin rights did it. Said out loud, because the
     # only useful reaction to "I did not do that" is to look at who has access.
     "changed_by_an_account_admin",
+    # the tenant's lockout policy locked the account after repeated wrong passwords
+    "too_many_failed_logins",
     # social sign-in: the provider vouched for the address, so the account
     # gained that way in; and the variant where the password nobody had
     # verified was dropped because the provider proved the mailbox.
@@ -549,6 +858,18 @@ REASONS: tuple[str, ...] = (
     # asked for that was refused (the code is a param)
     "provisioned_by_identity_provider",
     "scim_request_refused",
+    # the caller's address is outside the tenant's IP allowlist
+    "ip_not_in_allowlist",
+    # an account admin changed the IP allowlist (written by the Rust routes)
+    "ip_allowlist_entry_added",
+    "ip_allowlist_entry_removed",
+    "ip_allowlist_enabled",
+    "ip_allowlist_disabled",
+    # two-step sign-in: the person turned it off themselves, an admin cleared a
+    # locked-out person's enrollment, and a one-time recovery code opened a login
+    "mfa_disabled_by_the_user",
+    "mfa_reset_by_an_account_admin",
+    "recovery_code_used_to_sign_in",
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",
@@ -573,6 +894,23 @@ REASONS: tuple[str, ...] = (
     "sql_source_refresh_failed",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
+    # the audit stream gave up on `days` different days, or its address is refused
+    "audit_stream_failing_for_days",
+    "audit_stream_host_refused",
+    # organization links: which side ended it, or that an erased tenant did
+    "org_revoked_by_parent",
+    "org_revoked_by_child",
+    "org_tenant_erased",
+    # contract renewal alerts: the end date is near, the notice deadline is near,
+    # the end date passed with the contract still active
+    "contract_expiring",
+    "contract_notice_deadline",
+    "contract_expired",
+    # scheduled management reports
+    "report_build_failed",
+    "report_failed_repeatedly",
+    "report_missed_window",
+    "report_no_recipients",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

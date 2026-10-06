@@ -12,8 +12,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Send, X } from 'lucide-react'
 import {
-  approvePO, getPOApproval, getPOApprovalPending, rejectPO, requestPOApproval,
+  approvePO, getPOApproval, getPOApprovalPending, rejectPO, requestPOApproval, setPOCostCenter,
 } from '@/lib/api'
+import CostCenterPicker, { useActiveCostCenters } from '@/components/po/CostCenterPicker'
 import type { POApproval, POApprovalBadge, POApprovalPendingItem } from '@/lib/types'
 import AttentionChip from '@/components/layout/AttentionChip'
 import { useErrorDetail } from '@/components/ui/States'
@@ -37,6 +38,7 @@ export function ApprovalChip({ approval }: { approval?: POApprovalBadge | null }
   if (!approval?.required) return null
   const key = approval.status === 'pending_approval' ? 'po_approval.chip_pending'
     : approval.status === 'rejected' ? 'po_approval.chip_rejected'
+    : approval.status === 'chain_unresolved' ? 'po_approval.chip_unresolved'
     : 'po_approval.chip_needed'
   return <AttentionChip>{t(key)}</AttentionChip>
 }
@@ -51,6 +53,41 @@ export function usePOApproval(poLogId: string | null | undefined) {
   return { data, reload, setData }
 }
 
+/** An order whose cost center or approval chain cannot be resolved cannot ask
+ *  for approval: the way out is to say which cost center it is charged to. */
+function AssignCostCenter({ poLogId, onChanged }: { poLogId: string; onChanged?: () => void }) {
+  const { t } = useLanguage()
+  const errorDetail = useErrorDetail()
+  const centers = useActiveCostCenters()
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function assign() {
+    if (!value || busy) return
+    setBusy(true); setError(null)
+    try { await setPOCostCenter(poLogId, value); onChanged?.() }
+    catch (e: unknown) { setError(errorDetail(e)) }
+    finally { setBusy(false) }
+  }
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+      <span style={{ fontSize: 11, color: C.muted }}>
+        {centers.length > 0 ? t('cc.assign_hint') : t('cc.assign_none')}
+      </span>
+      <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <CostCenterPicker centers={centers} value={value} onChange={setValue} />
+        {centers.length > 0 && (
+          <button type="button" style={{ ...smallBtn, opacity: value && !busy ? 1 : 0.5 }}
+                  disabled={!value || busy} onClick={assign}>
+            {busy ? t('common.saving') : t('cc.assign_btn')}
+          </button>
+        )}
+      </span>
+      {error && <span role="alert" style={{ fontSize: 11, color: C.red }}>{error}</span>}
+    </span>
+  )
+}
+
 /** The step that replaces "send" while the order needs an approval it lacks. */
 export function RequestApprovalButton({ poLogId, approval, onChanged }: {
   poLogId: string
@@ -63,6 +100,7 @@ export function RequestApprovalButton({ poLogId, approval, onChanged }: {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; msg: string } | null>(null)
   if (!approval?.required) return null
+  if (approval.status === 'chain_unresolved') return <AssignCostCenter poLogId={poLogId} onChanged={onChanged} />
 
   const pending = approval.status === 'pending_approval'
   const style: React.CSSProperties = narrow
@@ -106,6 +144,7 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
   const errorDetail = useErrorDetail()
   const [items, setItems] = useState<POApprovalPendingItem[] | null>(null)
   const [isApprover, setIsApprover] = useState(false)
+  const [isDelegate, setIsDelegate] = useState(false)
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
@@ -113,7 +152,7 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
 
   const load = useCallback(() => {
     getPOApprovalPending({ silent: true })
-      .then(r => { setItems(r.items); setIsApprover(r.is_approver) })
+      .then(r => { setItems(r.items); setIsApprover(r.is_approver); setIsDelegate(Boolean(r.is_delegate)) })
       .catch(() => setItems([]))
   }, [])
   useEffect(() => { load() }, [load])
@@ -130,7 +169,7 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
     } finally { setBusy(null) }
   }
 
-  if (!isApprover || items === null) return null
+  if (!(isApprover || isDelegate) || items === null) return null
   if (items.length === 0 && !alwaysShow) return null
 
   return (
@@ -141,6 +180,9 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
         {t('po_approval.inbox_title')}
       </h2>
       <p style={{ margin: '0 0 12px', fontSize: 12.5, color: C.muted }}>{t('po_approval.inbox_hint')}</p>
+      {isDelegate && !isApprover && (
+        <p style={{ margin: '0 0 12px', fontSize: 12.5, color: C.dim }}>{t('po_delegation.inbox_covering')}</p>
+      )}
       {items.length === 0 && <p style={{ margin: 0, fontSize: 13, color: C.dim }}>{t('po_approval.inbox_empty')}</p>}
       {error && <p role="alert" style={{ margin: '0 0 10px', fontSize: 12, color: C.red }}>{error}</p>}
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -159,6 +201,11 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
               {it.warehouse ? ` · ${it.warehouse}` : ''}
               {` · ${t('po_approval.inbox_lines', { n: it.sku_count })}`}
             </div>
+            {it.level_no != null && (
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                {t('po_approval.chain_level_of', { n: it.level_no, total: it.levels_total ?? it.level_no })}
+              </div>
+            )}
             {it.note && <div style={{ fontSize: 12, color: C.text, marginTop: 6, overflowWrap: 'anywhere' }}>“{it.note}”</div>}
             {!it.can_decide && (
               <div style={{ fontSize: 12, color: C.dim, marginTop: 8 }}>{t('po_approval.inbox_own')}</div>

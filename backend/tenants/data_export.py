@@ -68,6 +68,15 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
      "last_viewed_at, submitted_at, reopened_at, reopened_by"),
     ("po_line_confirmations", "po_line_confirmations", "*"),
     ("po_confirmation_acceptances", "po_confirmation_acceptances", "*"),
+    # Customer portal links. The link's token hash is a credential and is never
+    # exported (nor is the keyed address hash of an answer).
+    ("customer_portal_links", "customer_portal_links",
+     "id, tenant_id, customer, customer_key, language, share_dates, expires_at, "
+     "revoked_at, revoked_by, created_by, created_at, last_viewed_at, reopened_at, "
+     "reopened_by"),
+    ("customer_portal_promised_dates", "customer_portal_promised_dates", "*"),
+    ("customer_portal_events", "customer_portal_events",
+     "id, tenant_id, link_id, commitment_id, response, comment, created_at"),
     ("inventory_shrinkage", "inventory_shrinkage", "*"),
     ("stock_counts", "stock_counts", "*"),
     ("stock_count_lines", "stock_count_lines", "*"),
@@ -90,15 +99,37 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("forecast_overrides", "forecast_overrides", "*"),
     ("forecast_adjustments", "forecast_adjustments", "*"),
     ("committed_demand", "committed_demand", "*"),
+    ("allocation_customer_priorities", "allocation_customer_priorities", "*"),
+    ("allocation_tier_policy", "allocation_tier_policy", "*"),
+    ("allocation_runs", "allocation_runs", "*"),
+    ("stock_reservations", "stock_reservations", "*"),
     ("supply_contracts", "supply_contracts", "*"),
+    ("recurring_delivery_schedules", "recurring_delivery_schedules", "*"),
     ("purchase_budgets", "purchase_budgets", "*"),
     ("demand_plan_versions", "demand_plan_versions", "*"),
     ("demand_plan_version_events", "demand_plan_version_events", "*"),
+    ("consensus_settings", "consensus_settings", "*"),
+    ("consensus_members", "consensus_members", "*"),
+    ("consensus_submissions", "consensus_submissions", "*"),
+    ("consensus_versions", "consensus_versions", "*"),
+    ("consensus_version_events", "consensus_version_events", "*"),
+    ("consensus_evidence", "consensus_evidence", "*"),
     ("spike_edits", "spike_edits", "*"),
     ("spike_edit_applications", "spike_edit_applications", "*"),
     ("sku_analogies", "sku_analogies", "*"),
     ("po_approval_rules", "po_approval_rules", "*"),
     ("po_approvals", "po_approvals", "*"),
+    ("po_approval_delegations", "po_approval_delegations", "*"),
+    ("po_approval_steps", "po_approval_steps", "*"),
+    ("cost_centers", "cost_centers", "*"),
+    ("approval_chains", "approval_chains", "*"),
+    ("approval_chain_bands", "approval_chain_bands", "*"),
+    # Decision links: who was sent one, when, and whether it was used. The
+    # token hash is a credential and is never exported.
+    ("po_approval_links", "po_approval_links",
+     "id, tenant_id, po_log_id, approval_id, approver_id, scope, channel, expires_at, "
+     "created_by, created_at, issued_at, last_viewed_at, used_at, used_decision, "
+     "revoked_at, revoked_by, revoked_reason"),
     ("scheduled_jobs", "scheduled_jobs", "*"),
     ("schedule_runs", "schedule_runs", "*"),
     ("session_manifests", "session_manifests", "*"),
@@ -121,7 +152,27 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
      "id, tenant_id, webhook_id, event_id, event_type, is_test, status, attempts, "
      "last_status_code, last_error, next_attempt_at, created_at, last_attempt_at, "
      "delivered_at"),
+    # The message outbox without its payload: `params` can hold a one-time
+    # code or a link while a row is pending (scrubbed when it ends).
+    ("outbound_messages", "outbound_messages",
+     "id, tenant_id, channel, kind, recipient, status, attempts, next_attempt_at, expires_at, "
+     "last_error, created_by, created_at, last_attempt_at, sent_at"),
+    # The audit stream destination: where, whether it is on and how far it got.
+    # Never the signing secret.
+    ("audit_streams", "audit_streams",
+     "tenant_id, url, enabled, disabled_at, disabled_reason, cursor_xid, cursor_seq, "
+     "batch_size, consecutive_failures, failure_days, last_error, last_status_code, "
+     "last_attempt_at, last_success_at, delivered_records, created_by, created_at, "
+     "updated_at, secret_rotated_at"),
+    ("audit_stream_deliveries", "audit_stream_deliveries", "*"),
+    # Scheduled management reports: the definition, who gets it, the external
+    # addresses an admin allowed, and what each period sent.
+    ("report_schedules", "report_schedules", "*"),
+    ("report_schedule_recipients", "report_schedule_recipients", "*"),
+    ("report_external_allowlist", "report_external_allowlist", "*"),
+    ("report_schedule_runs", "report_schedule_runs", "*"),
     ("user_permissions", "user_permissions", "*"),
+    ("custom_roles", "custom_roles", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
     # Microsoft / Apple is the person's data, so it travels with the export.
     ("user_identities", "user_identities",
@@ -132,6 +183,10 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
      "revoked_at, revoked_by"),
     ("scim_events", "scim_events", "*"),
     ("scim_user_links", "scim_user_links", "*"),
+    ("ip_allowlist_policies", "ip_allowlist_policies", "*"),
+    ("ip_allowlist_entries", "ip_allowlist_entries", "*"),
+    # The tenant's session and password policy: limits only, no secret.
+    ("tenant_session_policies", "tenant_session_policies", "*"),
     # Paying for the plan. No secret lives in these tables (keys and webhook
     # secrets are instance configuration, never per tenant); the provider ids
     # are the tenant's own records at Stripe / PayPal, so they travel.
@@ -144,7 +199,11 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
 # tenant's data" in the Ley 8968 / GDPR sense — refresh_tokens and
 # pw_change_codes store only hashes anyway, and auth_rate_events is keyed by a
 # generic rate-limit key (may mix identifiers across tenants), not owned rows.
-_OMITTED_FROM_EXPORT = ("refresh_tokens", "pw_change_codes", "auth_rate_events")
+_OMITTED_FROM_EXPORT = (
+    "refresh_tokens", "pw_change_codes", "auth_rate_events",
+    # MFA: an encrypted TOTP secret, hashed recovery codes and challenge tokens.
+    "user_mfa", "user_mfa_recovery_codes", "mfa_challenges",
+)
 
 
 def _json_default(obj: Any) -> str:
@@ -180,6 +239,13 @@ def build_export_zip(tenant_id: str) -> bytes:
 
         for stem, table, cols in _EXPORT_SPECS:
             rows = query(f"SELECT {cols} FROM {table} WHERE tenant_id = %s", (tenant_id,))
+            zf.writestr(f"{stem}.json", _dump(rows))
+            manifest["tables"][stem] = len(rows)
+
+        # The tenant's side of the organization hierarchy. A child never gets
+        # the parent's identity (see organizations/service.py export_rows).
+        from backend.organizations.service import export_rows as _org_rows
+        for stem, rows in _org_rows(tenant_id).items():
             zf.writestr(f"{stem}.json", _dump(rows))
             manifest["tables"][stem] = len(rows)
 
@@ -227,11 +293,17 @@ _DELETE_ORDER: list[str] = [
     # belongs to a tenant".
     "sso_domains",
     "sso_providers",
+    "saml_providers",   # 2026-10-06, cascades from tenants like its OIDC sibling
     # SCIM (2026-10-05): all three cascade from tenants (the links also from
     # users); listed for the same reason. Links before `users` below.
     "scim_events",
     "scim_user_links",
     "scim_tokens",
+    # IP allowlist: both cascade from tenants; listed for the same reason.
+    "ip_allowlist_entries",
+    "ip_allowlist_policies",
+    # Session and password policy (cascades from tenants; listed for the same reason).
+    "tenant_session_policies",
     "model_artifacts",
     # Billing (2026-10-05). The first two cascade from tenants; the event log
     # has no FK (an event may name no known tenant) and is only removed here.
@@ -244,16 +316,42 @@ _DELETE_ORDER: list[str] = [
     "whatsapp_conversations",
     "chat_messages",
     "chats",
+    "po_approval_delegations",
+    "po_approval_steps",
+    "po_approval_links",
     "po_approvals",
     "po_approval_rules",
+    "approval_chain_bands",
+    "approval_chains",
+    "cost_centers",
     "forecast_adjustments",
+    # Customer portal (2026-10-06): all three cascade from tenants (the promised
+    # dates also from the commitment they belong to, so they go first here);
+    # listed because this list is the reviewable answer to "what belongs to a
+    # tenant". Answers before the links they hang from.
+    "customer_portal_events",
+    "customer_portal_promised_dates",
+    "customer_portal_links",
+    # Stock allocation (advisory data; all four cascade from tenants).
+    "stock_reservations",
+    "allocation_runs",
+    "allocation_tier_policy",
+    "allocation_customer_priorities",
     "committed_demand",
     "supply_contracts",
+    "recurring_delivery_schedules",
     "purchase_budgets",
     # Demand plan versions are permanent (immutable rows); only whole-tenant
     # erasure removes them. Events first: they reference their version.
     "demand_plan_version_events",
     "demand_plan_versions",
+    # The consensus ledgers: events reference their version, so they go first.
+    "consensus_version_events",
+    "consensus_versions",
+    "consensus_submissions",
+    "consensus_members",
+    "consensus_settings",
+    "consensus_evidence",
     "spike_edit_applications",
     "spike_edits",
     "sku_analogies",
@@ -298,14 +396,25 @@ _DELETE_ORDER: list[str] = [
     "inbound_email_messages",
     "inbound_email_addresses",
     "webhook_deliveries",
+    "outbound_messages",
+    "report_schedule_runs",
+    "report_schedule_recipients",
+    "report_schedules",
+    "report_external_allowlist",
     "webhook_transition_state",
+    "audit_stream_deliveries",
+    "audit_streams",
     "webhooks",
     "api_usage_daily",
     "api_keys",
     "documents",
     "feedback_reports",
     "user_permissions",
+    "custom_roles",
     "user_identities",
+    "user_mfa_recovery_codes",
+    "user_mfa",
+    "mfa_challenges",
     "refresh_tokens",
     "pw_change_codes",
     "training_logs",
@@ -356,6 +465,12 @@ def delete_tenant(tenant_id: str) -> dict:
     tables have no FK to `tenants` at all (see module docstring).
     """
     with get_conn() as conn:
+        # Organization links name the tenant in TWO columns (parent and child),
+        # which the `tenant_id` loop below cannot see. The surviving side of
+        # each live link is told in its own activity feed, then every link and
+        # grant is deleted. Must run before the tenants row goes.
+        from backend.organizations.service import end_links_for_erasure
+        end_links_for_erasure(conn, tenant_id)
         with conn.cursor() as cur:
             for table in _DELETE_ORDER:
                 cur.execute(f"DELETE FROM {table} WHERE tenant_id = %s", (tenant_id,))

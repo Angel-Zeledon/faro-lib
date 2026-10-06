@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # Deployment environment: development | staging | production
     environment: str = "development"
 
+    # How many reverse proxies sit between the internet and this process and
+    # append to X-Forwarded-For. 0 = none: the socket peer is the client and the
+    # header is ignored (it is forgeable by anyone who reaches the port). The
+    # per-tenant IP allowlist (backend/ip_allowlist/) is the consumer.
+    trusted_proxy_hops: int = 0
+
     # JWT
     access_token_expire_minutes: int = 15
     algorithm: str = "HS256"
@@ -102,6 +108,11 @@ class Settings(BaseSettings):
     # takes down the customer's integration and the app together. Splitting that
     # is a different, much larger decision.
     public_api_only: bool = False
+    # Decision links in purchase-order approval requests (approve or reject from
+    # the message, without opening the app). OFF until the Rust API group that
+    # serves the public decision page is routed (docs/rust-migration.md): a link
+    # in a message that nothing answers is worse than no link. Environment-only.
+    approval_links_enabled: bool = False
     # Identity used to claim jobs and to recover this instance's orphans after a
     # crash. Empty falls back to the container/host name. Give each long-lived
     # worker a FIXED id (e.g. "worker-1") so its orphaned RUNNING jobs are still

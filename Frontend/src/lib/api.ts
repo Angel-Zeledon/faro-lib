@@ -139,6 +139,15 @@ export interface RequestOpts {
    *  double tap or a retry after a dropped connection returns the order
    *  already written instead of creating a second one. */
   headers?: Record<string, string>
+  /** The call is part of a sign-in step that holds no session yet (it carries
+   *  its own one-time token): a 401 is an answer for the form, never an
+   *  expired session to renew or a redirect to /login. */
+  authFlow?: boolean
+  /** A request a page makes on its own timer (a badge, a poll), not because a
+   *  person did something. The server still checks the session, but does not
+   *  count it as activity for the organization's idle timeout: otherwise a tab
+   *  left open would keep the session alive forever. */
+  background?: boolean
 }
 
 // FastAPI validation errors send `detail` as an array of {type, loc, msg, ...}
@@ -237,10 +246,13 @@ async function request<T = unknown>(
   method: string, path: string, body?: unknown, opts: RequestOpts = {},
 ): Promise<T> {
   const silent = opts.silent === true
+  const sendHeaders = opts.background
+    ? { ...opts.headers, 'X-StockAI-Background': '1' }
+    : opts.headers
 
   let res: Response
   try {
-    res = await _doFetch(method, path, body, opts.headers)
+    res = await _doFetch(method, path, body, sendHeaders)
   } catch {
     // fetch() only rejects when the request never completed: offline, DNS
     // failure, or the backend not listening. Any HTTP status resolves.
@@ -252,7 +264,7 @@ async function request<T = unknown>(
   if (res.status === 401) {
     // Auth endpoints return 401 for wrong credentials/tokens — surface that
     // error to the form instead of treating it as an expired session.
-    if (path.startsWith('/auth/')) {
+    if (path.startsWith('/auth/') || opts.authFlow) {
       const payload = await res.json().catch(() => ({ detail: res.statusText }))
       // `detail` stays whatever the backend said (English) — the auth screens
       // map the 401 to their own localized copy rather than rendering it.
@@ -267,7 +279,7 @@ async function request<T = unknown>(
     // once, so a 15-minute token never kicks the user back to /login mid-task.
     // `_sessionLost()` never returns — it clears auth and redirects.
     if (await tryRefresh()) {
-      res = await _doFetch(method, path, body, opts.headers)
+      res = await _doFetch(method, path, body, sendHeaders)
       if (res.status === 401) _sessionLost()
     } else {
       _sessionLost()
@@ -372,20 +384,103 @@ export const authSignup = (body: {
     verify_url: string | null
   }>('POST', '/auth/signup', body)
 
+export interface LoginSession {
+  access_token:  string
+  refresh_token: string
+  token_type:    string
+  expires_in:    number
+  user: {
+    id: string; email: string; full_name: string | null; role: string
+    tenant_id: string
+    /** Unverified users log in fine — only outward actions (invites,
+     *  sending notifications) demand verification. */
+    email_verified: boolean
+  }
+}
+
+/** Password accepted, but the account is protected by a second step. */
+export interface LoginMfaChallenge {
+  mfa_required: true
+  /** Opaque, single use, minutes long: it is the proof the password was right. */
+  mfa_token: string
+  methods: ('totp' | 'recovery_code')[]
+  expires_in: number
+}
+
+/** The organization requires two-step sign-in and this person has not set it
+ *  up yet: no session is issued until they do. */
+export interface LoginMfaEnrollment {
+  mfa_enrollment_required: true
+  enrollment_token: string
+  expires_in: number
+}
+
+export type LoginOutcome = LoginSession | LoginMfaChallenge | LoginMfaEnrollment
+
+export const isLoginSession = (r: LoginOutcome): r is LoginSession => 'access_token' in r
+export const isMfaChallenge = (r: LoginOutcome): r is LoginMfaChallenge => 'mfa_required' in r
+export const isMfaEnrollment = (r: LoginOutcome): r is LoginMfaEnrollment => 'mfa_enrollment_required' in r
+
 export const authLogin = (email: string, password: string) =>
-  request<{
-    access_token:  string
-    refresh_token: string
-    token_type:    string
-    expires_in:    number
-    user: {
-      id: string; email: string; full_name: string | null; role: string
-      tenant_id: string
-      /** Unverified users log in fine — only outward actions (invites,
-       *  sending notifications) demand verification. */
-      email_verified: boolean
-    }
-  }>('POST', '/auth/login', { email, password })
+  request<LoginOutcome>('POST', '/auth/login', { email, password })
+
+/** Second step: the challenge token plus an authenticator or recovery code. */
+export const authMfaVerify = (mfa_token: string, code: string) =>
+  request<LoginSession>('POST', '/auth/mfa/verify', { mfa_token, code })
+
+// ── Two-step sign-in management (Rust: backend-rs/src/routes/mfa/) ────────────
+export interface MfaStatus {
+  enrolled: boolean
+  pending: boolean
+  recovery_codes_remaining: number
+  required_by_tenant: boolean
+  can_disable: boolean
+}
+
+export interface MfaEnrollStart {
+  secret: string
+  otpauth_uri: string
+  issuer: string
+  account: string
+  digits: number
+  period: number
+}
+
+export interface MfaPolicy {
+  required: boolean
+  enrolled_users: number
+  total_users: number
+  users: { id: string; email: string; full_name: string | null; role: string; enrolled: boolean }[]
+}
+
+export const getMfaStatus = () => request<MfaStatus>('GET', '/mfa/status', undefined, { silent: true })
+
+/** `enrollmentToken` is what login hands a person the organization requires to
+ *  enrol; without it the call uses the signed-in session. */
+export const mfaEnrollBegin = (enrollmentToken?: string) =>
+  request<MfaEnrollStart>('POST', '/mfa/enroll/begin',
+    enrollmentToken ? { enrollment_token: enrollmentToken } : {},
+    { silent: true, authFlow: !!enrollmentToken })
+
+export const mfaEnrollConfirm = (code: string, enrollmentToken?: string) =>
+  request<{ enrolled: boolean; recovery_codes: string[]; sign_in_again: boolean }>(
+    'POST', '/mfa/enroll/confirm',
+    enrollmentToken ? { code, enrollment_token: enrollmentToken } : { code },
+    { silent: true, authFlow: !!enrollmentToken })
+
+export const mfaDisable = (code: string) =>
+  request<{ enrolled: boolean }>('POST', '/mfa/disable', { code }, { silent: true })
+
+export const mfaRegenerateCodes = (code: string) =>
+  request<{ recovery_codes: string[] }>('POST', '/mfa/recovery-codes/regenerate', { code }, { silent: true })
+
+export const getMfaPolicy = () => request<MfaPolicy>('GET', '/mfa/policy', undefined, { silent: true })
+
+export const setMfaPolicy = (required: boolean) =>
+  request<{ required: boolean; sessions_ended: number }>('PUT', '/mfa/policy', { required }, { silent: true })
+
+export const resetUserMfa = (userId: string) =>
+  request<{ reset: string }>('POST', `/mfa/users/${encodeURIComponent(userId)}/reset`, undefined, { silent: true })
 
 // ── Social sign-in (Google / Microsoft / Apple) ───────────────────────────────
 // Off unless the instance operator enabled a provider; `providers` is then [].
@@ -461,8 +556,8 @@ export const authLogout = () =>
   request<{ message: string }>('POST', '/auth/logout')
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
-export const getSessions   = () =>
-  request<{ items: SessionInfo[]; total: number }>('GET', '/sessions')
+export const getSessions   = (opts?: RequestOpts) =>
+  request<{ items: SessionInfo[]; total: number }>('GET', '/sessions', undefined, opts)
     .then(r => (Array.isArray(r) ? r : r.items) ?? [])
 // Enriched history list: dataset name, horizon, SKU count, granularity.
 export const getSessionSummaries = (
@@ -983,6 +1078,8 @@ export interface AdminUser {
   tenant_id: string
   /** Warehouse ids the person is limited to. null = every warehouse. */
   warehouse_scope?: string[] | null
+  /** Custom role (backend/auth/permissions.py). null = none: the built-in role alone decides. */
+  custom_role_id?: string | null
 }
 
 export const listAdminUsers = (params?: {
@@ -1032,15 +1129,20 @@ export interface SsoConfig {
 export const getSsoAvailability = () =>
   request<{ enabled: boolean }>('GET', '/auth/sso/availability', undefined, { silent: true })
 
-/** Does this work e-mail sign in through a company provider? */
+/** Does this work e-mail sign in through a company provider? `protocol` is
+ *  present only for a SAML tenant; absent means OpenID Connect. */
 export const ssoDiscover = (email: string) =>
-  request<{ available: boolean; enforced: boolean }>(
+  request<{ available: boolean; enforced: boolean; protocol?: 'saml' }>(
     'POST', '/auth/sso/discover', { email }, { silent: true })
 
 /** Where the browser goes to start a company sign-in: a navigation, not a
  *  fetch, because the provider's page has to take over the window. */
 export const ssoStartUrl = (email: string) =>
   `/api/v1/auth/sso/start?email=${encodeURIComponent(email)}`
+
+/** Same, for a SAML tenant (backend/auth/saml/). */
+export const samlStartUrl = (email: string) =>
+  `/api/v1/auth/saml/start?email=${encodeURIComponent(email)}`
 
 export const getSsoConfig = () =>
   request<{
@@ -1064,6 +1166,57 @@ export const saveSsoConfig = (body: {
 
 export const deleteSsoConfig = () =>
   request<{ removed: boolean }>('DELETE', '/auth/sso/config')
+
+// ── Enterprise single sign-on over SAML 2.0 (configuration is served by the
+// Rust API; the sign-in endpoints are Python) ─────────────────────────────────
+export interface SamlCertificate {
+  fingerprint_sha256: string | null
+  not_after: string | null
+  expired: boolean | null
+}
+export interface SamlConfig {
+  idp_entity_id: string
+  sso_url: string
+  certificates: SamlCertificate[]
+  allowed_domains: string[]
+  default_role: 'analyst' | 'viewer'
+  enforce_sso: boolean
+  email_attribute: string | null
+  groups_attribute: string | null
+  group_roles: Record<string, 'analyst' | 'viewer'>
+  enabled: boolean
+  /** An administrator has signed in through THIS provider (enforcement needs it). */
+  admin_signed_in: boolean
+  updated_at: string | null
+}
+
+export const getSamlConfig = () =>
+  request<{
+    instance_enabled: boolean
+    sp: { entity_id: string; acs_url: string }
+    config: SamlConfig | null
+  }>('GET', '/auth/saml/config')
+
+export const saveSamlConfig = (body: {
+  /** Either the pasted metadata XML, or the three explicit fields; both absent keeps the stored provider. */
+  metadata_xml?: string | null
+  idp_entity_id?: string | null
+  sso_url?: string | null
+  certificates?: string[] | null
+  allowed_domains: string[]
+  default_role: 'analyst' | 'viewer'
+  enforce_sso: boolean
+  email_attribute: string | null
+  groups_attribute: string | null
+  group_roles: Record<string, 'analyst' | 'viewer'>
+  enabled: boolean
+}) => request<{ config: SamlConfig }>('PUT', '/auth/saml/config', body)
+
+export const deleteSamlConfig = () =>
+  request<{ removed: boolean }>('DELETE', '/auth/saml/config')
+
+export const downloadSamlSpMetadata = () =>
+  downloadBlob('/auth/saml/sp-metadata', 'stockai-saml-sp-metadata.xml')
 
 // ── SCIM provisioning (admin side; the protocol itself is for the IdP) ──────
 export interface ScimTokenInfo {
@@ -1110,6 +1263,85 @@ export const updateScimToken = (manage_admins: boolean) =>
 
 export const revokeScimToken = () =>
   request<{ revoked: boolean }>('DELETE', '/auth/sso/scim/token')
+
+// ── IP allowlist (admin; served by the Rust API, no Python twin) ────────────
+export interface IpAllowlistEntry {
+  id: string
+  cidr: string
+  label: string
+  created_by: string | null
+  created_at: string | null
+}
+
+export interface IpAllowlistState {
+  enabled: boolean
+  entries: IpAllowlistEntry[]
+  /** The address the server sees for this request, null when unreadable. */
+  your_ip: string | null
+  /** Whether the entries cover `your_ip`: what the lockout guard decides. */
+  your_ip_covered: boolean
+  max_entries: number
+}
+
+export const getIpAllowlist = () => request<IpAllowlistState>('GET', '/ip-allowlist')
+
+export const addIpAllowlistEntry = (cidr: string, label: string) =>
+  request<IpAllowlistState>('POST', '/ip-allowlist/entries', { cidr, label })
+
+export const deleteIpAllowlistEntry = (id: string) =>
+  request<{ deleted: string }>('DELETE', `/ip-allowlist/entries/${encodeURIComponent(id)}`)
+
+export const setIpAllowlistEnabled = (enabled: boolean) =>
+  request<IpAllowlistState>('PUT', '/ip-allowlist/policy', { enabled })
+// ── Session and password policy (Rust-only admin routes) ──────────────────────
+export interface SessionPolicySettings {
+  max_session_hours: number | null
+  idle_timeout_minutes: number | null
+  min_password_length: number | null
+  require_mixed_case: boolean
+  require_symbol: boolean
+  password_max_age_days: number | null
+  max_concurrent_sessions: number | null
+  lockout_threshold: number | null
+  lockout_minutes: number | null
+}
+
+export interface SessionPolicyLockedUser {
+  user_id: string
+  email: string
+  full_name: string | null
+  locked_until: string
+  failed_attempts: number
+}
+
+export interface SessionPolicyView {
+  policy: SessionPolicySettings
+  /** True when nothing is enforced: everything behaves as before the feature. */
+  is_default: boolean
+  updated_at: string | null
+  updated_by: string | null
+  bounds: Record<string, { min: number; max: number }>
+  defaults: {
+    access_token_minutes: number
+    refresh_token_days: number
+    max_sessions_per_person: number
+    min_password_length: number
+    lockout_minutes: number
+  }
+  locked_users: SessionPolicyLockedUser[]
+}
+
+export const getSessionPolicy = () => request<SessionPolicyView>('GET', '/session-policy')
+
+/** A REPLACEMENT: a field that is null (or false) is "not set". */
+export const saveSessionPolicy = (policy: SessionPolicySettings) =>
+  request<SessionPolicyView>('PUT', '/session-policy', policy)
+
+export const resetSessionPolicy = () => request<SessionPolicyView>('DELETE', '/session-policy')
+
+export const unlockSessionPolicyUser = (userId: string) =>
+  request<{ user_id: string; unlocked: boolean }>(
+    'POST', `/session-policy/unlock/${encodeURIComponent(userId)}`)
 
 // ── Accuracy Tracking ─────────────────────────────────────────────────────────
 export const getAccuracyReport = (sessionId: string, threshold?: number) =>
@@ -1172,6 +1404,34 @@ export const enableWebhook = (id: string) =>
 export const listWebhookDeliveries = (id: string, opts?: RequestOpts) =>
   request<import('./types').WebhookDelivery[]>('GET', `/webhooks/${id}/deliveries`, undefined, opts)
 
+// ── Audit stream (continuous export to the customer's SIEM) ───────────────────
+export const getAuditStream = () =>
+  request<import('./types').AuditStreamState>('GET', '/audit-stream')
+
+export const putAuditStream = (body: { url?: string; batch_size?: number }) =>
+  request<import('./types').AuditStreamState>('PUT', '/audit-stream', body)
+
+export const deleteAuditStream = () =>
+  request<{ deleted: boolean }>('DELETE', '/audit-stream')
+
+export const enableAuditStream = () =>
+  request<import('./types').AuditStreamState>('POST', '/audit-stream/enable')
+
+export const disableAuditStream = () =>
+  request<import('./types').AuditStreamState>('POST', '/audit-stream/disable')
+
+export const rotateAuditStreamSecret = () =>
+  request<{ secret: string }>('POST', '/audit-stream/rotate-secret')
+
+export const replayAuditStream = (body: { cursor: string } | { since: string }) =>
+  request<{ cursor: string; moved: boolean }>('POST', '/audit-stream/replay', body)
+
+export const testAuditStream = () =>
+  request<{ queued: boolean }>('POST', '/audit-stream/test')
+
+export const listAuditStreamDeliveries = (limit = 20) =>
+  request<import('./types').AuditStreamDelivery[]>('GET', `/audit-stream/deliveries?limit=${limit}`)
+
 // ── Schedules ─────────────────────────────────────────────────────────────────
 // "No schedule configured" is a legitimate state, not an error: ask silently
 // and translate the 404 into `null` instead of letting it raise a toast.
@@ -1223,6 +1483,38 @@ export const saveSchedule = (sessionId: string, cronExpr: string, enabled: boole
 
 export const deleteSchedule = (sessionId: string) =>
   request<{ deleted: string }>('DELETE', `/sessions/${sessionId}/schedule`)
+
+// ── Custom roles (Rust-only routes; permissions enforced on every request) ────
+export interface CustomRole {
+  id: string
+  name: string
+  description: string
+  permissions: string[]
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  user_count: number
+}
+export interface MyRoles {
+  role: string
+  restricted: boolean
+  custom_role: { id: string; name: string | null } | null
+  permissions: string[]
+}
+export const listCustomRoles = () =>
+  request<{ roles: CustomRole[] }>('GET', '/roles', undefined, { silent: true })
+export const listRolePermissions = () =>
+  request<{ permissions: { name: string; description: string }[] }>('GET', '/roles/permissions', undefined, { silent: true })
+export const createCustomRole = (body: { name: string; description?: string; permissions: string[] }) =>
+  request<CustomRole>('POST', '/roles', body)
+export const updateCustomRole = (id: string, body: { name?: string; description?: string; permissions?: string[] }) =>
+  request<CustomRole>('PATCH', `/roles/${id}`, body)
+export const deleteCustomRole = (id: string) =>
+  request<{ deleted: string }>('DELETE', `/roles/${id}`)
+export const assignCustomRole = (userId: string, customRoleId: string | null) =>
+  request<{ user_id: string; custom_role: { id: string; name: string } | null }>(
+    'PUT', `/users/${userId}/custom-role`, { custom_role_id: customRoleId })
+export const getMyRoles = () => request<MyRoles>('GET', '/roles/me', undefined, { silent: true })
 
 export const getUserPermissions = (id: string) =>
   request<{ user_id: string; permissions: string[]; all_permissions: string[] }>('GET', `/users/${id}/permissions`)
@@ -1569,8 +1861,43 @@ export const deletePOApprovalRule = (id: string) =>
 export const setPOApprover = (userId: string, canApprove: boolean) =>
   request<{ user_id: string; can_approve: boolean }>(
     'PUT', `/inventory/po-approval/approvers/${userId}`, { can_approve: canApprove })
+// Delegation (a substitute approver for a date range). Served by the Rust API only.
+export const listPOApprovalDelegations = (opts?: RequestOpts) =>
+  request<{ items: import('./types').POApprovalDelegation[]; candidates: import('./types').POApprovalDelegationCandidate[] }>(
+    'GET', '/inventory/po-approval/delegations', undefined, opts)
+export const createPOApprovalDelegation = (body: {
+  delegate_id: string; starts_on: string; ends_on: string; note?: string | null
+}) => request<import('./types').POApprovalDelegation>('POST', '/inventory/po-approval/delegations', body)
+export const revokePOApprovalDelegation = (id: string) =>
+  request<import('./types').POApprovalDelegation & { changed: boolean }>(
+    'POST', `/inventory/po-approval/delegations/${id}/revoke`, {})
+// Cost centers and approval chains. Served by the Rust API only (no Python
+// route, no failover): with it down these answer 404 and the screen says so.
+export const listCostCenters = (opts?: RequestOpts) =>
+  request<{ items: import('./types').CostCenter[] }>('GET', '/cost-centers', undefined, opts)
+export const createCostCenter = (body: { code: string; name: string; parent_id?: string | null }) =>
+  request<import('./types').CostCenter>('POST', '/cost-centers', body)
+export const updateCostCenter = (id: string, body: {
+  code?: string; name?: string; parent_id?: string | null; active?: boolean
+}) => request<import('./types').CostCenter & { changed: boolean }>('PATCH', `/cost-centers/${id}`, body)
+export const getCostCenterSpend = (opts?: RequestOpts) =>
+  request<import('./types').CostCenterSpend>('GET', '/cost-centers/spend', undefined, opts)
+export const listApprovalChains = (opts?: RequestOpts) =>
+  request<{ items: import('./types').ApprovalChain[]; candidates: import('./types').ChainCandidate[];
+            max_levels: number; max_bands: number }>('GET', '/approval-chains', undefined, opts)
+export type ApprovalChainBody = {
+  name?: string; cost_center_id?: string | null; active?: boolean
+  bands?: { min_amount: number; levels: import('./types').ChainLevel[] }[]
+}
+export const createApprovalChain = (body: ApprovalChainBody) =>
+  request<import('./types').ApprovalChain>('POST', '/approval-chains', body)
+export const updateApprovalChain = (id: string, body: ApprovalChainBody) =>
+  request<import('./types').ApprovalChain & { changed: boolean }>('PATCH', `/approval-chains/${id}`, body)
+export const setPOCostCenter = (poLogId: string, costCenterId: string | null) =>
+  request<{ po_log_id: string; cost_center_id: string | null; changed: boolean }>(
+    'PUT', `/inventory/po/${poLogId}/cost-center`, { cost_center_id: costCenterId })
 export const getPOApprovalPending = (opts?: RequestOpts) =>
-  request<{ is_approver: boolean; items: import('./types').POApprovalPendingItem[] }>(
+  request<{ is_approver: boolean; is_delegate?: boolean; items: import('./types').POApprovalPendingItem[] }>(
     'GET', '/inventory/po-approval/pending', undefined, opts)
 export const getPOApproval = (poLogId: string) =>
   request<import('./types').POApproval>('GET', `/inventory/po/${poLogId}/approval`)
@@ -1630,6 +1957,56 @@ export const updateCommittedDemand = (id: string, body: Partial<import('./types'
   request<import('./types').CommittedDemand>('PATCH', `/committed-demand/${encodeURIComponent(id)}`, body)
 export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
   request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
+// Fulfillment outlook: served by the Rust API only (no Python twin to fall back to).
+export const getCommitmentOutlook = (opts?: { verdict?: import('./types').OutlookVerdict; sku?: string; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.verdict) q.set('verdict', opts.verdict)
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').OutlookList>('GET', `/committed-demand/outlook${qs ? `?${qs}` : ''}`)
+}
+export const getCommitmentOutlookSummary = () =>
+  request<import('./types').OutlookTenantSummary>('GET', '/committed-demand/outlook/summary')
+export const getCommitmentOutlookDetail = (id: string) =>
+  request<import('./types').OutlookDetail>('GET', `/committed-demand/${encodeURIComponent(id)}/outlook`)
+// ── Customer portal (private read-only link for a corporate customer) ───────
+export const listPortalCustomers = () =>
+  request<import('./types').CustomerPortalCustomer[]>('GET', '/customer-portal/customers')
+export const listPortalLinks = () =>
+  request<import('./types').CustomerPortalLink[]>('GET', '/customer-portal/links')
+export const createPortalLink = (body: { customer: string; language?: 'es' | 'en'; share_dates?: boolean; expires_in_days?: number }) =>
+  request<import('./types').CustomerPortalCreated>('POST', '/customer-portal/links', body)
+export const getPortalLink = (id: string) =>
+  request<import('./types').CustomerPortalDetail>('GET', `/customer-portal/links/${encodeURIComponent(id)}`)
+export const setPortalLinkSharing = (id: string, share_dates: boolean) =>
+  request<{ link: import('./types').CustomerPortalLink; changed: boolean }>(
+    'PATCH', `/customer-portal/links/${encodeURIComponent(id)}`, { share_dates })
+export const revokePortalLink = (id: string) =>
+  request<{ link: import('./types').CustomerPortalLink; changed: boolean }>(
+    'POST', `/customer-portal/links/${encodeURIComponent(id)}/revoke`)
+export const reopenPortalLink = (id: string) =>
+  request<{ link: import('./types').CustomerPortalLink; changed: boolean }>(
+    'POST', `/customer-portal/links/${encodeURIComponent(id)}/reopen`)
+export const setPortalPromisedDate = (id: string, commitment_id: string, promised_date: string | null) =>
+  request<{ commitment_id: string; promised_date: string | null }>(
+    'PUT', `/customer-portal/links/${encodeURIComponent(id)}/promised-dates`, { commitment_id, promised_date })
+// ── Stock allocation among committed customers (advisory, never moves stock) ─
+export const getAllocationPriorities = () =>
+  request<import('./types').AllocationPriorities>('GET', '/allocation/priorities')
+export const saveAllocationPriorities = (body: { priorities?: { customer: string; tier: number | null }[]; fair_share_tiers?: number[] }) =>
+  request<{ priorities: import('./types').AllocationPriority[]; fair_share_tiers: number[]; changed: number }>('PUT', '/allocation/priorities', body)
+export const getAllocationOverview = () =>
+  request<import('./types').AllocationOverview>('GET', '/allocation/overview')
+export const previewAllocation = (body: import('./types').AllocationWhatIf) =>
+  request<import('./types').AllocationPreview>('POST', '/allocation/preview', body)
+export const applyAllocation = (body: import('./types').AllocationWhatIf & { result_hash: string }) =>
+  request<{ run_id: string; sku: string; reservations: number; reserved: number; short: number; customers_short: number }>('POST', '/allocation/apply', body)
+export const releaseAllocation = (sku: string) =>
+  request<{ sku: string; released: number }>('POST', '/allocation/release', { sku })
+export const getAllocationReservations = (sku?: string) =>
+  request<{ items: import('./types').AllocationReservation[]; stale: number }>(
+    'GET', `/allocation/reservations${sku ? `?sku=${encodeURIComponent(sku)}` : ''}`)
 // ── Purchase budgets (a cap on purchasing spend) ────────────────────────────
 export const listBudgets = (includeInactive = false) =>
   request<{ items: import('./types').PurchaseBudget[]; scope: 'company' | 'warehouses'; currency: string }>(
@@ -1646,13 +2023,14 @@ export const getBudgetPlan = (budgetId?: string, sessionId?: string, opts?: Requ
   request<import('./types').BudgetPlan>(
     'POST', '/inventory/budget/plan', { budget_id: budgetId ?? null, session_id: sessionId ?? null }, opts)
 export const checkBudgetOrder = (
-  lines: { sku: string; qty: number; unit_cost: number | null; supplier?: string | null; supplier_id?: string | null }[],
+  lines: { sku: string; qty: number; unit_cost: number | null; currency?: string | null; supplier?: string | null; supplier_id?: string | null }[],
   destinationWarehouse?: string,
   opts?: RequestOpts,
+  costCenterId?: string,
 ) =>
   request<{ exceeded: import('./types').BudgetExceeded[] }>(
     'POST', '/inventory/budget/check',
-    { lines, destination_warehouse: destinationWarehouse ?? null }, opts)
+    { lines, destination_warehouse: destinationWarehouse ?? null, cost_center_id: costCenterId ?? null }, opts)
 
 // ── Blanket supply contracts (their releases become committed demand) ───────
 export const getSupplyContracts = () =>
@@ -1670,6 +2048,33 @@ export const reviseSupplyContract = (rootId: string, terms: import('./types').Su
 export const setSupplyContractStatus = (rootId: string, status: 'active' | 'closed' | 'cancelled', expectedRevision: number) =>
   request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/status`,
     { status, expected_revision: expectedRevision })
+
+// ── Recurring delivery schedules (Rust service: no Python route behind them) ─
+export const getRecurringDeliveries = () =>
+  request<{ statuses: import('./types').RecurringDeliveryStatus[]; items: import('./types').RecurringDelivery[] }>(
+    'GET', '/recurring-deliveries')
+export const getRecurringDelivery = (id: string) =>
+  request<import('./types').RecurringDelivery>('GET', `/recurring-deliveries/${encodeURIComponent(id)}`)
+export const previewRecurringDelivery = (terms: import('./types').RecurringDeliveryTerms) =>
+  request<import('./types').RecurringDeliveryPreview>('POST', '/recurring-deliveries/preview', terms)
+export const createRecurringDelivery = (terms: import('./types').RecurringDeliveryTerms) =>
+  request<import('./types').RecurringDelivery>('POST', '/recurring-deliveries', terms)
+export const reviseRecurringDelivery = (id: string, terms: import('./types').RecurringDeliveryTerms, expectedRevision: number) =>
+  request<import('./types').RecurringDelivery>('PATCH', `/recurring-deliveries/${encodeURIComponent(id)}`,
+    { ...terms, expected_revision: expectedRevision })
+export const setRecurringDeliveryStatus = (id: string, status: import('./types').RecurringDeliveryStatus, expectedRevision: number) =>
+  request<import('./types').RecurringDelivery>('POST', `/recurring-deliveries/${encodeURIComponent(id)}/status`,
+    { status, expected_revision: expectedRevision })
+// Renewal tracking (served by the Rust API only; see docs/rust-migration.md).
+export const getContractRenewals = (withinDays = 90, bucket?: import('./types').ContractRenewalBucket) =>
+  request<import('./types').ContractRenewalList>(
+    'GET', `/supply-contracts/renewals?within_days=${withinDays}${bucket ? `&bucket=${bucket}` : ''}`)
+export const getContractComparison = (rootId: string) =>
+  request<import('./types').ContractComparisonResponse>(
+    'GET', `/supply-contracts/${encodeURIComponent(rootId)}/comparison`)
+export const renewSupplyContract = (rootId: string, expectedRevision: number) =>
+  request<import('./types').ContractRenewResult>(
+    'POST', `/supply-contracts/${encodeURIComponent(rootId)}/renew`, { expected_revision: expectedRevision })
 
 // ── Demand plan versions (a frozen plan and its sign-off; changes no purchase) ─
 export const listDemandPlans = () =>
@@ -1696,6 +2101,63 @@ export const decideDemandPlan = (id: string, action: 'submit' | 'approve' | 'rej
     'POST', `/demand-plans/${encodeURIComponent(id)}/${action}`, { comment: comment || null })
 export const commentDemandPlan = (id: string, comment: string) =>
   request<import('./types').DemandPlanVersion>('POST', `/demand-plans/${encodeURIComponent(id)}/comments`, { comment })
+
+// ── S&OP forecast consensus (served by the Rust API; percentages are basis points) ─
+export const getConsensusSettings = () =>
+  request<import('./types').ConsensusSettings>('GET', '/consensus/settings')
+export const saveConsensusSettings = (body: {
+  rule: import('./types').ConsensusRuleName
+  priority: import('./types').ConsensusFunction[]
+  weights: Record<import('./types').ConsensusFunction, number>
+  cap_down_bp: number; cap_up_bp: number
+  members?: Record<import('./types').ConsensusFunction, string[]>
+}) => request<import('./types').ConsensusSettings>('PUT', '/consensus/settings', body)
+export const listConsensusSubmissions = (sessionId: string, opts?: { sku?: string; includeSuperseded?: boolean; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.includeSuperseded) q.set('include_superseded', 'true')
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').ConsensusSubmissionList>(
+    'GET', `/sessions/${encodeURIComponent(sessionId)}/consensus/submissions${qs ? `?${qs}` : ''}`)
+}
+export const createConsensusSubmission = (sessionId: string, body: {
+  sku: string; function: import('./types').ConsensusFunction; start_date: string; end_date: string
+  pct_bp: number; reason_code: string; reason_note?: string | null
+}) => request<import('./types').ConsensusSubmission>(
+  'POST', `/sessions/${encodeURIComponent(sessionId)}/consensus/submissions`, body)
+export const getConsensusPreview = (sessionId: string, opts?: { sku?: string; offset?: number; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.offset) q.set('offset', String(opts.offset))
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').ConsensusPreview>(
+    'GET', `/sessions/${encodeURIComponent(sessionId)}/consensus/preview${qs ? `?${qs}` : ''}`)
+}
+export const proposeConsensus = (sessionId: string, body: { name: string; note?: string | null }) =>
+  request<import('./types').ConsensusVersionDetail>(
+    'POST', `/sessions/${encodeURIComponent(sessionId)}/consensus/versions`, body)
+export const listConsensusVersions = (sessionId?: string) =>
+  request<import('./types').ConsensusVersionList>(
+    'GET', `/consensus/versions${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`)
+export const getConsensusVersion = (id: string, opts?: { sku?: string; offset?: number; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.offset) q.set('offset', String(opts.offset))
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').ConsensusVersionDetail>(
+    'GET', `/consensus/versions/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`)
+}
+export const decideConsensus = (id: string, action: 'approve' | 'reject' | 'withdraw', comment?: string) =>
+  request<import('./types').ConsensusVersionDetail>(
+    'POST', `/consensus/versions/${encodeURIComponent(id)}/${action}`, { comment: comment || null })
+export const getConsensusFva = (sessionId: string) =>
+  request<import('./types').ConsensusFva>('GET', `/sessions/${encodeURIComponent(sessionId)}/consensus/fva`)
+export const refreshConsensusEvidence = (sessionId: string) =>
+  request<import('./types').ConsensusEvidenceRefresh>(
+    'POST', `/sessions/${encodeURIComponent(sessionId)}/consensus/evidence/refresh`, {})
 
 export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =>
   request<import('./types').AdjustmentValueAdded>(
@@ -1848,13 +2310,18 @@ export const logPOGeneration = (
   destinationWarehouse?: string,
   opts?: RequestOpts,
   budgetOverrideReason?: string,
+  costCenterId?: string,
 ) => {
   // destination_warehouse omitted = tenant default warehouse (mono-warehouse
   // tenants never send it, so their behavior is byte-identical to before 5.4).
-  const body: { items?: POLineDecision[]; destination_warehouse?: string; budget_override_reason?: string } = {}
+  const body: {
+    items?: POLineDecision[]; destination_warehouse?: string; budget_override_reason?: string
+    cost_center_id?: string
+  } = {}
   if (items && items.length) body.items = items
   if (destinationWarehouse) body.destination_warehouse = destinationWarehouse
   if (budgetOverrideReason && budgetOverrideReason.trim()) body.budget_override_reason = budgetOverrideReason.trim()
+  if (costCenterId) body.cost_center_id = costCenterId
   return request<POLogEntry>(
     'POST',
     `/inventory/log-po?session_id=${sessionId}`,
@@ -1887,15 +2354,16 @@ export const updatePreferences = (body: Partial<import('./types').UserPreference
 export const getDmContacts = (opts?: RequestOpts) =>
   request<import('./types').DmContact[]>('GET', '/messages/contacts', undefined, opts)
 
-export const getDmConversations = () =>
-  request<import('./types').DmConversation[]>('GET', '/messages/conversations')
+export const getDmConversations = (opts?: RequestOpts) =>
+  request<import('./types').DmConversation[]>('GET', '/messages/conversations', undefined, opts)
 
 export const getDmUnreadCount = () =>
-  request<{ unread: number }>('GET', '/messages/unread-count', undefined, { silent: true })
+  request<{ unread: number }>('GET', '/messages/unread-count', undefined, { silent: true, background: true })
 
-export const getDmThread = (withUser: string, before?: number) =>
+export const getDmThread = (withUser: string, before?: number, opts?: RequestOpts) =>
   request<import('./types').DmThread>(
     'GET', `/messages/thread?with_user=${encodeURIComponent(withUser)}${before ? `&before=${before}` : ''}`,
+    undefined, opts,
   )
 
 export const sendDm = (recipientId: string, body: string) =>
@@ -1986,6 +2454,28 @@ export const getTenantCurrency = (opts?: RequestOpts) =>
 export const setTenantCurrency = (code: string) =>
   request<{ current: import('./currency').CurrencyInfo }>(
     'PATCH', '/tenant/currency', { code })
+
+// ── Exchange rates (multi-currency; tenant-entered, never fetched from a feed) ──
+/** The rate is TEXT on purpose: it is exact decimal, never a float. */
+export const listExchangeRates = (params?: { currency?: string; limit?: number; offset?: number }, opts?: RequestOpts) => {
+  const q = new URLSearchParams()
+  if (params?.currency) q.set('currency', params.currency)
+  if (params?.limit != null) q.set('limit', String(params.limit))
+  if (params?.offset != null) q.set('offset', String(params.offset))
+  const qs = q.toString()
+  return request<import('./types').ExchangeRateList>('GET', `/tenant/currency/rates${qs ? `?${qs}` : ''}`, undefined, opts)
+}
+
+/** Admin only. `rate`: 1 unit of `currency` in the company's own currency, as text. */
+export const createExchangeRate = (body: {
+  currency: string; rate: string; effective_date?: string; source_note?: string | null
+}) => request<import('./types').ExchangeRate>('POST', '/tenant/currency/rates', body)
+
+export const updateExchangeRate = (id: string, body: { rate?: string; source_note?: string | null }) =>
+  request<import('./types').ExchangeRate>('PATCH', `/tenant/currency/rates/${encodeURIComponent(id)}`, body)
+
+export const deleteExchangeRate = (id: string) =>
+  request<{ deleted: boolean; id: string }>('DELETE', `/tenant/currency/rates/${encodeURIComponent(id)}`)
 
 export const analyzeDataSource = (
   id: string,
@@ -2094,7 +2584,7 @@ export const sendPOToSelf = (poLogId: string) =>
 
 export const createManualPO = (body: {
   supplier_id: string
-  lines: { sku: string; qty: number; unit_cost?: number; display_name?: string }[]
+  lines: { sku: string; qty: number; unit_cost?: number; currency?: string; display_name?: string }[]
   destination_warehouse?: string
 }, opts?: RequestOpts) =>
   request<POLogEntry>('POST', '/inventory/po', body, opts)
@@ -2103,7 +2593,7 @@ export const getSkuSuppliers  = (sku: string) =>
   request<SkuSupplier[]>('GET', `/inventory/stock/${encodeURIComponent(sku)}/suppliers`)
 
 export const assignSkuSupplier = (sku: string, supplierId: string, body: {
-  is_primary?: boolean; unit_cost?: number; moq?: number; lead_time_days?: number
+  is_primary?: boolean; unit_cost?: number; currency?: string; moq?: number; lead_time_days?: number
 }) =>
   request<SkuSupplier>('PUT', `/inventory/stock/${encodeURIComponent(sku)}/suppliers/${supplierId}`, body)
 
@@ -2962,3 +3452,127 @@ export const startReforecast = (sessionId: string, datasetId?: string | null) =>
   request<{ session_id: string; job_id: string; parent_session_id: string }>(
     'POST', `/sessions/${sessionId}/reforecast`, datasetId ? { dataset_id: datasetId } : undefined,
   )
+
+// ── Organization hierarchy (Rust-only routes: /org/*) ───────────────────────
+export const getOrgOverview = () =>
+  request<import('./orgTypes').OrgOverview>('GET', '/org/overview', undefined, { silent: true })
+export const listOrgLinks = () =>
+  request<import('./orgTypes').OrgLinks>('GET', '/org/links', undefined, { silent: true })
+export const createOrgLink = (label: string) =>
+  request<import('./orgTypes').OrgCreatedLink>('POST', '/org/links', { label })
+export const acceptOrgLink = (code: string) =>
+  request<{ link_id: string; parent_name: string; status: 'active' }>('POST', '/org/links/accept', { code })
+export const revokeOrgLink = (linkId: string) =>
+  request<{ id: string; status: 'revoked'; changed: boolean }>('DELETE', `/org/links/${encodeURIComponent(linkId)}`)
+export const listOrgLinkMembers = (linkId: string) =>
+  request<import('./orgTypes').OrgMember[]>('GET', `/org/links/${encodeURIComponent(linkId)}/members`, undefined, { silent: true })
+export const grantOrgLinkMember = (linkId: string, userId: string) =>
+  request<{ changed: boolean }>('PUT', `/org/links/${encodeURIComponent(linkId)}/members/${encodeURIComponent(userId)}`)
+export const removeOrgLinkMember = (linkId: string, userId: string) =>
+  request<{ changed: boolean }>('DELETE', `/org/links/${encodeURIComponent(linkId)}/members/${encodeURIComponent(userId)}`)
+export const getOrgCommittedDemand = () =>
+  request<import('./orgTypes').OrgCommittedDemand>('GET', '/org/consolidated/committed-demand', undefined, { silent: true })
+export const getOrgStockSignals = () =>
+  request<import('./orgTypes').OrgStockSignals>('GET', '/org/consolidated/stock-signals', undefined, { silent: true })
+export const getOrgPurchaseOrders = (days: number) =>
+  request<import('./orgTypes').OrgPurchaseOrders>('GET', `/org/consolidated/purchase-orders?days=${days}`, undefined, { silent: true })
+export const getOrgBudgets = () =>
+  request<import('./orgTypes').OrgBudgets>('GET', '/org/consolidated/budgets', undefined, { silent: true })
+// ── Scheduled management reports (served by the Rust API: no Python route) ───
+
+export type ReportSection = 'purchasing_summary' | 'budget_vs_spend' | 'committed_demand' | 'supplier_scorecard'
+export type ReportFrequency = 'weekly' | 'monthly'
+
+export interface ReportRecipient {
+  id: string
+  kind: 'user' | 'external'
+  user_id: string | null
+  email: string | null
+  full_name: string | null
+  unsubscribed: boolean
+  /** False when the worker would skip this person right now, with `skip_reason`. */
+  would_send: boolean
+  skip_reason: string | null
+}
+
+export interface ReportSchedule {
+  id: string
+  name: string
+  sections: ReportSection[]
+  frequency: ReportFrequency
+  weekday: number | null
+  day_of_month: number | null
+  hour: number
+  timezone: string
+  enabled: boolean
+  paused_reason: string | null
+  paused_at: string | null
+  consecutive_failures: number
+  next_run_at: string
+  last_run_at: string | null
+  last_status: string | null
+  last_error: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  recipients: ReportRecipient[]
+}
+
+export interface ReportRun {
+  id: string
+  period: string
+  due_at: string
+  status: 'building' | 'queued' | 'skipped' | 'failed'
+  attempts: number
+  recipients_queued: number
+  recipients_skipped: { recipient: string; kind: string; reason: string }[]
+  error: string | null
+  started_at: string
+  finished_at: string | null
+  delivery: { sent: number; pending: number; failed: number; abandoned: number }
+}
+
+export interface ReportCatalog {
+  sections: ReportSection[]
+  frequencies: ReportFrequency[]
+  timezone: string
+  limits: { schedules: number; recipients: number; allowed_external: number; name_length: number }
+}
+
+export interface ReportScheduleInput {
+  name: string
+  sections: ReportSection[]
+  frequency: ReportFrequency
+  weekday?: number | null
+  day_of_month?: number | null
+  hour: number
+  user_ids: string[]
+  external_emails: string[]
+}
+
+export const getReportCatalog = () =>
+  request<ReportCatalog>('GET', '/scheduled-reports/catalog', undefined, { silent: true })
+export const listReportSchedules = () =>
+  request<{ items: ReportSchedule[] }>('GET', '/scheduled-reports', undefined, { silent: true })
+export const createReportSchedule = (body: ReportScheduleInput) =>
+  request<ReportSchedule>('POST', '/scheduled-reports', body)
+export const updateReportSchedule = (id: string, body: Partial<ReportScheduleInput>) =>
+  request<ReportSchedule>('PATCH', `/scheduled-reports/${id}`, body)
+export const deleteReportSchedule = (id: string) =>
+  request<{ deleted: boolean }>('DELETE', `/scheduled-reports/${id}`)
+export const pauseReportSchedule = (id: string) =>
+  request<ReportSchedule>('POST', `/scheduled-reports/${id}/pause`)
+export const resumeReportSchedule = (id: string) =>
+  request<ReportSchedule>('POST', `/scheduled-reports/${id}/resume`)
+export const listReportRuns = (id: string) =>
+  request<{ items: ReportRun[] }>('GET', `/scheduled-reports/${id}/runs?limit=20`, undefined, { silent: true })
+export const previewReport = (body: { schedule_id?: string; sections?: ReportSection[]; frequency?: ReportFrequency; name?: string }) =>
+  request<{ preview: boolean; sent: boolean; report: Record<string, unknown>; html: string }>(
+    'POST', '/scheduled-reports/preview', body)
+export const listAllowedReportRecipients = () =>
+  request<{ items: { email: string; added_by: string; created_at: string }[]; max: number }>(
+    'GET', '/scheduled-reports/allowed-recipients', undefined, { silent: true })
+export const addAllowedReportRecipient = (email: string) =>
+  request<{ email: string; created: boolean }>('POST', '/scheduled-reports/allowed-recipients', { email })
+export const removeAllowedReportRecipient = (email: string) =>
+  request<{ removed: boolean }>('DELETE', `/scheduled-reports/allowed-recipients/${encodeURIComponent(email)}`)

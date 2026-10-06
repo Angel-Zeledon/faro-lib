@@ -16,11 +16,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Wallet, Plus, Pencil, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
 import {
-  createBudget, getBudgetPlan, getBudgetStatus, listBudgets, listSuppliers, reviseBudget,
+  createBudget, getBudgetPlan, getBudgetStatus, listBudgets, listCostCenters, listSuppliers, reviseBudget,
 } from '@/lib/api'
 import type {
   BudgetInput, BudgetLineStatus, BudgetPeriodType, BudgetPlan, BudgetPlanLine, BudgetScopeType,
-  BudgetStatus, BudgetWarning, PurchaseBudget, Supplier,
+  BudgetStatus, BudgetWarning, CostCenter, PurchaseBudget, Supplier,
 } from '@/lib/types'
 import { useErrorDetail } from '@/components/ui/States'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -101,6 +101,7 @@ export default function BudgetPanel({ sessionId, onNotes, reloadToken, onChanged
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [scopeKind, setScopeKind] = useState<'company' | 'warehouses'>('company')
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -160,6 +161,8 @@ export default function BudgetPanel({ sessionId, onNotes, reloadToken, onChanged
       if (l.scope === 'warehouses' && !b) setForm(f => ({ ...f, scope_type: 'warehouse' }))
     } catch { /* the form still works; the server decides */ }
     listSuppliers().then(setSuppliers).catch(() => {})
+    // Served by the Rust API: when it is down there are simply no centers to pick.
+    listCostCenters({ silent: true }).then(r => setCostCenters(r.items.filter(c => c.active))).catch(() => {})
   }
 
   const amountNum = Number(form.amount)
@@ -360,6 +363,9 @@ export default function BudgetPanel({ sessionId, onNotes, reloadToken, onChanged
               <option value="warehouse">{t('budget.scope_warehouse')}</option>
               {scopeKind === 'company' && <option value="supplier">{t('budget.scope_supplier')}</option>}
               {scopeKind === 'company' && <option value="category">{t('budget.scope_category')}</option>}
+              {scopeKind === 'company' && (costCenters.length > 0 || form.scope_type === 'cost_center') && (
+                <option value="cost_center">{t('budget.scope_cost_center')}</option>
+              )}
             </select>
           </label>
           {form.scope_type === 'warehouse' && (
@@ -376,6 +382,15 @@ export default function BudgetPanel({ sessionId, onNotes, reloadToken, onChanged
                 <option value="">{t('budget.choose')}</option>
                 {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
+            </label>
+          )}
+          {form.scope_type === 'cost_center' && (
+            <label style={lbl}>{t('budget.scope_cost_center')}
+              <select style={field} value={form.scope_value} onChange={e => setForm(f => ({ ...f, scope_value: e.target.value }))}>
+                <option value="">{t('budget.choose')}</option>
+                {costCenters.map(c => <option key={c.id} value={c.id}>{c.path ?? c.code}</option>)}
+              </select>
+              <span style={{ fontSize: 11, color: 'var(--dim)' }}>{t('budget.scope_cost_center_hint')}</span>
             </label>
           )}
           {form.scope_type === 'category' && (

@@ -347,6 +347,16 @@ def _inventory_alert_loop() -> None:
         except Exception as e:
             log.error("Contract materialisation error: %s", e, exc_info=True)
         try:
+            # Renewal and expiry alerts for active contracts (60/30/7 days by
+            # default). Independent of the passes around it; idempotent (the
+            # event row records what was already raised).
+            from backend.inventory.contract_renewal_alerts import (
+                run_daily_contract_renewal_alerts,
+            )
+            run_daily_contract_renewal_alerts()
+        except Exception as e:
+            log.error("Contract renewal alert error: %s", e, exc_info=True)
+        try:
             from backend.inventory.service import run_daily_inventory_alerts
             run_daily_inventory_alerts()
         except Exception as e:
@@ -611,6 +621,57 @@ def _webhook_delivery_loop() -> None:
             time.sleep(_WEBHOOK_POLL_SECONDS)
 
 
+# Message outbox (backend/notifications/outbox.py): the table other services
+# (the Rust API) write their email / WhatsApp requests into. Polled like the
+# webhook queue, with the same SKIP LOCKED claim, so a second instance is harmless.
+_OUTBOX_POLL_SECONDS = 5
+
+
+def _outbox_drain_loop() -> None:
+    log.info("Outbox drain loop started")
+    while True:
+        handled = 0
+        try:
+            from backend.notifications.outbox import process_due
+            handled = process_due()
+        except Exception as e:
+            log.error("Outbox drain error: %s", e, exc_info=True)
+        if handled < 20:
+            time.sleep(_OUTBOX_POLL_SECONDS)
+# Continuous audit export (backend/audit_stream/service.py). Python, not Rust,
+# on purpose: delivery goes through the webhook SSRF guard and retry/signing
+# code, which exist once. The config and cursor routes are Rust and only write
+# `audit_streams`; the loop claims due destinations with a lease, so a second
+# instance is harmless.
+def _audit_stream_loop() -> None:
+    from backend.audit_stream.service import run_loop
+    run_loop()
+
+
+# Scheduled management reports (backend/scheduled_reports/service.py). One pass a
+# minute claims due schedules (FOR UPDATE SKIP LOCKED, one run per schedule per
+# local period), builds the report and hands each recipient's mail to the
+# outbox. The pass writes its own freshness row, so /health shows a loop that
+# stopped. Exactly one scheduler runs the cron loops, and the claim is safe even
+# if a second one does.
+def _report_scheduler_loop() -> None:
+    log.info("Report scheduler loop started")
+    from backend.scheduled_reports import catalog
+    while True:
+        now = datetime.now(timezone.utc)
+        try:
+            from backend.scheduled_reports.service import process_due
+            made = process_due(now)
+            if made:
+                log.info("Report scheduler: %d run(s) made", made)
+            loop_state.mark_run(loop_state.SCHEDULED_REPORTS, now)
+        except Exception as e:
+            log.error("Report scheduler error: %s", e, exc_info=True)
+            loop_state.mark_run(loop_state.SCHEDULED_REPORTS, now,
+                                status=loop_state.STATUS_FAILED, error=type(e).__name__)
+        time.sleep(catalog.POLL_SECONDS)
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -625,7 +686,7 @@ def enabled_components() -> list[str]:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
             "operator-digest", "trial-reaper", "billing-sweep",
-            "webhook-deliveries",
+            "webhook-deliveries", "outbox-drain", "audit-stream", "report-scheduler",
         ]
     return components
 
@@ -638,6 +699,9 @@ _COMPONENT_TARGETS = {
     "trial-reaper":       _trial_reaper_loop,
     "billing-sweep":      _billing_sweep_loop,
     "webhook-deliveries": _webhook_delivery_loop,
+    "outbox-drain":       _outbox_drain_loop,
+    "audit-stream":       _audit_stream_loop,
+    "report-scheduler":   _report_scheduler_loop,
 }
 
 

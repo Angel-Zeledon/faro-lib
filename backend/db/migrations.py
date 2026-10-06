@@ -275,6 +275,28 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
          granted_at TIMESTAMPTZ DEFAULT NOW(),
          UNIQUE (user_id, permission)
      )"""),
+    # Custom roles (backend/auth/permissions.py). No foreign keys on purpose: a
+    # role id that points at nothing must read as "no permissions" (fail
+    # closed), not cascade into somebody's access.
+    ("create_custom_roles",
+     """CREATE TABLE IF NOT EXISTS custom_roles (
+         id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id   TEXT NOT NULL,
+         name        TEXT NOT NULL,
+         description TEXT NOT NULL DEFAULT '',
+         permissions TEXT[] NOT NULL DEFAULT '{}',
+         created_by  TEXT,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("custom_roles_unique_name",
+     "CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_roles_tenant_name "
+     "ON custom_roles (tenant_id, lower(name))"),
+    ("add_users_custom_role_id",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_role_id TEXT"),
+    ("users_custom_role_index",
+     "CREATE INDEX IF NOT EXISTS idx_users_custom_role ON users (custom_role_id) "
+     "WHERE custom_role_id IS NOT NULL"),
     ("create_documents",
      """CREATE TABLE IF NOT EXISTS documents (
          id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -2044,6 +2066,9 @@ _MIGRATIONS += _COMMITTED
 # Blanket supply contracts: after committed demand, whose table they extend.
 from backend.inventory.supply_contract_migrations import MIGRATIONS as _SUPPLY_CONTRACTS  # noqa: E402
 _MIGRATIONS += _SUPPLY_CONTRACTS
+# Recurring delivery schedules: after committed demand, whose rows they materialise.
+from backend.inventory.recurring_delivery_migrations import MIGRATIONS as _RECURRING_DELIVERIES  # noqa: E402
+_MIGRATIONS += _RECURRING_DELIVERIES
 from backend.inventory.spike_edit_migrations import MIGRATIONS as _SPIKE_EDITS  # noqa: E402
 _MIGRATIONS += _SPIKE_EDITS
 from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  # noqa: E402
@@ -2052,10 +2077,35 @@ from backend.inventory.demand_plan_migrations import MIGRATIONS as _DEMAND_PLANS
 _MIGRATIONS += _DEMAND_PLANS
 from backend.webhooks.migrations import MIGRATIONS as _WEBHOOK_DELIVERY  # noqa: E402
 _MIGRATIONS += _WEBHOOK_DELIVERY
+from backend.audit_stream.migrations import MIGRATIONS as _AUDIT_STREAM  # noqa: E402
+_MIGRATIONS += _AUDIT_STREAM
 from backend.inventory.purchase_budget_migrations import MIGRATIONS as _PURCHASE_BUDGETS  # noqa: E402
 _MIGRATIONS += _PURCHASE_BUDGETS
 from backend.inventory.po_confirmation_migrations import MIGRATIONS as _PO_CONFIRMATIONS  # noqa: E402
 _MIGRATIONS += _PO_CONFIRMATIONS
+from backend.notifications.outbox_migrations import MIGRATIONS as _OUTBOX  # noqa: E402
+_MIGRATIONS += _OUTBOX
+from backend.inventory.po_delegation_migrations import MIGRATIONS as _PO_DELEGATIONS  # noqa: E402
+_MIGRATIONS += _PO_DELEGATIONS
+from backend.inventory.customer_portal_migrations import MIGRATIONS as _CUSTOMER_PORTAL  # noqa: E402
+_MIGRATIONS += _CUSTOMER_PORTAL
+from backend.fx.migrations import MIGRATIONS as _FX  # noqa: E402
+_MIGRATIONS += _FX
+# Organization hierarchy (holding + subsidiary tenants): after tenants and users.
+from backend.organizations.migrations import MIGRATIONS as _ORGANIZATIONS  # noqa: E402
+_MIGRATIONS += _ORGANIZATIONS
+from backend.inventory.cost_center_migrations import MIGRATIONS as _COST_CENTERS  # noqa: E402
+_MIGRATIONS += _COST_CENTERS
+from backend.inventory.stock_allocation_migrations import MIGRATIONS as _STOCK_ALLOCATION  # noqa: E402
+_MIGRATIONS += _STOCK_ALLOCATION
+# S&OP forecast consensus: after demand plans, whose approvers it reuses.
+from backend.inventory.consensus_migrations import MIGRATIONS as _CONSENSUS  # noqa: E402
+_MIGRATIONS += _CONSENSUS
+from backend.scheduled_reports.migrations import MIGRATIONS as _SCHEDULED_REPORTS  # noqa: E402
+_MIGRATIONS += _SCHEDULED_REPORTS
+# Decision links for purchase-order approvals (after approvals and the outbox).
+from backend.inventory.po_approval_link_migrations import MIGRATIONS as _PO_APPROVAL_LINKS  # noqa: E402
+_MIGRATIONS += _PO_APPROVAL_LINKS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
@@ -2079,6 +2129,9 @@ STATUS_INPUT_TABLES = (
     # The two ledgers that move demand beside the forecast. A manual adjustment was
     # missing here, so a new one left the cached status stale until it expired.
     "forecast_adjustments", "committed_demand",
+    # A published consensus moves demand the same way (the same active_by_sku
+    # reads it), so approving or withdrawing one must invalidate the cache.
+    "consensus_versions",
 )
 
 
@@ -2224,6 +2277,34 @@ _ENTERPRISE_ACCESS = [
      "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS warehouse_scope JSONB"),
 ]
 _MIGRATIONS += _ENTERPRISE_ACCESS
+
+
+# ── SAML 2.0 single sign-on (2026-10-06): the sibling of the OIDC provider ───
+# One SAML identity provider per tenant (backend/auth/saml/). Public data only:
+# the IdP's signing certificates are public keys, so there is no secret column.
+# Domains are NOT stored here: they live in `sso_domains`, shared with OIDC, so
+# "a domain belongs to one tenant" has one table and one answer. A tenant has
+# EITHER an OIDC provider or a SAML one, never both (both writers refuse).
+_SAML = [
+    ("create_saml_providers",
+     """CREATE TABLE IF NOT EXISTS saml_providers (
+         tenant_id        TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         idp_entity_id    TEXT NOT NULL,
+         sso_url          TEXT NOT NULL,
+         idp_certificates JSONB NOT NULL DEFAULT '[]',
+         allowed_domains  JSONB NOT NULL DEFAULT '[]',
+         default_role     TEXT NOT NULL DEFAULT 'viewer',
+         enforce_sso      BOOLEAN NOT NULL DEFAULT FALSE,
+         email_attribute  TEXT,
+         groups_attribute TEXT,
+         group_roles      JSONB NOT NULL DEFAULT '{}',
+         enabled          BOOLEAN NOT NULL DEFAULT TRUE,
+         created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_by       TEXT
+     )"""),
+]
+_MIGRATIONS += _SAML
 
 
 # ── "Send feedback" (2026-10-05) ─────────────────────────────────────────────
@@ -2415,6 +2496,145 @@ _SCIM = [
      "ON scim_user_links (tenant_id, external_id)"),
 ]
 _MIGRATIONS += _SCIM
+
+# ── MFA (TOTP + single-use recovery codes) ──────────────────────────────────
+# Additive only. Nothing here changes how a user without an enrollment signs
+# in: with no row in `user_mfa` and `tenants.mfa_required` false, login is
+# exactly what it was.
+_MFA = [
+    # One enrollment per user. `secret_enc` is the base32 TOTP secret under the
+    # Fernet key every other stored secret uses (service_config/crypto.py).
+    # `status` is 'pending' from "begin" until the first valid code confirms
+    # it ('active'); only an active row makes login ask for a code.
+    # `last_used_step` is the RFC 6238 time-step of the last accepted code: a
+    # code is accepted only for a step strictly greater than it, so one code
+    # opens at most one login.
+    ("create_user_mfa",
+     """CREATE TABLE IF NOT EXISTS user_mfa (
+         user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id      TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         secret_enc     TEXT NOT NULL,
+         status         TEXT NOT NULL DEFAULT 'pending',
+         last_used_step BIGINT,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         confirmed_at   TIMESTAMPTZ
+     )"""),
+    ("create_user_mfa_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS idx_user_mfa_tenant ON user_mfa (tenant_id)"),
+    # Only an HMAC of each recovery code is stored, never the code.
+    ("create_user_mfa_recovery_codes",
+     """CREATE TABLE IF NOT EXISTS user_mfa_recovery_codes (
+         id         BIGSERIAL PRIMARY KEY,
+         user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         code_hash  TEXT NOT NULL,
+         used_at    TIMESTAMPTZ,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_user_mfa_recovery_codes_idx",
+     "CREATE INDEX IF NOT EXISTS idx_user_mfa_recovery_user ON user_mfa_recovery_codes (user_id, code_hash)"),
+    # The opaque token between "password ok" and "code ok" (purpose 'login'),
+    # and the one that lets a user the tenant REQUIRES to enrol do so before
+    # holding any session (purpose 'enroll'). Only its SHA-256 is stored.
+    ("create_mfa_challenges",
+     """CREATE TABLE IF NOT EXISTS mfa_challenges (
+         token_hash  TEXT PRIMARY KEY,
+         user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         purpose     TEXT NOT NULL,
+         attempts    INT NOT NULL DEFAULT 0,
+         expires_at  TIMESTAMPTZ NOT NULL,
+         consumed_at TIMESTAMPTZ,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_mfa_challenges_user_idx",
+     "CREATE INDEX IF NOT EXISTS idx_mfa_challenges_user ON mfa_challenges (user_id)"),
+    # The tenant policy. Catalog-guarded, not ADD COLUMN IF NOT EXISTS, for the
+    # lock reason written above `add_users_has_password`: `tenants` is read by
+    # every login.
+    ("add_tenants_mfa_required",
+     """DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'tenants'
+               AND column_name = 'mfa_required'
+          ) THEN
+            ALTER TABLE tenants ADD COLUMN mfa_required BOOLEAN NOT NULL DEFAULT FALSE;
+          END IF;
+        END $$"""),
+]
+_MIGRATIONS += _MFA
+
+
+# ── Per-tenant IP allowlist ──────────────────────────────────────────────────
+# Additive: a tenant with no policy row (or a disabled one) is not filtered, so
+# with nothing configured every request behaves exactly as before. Python owns
+# the schema; the Rust service only reads and writes these rows.
+_IP_ALLOWLIST = [
+    ("create_ip_allowlist_policies",
+     """CREATE TABLE IF NOT EXISTS ip_allowlist_policies (
+         tenant_id   TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+         updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_by  TEXT
+     )"""),
+    # `cidr` is stored normalised (network address / prefix, IPv4 or IPv6), so
+    # the UNIQUE below is a real "no duplicates" and both services compare the
+    # same text they would parse.
+    ("create_ip_allowlist_entries",
+     """CREATE TABLE IF NOT EXISTS ip_allowlist_entries (
+         id          TEXT PRIMARY KEY,
+         tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         cidr        TEXT NOT NULL,
+         label       TEXT NOT NULL DEFAULT '',
+         created_by  TEXT,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         UNIQUE (tenant_id, cidr)
+     )"""),
+]
+_MIGRATIONS += _IP_ALLOWLIST
+
+
+# ── Session and password policy (backend/auth/session_policy.py) ─────────────
+# Additive: with no row in `tenant_session_policies` nothing reads a new column
+# for any decision, and every account behaves exactly as before. The Rust API
+# owns the admin routes; Python enforces the policy at login, refresh,
+# password change and token validation.
+_SESSION_POLICY = [
+    # One row per tenant; every limit NULL (or FALSE) means "not set". Bounds
+    # are checked by the admin route AND here, so a hand-written row cannot
+    # hold a value the enforcement code was never meant to see.
+    ("create_tenant_session_policies",
+     """CREATE TABLE IF NOT EXISTS tenant_session_policies (
+         tenant_id                TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         max_session_hours        INTEGER CHECK (max_session_hours BETWEEN 1 AND 168),
+         idle_timeout_minutes     INTEGER CHECK (idle_timeout_minutes BETWEEN 5 AND 1440),
+         min_password_length      INTEGER CHECK (min_password_length BETWEEN 8 AND 64),
+         require_mixed_case       BOOLEAN NOT NULL DEFAULT FALSE,
+         require_symbol           BOOLEAN NOT NULL DEFAULT FALSE,
+         password_max_age_days    INTEGER CHECK (password_max_age_days BETWEEN 7 AND 730),
+         -- When the age limit was switched on. Passwords older than the limit
+         -- on that day get the whole limit from then, not an instant lockout.
+         password_max_age_since   TIMESTAMPTZ,
+         max_concurrent_sessions  INTEGER CHECK (max_concurrent_sessions BETWEEN 1 AND 20),
+         lockout_threshold        INTEGER CHECK (lockout_threshold BETWEEN 3 AND 20),
+         lockout_minutes          INTEGER CHECK (lockout_minutes BETWEEN 1 AND 1440),
+         updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_by               TEXT
+     )"""),
+    # Last authenticated request (idle timeout), when the password was last
+    # set (its age), and the failed-login counter with its lock.
+    ("add_users_last_activity_at",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ"),
+    ("add_users_password_changed_at",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ"),
+    ("add_users_failed_login_count",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0"),
+    ("add_users_locked_until",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ"),
+]
+_MIGRATIONS += _SESSION_POLICY
 
 
 # Postgres SQLSTATE codes that mean "this object is already there", which is the

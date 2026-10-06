@@ -139,7 +139,13 @@ export function useEventDetails() {
       .filter(k => !OPAQUE_DETAILS.has(k) && d[k] !== null && d[k] !== '')
       .map(k => {
         const v = d[k]
-        const shown = MONEY_DETAILS.has(k) && typeof v === 'number' ? formatMoney(v) : v
+        // `settings` is a list of setting names (session policy): each one
+        // through its own label, never as the bare identifier.
+        // `channel` is a machine value (`message`): shown through the catalogue, never raw.
+        const shown = k === 'settings' && Array.isArray(v)
+          ? v.map(name => t(`session_policy.field.${String(name)}`)).join(', ')
+          : k === 'channel' ? t(`events.channel.${v}`)
+          : MONEY_DETAILS.has(k) && typeof v === 'number' ? formatMoney(v) : v
         return `${t(`events.detail.${k}`)}: ${shown}`
       })
       .join('  ·  ')
@@ -399,7 +405,7 @@ export default function AlertBell({ localNotices, onLocalRead, onClearLocal }: A
     try {
       // `silent`: a bell polling in the background must not raise a toast when
       // the backend blinks. The panel says so itself instead.
-      const data = await getAlertHistory(HISTORY_LIMIT, { silent: true })
+      const data = await getAlertHistory(HISTORY_LIMIT, { silent: true, background: true })
       if (!mounted.current) return
       setAlerts(data.items)
       setServerUnread(data.unread_count)

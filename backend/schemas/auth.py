@@ -25,6 +25,13 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class MfaVerifyRequest(BaseModel):
+    """The second step of a password login: the challenge token the first step
+    returned, and an authenticator code or a recovery code."""
+    mfa_token: str = Field(min_length=1, max_length=256)
+    code: str = Field(min_length=1, max_length=64)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 

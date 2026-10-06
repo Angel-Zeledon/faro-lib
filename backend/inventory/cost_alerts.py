@@ -95,6 +95,9 @@ def _cost_observations(tenant_id: str, window_days: int) -> tuple[list[dict], in
               AND pol.reception_status IN ('received', 'partial')
               AND poi.status IN ('approved', 'modified')
               AND poi.unit_cost IS NOT NULL
+              -- Unit costs are compared across orders; a line priced in another
+              -- currency is not comparable to one in the company's own.
+              AND poi.currency IS NULL
               AND poi.received_qty IS NOT NULL AND poi.received_qty > 0
               AND pol.received_at IS NOT NULL
               AND pol.received_at >= %s

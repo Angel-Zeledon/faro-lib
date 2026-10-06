@@ -206,6 +206,113 @@ def active_by_sku(tenant_id: str, session_id: str, today: Optional[date] = None)
     out: dict[str, list[dict]] = {}
     for r in rows:
         out.setdefault(r["sku"], []).append(dict(r))
+    return _with_published_consensus(tenant_id, session_id, today, out)
+
+
+# ── The published S&OP consensus ─────────────────────────────────────────────
+#
+# The consensus (routes in Rust, `backend-rs/src/routes/consensus.rs`) layers on
+# the statistical forecast: each function submits an adjustment, a tenant rule
+# turns them into one percentage per SKU and period, and a person with the
+# authority approves the frozen result. ONLY an approved version reaches
+# planning, and it reaches it through this same place, as one more adjustment
+# per line, so `adjustments_applied` names it (who approved, which functions
+# said what) and nothing moves silently. With no approved version this adds
+# nothing and every number is exactly what it was.
+
+CONSENSUS_REASON = "consensus"
+
+
+def _published_consensus(tenant_id: str, session_id: str) -> Optional[dict]:
+    return query_one(
+        """SELECT v.id, v.name, v.lines, v.decided_by,
+                  COALESCE(NULLIF(u.full_name, ''), split_part(u.email, '@', 1)) AS decided_by_name
+             FROM consensus_versions v
+             LEFT JOIN users u ON u.id = v.decided_by AND u.tenant_id = v.tenant_id
+            WHERE v.tenant_id = %s AND v.session_id = %s AND v.status = 'approved'""",
+        (tenant_id, session_id))
+
+
+def _consensus_lines(version: dict, today: date) -> list[dict]:
+    """The version's lines still ahead of `today`, as adjustment-shaped dicts.
+    A line that cannot be read is logged and skipped, never allowed to break
+    the recommendation."""
+    out: list[dict] = []
+    for n, line in enumerate(version.get("lines") or []):
+        try:
+            start = date.fromisoformat(str(line["start_date"])[:10])
+            end = date.fromisoformat(str(line["end_date"])[:10])
+            pct_bp = int(line["pct_bp"])
+            sku = str(line["sku"])
+        except (KeyError, TypeError, ValueError):
+            log.error("consensus %s: unreadable line %s skipped", version["id"], n)
+            continue
+        if end < today:
+            continue
+        inputs = ", ".join(
+            f"{i.get('function')} {int(i.get('pct_bp', 0)) / 100:+.2f}%"
+            for i in (line.get("inputs") or []))
+        out.append({
+            "id": f"{version['id']}:{n}", "sku": sku, "start_date": start, "end_date": end,
+            "mode": "consensus", "pct": pct_bp / 100.0, "reason_code": CONSENSUS_REASON,
+            "reason_note": f"{version['name']}: {inputs}"[:300],
+            "created_by": version.get("decided_by"),
+            "created_by_name": version.get("decided_by_name"),
+        })
+    return out
+
+
+def _subtract(start: date, end: date, ranges: list[tuple[date, date]]) -> list[tuple[date, date]]:
+    """[start, end] minus the (sorted, disjoint) `ranges`: the pieces left."""
+    pieces: list[tuple[date, date]] = []
+    cursor = start
+    for lo, hi in ranges:
+        if hi < cursor or lo > end:
+            continue
+        if lo > cursor:
+            pieces.append((cursor, lo - timedelta(days=1)))
+        cursor = max(cursor, hi + timedelta(days=1))
+        if cursor > end:
+            break
+    if cursor <= end:
+        pieces.append((cursor, end))
+    return pieces
+
+
+def _with_published_consensus(tenant_id: str, session_id: str, today: date,
+                              manual: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    version = _published_consensus(tenant_id, session_id)
+    if not version:
+        return manual
+    lines = _consensus_lines(version, today)
+    if not lines:
+        return manual
+    by_sku: dict[str, list[dict]] = {}
+    for ln in lines:
+        by_sku.setdefault(ln["sku"], []).append(ln)
+    out = {sku: list(items) for sku, items in manual.items()}
+    for sku, sku_lines in by_sku.items():
+        # What the functions agreed on stands in for a manual adjustment on the
+        # dates it covers: applying both would count one judgement twice. Only the
+        # overlapped dates are taken over; the rest of a longer manual adjustment
+        # keeps applying, and the consensus line names the rows it replaces.
+        covered = sorted((ln["start_date"], ln["end_date"]) for ln in sku_lines)
+        kept: list[dict] = []
+        for adj in out.get(sku, []):
+            pieces = _subtract(adj["start_date"], adj["end_date"], covered)
+            if pieces == [(adj["start_date"], adj["end_date"])]:
+                kept.append(adj)
+                continue
+            for lo, hi in pieces:
+                kept.append({**adj, "start_date": lo, "end_date": hi})
+            for ln in sku_lines:
+                if adj["start_date"] <= ln["end_date"] and adj["end_date"] >= ln["start_date"]:
+                    ln.setdefault("replaces", []).append(adj["id"])
+        applicable = [ln for ln in sku_lines if ln["pct"] != 0.0]
+        if kept or applicable:
+            out[sku] = kept + applicable
+        else:
+            out.pop(sku, None)
     return out
 
 
@@ -242,5 +349,6 @@ def demand_multiplier(adjustments: Optional[list[dict]], today: date,
             "overlap_days": overlap,
             "window_days": int(math.ceil(lead_time_days)),
             "blended_multiplier": round(blended, 4),
+            **({"replaces": adj["replaces"]} if adj.get("replaces") else {}),
         })
     return combined, applied

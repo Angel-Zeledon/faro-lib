@@ -261,6 +261,11 @@ function OrderCard({ entry, overdue, onOpen, onReceive }: {
         <span style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: entry.total_value != null ? C.text : C.dim, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
             {entry.total_value != null ? formatMoney(entry.total_value) : '—'}
+            {!!entry.fx_unconverted_lines && (
+              <span style={{ display: 'block', fontSize: 11, fontWeight: 400, color: 'var(--warning)' }}>
+                {t('fx.po_unconverted', { n: entry.fx_unconverted_lines })}
+              </span>
+            )}
           </span>
           <span style={{ fontSize: 11.5, color: entry.sent_at ? C.green : C.dim, whiteSpace: 'nowrap' }}>
             {entry.sent_at
@@ -344,7 +349,8 @@ function OrderDetailSheet({ entry, onClose, canEdit, suppliersWithoutContact, on
         display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, margin: '0 0 16px',
       }}>
         <Fact label={t('roi.col_datetime')} value={fmtShortDateTime(e.generated_at, lang)} />
-        <Fact label={t('roi.col_total_value')} value={e.total_value != null ? formatMoney(e.total_value) : '—'} />
+        <Fact label={t('roi.col_total_value')} value={(e.total_value != null ? formatMoney(e.total_value) : '—')
+          + (e.fx_unconverted_lines ? ` · ${t('fx.po_unconverted', { n: e.fx_unconverted_lines })}` : '')} />
         <Fact label={t('roi.col_skus_in_order')} value={String(e.sku_count)} />
         <Fact label={t('roi.col_total_units')} value={fmtUnits(e.total_units)} />
         <Fact

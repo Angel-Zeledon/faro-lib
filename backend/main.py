@@ -345,6 +345,10 @@ from backend.api.v1 import social_auth as social_auth_router  # noqa: E402
 app.include_router(social_auth_router.router, prefix=_PREFIX)
 from backend.api.v1 import sso as sso_router  # noqa: E402
 app.include_router(sso_router.router, prefix=_PREFIX)
+# SAML 2.0 sign-in (backend/auth/saml/). Only /start and /acs live here: the
+# configuration routes are Rust-only (docs/rust-migration.md).
+from backend.api.v1 import saml as saml_router  # noqa: E402
+app.include_router(saml_router.router, prefix=_PREFIX)
 # SCIM 2.0 provisioning (backend/scim/): its own bearer token, never a JWT or
 # an API key. Answers 401 until a tenant admin mints a token.
 from backend.api.v1 import scim as scim_router  # noqa: E402
@@ -404,6 +408,8 @@ from backend.api.v1 import supply_contracts as supply_contracts_router  # noqa: 
 app.include_router(supply_contracts_router.router, prefix=_PREFIX)
 from backend.api.v1 import demand_plans as demand_plans_router  # noqa: E402
 app.include_router(demand_plans_router.router, prefix=_PREFIX)
+from backend.api.v1 import consensus_evidence as consensus_evidence_router  # noqa: E402
+app.include_router(consensus_evidence_router.router, prefix=_PREFIX)
 from backend.api.v1 import spike_edits as spike_edits_router  # noqa: E402
 app.include_router(spike_edits_router.router, prefix=_PREFIX)
 from backend.api.v1 import sku_analogies as sku_analogies_router  # noqa: E402
@@ -442,6 +448,10 @@ app.include_router(service_config_router.router, prefix=_PREFIX)
 from backend.api.v1 import audit as audit_router  # noqa: E402
 app.include_router(audit_router.router, prefix=_PREFIX)
 app.include_router(audit_router.manifest_router, prefix=_PREFIX)
+# Service-to-service (the Rust API's report preview): not under /api/v1, so the
+# frontend proxy never reaches it, and HMAC-authenticated.
+from backend.scheduled_reports import internal_api as scheduled_reports_internal  # noqa: E402
+app.include_router(scheduled_reports_internal.router)
 app.include_router(ws_router)
 
 

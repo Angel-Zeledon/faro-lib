@@ -4,7 +4,7 @@ import {
   TrendingUp, Package, MessagesSquare, Users, User,
   ShoppingCart, Truck, Upload, ClipboardList, History, Database,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
-  ScrollText, Settings, ScanLine, ClipboardCheck, FileCheck2, CreditCard,
+  ScrollText, Settings, ScanLine, ClipboardCheck, FileCheck2, CreditCard, Network, Scale, Mail,
 } from 'lucide-react'
 import { has, UNKNOWN_FACTS, type TenantFacts } from '@/hooks/useTenantFacts'
 
@@ -64,6 +64,9 @@ export const SCREENS: Screen[] = [
   // Frozen demand plan versions and their sign-off (a record and a
   // measurement; it moves no purchase recommendation).
   { href: '/plan-de-demanda',       labelKey: 'nav.demand_plan',     Icon: FileCheck2,   parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
+  // S&OP consensus: functions adjust the statistical forecast, an approver
+  // publishes one agreed version, and only that version reaches planning.
+  { href: '/consenso',              labelKey: 'nav.consensus',       Icon: Scale,        parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
 
   // ── Under Configuración (the /configuracion hub lists them) ────────────────
   { href: '/mi-cuenta',             labelKey: 'nav.account',         Icon: User,         parent: SETTINGS_HREF },
@@ -77,6 +80,13 @@ export const SCREENS: Screen[] = [
   // Who must approve which purchase orders. A row in the hub, never in the
   // sidebar; it only matters to a tenant that wants the workflow.
   { href: '/aprobaciones',          labelKey: 'nav.po_approval',     Icon: ClipboardCheck, parent: SETTINGS_HREF, adminOnly: true },
+  // A holding and its subsidiaries: consolidated read-only views for whoever was
+  // granted access, and the link / grant administration for admins. NOT
+  // adminOnly: the person who reads the views is usually not an administrator.
+  { href: '/organizacion',          labelKey: 'nav.organization',    Icon: Network,      parent: SETTINGS_HREF },
+  // Recurring management reports by email. Admins and analysts define them; a
+  // viewer who opens the URL is told it is not for them.
+  { href: '/reportes-programados',  labelKey: 'nav.scheduled_reports', Icon: Mail,        parent: SETTINGS_HREF },
   { href: '/automatizacion',        labelKey: 'nav.automation',      Icon: Clock,        parent: SETTINGS_HREF, adminOnly: true },
   // NOT adminOnly: an analyst is exactly who wires a customer's own system up
   // to the public API, and the page only ever acts with the key the reader
@@ -112,7 +122,7 @@ export const SETTINGS_ITEM: Screen = byHref(SETTINGS_HREF)
 /** Pronósticos and the three analysis screens reached from it, shown as one
  *  tab strip at the top of all four (components/layout/SectionTabs.tsx). */
 export const ANALYSIS_TABS: Screen[] =
-  ['/pronosticos', '/escenarios', '/impacto', '/historial', '/plan-de-demanda'].map(byHref)
+  ['/pronosticos', '/escenarios', '/impacto', '/historial', '/plan-de-demanda', '/consenso'].map(byHref)
 
 /** Role and the screen's `visibleWhen` rule decide whether an entry is DRAWN
  *  (there are no plan locks and nothing is ever blocked: see Screen.visibleWhen).

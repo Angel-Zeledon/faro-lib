@@ -1,0 +1,36 @@
+# DISABLED EXAMPLE. Rename to 32-spike-edits.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust.
+#
+# backend-rs/src/routes/spike_edits.rs (the whole `spike-edits` router):
+#   GET, POST  /api/v1/sessions/{id}/spike-edits
+#   POST       /api/v1/spike-edits/{id}/revert
+#
+# Training applies the marks; that stays Python and only reads the rows.
+
+@rs_spike_edits {
+	method GET POST
+	path_regexp ^/api/v1/sessions/[^/]+/spike-edits$
+}
+@rs_spike_edit_revert {
+	method POST
+	path_regexp ^/api/v1/spike-edits/[^/]+/revert$
+}
+
+handle @rs_spike_edits {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_spike_edit_revert {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

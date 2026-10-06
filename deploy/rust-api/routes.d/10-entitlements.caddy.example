@@ -1,0 +1,21 @@
+# DISABLED EXAMPLE. Rename to 10-entitlements.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# GET /api/v1/entitlements (backend-rs/src/routes/entitlements.rs).
+# POST /api/v1/entitlements/upgrade-request stays on Python (it sends email):
+# the matcher is method + exact path, so it cannot catch it.
+
+@rs_entitlements {
+	method GET
+	path /api/v1/entitlements
+}
+handle @rs_entitlements {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

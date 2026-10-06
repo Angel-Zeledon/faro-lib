@@ -118,7 +118,45 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # webhook as a `billing.*` event (LEGACY below), with "system" as actor.
     ("POST", "/billing/checkout"):                  _r("billing.checkout_started", "billing"),
     ("POST", "/billing/portal"):                    _r("billing.portal_opened", "billing"),
+    # Scheduled management reports (served by the Rust API; the catalogue is
+    # shared data). Who defined, changed, paused or removed a recurring report,
+    # and which external address an admin allowed to receive them.
+    ("POST", "/scheduled-reports"):                 _r("report_schedule.created", "report_schedule"),
+    ("PATCH", "/scheduled-reports/{schedule_id}"):  _r("report_schedule.updated", "report_schedule", "schedule_id"),
+    ("DELETE", "/scheduled-reports/{schedule_id}"): _r("report_schedule.deleted", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/{schedule_id}/pause"):  _r("report_schedule.paused", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/{schedule_id}/resume"): _r("report_schedule.resumed", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/allowed-recipients"):   _r("report_recipient.allowed", "report_recipient"),
+    ("DELETE", "/scheduled-reports/allowed-recipients/{email}"):
+        _r("report_recipient.removed", "report_recipient", "email"),
 }
+
+
+# Routes that exist ONLY in the Rust service (backend-rs/), so FastAPI has no
+# such route to match. They are audited by the Rust handler through the same
+# entry shape (`audit::record`), and they are part of ROUTES so the filter
+# vocabulary is one list. `test_every_catalogued_route_is_a_real_route` allows
+# exactly these.
+RUST_ONLY_ROUTES: dict[tuple[str, str], AuditRoute] = {
+    # Two-step sign-in: an admin changes the tenant policy, or clears a
+    # locked-out person's enrollment (backend-rs/src/routes/mfa/).
+    ("PUT", "/mfa/policy"):                         _r("config.changed", "setting"),
+    ("POST", "/mfa/users/{user_id}/reset"):         _r("user.mfa_reset", "user", "user_id"),
+    # Custom roles (backend-rs/src/routes/roles.rs): audited with before/after.
+    ("POST", "/roles"):                             _r("role.created", "role"),
+    ("PATCH", "/roles/{role_id}"):                  _r("role.updated", "role", "role_id"),
+    ("DELETE", "/roles/{role_id}"):                 _r("role.deleted", "role", "role_id"),
+    ("PUT", "/users/{user_id}/custom-role"):        _r("user.role_assigned", "user", "user_id"),
+    # Continuous audit export (backend-rs/src/routes/audit_stream.rs).
+    ("PUT", "/audit-stream"):                       _r("audit_stream.configured", "audit_stream"),
+    ("DELETE", "/audit-stream"):                    _r("audit_stream.deleted", "audit_stream"),
+    ("POST", "/audit-stream/enable"):               _r("audit_stream.enabled", "audit_stream"),
+    ("POST", "/audit-stream/disable"):              _r("audit_stream.disabled", "audit_stream"),
+    ("POST", "/audit-stream/rotate-secret"):        _r("audit_stream.secret_rotated", "audit_stream"),
+    ("POST", "/audit-stream/replay"):               _r("audit_stream.replayed", "audit_stream"),
+    ("POST", "/audit-stream/test"):                 _r("audit_stream.tested", "audit_stream"),
+}
+ROUTES.update(RUST_ONLY_ROUTES)
 
 # Rows that already carry who/what, mapped onto the audit shape for reading.
 # legacy action -> (target_type, audit action name)
@@ -145,6 +183,15 @@ LEGACY: dict[str, tuple[str, str]] = {
     "account.scim_token_created":      ("scim_token", "scim_token.created"),
     "account.scim_token_revoked":      ("scim_token", "scim_token.revoked"),
     "account.scim_settings_changed":   ("scim_token", "scim_token.changed"),
+    "account.ip_allowlist_changed":    ("ip_allowlist", "ip_allowlist.changed"),
+    "account.ip_access_refused":       ("ip_allowlist", "ip_allowlist.access_refused"),
+    # Session and password policy: the admin routes are Rust-only, so they
+    # write these events (a catalogued ROUTES entry would need a Python route).
+    "account.session_policy_changed":  ("session_policy", "session_policy.changed"),
+    "account.user_locked_out":         ("user", "user.locked_out"),
+    "account.user_unlocked":           ("user", "user.unlocked"),
+    "account.saml_config_changed":     ("sso_config", "sso_config.changed"),
+    "account.saml_config_removed":      ("sso_config", "sso_config.removed"),
     "account.api_key_created":         ("api_key", "api_key.created"),
     "account.api_key_revoked":         ("api_key", "api_key.revoked"),
     "purchase.order_generated":        ("purchase_order", "purchase_order.created"),
@@ -165,6 +212,16 @@ LEGACY: dict[str, tuple[str, str]] = {
     "purchase.approval_requested":     ("purchase_order", "purchase_order.approval_requested"),
     "purchase.approval_approved":       ("purchase_order", "purchase_order.approval_approved"),
     "purchase.approval_rejected":       ("purchase_order", "purchase_order.approval_rejected"),
+    "approval_delegation.created":     ("approval_delegation", "approval_delegation.created"),
+    "approval_delegation.revoked":     ("approval_delegation", "approval_delegation.revoked"),
+    "purchase.approval_level_approved": ("purchase_order", "purchase_order.approval_level_approved"),
+    "purchase.order_cost_center_set":   ("purchase_order", "purchase_order.cost_center_set"),
+    "cost_center.created":              ("cost_center", "cost_center.created"),
+    "cost_center.updated":              ("cost_center", "cost_center.updated"),
+    "approval_chain.created":           ("approval_chain", "approval_chain.created"),
+    "approval_chain.updated":           ("approval_chain", "approval_chain.updated"),
+    "purchase.approval_links_sent":    ("purchase_order", "purchase_order.approval_links_sent"),
+    "purchase.approval_links_revoked": ("purchase_order", "purchase_order.approval_links_revoked"),
     "forecast.adjusted":               ("forecast_adjustment", "forecast_adjustment.created"),
     "forecast.spike_excluded":         ("spike_edit", "spike_edit.created"),
     "forecast.spike_restored":         ("spike_edit", "spike_edit.reverted"),
@@ -173,9 +230,26 @@ LEGACY: dict[str, tuple[str, str]] = {
     "committed_demand.created":        ("committed_demand", "committed_demand.created"),
     "committed_demand.imported":       ("committed_demand", "committed_demand.imported"),
     "committed_demand.changed":        ("committed_demand", "committed_demand.changed"),
+    "customer_portal.link_created":    ("customer_portal_link", "customer_portal_link.created"),
+    "customer_portal.link_revoked":    ("customer_portal_link", "customer_portal_link.revoked"),
+    "customer_portal.link_reopened":   ("customer_portal_link", "customer_portal_link.reopened"),
+    "customer_portal.link_updated":    ("customer_portal_link", "customer_portal_link.updated"),
+    "customer_portal.promise_set":     ("customer_portal_link", "customer_portal_link.promise_set"),
+    "customer_portal.received":        ("customer_portal_link", "customer_portal_link.acknowledged"),
+    "customer_portal.date_objected":   ("customer_portal_link", "customer_portal_link.date_objected"),
+    "allocation.priorities_changed":   ("stock_allocation", "stock_allocation.priorities_changed"),
+    "allocation.applied":              ("stock_allocation", "stock_allocation.applied"),
+    "allocation.released":             ("stock_allocation", "stock_allocation.released"),
     "supply_contract.created":         ("supply_contract", "supply_contract.created"),
     "supply_contract.revised":         ("supply_contract", "supply_contract.revised"),
     "supply_contract.status_changed":  ("supply_contract", "supply_contract.status_changed"),
+    "currency_rate.created":         ("currency_rate", "currency_rate.created"),
+    "currency_rate.changed":         ("currency_rate", "currency_rate.changed"),
+    "currency_rate.deleted":         ("currency_rate", "currency_rate.deleted"),
+    "recurring_delivery.created":      ("recurring_delivery", "recurring_delivery.created"),
+    "recurring_delivery.revised":      ("recurring_delivery", "recurring_delivery.revised"),
+    "recurring_delivery.status_changed": ("recurring_delivery", "recurring_delivery.status_changed"),
+    "supply_contract.renewed":         ("supply_contract", "supply_contract.renewed"),
     "purchase_budget.created":       ("purchase_budget", "purchase_budget.created"),
     "purchase_budget.revised":       ("purchase_budget", "purchase_budget.revised"),
     "purchase_budget.exceeded":      ("purchase_budget", "purchase_budget.exceeded"),
@@ -185,6 +259,12 @@ LEGACY: dict[str, tuple[str, str]] = {
     "demand_plan.approved":            ("demand_plan", "demand_plan.approved"),
     "demand_plan.rejected":            ("demand_plan", "demand_plan.rejected"),
     "demand_plan.commented":           ("demand_plan", "demand_plan.commented"),
+    "consensus.adjustment_submitted":  ("consensus_adjustment", "consensus_adjustment.submitted"),
+    "consensus.version_proposed":      ("consensus_version", "consensus_version.proposed"),
+    "consensus.version_approved":      ("consensus_version", "consensus_version.approved"),
+    "consensus.version_rejected":      ("consensus_version", "consensus_version.rejected"),
+    "consensus.version_withdrawn":     ("consensus_version", "consensus_version.withdrawn"),
+    "consensus.rule_changed":          ("consensus_rule", "consensus_rule.changed"),
     "data.stock_imported":             ("bulk_import", "bulk_import.stock"),
     "data.stock_import_partial":       ("bulk_import", "bulk_import.stock"),
     "data.suppliers_imported":         ("bulk_import", "bulk_import.suppliers"),
@@ -194,12 +274,36 @@ LEGACY: dict[str, tuple[str, str]] = {
     "data.transfer_created":           ("transfer", "transfer.created"),
     "data.shrinkage_recorded":         ("shrinkage", "shrinkage.recorded"),
     "data.stock_count_applied":        ("stock_count", "stock_count.applied"),
+    # Organization hierarchy: the handshake and the grants (backend/organizations/).
+    "org.link_created":                ("organization", "organization.link_created"),
+    "org.link_accepted":               ("organization", "organization.link_accepted"),
+    "org.link_revoked":                ("organization", "organization.link_revoked"),
+    "org.grant_added":                 ("organization", "organization.grant_added"),
+    "org.grant_removed":               ("organization", "organization.grant_removed"),
     "api_write":                       ("api_call", "api_call.write"),
     "billing.plan_activated":          ("billing", "billing.plan_activated"),
     "billing.plan_downgraded":         ("billing", "billing.plan_downgraded"),
     "billing.payment_failed":          ("billing", "billing.payment_failed"),
     "billing.subscription_changed":    ("billing", "billing.subscription_changed"),
+    "audit_stream.auto_disabled":      ("audit_stream", "audit_stream.auto_disabled"),
+    # Written by the report worker and by the unsubscribe link (actor "system").
+    "scheduled_report.auto_paused":    ("report_schedule", "report_schedule.auto_paused"),
+    "scheduled_report.unsubscribed":   ("report_schedule", "report_schedule.unsubscribed"),
 }
+
+# Catalogue entries whose route exists ONLY in the Rust API (new routes have no
+# Python implementation: docs/rust-migration.md). `test_audit_trail` checks every
+# other entry against the FastAPI routes; these are checked by a Rust unit test
+# that reads this tuple and asserts the Rust router serves each one.
+RUST_ONLY: tuple[tuple[str, str], ...] = (
+    ("POST", "/scheduled-reports"),
+    ("PATCH", "/scheduled-reports/{schedule_id}"),
+    ("DELETE", "/scheduled-reports/{schedule_id}"),
+    ("POST", "/scheduled-reports/{schedule_id}/pause"),
+    ("POST", "/scheduled-reports/{schedule_id}/resume"),
+    ("POST", "/scheduled-reports/allowed-recipients"),
+    ("DELETE", "/scheduled-reports/allowed-recipients/{email}"),
+)
 
 # The target types the trail can be filtered by.
 TARGET_TYPES = sorted({r.target_type for r in ROUTES.values()}

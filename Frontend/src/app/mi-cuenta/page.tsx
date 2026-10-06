@@ -13,6 +13,7 @@ import { MobileList, MobileCard, MobileSection, useMobileHeader } from '@/compon
 import MobileFormScope from '@/components/mobile/MobileFormScope'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import CurrencySection from '@/components/billing/CurrencySection'
+import ExchangeRatesSection from '@/components/billing/ExchangeRatesSection'
 import LimitsSection from '@/components/limits/LimitsSection'
 import { BillingPanel } from '@/components/billing/BillingSection'
 import FeatureLocked from '@/components/limits/FeatureLocked'
@@ -39,6 +40,7 @@ import {
   type LinkedIdentity, type SocialProvider,
 } from '@/lib/api'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import TwoStepSignIn from '@/components/security/TwoStepSignIn'
 import { useToast } from '@/contexts/ToastContext'
 import type { ActivityLog, PlanningState, PlanningPeriod } from '@/lib/types'
 
@@ -1013,6 +1015,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       )}
 
       <LinkedAccounts />
+      <TwoStepSignIn />
     </Card>
   )
 }
@@ -1641,6 +1644,15 @@ export default function ConfigPage() {
             />
             <CurrencySection />
           </Card>
+          {/* Exchange rates sit right under the currency they convert into. */}
+          <Card>
+            <SectionTitle
+              icon={Coins} color="var(--accent)"
+              title={t('fx.title')}
+              subtitle={t('fx.subtitle')}
+            />
+            <ExchangeRatesSection />
+          </Card>
           {/* Its own card, next to currency: both are "how this company's data is
               expressed", and the scheduled-retrain hours are meaningless without
               a zone attached. */}
@@ -1783,6 +1795,9 @@ function MobileSettings() {
           <Card>
             <SectionTitle icon={Coins} color="var(--accent)" title={t('currency.section_title')} subtitle={t('currency.section_subtitle')} />
             <CurrencySection />
+            <div style={{ height: 22 }} />
+            <SectionTitle icon={Coins} color="var(--accent)" title={t('fx.title')} subtitle={t('fx.subtitle')} />
+            <ExchangeRatesSection />
           </Card>
         )
         break

@@ -32,6 +32,7 @@ import { PriceBreakPanel } from '@/components/inventory/PriceBreakPanel'
 import { CashFitPanel } from '@/components/inventory/CashFitPanel'
 import BudgetPanel, { BudgetChip, type BudgetNote } from '@/components/inventory/BudgetPanel'
 import BudgetCartCheck from '@/components/inventory/BudgetCartCheck'
+import CostCenterPicker, { useActiveCostCenters } from '@/components/po/CostCenterPicker'
 import { useAutoSession } from '@/hooks/useAutoSession'
 import DataFreshness from '@/components/ui/DataFreshness'
 import StaleDataBanner from '@/components/ui/StaleDataBanner'
@@ -888,6 +889,9 @@ export default function HoyPage() {
  // tenant has ≥2 warehouses; mono-warehouse tenants never send it.
  const { warehouses, multi } = useWarehouses()
  const [destWarehouse, setDestWarehouse] = useState<string>('')
+ // Cost center the cart's spend is charged to (only offered when the company has any).
+ const costCenters = useActiveCostCenters()
+ const [costCenter, setCostCenter] = useState<string>('')
  useEffect(() => {
   if (warehouses.length > 0 && destWarehouse === '') {
    // Shared with the manual-PO modal so both destination pickers agree on
@@ -1308,7 +1312,7 @@ export default function HoyPage() {
   // Feature: generate→send in one flow. Capture the logged PO so we can offer
   // "send to suppliers now" right here, instead of sending the buyer to /orders.
   const destination = multi ? destWarehouse || undefined : undefined
-  const signature = JSON.stringify([sessionId, destination, decisions])
+  const signature = JSON.stringify([sessionId, destination, costCenter, decisions])
   if (!pendingSubmission.current || pendingSubmission.current.signature !== signature) {
    pendingSubmission.current = { key: newIdempotencyKey(), signature }
   }
@@ -1320,6 +1324,7 @@ export default function HoyPage() {
     sessionId, decisions, destination,
     { silent: true, headers: { 'Idempotency-Key': pendingSubmission.current.key } },
     budgetReason,
+    costCenter || undefined,
    )
    pendingSubmission.current = null
    setBudgetReason('')
@@ -1371,7 +1376,7 @@ export default function HoyPage() {
    // another session.
    if (e instanceof ApiError && e.kind === 'permission') {
     addToast(t('states.err_permission_title'), t('states.err_permission_body'), 'error')
-   } else if (e instanceof ApiError && (e.code === 'purchase_budget_hard_cap' || e.code === 'purchase_budget_override_requires_admin')) {
+   } else if (e instanceof ApiError && (e.code === 'purchase_budget_hard_cap' || e.code === 'purchase_budget_fx_rate_missing' || e.code === 'purchase_budget_override_requires_admin')) {
     // Refused by a hard-capped budget: the cart stays as it is, and the
     // reason box above it (admins) is where the way forward is.
     addToast(t('budget.toast_blocked_title'), errorDetail(e), 'error', { duration: 12000 })
@@ -1614,7 +1619,11 @@ export default function HoyPage() {
      </>}
      cartPanels={<>
       <BudgetCartCheck lines={budgetCheckLines} destination={multi ? destWarehouse || undefined : undefined}
+          costCenterId={costCenter || undefined}
        reason={budgetReason} onReason={setBudgetReason} />
+      <div style={{ marginBottom: costCenters.length > 0 ? 12 : 0 }}>
+       <CostCenterPicker centers={costCenters} value={costCenter} onChange={setCostCenter} />
+      </div>
       {priceBreaks && (
        <PriceBreakPanel
         opportunities={priceBreaks.opportunities}
@@ -1924,6 +1933,7 @@ export default function HoyPage() {
             the cart as it stands, so they sit right above it. */}
         {approved.length > 0 && (
          <BudgetCartCheck lines={budgetCheckLines} destination={multi ? destWarehouse || undefined : undefined}
+          costCenterId={costCenter || undefined}
           reason={budgetReason} onReason={setBudgetReason} />
         )}
 
@@ -2038,6 +2048,7 @@ export default function HoyPage() {
             </select>
            </label>
           )}
+          <CostCenterPicker centers={costCenters} value={costCenter} onChange={setCostCenter} />
           <button data-tour="hoy.download" onClick={downloadOC} disabled={submitting}
            aria-busy={submitting} style={{
            all: 'unset', cursor: submitting ? 'wait' : 'pointer', padding: '10px 20px', borderRadius: 8,

@@ -111,6 +111,11 @@ def update_password(tenant_id: str, user_id: str, new_password: str) -> None:
               SET hashed_password = %s,
                   has_password = TRUE,
                   sessions_invalid_before = NOW(),
+                  -- The tenant's password-age policy measures from here, and a
+                  -- reset (proof of the mailbox) also lifts a lockout.
+                  password_changed_at = NOW(),
+                  failed_login_count = 0,
+                  locked_until = NULL,
                   updated_at = NOW()
             WHERE id = %s AND tenant_id = %s""",
         (hash_password(new_password), user_id, tenant_id),
@@ -179,7 +184,8 @@ def update_profile(
 
 def update_last_login(tenant_id: str, user_id: str) -> None:
     execute(
-        "UPDATE users SET last_login_at = NOW() WHERE id = %s AND tenant_id = %s",
+        "UPDATE users SET last_login_at = NOW(), last_activity_at = NOW() "
+        "WHERE id = %s AND tenant_id = %s",
         (user_id, tenant_id),
     )
 
@@ -279,12 +285,18 @@ def update_status(tenant_id: str, user_id: str, new_status: str) -> None:
     )
     if new_status in ("inactive", "suspended"):
         execute("DELETE FROM refresh_tokens WHERE user_id = %s", (user_id,))
+    if new_status != "active":
+        # A subsidiary grant must not wait dormant for a reactivation.
+        from backend.organizations.service import drop_user_grants
+        drop_user_grants(user_id)
 
 
 def delete_user(tenant_id: str, user_id: str) -> None:
     execute("DELETE FROM refresh_tokens WHERE user_id = %s", (user_id,))
     execute("DELETE FROM user_permissions WHERE user_id = %s", (user_id,))
     execute("DELETE FROM pw_change_codes WHERE user_id = %s", (user_id,))
+    for table in ("user_mfa_recovery_codes", "user_mfa", "mfa_challenges"):
+        execute(f"DELETE FROM {table} WHERE user_id = %s", (user_id,))
     execute(
         "DELETE FROM users WHERE id = %s AND tenant_id = %s",
         (user_id, tenant_id),
@@ -293,13 +305,11 @@ def delete_user(tenant_id: str, user_id: str) -> None:
 
 # ── Permissions ────────────────────────────────────────────────────────────
 
-ALL_PERMISSIONS = [
-    "view_forecasts", "run_training", "manage_sessions", "export_data",
-    "view_inventory", "manage_inventory",
-    "view_analysts", "run_analysts",
-    "view_data_sources", "manage_data_sources",
-    "view_users", "manage_users",
-]
+# The 12 permissions `user_permissions` has always stored. They are NOT
+# enforced (nothing reads them to decide access; see backend/auth/permissions.py
+# for why they stay that way): the enforced mechanism is a custom role.
+from backend.auth.permissions import LEGACY_PERMISSIONS
+ALL_PERMISSIONS = list(LEGACY_PERMISSIONS)
 
 
 def get_permissions(tenant_id: str, user_id: str) -> list[str]:
@@ -325,12 +335,16 @@ def set_permissions(tenant_id: str, user_id: str, permissions: list[str]) -> Non
 # ── Refresh tokens ─────────────────────────────────────────────────────────
 
 def add_refresh_token(tenant_id: str, user_id: str, token_hash: str) -> None:
+    # Sessions kept per person: 5 as always, or the tenant's concurrent-session
+    # limit. The oldest go first; the new login is never the one dropped.
+    from backend.auth.session_policy import refresh_token_keep
+    keep = refresh_token_keep(tenant_id)
     execute(
         """DELETE FROM refresh_tokens WHERE user_id = %s AND id IN (
                SELECT id FROM refresh_tokens
-               WHERE user_id = %s ORDER BY created_at DESC OFFSET 4
+               WHERE user_id = %s ORDER BY created_at DESC, id DESC OFFSET %s
            )""",
-        (user_id, user_id),
+        (user_id, user_id, keep - 1),
     )
     from backend.auth.jwt_handler import get_refresh_expire_days
     from datetime import timezone
@@ -344,7 +358,7 @@ def add_refresh_token(tenant_id: str, user_id: str, token_hash: str) -> None:
 
 def validate_refresh_token(token_hash: str) -> Optional[dict]:
     return query_one(
-        """SELECT u.* FROM refresh_tokens rt
+        """SELECT u.*, rt.created_at AS session_started_at FROM refresh_tokens rt
            JOIN users u ON u.id = rt.user_id
            WHERE rt.hash = %s AND rt.expires_at > NOW()""",
         (token_hash,),

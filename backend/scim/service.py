@@ -587,6 +587,9 @@ def _apply(ctx: ScimContext, row: dict, desired: UserState, operation: str) -> d
                           hashed_password = %s WHERE id = %s AND tenant_id = %s""",
                 (hash_password(secrets.token_urlsafe(48)), user_id, ctx.tenant_id), conn=conn,
             )
+        if status_changed and new_status != "active":
+            from backend.organizations.service import drop_user_grants
+            drop_user_grants(user_id, conn)
         if cut_sessions:
             # The access tokens die by `sessions_invalid_before` (guards.py
             # compares it with each token's iat); the refresh tokens go here,

@@ -11,7 +11,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 _security = HTTPBearer(auto_error=False)
@@ -26,7 +26,7 @@ from backend.db.connection import execute, query_one
 from backend.errors import AppError
 from backend.schemas.auth import (
     ForgotPasswordRequest, ForgotPasswordVerifyRequest,
-    LoginRequest, RefreshRequest,
+    LoginRequest, MfaVerifyRequest, RefreshRequest,
     ResendVerificationRequest, ResetPasswordRequest, SignupRequest,
     VerifyEmailRequest,
 )
@@ -83,7 +83,7 @@ def _check_rate(key: str, max_attempts: int, window_secs: int) -> None:
         )
 
 
-def _reject_weak_password(password: str) -> None:
+def _reject_weak_password(password: str, tenant_id: str | None = None) -> None:
     """Guard every password entry point with one localizable code.
 
     ``validate_strength`` returns an English sentence per broken rule; the user
@@ -91,10 +91,16 @@ def _reject_weak_password(password: str) -> None:
     code and the frontend renders the full requirement list from
     ``errors.password_invalid``. The English sentence stays as the fallback
     ``message`` (and in the ``rule`` param) for clients with no mapping.
+
+    ``tenant_id`` adds the tenant's own password policy on top (minimum length,
+    mixed case, a symbol) as ``password_policy``. A path that has no tenant yet
+    (signup creates it) passes none: the product rules are all there is.
     """
     valid, msg = validate_strength(password)
     if not valid:
         raise AppError("password_invalid", msg, status_code=400, params={"rule": msg})
+    from backend.auth.session_policy import reject_password_against_policy
+    reject_password_against_policy(password, tenant_id)
 
 
 def _lookup_email(email: str) -> dict | None:
@@ -292,7 +298,7 @@ async def resend_verification(body: ResendVerificationRequest):
 
 
 @router.post("/login")
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, request: Request):
     _check_rate(f"login:{body.email.lower()}", max_attempts=5, window_secs=300)
     entry = _lookup_email(body.email)
     if not entry:
@@ -312,9 +318,18 @@ async def login(body: LoginRequest):
             status_code=403,
         )
 
+    # The tenant's session policy, None for every tenant that set nothing (the
+    # common case: one read, then the login below is unchanged). A locked
+    # account is refused BEFORE the password is looked at.
+    from backend.auth import session_policy
+    policy = session_policy.get_policy(entry["tenant_id"])
+    session_policy.refuse_if_locked(entry["tenant_id"], entry["user_id"], policy)
+
     user = user_svc.verify_credentials(entry["tenant_id"], body.email, body.password)
     if not user:
+        session_policy.record_failed_login(entry["tenant_id"], entry["user_id"], policy)
         raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
+    session_policy.clear_failed_logins(entry["tenant_id"], entry["user_id"], policy)
 
     # A trial account between its end and the hourly reaper. After the
     # password matched, so it says nothing to somebody guessing addresses.
@@ -334,6 +349,11 @@ async def login(body: LoginRequest):
     # self-service way out and nothing of the product seen.
     email_verified = bool(user.get("email_verified"))
 
+    # The tenant's IP allowlist, after the password matched (so a refusal tells
+    # nobody guessing addresses which tenants filter by network).
+    from backend.ip_allowlist import service as ip_allowlist
+    ip_allowlist.enforce(request, entry["tenant_id"], user["id"])
+
     user_status = user.get("status", "active")
     if user_status != "active":
         if user_status == "pending_confirmation":
@@ -349,7 +369,41 @@ async def login(body: LoginRequest):
             params={"status": user_status},
         )
 
-    user_svc.update_last_login(entry["tenant_id"], user["id"])
+    # After the password matched and the account is active: an expired password
+    # says nothing to somebody guessing, and the person can reset it right away.
+    expired = session_policy.password_age_refusal(user, policy)
+    if expired is not None:
+        raise expired
+
+    # Second factor. Only this password door asks for it: social and
+    # enterprise sign-ins carry the identity provider's own proof (and policy)
+    # and never reach here; API keys are machine credentials. A user with an
+    # active enrollment, or in a tenant that REQUIRES MFA, gets no session yet:
+    # the answer is a challenge, and `/auth/mfa/verify` mints the tokens.
+    from backend.auth import mfa as mfa_svc
+    if mfa_svc.active_enrollment(user["id"]):
+        raw, ttl = mfa_svc.create_challenge(user["id"], user["tenant_id"], mfa_svc.PURPOSE_LOGIN)
+        return ok({
+            "mfa_required": True,
+            "mfa_token": raw,
+            "methods": ["totp", "recovery_code"],
+            "expires_in": ttl,
+        })
+    if mfa_svc.tenant_requires_mfa(user["tenant_id"]):
+        raw, ttl = mfa_svc.create_challenge(user["id"], user["tenant_id"], mfa_svc.PURPOSE_ENROLL)
+        return ok({
+            "mfa_enrollment_required": True,
+            "enrollment_token": raw,
+            "expires_in": ttl,
+        })
+
+    return ok(_complete_login(user, email_verified))
+
+
+def _complete_login(user: dict, email_verified: bool) -> dict:
+    """Stamp the login and mint the token pair. The one place that does it for
+    the password door, with or without a second factor in front."""
+    user_svc.update_last_login(user["tenant_id"], user["id"])
 
     access_token = create_access_token(
         user["id"], user["tenant_id"], user["role"], email_verified=email_verified,
@@ -357,7 +411,7 @@ async def login(body: LoginRequest):
     raw_refresh, hashed_refresh = create_refresh_token()
     user_svc.add_refresh_token(user["tenant_id"], user["id"], hashed_refresh)
 
-    return ok({
+    return {
         "access_token": access_token,
         "refresh_token": raw_refresh,
         "token_type": "bearer",
@@ -372,11 +426,74 @@ async def login(body: LoginRequest):
             # and to offer the resend, without decoding the token itself.
             "email_verified": email_verified,
         },
-    })
+    }
+
+
+@router.post("/mfa/verify")
+async def mfa_verify(body: MfaVerifyRequest):
+    """Second step of a password login: the challenge token plus a code.
+
+    The code is a 6-digit authenticator code or a recovery code. Throttled the
+    way the reset OTP is: per-user in `auth_rate_events`, and per challenge by
+    an atomic attempt counter (five guesses, then the challenge is dead and the
+    user signs in again, which is itself rate limited).
+    """
+    from backend.auth import mfa as mfa_svc
+
+    challenge = mfa_svc.claim_attempt(body.mfa_token, mfa_svc.PURPOSE_LOGIN)
+    if not challenge:
+        raise AppError(
+            "mfa_challenge_invalid",
+            "This sign-in step has expired or was already used. Sign in again.",
+            status_code=401,
+        )
+    _check_rate(f"mfa:{challenge['user_id']}", max_attempts=10, window_secs=600)
+
+    method = mfa_svc.verify_second_factor(challenge["user_id"], body.code)
+    if method is None:
+        raise AppError("mfa_code_invalid", "Invalid or already used code.", status_code=401)
+    if not mfa_svc.consume(challenge["token_hash"]):
+        # Two requests raced with this token and the other one won.
+        raise AppError(
+            "mfa_challenge_invalid",
+            "This sign-in step has expired or was already used. Sign in again.",
+            status_code=401,
+        )
+
+    user = query_one("SELECT * FROM users WHERE id = %s", (challenge["user_id"],))
+    if not user:
+        raise AppError("mfa_challenge_invalid", "Account no longer exists.", status_code=401)
+    # State may have changed in the few minutes between the password and the
+    # code: re-check what the password step checked.
+    if (user.get("status") or "active") != "active":
+        raise AppError(
+            "account_not_active",
+            "Account is not active. Contact your administrator.",
+            status_code=403,
+            params={"status": user.get("status") or ""},
+        )
+    from backend.tenants.service import get_tenant
+    from backend.trial.service import is_expired_trial
+    if is_expired_trial(get_tenant(user["tenant_id"])):
+        raise AppError(
+            "trial_account_expired",
+            "This trial account has ended. Start a new one from the home page.",
+            status_code=403,
+        )
+
+    if method == "recovery":
+        from backend.activity.events import record_event
+        record_event(
+            user["tenant_id"], user["id"], "account.mfa_recovery_code_used",
+            details={"remaining": mfa_svc.recovery_codes_remaining(user["id"])},
+            reason="recovery_code_used_to_sign_in",
+        )
+
+    return ok(_complete_login(user, bool(user.get("email_verified"))))
 
 
 @router.post("/refresh")
-async def refresh(body: RefreshRequest):
+async def refresh(body: RefreshRequest, request: Request):
     token_hash = hash_token(body.refresh_token)
     user = user_svc.validate_refresh_token(token_hash)
     if not user:
@@ -392,12 +509,24 @@ async def refresh(body: RefreshRequest):
             status_code=401,
         )
 
+    # A session opened inside the office must not keep renewing outside it.
+    from backend.ip_allowlist import service as ip_allowlist
+    ip_allowlist.enforce(request, user["tenant_id"], user["id"])
+    # The tenant's maximum session length and idle timeout: a session past
+    # either cannot be renewed (and its refresh token is deleted).
+    from backend.auth import session_policy
+    session_policy.enforce_refresh(user, token_hash)
+
     # Re-read from the row, not from the old token: a user who verifies mid
     # session gets the full-access claim on their next refresh (≤15 min) with
     # no re-login, and a re-issued token can never upgrade itself.
+    started = user.get("session_started_at")
     access_token = create_access_token(
         user["id"], user["tenant_id"], user["role"],
         email_verified=bool(user.get("email_verified")),
+        # The new token must still know when the SESSION began (its own `iat`
+        # is now), or a maximum session length could be renewed forever.
+        session_started_at=started.timestamp() if started else None,
     )
     return ok({
         "access_token": access_token,
@@ -489,7 +618,7 @@ async def reset_password(body: ResetPasswordRequest):
 
     # Deliberately BEFORE the burn: a password rejected for being weak must
     # leave the token usable, or the user's first typo costs them the link.
-    _reject_weak_password(body.new_password)
+    _reject_weak_password(body.new_password, payload.get("tenant_id"))
 
     user_svc.update_password(payload["tenant_id"], payload["sub"], body.new_password)
     if jti and payload.get("exp"):

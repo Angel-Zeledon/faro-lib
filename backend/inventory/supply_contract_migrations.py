@@ -85,4 +85,40 @@ MIGRATIONS: list[tuple[str, str]] = [
      "CREATE UNIQUE INDEX IF NOT EXISTS committed_demand_contract_release_uniq "
      "ON committed_demand (tenant_id, contract_root_id, sku, contract_release_date) "
      "WHERE contract_root_id IS NOT NULL AND contract_withdrawn_at IS NULL"),
+
+    # ── Renewal and expiry tracking (see `contract_renewal.py`) ──────────────
+    # `notice_days`: days before `period_end` by which a person must say
+    #   whether the contract renews (NULL = no notice period recorded).
+    # `auto_renew`: the contract renews by itself unless somebody gives notice.
+    #   A LABEL for the screens and the alert wording: nothing clones a contract
+    #   on its own.
+    # `renewal_lead_days`: alert lead times; NULL = nobody chose, the product
+    #   default 60/30/7 applies (a default must not look like a choice).
+    # `renewed_from_root_id`: set on a contract created by the renew action, the
+    #   lineage it renews.
+    ("add_supply_contracts_notice_days",
+     "ALTER TABLE supply_contracts ADD COLUMN IF NOT EXISTS notice_days INT"),
+    ("add_supply_contracts_notice_days_check",
+     """DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                          WHERE conname = 'supply_contracts_notice_days_check') THEN
+            ALTER TABLE supply_contracts ADD CONSTRAINT supply_contracts_notice_days_check
+              CHECK (notice_days IS NULL OR (notice_days >= 0 AND notice_days <= 730));
+          END IF;
+        END $$"""),
+    ("add_supply_contracts_auto_renew",
+     "ALTER TABLE supply_contracts ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN "
+     "NOT NULL DEFAULT FALSE"),
+    ("add_supply_contracts_renewal_lead_days",
+     "ALTER TABLE supply_contracts ADD COLUMN IF NOT EXISTS renewal_lead_days INT[]"),
+    ("add_supply_contracts_renewed_from_root_id",
+     "ALTER TABLE supply_contracts ADD COLUMN IF NOT EXISTS renewed_from_root_id TEXT"),
+    # Not unique on purpose: a renewal that was cancelled frees the contract to
+    # be renewed again. Two people pressing Renew at once are serialised by the
+    # row lock the renew action takes on the contract's current revision.
+    ("create_supply_contracts_renewed_from_idx",
+     "CREATE INDEX IF NOT EXISTS supply_contracts_renewed_from_idx "
+     "ON supply_contracts (tenant_id, renewed_from_root_id) "
+     "WHERE renewed_from_root_id IS NOT NULL"),
 ]

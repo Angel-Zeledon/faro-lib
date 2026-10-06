@@ -82,11 +82,19 @@ def discover(body: DiscoverRequest, request: Request):
     form and there is nothing to tell the cases apart for.
     """
     _rate("sso-discover", request)
-    row = service.active_row_for_domain(service.email_domain(body.email))
-    return ok({
-        "available": bool(row),
-        "enforced": bool(row and row["enforce_sso"]),
-    })
+    domain = service.email_domain(body.email)
+    row = service.active_row_for_domain(domain)
+    if row:
+        return ok({"available": True, "enforced": bool(row["enforce_sso"])})
+    # The SAML sibling (backend/auth/saml/): a tenant has one or the other. The
+    # answer for OpenID Connect and for "nothing" is byte-identical to what it
+    # was before SAML existed; only a SAML tenant adds `protocol`, which tells
+    # the page to open /auth/saml/start instead of /auth/sso/start.
+    from backend.auth.saml import service as saml_service
+    srow = saml_service.active_row_for_domain(domain)
+    if srow:
+        return ok({"available": True, "enforced": bool(srow["enforce_sso"]), "protocol": "saml"})
+    return ok({"available": False, "enforced": False})
 
 
 @router.get("/start")

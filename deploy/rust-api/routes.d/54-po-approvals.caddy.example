@@ -1,0 +1,37 @@
+# DISABLED EXAMPLE. Rename to 43-po-approvals.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# backend-rs/src/routes/po_approvals.rs: 9 of the router's 10 routes.
+# POST /api/v1/inventory/po/{id}/approval/request STAYS on Python (its answer
+# counts the mails that left; Rust only queues them on the outbox). The exact
+# method + path matchers below keep it there. Requires the Python
+# `outbox-drain` worker loop to be running (approve/reject queue the
+# requester's mail on outbound_messages).
+
+@rs_po_approvals_read {
+	method GET
+	path_regexp ^/api/v1/inventory/(po-approval/(settings|pending)|po/[^/]+/approval)$
+}
+@rs_po_approvals_write {
+	method POST PATCH DELETE PUT
+	path_regexp ^/api/v1/inventory/(po-approval/rules(/[^/]+)?|po-approval/approvers/[^/]+|po/[^/]+/approval/(approve|reject))$
+}
+handle @rs_po_approvals_read {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_po_approvals_write {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

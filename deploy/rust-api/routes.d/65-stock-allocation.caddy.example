@@ -1,0 +1,25 @@
+# DISABLED EXAMPLE. Rename to 50-stock-allocation.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust.
+#
+# Stock allocation among committed customers (backend-rs/src/routes/
+# stock_allocation.rs). These routes are NEW: Python has no twin of them, so
+# there is NO FAILOVER to the Python API. With api-rs down, Python would answer
+# a misleading 404 for these paths, so the only upstream here is api-rs and a
+# dead Rust container is an honest 502. Moving this file to routes.d/off/ and
+# reloading hides the feature (the screen shows the error); it loses no data:
+# the four allocation tables stay in the database, and nothing here ever
+# touches inventory_stock.
+#
+# Every method under /api/v1/allocation/ goes to Rust: GET priorities, PUT
+# priorities, POST preview, POST apply, POST release, GET reservations,
+# GET overview.
+@rs_stock_allocation {
+	path /api/v1/allocation /api/v1/allocation/*
+}
+handle @rs_stock_allocation {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

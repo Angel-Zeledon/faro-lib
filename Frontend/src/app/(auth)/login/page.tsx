@@ -2,7 +2,10 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { authLogin, authResendVerification, isApiError } from '@/lib/api'
+import {
+  authLogin, authResendVerification, isApiError,
+  isLoginSession, isMfaChallenge, isMfaEnrollment, type LoginSession,
+} from '@/lib/api'
 import { setAuth, isAuthenticated } from '@/lib/auth'
 import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
 import { Eye, EyeOff, AlertTriangle, MailCheck } from 'lucide-react'
@@ -10,6 +13,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useAuthErrorText } from '@/hooks/useAuthErrorText'
 import { SocialButtons, socialErrorText } from '@/components/auth/SocialButtons'
 import { SsoSignIn } from '@/components/auth/SsoSignIn'
+import MfaLoginStep, { type MfaStep } from '@/components/auth/MfaLoginStep'
 
 // The split stage (wordmark, form column, the morning-list panel) comes from
 // (auth)/layout.tsx — this file renders only the form, centred in its column.
@@ -38,6 +42,9 @@ function LoginPageContent() {
   const [ssoRequired, setSsoRequired] = useState(false)
   const [resending,  setResending]  = useState(false)
   const [resentNote, setResentNote] = useState<string | null>(null)
+  // The second step (a code, or enrolling when the organization requires it)
+  // replaces the password form; no token exists until the server issues one.
+  const [mfaStep, setMfaStep] = useState<MfaStep | null>(null)
 
   // `/login` is a public path, so AuthGuard lets it render even with a live
   // session — a user coming back to a still-valid tab would otherwise be shown
@@ -65,6 +72,36 @@ function LoginPageContent() {
     }
   }
 
+  function finishLogin(res: LoginSession) {
+    setAuth(res.access_token, res.refresh_token, {
+      id:        res.user.id,
+      email:     res.user.email,
+      full_name: res.user.full_name,
+      role:      res.user.role,
+      tenant_id: res.user.tenant_id,
+    })
+    // Every sign-in opens the app with its entrance (AppIntro).
+    try { sessionStorage.removeItem(INTRO_SEEN_KEY) } catch { /* storage blocked */ }
+    router.replace(destination)
+  }
+
+  // Right after enrolling: the password is still in the form, so ask again and
+  // the server answers with the challenge the new factor now answers.
+  async function signInAgainAfterEnroll() {
+    setLoading(true)
+    try {
+      const res = await authLogin(email, password)
+      if (isLoginSession(res)) finishLogin(res)
+      else if (isMfaChallenge(res)) setMfaStep({ kind: 'challenge', token: res.mfa_token, justEnrolled: true })
+      else setMfaStep(null)
+    } catch (err: unknown) {
+      setMfaStep(null)
+      setError(authErrorText(err, 'auth.login_failed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -74,16 +111,9 @@ function LoginPageContent() {
     setLoading(true)
     try {
       const res = await authLogin(email, password)
-      setAuth(res.access_token, res.refresh_token, {
-        id:        res.user.id,
-        email:     res.user.email,
-        full_name: res.user.full_name,
-        role:      res.user.role,
-        tenant_id: res.user.tenant_id,
-      })
-      // Every sign-in opens the app with its entrance (AppIntro).
-      try { sessionStorage.removeItem(INTRO_SEEN_KEY) } catch { /* storage blocked */ }
-      router.replace(destination)
+      if (isLoginSession(res)) finishLogin(res)
+      else if (isMfaChallenge(res)) setMfaStep({ kind: 'challenge', token: res.mfa_token, justEnrolled: false })
+      else if (isMfaEnrollment(res)) setMfaStep({ kind: 'enroll', token: res.enrollment_token })
     } catch (err: unknown) {
       setError(authErrorText(err, 'auth.login_failed'))
       setCanResend(isApiError(err) && VERIFICATION_CODES.includes(err.code))
@@ -108,16 +138,27 @@ function LoginPageContent() {
         {/* No card: on a plain white column the form itself is the surface. */}
         <div className="auth-enter" style={{ animation: 'auth-fade-in 0.5s ease-out both' }}>
 
-          <div style={{ marginBottom: 30 }}>
-            <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 24, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
-              {t('auth.login_title')}
-            </h1>
-            <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: 0, lineHeight: 1.5 }}>
-              {t('auth.login_subtitle')}
-            </p>
-          </div>
+          {!mfaStep && (
+            <div style={{ marginBottom: 30 }}>
+              <h1 style={{ fontFamily: 'var(--font-brand), system-ui, sans-serif', fontSize: 24, fontWeight: 600, color: 'var(--a-ink)', margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.12 }}>
+                {t('auth.login_title')}
+              </h1>
+              <p style={{ fontSize: 14, color: 'var(--a-muted)', margin: 0, lineHeight: 1.5 }}>
+                {t('auth.login_subtitle')}
+              </p>
+            </div>
+          )}
 
-          {error && (
+          {mfaStep && (
+            <MfaLoginStep
+              step={mfaStep}
+              onSession={finishLogin}
+              onBack={() => { setMfaStep(null); setPassword('') }}
+              onSignInAgain={signInAgainAfterEnroll}
+            />
+          )}
+
+          {!mfaStep && error && (
             <div role="alert" style={{
               display: 'flex', flexDirection: 'column', gap: 8,
               padding: '10px 12px', borderRadius: 10, marginBottom: 20,
@@ -152,6 +193,7 @@ function LoginPageContent() {
             </div>
           )}
 
+          {!mfaStep && (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
             <div className="auth-field auth-enter" style={{ animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.10s both' }}>
@@ -217,13 +259,14 @@ function LoginPageContent() {
               )}
             </button>
           </form>
+          )}
 
-          <SocialButtons intent="login" />
+          {!mfaStep && <SocialButtons intent="login" />}
 
-          <SsoSignIn initialEmail={email} forceOpen={ssoRequired} />
+          {!mfaStep && <SsoSignIn initialEmail={email} forceOpen={ssoRequired} />}
         </div>
 
-        <p className="auth-enter" style={{
+        {!mfaStep && <p className="auth-enter" style={{
           marginTop: 28, fontSize: 13.5, color: 'var(--a-muted)',
           animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.3s both',
         }}>
@@ -231,7 +274,7 @@ function LoginPageContent() {
           <Link href="/signup" className="auth-link" style={{ color: 'var(--a-ink)', textDecoration: 'none', fontWeight: 600 }}>
             {t('auth.request_access')}
           </Link>
-        </p>
+        </p>}
       </div>
     </div>
   )

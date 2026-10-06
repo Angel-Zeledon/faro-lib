@@ -26,6 +26,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { getUser } from '@/lib/auth'
 import { parseReleaseTable, type ScheduleProblem } from '@/lib/contractScheduleCsv'
+import ContractRenewalsPanel from '@/components/inventory/ContractRenewalsPanel'
 
 const C = { border: 'var(--border)', text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)', red: '#C0504D', amber: '#B7791F', green: '#2E7D5B' }
 
@@ -36,6 +37,7 @@ interface FormState {
   customer: string; reference: string; warehouse: string; start: string; end: string
   kind: SupplyContractScheduleKind; tolerance: string; inHistory: boolean; note: string
   lines: LineForm[]; paste: string
+  noticeDays: string; autoRenew: boolean; leadDays: string
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
@@ -45,6 +47,7 @@ const emptyForm = (): FormState => {
   return {
     customer: '', reference: '', warehouse: '', start: iso(now), end: iso(end), kind: 'monthly',
     tolerance: '0', inHistory: false, note: '', lines: [{ sku: '', total: '', price: '' }], paste: '',
+    noticeDays: '', autoRenew: false, leadDays: '',
   }
 }
 const fromContract = (c: SupplyContract): FormState => ({
@@ -56,8 +59,19 @@ const fromContract = (c: SupplyContract): FormState => ({
     price: l.unit_price == null ? '' : String(l.unit_price),
   })),
   paste: (c.releases ?? []).map(r => `${r.sku ?? ''}\t${r.date}\t${r.quantity ?? ''}`).join('\n'),
+  noticeDays: c.notice_days == null ? '' : String(c.notice_days),
+  autoRenew: !!c.auto_renew,
+  leadDays: (c.renewal_lead_days ?? []).join(', '),
 })
 const num = (s: string) => (s.trim() === '' ? null : Number(s.replace(',', '.')))
+/** '60, 30 7' -> [60, 30, 7]; blank -> null (nobody chose: the default applies);
+ *  anything that is not a whole number of days -> undefined (invalid). */
+const parseLeadDays = (s: string): number[] | null | undefined => {
+  if (s.trim() === '') return null
+  const nums = s.split(/[\s,;]+/).filter(Boolean).map(Number)
+  if (nums.some(n => !Number.isInteger(n) || n < 1 || n > 730) || nums.length > 6) return undefined
+  return nums
+}
 
 export default function SupplyContractsPanel({ onChanged, reloadToken }: { onChanged?: () => void; reloadToken?: number }) {
   const { t, lang } = useLanguage()
@@ -133,6 +147,9 @@ export default function SupplyContractsPanel({ onChanged, reloadToken }: { onCha
       warehouse_id: form.warehouse || null,
       on_top_of_base: !form.inHistory,
       note: form.note.trim() || null,
+      notice_days: num(form.noticeDays),
+      auto_renew: form.autoRenew,
+      renewal_lead_days: parseLeadDays(form.leadDays) ?? null,
     }
   }
 
@@ -144,9 +161,12 @@ export default function SupplyContractsPanel({ onChanged, reloadToken }: { onCha
     return totalOk && (price === null || (Number.isFinite(price) && price >= 0))
   })
   const tol = num(form.tolerance)
+  const noticeN = num(form.noticeDays)
+  const renewalOk = (noticeN === null || (Number.isInteger(noticeN) && noticeN >= 0 && noticeN <= 730))
+    && parseLeadDays(form.leadDays) !== undefined
   const scheduleOk = form.kind !== 'explicit' || (!!parsed && !parsed.fatal && parsed.problems.length === 0 && parsed.rows.length > 0)
   const valid = form.customer.trim() !== '' && form.start !== '' && form.end !== '' && form.end >= form.start
-    && linesOk && scheduleOk && (tol === null || (Number.isFinite(tol) && tol >= 0 && tol <= 100))
+    && linesOk && scheduleOk && renewalOk && (tol === null || (Number.isFinite(tol) && tol >= 0 && tol <= 100))
 
   function openForm(target: SupplyContract | 'new') {
     setEditing(target); setError(null); setNotice(null); setRowErrors([]); setBadRows(0); setPreview(null)
@@ -240,6 +260,8 @@ export default function SupplyContractsPanel({ onChanged, reloadToken }: { onCha
       </div>
       <p style={{ margin: 0, fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('contracts.intro')}</p>
 
+      <ContractRenewalsPanel reloadToken={reloadToken} onChanged={() => { load(); onChanged?.() }} />
+
       {notice && <p role="status" style={{ margin: 0, fontSize: 12.5, color: C.text }}>{notice}</p>}
       {error && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: C.red }}>{error}</p>}
 
@@ -301,7 +323,20 @@ export default function SupplyContractsPanel({ onChanged, reloadToken }: { onCha
               <input style={field} type="text" maxLength={300} value={form.note}
                 onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
             </label>
+            <label style={lbl}>{t('contracts.field_notice_days')}
+              <input style={field} type="number" inputMode="numeric" min={0} max={730} value={form.noticeDays}
+                onChange={e => setForm(f => ({ ...f, noticeDays: e.target.value }))} />
+            </label>
+            <label style={lbl}>{t('contracts.field_lead_days')}
+              <input style={field} type="text" inputMode="numeric" value={form.leadDays} placeholder="60, 30, 7"
+                onChange={e => setForm(f => ({ ...f, leadDays: e.target.value }))} />
+            </label>
           </div>
+          <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: 8, minHeight: narrow ? 44 : undefined }}>
+            <input type="checkbox" checked={form.autoRenew} onChange={e => setForm(f => ({ ...f, autoRenew: e.target.checked }))} />
+            <span>{t('contracts.field_auto_renew')}</span>
+          </label>
+          <p style={{ margin: 0, fontSize: 11, color: C.dim }}>{t('contracts.renewal_hint')}</p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={lbl}>{t('contracts.lines_title')}</div>
@@ -439,6 +474,8 @@ export default function SupplyContractsPanel({ onChanged, reloadToken }: { onCha
                         </span>
                       )}
                       {c.status === 'active' && c.period_ended && <span style={chip(C.amber)}>{t('contracts.period_ended')}</span>}
+                      {c.auto_renew && <span style={chip(C.green)}>{t('renewals.auto_renew_chip')}</span>}
+                      {c.renewed_from_root_id && <span style={chip(C.muted)}>{t('contracts.renewal_of')}</span>}
                     </div>
                     <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
                       {t('contracts.period', { start: c.period_start, end: c.period_end })} · {t(`contracts.schedule_${c.schedule_kind}`)}

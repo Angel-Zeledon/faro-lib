@@ -1,0 +1,35 @@
+# DISABLED EXAMPLE. Rename to 34-lineage.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# Lineage manifests (backend-rs/src/routes/lineage.rs), read-only:
+#   GET /api/v1/sessions/{id}/manifest
+#   GET /api/v1/training/run-durations
+# The manifest is WRITTEN by the Python worker; only the reads moved.
+
+@rs_lineage_manifest {
+	method GET
+	path_regexp ^/api/v1/sessions/[^/]+/manifest$
+}
+@rs_lineage_durations {
+	method GET
+	path /api/v1/training/run-durations
+}
+handle @rs_lineage_manifest {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_lineage_durations {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

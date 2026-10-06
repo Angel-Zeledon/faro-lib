@@ -6,7 +6,7 @@
  */
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { listSuppliers, createManualPO } from '@/lib/api'
+import { listSuppliers, createManualPO, getTenantCurrency } from '@/lib/api'
 import type { Supplier } from '@/lib/types'
 import {
   useWarehouses, defaultWarehouse, DEFAULT_WAREHOUSE_NAME,
@@ -27,9 +27,11 @@ interface LineDraft {
   sku: string
   qty: string
   unit_cost: string
+  /** '' = the company's own currency; otherwise the ISO code the cost is quoted in. */
+  currency: string
 }
 
-const EMPTY_LINE: LineDraft = { sku: '', qty: '', unit_cost: '' }
+const EMPTY_LINE: LineDraft = { sku: '', qty: '', unit_cost: '', currency: '' }
 
 export function ManualPOModal({ onClose, onSaved }: {
   onClose: () => void
@@ -44,7 +46,21 @@ export function ManualPOModal({ onClose, onSaved }: {
   const [lines,      setLines]      = useState<LineDraft[]>([{ ...EMPTY_LINE }])
   const [saving,     setSaving]     = useState(false)
   const [error,      setError]      = useState<string | null>(null)
+  // Currencies a line may be priced in, besides the company's own (exchange
+  // rates are entered in Mi cuenta; with none, the order says the line is
+  // unconverted instead of valuing it at 1).
+  const [baseCode, setBaseCode] = useState('')
+  const [otherCurrencies, setOtherCurrencies] = useState<string[]>([])
   const narrow = useIsNarrow()
+
+  useEffect(() => {
+    getTenantCurrency({ silent: true })
+      .then(d => {
+        setBaseCode(d.current.code)
+        setOtherCurrencies((d.supported || []).map(c => c.code).filter(c => c !== d.current.code))
+      })
+      .catch(() => { /* the line stays in the company currency */ })
+  }, [])
 
   useEffect(() => {
     listSuppliers()
@@ -87,7 +103,7 @@ export function ManualPOModal({ onClose, onSaved }: {
   })
 
   const validLines = lines
-    .map(l => ({ sku: l.sku.trim(), qty: Number(l.qty), unit_cost: l.unit_cost.trim() }))
+    .map(l => ({ sku: l.sku.trim(), qty: Number(l.qty), unit_cost: l.unit_cost.trim(), currency: l.currency }))
     .filter(l => l.sku && Number.isFinite(l.qty) && l.qty > 0 && l.qty <= MAX_QTY)
 
   const canSave = !!supplierId && validLines.length > 0 && !badLine && !saving
@@ -104,6 +120,7 @@ export function ManualPOModal({ onClose, onSaved }: {
           qty: l.qty,
           ...(l.unit_cost !== '' && Number.isFinite(Number(l.unit_cost))
             ? { unit_cost: Number(l.unit_cost) } : {}),
+          ...(l.currency ? { currency: l.currency } : {}),
         })),
         ...(multi && warehouse ? { destination_warehouse: warehouse } : {}),
       })
@@ -226,6 +243,15 @@ export function ManualPOModal({ onClose, onSaved }: {
                       style={{ ...field, fontVariantNumeric: 'tabular-nums' }}
                     />
                   </label>
+                  {otherCurrencies.length > 0 && (
+                    <label style={{ ...label, flex: 1, minWidth: 0 }}>
+                      {t('po.manual_col_currency')}
+                      <select value={l.currency} onChange={e => setLine(idx, { currency: e.target.value })} style={field}>
+                        <option value="">{baseCode}</option>
+                        {otherCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </label>
+                  )}
                 </div>
               </fieldset>
             ))}
@@ -331,7 +357,8 @@ export function ManualPOModal({ onClose, onSaved }: {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 16 }}>
               <thead>
                 <tr>
-                  {[t('po.manual_col_sku'), t('po.manual_col_qty'), t('po.manual_col_cost'), ''].map((h, i) => (
+                  {[t('po.manual_col_sku'), t('po.manual_col_qty'), t('po.manual_col_cost'),
+                    ...(otherCurrencies.length > 0 ? [t('po.manual_col_currency')] : []), ''].map((h, i) => (
                     <th key={i} style={{
                       textAlign: 'left', padding: '6px 8px', color: C.dim,
                       fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em',
@@ -383,6 +410,22 @@ export function ManualPOModal({ onClose, onSaved }: {
                         }}
                       />
                     </td>
+                    {otherCurrencies.length > 0 && (
+                      <td style={{ padding: 8 }}>
+                        <select
+                          value={l.currency}
+                          aria-label={t('po.manual_col_currency')}
+                          onChange={e => setLine(idx, { currency: e.target.value })}
+                          style={{
+                            padding: '6px 6px', borderRadius: 7, border: `1px solid ${C.border}`,
+                            background: C.card, color: C.text, fontSize: 12,
+                          }}
+                        >
+                          <option value="">{baseCode}</option>
+                          {otherCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </td>
+                    )}
                     <td style={{ padding: 8 }}>
                       {lines.length > 1 && (
                         <button

@@ -32,6 +32,7 @@ import { SCREENS, canSee, type Screen } from '@/components/layout/navItems'
 import { useTenantFacts, type TenantFacts } from '@/hooks/useTenantFacts'
 import LegalLinks from '@/components/legal/LegalLinks'
 import InboundEmailCard from '@/components/inbound/InboundEmailCard'
+import AuditStreamCard from '@/components/audit/AuditStreamCard'
 
 interface Row { screen: Screen; descKey: string }
 interface Section { id: string; titleKey: string; rows: Row[] }
@@ -44,6 +45,7 @@ const SECTIONS: Section[] = [
   { id: 'team', titleKey: 'hub.team_title', rows: [
     { screen: screen('/usuarios'), descKey: 'hub.users_desc' },
     { screen: screen('/aprobaciones'), descKey: 'hub.po_approval_desc' },
+    { screen: screen('/organizacion'), descKey: 'hub.organization_desc' },
     { screen: screen('/facturacion'),  descKey: 'hub.billing_desc' },
   ] },
   { id: 'data', titleKey: 'hub.data_title', rows: [
@@ -53,6 +55,7 @@ const SECTIONS: Section[] = [
   ] },
   { id: 'connect', titleKey: 'hub.connect_title', rows: [
     { screen: screen('/automatizacion'), descKey: 'hub.automation_desc' },
+    { screen: screen('/reportes-programados'), descKey: 'hub.scheduled_reports_desc' },
     { screen: screen('/api'),            descKey: 'hub.api_desc' },
   ] },
   { id: 'activity', titleKey: 'hub.activity_title', rows: [
@@ -135,6 +138,12 @@ export default function SettingsHubPage() {
           {s.id === 'data' && user?.role === 'admin' && (
             <div style={{ borderTop: '1px solid var(--border)' }}>
               <InboundEmailCard />
+            </div>
+          )}
+          {/* Continuous audit export to the SIEM: admin only, like the trail itself. */}
+          {s.id === 'connect' && user?.role === 'admin' && (
+            <div style={{ borderTop: '1px solid var(--border)' }}>
+              <AuditStreamCard />
             </div>
           )}
         </HubSection>

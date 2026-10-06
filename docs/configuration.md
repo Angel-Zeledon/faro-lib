@@ -50,6 +50,7 @@ Environment only, on purpose: these are read at import time by the connection po
 | `ALLOWED_ORIGINS` | `http://localhost:3000, http://localhost:4000, http://localhost:5000` | environment only | CORS origins allowed to call the API from a browser. The frontend's own origin must be in the list or every call fails in the browser while working perfectly from curl. |
 | `INSTANCE_ADMIN_EMAILS` | - | environment only | Comma-separated addresses allowed to see and edit this instance's service configuration. `admin` is a role inside a tenant, so it cannot grant deployment-wide access. Empty means nobody edits it from the app — the panel becomes read-only for a tenant's own channels and says why. |
 | `ENVIRONMENT` | `development` | environment only | development / staging / production. In production the server REFUSES to boot with TESTING_MODE=true. |
+| `TRUSTED_PROXY_HOPS` | `0` | environment only | How many reverse proxies in front of the API append to X-Forwarded-For (public proxy, web server, internal gateway). The client address the per-tenant IP allowlist judges is the entry that many hops from the right of the header chain; anything a client writes further left is ignored. 0 (default) uses the socket peer and ignores the header, which behind a proxy makes every caller look like the proxy: set it before a tenant enables an allowlist, and keep the API port reachable only through the proxies. |
 | `APP_NAME` | `ForecastPlatform` | environment only | Product name in email subjects and the API's OpenAPI title. |
 | `APP_VERSION` | `1.0.0` | environment only | Version string reported by /health and the OpenAPI document. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | environment only | Access-token lifetime. The frontend refreshes silently, so this is a security window, not a UX one. |
@@ -271,7 +272,7 @@ Needs a mail provider that can forward inbound mail to a webhook (Postmark, Mail
 | `INBOUND_EMAIL_DOMAIN` | - | required, environment only | Domain the per-account addresses live on (sales+<token>@<domain>). Its MX record must point at your inbound mail provider. |
 | `INBOUND_EMAIL_SECRET` | - | required, secret, environment only | Shared secret that authenticates the provider's webhook calls. Use a long random string; changing it requires updating the provider's webhook settings too. |
 
-## `enterprise_sso` - Company sign-in through the customer's own OpenID Connect provider.
+## `enterprise_sso` - Company sign-in through the customer's own identity provider (OpenID Connect or SAML 2.0).
 
 *Kind:* external service. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* no.
 
@@ -283,7 +284,9 @@ Each tenant admin configures their own provider (issuer URL, client id and secre
 
     <FRONTEND_URL>/api/v1/auth/sso/callback
 
-People are created just-in-time inside the tenant that owns their e-mail domain, never as administrators. Only OpenID Connect is supported (no SAML).
+People are created just-in-time inside the tenant that owns their e-mail domain, never as administrators.
+
+SAML 2.0 is the second protocol (SP-initiated, signed assertions): the tenant admin pastes the identity provider's metadata and registers StockAI there with the entity ID and ACS URL the app shows (the ACS URL is <FRONTEND_URL>/api/v1/auth/saml/acs). SAML needs no secret, only the provider's public signing certificate. A tenant uses one protocol or the other.
 
 | Variable | Default | Notes | What it does |
 |---|---|---|---|
@@ -352,6 +355,7 @@ What it does NOT buy: isolation from the database. Both instances still share on
 | Variable | Default | Notes | What it does |
 |---|---|---|---|
 | `PUBLIC_API_ONLY` | `false` | environment only | Serve only the public integration surface on this instance. |
+| `APPROVAL_LINKS_ENABLED` | `false` | environment only | Put a one-time decision link in purchase-order approval requests, so an approver can approve or reject from the message. Turn it on only once the Rust API group that serves the decision page is routed: with it off no link is issued and approvals behave exactly as before. |
 
 ## `operations` - Thresholds behind the installation status panel (queue, worker, disk, backup, latency).
 

@@ -1,0 +1,26 @@
+# DISABLED EXAMPLE. Rename to 40-po-payments-cancellation.caddy inside the
+# gateway's /etc/caddy/routes.d/ to send this group to Rust.
+#
+# Purchase-order payments and cancellation (backend-rs/src/routes/
+# po_payments.rs, po_cancellation.rs): exactly four POST routes, each with the
+# order id in the path. Every other /inventory/po/{id}/... route (send,
+# receive, PDF, approvals, ...) stays on Python, so the match is a regexp on
+# the last segment, not a prefix.
+#
+# The readers of the paid / cancelled markers (cash calendar, incoming units,
+# overdue receptions, PO history) stay on Python; they read the columns at
+# query time, so which service wrote them makes no difference.
+
+@rs_po_payments_cancellation {
+	method POST
+	path_regexp ^/api/v1/inventory/po/[^/]+/(mark-paid|mark-unpaid|cancel|uncancel)$
+}
+handle @rs_po_payments_cancellation {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
