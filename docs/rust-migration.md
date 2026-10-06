@@ -615,7 +615,7 @@ Next-run arithmetic reuses the `croniter` port in `routes/schedule`.
 
 **Python owns**: the additive schema (`backend/scheduled_reports/migrations.py`,
 tables `report_schedules`, `report_schedule_recipients`, `report_schedule_runs`,
-`report_allowed_recipients`; note `report_runs` is the report generator's, not
+`report_external_allowlist`; note `report_runs` is the report generator's, not
 ours), the `report-scheduler` worker loop, and the report BODY. Python builds it
 because every section stands on code that stays in Python (the budget, committed
 demand and supplier scorecard read paths and the email locale catalogue); a Rust
