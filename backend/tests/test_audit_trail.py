@@ -273,5 +273,14 @@ def test_every_catalogued_route_is_a_real_route(client):
 
     real = {(m, r.path.replace("/api/v1", "", 1))
             for r in app.routes for m in (getattr(r, "methods", None) or ())}
-    missing = sorted(set(ROUTES) - real)
+    # Routes served ONLY by backend-rs (docs/rust-migration.md: no Python twin,
+    # no failover). They are catalogued here so the trail reads them, and
+    # audited by the Rust writer; the Rust catalogue test pins the same list.
+    rust_only = {("PUT", "/audit-stream"), ("DELETE", "/audit-stream"),
+                 ("POST", "/audit-stream/enable"), ("POST", "/audit-stream/disable"),
+                 ("POST", "/audit-stream/rotate-secret"), ("POST", "/audit-stream/replay"),
+                 ("POST", "/audit-stream/test")}
+    assert rust_only <= set(ROUTES)
+    assert not (rust_only & real), "a Python route now exists: drop it from rust_only"
+    missing = sorted(set(ROUTES) - real - rust_only)
     assert not missing, f"audit catalogue names routes that do not exist: {missing}"
