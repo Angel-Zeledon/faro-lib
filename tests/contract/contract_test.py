@@ -44,6 +44,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from allocation_contract import run_allocation  # noqa: E402
+
 API = "/api/v1"
 # Generous: a dev backend talking to its database through an SSH tunnel takes
 # tens of seconds on a read that runs eight queries.
@@ -2804,9 +2807,14 @@ def run(args) -> int:
                       f"\nRS {rr.status} {json.dumps(rr.body)[:1500]}")
             hard = [p for p in problems if not p.startswith("(")]
             results.append((case, "FAIL" if hard else "PASS", problems))
-        results += run_r3(args, fx, db)
-        results += run_r4(args, fx, db)
-        results += run_cd_resync(args, fx, db)
+        # `--only allocation` runs just the (Rust-only) allocation scenarios.
+        if not (args.only and args.only.startswith("allocation")):
+            results += run_r3(args, fx, db)
+            results += run_r4(args, fx, db)
+            results += run_cd_resync(args, fx, db)
+        results += run_allocation(args, fx, db, dict(http=http, API=API, auth_for=auth_for, today_plus=today_plus, Case=Case,
+                                                     mint_access_token=mint_access_token, make_fixture=make_fixture,
+                                                     erase_fixture=erase_fixture))
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
