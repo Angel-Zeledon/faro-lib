@@ -12,6 +12,7 @@ mod auth;
 mod config;
 mod entitlements;
 mod error;
+mod fulfillment;
 mod limits;
 mod middleware;
 mod pycompat;
