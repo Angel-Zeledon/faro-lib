@@ -59,6 +59,13 @@ const FIELDS: &[Field] = &[
     f("integrations_secret_key", "INTEGRATIONS_SECRET_KEY", Kind::Str, "", false),
     f("contact_whatsapp", "CONTACT_WHATSAPP", Kind::Str, "", true),
     f("contact_email", "CONTACT_EMAIL", Kind::Str, "", true),
+    f("stripe_secret_key", "STRIPE_SECRET_KEY", Kind::Str, "", true),
+    f("stripe_webhook_secret", "STRIPE_WEBHOOK_SECRET", Kind::Str, "", true),
+    f("stripe_price_id_full", "STRIPE_PRICE_ID_FULL", Kind::Str, "", true),
+    f("paypal_client_id", "PAYPAL_CLIENT_ID", Kind::Str, "", true),
+    f("paypal_client_secret", "PAYPAL_CLIENT_SECRET", Kind::Str, "", true),
+    f("paypal_webhook_id", "PAYPAL_WEBHOOK_ID", Kind::Str, "", true),
+    f("paypal_plan_id_full", "PAYPAL_PLAN_ID_FULL", Kind::Str, "", true),
     f("social_login_enabled", "SOCIAL_LOGIN_ENABLED", Kind::Bool, "false", true),
     f("google_oauth_client_id", "GOOGLE_OAUTH_CLIENT_ID", Kind::Str, "", true),
     f("google_oauth_client_secret", "GOOGLE_OAUTH_CLIENT_SECRET", Kind::Str, "", true),
@@ -109,6 +116,12 @@ const SERVICES: &[ServiceDef] = &[
         required: &["integrations_secret_key"], any_of: &[] },
     ServiceDef { key: "contact", kind: ServiceKind::External, switch: None, required: &[],
         any_of: &[&["contact_whatsapp"], &["contact_email"]] },
+    // Either payment provider, complete, turns online payment on.
+    ServiceDef { key: "billing", kind: ServiceKind::External, switch: None, required: &[],
+        any_of: &[
+            &["stripe_secret_key", "stripe_webhook_secret", "stripe_price_id_full"],
+            &["paypal_client_id", "paypal_client_secret", "paypal_webhook_id", "paypal_plan_id_full"],
+        ] },
     ServiceDef { key: "social_login", kind: ServiceKind::External, switch: Some("social_login_enabled"),
         required: &[],
         any_of: &[
@@ -121,6 +134,7 @@ const SERVICES: &[ServiceDef] = &[
         required: &["frontend_url"], any_of: &[] },
     ServiceDef { key: "worker", kind: ServiceKind::Deployment, switch: None, required: &[], any_of: &[] },
     ServiceDef { key: "limits", kind: ServiceKind::Deployment, switch: None, required: &[], any_of: &[] },
+    ServiceDef { key: "sql_sources", kind: ServiceKind::Deployment, switch: None, required: &[], any_of: &[] },
     ServiceDef { key: "api_surface", kind: ServiceKind::Deployment, switch: None, required: &[], any_of: &[] },
     ServiceDef { key: "operations", kind: ServiceKind::Deployment, switch: None, required: &[], any_of: &[] },
 ];
@@ -322,6 +336,28 @@ mod tests {
         assert_eq!(resolve(&s, &o, "contact_email"), Resolved::Str("panel@example.com".into()));
         // api_surface is not editable: the stored row is ignored.
         assert_eq!(resolve(&s, &o, "public_api_only"), Resolved::Bool(false));
+    }
+
+    #[test]
+    fn service_order_and_keys_match_the_registry() {
+        // python -c "from backend.service_config.registry import SERVICES; print([s.key for s in SERVICES])"
+        let keys: Vec<&str> = SERVICES.iter().map(|s| s.key).collect();
+        assert_eq!(keys, ["core", "llm", "email", "whatsapp", "sms", "rag", "secret_storage", "contact",
+            "billing", "social_login", "inbound_email", "enterprise_sso", "worker", "limits", "sql_sources",
+            "api_surface", "operations"]);
+    }
+
+    #[test]
+    fn billing_needs_one_complete_provider() {
+        let partial = settings(&[("STRIPE_SECRET_KEY", "sk"), ("STRIPE_WEBHOOK_SECRET", "wh")]);
+        let o = HashMap::new();
+        let r = |s: &Settings, k: &str| resolve(s, &o, k).truthy();
+        let billing = SERVICES.iter().find(|s| s.key == "billing").unwrap();
+        let ok = |s: &Settings| billing.any_of.iter().any(|g| g.iter().all(|k| r(s, k)));
+        assert!(!ok(&partial));
+        let full = settings(&[("PAYPAL_CLIENT_ID", "a"), ("PAYPAL_CLIENT_SECRET", "b"),
+            ("PAYPAL_WEBHOOK_ID", "c"), ("PAYPAL_PLAN_ID_FULL", "d")]);
+        assert!(ok(&full));
     }
 
     #[test]

@@ -1274,8 +1274,9 @@ def build_r2_cases(fx: Fixture, ph: dict) -> list[Case]:
 # the other, revoked on one and tried on both, and the audit reads run before
 # the exports (an export writes an audit row the next read would show).
 #
-# Verdicts: PASS, FAIL, SKIP (cannot be exercised here, says why) and STALE:
-# the running Python process predates the Python SOURCE for that behaviour
+# Verdicts: PASS, FAIL, SKIP (cannot be exercised here, says why) and, only
+# with --allow-stale, STALE: the running Python process predates the Python
+# SOURCE for that behaviour
 # (uvicorn does not reload), so Python's answer is not the spec; Rust was
 # checked against an expectation computed from the source instead, and that
 # check passed. A STALE whose Rust check fails is a FAIL.
@@ -1354,7 +1355,9 @@ def run_r3(args, fx: Fixture, db) -> list:
         verdict = "PASS"
         if hard:
             verdict = "FAIL"
-            if stale_spec is not None:
+            # Only on request: against a Python process running current main,
+            # Python's answer IS the spec and a difference is a failure.
+            if stale_spec is not None and getattr(args, "allow_stale", False):
                 spec_problems = stale_spec(rp, rr)
                 if not spec_problems:
                     verdict = "STALE"
@@ -2603,6 +2606,8 @@ def main() -> None:
     ap.add_argument("--only", default=None, help="run only cases whose name contains this")
     ap.add_argument("--dump", action="store_true", help="print both bodies for every case")
     ap.add_argument("--keep", action="store_true", help="do not erase the throwaway tenant")
+    ap.add_argument("--allow-stale", action="store_true",
+                    help="R3: accept a Python answer that predates the source when Rust matches the source")
     ap.add_argument("--erase-orphans", action="store_true",
                     help="only erase throwaway tenants left by a crashed run, then exit")
     sys.exit(run(ap.parse_args()))

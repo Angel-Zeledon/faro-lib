@@ -122,7 +122,7 @@ async fn actor_labels(pool: &PgPool, tenant_id: &str, ids: &HashSet<String>) -> 
     let mut labels = HashMap::new();
     let user_ids: Vec<String> = ids
         .iter()
-        .filter(|i| !i.starts_with("api_key:") && *i != "scheduler" && *i != "system")
+        .filter(|i| !i.starts_with("api_key:") && *i != "scheduler" && *i != "system" && *i != "scim")
         .cloned()
         .collect();
     if !user_ids.is_empty() {
@@ -163,6 +163,9 @@ pub fn actor_kind(actor_id: &str) -> &'static str {
         "schedule"
     } else if actor_id == "system" {
         "system"
+    } else if actor_id == "scim" {
+        // The company's identity provider, through the tenant's SCIM token.
+        "scim"
     } else {
         "user"
     }
@@ -223,7 +226,7 @@ pub fn normalise(row: &Row, labels: &HashMap<String, String>) -> Result<Value, (
                 label = get(&ctx, "name");
                 b = json!({"name": get(&ctx, "name"), "status": get(&ctx, "status_at_archive")});
             }
-            "account.user_role_changed" => {
+            "account.user_role_changed" | "account.scim_role_changed" => {
                 b = json!({"role": get(&ctx, "previous_role")});
                 af = json!({"role": get(&ctx, "role")});
             }

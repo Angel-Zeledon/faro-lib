@@ -13,6 +13,20 @@
 //!
 //! Every rule below is copied from Python in Python's order, because the
 //! order decides which error a request with several problems gets.
+//!
+//! Warehouse scope (`backend/api/v1/committed_demand.py`): a commitment names
+//! its warehouse by id, or none (a company-wide promise). A caller limited to
+//! some warehouses enters and changes only commitments naming one of THEIR
+//! warehouses; any other commitment is the same 404 a missing one gets.
+//!
+//! Contracts (`supply_contract_service`): a commitment materialised from a
+//! blanket contract (`source = 'contract'`) keeps the contract's sku,
+//! warehouse, customer, probability and on-top flag; a withdrawn one cannot
+//! change status; one whose contract is no longer active cannot be reopened.
+//! Those are row and table reads, no contract logic, so they are ported here.
+//!
+//! Marking a commitment fulfilled queues the `commitment.fulfilled` webhook
+//! (`crate::webhook_events`), once per real transition.
 
 use std::collections::HashSet;
 
@@ -26,7 +40,7 @@ use sqlx::postgres::PgRow;
 use sqlx::{PgPool, Row};
 
 use crate::activity::{record_event, Event};
-use crate::auth::{self, CurrentUser, Exposure, RequestActors, RouteAuth};
+use crate::auth::{self, warehouse_scope as wscope, CurrentUser, Exposure, RequestActors, RouteAuth};
 use crate::error::ApiError;
 use crate::pycompat::{date_fromisoformat, isoformat_date, isoformat_utc, py_strip, take_chars};
 use crate::routes::ok;
@@ -261,7 +275,13 @@ async fn check_warehouse(pool: &PgPool, tenant_id: &str, warehouse_id: Option<&s
 
 const COLS: &str = "c.id, c.sku, c.warehouse_id, c.delivery_date, c.quantity, c.customer,
     c.probability, c.on_top_of_base, c.status, c.note, c.created_by,
-    c.created_at, c.updated_at, c.status_changed_by, c.status_changed_at";
+    c.created_at, c.updated_at, c.status_changed_by, c.status_changed_at,
+    c.source, c.contract_id, c.contract_root_id, c.contract_release_date,
+    c.contract_withdrawn_at";
+
+/// `CONTRACT_LOCKED_FIELDS`: what a contract-materialised commitment takes
+/// from its contract. Quantity, date and note stay editable.
+const CONTRACT_LOCKED_FIELDS: [&str; 5] = ["sku", "warehouse_id", "customer", "probability", "on_top_of_base"];
 
 /// `_fmt`: the row in `_COLS` order, dates as ISO strings, plus `overdue`.
 fn fmt_row(row: &PgRow, today: NaiveDate) -> Result<Map<String, Value>, sqlx::Error> {
@@ -291,6 +311,13 @@ fn fmt_row(row: &PgRow, today: NaiveDate) -> Result<Map<String, Value>, sqlx::Er
     m.insert("updated_at".into(), ts("updated_at")?);
     m.insert("status_changed_by".into(), s("status_changed_by")?);
     m.insert("status_changed_at".into(), ts("status_changed_at")?);
+    m.insert("source".into(), s("source")?);
+    m.insert("contract_id".into(), s("contract_id")?);
+    m.insert("contract_root_id".into(), s("contract_root_id")?);
+    let release: Option<NaiveDate> = row.try_get("contract_release_date")?;
+    m.insert("contract_release_date".into(),
+        release.map(|d| Value::String(isoformat_date(&d))).unwrap_or(Value::Null));
+    m.insert("contract_withdrawn_at".into(), ts("contract_withdrawn_at")?);
     m.insert("overdue".into(), Value::Bool(status == "open" && delivery < today));
     Ok(m)
 }
@@ -306,6 +333,78 @@ async fn get(pool: &PgPool, tenant_id: &str, id: &str) -> Result<Map<String, Val
         Some(r) => Ok(fmt_row(&r, today())?),
         None => Err(ApiError::app("committed_demand_not_found", "Commitment not found", 404, json!({}))),
     }
+}
+
+// ── Warehouse scope (the API module's helpers) ──────────────────────────────
+
+/// `_visible`: an unrestricted caller sees everything; a scoped one only rows
+/// naming one of their warehouses (an unassigned row is company-wide).
+fn visible(allowed: &Option<Vec<String>>, row: &Map<String, Value>) -> bool {
+    match allowed {
+        None => true,
+        Some(ids) => row
+            .get("warehouse_id")
+            .and_then(Value::as_str)
+            .filter(|w| !w.is_empty())
+            .is_some_and(|w| ids.iter().any(|i| i == w)),
+    }
+}
+
+/// `_require_writable_warehouse`: a scoped caller must name one of their own.
+async fn require_writable_warehouse(pool: &PgPool, tenant_id: &str, allowed: &Option<Vec<String>>,
+    warehouse_id: Option<&str>) -> Result<(), ApiError>
+{
+    let Some(ids) = allowed else { return Ok(()) };
+    let wid = py_strip(warehouse_id.unwrap_or(""));
+    if wid.is_empty() {
+        return Err(ApiError::app("committed_demand_warehouse_required",
+            "A user limited to some warehouses must assign the commitment to one of them.", 422, json!({})));
+    }
+    if !ids.iter().any(|i| i == wid) {
+        let row: Option<(String,)> = sqlx::query_as("SELECT name FROM warehouses WHERE id = $1 AND tenant_id = $2")
+            .bind(wid)
+            .bind(tenant_id)
+            .fetch_optional(pool)
+            .await?;
+        let name = row.map(|r| r.0).unwrap_or_else(|| wid.to_string());
+        return Err(wscope::denied(Some(&name)));
+    }
+    Ok(())
+}
+
+/// `_get_visible`: the commitment, or the 404 a missing one gets.
+async fn get_visible(pool: &PgPool, tenant_id: &str, allowed: &Option<Vec<String>>, id: &str)
+    -> Result<Map<String, Value>, ApiError>
+{
+    let row = get(pool, tenant_id, id).await?;
+    if !visible(allowed, &row) {
+        return Err(ApiError::app("committed_demand_not_found", "Commitment not found", 404, json!({})));
+    }
+    Ok(row)
+}
+
+/// Python's `fields[k] != current.get(k)` for one locked field the PATCH sent.
+fn locked_field_changed(patch: &CommitmentPatch, current: &Map<String, Value>, key: &str) -> bool {
+    let cur = current.get(key).unwrap_or(&Value::Null);
+    let s = |v: &Option<Option<String>>| v.as_ref().map(|v| match v {
+        Some(x) => cur.as_str() != Some(x.as_str()),
+        None => !cur.is_null(),
+    });
+    let changed = match key {
+        "sku" => s(&patch.sku),
+        "warehouse_id" => s(&patch.warehouse_id),
+        "customer" => s(&patch.customer),
+        "probability" => patch.probability.map(|v| match v {
+            Some(x) => cur.as_f64() != Some(x),
+            None => !cur.is_null(),
+        }),
+        "on_top_of_base" => patch.on_top_of_base.map(|v| match v {
+            Some(x) => cur.as_bool() != Some(x),
+            None => !cur.is_null(),
+        }),
+        _ => None,
+    };
+    changed.unwrap_or(false)
 }
 
 /// `date.today()`: the server's local date, as Python reads it.
@@ -373,6 +472,8 @@ pub async fn create(
     errs.into_result()?;
     let body = body.ok_or_else(ApiError::internal)?;
 
+    let allowed = wscope::scope_warehouse_ids(&state.pool, &user).await?;
+    require_writable_warehouse(&state.pool, &user.tenant_id, &allowed, body.warehouse_id.as_deref()).await?;
     let c = clean(body.into(), today())?;
     check_warehouse(&state.pool, &user.tenant_id, c.warehouse_id.as_deref()).await?;
     let mut tx = state.pool.begin().await?;
@@ -411,6 +512,12 @@ pub async fn create_bulk(
         }
     }
     errs.into_result()?;
+
+    // Every row's warehouse is checked BEFORE anything is written.
+    let allowed = wscope::scope_warehouse_ids(&state.pool, &user).await?;
+    for r in &rows {
+        require_writable_warehouse(&state.pool, &user.tenant_id, &allowed, r.warehouse_id.as_deref()).await?;
+    }
 
     // create_many
     if rows.is_empty() {
@@ -497,11 +604,25 @@ async fn update_inner(
     let (user, obj) = writer_and_body(&state, &actors, &headers, &bytes).await?;
     let patch = validate_patch(&obj)?;
 
+    let allowed = wscope::scope_warehouse_ids(&state.pool, &user).await?;
+    get_visible(&state.pool, &user.tenant_id, &allowed, &commitment_id).await?;
+    if let Some(w) = &patch.warehouse_id {
+        // Moving it: the destination must be theirs too.
+        require_writable_warehouse(&state.pool, &user.tenant_id, &allowed, w.as_deref()).await?;
+    }
+
     let current = get(&state.pool, &user.tenant_id, &commitment_id).await?;
     if current["status"] != "open" {
         return Err(ApiError::app("committed_demand_closed",
             "A fulfilled or cancelled commitment cannot be edited", 409,
             json!({"status": current["status"]})));
+    }
+    if current.get("source").and_then(Value::as_str) == Some("contract") {
+        if let Some(field) = CONTRACT_LOCKED_FIELDS.iter().find(|k| locked_field_changed(&patch, &current, k)) {
+            return Err(ApiError::app("committed_demand_contract_locked",
+                "This commitment comes from a contract; change the contract instead", 409,
+                json!({"field": field})));
+        }
     }
     let cur_s = |k: &str| current.get(k).and_then(Value::as_str).map(str::to_string);
     let mut input = CleanInput {
@@ -565,12 +686,34 @@ pub async fn set_status(
     errs.into_result()?;
     let Field::Value(status) = status else { return Err(ApiError::internal()) };
 
-    get(&state.pool, &user.tenant_id, &commitment_id).await?;
+    let allowed = wscope::scope_warehouse_ids(&state.pool, &user).await?;
+    get_visible(&state.pool, &user.tenant_id, &allowed, &commitment_id).await?;
+
+    // svc.set_status
+    let current = get(&state.pool, &user.tenant_id, &commitment_id).await?;
+    if !current.get("contract_withdrawn_at").map_or(true, Value::is_null) {
+        return Err(ApiError::app("committed_demand_withdrawn",
+            "This commitment was withdrawn when its contract changed", 409, json!({})));
+    }
+    if status == "open" && current.get("source").and_then(Value::as_str) == Some("contract") {
+        let live: Option<(String,)> = sqlx::query_as(
+            "SELECT status FROM supply_contracts
+              WHERE tenant_id = $1 AND root_id = $2 AND superseded_by IS NULL",
+        )
+        .bind(&user.tenant_id)
+        .bind(current.get("contract_root_id").and_then(Value::as_str))
+        .fetch_optional(&state.pool)
+        .await?;
+        if live.map_or(true, |(s,)| s != "active") {
+            return Err(ApiError::app("committed_demand_contract_inactive",
+                "Its contract is no longer active, so it cannot be reopened", 409, json!({})));
+        }
+    }
     sqlx::query(
         "UPDATE committed_demand
             SET status = $1, status_changed_by = $2, status_changed_at = NOW(),
                 updated_at = NOW()
-          WHERE id = $3 AND tenant_id = $4",
+          WHERE id = $3 AND tenant_id = $4 AND contract_withdrawn_at IS NULL",
     )
     .bind(&status)
     .bind(&user.user_id)
@@ -579,6 +722,13 @@ pub async fn set_status(
     .execute(&state.pool)
     .await?;
     let row = get(&state.pool, &user.tenant_id, &commitment_id).await?;
+    if status == "fulfilled" && current.get("status").and_then(Value::as_str) != Some("fulfilled") {
+        // Once per real transition: closing an already-fulfilled row emits nothing.
+        let mut extra = Map::new();
+        extra.insert("fulfilled_at".into(), row.get("status_changed_at").cloned().unwrap_or(Value::Null));
+        crate::webhook_events::emit_commitment_event(&state.pool, &user.tenant_id, "commitment.fulfilled",
+            &row, extra).await;
+    }
     record_event(&state.pool, &user.tenant_id, &user.user_id, Event::CommittedDemandChanged,
         row.get("id").and_then(Value::as_str),
         details(&[("sku", row["sku"].clone()), ("status", row["status"].clone())])).await;

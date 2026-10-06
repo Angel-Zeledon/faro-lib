@@ -82,6 +82,10 @@ fn dumps_str(s: &str, out: &mut String) {
 }
 
 fn dumps_into(v: &Value, out: &mut String) {
+    dumps_sep(v, out, ", ", ": ")
+}
+
+fn dumps_sep(v: &Value, out: &mut String, item_sep: &str, key_sep: &str) {
     match v {
         Value::Null => out.push_str("null"),
         Value::Bool(true) => out.push_str("true"),
@@ -92,9 +96,9 @@ fn dumps_into(v: &Value, out: &mut String) {
             out.push('[');
             for (i, item) in items.iter().enumerate() {
                 if i > 0 {
-                    out.push_str(", ");
+                    out.push_str(item_sep);
                 }
-                dumps_into(item, out);
+                dumps_sep(item, out, item_sep, key_sep);
             }
             out.push(']');
         }
@@ -102,11 +106,11 @@ fn dumps_into(v: &Value, out: &mut String) {
             out.push('{');
             for (i, (k, item)) in map.iter().enumerate() {
                 if i > 0 {
-                    out.push_str(", ");
+                    out.push_str(item_sep);
                 }
                 dumps_str(k, out);
-                out.push_str(": ");
-                dumps_into(item, out);
+                out.push_str(key_sep);
+                dumps_sep(item, out, item_sep, key_sep);
             }
             out.push('}');
         }
@@ -117,6 +121,14 @@ fn dumps_into(v: &Value, out: &mut String) {
 pub fn dumps(v: &Value) -> String {
     let mut out = String::new();
     dumps_into(v, &mut out);
+    out
+}
+
+/// `json.dumps(value, separators=(",", ":"))`: compact, still ASCII-escaped
+/// (the webhook payload text, which is what gets signed and posted).
+pub fn dumps_compact(v: &Value) -> String {
+    let mut out = String::new();
+    dumps_sep(v, &mut out, ",", ":");
     out
 }
 

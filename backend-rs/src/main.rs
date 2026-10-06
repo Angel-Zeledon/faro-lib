@@ -21,6 +21,7 @@ mod routes;
 mod service_config;
 mod state;
 mod validation;
+mod webhook_events;
 
 use std::sync::Arc;
 use std::time::Duration;

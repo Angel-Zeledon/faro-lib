@@ -101,6 +101,22 @@ pub async fn scope_ids(pool: &PgPool, user: &CurrentUser) -> Result<Option<Vec<S
     caller_ids(pool, user).await
 }
 
+/// `scope_warehouse_ids`: the caller's warehouse IDS resolved against the
+/// tenant's own warehouses (stale or foreign ids drop out); `None` when
+/// unrestricted. For rows that name a warehouse by id (commitments).
+pub async fn scope_warehouse_ids(pool: &PgPool, user: &CurrentUser) -> Result<Option<Vec<String>>, sqlx::Error> {
+    let Some(ids) = caller_ids(pool, user).await? else { return Ok(None) };
+    if ids.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT id FROM warehouses WHERE tenant_id = $1 AND id = ANY($2)")
+        .bind(&user.tenant_id)
+        .bind(&ids)
+        .fetch_all(pool)
+        .await?;
+    Ok(Some(rows.into_iter().map(|(i,)| i).collect()))
+}
+
 /// `is_scoped`: `scope_names(user) is not None`, which is exactly "the stored
 /// value is not None" (an empty or stale scope still counts as scoped).
 pub async fn is_scoped(pool: &PgPool, user: &CurrentUser) -> Result<bool, sqlx::Error> {
@@ -166,11 +182,6 @@ pub fn denied(warehouse: Option<&str>) -> ApiError {
         403,
         json!({"warehouse": effective_name(warehouse)}),
     )
-}
-
-/// `require_in_scope(user, warehouse)` for an already resolved scope.
-pub fn require_in_scope(scope: &Scope, warehouse: Option<&str>) -> Result<(), ApiError> {
-    if in_scope(scope, warehouse) { Ok(()) } else { Err(denied(warehouse)) }
 }
 
 /// `warehouse_service.name_precedence_key`.
