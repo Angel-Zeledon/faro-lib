@@ -36,6 +36,31 @@ from backend.db.connection import query_one
 
 # Keyed exactly as FastAPI reports the route. The value is why it is open.
 UNAUTHENTICATED = {
+    "GET /api/v1/auth/sso/availability": "tells the login page whether company sign-in exists for an e-mail domain",
+    "POST /api/v1/auth/sso/discover": "finds the company sign-in for an e-mail domain before login",
+    "GET /api/v1/auth/sso/start": "starts the company sign-in redirect",
+    "GET /api/v1/auth/sso/callback": "the identity provider's redirect back; validated by the signed state",
+    "GET /api/v1/billing/offer": "the public price shown on the pricing page",
+    "POST /api/v1/billing/stripe/webhook": "authenticated by the provider's signature over the raw body",
+    "POST /api/v1/billing/paypal/webhook": "authenticated by PayPal's verify-webhook-signature call",
+    "POST /api/v1/inbound/email": "authenticated by the shared secret and the per-tenant secret address",
+    "GET /api/v1/scim/v2/ServiceProviderConfig": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "GET /api/v1/scim/v2/ResourceTypes": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "GET /api/v1/scim/v2/ResourceTypes/{name}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "GET /api/v1/scim/v2/Schemas": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "GET /api/v1/scim/v2/Schemas/{urn}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "GET /api/v1/scim/v2/Users": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "POST /api/v1/scim/v2/Users": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "GET /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PUT /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PATCH /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "DELETE /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "GET /api/v1/scim/v2/Groups": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "POST /api/v1/scim/v2/Groups": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "GET /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PUT /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PATCH /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "DELETE /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
     # You cannot be authenticated before you authenticate.
     "POST /api/v1/auth/signup": "creates the account and its tenant",
     "POST /api/v1/auth/login": "issues the credential",
@@ -55,6 +80,12 @@ UNAUTHENTICATED = {
     # The landing visitor has no account yet: this mints a throwaway one. It
     # reads no tenant's data; abuse is bounded in backend/trial/service.py.
     "POST /api/v1/trial": "creates a 24-hour trial account for a visitor",
+    # A supplier answers a purchase order from the link in the message, with no
+    # account. The 256-bit link token is the credential (only its hash is
+    # stored); every bad link answers one identical 404 and both routes are rate
+    # limited. See backend/api/v1/supplier_portal.py.
+    "GET /api/v1/supplier-portal/{token}": "the supplier's link token is the credential",
+    "POST /api/v1/supplier-portal/{token}/confirm": "the supplier's link token is the credential",
     # Machine callers authorised by request signature, not by a user token.
     "POST /api/v1/whatsapp/inbound": "Twilio webhook, verified by signature",
     # Deliberate: Twilio's MediaUrl fetch cannot carry a Bearer token, and the

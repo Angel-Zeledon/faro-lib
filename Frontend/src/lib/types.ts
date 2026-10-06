@@ -1016,6 +1016,41 @@ export interface Webhook {
   url:        string
   events:     string[]
   created_at: string
+  /** null = company-wide; otherwise the warehouses it is confined to. */
+  warehouse_ids:     string[] | null
+  disabled_at:       string | null
+  disabled_reason:   string | null
+  failure_days:      number
+  secret_rotated_at: string | null
+}
+
+/** Returned once, by create: the only time the signing secret is visible. */
+export interface CreatedWebhook {
+  id: string; url: string; events: string[]
+  warehouse_ids: string[] | null; secret: string
+}
+
+export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'failed' | 'abandoned'
+
+export interface WebhookDelivery {
+  id:               string
+  event_id:         string
+  event_type:       string
+  is_test:          boolean
+  status:           WebhookDeliveryStatus
+  attempts:         number
+  last_status_code: number | null
+  last_error:       string | null
+  next_attempt_at:  string | null
+  created_at:       string
+  last_attempt_at:  string | null
+  delivered_at:     string | null
+}
+
+export interface WebhookEventInfo {
+  type: string
+  data_keys: string[]
+  warehouse_aware: boolean
 }
 
 // ── Job Schedule ──────────────────────────────────────────────────────────────
@@ -1985,8 +2020,152 @@ export interface IncomingSource {
   qty:       number
 }
 
+// ── Purchase budgets (a cap on purchasing spend) ─────────────────────────────
+export type BudgetPeriodType = 'month' | 'quarter' | 'custom'
+export type BudgetScopeType = 'company' | 'warehouse' | 'supplier' | 'category'
+
+export interface PurchaseBudget {
+  id: string
+  root_id: string
+  revision: number
+  period_type: BudgetPeriodType
+  period_start: string
+  period_end: string
+  amount: number
+  currency: string
+  scope_type: BudgetScopeType
+  scope_value: string | null
+  /** Warehouse / supplier NAME for those scopes, the category text, null for company. */
+  scope_label: string | null
+  parent_root_id: string | null
+  hard_cap: boolean
+  active: boolean
+  note: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface BudgetBurn {
+  total_days: number
+  elapsed_days: number
+  elapsed_fraction: number
+  days_left: number
+  state: 'upcoming' | 'running' | 'closed'
+  used_fraction: number | null
+  projected_total: number | null
+  projected_overrun: number | null
+  projection_reliable: boolean
+  pace: 'on_track' | 'ahead' | 'over'
+}
+
+export interface BudgetUsage {
+  spent: number
+  committed: number
+  ordered: number
+  remaining: number
+  unknown_cost_lines: number
+  burn: BudgetBurn
+  free: number
+  limited_by: 'self' | 'parent'
+  parent_remaining: number | null
+}
+
+export interface BudgetSummaryRow {
+  root_id: string
+  scope_type: BudgetScopeType
+  scope_label: string | null
+  amount: number
+  currency: string
+  period_type: BudgetPeriodType
+  period_start: string
+  period_end: string
+  running: boolean
+}
+
+export interface BudgetWarning { code: string; params: Record<string, unknown> }
+
+export interface BudgetStatus {
+  budget: PurchaseBudget | null
+  budgets: BudgetSummaryRow[]
+  usage?: BudgetUsage
+  warnings: BudgetWarning[]
+  today: string
+}
+
+export type BudgetLineStatus = 'funded' | 'partial' | 'deferred' | 'cost_unknown' | 'ignored'
+
+export interface BudgetPlanLine {
+  key: string
+  sku: string
+  display_name: string | null
+  supplier: string | null
+  warehouse: string | null
+  signal: string
+  abc: string | null
+  status: BudgetLineStatus
+  reason: string | null
+  recommended_qty: number
+  funded_qty: number
+  unit_cost: number | null
+  full_cost: number | null
+  funded_cost: number
+  money_at_risk: number | null
+  uncovered_risk: number | null
+  moq: number | null
+}
+
+export interface BudgetPlanSummary {
+  capped: boolean
+  budget_remaining_in: number | null
+  budget_remaining_after: number | null
+  funded_cost: number
+  full_cost: number
+  funded_lines: number
+  partial_lines: number
+  deferred_lines: number
+  cost_unknown_lines: number
+  money_at_risk_total: number
+  money_at_risk_uncovered: number
+  risk_unknown_lines: number
+  cost_unknown_risk: number
+}
+
+export interface BudgetPlan extends BudgetStatus {
+  lines: BudgetPlanLine[]
+  summary: BudgetPlanSummary | null
+}
+
+export interface BudgetInput {
+  period_type: BudgetPeriodType
+  period_start: string
+  period_end?: string | null
+  amount: number
+  scope_type: BudgetScopeType
+  scope_value?: string | null
+  parent_root_id?: string | null
+  hard_cap: boolean
+  active: boolean
+  note?: string | null
+}
+
+/** One budget an order would push past what it has left. A budget the caller
+ *  cannot see arrives without its figures (visible: false). */
+export interface BudgetExceeded {
+  root_id: string | null
+  scope_type: BudgetScopeType
+  hard_cap: boolean
+  visible: boolean
+  currency: string
+  order_value?: number
+  remaining?: number
+  over_by?: number
+  unknown_cost_lines?: number
+}
+
 export interface POLogEntry {
   id:                string
+  /** Budgets this order pushed past what they had left (soft warnings). */
+  budget_warnings?:  BudgetExceeded[]
   po_number?:        number | null
   // NULL for manual orders (source === 'manual'), which have no forecast
   // session behind them.
@@ -2236,6 +2415,95 @@ export interface SendPOResult {
   /** Lines whose supplier could not be resolved to a supplier record at all —
    *  previously dropped in silence. */
   unresolved?: { sku: string; supplier: string | null }[]
+  /** Present only when the send asked for confirmation links: which suppliers
+   *  received one, and by which channel. */
+  confirmation_links?:  { supplier: string; email: boolean; whatsapp: boolean }[]
+  /** Suppliers whose link could not be created (the order still went out). */
+  confirmation_failed?: string[]
+}
+
+// ── Supplier confirmation link ────────────────────────────────────────────────
+export type POConfirmationStatus = 'pending' | 'confirmed' | 'changed' | 'declined'
+
+/** One row per order that has a confirmation link (the history chip). */
+export interface POConfirmationSummary {
+  po_log_id:           string
+  status:              POConfirmationStatus
+  /** Proposed changes the buyer has not accepted yet. */
+  pending_acceptance:  number
+  suppliers:           number
+}
+
+export interface POConfirmationLineResponse {
+  confirmation_id: string
+  revision:        number
+  status:          'confirmed' | 'changed' | 'declined'
+  confirmed_qty:   number | null
+  promised_date:   string | null
+  /** The supplier's own words: render as text only, never as HTML. */
+  note:            string | null
+  submitted_at:    string
+  accepted:        boolean
+  accepted_at:     string | null
+  /** A proposed change nobody accepted yet. */
+  acceptable:      boolean
+}
+
+export interface POConfirmationLine {
+  line_id:      string
+  sku:          string
+  name:         string
+  ordered_qty:  number
+  response:     POConfirmationLineResponse | null
+}
+
+export interface POConfirmationRequest {
+  request_id:          string
+  supplier:            string
+  status:              POConfirmationStatus
+  state:               'active' | 'expired' | 'revoked'
+  locked:              boolean
+  submitted_at:        string | null
+  expires_at:          string
+  requested_date:      string | null
+  pending_acceptance:  number
+  lines:               POConfirmationLine[]
+}
+
+// What a supplier sees on /proveedor/<token> (no prices, no stock, no other orders).
+export interface SupplierPortalLine {
+  line_id:        string
+  sku:            string
+  name:           string
+  quantity:       number
+  unit:           string | null
+  requested_date: string | null
+  response: null | {
+    status:        'confirmed' | 'changed' | 'declined'
+    confirmed_qty: number | null
+    promised_date: string | null
+    note:          string | null
+  }
+}
+
+export interface SupplierPortalView {
+  reference:      string
+  buyer:          string | null
+  supplier:       string
+  language:       'es' | 'en'
+  requested_date: string | null
+  expires_at:     string
+  locked:         boolean
+  submitted_at:   string | null
+  lines:          SupplierPortalLine[]
+}
+
+export interface SupplierPortalAnswer {
+  line_id:        string
+  decision:       'confirm' | 'decline'
+  confirmed_qty?: number
+  promised_date?: string
+  note?:          string
 }
 
 // ── Event / promo impact simulation (feature 2.3) ────────────────────────────
@@ -2319,6 +2587,9 @@ export interface OverdueReception {
   // Unified with the semáforo's vocabulary: 'observed' is now 'learned' and
   // 'declared' is 'supplier_rule'. Two words for one question was the bug.
   lead_time_source:  ValueSource
+  /** 'supplier_promise' when the buyer accepted a date the supplier promised
+   *  through the confirmation link; 'model' (or absent) otherwise. */
+  expected_arrival_source?: 'model' | 'supplier_promise'
 }
 
 export interface SupplierScorecardRow {
@@ -2333,6 +2604,11 @@ export interface SupplierScorecardRow {
   lead_time_declarado:  number | null
   deviation_days:      number | null
   on_time_rate:         number | null
+  /** Accepted supplier promises (confirmation link) delivered by the promised
+   *  date. null when no promise was ever accepted and received — never 0. */
+  promise_kept_rate?:      number | null
+  promises_measured?:      number
+  promise_avg_slip_days?:  number | null
   fill_rate:            number | null
   /** null when no ordered line of this supplier carries a unit cost — the same
    *  rule /impacto applies to managed_purchase_value. A confident 0 would read

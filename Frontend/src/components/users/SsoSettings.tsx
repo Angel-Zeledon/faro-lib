@@ -24,6 +24,7 @@ import Card from '@/components/ui/Card'
 import Input, { Field, Select } from '@/components/ui/Input'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { roleLabel } from '@/lib/enumLabels'
+import { ScimSettings } from './ScimSettings'
 
 type Role = 'analyst' | 'viewer'
 
@@ -253,6 +254,8 @@ export function SsoSettings() {
                 </div>
               </form>
             )}
+            {/* SCIM rides on a saved company sign-in: nothing to show before it. */}
+            {status === 'ready' && state?.config && <ScimSettings ssoSaved={saved} />}
           </div>
         )}
       </Card>

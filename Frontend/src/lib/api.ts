@@ -1065,6 +1065,52 @@ export const saveSsoConfig = (body: {
 export const deleteSsoConfig = () =>
   request<{ removed: boolean }>('DELETE', '/auth/sso/config')
 
+// ── SCIM provisioning (admin side; the protocol itself is for the IdP) ──────
+export interface ScimTokenInfo {
+  id: string
+  hint: string
+  manage_admins: boolean
+  created_at: string | null
+  created_by: string | null
+  last_used_at: string | null
+}
+
+export interface ScimEvent {
+  id: string
+  created_at: string | null
+  operation: string
+  resource_type: string
+  resource_id: string | null
+  email: string | null
+  outcome: 'success' | 'error'
+  http_status: number
+  error_code: string | null
+  changes: Record<string, unknown>
+}
+
+export interface ScimStatus {
+  sso_configured: boolean
+  sso_ready: boolean
+  base_url: string
+  token: ScimTokenInfo | null
+  last_used_at: string | null
+  last_change_at: string | null
+  events: ScimEvent[]
+}
+
+export const getScimStatus = () => request<ScimStatus>('GET', '/auth/sso/scim')
+
+/** Mints (or rotates) the token. The raw `token` is returned this once only. */
+export const mintScimToken = (manage_admins: boolean) =>
+  request<{ token: string; token_info: ScimTokenInfo; rotated: boolean; base_url: string }>(
+    'POST', '/auth/sso/scim/token', { manage_admins })
+
+export const updateScimToken = (manage_admins: boolean) =>
+  request<{ token_info: ScimTokenInfo }>('PATCH', '/auth/sso/scim/token', { manage_admins })
+
+export const revokeScimToken = () =>
+  request<{ revoked: boolean }>('DELETE', '/auth/sso/scim/token')
+
 // ── Accuracy Tracking ─────────────────────────────────────────────────────────
 export const getAccuracyReport = (sessionId: string, threshold?: number) =>
   request<import('./types').AccuracyReport>(
@@ -1103,13 +1149,28 @@ export const getApiKeyUsage = (month?: string) =>
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
 export const createWebhook = (url: string, events: string[]) =>
-  request<import('./types').Webhook>('POST', '/webhooks', { url, events })
+  request<import('./types').CreatedWebhook>('POST', '/webhooks', { url, events })
 
 export const listWebhooks = (opts?: RequestOpts) =>
   request<import('./types').Webhook[]>('GET', '/webhooks', undefined, opts)
 
 export const deleteWebhook = (id: string) =>
   request<{ deleted: string }>('DELETE', `/webhooks/${id}`)
+
+export const listWebhookEvents = () =>
+  request<{ api_version: string; events: import('./types').WebhookEventInfo[] }>('GET', '/webhooks/events')
+
+export const rotateWebhookSecret = (id: string) =>
+  request<{ id: string; secret: string }>('POST', `/webhooks/${id}/rotate-secret`)
+
+export const sendWebhookTest = (id: string) =>
+  request<{ delivery_id: string }>('POST', `/webhooks/${id}/test`)
+
+export const enableWebhook = (id: string) =>
+  request<{ id: string; enabled: boolean }>('POST', `/webhooks/${id}/enable`)
+
+export const listWebhookDeliveries = (id: string, opts?: RequestOpts) =>
+  request<import('./types').WebhookDelivery[]>('GET', `/webhooks/${id}/deliveries`, undefined, opts)
 
 // ── Schedules ─────────────────────────────────────────────────────────────────
 // "No schedule configured" is a legitimate state, not an error: ask silently
@@ -1569,6 +1630,30 @@ export const updateCommittedDemand = (id: string, body: Partial<import('./types'
   request<import('./types').CommittedDemand>('PATCH', `/committed-demand/${encodeURIComponent(id)}`, body)
 export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
   request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
+// ── Purchase budgets (a cap on purchasing spend) ────────────────────────────
+export const listBudgets = (includeInactive = false) =>
+  request<{ items: import('./types').PurchaseBudget[]; scope: 'company' | 'warehouses'; currency: string }>(
+    'GET', `/inventory/budgets${includeInactive ? '?include_inactive=true' : ''}`)
+export const createBudget = (body: import('./types').BudgetInput) =>
+  request<import('./types').PurchaseBudget>('POST', '/inventory/budgets', body)
+export const reviseBudget = (rootId: string, expectedRevision: number, changes: Partial<import('./types').BudgetInput>) =>
+  request<import('./types').PurchaseBudget>(
+    'PATCH', `/inventory/budgets/${encodeURIComponent(rootId)}`, { expected_revision: expectedRevision, ...changes })
+export const getBudgetStatus = (budgetId?: string, opts?: RequestOpts) =>
+  request<import('./types').BudgetStatus>(
+    'GET', `/inventory/budget/status${budgetId ? `?budget_id=${encodeURIComponent(budgetId)}` : ''}`, undefined, opts)
+export const getBudgetPlan = (budgetId?: string, sessionId?: string, opts?: RequestOpts) =>
+  request<import('./types').BudgetPlan>(
+    'POST', '/inventory/budget/plan', { budget_id: budgetId ?? null, session_id: sessionId ?? null }, opts)
+export const checkBudgetOrder = (
+  lines: { sku: string; qty: number; unit_cost: number | null; supplier?: string | null; supplier_id?: string | null }[],
+  destinationWarehouse?: string,
+  opts?: RequestOpts,
+) =>
+  request<{ exceeded: import('./types').BudgetExceeded[] }>(
+    'POST', '/inventory/budget/check',
+    { lines, destination_warehouse: destinationWarehouse ?? null }, opts)
+
 // ── Blanket supply contracts (their releases become committed demand) ───────
 export const getSupplyContracts = () =>
   request<{ statuses: import('./types').SupplyContractStatus[]; items: import('./types').SupplyContract[] }>('GET', '/supply-contracts')
@@ -1616,8 +1701,32 @@ export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =
   request<import('./types').AdjustmentValueAdded>(
     'GET', `/sessions/${sessionId}/adjustments/value-added`, undefined, opts)
 
-export const sendPOToSuppliers = (poLogId: string) =>
-  request<import('./types').SendPOResult>('POST', `/inventory/po/${poLogId}/send`)
+export const sendPOToSuppliers = (poLogId: string, opts?: { requestConfirmation?: boolean }) =>
+  request<import('./types').SendPOResult>(
+    'POST', `/inventory/po/${poLogId}/send`,
+    // No body when the caller did not choose: the server then sends exactly what
+    // it always sent (no confirmation link).
+    opts?.requestConfirmation === undefined
+      ? undefined
+      : { request_confirmation: opts.requestConfirmation },
+  )
+
+// ── Supplier confirmation link (buyer side) ──────────────────────────────────
+export const getPOConfirmationSummary = () =>
+  request<import('./types').POConfirmationSummary[]>(
+    'GET', '/inventory/po-confirmations', undefined, { silent: true })
+export const getPOConfirmations = (poLogId: string) =>
+  request<import('./types').POConfirmationRequest[]>(
+    'GET', `/inventory/po/${encodeURIComponent(poLogId)}/confirmations`)
+export const acceptPOConfirmation = (poLogId: string, confirmationId: string) =>
+  request<{ changed: boolean }>(
+    'POST', `/inventory/po/${encodeURIComponent(poLogId)}/confirmations/${encodeURIComponent(confirmationId)}/accept`)
+export const reopenPOConfirmationLink = (poLogId: string, requestId: string) =>
+  request<{ changed: boolean }>(
+    'POST', `/inventory/po/${encodeURIComponent(poLogId)}/confirmation-links/${encodeURIComponent(requestId)}/reopen`)
+export const revokePOConfirmationLink = (poLogId: string, requestId: string) =>
+  request<{ changed: boolean }>(
+    'POST', `/inventory/po/${encodeURIComponent(poLogId)}/confirmation-links/${encodeURIComponent(requestId)}/revoke`)
 
 // Undoing a reception or a send. These exist because the WhatsApp assistant
 // was not allowed to record either action while they were irreversible — see
@@ -1738,12 +1847,14 @@ export const logPOGeneration = (
   items?: POLineDecision[],
   destinationWarehouse?: string,
   opts?: RequestOpts,
+  budgetOverrideReason?: string,
 ) => {
   // destination_warehouse omitted = tenant default warehouse (mono-warehouse
   // tenants never send it, so their behavior is byte-identical to before 5.4).
-  const body: { items?: POLineDecision[]; destination_warehouse?: string } = {}
+  const body: { items?: POLineDecision[]; destination_warehouse?: string; budget_override_reason?: string } = {}
   if (items && items.length) body.items = items
   if (destinationWarehouse) body.destination_warehouse = destinationWarehouse
+  if (budgetOverrideReason && budgetOverrideReason.trim()) body.budget_override_reason = budgetOverrideReason.trim()
   return request<POLogEntry>(
     'POST',
     `/inventory/log-po?session_id=${sessionId}`,
@@ -2668,7 +2779,7 @@ export const getSessionManifest = (sessionId: string) =>
 
 export interface AuditEntry {
   id: string; at: string
-  actor: { id: string; kind: 'user' | 'api_key' | 'schedule' | 'system'; label: string | null }
+  actor: { id: string; kind: 'user' | 'api_key' | 'schedule' | 'system' | 'scim'; label: string | null }
   action: string
   target: { type: string | null; id: string | null; label: string | null }
   before: Record<string, unknown> | null

@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 251,
-  "read": 154,
-  "write": 97
+  "total": 256,
+  "read": 156,
+  "write": 100
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -8312,6 +8312,13 @@
          "required": false,
          "type": "string",
          "nullable": true
+        },
+        {
+         "name": "budget_override_reason",
+         "required": false,
+         "type": "string",
+         "max_length": 500,
+         "nullable": true
         }
        ],
        "nullable": true
@@ -9092,7 +9099,25 @@
        "example": "<po_log_id>"
       }
      ],
-     "request_body": null,
+     "request_body": {
+      "content_type": "application/json",
+      "required": false,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "request_confirmation",
+         "required": false,
+         "type": "boolean",
+         "default": false
+        }
+       ],
+       "nullable": true
+      },
+      "example": {
+       "request_confirmation": false
+      }
+     },
      "success_status": 200,
      "response_content_types": [
       "application/json"
@@ -15254,7 +15279,7 @@
      "tag": "webhooks",
      "scope": "write",
      "summary": "Create a webhook",
-     "description": "Subscribes an https URL to job.completed / job.failed events.",
+     "description": "Subscribes an https URL to business events (purchase orders, stockouts, commitments, jobs). The signing secret is returned once.",
      "parameters": [],
      "request_body": {
       "content_type": "application/json",
@@ -15274,6 +15299,15 @@
          "items": {
           "type": "string"
          }
+        },
+        {
+         "name": "warehouse_ids",
+         "required": false,
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "nullable": true
         }
        ]
       },
@@ -15308,13 +15342,235 @@
      ]
     },
     {
+     "id": "get-webhooks-events",
+     "method": "GET",
+     "path": "/webhooks/events",
+     "tag": "webhooks",
+     "scope": "read",
+     "summary": "List webhook events",
+     "description": "The events a webhook can subscribe to and the data keys each carries.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
      "id": "delete-webhooks-webhook_id",
      "method": "DELETE",
      "path": "/webhooks/{webhook_id}",
      "tag": "webhooks",
      "scope": "write",
      "summary": "Delete a webhook",
-     "description": "Removes the webhook.",
+     "description": "Removes the webhook and its delivery log.",
+     "parameters": [
+      {
+       "name": "webhook_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<webhook_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-webhooks-webhook_id-deliveries",
+     "method": "GET",
+     "path": "/webhooks/{webhook_id}/deliveries",
+     "tag": "webhooks",
+     "scope": "read",
+     "summary": "List webhook deliveries",
+     "description": "The delivery log: status, attempts, last status code, last error and next retry.",
+     "parameters": [
+      {
+       "name": "webhook_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<webhook_id>"
+      },
+      {
+       "name": "status",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<status>"
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200,
+        "default": 50
+       },
+       "example": 50
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-webhooks-webhook_id-enable",
+     "method": "POST",
+     "path": "/webhooks/{webhook_id}/enable",
+     "tag": "webhooks",
+     "scope": "write",
+     "summary": "Re-enable a webhook",
+     "description": "Switches a webhook back on after it was disabled for repeated failures.",
+     "parameters": [
+      {
+       "name": "webhook_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<webhook_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-webhooks-webhook_id-rotate-secret",
+     "method": "POST",
+     "path": "/webhooks/{webhook_id}/rotate-secret",
+     "tag": "webhooks",
+     "scope": "write",
+     "summary": "Rotate a webhook secret",
+     "description": "Issues a new signing secret, returned once. The old one stops verifying at once.",
+     "parameters": [
+      {
+       "name": "webhook_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<webhook_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-webhooks-webhook_id-test",
+     "method": "POST",
+     "path": "/webhooks/{webhook_id}/test",
+     "tag": "webhooks",
+     "scope": "write",
+     "summary": "Send a test event",
+     "description": "Queues a signed webhook.test delivery to the webhook.",
      "parameters": [
       {
        "name": "webhook_id",

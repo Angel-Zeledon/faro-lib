@@ -180,6 +180,25 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("customer", "lines", "revision", "status"),
     ),
+    # Purchase budgets (inventory/purchase_budget_service.py): who set or changed
+    # a cap, and every order that went past what a cap had left (with the reason
+    # a person gave, when an administrator overrode a hard cap).
+    "purchase_budget.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("budget_scope", "amount", "period"),
+    ),
+    "purchase_budget.revised": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("budget_scope", "amount", "period"),
+    ),
+    "purchase_budget.exceeded": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("budget_scope", "over_by", "override_reason", "reference"),
+    ),
+    "purchase_budget.override": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("budget_scope", "over_by", "override_reason", "reference"),
+    ),
     "purchase.order_generated": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("reference", "lines", "value", "suppliers"),
@@ -192,6 +211,31 @@ EVENTS: dict[str, EventSpec] = {
     "purchase.order_not_sent": EventSpec(
         kind="purchase", severity=CRITICAL,
         detail_keys=("reference", "skipped"),
+    ),
+    # The supplier answered the confirmation link (inventory/po_confirmation_
+    # service.py). Everything confirmed is history; a proposed change or a
+    # declined line needs the buyer's decision, so it reaches the bell.
+    "purchase.supplier_confirmed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "supplier", "confirmed"),
+    ),
+    "purchase.supplier_changes_proposed": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("reference", "supplier", "confirmed", "changed", "declined"),
+    ),
+    # A person accepted a supplier's promised date: it now drives that order's
+    # expected arrival. Recorded under their name, because it moves a decision.
+    "purchase.supplier_change_accepted": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "supplier", "sku", "promised_date"),
+    ),
+    "purchase.supplier_link_reopened": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "supplier"),
+    ),
+    "purchase.supplier_link_revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "supplier"),
     ),
     "purchase.reception_recorded": EventSpec(
         kind="purchase", severity=INFO,
@@ -394,6 +438,45 @@ EVENTS: dict[str, EventSpec] = {
     "account.warehouse_scope_changed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email", "warehouses"),
     ),
+    # An outbound webhook that failed on several different days was switched
+    # off (backend/webhooks/service.py). Warning, with the host so the admin
+    # knows which receiver to fix before re-enabling it.
+    "webhook.auto_disabled": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("host",),
+    ),
+    # SCIM provisioning (backend/scim/). The actor is "scim": the company's
+    # identity provider did these, not a person in the app. Losing or regaining
+    # access and a changed role are warnings - the things an admin is asked
+    # about - while a created person or a renamed one is history.
+    "account.scim_user_created": EventSpec(
+        kind="account", severity=INFO, detail_keys=("email", "role"),
+    ),
+    "account.scim_user_updated": EventSpec(
+        kind="account", severity=INFO, detail_keys=("email", "changes"),
+    ),
+    "account.scim_user_deactivated": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
+    "account.scim_user_reactivated": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
+    "account.scim_role_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "role", "previous_role"),
+    ),
+    # A write the provider asked for and this product refused (last admin,
+    # ceiling, another tenant's address...). The code is a reason param.
+    "account.scim_request_refused": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "operation"),
+    ),
+    "account.scim_token_created": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("manage_admins", "rotated"),
+    ),
+    "account.scim_token_revoked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=(),
+    ),
+    "account.scim_settings_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("manage_admins",),
+    ),
 
     # ── Paying for the plan (backend/billing/) ───────────────────────────────
     # Written by a VERIFIED provider webhook (or the hourly sweep applying what
@@ -443,6 +526,9 @@ REASONS: tuple[str, ...] = (
     "supplier_has_no_contact",
     "no_transport_configured",
     "transport_error",
+    # a supplier answered the confirmation link with a different date/quantity
+    # or declined a line; nothing applies until the buyer accepts it
+    "supplier_proposed_changes",
     # ceilings
     "plan_limit_reached",
     # account and access — the WHY of a role change or a new machine credential
@@ -459,6 +545,10 @@ REASONS: tuple[str, ...] = (
     # sign-in the tenant's own provider flow refused (the code is a param)
     "mapped_from_identity_provider_groups",
     "sso_sign_in_refused",
+    # SCIM: the company's identity provider made the change, and a change it
+    # asked for that was refused (the code is a param)
+    "provisioned_by_identity_provider",
+    "scim_request_refused",
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",
@@ -481,6 +571,8 @@ REASONS: tuple[str, ...] = (
     # connected databases: the scheduled refresh could not read the source;
     # `reason_params.error_code` names the failure for the screen to explain
     "sql_source_refresh_failed",
+    # an outbound webhook gave up on `days` different days in a row
+    "webhook_failing_for_days",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

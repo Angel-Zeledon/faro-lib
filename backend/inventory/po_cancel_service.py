@@ -108,6 +108,9 @@ def cancel(tenant_id: str, po_log_id: str, user_id: str,
             "cancel_reason": current.get("cancel_reason"), "changed": False,
         }
     log.info("[po-cancel] CANCEL tenant=%s po=%s by=%s", tenant_id, po_log_id, user_id)
+    # Past the conditional UPDATE: only the call that really cancelled emits.
+    from backend.webhooks.service import emit_po_event
+    emit_po_event(tenant_id, "purchase_order.cancelled", po_log_id)
     return {
         "po_log_id": po_log_id, "po_number": po.get("po_number"),
         "cancelled_at": _iso(updated["cancelled_at"]),

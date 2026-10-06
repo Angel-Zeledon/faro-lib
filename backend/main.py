@@ -345,6 +345,11 @@ from backend.api.v1 import social_auth as social_auth_router  # noqa: E402
 app.include_router(social_auth_router.router, prefix=_PREFIX)
 from backend.api.v1 import sso as sso_router  # noqa: E402
 app.include_router(sso_router.router, prefix=_PREFIX)
+# SCIM 2.0 provisioning (backend/scim/): its own bearer token, never a JWT or
+# an API key. Answers 401 until a tenant admin mints a token.
+from backend.api.v1 import scim as scim_router  # noqa: E402
+app.include_router(scim_router.router, prefix=_PREFIX)
+app.include_router(scim_router.admin_router, prefix=_PREFIX)
 app.include_router(users.router,         prefix=_PREFIX)
 app.include_router(sessions.router,      prefix=_PREFIX)
 # BEFORE the upload router: its `/datasets/{dataset_id}` would swallow the fixed
@@ -393,6 +398,8 @@ from backend.api.v1 import forecast_adjustments as forecast_adjustments_router  
 app.include_router(forecast_adjustments_router.router, prefix=_PREFIX)
 from backend.api.v1 import committed_demand as committed_demand_router  # noqa: E402
 app.include_router(committed_demand_router.router, prefix=_PREFIX)
+from backend.api.v1 import purchase_budget as purchase_budget_router  # noqa: E402
+app.include_router(purchase_budget_router.router, prefix=_PREFIX)
 from backend.api.v1 import supply_contracts as supply_contracts_router  # noqa: E402
 app.include_router(supply_contracts_router.router, prefix=_PREFIX)
 from backend.api.v1 import demand_plans as demand_plans_router  # noqa: E402
@@ -406,6 +413,12 @@ app.include_router(ai_insights.router,     prefix=_PREFIX)
 app.include_router(demo.router,            prefix=_PREFIX)
 from backend.api.v1 import trial as trial_router  # noqa: E402
 app.include_router(trial_router.router,    prefix=_PREFIX)
+# The supplier's confirmation page (public: the link is the credential) and the
+# buyer's side of it (read the answers, accept a change).
+from backend.api.v1 import supplier_portal as supplier_portal_router  # noqa: E402
+app.include_router(supplier_portal_router.router, prefix=_PREFIX)
+from backend.api.v1 import po_confirmations as po_confirmations_router  # noqa: E402
+app.include_router(po_confirmations_router.router, prefix=_PREFIX)
 app.include_router(entitlements.router,    prefix=_PREFIX)
 from backend.api.v1 import feedback as feedback_router  # noqa: E402
 app.include_router(feedback_router.router, prefix=_PREFIX)

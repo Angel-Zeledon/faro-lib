@@ -2,15 +2,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   listApiKeys, createApiKey, revokeApiKey,
-  listWebhooks, createWebhook, deleteWebhook,
+  listWebhooks, createWebhook, deleteWebhook, listWebhookEvents,
+  rotateWebhookSecret, sendWebhookTest, enableWebhook, listWebhookDeliveries,
   getSessions, getSchedule, saveSchedule, deleteSchedule, listSchedules,
   getTenantTimezone, listScheduleHistory,
 } from '@/lib/api'
-import type { ApiKey, ApiKeyScope, Webhook, JobSchedule, SessionInfo } from '@/lib/types'
+import type {
+  ApiKey, ApiKeyScope, Webhook, WebhookDelivery, WebhookDeliveryStatus, JobSchedule, SessionInfo,
+} from '@/lib/types'
 import type { TenantTimezone, ScheduleRun } from '@/lib/api'
 import Button from '@/components/ui/Button'
 import Input, { Select } from '@/components/ui/Input'
 import Card from '@/components/ui/Card'
+import Badge from '@/components/ui/Badge'
 import Spinner from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/States'
 import { Key, Webhook as WebhookIcon, Clock, Copy, Check, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
@@ -28,11 +32,6 @@ import ApiKeysMobile from './ApiKeysMobile'
 import RunDurationsPanel from './RunDurationsPanel'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
-
-const WEBHOOK_EVENTS = [
-  { id: 'job.completed',     labelKey: 'settings.event_job_completed' },
-  { id: 'job.failed',        labelKey: 'settings.event_job_failed' },
-]
 
 const CRON_OPTIONS = [
   { labelKey: 'settings.cron_mon_6am',        value: '0 6 * * 1' },
@@ -252,8 +251,24 @@ function ApiKeysTab() {
 }
 
 // ── Webhooks tab ──────────────────────────────────────────────────────────────
+// Shown when the catalogue call fails, so the form still works: the same names
+// the backend offers (backend/webhooks/catalog.py).
+const FALLBACK_WEBHOOK_EVENTS = [
+  'purchase_order.approved', 'purchase_order.rejected', 'purchase_order.sent',
+  'purchase_order.cancelled', 'stockout.imminent', 'commitment.at_risk',
+  'commitment.fulfilled', 'job.completed', 'job.failed',
+]
+
+const DELIVERY_VARIANT: Record<WebhookDeliveryStatus, 'success' | 'info' | 'danger' | 'muted'> = {
+  delivered: 'success', pending: 'info', failed: 'danger', abandoned: 'muted',
+}
+
+const eventDescKey = (type: string) => `settings.webhook_event_desc_${type.replace(/[.-]/g, '_')}`
+const shortTime = (iso: string | null) => (iso ? iso.slice(0, 19).replace('T', ' ') : '—')
+
 function WebhooksTab() {
   const { t } = useLanguage()
+  const confirm = useConfirm()
   const { undoable } = useToast()
   const [hooks,    setHooks]    = useState<Webhook[]>([])
   const [loading,  setLoading]  = useState(true)
@@ -262,6 +277,14 @@ function WebhooksTab() {
   const [url,      setUrl]      = useState('')
   const [events,   setEvents]   = useState<string[]>([])
   const [saving,   setSaving]   = useState(false)
+  const [eventTypes, setEventTypes] = useState<string[]>(FALLBACK_WEBHOOK_EVENTS)
+  // The signing secret is visible exactly once, after create or rotate.
+  const [secret,   setSecret]   = useState<{ id: string; value: string } | null>(null)
+  const [copied,   setCopied]   = useState(false)
+  const [busy,     setBusy]     = useState<string | null>(null)
+  const [logOf,    setLogOf]    = useState<string | null>(null)
+  const [log,      setLog]      = useState<WebhookDelivery[]>([])
+  const [logLoading, setLogLoading] = useState(false)
 
   const load = useCallback(() => {
     listWebhooks()
@@ -271,16 +294,74 @@ function WebhooksTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    listWebhookEvents()
+      .then(r => { if (r.events.length) setEventTypes(r.events.map(e => e.type)) })
+      .catch(() => { /* keep the fallback list */ })
+  }, [])
+
+  const loadLog = useCallback((id: string) => {
+    setLogLoading(true)
+    listWebhookDeliveries(id)
+      .then(setLog)
+      .catch(e => setError(e.message))
+      .finally(() => setLogLoading(false))
+  }, [])
+
+  const openLog = (id: string) => {
+    if (logOf === id) { setLogOf(null); return }
+    setLogOf(id); setLog([]); loadLog(id)
+  }
 
   const handleCreate = async () => {
     if (!url.startsWith('https://') || !events.length) return
     setSaving(true); setError(null)
-    try { await createWebhook(url, events); setUrl(''); setEvents([]); setShowForm(false); load() }
+    try {
+      const made = await createWebhook(url, events)
+      setSecret({ id: made.id, value: made.secret }); setCopied(false)
+      setUrl(''); setEvents([]); setShowForm(false); load()
+    }
     catch (e: any) { setError(e.message) }
     finally { setSaving(false) }
   }
 
-  // Re-adding a webhook is retyping a URL and ticking two boxes, so the modal
+  const copySecret = () => {
+    if (!secret) return
+    navigator.clipboard.writeText(secret.value)
+    setCopied(true); setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleRotate = async (id: string) => {
+    if (!(await confirm({
+      title: t('settings.webhook_rotate_title'), message: t('settings.webhook_rotate_confirm'), danger: true,
+    }))) return
+    setBusy(id); setError(null)
+    try {
+      const r = await rotateWebhookSecret(id)
+      setSecret({ id, value: r.secret }); setCopied(false); load()
+    } catch (e: any) { setError(e.message) }
+    finally { setBusy(null) }
+  }
+
+  const handleTest = async (id: string) => {
+    setBusy(id); setError(null)
+    try {
+      await sendWebhookTest(id)
+      setLogOf(id); setLog([]); loadLog(id)
+      // The worker picks it up within seconds: look again shortly after.
+      setTimeout(() => loadLog(id), 4000)
+    } catch (e: any) { setError(e.message) }
+    finally { setBusy(null) }
+  }
+
+  const handleEnable = async (id: string) => {
+    setBusy(id); setError(null)
+    try { await enableWebhook(id); load() }
+    catch (e: any) { setError(e.message) }
+    finally { setBusy(null) }
+  }
+
+  // Re-adding a webhook is retyping a URL and ticking boxes, so the modal
   // was pure friction. The row leaves at once and the DELETE is held back for
   // the length of the undo window.
   const handleDelete = (id: string) => {
@@ -333,13 +414,22 @@ function WebhooksTab() {
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--dim)', display: 'block', marginBottom: 6 }}>{t('settings.events_to_subscribe')}</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {WEBHOOK_EVENTS.map(ev => (
-                <label key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
-                  <input type="checkbox" checked={events.includes(ev.id)} onChange={() => toggleEvent(ev.id)} style={{ accentColor: 'var(--accent)' }} />
-                  {t(ev.labelKey)}
-                </label>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {eventTypes.map(type => {
+                const desc = t(eventDescKey(type))
+                return (
+                  <label key={type} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+                    <input type="checkbox" checked={events.includes(type)} onChange={() => toggleEvent(type)} style={{ accentColor: 'var(--accent)', marginTop: 2 }} />
+                    <span>
+                      <span style={{ fontWeight: 600 }}>{webhookEventLabel(t, type)}</span>
+                      <span style={{ fontFamily: 'monospace', fontSize: 10.5, color: 'var(--dim)', marginLeft: 6 }}>{type}</span>
+                      {desc !== eventDescKey(type) && (
+                        <span style={{ display: 'block', fontSize: 11, color: 'var(--dim)' }}>{desc}</span>
+                      )}
+                    </span>
+                  </label>
+                )
+              })}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -355,6 +445,29 @@ function WebhooksTab() {
         </Card>
       )}
 
+      {secret && (
+        <div style={{ padding: '14px 16px', borderRadius: 8, background: 'rgba(46,139,98,0.07)', border: '1px solid rgba(46,139,98,0.25)' }}>
+          <div style={{ fontSize: 12, color: '#2E8B62', fontWeight: 600, marginBottom: 4 }}>
+            {t('settings.webhook_secret_title')}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--dim)', marginBottom: 8 }}>
+            {t('settings.webhook_secret_shown_once')}
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Input
+              readOnly value={secret.value}
+              style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', background: 'var(--surface)' }}
+            />
+            <Button variant="secondary" size="sm" icon={copied ? <Check size={12} /> : <Copy size={12} />} onClick={copySecret}>
+              {copied ? t('settings.copied') : t('settings.copy')}
+            </Button>
+            <button onClick={() => setSecret(null)} aria-label={t('common.close')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--dim)' }}>
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div style={{ fontSize: 12, color: '#C0504D', display: 'flex', gap: 6, alignItems: 'center' }}>
           <AlertTriangle size={13} />{error}
@@ -368,15 +481,40 @@ function WebhooksTab() {
       ) : (
         <table className="data-table">
           <thead>
-            <tr><th>{t('settings.col_url')}</th><th>{t('settings.col_events')}</th><th>{t('settings.col_created')}</th><th></th></tr>
+            <tr>
+              <th>{t('settings.col_url')}</th><th>{t('settings.col_events')}</th>
+              <th>{t('settings.webhook_col_state')}</th><th>{t('settings.col_created')}</th><th></th>
+            </tr>
           </thead>
           <tbody>
             {hooks.map(h => (
               <tr key={h.id}>
                 <td style={{ fontFamily: 'monospace', fontSize: 11, maxWidth: 220, overflow: 'hidden', overflowWrap: 'anywhere' }}>{h.url}</td>
                 <td style={{ fontSize: 11 }}>{h.events.map(e => webhookEventLabel(t, e)).join(', ')}</td>
-                <td style={{ fontSize: 11, color: 'var(--dim)' }}>{h.created_at.slice(0, 10)}</td>
                 <td>
+                  {h.disabled_at
+                    ? <Badge variant="danger">{t('settings.webhook_state_disabled')}</Badge>
+                    : <Badge variant="success">{t('settings.webhook_state_active')}</Badge>}
+                  {h.warehouse_ids !== null && (
+                    <Badge variant="muted" style={{ marginLeft: 4 }}>{t('settings.webhook_state_scoped')}</Badge>
+                  )}
+                </td>
+                <td style={{ fontSize: 11, color: 'var(--dim)' }}>{h.created_at.slice(0, 10)}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <Button variant="ghost" size="sm" onClick={() => openLog(h.id)}>
+                    {t('settings.webhook_log')}
+                  </Button>{' '}
+                  <Button variant="secondary" size="sm" loading={busy === h.id} onClick={() => handleTest(h.id)}>
+                    {t('settings.webhook_send_test')}
+                  </Button>{' '}
+                  <Button variant="secondary" size="sm" disabled={busy === h.id} onClick={() => handleRotate(h.id)}>
+                    {t('settings.webhook_rotate')}
+                  </Button>{' '}
+                  {h.disabled_at && (
+                    <><Button variant="primary" size="sm" disabled={busy === h.id} onClick={() => handleEnable(h.id)}>
+                      {t('settings.webhook_enable')}
+                    </Button>{' '}</>
+                  )}
                   <Button variant="danger" size="sm" icon={<Trash2 size={11} />} onClick={() => handleDelete(h.id)}>
                     {t('common.delete')}
                   </Button>
@@ -385,6 +523,51 @@ function WebhooksTab() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {logOf && (
+        <Card tone="inset" radius={8} padding="14px 16px" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 12, fontWeight: 600 }}>{t('settings.webhook_log_title')}</div>
+            <Button variant="ghost" size="sm" loading={logLoading} onClick={() => loadLog(logOf)}>
+              {t('common.retry')}
+            </Button>
+          </div>
+          {!logLoading && log.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('settings.webhook_log_empty')}</div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t('settings.webhook_log_col_time')}</th><th>{t('settings.col_events')}</th>
+                  <th>{t('settings.webhook_log_col_status')}</th><th>{t('settings.webhook_log_col_attempts')}</th>
+                  <th>{t('settings.webhook_log_col_code')}</th><th>{t('settings.webhook_log_col_next')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {log.map(d => (
+                  <tr key={d.id}>
+                    <td style={{ fontSize: 11 }}>{shortTime(d.created_at)}</td>
+                    <td style={{ fontSize: 11 }}>
+                      {d.is_test ? t('settings.webhook_test_event') : webhookEventLabel(t, d.event_type)}
+                    </td>
+                    <td>
+                      <Badge variant={DELIVERY_VARIANT[d.status] ?? 'muted'}>
+                        {t(`settings.webhook_status_${d.status}`)}
+                      </Badge>
+                      {d.last_error && (
+                        <div style={{ fontSize: 10.5, color: 'var(--dim)', fontFamily: 'monospace' }}>{d.last_error}</div>
+                      )}
+                    </td>
+                    <td style={{ fontSize: 11 }}>{d.attempts}</td>
+                    <td style={{ fontSize: 11 }}>{d.last_status_code ?? '—'}</td>
+                    <td style={{ fontSize: 11, color: 'var(--dim)' }}>{d.status === 'pending' ? shortTime(d.next_attempt_at) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
       )}
     </div>
   )
@@ -798,9 +981,9 @@ function SchedulesTab() {
  * · API keys: a key can be created and listed, and then authenticates nothing
  *   — no endpoint accepts one. The tab shipped its own "coming soon" banner,
  *   which is an admission that the screen was misleading, not a fix for it.
- * · Webhooks: the delivery is real (HMAC-signed) but it is a single POST with
- *   no retry and only two events, both about training runs. A user who
- *   configures one reasonably expects it to be reliable.
+ * · Webhooks (HISTORY, enabled again 2026-10-05): the delivery was a single
+ *   POST with no retry and only two events, both about training runs. It is now
+ *   a durable, retried, logged delivery of business events.
  *
  * A control that does nothing is worse than an absent one: it spends the
  * user's trust and their time. They come back by flipping these to true —
@@ -813,7 +996,10 @@ const ENABLED: Record<Tab, boolean> = {
   // there was no way to obtain a key from the product at all, so the API existed
   // for nobody.
   'api-keys':  true,
-  'webhooks':  false,
+  // Turned on 2026-10-05, with what it was missing: durable queue with retries
+  // and backoff, a delivery log, business events (orders, stockouts,
+  // commitments) and a signing secret the owner can finally see and rotate.
+  'webhooks':  true,
   'schedules': true,
 }
 
@@ -848,7 +1034,7 @@ export default function SettingsPage() {
           )}
           <div key={tab} className="page-enter" data-tour={`settings.${tab}`}>
             {ENABLED['api-keys']  && tab === 'api-keys'  && <FeatureGate feature="api"><ApiKeysTab /></FeatureGate>}
-            {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
+            {ENABLED['webhooks']  && tab === 'webhooks'  && <FeatureGate feature="api"><WebhooksTab /></FeatureGate>}
             {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
             {ENABLED['schedules'] && tab === 'schedules' && <RunDurationsPanel />}
           </div>
@@ -902,7 +1088,7 @@ export default function SettingsPage() {
           is drawn left the tour pointing at nothing. */}
       <Card tone="inset" padding="20px 24px" data-tour={`settings.${tab}`}>
         {ENABLED['api-keys']  && tab === 'api-keys'  && <FeatureGate feature="api"><ApiKeysTab /></FeatureGate>}
-        {ENABLED['webhooks']  && tab === 'webhooks'  && <WebhooksTab />}
+        {ENABLED['webhooks']  && tab === 'webhooks'  && <FeatureGate feature="api"><WebhooksTab /></FeatureGate>}
         {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
       </Card>
       {ENABLED['schedules'] && tab === 'schedules' && <RunDurationsPanel />}

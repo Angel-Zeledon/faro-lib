@@ -44,7 +44,7 @@ _DIMENSIONED = re.compile(
 # Routers whose EVERY route is warehouse-dimensioned, whatever words its body
 # happens to use: the per-function text scan missed the commitments list once,
 # so a new route in one of these modules is flagged by where it lives.
-DIMENSIONED_MODULES = {"committed_demand.py"}
+DIMENSIONED_MODULES = {"committed_demand.py", "purchase_budget.py"}
 _HELPER = re.compile(r"wscope\.|warehouse_scope|_require_transfer_end_in_scope")
 _VERBS = {"get", "post", "put", "patch", "delete"}
 
@@ -59,6 +59,8 @@ ALLOWED: dict[str, str] = {
     "inventory_import.py:po_import_preview":
         "A dry run over the caller's own uploaded file; writes nothing and reads no "
         "stored stock. The import itself (po_import) is guarded.",
+    "webhooks.py:list_event_types":
+        "A static catalogue of event names and payload keys; no tenant data.",
     "inventory.py:supplier_scorecard":
         "Supplier-level statistics (lead time, on-time and fill rate). Not keyed by "
         "warehouse and shows no stock or warehouse names.",

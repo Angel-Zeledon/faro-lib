@@ -60,6 +60,14 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("inventory_event_multipliers", "inventory_event_multipliers", "*"),
     ("inventory_po_log", "inventory_po_log", "*"),
     ("inventory_po_items", "inventory_po_items", "*"),
+    # Supplier confirmation links. The link's token hash is a credential and is
+    # never exported — who was asked, when, and what they answered is.
+    ("po_confirmation_requests", "po_confirmation_requests",
+     "id, tenant_id, po_log_id, supplier, requested_date, language, expires_at, "
+     "revoked_at, revoked_by, created_by, created_at, token_issued_at, "
+     "last_viewed_at, submitted_at, reopened_at, reopened_by"),
+    ("po_line_confirmations", "po_line_confirmations", "*"),
+    ("po_confirmation_acceptances", "po_confirmation_acceptances", "*"),
     ("inventory_shrinkage", "inventory_shrinkage", "*"),
     ("stock_counts", "stock_counts", "*"),
     ("stock_count_lines", "stock_count_lines", "*"),
@@ -83,6 +91,7 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("forecast_adjustments", "forecast_adjustments", "*"),
     ("committed_demand", "committed_demand", "*"),
     ("supply_contracts", "supply_contracts", "*"),
+    ("purchase_budgets", "purchase_budgets", "*"),
     ("demand_plan_versions", "demand_plan_versions", "*"),
     ("demand_plan_version_events", "demand_plan_version_events", "*"),
     ("spike_edits", "spike_edits", "*"),
@@ -102,12 +111,27 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("api_keys", "api_keys", "id, tenant_id, name, last_used, created_at"),
     # Calls per key per day: what a call-based bill is computed from.
     ("api_usage_daily", "api_usage_daily", "*"),
-    ("webhooks", "webhooks", "id, tenant_id, url, events, created_at"),
+    ("webhooks", "webhooks",
+     "id, tenant_id, url, events, created_at, created_by, warehouse_scope, "
+     "disabled_at, disabled_reason, failure_days, last_failure_on, secret_rotated_at"),
+    # The delivery log without the payload (the receiver has it). The
+    # once-per-transition state table is internal bookkeeping, erased but not
+    # exported.
+    ("webhook_deliveries", "webhook_deliveries",
+     "id, tenant_id, webhook_id, event_id, event_type, is_test, status, attempts, "
+     "last_status_code, last_error, next_attempt_at, created_at, last_attempt_at, "
+     "delivered_at"),
     ("user_permissions", "user_permissions", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
     # Microsoft / Apple is the person's data, so it travels with the export.
     ("user_identities", "user_identities",
      "id, user_id, tenant_id, provider, subject, email, created_at, last_used_at"),
+    # SCIM provisioning. The token travels as metadata only - never its hash.
+    ("scim_tokens", "scim_tokens",
+     "id, tenant_id, manage_admins, created_at, created_by, last_used_at, "
+     "revoked_at, revoked_by"),
+    ("scim_events", "scim_events", "*"),
+    ("scim_user_links", "scim_user_links", "*"),
     # Paying for the plan. No secret lives in these tables (keys and webhook
     # secrets are instance configuration, never per tenant); the provider ids
     # are the tenant's own records at Stripe / PayPal, so they travel.
@@ -203,6 +227,11 @@ _DELETE_ORDER: list[str] = [
     # belongs to a tenant".
     "sso_domains",
     "sso_providers",
+    # SCIM (2026-10-05): all three cascade from tenants (the links also from
+    # users); listed for the same reason. Links before `users` below.
+    "scim_events",
+    "scim_user_links",
+    "scim_tokens",
     "model_artifacts",
     # Billing (2026-10-05). The first two cascade from tenants; the event log
     # has no FK (an event may name no known tenant) and is only removed here.
@@ -220,6 +249,7 @@ _DELETE_ORDER: list[str] = [
     "forecast_adjustments",
     "committed_demand",
     "supply_contracts",
+    "purchase_budgets",
     # Demand plan versions are permanent (immutable rows); only whole-tenant
     # erasure removes them. Events first: they reference their version.
     "demand_plan_version_events",
@@ -227,6 +257,12 @@ _DELETE_ORDER: list[str] = [
     "spike_edit_applications",
     "spike_edits",
     "sku_analogies",
+    # Supplier confirmation answers, newest dependency first. They cascade from
+    # the tenant, listed because this is the reviewable answer to "what belongs
+    # to a tenant".
+    "po_confirmation_acceptances",
+    "po_line_confirmations",
+    "po_confirmation_requests",
     "inventory_po_items",
     "supplier_lead_time_obs",
     "inventory_po_log",
@@ -261,6 +297,8 @@ _DELETE_ORDER: list[str] = [
     "session_accuracy_tracking",
     "inbound_email_messages",
     "inbound_email_addresses",
+    "webhook_deliveries",
+    "webhook_transition_state",
     "webhooks",
     "api_usage_daily",
     "api_keys",

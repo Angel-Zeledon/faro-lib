@@ -51,6 +51,9 @@ import { renderExplanation } from '@/lib/explanationCopy'
 import { StaleSignalChip } from '@/components/ui/StaleDataBanner'
 import { ErrorState, LoadingState, SkeletonCards, useErrorDetail } from '@/components/ui/States'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import {
+  RequestConfirmationCheckbox, useRequestConfirmationPref, confirmationNote,
+} from '@/components/po/SupplierConfirmation'
 import { RequestApprovalButton, usePOApproval } from '@/components/po/POApproval'
 import {
   SupplierContactHealthBanner, SupplierLeadTimeAlertBanner,
@@ -59,6 +62,7 @@ import BottomSheet from '@/components/mobile/BottomSheet'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { fmtNum } from '@/lib/numberLocale'
 import { StaleLine, useTabFold } from './folds'
+import { BudgetChip, type BudgetNote } from '@/components/inventory/BudgetPanel'
 import {
   C, AllClear, StatusMark, SourceBadge, provenanceText, summarizeAssumptions,
   tOr, type ActionItem, IncomingNote, MoneyAtRiskNote, OrderedNote,
@@ -91,6 +95,8 @@ interface HoyMobileProps {
   onChangeSupplier: (sku: string, supplierId: string) => void
   onClearCart: () => void
   onGenerate:  () => void
+  /** Where the purchase budget puts each SKU (funded / partial / deferred). */
+  budgetNotes?: Record<string, BudgetNote>
   /** True while the order is being saved: the generate button is disabled so
    *  a second tap cannot start a second order. */
   generating?: boolean
@@ -134,7 +140,7 @@ export default function HoyMobile(props: HoyMobileProps) {
   const {
     loading, error, onRetry, briefing, firstName, freshness, freshnessChip, semaphoreStale,
     cart, approved, onApprove, onRemove, onReject, onChangeQty, suppliers, onChangeSupplier,
-    onClearCart, onGenerate, generating = false, canDecide,
+    onClearCart, onGenerate, budgetNotes, generating = false, canDecide,
     multiWarehouse, warehouses, destWarehouse, onDestWarehouse,
     generatedPO, generatedLines, sendState, sendResult, sendError, onSendNow, sendReason,
     onDismissGenerated, pendingReceptions, overduePOs, onReceive,
@@ -163,6 +169,7 @@ export default function HoyMobile(props: HoyMobileProps) {
     item, briefing: briefing!, stale: semaphoreStale, canDecide,
     noContact: !!item.supplier && noContactNames.has(item.supplier.toLowerCase()),
     lateAlert: item.supplier ? lateBySupplier.get(item.supplier.toLowerCase()) ?? null : null,
+    budgetNote: budgetNotes?.[item.sku] ?? null,
     onApprove: () => onApprove(item.sku),
     onRemove: () => onRemove(item.sku),
     onRestore: () => onApprove(item.sku),
@@ -445,8 +452,9 @@ export default function HoyMobile(props: HoyMobileProps) {
 const listReset: React.CSSProperties = { listStyle: 'none', margin: 0, padding: 0 }
 
 // ── One decision, one card ───────────────────────────────────────────────────
-function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestore, onChangeQty, onOpen, canDecide, noContact = false, lateAlert = null }: {
+function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestore, onChangeQty, onOpen, canDecide, noContact = false, lateAlert = null, budgetNote = null }: {
   item:        ActionItem
+  budgetNote?: BudgetNote | null
   noContact?:  boolean
   lateAlert?:  SupplierLeadTimeAlert | null
   briefing:    MorningBriefing
@@ -567,6 +575,7 @@ function MobileActionCard({ item, briefing, stale, onApprove, onRemove, onRestor
         <MoneyAtRiskNote item={item} />
         <IncomingNote item={item} />
         <OrderedNote item={item} />
+        {budgetNote && <div style={{ marginTop: 6 }}><BudgetChip note={budgetNote} /></div>}
         {(noContact || lateAlert) && item.supplier && (
           <div style={{ marginTop: 6, fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>
             {noContact && (
@@ -971,6 +980,7 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
   // Only a tenant with an approval rule ever gets `required`: for everybody
   // else this is `null`/not required and the sheet is what it always was.
   const { data: approval, reload: reloadApproval } = usePOApproval(shown?.id)
+  const [requestConfirmation, setRequestConfirmation] = useRequestConfirmationPref()
   if (!shown) return null
   const bySupplier = Object.entries(lines.reduce<Record<string, ActionItem[]>>((acc, i) => {
     const key = i.supplier || ''
@@ -1027,6 +1037,9 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
               {t('roi.send_po_unresolved')} {(sendResult.unresolved ?? []).map(u => u.sku).join(', ')}
             </div>
           )}
+          {confirmationNote(sendResult, t) && (
+            <div style={{ fontSize: 13, color: C.muted }}>{confirmationNote(sendResult, t)}</div>
+          )}
         </div>
       ) : (
         approval?.required ? (
@@ -1041,6 +1054,7 @@ function GeneratedSheet({ po, lines, sendState, sendResult, sendError, onSendNow
               {t('hoy.generate_send_failed')} {errorDetail(sendError)}
             </div>
           )}
+          <RequestConfirmationCheckbox checked={requestConfirmation} onChange={setRequestConfirmation} />
           <button
             className="mobile-btn mobile-btn-primary"
             onClick={onSendNow}

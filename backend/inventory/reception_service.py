@@ -104,12 +104,17 @@ def mark_po_sent(tenant_id: str, po_log_id: str) -> None:
     """
     from backend.inventory import po_approval_service as approval_svc
     approval_svc.assert_sendable(tenant_id, po_log_id)
-    execute(
+    stamped = query_one(
         """UPDATE inventory_po_log
               SET sent_at = NOW()
-            WHERE id = %s AND tenant_id = %s AND sent_at IS NULL""",
+            WHERE id = %s AND tenant_id = %s AND sent_at IS NULL
+        RETURNING id""",
         (po_log_id, tenant_id),
     )
+    if stamped is not None:
+        # First send only (a resend finds sent_at already set and emits nothing).
+        from backend.webhooks.service import emit_po_event
+        emit_po_event(tenant_id, "purchase_order.sent", po_log_id)
 
 
 def receive_po(
@@ -1074,6 +1079,11 @@ def get_overdue_receptions(tenant_id: str) -> list[dict]:
 
     now = datetime.now(timezone.utc)
     out: list[dict] = []
+    # Dates a supplier promised AND a person accepted (po_confirmation_service).
+    # Empty unless somebody accepted one, so nothing changes until then.
+    from backend.inventory import po_confirmation_core as confirm_core
+    from backend.inventory import po_confirmation_service as confirm_svc
+    accepted = confirm_svc.accepted_promises(tenant_id, [p["id"] for p in pos])
     for po in pos:
         po_log_id = po["id"]
         generated_at = po["generated_at"]
@@ -1093,6 +1103,19 @@ def get_overdue_receptions(tenant_id: str) -> list[dict]:
         for prov in suppliers:
             lead_time, source = _effective_lead_time(tenant_id, prov)
             expected_arrival = generated_at + timedelta(days=lead_time)
+            arrival_source = confirm_core.SOURCE_MODEL
+            promises = accepted.get((po_log_id, prov))
+            if promises:
+                # The supplier promised a date and the buyer accepted it: the
+                # order is expected then, not when the model guessed. A line with
+                # no accepted promise keeps the model's date (see the helper).
+                line_ids = [i["id"] for i in ordered
+                            if (i.get("supplier") or "").strip() == prov]
+                promised_day, arrival_source = confirm_core.expected_arrival_with_promises(
+                    expected_arrival.date(), [promises.get(i) for i in line_ids])
+                if arrival_source == confirm_core.SOURCE_SUPPLIER_PROMISE:
+                    expected_arrival = datetime.combine(
+                        promised_day, datetime.min.time(), tzinfo=timezone.utc)
             if now <= expected_arrival:
                 continue
             out.append({
@@ -1103,6 +1126,7 @@ def get_overdue_receptions(tenant_id: str) -> list[dict]:
                 "days_overdue":     (now - expected_arrival).days,
                 "lead_time_used":   round(lead_time, 1),
                 "lead_time_source": source,
+                "expected_arrival_source": arrival_source,
             })
 
     out.sort(key=lambda r: -r["days_overdue"])

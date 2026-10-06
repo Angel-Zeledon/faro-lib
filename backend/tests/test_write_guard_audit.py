@@ -37,11 +37,20 @@ MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 # ── Deliberate exceptions ─────────────────────────────────────────────────────
 # Keyed by "METHOD /path" exactly as FastAPI reports it. The value is why.
 PUBLIC = {
+    "POST /api/v1/scim/v2/Users": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PUT /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PATCH /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "DELETE /api/v1/scim/v2/Users/{user_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "POST /api/v1/scim/v2/Groups": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PUT /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "PATCH /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
+    "DELETE /api/v1/scim/v2/Groups/{group_id}": "authenticated by the per-tenant SCIM bearer token, never a user JWT",
     "POST /api/v1/billing/stripe/webhook": "authenticated by the provider's signature (HMAC) over the raw body",
     "POST /api/v1/billing/paypal/webhook": "authenticated by PayPal's verify-webhook-signature call",
     "POST /api/v1/auth/login": "you cannot be authorised before you log in",
     "POST /api/v1/auth/signup": "creates the account and its tenant",
     "POST /api/v1/trial": "the landing visitor has no account yet; it creates one",
+    "POST /api/v1/supplier-portal/{token}/confirm": "a supplier answers a purchase order from the link in the message, no account; the 256-bit link token is the credential",
     "POST /api/v1/auth/refresh": "the refresh token IS the credential",
     "POST /api/v1/auth/logout": "revoking your own session needs no role",
     "POST /api/v1/auth/forgot-password": "you are locked out by definition",
@@ -114,6 +123,8 @@ READ_ONLY_POSTS = {
     "/reconcile": "recomputes a hierarchy total and returns it",
     "/run": "runs a saved scenario and returns the comparison",
     "cash-calendar/fit": "fits a payment pattern and returns it",
+    "budget/plan": "splits the current recommendations into funded / deferred under a budget and returns it; creates no order",
+    "budget/check": "previews whether an order would exceed a budget; writes nothing",
     # MCP is JSON-RPC: the method lives in the BODY, so `tools/list` and every
     # read tool arrive as a POST. The excuse holds only because the catalogue
     # (`backend/mcp/catalog.py`) is closed and every entry in it reads — which
