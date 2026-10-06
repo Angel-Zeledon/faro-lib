@@ -14,6 +14,7 @@ mod entitlements;
 mod error;
 mod limits;
 mod middleware;
+mod org;
 mod pycompat;
 mod pyjson;
 mod query;

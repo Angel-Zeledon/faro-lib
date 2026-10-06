@@ -11,6 +11,8 @@ pub mod webhooks;
 pub mod po_cancellation;
 pub mod po_payments;
 pub mod signal_thresholds;
+pub mod org;
+pub mod org_consolidated;
 
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
@@ -70,6 +72,21 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // Organization hierarchy (Rust only, no Python route): links, grants and
+        // the consolidated read-only views.
+        .route("/api/v1/org/overview", get(org::overview))
+        .route("/api/v1/org/links", post(org::create_link).get(org::list_links))
+        .route("/api/v1/org/links/accept", post(org::accept))
+        .route("/api/v1/org/links/{link_id}", delete(org::revoke))
+        .route("/api/v1/org/links/{link_id}/members", get(org::list_members))
+        .route(
+            "/api/v1/org/links/{link_id}/members/{user_id}",
+            axum::routing::put(org::grant).delete(org::ungrant),
+        )
+        .route("/api/v1/org/consolidated/committed-demand", get(org_consolidated::committed_demand))
+        .route("/api/v1/org/consolidated/stock-signals", get(org_consolidated::stock_signals))
+        .route("/api/v1/org/consolidated/purchase-orders", get(org_consolidated::purchase_orders))
+        .route("/api/v1/org/consolidated/budgets", get(org_consolidated::budgets))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }

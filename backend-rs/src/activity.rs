@@ -57,6 +57,11 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    OrgLinkCreated,
+    OrgLinkAccepted,
+    OrgLinkRevoked,
+    OrgGrantAdded,
+    OrgGrantRemoved,
 }
 
 impl Event {
@@ -79,6 +84,11 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::OrgLinkCreated => ("org.link_created", "account", "info", &["label"]),
+            Event::OrgLinkAccepted => ("org.link_accepted", "account", "info", &["label"]),
+            Event::OrgLinkRevoked => ("org.link_revoked", "account", "warning", &["label"]),
+            Event::OrgGrantAdded => ("org.grant_added", "account", "info", &["label", "member"]),
+            Event::OrgGrantRemoved => ("org.grant_removed", "account", "info", &["label", "member"]),
         }
     }
 }

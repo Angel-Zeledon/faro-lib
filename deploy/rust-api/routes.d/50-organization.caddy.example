@@ -1,0 +1,36 @@
+# DISABLED EXAMPLE. Rename to 50-organization.caddy inside the gateway's
+# /etc/caddy/routes.d/ to turn the organization hierarchy on; move it to off/
+# and `caddy reload` to turn it off.
+#
+# Organization hierarchy (backend-rs/src/routes/org.rs, org_consolidated.rs):
+#   links and grants    /api/v1/org/overview
+#                       /api/v1/org/links              (GET, POST)
+#                       /api/v1/org/links/accept       (POST)
+#                       /api/v1/org/links/{id}         (DELETE)
+#                       /api/v1/org/links/{id}/members (GET)
+#                       /api/v1/org/links/{id}/members/{user_id} (PUT, DELETE)
+#   consolidated reads  /api/v1/org/consolidated/{committed-demand,stock-signals,
+#                                                purchase-orders,budgets}
+#
+# NO PYTHON FAILOVER. These routes exist only in Rust: there is no Python twin
+# for the gateway to fall back to, and a Python answer would be a 404 that looks
+# like "this feature is not there". So the group lists api-rs ONLY. With the Rust
+# container down the gateway answers 502, which is the truth; the rest of the
+# product is unaffected because the other route groups still fail over.
+#
+# The schema (org_links, org_link_grants) is created by the Python app's
+# migrations at boot, and Python itself honours the feature on the paths it
+# still serves: whole-tenant erasure, the data export and deactivating a person
+# (backend/organizations/service.py). Turning this group off hides the screens'
+# data; it does not delete links or grants.
+
+@rs_organization {
+	path /api/v1/org/*
+}
+handle @rs_organization {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
