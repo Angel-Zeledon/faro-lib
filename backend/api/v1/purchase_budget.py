@@ -66,6 +66,8 @@ class CheckLine(BaseModel):
     sku: str = Field(min_length=1, max_length=200)
     qty: float = Field(ge=0, le=1e9)
     unit_cost: Optional[float] = Field(default=None, ge=0, le=1e9)
+    # ISO 4217 code of `unit_cost` when it is not the company's own currency.
+    currency: Optional[str] = Field(default=None, max_length=8)
     supplier: Optional[str] = Field(default=None, max_length=200)
     supplier_id: Optional[str] = Field(default=None, max_length=64)
     warehouse: Optional[str] = Field(default=None, max_length=200)
