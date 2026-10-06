@@ -24,8 +24,8 @@ use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
-use crate::activity::log_action;
-use crate::auth::{self, CurrentUser, Exposure, RequestActors, RouteAuth};
+use crate::audit::{self, Note};
+use crate::auth::{self, Exposure, RequestActors, RouteAuth};
 use crate::error::ApiError;
 use crate::pycompat::{isoformat_utc, py_strip};
 use crate::routes::ok;
@@ -289,24 +289,9 @@ async fn clear_signal_thresholds(
 /// What `AuditMiddleware` writes after a successful catalogued call
 /// (`ROUTES[(method, "/inventory/signal-thresholds")] = config.changed /
 /// setting`). These handlers add no `audit.note`, so target, label, before
-/// and after are all null. A failure is logged, never raised.
-async fn audit_config_changed(pool: &PgPool, user: &CurrentUser, method: &str) {
-    let context = json!({
-        "target_type": "setting",
-        "target_id": null,
-        "target_label": null,
-        "before": null,
-        "after": null,
-        "actor_kind": if user.is_machine() { "api_key" } else { "user" },
-        "method": method,
-        "path": "/inventory/signal-thresholds",
-        "status_code": 200,
-    });
-    if let Err(e) = log_action(pool, &user.tenant_id, &user.user_id, "audit.config.changed", None, &context,
-        "success").await
-    {
-        tracing::warn!(error = %e, "audit trail not recorded");
-    }
+/// and after are all null.
+async fn audit_config_changed(state: &AppState, actors: &RequestActors, method: &str) {
+    audit::record(state, actors, method, "/inventory/signal-thresholds", None, Note::default(), 200).await;
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -356,7 +341,7 @@ pub async fn put_thresholds(
     let mut out = Map::new();
     out.insert("saved".into(), saved);
     out.extend(get_signal_thresholds(&state.pool, &user.tenant_id).await?);
-    audit_config_changed(&state.pool, &user, "PUT").await;
+    audit_config_changed(&state, &actors, "PUT").await;
     Ok(ok(Value::Object(out)))
 }
 
@@ -404,7 +389,7 @@ pub async fn reset_thresholds(
     let mut out = Map::new();
     out.insert("cleared".into(), Value::Bool(cleared));
     out.extend(get_signal_thresholds(&state.pool, &user.tenant_id).await?);
-    audit_config_changed(&state.pool, &user, "DELETE").await;
+    audit_config_changed(&state, &actors, "DELETE").await;
     Ok(ok(Value::Object(out)))
 }
 

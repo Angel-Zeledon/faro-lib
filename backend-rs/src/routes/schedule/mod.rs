@@ -28,8 +28,8 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Map, Value};
 use sqlx::Row;
 
-use crate::activity::log_action;
-use crate::auth::{self, CurrentUser, Exposure, RequestActors, RouteAuth};
+use crate::audit::{self, Note};
+use crate::auth::{self, Exposure, RequestActors, RouteAuth};
 use crate::error::ApiError;
 use crate::pycompat::isoformat_utc;
 use crate::routes::ok;
@@ -144,51 +144,12 @@ fn next_run(cron_expr: &str, zone: &tz::Zone, now: DateTime<Utc>, tenant_id: &st
 
 // ── Audit row (AuditMiddleware for the two catalogued routes) ────────────────
 
-/// `json.dumps(value)` length with Python's defaults (ASCII-escaped, `", "`
-/// and `": "` separators), for the 4000-character note clamp.
-fn py_dumps_len(v: &Value) -> usize {
-    match v {
-        Value::Null => 4,
-        Value::Bool(b) => if *b { 4 } else { 5 },
-        Value::Number(n) => n.to_string().len(),
-        Value::String(s) => {
-            2 + s.chars().map(|c| match c {
-                '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
-                c if (c as u32) < 0x20 || (c as u32) > 0x7e => if (c as u32) > 0xffff { 12 } else { 6 },
-                _ => 1,
-            }).sum::<usize>()
-        }
-        Value::Array(a) => 2 + a.iter().map(py_dumps_len).sum::<usize>() + a.len().saturating_sub(1) * 2,
-        Value::Object(o) => {
-            2 + o.iter().map(|(k, v)| py_dumps_len(&Value::String(k.clone())) + 2 + py_dumps_len(v)).sum::<usize>()
-                + o.len().saturating_sub(1) * 2
-        }
-    }
-}
-
-/// `_clamp`.
-fn clamp(v: Value) -> Value {
-    if v.is_null() || py_dumps_len(&v) <= 4000 { v } else { json!({"truncated": true}) }
-}
-
-async fn write_audit(state: &AppState, user: &CurrentUser, action: &str, method: &str, session_id: &str,
+/// The `audit.schedule.*` row, through the shared writer (`crate::audit`),
+/// with the `audit.note(before=..., after=...)` the Python handlers set.
+async fn write_audit(state: &AppState, actors: &RequestActors, method: &str, session_id: &str,
     before: Value, after: Value) {
-    let context = json!({
-        "target_type": "schedule",
-        "target_id": session_id,
-        "target_label": null,
-        "before": clamp(before),
-        "after": clamp(after),
-        "actor_kind": if user.is_machine() { "api_key" } else { "user" },
-        "method": method,
-        "path": SCHEDULE_PATH,
-        "status_code": 200,
-    });
-    if let Err(e) = log_action(&state.pool, &user.tenant_id, &user.user_id, &format!("audit.{action}"),
-        Some(session_id), &context, "success").await
-    {
-        tracing::warn!(error = %e, "audit trail not recorded");
-    }
+    let note = Note { target_id: None, label: None, before: Some(before), after: Some(after) };
+    audit::record(state, actors, method, SCHEDULE_PATH, Some(session_id), note, 200).await;
 }
 
 // ── Routes ───────────────────────────────────────────────────────────────────
@@ -381,7 +342,7 @@ pub async fn save_schedule(
         row.map(|r| Value::String(r.0)).unwrap_or(Value::Null)
     };
     tracing::info!("[schedule] saved session={session_id} cron={}", body.cron_expr);
-    write_audit(&state, &user, "schedule.saved", "POST", &session_id, before, after).await;
+    write_audit(&state, &actors, "POST", &session_id, before, after).await;
     Ok(ok(json!({
         "id": schedule_id,
         "session_id": session_id,
@@ -416,7 +377,7 @@ pub async fn delete_schedule(
         .execute(&state.pool)
         .await?;
     let before = previous.map(Value::Object).unwrap_or(Value::Null);
-    write_audit(&state, &user, "schedule.deleted", "DELETE", &session_id, before, Value::Null).await;
+    write_audit(&state, &actors, "DELETE", &session_id, before, Value::Null).await;
     Ok(ok(json!({"deleted": session_id})))
 }
 
@@ -451,8 +412,8 @@ mod tests {
     fn dumps_length_matches_python() {
         // len(json.dumps({"cron_expr": "0 6 * * 1", "enabled": True, "retrain_mode": "refit"})) == 68
         let v = json!({"cron_expr": "0 6 * * 1", "enabled": true, "retrain_mode": "refit"});
-        assert_eq!(py_dumps_len(&v), 68);
-        assert_eq!(py_dumps_len(&json!("é")), 8);
+        assert_eq!(crate::pyjson::dumps(&v).chars().count(), 68);
+        assert_eq!(crate::pyjson::dumps(&json!("é")).chars().count(), 8);
     }
 
     #[test]

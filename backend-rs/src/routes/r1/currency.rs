@@ -18,8 +18,8 @@ use axum::{Extension, Json};
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
-use crate::activity::log_action;
-use crate::auth::{self, CurrentUser, Exposure, RequestActors, RouteAuth};
+use crate::audit::{self, Note};
+use crate::auth::{self, Exposure, RequestActors, RouteAuth};
 use crate::error::ApiError;
 use crate::pycompat::py_strip;
 use crate::routes::ok;
@@ -119,39 +119,6 @@ async fn currency_of(pool: &PgPool, tenant_id: &str) -> Result<Value, ApiError> 
     entry(&code).ok_or_else(ApiError::internal)
 }
 
-// ── audit trail (backend/middleware/audit_trail.py) ──────────────────────────
-
-/// The row `AuditMiddleware` writes after a successful catalogued call made
-/// by a person (`audit.note` supplies target, label, before and after).
-pub(crate) async fn record_audit(
-    pool: &PgPool,
-    user: &CurrentUser,
-    action: &str,
-    target_type: &str,
-    method: &str,
-    template: &str,
-    status_code: u16,
-    note: (&str, &str, Value, Value),
-) {
-    let (target_id, label, before, after) = note;
-    let context = json!({
-        "target_type": target_type,
-        "target_id": target_id,
-        "target_label": label,
-        "before": before,
-        "after": after,
-        "actor_kind": if user.is_machine() { "api_key" } else { "user" },
-        "method": method,
-        "path": template,
-        "status_code": status_code,
-    });
-    if let Err(e) = log_action(pool, &user.tenant_id, &user.user_id, &format!("audit.{action}"),
-        Some(target_id), &context, "success").await
-    {
-        tracing::warn!(error = %e, "audit trail not recorded");
-    }
-}
-
 // ── handlers ─────────────────────────────────────────────────────────────────
 
 pub async fn get_currency(
@@ -199,8 +166,14 @@ pub async fn set_currency(
     update_settings(&state.pool, &user.tenant_id, "currency", Value::String(code.clone())).await?;
     tracing::info!("[currency] tenant {} -> {} (by {})", user.tenant_id, code, user.user_id);
     let current = currency_of(&state.pool, &user.tenant_id).await?;
-    record_audit(&state.pool, &user, "config.changed", "setting", "PATCH", "/tenant/currency", 200,
-        ("currency", "currency", json!({"currency": previous}), json!({"currency": code}))).await;
+    // AuditMiddleware's row, with the handler's audit.note.
+    let note = Note {
+        target_id: Some("currency".into()),
+        label: Some("currency".into()),
+        before: Some(json!({"currency": previous})),
+        after: Some(json!({"currency": code})),
+    };
+    audit::record(&state, &actors, "PATCH", "/tenant/currency", None, note, 200).await;
     Ok(ok(json!({"current": current})))
 }
 
