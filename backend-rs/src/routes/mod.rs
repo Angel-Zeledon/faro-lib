@@ -2,6 +2,7 @@ pub mod api_keys;
 pub mod audit;
 pub mod committed_demand;
 pub mod entitlements;
+pub mod fx_rates;
 pub mod health;
 pub mod r1;
 pub mod schedule;
@@ -44,6 +45,11 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/committed-demand/{commitment_id}", patch(committed_demand::update))
         .route("/api/v1/committed-demand/{commitment_id}/status", post(committed_demand::set_status))
         .merge(r1::router())
+        // Multi-currency (new routes, no Python twin): exchange rates + conversion preview.
+        .route("/api/v1/tenant/currency/rates", get(fx_rates::list).post(fx_rates::create))
+        .route("/api/v1/tenant/currency/rates/resolve", get(fx_rates::resolve))
+        .route("/api/v1/tenant/currency/rates/{rate_id}", patch(fx_rates::update).delete(fx_rates::delete))
+        .route("/api/v1/tenant/currency/convert", post(fx_rates::convert))
         .merge(sessions::router()).merge(schedule::router()).merge(spike_edits::router())
         // R3: API keys, webhook subscriptions, audit trail reads.
         .route("/api/v1/api-keys", post(api_keys::create).get(api_keys::list))

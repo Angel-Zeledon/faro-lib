@@ -32,6 +32,7 @@ The rules, all of them:
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import ROUND_HALF_UP, Context, Decimal, InvalidOperation
 from typing import Any, Iterable, Mapping, Optional, Sequence
@@ -47,6 +48,9 @@ RATE_MIN = Decimal("0.0000000001")        # 1e-10: the smallest storable positiv
 # Any input amount must be below this and spell at most MAX_DECIMALS decimals.
 AMOUNT_LIMIT = Decimal(10) ** 30
 MAX_DECIMALS = 40
+
+
+_NUMBER = re.compile(r"\+?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?", re.ASCII)
 
 
 class FxError(ValueError):
@@ -65,14 +69,22 @@ def to_decimal(value: Any) -> Decimal:
     elif isinstance(value, int):
         d = Decimal(value)
     elif isinstance(value, str):
+        text = value.strip()
+        # One grammar, shared with the Rust core: optional +, digits with an
+        # optional fraction (or just a fraction), optional exponent. No sign
+        # minus, no underscores, no "NaN" / "Infinity".
+        if not _NUMBER.fullmatch(text):
+            raise FxError(f"not a number: {value!r}")
         try:
-            d = Decimal(value.strip())
+            d = Decimal(text)
         except InvalidOperation as exc:
             raise FxError(f"not a number: {value!r}") from exc
     else:
         raise FxError(f"not a number: {value!r}")
     if not d.is_finite():
         raise FxError("amount must be finite")
+    if d == 0:
+        d = d.copy_abs()  # never "-0.00"
     if d < 0:
         raise FxError("amount must not be negative")
     # Bounds shared with the Rust core, so both refuse the same inputs.
