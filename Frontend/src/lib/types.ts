@@ -3468,3 +3468,56 @@ export interface InboundEmailState {
   allowed_senders: string[]
   messages:        InboundEmailMessage[]
 }
+
+// ── Customer portal ──────────────────────────────────────────────────────────
+export type CustomerPortalStatus = 'active' | 'expired' | 'revoked'
+
+export interface CustomerPortalCustomer { customer: string; open_commitments: number; commitments: number }
+
+export interface CustomerPortalLink {
+  id: string
+  customer: string
+  language: 'es' | 'en'
+  share_dates: boolean
+  status: CustomerPortalStatus
+  expires_at: string
+  revoked_at: string | null
+  created_by: string
+  created_at: string
+  last_viewed_at: string | null
+  reopened_at: string | null
+  commitments: number
+  received: number
+  objections: number
+}
+
+/** Returned once, at creation: only the hash of `token` is kept server-side. */
+export interface CustomerPortalCreated { link: CustomerPortalLink; token: string; url: string }
+
+export type CustomerPortalAnswer = 'received' | 'date_objection'
+
+export interface CustomerPortalDetail {
+  link: CustomerPortalLink
+  commitments: {
+    id: string; sku: string; description: string; quantity: number
+    requested_date: string; status: 'open' | 'fulfilled' | 'cancelled'
+    promised_date: string | null
+    response: CustomerPortalAnswer | null; response_comment: string | null; responded_at: string | null
+  }[]
+  events: { id: string; commitment_id: string; response: CustomerPortalAnswer; comment: string | null; created_at: string }[]
+}
+
+/** What the customer's page receives: a whitelist, never stock, costs or other customers. */
+export interface CustomerPortalPublicView {
+  company: string
+  customer: string
+  language: 'es' | 'en'
+  share_dates: boolean
+  expires_at: string
+  commitments: {
+    id: string; sku: string; description: string; quantity: number
+    requested_date: string; status: 'open' | 'fulfilled' | 'cancelled'
+    promised_date?: string
+    my_response: CustomerPortalAnswer | null
+  }[]
+}
