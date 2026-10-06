@@ -52,7 +52,7 @@ const ROUTE: RouteAuth = RouteAuth {
     is_mcp: false,
 };
 
-const PENDING: &str = "pending_approval";
+pub(crate) const PENDING: &str = "pending_approval";
 const APPROVED: &str = "approved";
 const REJECTED: &str = "rejected";
 const MAX_COMMENT_LENGTH: usize = 500;
@@ -224,11 +224,11 @@ async fn clean_rule(
 
 // ── Approvers ────────────────────────────────────────────────────────────────
 
-struct Approver {
-    id: String,
-    email: Option<String>,
-    full_name: Option<String>,
-    role: String,
+pub(crate) struct Approver {
+    pub(crate) id: String,
+    pub(crate) email: Option<String>,
+    pub(crate) full_name: Option<String>,
+    pub(crate) role: String,
 }
 
 impl Approver {
@@ -238,7 +238,7 @@ impl Approver {
 }
 
 /// `list_approvers`: flagged, active, able to act.
-async fn list_approvers(pool: &PgPool, tenant_id: &str) -> Result<Vec<Approver>, ApiError> {
+pub(crate) async fn list_approvers(pool: &PgPool, tenant_id: &str) -> Result<Vec<Approver>, ApiError> {
     let rows = sqlx::query(
         "SELECT id, email, full_name, role FROM users \
           WHERE tenant_id = $1 AND can_approve_po AND status = 'active' AND role IN ('admin', 'analyst') \
@@ -261,16 +261,16 @@ async fn list_approvers(pool: &PgPool, tenant_id: &str) -> Result<Vec<Approver>,
 
 // ── The requirement ──────────────────────────────────────────────────────────
 
-struct Po {
-    id: String,
-    po_number: Option<i32>,
-    destination_warehouse: Option<String>,
-    approval_status: Option<String>,
-    approved_amount: Option<f64>,
+pub(crate) struct Po {
+    pub(crate) id: String,
+    pub(crate) po_number: Option<i32>,
+    pub(crate) destination_warehouse: Option<String>,
+    pub(crate) approval_status: Option<String>,
+    pub(crate) approved_amount: Option<f64>,
 }
 
 /// `_get_po`.
-async fn get_po(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Po, ApiError> {
+pub(crate) async fn get_po(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Po, ApiError> {
     let row = sqlx::query(
         "SELECT id, po_number, destination_warehouse, approval_status, approved_amount \
            FROM inventory_po_log WHERE id = $1 AND tenant_id = $2",
@@ -359,13 +359,13 @@ fn rule_matches(rule: &Rule, amount: f64, facts: &Facts) -> bool {
     true
 }
 
-struct Req {
-    required: bool,
-    status: String,
-    amount: Option<f64>,
-    amount_known: Option<bool>,
-    rule_id: Option<String>,
-    self_approve_below: Option<f64>,
+pub(crate) struct Req {
+    pub(crate) required: bool,
+    pub(crate) status: String,
+    pub(crate) amount: Option<f64>,
+    pub(crate) amount_known: Option<bool>,
+    pub(crate) rule_id: Option<String>,
+    pub(crate) self_approve_below: Option<f64>,
 }
 
 impl Req {
@@ -419,7 +419,7 @@ fn requirement(rules: &[Rule], po: &Po, facts: &Facts) -> Req {
     }
 }
 
-async fn requirement_of(pool: &PgPool, tenant_id: &str, po: &Po) -> Result<Req, ApiError> {
+pub(crate) async fn requirement_of(pool: &PgPool, tenant_id: &str, po: &Po) -> Result<Req, ApiError> {
     let rules = list_rules(pool, tenant_id).await?;
     if !rules.iter().any(|r| r.active) {
         return Ok(Req::none(None, None));
@@ -431,7 +431,7 @@ async fn requirement_of(pool: &PgPool, tenant_id: &str, po: &Po) -> Result<Req, 
 // ── History and describe ─────────────────────────────────────────────────────
 
 /// `_name_of`: full name, else the local part of the email, else null.
-fn name_of(full_name: Option<&str>, email: Option<&str>) -> Option<String> {
+pub(crate) fn name_of(full_name: Option<&str>, email: Option<&str>) -> Option<String> {
     if let Some(n) = full_name.filter(|n| !n.is_empty()) {
         return Some(n.to_string());
     }
@@ -449,6 +449,7 @@ struct HistoryRow {
     decided_by: Option<String>,
     decided_at: Option<DateTime<Utc>>,
     comment: Option<String>,
+    decided_channel: Option<String>,
     requested_by_name: Option<String>,
     decided_by_name: Option<String>,
 }
@@ -459,7 +460,7 @@ impl HistoryRow {
             "id": self.id, "status": self.status, "amount": self.amount, "requested_by": self.requested_by,
             "requested_at": iso(self.requested_at), "request_note": self.request_note,
             "decided_by": self.decided_by, "decided_at": iso(self.decided_at), "comment": self.comment,
-            "requested_by_name": self.requested_by_name, "decided_by_name": self.decided_by_name,
+            "decided_channel": self.decided_channel, "requested_by_name": self.requested_by_name, "decided_by_name": self.decided_by_name,
         })
     }
 }
@@ -467,7 +468,7 @@ impl HistoryRow {
 async fn history(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Vec<HistoryRow>, ApiError> {
     let rows = sqlx::query(
         "SELECT a.id, a.status, a.amount, a.requested_by, a.requested_at, a.request_note, \
-                a.decided_by, a.decided_at, a.comment, \
+                a.decided_by, a.decided_at, a.comment, a.decided_channel, \
                 rq.full_name AS requested_by_name, rq.email AS requested_by_email, \
                 dc.full_name AS decided_by_name, dc.email AS decided_by_email \
            FROM po_approvals a \
@@ -496,6 +497,7 @@ async fn history(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Vec<
             decided_by: r.try_get("decided_by")?,
             decided_at: r.try_get("decided_at")?,
             comment: r.try_get("comment")?,
+            decided_channel: r.try_get("decided_channel")?,
             requested_by_name: name_of(rq_name.as_deref(), rq_email.as_deref()),
             decided_by_name: name_of(dc_name.as_deref(), dc_email.as_deref()),
         });
@@ -504,7 +506,7 @@ async fn history(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Vec<
 }
 
 /// `_may_decide`.
-fn may_decide(is_approver: bool, user_id: &str, requested_by: &str, amount: f64, req: &Req) -> bool {
+pub(crate) fn may_decide(is_approver: bool, user_id: &str, requested_by: &str, amount: f64, req: &Req) -> bool {
     if !is_approver {
         return false;
     }
@@ -514,7 +516,7 @@ fn may_decide(is_approver: bool, user_id: &str, requested_by: &str, amount: f64,
     req.self_approve_below.is_some_and(|below| amount < below)
 }
 
-async fn is_approver(pool: &PgPool, tenant_id: &str, user_id: &str) -> Result<bool, ApiError> {
+pub(crate) async fn is_approver(pool: &PgPool, tenant_id: &str, user_id: &str) -> Result<bool, ApiError> {
     Ok(list_approvers(pool, tenant_id).await?.iter().any(|a| a.id == user_id))
 }
 
@@ -1015,8 +1017,37 @@ async fn decide(
     decision: &str,
     comment: Option<String>,
 ) -> Result<Json<Value>, ApiError> {
+    decide_core(state, &user.tenant_id, &user.user_id, po_log_id, decision, comment, None).await
+}
+
+/// How a decision reached us, beyond the app: the decision link in a message
+/// (`routes/approval_links.rs`). The rules below are the SAME for both: this is
+/// the only function that decides an approval, so a link can never do what the
+/// app would refuse.
+pub(crate) struct ViaLink<'a> {
+    /// The `po_approval_links` row being spent by this decision.
+    pub link_id: &'a str,
+}
+
+/// `po_approval_service.decide(..., channel=...)` + the route's event.
+///
+/// `link` is `Some` for a decision taken through a message. Then the link is
+/// consumed INSIDE the decision's transaction (so "used" and "decided" are one
+/// fact, and a crash can neither burn a link without deciding nor decide
+/// without burning it), and any answer that would be an idempotent "already
+/// done" for the app is instead the one neutral not-found: a replayed link must
+/// not get a 200.
+pub(crate) async fn decide_core(
+    state: &AppState,
+    tenant: &str,
+    user_id: &str,
+    po_log_id: &str,
+    decision: &str,
+    comment: Option<String>,
+    link: Option<ViaLink<'_>>,
+) -> Result<Json<Value>, ApiError> {
     let pool = &state.pool;
-    let tenant = &user.tenant_id;
+    let channel: Option<&str> = link.as_ref().map(|_| "message");
     let po = get_po(pool, tenant, po_log_id).await?;
     let clean = clean_comment(comment.as_deref());
     if decision == "rejected" && clean.as_deref().map_or(true, |c| c.chars().count() < MIN_REJECT_REASON_LENGTH) {
@@ -1026,16 +1057,19 @@ async fn decide(
         return Err(app_err("po_approval_not_requested", "Nobody has asked for approval on this order", 409, json!({})));
     };
     if last.status != "requested" {
+        if link.is_some() {
+            return Err(crate::routes::approval_links::not_found());
+        }
         if last.status == decision {
-            return unchanged(pool, tenant, po_log_id, &user.user_id).await;
+            return unchanged(pool, tenant, po_log_id, user_id).await;
         }
         return Err(already_decided(&last.status));
     }
     let req = requirement_of(pool, tenant, &po).await?;
-    if !is_approver(pool, tenant, &user.user_id).await? {
+    if !is_approver(pool, tenant, user_id).await? {
         return Err(app_err("po_approval_not_approver", "You are not allowed to approve orders", 403, json!({})));
     }
-    let own = last.requested_by == user.user_id;
+    let own = last.requested_by == user_id;
     if own && decision == "approved" && !req.self_approve_below.is_some_and(|b| last.amount < b) {
         return Err(app_err("po_approval_self_approval", "You cannot approve your own order at this value", 403,
             json!({})));
@@ -1043,18 +1077,46 @@ async fn decide(
     let amount_now = req.amount.unwrap_or(last.amount);
 
     let mut tx = pool.begin().await?;
+    if let Some(l) = &link {
+        // Spend the link first: a concurrent second use blocks here on the row
+        // lock, then finds it used and is refused, whatever it asked for.
+        let spent: Option<(String,)> = sqlx::query_as(
+            "UPDATE po_approval_links SET used_at = NOW(), used_decision = $2 \
+              WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW() RETURNING id",
+        )
+        .bind(l.link_id)
+        .bind(decision)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if spent.is_none() {
+            tx.rollback().await?;
+            return Err(crate::routes::approval_links::not_found());
+        }
+    }
     let won: Option<(String,)> = sqlx::query_as(
-        "UPDATE po_approvals SET status = $1, decided_by = $2, decided_at = NOW(), comment = $3 \
+        "UPDATE po_approvals SET status = $1, decided_by = $2, decided_at = NOW(), comment = $3, \
+                decided_channel = $6 \
           WHERE id = $4 AND tenant_id = $5 AND status = 'requested' RETURNING id",
     )
     .bind(decision)
-    .bind(&user.user_id)
+    .bind(user_id)
     .bind(&clean)
     .bind(&last.id)
     .bind(tenant)
+    .bind(channel)
     .fetch_optional(&mut *tx)
     .await?;
     if won.is_some() {
+        // A decided request needs no more links: every open one, for every
+        // approver and channel, dies with the decision, in this transaction.
+        sqlx::query(
+            "UPDATE po_approval_links SET revoked_at = NOW(), revoked_by = NULL, revoked_reason = 'decided' \
+              WHERE tenant_id = $1 AND approval_id = $2 AND used_at IS NULL AND revoked_at IS NULL",
+        )
+        .bind(tenant)
+        .bind(&last.id)
+        .execute(&mut *tx)
+        .await?;
         sqlx::query("UPDATE inventory_po_log SET approval_status = $1, approved_amount = $2 WHERE id = $3 AND tenant_id = $4")
             .bind(if decision == "approved" { APPROVED } else { REJECTED })
             .bind(if decision == "approved" { Some(amount_now) } else { None })
@@ -1062,36 +1124,45 @@ async fn decide(
             .bind(tenant)
             .execute(&mut *tx)
             .await?;
-    }
-    tx.commit().await?;
-    if won.is_none() {
-        // Another decision landed between the read and the write.
+        tx.commit().await?;
+    } else {
+        // Another decision landed between the read and the write: nothing of
+        // this call survives (the link, if any, is not spent).
+        tx.rollback().await?;
+        if link.is_some() {
+            return Err(crate::routes::approval_links::not_found());
+        }
         let now = latest(pool, po_log_id).await?;
         let status = now.map(|l| l.status);
         if status.as_deref() == Some(decision) {
-            return unchanged(pool, tenant, po_log_id, &user.user_id).await;
+            return unchanged(pool, tenant, po_log_id, user_id).await;
         }
         return Err(already_decided(status.as_deref().unwrap_or("")));
     }
-    tracing::info!("[po-approval] {} tenant={tenant} po={po_log_id} by={}", decision.to_uppercase(), user.user_id);
+    tracing::info!("[po-approval] {} tenant={tenant} po={po_log_id} by={user_id}{}", decision.to_uppercase(),
+        if link.is_some() { " via=message" } else { "" });
 
     // Only the decision that won the race gets here: one decision, one event.
     crate::webhook_events::emit_po_event(pool, tenant, &format!("purchase_order.{decision}"), po_log_id,
-        Some(&user.user_id)).await;
-    notify_requester(pool, tenant, &po, &last, decision, clean.as_deref(), &user.user_id).await;
+        Some(user_id)).await;
+    notify_requester(pool, tenant, &po, &last, decision, clean.as_deref(), user_id).await;
 
-    let mut m = describe(pool, tenant, po_log_id, &user.user_id).await?;
+    let mut m = describe(pool, tenant, po_log_id, user_id).await?;
     m.insert("changed".into(), json!(true));
     m.insert("po_number".into(), json!(po.po_number));
     m.insert("amount".into(), json!(last.amount));
     m.insert("comment".into(), json!(clean));
+    m.insert("channel".into(), json!(channel));
 
     let mut details = Map::new();
     details.insert("reference".into(), json!(format_po_number(po.po_number, po_log_id)));
     details.insert("value".into(), json!(last.amount));
     details.insert("decision_comment".into(), json!(clean));
+    if let Some(c) = channel {
+        details.insert("channel".into(), json!(c));
+    }
     let event = if decision == "approved" { Event::ApprovalApproved } else { Event::ApprovalRejected };
-    record_event_with_reason(pool, tenant, &user.user_id, event, Some(po_log_id), details, None).await;
+    record_event_with_reason(pool, tenant, user_id, event, Some(po_log_id), details, None).await;
     Ok(ok(Value::Object(m)))
 }
 

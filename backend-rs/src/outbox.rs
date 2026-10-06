@@ -60,7 +60,7 @@ pub const KINDS: &[Kind] = &[
         channel: Channel::Email,
         name: "po_approval_request",
         required: &["po_log_id", "amount"],
-        optional: &["approver_id", "requester_id"],
+        optional: &["approver_id", "requester_id", "decision_token"],
     },
     Kind {
         channel: Channel::Email,
@@ -69,6 +69,12 @@ pub const KINDS: &[Kind] = &[
         optional: &["requester_id", "decider_id", "comment"],
     },
     Kind { channel: Channel::Whatsapp, name: "verification_code", required: &["code"], optional: &[] },
+    Kind {
+        channel: Channel::Whatsapp,
+        name: "po_approval_link",
+        required: &["po_log_id", "amount", "decision_token"],
+        optional: &["approver_id"],
+    },
 ];
 
 /// `outbox.check_params`: why a request is not acceptable, or `None`.

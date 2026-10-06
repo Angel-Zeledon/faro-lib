@@ -123,7 +123,9 @@ async fn main() {
         let _ = tokio::signal::ctrl_c().await;
         tracing::info!("shutting down");
     };
-    if let Err(e) = axum::serve(listener, app).with_graceful_shutdown(shutdown).await {
+    // The peer address feeds the per-address rate limit of the public decision links.
+    let service = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+    if let Err(e) = axum::serve(listener, service).with_graceful_shutdown(shutdown).await {
         tracing::error!(error = %e, "server error");
     }
 }

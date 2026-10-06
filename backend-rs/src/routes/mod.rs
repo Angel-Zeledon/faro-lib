@@ -1,4 +1,5 @@
 pub mod api_keys;
+pub mod approval_links;
 pub mod audit;
 pub mod committed_demand;
 pub mod entitlements;
@@ -47,7 +48,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/committed-demand/{commitment_id}", patch(committed_demand::update))
         .route("/api/v1/committed-demand/{commitment_id}/status", post(committed_demand::set_status))
         .merge(r1::router())
-        .merge(sessions::router()).merge(lineage::router()).merge(reception_reversals::router()).merge(po_approvals::router()).merge(schedule::router()).merge(spike_edits::router())
+        .merge(sessions::router()).merge(lineage::router()).merge(reception_reversals::router()).merge(po_approvals::router()).merge(approval_links::router()).merge(schedule::router()).merge(spike_edits::router())
         // R3: API keys, webhook subscriptions, audit trail reads.
         .route("/api/v1/api-keys", post(api_keys::create).get(api_keys::list))
         .route("/api/v1/api-keys/usage", get(api_keys::usage).delete(api_keys::revoke_literal_usage))

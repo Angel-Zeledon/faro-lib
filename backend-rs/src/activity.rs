@@ -57,6 +57,8 @@ pub enum Event {
     OrderUnsent,
     ApprovalApproved,
     ApprovalRejected,
+    ApprovalLinksSent,
+    ApprovalLinksRevoked,
     ApiKeyCreated,
     ApiKeyRevoked,
     SpikeExcluded,
@@ -77,11 +79,17 @@ impl Event {
                 "purchase.reception_undone", "purchase", "warning", &["reference", "sku_count", "units", "warehouse"],
             ),
             Event::ApprovalApproved => (
-                "purchase.approval_approved", "purchase", "info", &["reference", "value", "decision_comment"],
+                "purchase.approval_approved", "purchase", "info",
+                &["reference", "value", "decision_comment", "channel"],
             ),
             Event::ApprovalRejected => (
-                "purchase.approval_rejected", "purchase", "info", &["reference", "value", "decision_comment"],
+                "purchase.approval_rejected", "purchase", "info",
+                &["reference", "value", "decision_comment", "channel"],
             ),
+            Event::ApprovalLinksSent => ("purchase.approval_links_sent", "purchase", "info", &["reference", "count"]),
+            Event::ApprovalLinksRevoked => {
+                ("purchase.approval_links_revoked", "purchase", "info", &["reference", "count"])
+            }
             Event::OrderUnsent => ("purchase.order_unsent", "purchase", "warning", &["reference"]),
             Event::CommittedDemandCreated => (
                 "committed_demand.created", "purchase", "info",

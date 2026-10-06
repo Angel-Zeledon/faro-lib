@@ -119,7 +119,6 @@ impl ApiError {
         self
     }
 
-    #[cfg(test)]
     pub fn code(&self) -> Option<&str> {
         self.body.get("error_code").and_then(Value::as_str)
     }
