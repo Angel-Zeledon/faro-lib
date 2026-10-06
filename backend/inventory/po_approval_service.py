@@ -324,11 +324,14 @@ def history(tenant_id: str, po_log_id: str) -> list[dict]:
     rows = query(
         """SELECT a.id, a.status, a.amount, a.requested_by, a.requested_at, a.request_note,
                   a.decided_by, a.decided_at, a.comment,
+                  a.decided_on_behalf_of, a.delegation_id,
                   rq.full_name AS requested_by_name, rq.email AS requested_by_email,
-                  dc.full_name AS decided_by_name, dc.email AS decided_by_email
+                  dc.full_name AS decided_by_name, dc.email AS decided_by_email,
+                  ob.full_name AS on_behalf_full_name, ob.email AS on_behalf_email
              FROM po_approvals a
              LEFT JOIN users rq ON rq.id = a.requested_by
              LEFT JOIN users dc ON dc.id = a.decided_by
+             LEFT JOIN users ob ON ob.id = a.decided_on_behalf_of
             WHERE a.po_log_id = %s AND a.tenant_id = %s
             ORDER BY a.requested_at DESC, a.id DESC""",
         (po_log_id, tenant_id),
@@ -340,6 +343,8 @@ def history(tenant_id: str, po_log_id: str) -> list[dict]:
                                            "email": d.pop("requested_by_email")})
         d["decided_by_name"] = _name_of({"full_name": d.pop("decided_by_name"),
                                          "email": d.pop("decided_by_email")})
+        d["decided_on_behalf_of_name"] = _name_of({"full_name": d.pop("on_behalf_full_name"),
+                                                   "email": d.pop("on_behalf_email")})
         d["requested_at"] = _iso(d["requested_at"])
         d["decided_at"] = _iso(d["decided_at"])
         out.append(d)
@@ -355,14 +360,22 @@ def describe(tenant_id: str, po_log_id: str, user_id: Optional[str] = None) -> d
     open_request = next((h for h in hist if h["status"] == "requested"), None)
     can_decide = False
     if open_request and user_id:
-        can_decide = _may_decide(tenant_id, user_id, open_request, req)
+        can_decide = _may_decide(tenant_id, user_id, open_request, req, po)
     return {"po_log_id": po_log_id, **req, "history": hist,
             "open_request": open_request, "can_decide": can_decide}
 
 
-def _may_decide(tenant_id: str, user_id: str, request_row: dict, req: dict) -> bool:
+def _may_decide(tenant_id: str, user_id: str, request_row: dict, req: dict,
+                po: Optional[dict] = None) -> bool:
     if not is_approver(tenant_id, user_id):
-        return False
+        # A substitute may decide only what their delegation reaches, and never
+        # their own request above the self-approval limit.
+        if po is None:
+            return False
+        from backend.inventory import po_delegation_service as delegations
+        via, _ = delegations.authority_for(tenant_id, user_id, po, request_row, req)
+        if via is None:
+            return False
     if request_row["requested_by"] != user_id:
         return True
     below = req.get("self_approve_below")
@@ -448,9 +461,20 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
                        params={"decision": latest["status"]})
 
     req = requirement(tenant_id, po)
+    via = None   # the delegation this decision stands on, when the person is a substitute
     if not is_approver(tenant_id, user_id):
-        raise AppError("po_approval_not_approver",
-                       "You are not allowed to approve orders", status_code=403)
+        from backend.inventory import po_delegation_service as delegations
+        via, had_delegation = delegations.authority_for(
+            tenant_id, user_id, po, latest, req, decision)
+        if via is None and had_delegation:
+            # A delegation is in force but does not reach THIS order (the
+            # delegator's warehouses, their own order, no longer an approver).
+            raise AppError("po_approval_delegation_not_permitted",
+                           "Your delegation does not allow you to decide this order",
+                           status_code=403)
+        if via is None:
+            raise AppError("po_approval_not_approver",
+                           "You are not allowed to approve orders", status_code=403)
     own = latest["requested_by"] == user_id
     below = req.get("self_approve_below")
     if own and decision == "approved" and not (
@@ -464,10 +488,13 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
     with transaction() as conn:
         won = query_one(
             """UPDATE po_approvals
-                  SET status = %s, decided_by = %s, decided_at = NOW(), comment = %s
+                  SET status = %s, decided_by = %s, decided_at = NOW(), comment = %s,
+                      decided_on_behalf_of = %s, delegation_id = %s
                 WHERE id = %s AND tenant_id = %s AND status = 'requested'
             RETURNING id""",
-            (decision, user_id, clean_comment, latest["id"], tenant_id), conn=conn)
+            (decision, user_id, clean_comment,
+             via["delegator_id"] if via else None, via["id"] if via else None,
+             latest["id"], tenant_id), conn=conn)
         if won is not None:
             execute(
                 """UPDATE inventory_po_log
@@ -495,14 +522,17 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
                       float(latest["amount"]), user_id)
     return {**describe(tenant_id, po_log_id, user_id), "changed": True,
             "po_number": po.get("po_number"), "amount": float(latest["amount"]),
-            "comment": clean_comment}
+            "comment": clean_comment,
+            "on_behalf_of_name": via["delegator_name"] if via else None}
 
 
 def list_pending(tenant_id: str, user_id: str) -> dict:
     """The approver's inbox: open requests on orders that can still be acted on.
     A person who cannot approve gets an empty list, not an error: the same call
     feeds the attention rows for everyone."""
-    if not is_approver(tenant_id, user_id):
+    from backend.inventory import po_delegation_service as delegations
+    own = is_approver(tenant_id, user_id)
+    if not own and not delegations.active_for_delegate(tenant_id, user_id):
         return {"is_approver": False, "items": []}
     rows = query(
         """SELECT a.id AS approval_id, a.po_log_id, a.amount, a.requested_by,
@@ -535,8 +565,12 @@ def list_pending(tenant_id: str, user_id: str) -> dict:
             "requested_by_name": _name_of({"full_name": r["requested_by_name"],
                                            "email": r["requested_by_email"]}),
             "requested_at": _iso(r["requested_at"]), "note": r["request_note"],
-            "can_decide": _may_decide(tenant_id, user_id, req_row, req),
+            "can_decide": _may_decide(tenant_id, user_id, req_row, req, po),
         })
+    if not own:
+        # A substitute sees only the orders their delegation lets them decide.
+        items = [i for i in items if i["can_decide"]]
+        return {"is_approver": False, "is_delegate": True, "items": items}
     return {"is_approver": True, "items": items}
 
 

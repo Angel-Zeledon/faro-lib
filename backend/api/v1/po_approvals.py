@@ -182,6 +182,7 @@ def _decide(user: CurrentUser, po_log_id: str, decision: str, comment: Optional[
             resource=po_log_id,
             details={"reference": format_po_number(result.get("po_number"), po_log_id),
                      "value": result.get("amount"),
-                     "decision_comment": result.get("comment")},
+                     "decision_comment": result.get("comment"),
+                     "on_behalf_of": result.get("on_behalf_of_name")},
         )
     return result
