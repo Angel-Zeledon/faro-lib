@@ -275,6 +275,28 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
          granted_at TIMESTAMPTZ DEFAULT NOW(),
          UNIQUE (user_id, permission)
      )"""),
+    # Custom roles (backend/auth/permissions.py). No foreign keys on purpose: a
+    # role id that points at nothing must read as "no permissions" (fail
+    # closed), not cascade into somebody's access.
+    ("create_custom_roles",
+     """CREATE TABLE IF NOT EXISTS custom_roles (
+         id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+         tenant_id   TEXT NOT NULL,
+         name        TEXT NOT NULL,
+         description TEXT NOT NULL DEFAULT '',
+         permissions TEXT[] NOT NULL DEFAULT '{}',
+         created_by  TEXT,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("custom_roles_unique_name",
+     "CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_roles_tenant_name "
+     "ON custom_roles (tenant_id, lower(name))"),
+    ("add_users_custom_role_id",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_role_id TEXT"),
+    ("users_custom_role_index",
+     "CREATE INDEX IF NOT EXISTS idx_users_custom_role ON users (custom_role_id) "
+     "WHERE custom_role_id IS NOT NULL"),
     ("create_documents",
      """CREATE TABLE IF NOT EXISTS documents (
          id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,

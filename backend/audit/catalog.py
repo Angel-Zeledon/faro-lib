@@ -131,6 +131,11 @@ RUST_ONLY_ROUTES: dict[tuple[str, str], AuditRoute] = {
     # locked-out person's enrollment (backend-rs/src/routes/mfa/).
     ("PUT", "/mfa/policy"):                         _r("config.changed", "setting"),
     ("POST", "/mfa/users/{user_id}/reset"):         _r("user.mfa_reset", "user", "user_id"),
+    # Custom roles (backend-rs/src/routes/roles.rs): audited with before/after.
+    ("POST", "/roles"):                             _r("role.created", "role"),
+    ("PATCH", "/roles/{role_id}"):                  _r("role.updated", "role", "role_id"),
+    ("DELETE", "/roles/{role_id}"):                 _r("role.deleted", "role", "role_id"),
+    ("PUT", "/users/{user_id}/custom-role"):        _r("user.role_assigned", "user", "user_id"),
 }
 ROUTES.update(RUST_ONLY_ROUTES)
 

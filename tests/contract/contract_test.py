@@ -4812,6 +4812,9 @@ def run(args) -> int:
         from mfa_cases import run_mfa  # noqa: PLC0415
         results += run_mfa(sys.modules[__name__], args, fx, db)
         results += run_fx_section(args, fx, db)
+        # Custom roles (Rust-only routes + enforcement on both): own file.
+        from custom_roles_cases import run_custom_roles
+        results += run_custom_roles(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

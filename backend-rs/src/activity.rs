@@ -78,6 +78,10 @@ pub enum Event {
     CurrencyRateCreated,
     CurrencyRateChanged,
     CurrencyRateDeleted,
+    CustomRoleCreated,
+    CustomRoleUpdated,
+    CustomRoleDeleted,
+    CustomRoleAssigned,
 }
 
 impl Event {
@@ -131,6 +135,10 @@ impl Event {
             Event::CurrencyRateCreated => ("currency_rate.created", "purchase", "info", &["currency", "rate", "effective_date"]),
             Event::CurrencyRateChanged => ("currency_rate.changed", "purchase", "info", &["currency", "rate", "effective_date"]),
             Event::CurrencyRateDeleted => ("currency_rate.deleted", "purchase", "info", &["currency", "rate", "effective_date"]),
+            Event::CustomRoleCreated => ("account.custom_role_created", "account", "warning", &["role_name"]),
+            Event::CustomRoleUpdated => ("account.custom_role_updated", "account", "warning", &["role_name"]),
+            Event::CustomRoleDeleted => ("account.custom_role_deleted", "account", "warning", &["role_name"]),
+            Event::CustomRoleAssigned => ("account.custom_role_assigned", "account", "warning", &["email", "role_name"]),
         }
     }
 }

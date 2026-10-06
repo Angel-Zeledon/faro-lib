@@ -454,6 +454,20 @@ EVENTS: dict[str, EventSpec] = {
     "account.user_deactivated": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email",),
     ),
+    # Custom roles (backend/auth/permissions.py): changing what a role may do,
+    # or who holds it, changes who can do what, so each one reaches the bell.
+    "account.custom_role_created": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("role_name",),
+    ),
+    "account.custom_role_updated": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("role_name",),
+    ),
+    "account.custom_role_deleted": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("role_name",),
+    ),
+    "account.custom_role_assigned": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "role_name"),
+    ),
     "account.api_key_created": EventSpec(
         kind="account", severity=WARNING, detail_keys=("key_name", "role"),
     ),

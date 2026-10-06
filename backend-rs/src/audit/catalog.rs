@@ -44,6 +44,10 @@ pub const ROUTES: &[AuditRoute] = &[
     r("POST", "/data-sources/{source_id}/test-connection", "dataset.connection_tested", "dataset", Some("source_id")),
     r("DELETE", "/data-sources/{source_id}", "dataset.deleted", "dataset", Some("source_id")),
     r("PATCH", "/users/{user_id}/permissions", "user.permissions_changed", "user", Some("user_id")),
+    r("POST", "/roles", "role.created", "role", None),
+    r("PATCH", "/roles/{role_id}", "role.updated", "role", Some("role_id")),
+    r("DELETE", "/roles/{role_id}", "role.deleted", "role", Some("role_id")),
+    r("PUT", "/users/{user_id}/custom-role", "user.role_assigned", "user", Some("user_id")),
     r("POST", "/inventory/warehouses", "warehouse.created", "warehouse", None),
     r("PATCH", "/inventory/warehouses/{name}", "warehouse.updated", "warehouse", Some("name")),
     r("PUT", "/inventory/warehouses/lanes", "warehouse.lanes_changed", "warehouse", None),
@@ -246,11 +250,11 @@ mod tests {
     fn vocabularies_have_the_python_sizes() {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
-        assert_eq!(ROUTES.len(), 58);
+        assert_eq!(ROUTES.len(), 62);
         assert_eq!(LEGACY.len(), 87);
-        assert_eq!(target_types().len(), 32);
-        assert_eq!(audit_actions().len(), 123);
-        assert_eq!(all_stored_actions().len(), 127);
+        assert_eq!(target_types().len(), 33);
+        assert_eq!(audit_actions().len(), 127);
+        assert_eq!(all_stored_actions().len(), 131);
 
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));

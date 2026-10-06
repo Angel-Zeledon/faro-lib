@@ -9,13 +9,14 @@ import { getUser } from '@/lib/auth'
 import {
   listAdminUsers, createAdminUser, updateAdminUser,
   deleteAdminUser, setUserStatus,
-  resendVerification, listWarehouses,
-  type AdminUser,
+  resendVerification, listWarehouses, listCustomRoles,
+  type AdminUser, type CustomRole,
 } from '@/lib/api'
 import type { Warehouse } from '@/lib/types'
 import { WarehouseScope } from '@/components/users/WarehouseScope'
 import { SsoSettings } from '@/components/users/SsoSettings'
 import { IpAllowlistSettings } from '@/components/users/IpAllowlistSettings'
+import { RolesPanel, CustomRoleSelect } from '@/components/users/RolesPanel'
 import Card from '@/components/ui/Card'
 import { thStyle } from '@/components/ui/Table'
 import Input, { Field, Select } from '@/components/ui/Input'
@@ -515,6 +516,14 @@ export default function UsersPage() {
     return () => { alive = false }
   }, [])
 
+  // Custom roles (Rust-only routes). A failure leaves the list empty: the
+  // per-person selector then simply does not appear, nothing else changes.
+  const [customRoles, setCustomRoles]   = useState<CustomRole[]>([])
+  const loadRoles = useCallback(() => {
+    listCustomRoles().then(r => setCustomRoles(r.roles)).catch(() => setCustomRoles([]))
+  }, [])
+  useEffect(() => { loadRoles() }, [loadRoles])
+
   const load = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
@@ -707,6 +716,10 @@ export default function UsersPage() {
               {warehouses.length >= 2 && (
                 <WarehouseScope user={u} warehouses={warehouses} onChanged={load} />
               )}
+              {(customRoles.length > 0 || u.custom_role_id) && (
+                <CustomRoleSelect user={u} roles={customRoles} disabled={u.id === currentUser?.id}
+                  onChanged={() => { load(); loadRoles() }} />
+              )}
             </div>
             <div data-tour={idx === 0 ? 'users.status' : undefined}><StatusBadge status={u.status} /></div>
             <div data-tour={idx === 0 ? 'users.role' : undefined}><RoleBadge role={u.role} /></div>
@@ -765,6 +778,7 @@ export default function UsersPage() {
         </div>
       )}
 
+      <RolesPanel onChanged={() => { load(); loadRoles() }} />
       <SsoSettings />
       <IpAllowlistSettings />
 

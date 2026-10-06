@@ -137,6 +137,7 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
      "id, tenant_id, channel, kind, recipient, status, attempts, next_attempt_at, expires_at, "
      "last_error, created_by, created_at, last_attempt_at, sent_at"),
     ("user_permissions", "user_permissions", "*"),
+    ("custom_roles", "custom_roles", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
     # Microsoft / Apple is the person's data, so it travels with the export.
     ("user_identities", "user_identities",
@@ -338,6 +339,7 @@ _DELETE_ORDER: list[str] = [
     "documents",
     "feedback_reports",
     "user_permissions",
+    "custom_roles",
     "user_identities",
     "user_mfa_recovery_codes",
     "user_mfa",

@@ -8,6 +8,7 @@
 
 pub mod api_key;
 pub mod jwt;
+pub mod permissions;
 pub mod warehouse_scope;
 
 use std::sync::{Arc, Mutex};
@@ -55,6 +56,9 @@ pub struct ActorsInner {
     /// The socket peer, set by the middleware: the proxy's address behind a
     /// proxy, the caller's otherwise. Input to the IP allowlist.
     pub peer: Option<std::net::IpAddr>,
+    /// (method, matched route template) of the request, set by the router's
+    /// route layer so the guard can look up the permission the route needs.
+    pub route: Option<(String, String)>,
 }
 
 impl RequestActors {
@@ -70,6 +74,14 @@ impl RequestActors {
     pub fn set_peer(&self, peer: Option<std::net::IpAddr>) {
         if let Ok(mut g) = self.0.lock() {
             g.peer = peer;
+        }
+    }
+    pub fn route(&self) -> Option<(String, String)> {
+        self.0.lock().ok().and_then(|g| g.route.clone())
+    }
+    pub fn set_route(&self, method: &str, template: &str) {
+        if let Ok(mut g) = self.0.lock() {
+            g.route = Some((method.to_string(), template.to_string()));
         }
     }
     fn set_machine(&self, tenant: &str, actor: &str) {
@@ -191,6 +203,9 @@ pub async fn current_user(
     // the actor is published: a refused request has no actor to record.
     crate::ip_allowlist::enforce(state, actors, headers, &tenant_id, &user_id).await?;
     actors.set_person(&tenant_id, &user_id);
+    // Custom-role permissions (auth/permissions.rs): a person with no custom
+    // role passes untouched; one with a role is checked on every request.
+    permissions::enforce(&state.pool, actors.route(), &tenant_id, &user_id).await?;
     Ok(CurrentUser {
         user_id,
         tenant_id,
