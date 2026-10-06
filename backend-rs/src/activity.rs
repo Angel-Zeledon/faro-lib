@@ -49,12 +49,22 @@ pub enum Event {
     CommittedDemandCreated,
     CommittedDemandImported,
     CommittedDemandChanged,
+    PurchaseOrderPaid,
+    PurchaseOrderUnpaid,
+    PurchaseOrderCancelled,
+    PurchaseOrderUncancelled,
 }
 
 impl Event {
     /// (action, kind, severity, detail_keys) exactly as declared in EVENTS.
     fn spec(self) -> (&'static str, &'static str, &'static str, &'static [&'static str]) {
         match self {
+            Event::PurchaseOrderPaid => ("purchase.order_paid", "purchase", "info", &["reference"]),
+            Event::PurchaseOrderUnpaid => ("purchase.order_unpaid", "purchase", "warning", &["reference"]),
+            Event::PurchaseOrderCancelled => (
+                "purchase.order_cancelled", "purchase", "warning", &["reference", "cancel_reason"],
+            ),
+            Event::PurchaseOrderUncancelled => ("purchase.order_uncancelled", "purchase", "warning", &["reference"]),
             Event::CommittedDemandCreated => (
                 "committed_demand.created", "purchase", "info",
                 &["sku", "quantity", "delivery_date", "customer"],
@@ -96,8 +106,28 @@ pub async fn record_event(
     resource: Option<&str>,
     details: Map<String, Value>,
 ) {
-    let (action, ..) = event.spec();
-    let ctx = event_context(event, &details);
+    record_event_with_reason(pool, tenant_id, user_id, event, resource, details, None).await
+}
+
+/// `record_event(..., reason=...)`: the context gains `reason` after
+/// `severity` and `kind`. Python refuses a non-INFO event without a reason
+/// (a ValueError at the call site); the Rust callers of warning events always
+/// pass one, and a debug assertion keeps it that way.
+pub async fn record_event_with_reason(
+    pool: &PgPool,
+    tenant_id: &str,
+    user_id: &str,
+    event: Event,
+    resource: Option<&str>,
+    details: Map<String, Value>,
+    reason: Option<&str>,
+) {
+    let (action, _, severity, _) = event.spec();
+    debug_assert!(severity == "info" || reason.is_some(), "{action} is {severity} and must carry a reason");
+    let mut ctx = event_context(event, &details);
+    if let (Some(r), Value::Object(m)) = (reason.filter(|r| !r.is_empty()), &mut ctx) {
+        m.insert("reason".into(), Value::String(r.into()));
+    }
     if let Err(e) = log_action(pool, tenant_id, user_id, action, resource, &ctx, "success").await {
         tracing::error!(error = %e, action, tenant = tenant_id, "record_event: could not record");
     }
@@ -114,6 +144,18 @@ mod tests {
         assert!(id.starts_with("act_"));
         assert_eq!(id.len(), 16);
         assert!(id[4..].chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn purchase_order_contexts_match_python() {
+        let d = json!({"reference": "OC-000007", "cancel_reason": null});
+        let ctx = event_context(Event::PurchaseOrderCancelled, d.as_object().unwrap());
+        assert_eq!(
+            serde_json::to_string(&ctx).unwrap(),
+            r#"{"reference":"OC-000007","severity":"warning","kind":"purchase"}"#
+        );
+        let ctx = event_context(Event::PurchaseOrderPaid, d.as_object().unwrap());
+        assert_eq!(ctx["severity"], "info");
     }
 
     #[test]

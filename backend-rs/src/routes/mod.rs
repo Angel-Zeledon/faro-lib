@@ -8,6 +8,9 @@ pub mod schedule;
 pub mod sessions;
 pub mod spike_edits;
 pub mod webhooks;
+pub mod po_cancellation;
+pub mod po_payments;
+pub mod signal_thresholds;
 
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
@@ -56,6 +59,17 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/audit", get(audit::list))
         .route("/api/v1/audit/filters", get(audit::filters_vocabulary))
         .route("/api/v1/audit/export", get(audit::export))
+        // R4: purchase-order payments / cancellation, signal thresholds.
+        .route("/api/v1/inventory/po/{po_log_id}/mark-paid", post(po_payments::mark_paid))
+        .route("/api/v1/inventory/po/{po_log_id}/mark-unpaid", post(po_payments::mark_unpaid))
+        .route("/api/v1/inventory/po/{po_log_id}/cancel", post(po_cancellation::cancel))
+        .route("/api/v1/inventory/po/{po_log_id}/uncancel", post(po_cancellation::uncancel))
+        .route(
+            "/api/v1/inventory/signal-thresholds",
+            get(signal_thresholds::get_thresholds)
+                .put(signal_thresholds::put_thresholds)
+                .delete(signal_thresholds::reset_thresholds),
+        )
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }
