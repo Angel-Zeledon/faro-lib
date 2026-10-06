@@ -248,6 +248,8 @@ def make_fixture(py: str, secret: str) -> Fixture:
 
 
 def erase_fixture(py: str, fx: Fixture) -> None:
+    if getattr(fx, 'erased', False):
+        return  # run_org erased it already, as part of a case
     # A fresh token: a run through a slow tunnel outlives the 15-minute login
     # token, and an expired one would leave the throwaway tenant behind.
     token = mint_access_token(fx.secret, fx.admin_id, fx.tenant_id, "admin")
@@ -2739,6 +2741,687 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
     return out
 
 
+# ── ORG: organization hierarchy (Rust only, no Python route) ────────────────
+#
+# There is no Python twin to diff against: `/org/*` exists only in Rust, so
+# these cases assert the Rust answers and the database state they leave. The
+# cases are adversarial on purpose: this is the one feature where a bug shows
+# one tenant another tenant's purchasing data.
+#
+# Five throwaway tenants: HOLDING (the main fixture: admin, analyst, viewer),
+# SUB1 and SUB2 (subsidiaries), OUT (linked to nothing) and, when a case needs a
+# second holding, OUT creates the codes. Each tenant's data is seeded with
+# numbers that cannot be confused (OUT's are enormous), so a leak shows up as a
+# number or an id in a response that must not contain it.
+
+ORG_ROUTES = [
+    ("GET", "/org/overview", None),
+    ("GET", "/org/links", None),
+    ("POST", "/org/links", {"label": "x"}),
+    ("POST", "/org/links/accept", {"code": "orgl_" + "a" * 48}),
+    ("DELETE", "/org/links/x", None),
+    ("GET", "/org/links/x/members", None),
+    ("PUT", "/org/links/x/members/y", None),
+    ("DELETE", "/org/links/x/members/y", None),
+    ("GET", "/org/consolidated/committed-demand", None),
+    ("GET", "/org/consolidated/stock-signals", None),
+    ("GET", "/org/consolidated/purchase-orders", None),
+    ("GET", "/org/consolidated/budgets", None),
+]
+ORG_VIEWS = ["committed-demand", "stock-signals", "purchase-orders", "budgets"]
+
+
+def org_seed(db, fx: Fixture, spec: dict) -> None:
+    """Business data for one tenant, straight into the database. `spec` keys:
+    commit (list of (qty, prob, on_top, status, withdrawn, days)), pos (list of
+    dicts), budget (dict), snapshot ('fresh'|'stale'|None, {signal: n})."""
+    cur = db.cursor()
+    t = fx.tenant_id
+    for qty, prob, on_top, status, withdrawn, days in spec.get("commit", []):
+        cur.execute(
+            """INSERT INTO committed_demand (tenant_id, sku, delivery_date, quantity, customer, probability,
+                                             on_top_of_base, status, created_by, contract_withdrawn_at)
+               VALUES (%s, %s, CURRENT_DATE + %s, %s, 'seed', %s, %s, %s, %s, CASE WHEN %s THEN NOW() END)""",
+            (t, f"ORG-{secrets.token_hex(3)}", days, qty, prob, on_top, status, fx.admin_id, withdrawn))
+    for po in spec.get("pos", []):
+        cur.execute(
+            """INSERT INTO inventory_po_log (tenant_id, generated_at, sku_count, total_units, total_value,
+                                             sent_at, paid_at, cancelled_at, reception_status)
+               VALUES (%s, NOW() - %s * INTERVAL '1 day', 1, 1, %s,
+                       CASE WHEN %s THEN NOW() END, CASE WHEN %s THEN NOW() END,
+                       CASE WHEN %s THEN NOW() END, %s)
+               RETURNING id""",
+            (t, po.get("age", 1), po.get("value"), po.get("sent", True), po.get("paid", False),
+             po.get("cancelled", False), po.get("reception", "pending")))
+        po_id = cur.fetchone()[0]
+        for qty, cost, status in po.get("lines", []):
+            cur.execute(
+                """INSERT INTO inventory_po_items (po_log_id, tenant_id, sku, recommended_qty, final_qty, unit_cost, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (po_id, t, f"ORGL-{secrets.token_hex(3)}", qty, qty, cost, status))
+    b = spec.get("budget")
+    if b:
+        rid = f"orgb_{secrets.token_hex(6)}"
+        cur.execute(
+            """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
+                                             amount, currency, scope_type, created_by)
+               VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, %s, %s, 'company', %s)""",
+            (rid, t, rid, b["amount"], b["currency"], fx.admin_id))
+        if b.get("other_scope"):
+            rid2 = f"orgb_{secrets.token_hex(6)}"
+            cur.execute(
+                """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
+                                                 amount, currency, scope_type, scope_value, created_by)
+                   VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, 5, %s, 'category', 'x', %s)""",
+                (rid2, t, rid2, b["currency"], fx.admin_id))
+    snap = spec.get("snapshot")
+    if snap:
+        kind, counts = snap
+        cur.execute("SELECT COALESCE(MAX(id), 0) FROM status_input_bumps WHERE tenant_id = %s", (t,))
+        version = cur.fetchone()[0]
+        n = sum(counts.values())
+        cur.execute(
+            """INSERT INTO inventory_status_snapshot_meta
+                   (tenant_id, session_id, period, service_level, generation, inputs_version, code_hash,
+                    computed_on, computed_at, n_rows)
+               VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 'x', CURRENT_DATE,
+                       CASE WHEN %s THEN NOW() - INTERVAL '3 hours' ELSE NOW() END, %s)""",
+            (t, version, kind == "stale", n))
+        for signal, c in counts.items():
+            for i in range(c):
+                cur.execute(
+                    """INSERT INTO inventory_status_snapshot
+                           (tenant_id, session_id, period, service_level, generation, sku, urgency_pos, signal,
+                            supplier_lc, search_text, has_stock, has_forecast, inventory_value, sort_keys, item,
+                            computed_at)
+                       VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 0, %s, '', '', true, true, %s, '{}', '{}', NOW())""",
+                    (t, f"{signal}-{i}", signal, 10.0))
+
+
+def run_org(args, fx: Fixture, db) -> list:
+    rs = args.rust
+    py = args.python
+    out: list = []
+    if db is None:
+        return [(Case("org (all)", "-", "-", route="ORG"), "SKIP", ["ORG needs --db: grants are checked in the database"])]
+
+    def q1(sql, params=()):
+        cur = db.cursor()
+        cur.execute(sql, params)
+        return cur.fetchone()
+
+    def qa(sql, params=()):
+        cur = db.cursor()
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+    def ex(sql, params=()):
+        db.cursor().execute(sql, params)
+
+    def call(method, path, who="admin", f=None, token=None, body=None, headers=None, raw_body=None):
+        f = f or fx
+        tok = token if token is not None else auth_for(f, who)
+        return http(rs, method, f"{API}{path}", token=tok, body=body, headers=headers, raw_body=raw_body)
+
+    def ok_(name, problems):
+        if args.only and args.only not in name:
+            return
+        hard = [p for p in problems if not p.startswith("(")]
+        out.append((Case(name, "-", "-", route="ORG"), "FAIL" if hard else "PASS", problems))
+
+    def expect(name, r, status, code=None, **extra):
+        """Status (and error_code) of a response, plus any extra problems."""
+        problems = []
+        if r.status != status:
+            problems.append(f"status {r.status}, wanted {status}: {json.dumps(r.body)[:300]}")
+        elif code is not None:
+            got = r.body.get("error_code") if isinstance(r.body, dict) else None
+            if got != code:
+                problems.append(f"error_code {got!r}, wanted {code!r}")
+        problems += [p for p in extra.get("also", []) if p]
+        ok_(name, problems)
+        return r
+
+    def data(r):
+        return r.body.get("data") if isinstance(r.body, dict) else None
+
+    def links_naming(tid):
+        return q1("SELECT COUNT(*) FROM org_links WHERE parent_tenant_id = %s OR child_tenant_id = %s", (tid, tid))[0]
+
+    def grants_of(link_id):
+        return sorted(r[0] for r in qa("SELECT user_id FROM org_link_grants WHERE link_id = %s", (link_id,)))
+
+    def feed(tid, action, resource=None):
+        sql = "SELECT user_id, resource, context FROM activity_logs WHERE tenant_id = %s AND action = %s"
+        params = [tid, action]
+        if resource:
+            sql += " AND resource = %s"
+            params.append(resource)
+        return qa(sql + " ORDER BY created_at", tuple(params))
+
+    def leak(r, *forbidden):
+        text = json.dumps(r.body)
+        return [f"response leaks {f!r}" for f in forbidden if f and str(f) in text]
+
+    def tenant_ids(r):
+        d = data(r) or {}
+        return sorted(t["tenant_id"] for t in d.get("tenants", []))
+
+    import threading
+    import urllib.parse
+
+    secret = fx.secret
+    sub1 = make_fixture(py, secret)
+    sub2 = make_fixture(py, secret)
+    outs = make_fixture(py, secret)
+    extra = [sub1, sub2, outs]
+    H, S1, S2, O = fx.tenant_id, sub1.tenant_id, sub2.tenant_id, outs.tenant_id
+    try:
+        # The earlier sections left commitments, orders and budgets in the main
+        # fixture's tenant; this one counts exact numbers, so it starts clean
+        # (it is the last section, and nothing after it reads them).
+        for table in ("committed_demand", "inventory_po_items", "inventory_po_log", "purchase_budgets",
+                      "inventory_status_snapshot", "inventory_status_snapshot_meta"):
+            ex(f"DELETE FROM {table} WHERE tenant_id = %s", (H,))
+        # Invited people are `pending_confirmation` until they set a password; the
+        # harness mints their tokens, so it makes them active like a signed-in one.
+        ex("UPDATE users SET status = 'active' WHERE tenant_id = ANY(%s)", ([H, S1, S2, O],))
+        ex("UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{currency}', '\"USD\"') WHERE id = %s", (S2,))
+        org_seed(db, fx, {
+            "commit": [(10, 1, True, "open", False, 30), (20, 0.5, False, "open", False, 60),
+                       (50, 1, True, "fulfilled", False, 5), (60, 1, True, "cancelled", False, 5),
+                       (70, 1, True, "open", True, 5)],
+            "pos": [{"value": 300, "lines": [(3, 100.0, "approved")], "sent": True, "reception": "pending"},
+                    {"value": 40, "cancelled": True, "lines": [(1, 40.0, "approved")]},
+                    {"value": None, "sent": False, "lines": [(2, None, "approved")]}],
+            "budget": {"amount": 1000, "currency": "CRC"},
+            "snapshot": ("fresh", {"PEDIR_YA": 2, "OK": 3}),
+        })
+        org_seed(db, sub1, {
+            "commit": [(100, 0.8, True, "open", False, -3)],
+            "pos": [{"value": 500, "paid": True, "reception": "received", "lines": [(5, 100.0, "approved")]}],
+            "budget": {"amount": 800, "currency": "USD", "other_scope": True},
+            "snapshot": ("fresh", {"PEDIR_PRONTO": 4}),
+        })
+        org_seed(db, sub2, {
+            "commit": [(1000, 1, True, "open", False, 10)],
+            "pos": [{"value": 90, "lines": [(1, 90.0, "approved")]}],
+            "snapshot": ("stale", {"SOBRESTOCK": 6}),
+        })
+        org_seed(db, outs, {
+            "commit": [(7777777, 1, True, "open", False, 10)],
+            "pos": [{"value": 8888888, "lines": [(1, 8888888.0, "approved")]}],
+            "budget": {"amount": 9999999, "currency": "CRC"},
+            "snapshot": ("fresh", {"PEDIR_YA": 777}),
+        })
+        SENTINELS = ("7777777", "8888888", "9999999")
+
+        # ── A: nobody gets in without a person's token ──────────────────────
+        for method, path, body in ORG_ROUTES:
+            for who in ("key_write", "key_read"):
+                if fx.token(who) is None:
+                    continue
+                r = call(method, path, who=who, body=body)
+                expect(f"org: {who} refused on {method} {path}", r, 403, "api_key_route_not_exposed")
+            r = call(method, path, who="none", body=body)
+            expect(f"org: no credential on {method} {path}", r, 401)
+            r = call(method, path, who="bad_signature", body=body)
+            expect(f"org: forged token on {method} {path}", r, 401)
+        # The key in X-API-Key, not Authorization: same refusal, and no state.
+        if fx.write_key:
+            r = http(rs, "POST", f"{API}/org/links", body={"label": "viaheader"}, headers={"X-API-Key": fx.write_key})
+            expect("org: X-API-Key refused", r, 403, "api_key_route_not_exposed",
+                   also=[] if links_naming(H) == 0 else ["a key created a link"])
+
+        # ── B: management needs an admin: the permission pair ───────────────
+        before = links_naming(H)
+        for who in ("viewer", "analyst"):
+            for method, path, body in (("POST", "/org/links", {"label": "nope"}), ("GET", "/org/links", None),
+                                       ("POST", "/org/links/accept", {"code": "orgl_" + "a" * 48}),
+                                       ("DELETE", "/org/links/x", None), ("GET", "/org/links/x/members", None),
+                                       ("PUT", "/org/links/x/members/y", None), ("DELETE", "/org/links/x/members/y", None)):
+                r = call(method, path, who=who, body=body)
+                expect(f"org: {who} denied {method} {path}", r, 403, "role_not_permitted",
+                       also=[] if links_naming(H) == before else ["state changed"])
+
+        # ── C: the handshake ────────────────────────────────────────────────
+        r = call("POST", "/org/links", body={"label": "  Norte  "})
+        d = data(r) or {}
+        code, link1 = d.get("code", ""), d.get("id", "")
+        row = q1("SELECT status, code_hash, label, child_tenant_id, code_expires_at > NOW() FROM org_links WHERE id = %s", (link1,))
+        probs = []
+        if not row:
+            probs.append("no org_links row")
+        else:
+            if row[0] != "pending" or row[3] is not None or row[2] != "Norte" or not row[4]:
+                probs.append(f"row {row}")
+            if row[1] != _sha256(code):
+                probs.append("code_hash is not sha256(code)")
+            if code in json.dumps(list(map(str, row))):
+                probs.append("raw code stored")
+        ctxs = [str(c[2]) for c in feed(H, "org.link_created", link1)]
+        if len(ctxs) != 1 or code in ctxs[0]:
+            probs.append(f"link_created events: {ctxs}")
+        expect("org: admin creates a link (code shown once, only its hash stored)", r, 200, also=probs)
+        if not code.startswith("orgl_"):
+            ok_("org: aborted, no code to continue with", ["the handshake cases need a code"])
+            return out
+        r = call("GET", "/org/links")
+        txt = json.dumps(r.body)
+        expect("org: the list never carries the code or its hash", r, 200,
+               also=([f"code in list"] if code in txt else []) + (["hash in list"] if _sha256(code) in txt else []) + (
+                   ["no code_expires_at on a pending link"] if (data(r)["as_parent"][0]["code_expires_at"] is None) else []))
+
+        for bad_body, why in (({}, "missing label"), ({"label": "   "}, "blank label"), ({"label": 5}, "number"),
+                              ({"label": "x" * 81}, "81 chars")):
+            expect(f"org: create refuses {why}", call("POST", "/org/links", body=bad_body), 422)
+        expect("org: create refuses a non-JSON body",
+               call("POST", "/org/links", raw_body=b"label=x", body=None), 422)
+
+        expect("org: a subsidiary analyst cannot redeem", call("POST", "/org/links/accept", who="analyst", f=sub1,
+               body={"code": code}), 403, "role_not_permitted",
+               also=[] if q1("SELECT status FROM org_links WHERE id = %s", (link1,))[0] == "pending" else ["consumed"])
+        for bad in ("orgl_" + "0" * 48, "' OR '1'='1", "orgl_" + "g" * 48, "", "orgl_" + "a" * 47, code.upper()):
+            r = call("POST", "/org/links/accept", f=sub1, who="admin", body={"code": bad})
+            expect(f"org: redeeming {bad[:18]!r} is one flat 'not valid'", r, 404 if bad else 422,
+                   "org_link_code_invalid" if bad else None,
+                   also=[] if q1("SELECT status FROM org_links WHERE id = %s", (link1,))[0] == "pending" else ["consumed"])
+        expect("org: a tenant cannot redeem its own code", call("POST", "/org/links/accept", body={"code": code}),
+               409, "org_link_self")
+        ex("UPDATE org_links SET code_expires_at = NOW() - INTERVAL '1 minute' WHERE id = %s", (link1,))
+        expect("org: an expired code is refused", call("POST", "/org/links/accept", f=sub1, body={"code": code}),
+               404, "org_link_code_invalid")
+        ex("UPDATE org_links SET code_expires_at = NOW() + INTERVAL '1 day' WHERE id = %s", (link1,))
+
+        r = call("POST", "/org/links/accept", f=sub1, body={"code": code})
+        row = q1("SELECT status, child_tenant_id, code_hash, accepted_by FROM org_links WHERE id = %s", (link1,))
+        probs = []
+        if row != ("active", S1, None, sub1.admin_id):
+            probs.append(f"row {row}")
+        if (data(r) or {}).get("parent_name") != q1("SELECT name FROM tenants WHERE id = %s", (H,))[0]:
+            probs.append("parent_name")
+        if len(feed(H, "org.link_accepted", link1)) != 1 or len(feed(S1, "org.link_accepted", link1)) != 1:
+            probs.append("accepted events")
+        if any("Norte" in str(c[2]) for c in feed(S1, "org.link_accepted", link1)):
+            probs.append("the subsidiary's feed learned the holding's label")
+        if any(sub1.admin_id in str(c[0]) for c in feed(H, "org.link_accepted", link1)):
+            probs.append("the holding's feed names a person of the subsidiary")
+        expect("org: the subsidiary's admin redeems: link active, code gone, both feeds told", r, 200, also=probs)
+        expect("org: a used code cannot be used twice", call("POST", "/org/links/accept", f=sub2, body={"code": code}),
+               404, "org_link_code_invalid")
+
+        # A second subsidiary through the same door, and the nesting rules.
+        r = call("POST", "/org/links", body={"label": "Sur"})
+        code2, link2 = data(r)["code"], data(r)["id"]
+        expect("org: SUB2 redeems its own code", call("POST", "/org/links/accept", f=sub2, body={"code": code2}), 200)
+        expect("org: a subsidiary cannot become a holding", call("POST", "/org/links", f=sub1, body={"label": "x"}),
+               409, "org_nesting_not_allowed", also=[] if links_naming(S1) == 1 else ["link created"])
+        r = call("POST", "/org/links", f=outs, body={"label": "Foreign"})
+        code_out, link_out = data(r)["code"], data(r)["id"]
+        expect("org: a holding cannot become a subsidiary", call("POST", "/org/links/accept", body={"code": code_out}),
+               409, "org_nesting_not_allowed",
+               also=[] if q1("SELECT status FROM org_links WHERE id = %s", (link_out,))[0] == "pending" else ["consumed"])
+        expect("org: a subsidiary cannot join a second holding", call("POST", "/org/links/accept", f=sub1, body={"code": code_out}),
+               409, "org_already_linked",
+               also=[] if q1("SELECT status FROM org_links WHERE id = %s", (link_out,))[0] == "pending" else ["consumed"])
+        ex("UPDATE org_links SET status = 'revoked', code_hash = NULL, code_expires_at = NULL, revoked_at = NOW(), "
+           "revoked_side = 'parent' WHERE id = %s", (link_out,))
+
+        # Pending-code ceiling, on OUT.
+        for i in range(20):
+            http(rs, "POST", f"{API}/org/links", token=auth_for(outs, "admin"), body={"label": f"c{i}"})
+        expect("org: too many waiting codes", call("POST", "/org/links", f=outs, body={"label": "21"}), 409,
+               "org_too_many_pending_links")
+
+        # Two subsidiaries racing for one code: exactly one wins.
+        r = call("POST", "/org/links", body={"label": "Race"})
+        code_r, link_r = data(r)["code"], data(r)["id"]
+        results: dict = {}
+
+        def redeem(tag, f):
+            results[tag] = call("POST", "/org/links/accept", f=f, body={"code": code_r})
+        # SUB1/SUB2 are already linked; use two fresh tenants.
+        race_a, race_b = make_fixture(py, secret), make_fixture(py, secret)
+        extra += [race_a, race_b]
+        ts = [threading.Thread(target=redeem, args=("a", race_a)), threading.Thread(target=redeem, args=("b", race_b))]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        statuses = sorted(r.status for r in results.values())
+        child = q1("SELECT child_tenant_id, status FROM org_links WHERE id = %s", (link_r,))
+        ok_("org: two redeemers of one code, exactly one wins",
+            [] if statuses == [200, 404] and child[1] == "active" and child[0] in (race_a.tenant_id, race_b.tenant_id)
+            else [f"statuses {statuses}, row {child}"])
+        ex("UPDATE org_links SET status = 'revoked', revoked_at = NOW(), revoked_side = 'system' WHERE id = %s", (link_r,))
+
+        # ── D: a link shows nothing until someone is granted ───────────────
+        r = call("GET", "/org/overview")
+        d = data(r) or {}
+        expect("org: the holding's admin is not granted by being admin", r, 200, also=[] if (
+            d.get("entitled") is False and d.get("reason") == "org_not_entitled" and d.get("can_manage") is True
+            and d.get("tenants") == []) else [f"overview {d}"])
+        for view in ORG_VIEWS:
+            for who in ("admin", "analyst", "viewer"):
+                expect(f"org: {who} without a grant gets no {view}", call("GET", f"/org/consolidated/{view}", who=who),
+                       403, "org_not_entitled")
+
+        # Grants: the holding's admin gives the analyst SUB1 only.
+        r = call("PUT", f"/org/links/{link1}/members/{fx.analyst_id}")
+        probs = [] if grants_of(link1) == [fx.analyst_id] else [f"grants {grants_of(link1)}"]
+        ev = feed(H, "org.grant_added", link1)
+        if len(ev) != 1 or "label" not in str(ev[0][2]):
+            probs.append(f"grant_added events {ev}")
+        expect("org: admin grants the analyst SUB1", r, 200, also=probs)
+        r = call("PUT", f"/org/links/{link1}/members/{fx.analyst_id}")
+        expect("org: granting twice changes nothing and logs nothing", r, 200,
+               also=[] if (data(r) or {}).get("changed") is False and len(feed(H, "org.grant_added", link1)) == 1
+               else ["second grant changed state or logged"])
+        expect("org: a person of another tenant cannot be granted",
+               call("PUT", f"/org/links/{link1}/members/{sub1.admin_id}"), 404, "org_member_not_found",
+               also=[] if grants_of(link1) == [fx.analyst_id] else ["row created"])
+        expect("org: a link of another tenant is 'not found' to a holding admin",
+               call("PUT", f"/org/links/{link_out}/members/{fx.admin_id}"), 404, "org_link_not_found")
+        expect("org: the subsidiary's admin cannot grant on the link",
+               call("PUT", f"/org/links/{link1}/members/{sub1.admin_id}", f=sub1), 404, "org_link_not_found",
+               also=[] if grants_of(link1) == [fx.analyst_id] else ["row created"])
+        expect("org: the subsidiary's admin cannot list who can see it",
+               call("GET", f"/org/links/{link1}/members", f=sub1), 404, "org_link_not_found")
+        expect("org: an outsider's admin cannot list the grants", call("GET", f"/org/links/{link1}/members", f=outs),
+               404, "org_link_not_found")
+        expect("org: a revoked link takes no grants", call("PUT", f"/org/links/{link_out}/members/{outs.admin_id}", f=outs),
+               409, "org_link_not_active")
+        r = call("GET", f"/org/links/{link1}/members")
+        expect("org: the holding sees who holds the grant", r, 200,
+               also=[] if [m["user_id"] for m in data(r)] == [fx.analyst_id] else ["members"])
+
+        # A grant belongs to ONE person: somebody else of the same tenant, who
+        # was not granted, gets nothing, even though a grant exists on the link.
+        for view in ORG_VIEWS:
+            for other in ("viewer", "admin"):
+                r = call("GET", f"/org/consolidated/{view}", who=other)
+                expect(f"org: {other} (not granted) gets no {view} while the analyst holds a grant", r, 403,
+                       "org_not_entitled", also=leak(r, S1, "Norte"))
+        r = call("GET", "/org/overview", who="viewer")
+        expect("org: the viewer's overview shows no subsidiaries while the analyst holds a grant", r, 200,
+               also=[] if data(r)["entitled"] is False and data(r)["tenants"] == [] else ["entitled"])
+        # ── E: the consolidated reads: the right tenants, the right numbers ─
+        who = "analyst"
+        r = call("GET", "/org/consolidated/committed-demand", who=who)
+        d = data(r) or {}
+        ids = tenant_ids(r)
+        probs = [] if ids == sorted([H, S1]) else [f"covers {ids}"]
+        probs += leak(r, S2, O, *SENTINELS, "Sur", "Foreign")
+        t = d.get("totals", {})
+        if (t.get("commitments"), t.get("quantity"), t.get("weighted_quantity"), t.get("overdue")) != (3, 130.0, 100.0, 1):
+            probs.append(f"totals {t}")
+        expect("org: committed demand covers own + granted only; withdrawn/fulfilled/cancelled left out", r, 200, also=probs)
+
+        own = next((x for x in (d.get("tenants") or []) if x["tenant_id"] == H), {})
+        expect("org: committed rows split what is added on top of the forecast", r, 200, also=[] if (
+            own.get("commitments") == 2 and own.get("quantity") == 30.0 and own.get("weighted_quantity") == 20.0
+            and own.get("added_to_forecast_quantity") == 10.0) else [f"own {own}"])
+
+        for tid, label in ((S2, "SUB2 (a sibling the person was not granted)"), (O, "an unrelated tenant"),
+                           ("nonexistent-tenant", "an id that does not exist"), ("x' OR '1'='1", "a SQL fragment"),
+                           (S1.upper(), "the id in upper case"), ("%00", "a NUL byte")):
+            for view in ORG_VIEWS:
+                r = call("GET", f"/org/consolidated/{view}?tenant_ids={urllib.parse.quote(tid)}", who=who)
+                expect(f"org: {view} narrowed to {label}", r, 404, "org_tenant_not_found",
+                       also=leak(r, *SENTINELS))
+        r1 = call("GET", f"/org/consolidated/budgets?tenant_ids={O}", who=who)
+        r2 = call("GET", "/org/consolidated/budgets?tenant_ids=does-not-exist", who=who)
+        ok_("org: an unrelated tenant and a missing one are indistinguishable",
+            [] if (r1.status, r1.body.get("error_code"), r1.body.get("detail")) == (r2.status, r2.body.get("error_code"), r2.body.get("detail"))
+            else ["the narrowing parameter is an existence oracle"])
+        r = call("GET", f"/org/consolidated/committed-demand?tenant_ids={S1}", who=who)
+        expect("org: narrowing to one granted subsidiary returns only it", r, 200,
+               also=[] if tenant_ids(r) == [S1] and data(r)["totals"]["commitments"] == 1 else [f"covers {tenant_ids(r)}"])
+        r = call("GET", f"/org/consolidated/committed-demand?tenant_ids={S1},{S2}", who=who)
+        expect("org: one foreign id poisons the whole request (no partial answer)", r, 404, "org_tenant_not_found")
+        r = call("GET", f"/org/consolidated/committed-demand?tenant_ids={H},{S1}", who=who)
+        expect("org: own + granted by id", r, 200, also=[] if tenant_ids(r) == sorted([H, S1]) else ["covers"])
+        expect("org: days must be a bounded integer", call("GET", "/org/consolidated/purchase-orders?days=0", who=who), 422)
+        expect("org: days must be an integer", call("GET", "/org/consolidated/purchase-orders?days=1;DROP", who=who), 422)
+        expect("org: days has a ceiling", call("GET", "/org/consolidated/purchase-orders?days=731", who=who), 422)
+
+        # Children never see the parent or the sibling.
+        for view in ORG_VIEWS:
+            r = call("GET", f"/org/consolidated/{view}", f=sub1)
+            expect(f"org: the subsidiary's admin gets no {view}", r, 403, "org_not_entitled",
+                   also=leak(r, H, S2, O, *SENTINELS))
+            r = call("GET", f"/org/consolidated/{view}?tenant_ids={H}", f=sub1)
+            expect(f"org: a subsidiary asking for the holding by id: {view}", r, 403, "org_not_entitled",
+                   also=leak(r, H))
+            r = call("GET", f"/org/consolidated/{view}", f=outs)
+            expect(f"org: an outsider gets no {view}", r, 403, "org_not_entitled", also=leak(r, H, S1, S2))
+        r = call("GET", "/org/links", f=sub1)
+        d = data(r) or {}
+        expect("org: the subsidiary's link list names the holding and nothing else of it", r, 200, also=(
+            leak(r, "Norte", "Sur", H, S2, fx.analyst_id, fx.viewer_id, "contract-")
+            + ([] if len(d.get("as_child", [])) == 1 and d["as_child"][0]["parent_name"] and d["as_parent"] == []
+               else [f"list {d}"])))
+        r = call("GET", "/org/overview", f=sub1)
+        expect("org: the subsidiary's overview is empty", r, 200, also=[] if (data(r)["entitled"] is False
+               and data(r)["tenants"] == []) else ["overview"])
+        expect("org: the subsidiary cannot end the holding's other link", call("DELETE", f"/org/links/{link2}", f=sub1),
+               404, "org_link_not_found", also=[] if q1("SELECT status FROM org_links WHERE id = %s", (link2,))[0] == "active" else ["revoked"])
+        expect("org: an outsider cannot end any link", call("DELETE", f"/org/links/{link1}", f=outs), 404,
+               "org_link_not_found", also=[] if q1("SELECT status FROM org_links WHERE id = %s", (link1,))[0] == "active" else ["revoked"])
+
+        # Everything for the holding admin once granted on both.
+        call("PUT", f"/org/links/{link1}/members/{fx.admin_id}")
+        call("PUT", f"/org/links/{link2}/members/{fx.admin_id}")
+        r = call("GET", "/org/consolidated/committed-demand")
+        d = data(r)
+        expect("org: committed demand across the holding", r, 200, also=(
+            [] if tenant_ids(r) == sorted([H, S1, S2]) and d["totals"]["commitments"] == 4 and d["totals"]["quantity"] == 1130.0
+            else [f"{tenant_ids(r)} {d['totals']}"]) + leak(r, O, *SENTINELS)
+            + ([] if [m["month"] for m in d["months"]] == sorted(m["month"] for m in d["months"]) else ["months not ordered"]))
+
+        r = call("GET", "/org/consolidated/stock-signals")
+        d = data(r)
+        excl = {e["tenant_id"]: e["reason"] for e in d["excluded"]}
+        expect("org: stock counts fresh tenants only; stale and missing are listed, not summed", r, 200, also=(
+            [] if d["totals"]["signals"]["PEDIR_YA"] == 2 and d["totals"]["signals"]["OK"] == 3
+            and d["totals"]["signals"]["PEDIR_PRONTO"] == 4 and d["totals"]["signals"]["SOBRESTOCK"] == 0
+            and excl == {S2: "stale"} and d["totals"]["skus"] == 9 and d["totals"]["tenants_excluded"] == 1
+            else [f"{d['totals']} {excl}"]) + leak(r, O))
+        r = call("GET", "/org/consolidated/stock-signals")
+        d = data(r)
+        s2 = next(x for x in d["tenants"] if x["tenant_id"] == S2)
+        expect("org: the stale tenant still shows its own numbers, flagged", r, 200,
+               also=[] if s2["counted"] is False and s2["signals"]["SOBRESTOCK"] == 6 else [f"{s2}"])
+        ex("UPDATE inventory_status_snapshot_meta SET n_rows = n_rows + 1 WHERE tenant_id = %s", (S1,))
+        r = call("GET", "/org/consolidated/stock-signals")
+        d = data(r)
+        ok_("org: a snapshot whose rows do not match its meta is not trusted",
+            [] if {e["tenant_id"]: e["reason"] for e in d["excluded"]}.get(S1) == "inconsistent"
+            and d["totals"]["signals"]["PEDIR_PRONTO"] == 0 else [f"{d['excluded']}"])
+        ex("UPDATE inventory_status_snapshot_meta SET n_rows = n_rows - 1 WHERE tenant_id = %s", (S1,))
+        ex("INSERT INTO status_input_bumps (tenant_id, source) VALUES (%s, 'org-test')", (H,))
+        r = call("GET", "/org/consolidated/stock-signals")
+        ok_("org: an input changed since the snapshot: stale",
+            [] if {e["tenant_id"]: e["reason"] for e in data(r)["excluded"]}.get(H) == "stale" else ["not stale"])
+
+        r = call("GET", "/org/consolidated/purchase-orders")
+        d = data(r)
+        tot = d["totals"]
+        usd = lambda lst, c: next((m["amount"] for m in lst if m["currency"] == c), None)
+        expect("org: purchase orders, money per currency", r, 200, also=(
+            [] if (tot["orders"], tot["cancelled"], tot["active"], tot["sent"], tot["not_sent"], tot["paid"],
+                   tot["awaiting_payment"], tot["awaiting_reception"]) == (5, 1, 4, 3, 1, 1, 2, 2)
+            and usd(tot["value"], "CRC") == 800.0 and usd(tot["value"], "USD") == 90.0
+            and len(tot["value"]) == 2 and tot["orders_without_value"] == 1
+            else [f"{tot}"]) + leak(r, *SENTINELS))
+        r = call("GET", "/org/consolidated/purchase-orders?days=1")
+        expect("org: the window excludes older orders", r, 200,
+               also=[] if data(r)["totals"]["orders"] == 0 and data(r)["window_days"] == 1 else [f"{data(r)['totals']}"])
+
+        r = call("GET", "/org/consolidated/budgets")
+        d = data(r)
+        by = {c["currency"]: c for c in d["totals"]["by_currency"]}
+        s1b = next(x for x in d["tenants"] if x["tenant_id"] == S1)
+        hb = next(x for x in d["tenants"] if x["tenant_id"] == H)["budgets"][0]
+        expect("org: budgets: own budget valued, a foreign-currency budget shown but not totalled", r, 200, also=(
+            [] if set(by) == {"CRC"} and by["CRC"]["amount"] == 1000.0 and hb["spent"] == 0.0 and hb["committed"] == 300.0
+            and hb["remaining"] == 700.0 and hb["unknown_cost_lines"] == 1
+            and s1b["budgets"][0]["currency_mismatch"] is True and d["totals"]["budgets_not_totalled"] == 1
+            and s1b["other_scope_budgets_not_included"] == 1
+            else [f"{d['totals']} {hb} {s1b}"]) + leak(r, *SENTINELS))
+
+        # Read-only: no verb but GET reaches a consolidated route.
+        snap = (q1("SELECT COUNT(*) FROM committed_demand")[0], q1("SELECT COUNT(*) FROM inventory_po_log")[0],
+                q1("SELECT COUNT(*) FROM org_links")[0])
+        for view in ORG_VIEWS:
+            for method in ("POST", "PUT", "PATCH", "DELETE"):
+                r = call(method, f"/org/consolidated/{view}", body={"x": 1} if method != "DELETE" else None)
+                expect(f"org: {method} on /org/consolidated/{view} is refused", r, 405)
+        ok_("org: the refused verbs wrote nothing",
+            [] if snap == (q1("SELECT COUNT(*) FROM committed_demand")[0], q1("SELECT COUNT(*) FROM inventory_po_log")[0],
+                           q1("SELECT COUNT(*) FROM org_links")[0]) else ["a write got through"])
+
+        # ── F: lifecycle: every way access ends ─────────────────────────────
+        # (1) the live person, not the token.
+        ex("UPDATE users SET status = 'inactive' WHERE id = %s", (fx.analyst_id,))
+        r = call("GET", "/org/consolidated/committed-demand", who="analyst")
+        expect("org: a deactivated person with a still-valid token gets nothing", r, 403, "org_not_entitled")
+        ex("UPDATE users SET status = 'active' WHERE id = %s", (fx.analyst_id,))
+        expect("org: ...and gets it back only because the grant was never removed here",
+               call("GET", "/org/consolidated/committed-demand", who="analyst"), 200)
+        ex("UPDATE users SET role = 'viewer' WHERE id = %s", (fx.admin_id,))
+        for method, path, body in (("POST", "/org/links", {"label": "stale-admin"}), ("GET", "/org/links", None),
+                                   ("DELETE", f"/org/links/{link2}", None)):
+            expect(f"org: a demoted admin's old token cannot {method} {path}", call(method, path, body=body), 403,
+                   "role_not_permitted",
+                   also=[] if q1("SELECT status FROM org_links WHERE id = %s", (link2,))[0] == "active" else ["revoked"])
+        ex("UPDATE users SET role = 'admin' WHERE id = %s", (fx.admin_id,))
+        # (2) a person limited to some warehouses is refused company-wide totals.
+        ex("UPDATE users SET warehouse_scope = '[\"w1\"]'::jsonb WHERE id = %s", (fx.analyst_id,))
+        for view in ORG_VIEWS:
+            expect(f"org: a warehouse-scoped person gets no {view}", call("GET", f"/org/consolidated/{view}", who="analyst"),
+                   403, "warehouse_scope_company_totals")
+        r = call("GET", "/org/overview", who="analyst")
+        expect("org: ...and the overview says why", r, 200, also=[] if data(r)["reason"] == "warehouse_scope_company_totals" else ["reason"])
+        ex("UPDATE users SET warehouse_scope = NULL WHERE id = %s", (fx.analyst_id,))
+        # (3) a suspended subsidiary is named, not read.
+        ex("UPDATE tenants SET status = 'suspended' WHERE id = %s", (S1,))
+        r = call("GET", "/org/consolidated/committed-demand")
+        d = data(r)
+        expect("org: a suspended subsidiary is reported unavailable and its data is not read", r, 200, also=(
+            [] if tenant_ids(r) == sorted([H, S2]) and [u["label"] for u in d["unavailable"]] == ["Norte"]
+            and d["totals"]["quantity"] == 1030.0 else [f"{tenant_ids(r)} {d['unavailable']} {d['totals']}"]))
+        ex("UPDATE tenants SET status = 'active' WHERE id = %s", (S1,))
+
+        # (4) removing a grant ends access at once.
+        r = call("DELETE", f"/org/links/{link1}/members/{fx.analyst_id}")
+        probs = [] if fx.analyst_id not in grants_of(link1) else ["row still there"]
+        if len(feed(H, "org.grant_removed", link1)) != 1:
+            probs.append("grant_removed event")
+        expect("org: admin removes the analyst's grant", r, 200, also=probs)
+        expect("org: the analyst has no access the next request",
+               call("GET", "/org/consolidated/committed-demand", who="analyst"), 403, "org_not_entitled")
+        expect("org: removing a grant twice changes nothing",
+               call("DELETE", f"/org/links/{link1}/members/{fx.analyst_id}"), 200,
+               also=[] if len(feed(H, "org.grant_removed", link1)) == 1 else ["second event"])
+        call("PUT", f"/org/links/{link1}/members/{fx.analyst_id}")
+
+        # (5) the SUBSIDIARY ends the link.
+        r = call("DELETE", f"/org/links/{link1}", f=sub1)
+        row = q1("SELECT status, revoked_side, code_hash FROM org_links WHERE id = %s", (link1,))
+        probs = [] if row == ("revoked", "child", None) else [f"row {row}"]
+        if grants_of(link1):
+            probs.append("grants survive the link")
+        h_ev, s_ev = feed(H, "org.link_revoked", link1), feed(S1, "org.link_revoked", link1)
+        if len(h_ev) != 1 or h_ev[0][2].get("reason") != "org_revoked_by_child" or h_ev[0][2].get("label") != "Norte":
+            probs.append(f"holding's event {h_ev}")
+        if len(s_ev) != 1 or "label" in s_ev[0][2] or s_ev[0][2].get("reason") != "org_revoked_by_child":
+            probs.append(f"subsidiary's event {s_ev}")
+        expect("org: the subsidiary ends the link: grants gone, both feeds told", r, 200, also=probs)
+        expect("org: ending twice is a no-op", call("DELETE", f"/org/links/{link1}", f=sub1), 200,
+               also=[] if len(feed(H, "org.link_revoked", link1)) == 1 else ["second event"])
+        r = call("GET", "/org/consolidated/committed-demand", who="analyst")
+        expect("org: the analyst's only subsidiary is gone, so is the access", r, 403, "org_not_entitled",
+               also=leak(r, S1))
+        expect("org: the holding cannot grant on an ended link",
+               call("PUT", f"/org/links/{link1}/members/{fx.analyst_id}"), 409, "org_link_not_active",
+               also=[] if grants_of(link1) == [] else ["grant on a revoked link"])
+        r = call("GET", "/org/consolidated/committed-demand")
+        expect("org: the holding's admin no longer sees the ended subsidiary", r, 200,
+               also=[] if tenant_ids(r) == sorted([H, S2]) else [f"covers {tenant_ids(r)}"])
+        # Re-linking is a fresh handshake, never a reactivation.
+        r = call("POST", "/org/links/accept", f=sub1, body={"code": code})
+        expect("org: the old code does not revive an ended link", r, 404, "org_link_code_invalid")
+
+        # (6) the HOLDING ends the link.
+        r = call("DELETE", f"/org/links/{link2}")
+        row = q1("SELECT status, revoked_side FROM org_links WHERE id = %s", (link2,))
+        expect("org: the holding ends a link", r, 200, also=[] if row == ("revoked", "parent") and not grants_of(link2)
+               and feed(S2, "org.link_revoked", link2)[0][2].get("reason") == "org_revoked_by_parent" else [f"{row}"])
+        r = call("GET", "/org/consolidated/committed-demand")
+        expect("org: with every subsidiary gone, the admin's grant reaches nothing", r, 403, "org_not_entitled")
+
+        # (7) a pending link cancelled by the holding.
+        r = call("POST", "/org/links", body={"label": "Cancelled"})
+        cid, ccode = data(r)["id"], data(r)["code"]
+        expect("org: the holding cancels a pending code", call("DELETE", f"/org/links/{cid}"), 200,
+               also=[] if q1("SELECT status, code_hash FROM org_links WHERE id = %s", (cid,)) == ("revoked", None) else ["row"])
+        expect("org: a cancelled code cannot be redeemed", call("POST", "/org/links/accept", f=outs, body={"code": ccode}),
+               404, "org_link_code_invalid")
+
+        # (8) whole-tenant erasure of a subsidiary, through the real Python route.
+        keeper = race_a
+        r = call("POST", "/org/links", body={"label": "Keeper"})
+        call("POST", "/org/links/accept", f=keeper, body={"code": data(r)["code"]})
+        call("PUT", f"/org/links/{data(r)['id']}/members/{fx.admin_id}")
+        r = call("POST", "/org/links", body={"label": "Erasable"})
+        code_e, link_e = data(r)["code"], data(r)["id"]
+        victim = make_fixture(py, secret)
+        extra.append(victim)
+        call("POST", "/org/links/accept", f=victim, body={"code": code_e})
+        call("PUT", f"/org/links/{link_e}/members/{fx.admin_id}")
+        org_seed(db, victim, {"commit": [(31337, 1, True, "open", False, 10)]})
+        r = call("GET", "/org/consolidated/committed-demand")
+        ok_("org: before erasure the victim subsidiary is in the view",
+            [] if victim.tenant_id in tenant_ids(r) else ["not covered"])
+        er = http(py, "DELETE", f"{API}/tenant", token=mint_access_token(secret, victim.admin_id, victim.tenant_id, "admin"),
+                  body={"confirm": "DELETE"})
+        extra.remove(victim)
+        r = call("GET", "/org/consolidated/committed-demand")
+        ev = feed(H, "org.link_revoked", link_e)
+        expect("org: an erased subsidiary leaves the view, the links, the grants, and says why", r, 200, also=(
+            ([] if er.status == 200 else [f"erase answered {er.status}"])
+            + ([] if tenant_ids(r) == sorted([H, keeper.tenant_id]) else [f"covers {tenant_ids(r)}"])
+            + ([] if links_naming(victim.tenant_id) == 0 and grants_of(link_e) == [] else ["links/grants survive"])
+            + ([] if len(ev) == 1 and ev[0][2].get("reason") == "org_tenant_erased" and ev[0][2].get("label") == "Erasable"
+                else [f"holding's feed {ev}"]) + leak(r, "31337", victim.tenant_id)))
+
+        # (9) the HOLDING is erased: the subsidiary survives, is told, and is free again.
+        r = call("POST", "/org/links", body={"label": "Last"})
+        code_l, link_l = data(r)["code"], data(r)["id"]
+        expect("org: SUB1 re-links with a fresh code", call("POST", "/org/links/accept", f=sub1, body={"code": code_l}), 200)
+        er = http(py, "DELETE", f"{API}/tenant", token=mint_access_token(secret, fx.admin_id, H, "admin"),
+                  body={"confirm": "DELETE"})
+        fx.erased = True
+        ev = feed(S1, "org.link_revoked", link_l)
+        probs = [] if er.status == 200 else [f"erase answered {er.status}"]
+        if links_naming(H) or links_naming(S1) or q1("SELECT COUNT(*) FROM org_link_grants WHERE link_id = %s", (link_l,))[0]:
+            probs.append("links or grants survive the holding")
+        if len(ev) != 1 or ev[0][2].get("reason") != "org_tenant_erased" or "label" in ev[0][2] or H in json.dumps(ev[0][2]):
+            probs.append(f"subsidiary's feed {ev}")
+        if not q1("SELECT 1 FROM tenants WHERE id = %s", (S1,)):
+            probs.append("the subsidiary was erased with its holding")
+        ok_("org: erasing the holding frees and tells the subsidiary, and removes every link and grant", probs)
+        ex("UPDATE org_links SET status = 'revoked', code_hash = NULL, code_expires_at = NULL, revoked_at = NOW(), "
+           "revoked_side = 'system' WHERE parent_tenant_id = %s AND status = 'pending'", (O,))
+        r = call("POST", "/org/links", f=outs, body={"label": "After"})
+        expect("org: a freed subsidiary can join another holding",
+               call("POST", "/org/links/accept", f=sub1, body={"code": data(r)["code"]}), 200)
+    finally:
+        for f in extra:
+            tok = mint_access_token(secret, f.admin_id, f.tenant_id, "admin")
+            http(py, "DELETE", f"{API}/tenant", token=tok, body={"confirm": "DELETE"})
+    return out
+
+
 def run(args) -> int:
     env = read_env_file(args.env_file) if args.env_file else {}
     secret = os.environ.get("SECRET_KEY") or env.get("SECRET_KEY")
@@ -2807,6 +3490,7 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        results += run_org(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
