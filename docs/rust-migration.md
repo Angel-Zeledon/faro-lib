@@ -6,8 +6,9 @@ the training worker stay in Python.** The Python FastAPI app keeps serving
 every route that has not moved, and keeps the code of every route that has,
 so any route can go back to Python in seconds.
 
-Status: wave 0 (foundations) and the first wave-1 routes are implemented in
-`backend-rs/`. **Nothing is deployed.** The compose and Caddy files under
+Status: wave 0 (foundations), the wave-1 routes R1 to R4 and the outbox-free
+part of wave 2 ("wave 2b", section 12) are implemented in `backend-rs/`.
+**Nothing is deployed.** The compose and Caddy files under
 `deploy/rust-api/` are disabled examples. Parity claims in this document are
 limited to what `tests/contract/contract_test.py` showed (see "Results").
 
@@ -134,6 +135,18 @@ notification, no file storage, no hub.
   emit half of `backend/webhooks/service.py`: it only inserts
   `webhook_deliveries` rows, which Python's delivery loop sends).
 * Next: the rest of the Wave 1 list in the table above.
+
+**Wave 2b (done in `routes/w2b/`, branch `feat/rust-wave2b`): the parts of
+wave 2 that need no outbox.**
+* `GET /data-freshness` (the read half; the daily reminder loop stays in the
+  Python worker).
+* `GET /tenant/export` (ZIP) and `DELETE /tenant` (whole-tenant erasure). The
+  table lists are generated from `backend/tenants/data_export.py`.
+* `GET /service-config/capabilities` only. The other ten service-config routes
+  stay Python, see "Wave 2b: what stayed Python".
+* `GET /auth/sso/availability`, the only `auth`-tag route moved. No
+  authentication code moved; the per-feature plan for it is section 10.
+* Results and divergences: "Results: wave 2b" below.
 
 **Wave 2: DB plus side effects and security.** auth / social / sso, users,
 messages, po_approvals, entitlements upgrade-request, trial, freshness,
@@ -366,6 +379,41 @@ Modules: `config`, `pycompat` (`isoformat`, `date.fromisoformat`,
    a set (arbitrary order), and Rust names the first in row order.
 8. `api_keys.last_used` update failure: Python would raise (500), and Rust
    logs and continues.
+9. **Database session time zone (every migrated route).** Both services print
+   timestamps in the session zone of their connection; Rust prints `+00:00`
+   always. They agree only when the database is UTC, which holds for every
+   StockAI deployment but NOT for the Postgres installed on this development
+   machine (`America/Guatemala`). The wave 2b run set the disposable
+   database to UTC. Against a non-UTC database every timestamp of every
+   migrated route differs (R1 to R4 included).
+10. Freshness: `datetime.fromisoformat` is ported for dates (all forms
+    `date.fromisoformat` takes) and for `T` or space then `HH`, `HH:MM`,
+    `HH:MM:SS` or compact `HHMMSS`, with a fraction and a `Z` / offset that
+    `.replace(tzinfo=)` discards. ISO week dates followed by a time, other
+    separators and 3.11-only exotic spellings are not matched: Rust then falls
+    back to the upload date where Python would have parsed them. The two
+    services read their own clock, so an age exactly on a day boundary can
+    differ by one day between two calls a moment apart.
+11. Export: row order inside a member is whatever the query returns (no
+    `ORDER BY`, same as Python; none of the runs saw a difference). ZIP
+    container bytes differ (compressor, timestamps), member contents do not.
+    A column type outside text / int / float8 / bool / jsonb / timestamptz /
+    date / text[] is selected `::text`, which equals Python's `str()` for
+    numeric, uuid and time, and differs for interval, bytea and the extreme
+    float4 cases (the schema has none today). JSON text from Postgres is
+    re-parsed with Python's integer rule (big integers stay integers).
+    Feedback screenshot paths are checked lexically (one plain file name);
+    Python also resolves symlinks.
+12. Erase: `removed_storage_dirs` prints paths with the platform separator
+    (the harness normalises it); storage removal is `remove_dir_all` per
+    category, best effort, like `shutil.rmtree`.
+13. `GET /service-config/capabilities` and `GET /auth/sso/availability`: Python
+    caches the override table for 10 s per process, Rust reads it per request,
+    so after a panel write the two can disagree for up to 10 s. A stored float
+    is parsed with Rust's `f64` rules: Python's `float()` also accepts
+    underscores (`1_0`), which Rust refuses (the value is then ignored).
+14. Invalid JSON bodies on `DELETE /tenant`: same status, type and `loc`
+    shape as every other route; `ctx.error` is serde's wording (divergence 2).
 
 ## 9. Results
 
@@ -528,3 +576,254 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. Authentication: per-feature contract-case plan
+
+**Nothing in authentication moved in wave 2b** (except `GET /auth/sso/availability`,
+a read of one configuration switch). This section is the plan the move must
+follow, written from the Python source as of this branch
+(`backend/api/v1/auth.py`, `auth/password.py`, `auth/guards.py`,
+`users/service.py`). Each feature lists what the Python code does today, the
+contract cases that must pass before it moves, and the traps. Auth is never
+moved as one router: the order is at the end.
+
+**Why the existing harness cannot verify any of it yet.** The harness runs both
+services with `TESTING_MODE=true`, and Python's `_check_rate` returns on its
+first line in testing mode. So every limiter below (login, OTP, trial, SSO) is
+invisible to it. The auth runs need their own mode: a disposable database, both
+services started with `TESTING_MODE=false` (never `ENVIRONMENT=production`; the
+server refuses that pair), and a harness section that creates its own throwaway
+tenants. Plan gates (`plan_feature_locked`, `PLAN_LIMIT_REACHED`),
+`TRIAL_EXPIRED` and the API-key rate limit flip on in the same run, so that run
+also closes the SKIPs listed in section 9.
+
+Prerequisites, none built here: the email outbox (rust-wave1b) for
+verification mail and OTP delivery, the users `create_user` / `create_tenant`
+port (shared with `POST /trial`), the `bcrypt` crate.
+
+**1. Password hashing (bcrypt).**
+* Today: `bcrypt.gensalt()` (cost 12, `$2b$` prefix), `bcrypt.hashpw`;
+  `checkpw` returns `False` on ANY exception, so a malformed stored hash is a
+  401 `invalid_credentials`, not a 500. `validate_strength`: at least 8
+  characters, at most 72 UTF-8 BYTES, at least one digit, at least one letter,
+  each with its own English sentence. A `users.has_password = FALSE` account
+  (provider-only) refuses every password.
+* Cases: (a) a hash written by Rust verifies in Python's `POST /login` and the
+  reverse, both directions, with the same password; (b) the stored hash starts
+  with `$2b$12$`; (c) boundaries 7/8 characters, 72/73 bytes, a 72-byte
+  password built from multibyte characters, digit-only, letter-only; (d) a
+  garbage `hashed_password` gives 401, not 500; (e) `has_password = FALSE`
+  with the right password gives 401; (f) unicode normalisation: bcrypt hashes
+  bytes, so NFC and NFD spellings are different passwords on both sides.
+* Traps: the unknown-address path does no dummy hash, so login timing already
+  tells a valid address from an unknown one. Rust must not "fix" that silently
+  (a behaviour change needs the owner's yes, and a timing test would have to
+  tolerate it). Cost is a constant of the crate call, not a setting.
+
+**2. Throttling and one-time codes.**
+* Login: `_check_rate("login:<lowercased email>", 5, 300)` runs BEFORE the
+  credentials are looked at, so every attempt counts, successful ones too. The
+  limiter is `DELETE old rows; COUNT; INSERT` on `auth_rate_events`, three
+  statements with no advisory lock (unlike the API-key limiter), so two
+  concurrent requests can both read 4 and both pass. On a database error it
+  falls back to a per-process in-memory window; Rust must choose between
+  failing open and keeping its own window, and the choice is a decision.
+  Both services share the table, so a Python attempt counts against Rust.
+* Reset codes: `forgot-password` never reports delivery (same body for an
+  unknown address) and has no limiter of its own. The code is
+  `SystemRandom().randint(0, 999999)` zero-padded to 6 digits, stored as
+  HMAC-SHA256(`SECRET_KEY`, code) hex, valid `OTP_EXPIRE_MINUTES`, one live code
+  per user (older unused codes are deleted when a new one is issued).
+  `forgot-password/verify` is limited by `otp:<email>` 10 per 600 s and by
+  `attempts < 5` per code; every failure (unknown address, no live code,
+  expired, wrong, attempts exhausted) is the same 400 `reset_code_invalid`; a
+  correct code is burnt (`used = TRUE`) and buys a 10-minute signed token with
+  `purpose = password_reset`.
+* Cases (all with `TESTING_MODE=false`): 5 logins pass and the 6th is 429
+  `too_many_attempts`; the window slides (rows aged by SQL); a wrong-password
+  attempt and a right one both consume the budget; case-insensitive key;
+  a mixed sequence (3 attempts on Python, 3 on Rust) hits the limit on the 6th
+  whichever side it lands on; 10 OTP verifies then 429; 5 wrong codes kill the
+  code and the right one is then refused; a code issued by Python is accepted
+  by Rust and the reverse (this proves the HMAC and the 6-digit format); a new
+  code invalidates the previous one; all five failure modes return identical
+  bodies; unknown address on `forgot-password` returns the identical body and
+  writes no row; a concurrent burst of 20 logins against the limit (Python
+  admits more than 5; the case records how many and Rust must not admit
+  more than Python's worst case).
+* Traps: email delivery is the outbox; the OTP row is Rust's job, the send is
+  not. `trial:<address>` and `sso-*` limiters share `_check_rate` and move
+  with it.
+
+**3. Refresh tokens.**
+* Today there is NO rotation. `POST /login` stores sha256(raw) in
+  `refresh_tokens` with a 7-day expiry (raw = `token_urlsafe(64)`, returned
+  once). `POST /refresh` hashes the presented token, joins the user row, and
+  returns only a NEW access token (and the current `email_verified`); the
+  refresh token stays valid and reusable until it expires or is deleted. It
+  deletes nothing and does not look at `users.status`; deactivation and
+  password change delete the user's rows instead. An expired trial tenant
+  gets 401 `trial_account_expired` here (403 on login).
+* Cases: a token issued by Python refreshes on Rust and the reverse; two
+  refreshes with the same token both succeed and neither returns a refresh
+  token (this pins "no rotation"); unknown, expired (row aged by SQL) and
+  deleted tokens give 401 `refresh_token_invalid`; `email_verified` is
+  re-read (verify the user between two refreshes and the claim flips);
+  expired trial; deactivating the user (`PATCH /users/{id}`) kills the token.
+* Decision for the owner, not a defect: rotation with reuse detection is the
+  standard hardening and is NOT current behaviour. Adding it in Rust alone
+  would break the failover (a Rust-rotated token presented to Python) and
+  every Python-issued session. If wanted, it goes into Python first.
+
+**4. The `sessions_invalid_before` cut and the revoked-`jti` list.**
+* Today: `users.sessions_invalid_before` is stamped `NOW()` by
+  `update_password` (reset, change), social password drop, SSO, and SCIM, which
+  also delete the user's refresh tokens. `guards.py` refuses an access token
+  whose `iat` (float, sub-second) is below the cut, with 401 "Session ended by
+  a password change"; a token without `iat` is refused only for an account that
+  has a cut. `/logout` revokes the presented `jti` in `revoked_tokens` and
+  deletes ALL the user's refresh tokens but does NOT set the cut, so other
+  access tokens of that user live up to 15 minutes. A reset token is one-use:
+  its `jti` is revoked after the password change (replay: 400
+  `reset_token_invalid`, "This reset link was already used").
+* The read side already exists in `backend-rs/src/auth/mod.rs` (the order of
+  checks is in section 4) but was never contract-verified. Cases: a token
+  minted just before a reset is refused by both services and one minted just
+  after is accepted (microsecond boundary: `iat` equal to the cut passes, one
+  microsecond lower fails); the cut set by Rust is honoured by Python and the
+  reverse; a token with no `iat` for an account with and without a cut; a
+  revoked `jti` is 401 on both; a revoked row past `expires_at` no longer
+  blocks; logout then reuse of the same access token (401), reuse of another
+  access token of the same user (still 200: pins the 15-minute window),
+  refresh after logout (401); reset-token replay; a weak new password leaves
+  the reset token usable ("deliberately BEFORE the burn").
+
+**5. Signup, verification, social and SSO.**
+* `signup` creates tenant, admin user, quota, terms acceptance and a signed
+  verification token; `verify-email` and `resend-verification` consume or
+  re-issue it. They depend on `create_tenant` / `create_user` (the same
+  functions `POST /trial` uses) and on the outbox. Cases: slug generation and
+  collisions, terms version, whatsapp normalisation, the `verify_url` the
+  harness itself depends on, the `@stockai.demo` refusal at the transport.
+* Social (Google, Microsoft, Apple) and SSO (OIDC) call out over HTTP, keep
+  binding cookies, PKCE and nonce state, and the provider list depends on
+  parsing an ES256 private key (Apple) to decide whether a button shows. They
+  stay Python the longest. `GET /auth/providers` and `GET /auth/identities`
+  were NOT moved in wave 2b because both embed that list; `GET /auth/sso/config`
+  was not moved because it needs the secret-storage probe and the
+  `sso_providers` row view. Only `GET /auth/sso/availability` moved.
+
+**Order.** (1) Run the existing read side (guards, `sessions_invalid_before`,
+`jti` list) under `TESTING_MODE=false` and close the section 9 SKIPs. (2)
+`login`, `refresh`, `logout` (needs bcrypt; no mail). (3) The reset family
+(needs the outbox). (4) `signup` and verification (needs the users port). (5)
+Social and SSO last, or never. Each step is a gateway file per route, and
+`POST /login` is the first one worth a canary: it has the loudest failure mode.
+
+## 11. Wave 2b: what stayed Python, and why
+
+| Router | Routes | Why it stayed |
+|---|---|---|
+| service_config | 10 of 11 | The panel shows `last_check`, the result of the last probe, kept in the memory of the Python process (`status._last_probe`); every write calls `forget_probe` there. A Rust `GET /services` would show a stale or empty check next to a Python probe, and a Rust write would not clear a stale `degraded`. The probes themselves make outbound HTTP (Twilio, Resend, SMTP, DeepSeek, Pinecone). `/ops` reads queue, pool, disk and backup state of the Python process. Writes encrypt secrets and enforce the operator rules. Moving any of it needs the probe state in the database first. Only `/capabilities` moved: it reads no probe state. |
+| trial | 1 | `POST /trial` needs `create_tenant` and `create_user` (bcrypt, terms, quota, owned by the users port that rust-wave1b is building), the `auth_rate_events` limiter with its in-memory fallback, and the capacity ceilings that `TESTING_MODE` hides. The harness signs its own tenants up through the Python API, so a Rust trial would be matched against a path no case exercises. The trial reaper is a Python worker loop. |
+| auth, social_auth, sso | 23 of 23 minus `/auth/sso/availability` | Section 10. |
+| documents, artifacts, reports | 11 | Files under `storage/`, Excel and PDF builders, and for documents the RAG pipeline (Voyage, Pinecone). Python-only libraries. |
+| analyst, chats, ai_insights | 16 | DeepSeek calls, prompt assembly, RAG retrieval. The product rule is one LLM backend behind one factory. |
+| mcp | 2 | Imports four Python routers to resolve what each tool calls; the test that pins "only GET endpoints" reads the FastAPI route table. |
+| whatsapp, inbound_email | 5 | Signed provider webhooks, outbound Twilio, dataset ingestion with pandas, the job queue. |
+| users, messages, po_approvals, entitlements upgrade-request | | Not in this pass: they send email or WhatsApp and are rust-wave1b's. |
+
+Everything above keeps its Python route code untouched. Nothing was deleted.
+
+## 12. Results: wave 2b (disposable database, 2026-10-06)
+
+**Setup.** Disposable database `rust_w2b` on this machine's Postgres 5432,
+created for the run and dropped at the end. The Python API is this worktree's
+code on `:8072` (it self-migrated the database); the Rust debug build on
+`:8073`. `TESTING_MODE=true`, `WORKER_ENABLED=false`, a Fernet key in
+`INTEGRATIONS_SECRET_KEY` shared by both. The database was set to
+`timezone = UTC` after creation: this machine's Postgres defaults to
+`America/Guatemala`, and both services print timestamps in the session zone
+(divergence 9). No credentials of any provider were present, so no mail or
+message could leave. Production was never touched.
+
+| Route | Cases | Pass |
+|---|---|---|
+| `GET /data-freshness` | 41 | 41 |
+| `GET /tenant/export` | 11 | 11 |
+| `DELETE /tenant` | 33 | 33 |
+| `GET /service-config/capabilities` | 26 | 26 |
+| `GET /auth/sso/availability` | 15 | 15 |
+| **Wave 2b section** | **126** | **126** |
+
+What the cases are:
+* **Freshness (41):** 25 data scenarios (empty tenant, fresh, stale, blind,
+  sales and stock blind separately, each way the file date can be wrong or
+  missing, archived / backtest / running sessions, one warehouse, one that
+  lags, all late, registered without stock, case folding and sort of
+  warehouse names, junk store dates), roles, keys, 5 auth failures, the
+  `X-API-Key` header, 5 warehouse-scoped callers, the thresholds compared with
+  the Python constants, and a second tenant's rows that must not leak. Every
+  body is compared EXACTLY (timestamps included), and for 7 scenarios the
+  Python answer itself is asserted, so two empty answers cannot pass.
+* **Export (11):** a tenant with one synthetic row in all 86 tenant tables
+  (generated from the schema: foreign keys, CHECK constraints) plus NaN,
+  Infinity, control characters, emoji, a 10^20 integer inside jsonb, text
+  arrays, microsecond timestamps and feedback screenshots (one valid, five
+  hostile paths). The two ZIPs have the same member list and byte-identical
+  member contents (only `generated_at` is masked, the zip container bytes
+  differ), the Python archive is asserted to contain each scenario, no stored
+  credential hash appears in either, and the `audit.export.tenant_data` row is
+  identical.
+* **Erase (33):** 16 refusal cases (viewer, analyst, no token, bad signature,
+  expired, read key, write key, wrong / empty / foreign-slug confirmation,
+  missing / numeric / null / list / absent / invalid JSON body), a
+  warehouse-scoped admin, 5 blocking subscription states, 8 successful erasures
+  (typed `DELETE`, lowercase with whitespace, the slug, and the subscription
+  states that do not block), a second call on an erased tenant, a bystander
+  tenant proven untouched, and the table-list check. Every erasure runs on two
+  identically seeded tenants (86 tables, 9 storage directories, a plain file
+  where a directory is expected), one erased by each service, and compares:
+  status and body, the row-count delta of EVERY table in the database, the
+  rows left in every table that carries a `tenant_id`, the storage
+  directories removed, and that a refused request changed nothing anywhere.
+* **Capabilities (26) and SSO availability (15):** instance rows and tenant
+  rows written straight to `service_config`, secrets Fernet-encrypted by the
+  harness (so Rust's decryption is exercised), 7 phases for capabilities
+  including a tenant row for an instance-only field (ignored), unparseable
+  stored values (ignored), a padded mixed-case PayPal mode, a zero price. Each
+  case asserts the Python answer is the scenario named.
+
+Unit tests: `cargo test` 135 passed, 2 ignored (120 before wave 2b: +15 for freshness dates and ages, the JSON dump, the screenshot-path rule, `grants_access`, and the capability resolver).
+
+**What the erase run did NOT prove.**
+* In a freshly migrated database every one of the 87 tenant tables carries
+  `REFERENCES tenants(id) ON DELETE CASCADE` (the `data_export.py` header says
+  most do not; that is out of date). So a table missing from Rust's explicit
+  list would still be emptied by the final `DELETE FROM tenants`, and the
+  row-for-row comparison cannot see it. Parity of the list therefore rests on
+  generation: `scripts/gen_rust_tenant_tables.py` reads the Python lists with
+  `ast`, the harness fails when the Rust file is stale or when a table with a
+  `tenant_id` column or an FK to `tenants` is missing from the Python list, and
+  a mutation check showed both fire (a deleted storage category and a stale
+  file were caught; a deleted table was caught only by the stale check, for the
+  reason above). On an older database without those FKs the explicit list is
+  what erases, and that case was not reproduced.
+* The Python and Rust erasures were never run concurrently against one tenant,
+  nor with a job running for it.
+* Billing subscriptions were seeded by SQL; no provider was involved.
+  `grants_access` was ported (`billing_access.rs`) with unit tests and the
+  contract cases above (5 blocked, 3 allowed states); `decide_tier` was not
+  ported (the webhooks stay Python).
+
+**What `TESTING_MODE=true` hides from this run** (on both sides): the login,
+OTP and trial limiters, trial capacity, `plan_feature_locked`, `TRIAL_EXPIRED`,
+the API-key rate limit. None of the wave 2b routes depends on them (the admin
+guard has no trial read-only check; a trial tenant can erase itself), but the
+auth plan in section 10 does.
+
+**Not verified at all.** The `routes.d` examples have not been loaded by Caddy
+(no Caddy here); the failover of a `DELETE` through `lb_try_duration`; export
+memory and time on a large tenant (both services build the archive in memory;
+neither was measured); a Postgres whose session zone is not UTC; production
+data volumes; any release build (all runs used the debug binary).
