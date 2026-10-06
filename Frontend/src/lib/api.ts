@@ -1172,6 +1172,34 @@ export const enableWebhook = (id: string) =>
 export const listWebhookDeliveries = (id: string, opts?: RequestOpts) =>
   request<import('./types').WebhookDelivery[]>('GET', `/webhooks/${id}/deliveries`, undefined, opts)
 
+// ── Audit stream (continuous export to the customer's SIEM) ───────────────────
+export const getAuditStream = () =>
+  request<import('./types').AuditStreamState>('GET', '/audit-stream')
+
+export const putAuditStream = (body: { url?: string; batch_size?: number }) =>
+  request<import('./types').AuditStreamState>('PUT', '/audit-stream', body)
+
+export const deleteAuditStream = () =>
+  request<{ deleted: boolean }>('DELETE', '/audit-stream')
+
+export const enableAuditStream = () =>
+  request<import('./types').AuditStreamState>('POST', '/audit-stream/enable')
+
+export const disableAuditStream = () =>
+  request<import('./types').AuditStreamState>('POST', '/audit-stream/disable')
+
+export const rotateAuditStreamSecret = () =>
+  request<{ secret: string }>('POST', '/audit-stream/rotate-secret')
+
+export const replayAuditStream = (body: { cursor: string } | { since: string }) =>
+  request<{ cursor: string; moved: boolean }>('POST', '/audit-stream/replay', body)
+
+export const testAuditStream = () =>
+  request<{ queued: boolean }>('POST', '/audit-stream/test')
+
+export const listAuditStreamDeliveries = (limit = 20) =>
+  request<import('./types').AuditStreamDelivery[]>('GET', `/audit-stream/deliveries?limit=${limit}`)
+
 // ── Schedules ─────────────────────────────────────────────────────────────────
 // "No schedule configured" is a legitimate state, not an error: ask silently
 // and translate the 404 into `null` instead of letting it raise a toast.

@@ -3461,6 +3461,53 @@ export interface InboundEmailMessage {
   received_at:   string
 }
 
+/** `GET /audit-stream`. Never carries the signing secret (only create and rotate return it, once). */
+export type AuditStreamState =
+  | { configured: false }
+  | {
+      configured: true
+      url: string
+      host: string | null
+      enabled: boolean
+      disabled_at: string | null
+      /** 'manual' | 'failing_for_days' | 'host_refused' */
+      disabled_reason: string | null
+      batch_size: number
+      /** "<transaction>:<sequence>", the position of the last record delivered. */
+      cursor: string
+      pending_records: number
+      pending_capped: boolean
+      lag_seconds: number | null
+      delivered_records: number
+      consecutive_failures: number
+      failure_days: number
+      last_error: string | null
+      last_status_code: number | null
+      last_attempt_at: string | null
+      last_success_at: string | null
+      next_attempt_at: string | null
+      test_pending: boolean
+      secret_rotated_at: string | null
+      created_at: string
+      updated_at: string
+      /** Present only on the response that created the destination. */
+      secret?: string
+    }
+
+export interface AuditStreamDelivery {
+  id:           string
+  kind:         'batch' | 'test'
+  status:       'delivered' | 'failed' | 'superseded'
+  records:      number
+  bytes:        number
+  first_cursor: string | null
+  last_cursor:  string | null
+  status_code:  number | null
+  error:        string | null
+  duration_ms:  number | null
+  created_at:   string
+}
+
 export interface InboundEmailState {
   /** False when this installation has no inbound mail domain and secret. */
   enabled:         boolean
