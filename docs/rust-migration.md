@@ -109,10 +109,12 @@ notification, no file storage, no hub.
 * Done (R1): currency GET/PATCH (PATCH writes the `audit.config.changed` row).
 * Done (R1): timezone GET only. `PATCH /tenant/timezone` stays Python: it re-anchors schedules with croniter.
 * Synced to main (R1): `GET /entitlements` (Full 1000/5/3, `max_trainings_per_day`, `trainings_today`), `tsb` model, new events, `X-API-Key` header.
+* Done (R2): sessions `GET /sessions`, `GET /sessions/summary`, `GET /{id}`, `DELETE /{id}` (archives), `POST /{id}/restore`; 107/107 contract cases.
+* Done (R2): all five schedule routes; croniter 6.2.2 + zoneinfo ported (`routes/schedule/`), 1992 differential cron cases and every zone transition 2025-2075 match; non-ASCII digits in a cron are a known gap.
+* Done (R2): spike_edits, all three routes. Not done: `POST /sessions` and `PATCH /sessions/{id}` (stay Python).
 * Next, in this order: preferences, activity, alerts, timezone, currency,
-  models, spike_edits, po_payments, po_cancellation, sessions (read and
-  archive/restore; not `/train`), schedule, webhooks CRUD (dispatch stays
-  Python), api_keys, audit. Roughly 60 routes. Each one needs the audit-route
+  models, po_payments, po_cancellation, webhooks CRUD (dispatch stays
+  Python), api_keys, audit. Each one needs the audit-route
   catalogue (`backend/audit/catalog.py`) ported for its paths, because
   `AuditMiddleware` writes `audit.*` rows for catalogued routes.
 

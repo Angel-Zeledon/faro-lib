@@ -1,0 +1,38 @@
+# DISABLED EXAMPLE. Rename to 31-schedule.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust.
+#
+# backend-rs/src/routes/schedule/ (the whole `schedule` router):
+#   GET                 /api/v1/schedules
+#   GET                 /api/v1/schedules/history
+#   GET, POST, DELETE   /api/v1/sessions/{id}/schedule
+#
+# The worker that FIRES schedules stays Python; it reads `scheduled_jobs`
+# and never notices which service wrote the row.
+
+@rs_schedules {
+	method GET
+	path /api/v1/schedules /api/v1/schedules/history
+}
+@rs_session_schedule {
+	method GET POST DELETE
+	path_regexp ^/api/v1/sessions/[^/]+/schedule$
+}
+
+handle @rs_schedules {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_session_schedule {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

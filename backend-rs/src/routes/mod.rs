@@ -2,6 +2,9 @@ pub mod committed_demand;
 pub mod entitlements;
 pub mod health;
 pub mod r1;
+pub mod schedule;
+pub mod sessions;
+pub mod spike_edits;
 
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
@@ -35,6 +38,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/committed-demand/{commitment_id}", patch(committed_demand::update))
         .route("/api/v1/committed-demand/{commitment_id}/status", post(committed_demand::set_status))
         .merge(r1::router())
+        .merge(sessions::router()).merge(schedule::router()).merge(spike_edits::router())
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }

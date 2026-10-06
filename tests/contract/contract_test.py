@@ -248,7 +248,8 @@ def make_fixture(py: str, secret: str) -> Fixture:
 
 
 def erase_fixture(py: str, fx: Fixture) -> None:
-    # A fresh token: the login one may have expired during a long run.
+    # A fresh token: a run through a slow tunnel outlives the 15-minute login
+    # token, and an expired one would leave the throwaway tenant behind.
     token = mint_access_token(fx.secret, fx.admin_id, fx.tenant_id, "admin")
     r = http(py, "DELETE", f"{API}/tenant", token=token, body={"confirm": "DELETE"})
     print(f"\nthrowaway tenant {fx.tenant_id} erased: {r.status}")
@@ -557,6 +558,132 @@ def r1_prefs_check(user_attr, expect):
     return check
 
 
+# ── R2: sessions (reads, archive/restore), schedule, spike edits ────────────
+#
+# Fixture sessions are created through the Python API; the facts no route of
+# this group can set (a dataset id, a back-test flag, a running job, a past
+# scheduler run, a spike application) are written straight into the
+# throwaway tenant's rows. Every write case acts on a PER-SIDE object
+# (`{x}` resolves to the Python copy for the Python call and to the Rust copy
+# for the Rust call), so the two sides never edit the same row.
+
+R2_PAST = (date.today() - timedelta(days=40)).isoformat()
+
+
+def _r2_session(py: str, fx: Fixture, name: str) -> str:
+    r = http(py, "POST", f"{API}/sessions", token=fx.admin_token,
+             body={"name": name, "description": "contract", "tags": ["ct", "r2"]})
+    if r.status != 201:
+        raise SystemExit(f"creating session {name!r} failed: {r.status} {r.body}")
+    return r.body["data"]["id"]
+
+
+def r2_prepare(py: str, rs: str, fx: Fixture, db) -> dict:
+    """Placeholders `{name}` -> (python value, rust value)."""
+    ph: dict[str, tuple[str, str]] = {}
+    shared = {
+        "main": _r2_session(py, fx, "CT R2 main"),
+        "nodata": _r2_session(py, fx, "CT R2 no data"),
+        "backtest": _r2_session(py, fx, "CT R2 backtest"),
+        "running": _r2_session(py, fx, "CT R2 running"),
+        "archived": _r2_session(py, fx, "CT R2 archived"),
+    }
+    for k, v in shared.items():
+        ph[f"{{s_{k}}}"] = (v, v)
+    for k in ("arch", "archkey", "restore", "sched", "spike"):
+        ph[f"{{s_{k}}}"] = (_r2_session(py, fx, f"CT R2 {k}"), _r2_session(py, fx, f"CT R2 {k}"))
+    for sid in (shared["archived"], *ph["{s_restore}"]):
+        r = http(py, "DELETE", f"{API}/sessions/{sid}", token=fx.admin_token)
+        if r.status != 204:
+            raise SystemExit(f"archiving {sid} failed: {r.status} {r.body}")
+    cur = db.cursor()
+    cur.execute("UPDATE sessions SET dataset_id = 'ds_ct_r2_main' WHERE id = %s", (shared["main"],))
+    cur.execute("UPDATE sessions SET is_backtest = TRUE, backtest_holdout_periods = 4, "
+                "backtest_source_dataset_id = 'ds_ct_r2_main', dataset_id = 'ds_ct_r2_main' WHERE id = %s",
+                (shared["backtest"],))
+    # A trained-looking result and configs, so the library's computed columns
+    # (accuracy, models, sku_count, horizon, granularity) carry real values.
+    metrics = {"metrics": {"rows": [
+        {"sku": "A", "model": "lightgbm", "wape": 0.1234567890123},
+        {"sku": "A", "model": "ets", "wape": 0.2},
+        {"sku": "A", "model": "naive", "type": "baseline", "wape": 0.01},
+        {"sku": "B", "model": "arima", "wape": 0.3333333333333333},
+        {"sku": "B", "model": "lightgbm", "wape": "n/a"},
+    ]}}
+    cur.execute("INSERT INTO session_results (session_id, tenant_id, training_result) VALUES (%s, %s, %s)",
+                (shared["main"], fx.tenant_id, json.dumps(metrics)))
+    cur.execute("UPDATE session_configs SET forecast_cfg = '{\"horizon\": 12}' WHERE session_id = %s",
+                (shared["main"],))
+    cur.execute("UPDATE session_configs SET validation_cfg = '{\"horizon\": \"8\"}', "
+                "granularity_cfg = '{\"target_freq\": \"W\"}' WHERE session_id = %s", (shared["backtest"],))
+    sp_py, sp_rs = ph["{s_spike}"]
+    cur.execute("UPDATE sessions SET dataset_id = 'ds_ct_r2_py' WHERE id = %s", (sp_py,))
+    cur.execute("UPDATE sessions SET dataset_id = 'ds_ct_r2_rs' WHERE id = %s", (sp_rs,))
+    # A job "in flight": RUNNING with a worker id no live worker owns, so no
+    # worker claims it (only QUEUED rows are claimed) and nothing trains.
+    cur.execute("""INSERT INTO jobs (id, tenant_id, session_id, created_by, status, started_at, worker_id)
+                   VALUES (%s, %s, %s, %s, 'RUNNING', NOW(), 'contract-harness')""",
+                (f"job_ct_{secrets.token_hex(5)}", fx.tenant_id, shared["running"], fx.admin_id))
+    # Scheduler history: two finished runs and one run that did not launch.
+    for i, status in enumerate(("COMPLETED", "FAILED")):
+        cur.execute("""INSERT INTO jobs (id, tenant_id, session_id, created_by, status, created_at,
+                                         started_at, completed_at, error)
+                       VALUES (%s, %s, %s, 'scheduler', %s, NOW() - %s * INTERVAL '1 day',
+                               NOW() - %s * INTERVAL '1 day', NOW() - %s * INTERVAL '1 day', %s)""",
+                    (f"job_ct_{secrets.token_hex(5)}", fx.tenant_id, shared["main"], status, i + 1, i + 1, i + 1,
+                     None if status == "COMPLETED" else "boom"))
+    cur.execute("""INSERT INTO schedule_runs (id, tenant_id, schedule_id, ran_at, outcome, reason,
+                                              reason_params, session_id)
+                   VALUES (%s, %s, 'sched_ct_none', NOW() - INTERVAL '36 hours', 'skipped', 'nothing_new',
+                           '{"rows": 3}', %s)""",
+                (f"run_ct_{secrets.token_hex(5)}", fx.tenant_id, shared["main"]))
+    # One spike mark per side, made through each side's own API.
+    marks = []
+    for base, sid in ((py, sp_py), (rs, sp_rs)):
+        r = http(base, "POST", f"{API}/sessions/{sid}/spike-edits", token=fx.admin_token,
+                 body={"sku": "CT-SPK", "start_date": R2_PAST, "end_date": R2_PAST,
+                       "reason_code": "promotion", "reason_note": "seed"})
+        if r.status != 201:
+            raise SystemExit(f"seeding a spike mark on {base} failed: {r.status} {r.body}")
+        marks.append(r.body["data"]["id"])
+        cur.execute("""INSERT INTO spike_edit_applications (tenant_id, session_id, spike_edit_id, sku, status,
+                                                            points_treated, original_total, replacement_total)
+                       VALUES (%s, %s, %s, 'CT-SPK', 'applied', 1, 120.5, 30.25)""",
+                    (fx.tenant_id, sid, r.body["data"]["id"]))
+    ph["{spk}"] = (marks[0], marks[1])
+    cur.execute("SELECT id FROM sessions WHERE tenant_id <> %s LIMIT 1", (fx.tenant_id,))
+    other = cur.fetchone()
+    ph["{s_other_tenant}"] = (other[0], other[0]) if other else ("sess_none_elsewhere",) * 2
+    return ph
+
+
+def _session_row(db, sid):
+    cur = db.cursor()
+    cur.execute("SELECT archived_at IS NOT NULL, archived_by, status, name FROM sessions WHERE id = %s", (sid,))
+    return cur.fetchone()
+
+
+def _activity(db, tenant_id, resource, action_prefix):
+    cur = db.cursor()
+    cur.execute("""SELECT action, user_id, context, status FROM activity_logs
+                    WHERE tenant_id = %s AND resource = %s AND action LIKE %s ORDER BY created_at""",
+                (tenant_id, resource, action_prefix + "%"))
+    return [dict(zip(("action", "user_id", "context", "status"), r)) for r in cur.fetchall()]
+
+
+def r2_check_session_state(key: str, action: str, ph: dict):
+    """The session row (archived flag, archived_by) and its `session.*` rows."""
+    def check(fx, rp, rr, db):
+        sp, sr = ph[key]
+        a, b = _session_row(db, sp), _session_row(db, sr)
+        problems = [] if a[:3] == b[:3] else [f"session row: python={a} rust={b}"]
+        ea, eb = _activity(db, fx.tenant_id, sp, action), _activity(db, fx.tenant_id, sr, action)
+        if ea != eb:
+            problems.append(f"{action} rows differ: python={ea} rust={eb}")
+        return problems
+    return check
+
+
 # alerts/read ----------------------------------------------------------------
 
 def r1_check_mark_read(fx, rp, rr, db):
@@ -612,6 +739,39 @@ def r1_check_currency_write(expected_code):
         rows = _audit_rows(db, fx.tenant_id)
         if len(rows) != 2 or rows[0] != rows[1]:
             problems.append(f"audit rows differ or are missing: {rows}")
+        return problems
+    return check
+
+
+def r2_check_unchanged(key: str, archived: bool, ph: dict):
+    def check(fx, rp, rr, db):
+        out = []
+        for side, sid in zip(("python", "rust"), ph[key]):
+            row = _session_row(db, sid)
+            if row[0] is not archived:
+                out.append(f"{side}: archived={row[0]}, expected {archived}")
+        return out
+    return check
+
+
+def r2_check_schedule(ph: dict, audit_action: str):
+    def check(fx, rp, rr, db):
+        cur = db.cursor()
+        sp, sr = ph["{s_sched}"]
+        rows = []
+        for sid in (sp, sr):
+            cur.execute("SELECT cron_expr, next_run, enabled, retrain_mode FROM scheduled_jobs "
+                        "WHERE session_id = %s AND tenant_id = %s", (sid, fx.tenant_id))
+            rows.append(cur.fetchone())
+        problems = [] if rows[0] == rows[1] else [f"scheduled_jobs row: python={rows[0]} rust={rows[1]}"]
+        ea = _activity(db, fx.tenant_id, sp, audit_action)
+        eb = _activity(db, fx.tenant_id, sr, audit_action)
+        strip = lambda rows_: [{**r, "context": {k: v for k, v in r["context"].items() if k != "target_id"}}  # noqa: E731
+                               for r in rows_]
+        if strip(ea) != strip(eb):
+            problems.append(f"{audit_action} rows differ: python={ea[-1:]} rust={eb[-1:]}")
+        if not ea:
+            problems.append(f"no {audit_action} row was recorded")
         return problems
     return check
 
@@ -885,6 +1045,231 @@ def build_r1_cases(fx: Fixture) -> list[Case]:
     ]
 
 
+def r2_check_spike(fx, rp, rr, db):
+    if rp.status not in (200, 201) or rr.status not in (200, 201):
+        return []
+    a_id, b_id = rp.body["data"]["id"], rr.body["data"]["id"]
+    cur = db.cursor()
+    cols = ("sku", "start_date", "end_date", "reason_code", "reason_note", "created_by", "reverted_by",
+            "reverted_at IS NOT NULL")
+    rows = []
+    for i in (a_id, b_id):
+        cur.execute(f"SELECT {', '.join(cols)} FROM spike_edits WHERE id = %s", (i,))
+        rows.append(cur.fetchone())
+    problems = [] if rows[0] == rows[1] else [f"spike_edits row: python={rows[0]} rust={rows[1]}"]
+    ea, eb = _activity(db, fx.tenant_id, a_id, "forecast."), _activity(db, fx.tenant_id, b_id, "forecast.")
+    if ea != eb:
+        problems.append(f"activity rows differ: python={ea} rust={eb}")
+    if not ea:
+        problems.append("no forecast.spike_* row was recorded")
+    return problems
+
+
+def r2_check_no_spike_written(fx, rp, rr, db):
+    cur = db.cursor()
+    cur.execute("SELECT COUNT(*) FROM spike_edits WHERE tenant_id = %s AND created_by = %s",
+                (fx.tenant_id, fx.viewer_id))
+    n = cur.fetchone()[0]
+    return [] if n == 0 else [f"viewer wrote {n} spike marks"]
+
+
+def build_r2_cases(fx: Fixture, ph: dict) -> list[Case]:
+    S, SS = f"{API}/sessions", f"{API}/sessions/summary"
+    sess = "GET /sessions"
+    summ = "GET /sessions/summary"
+    one = "GET /sessions/{id}"
+    arch = "DELETE /sessions/{id}"
+    rest = "POST /sessions/{id}/restore"
+    sch = "/sessions/{id}/schedule"
+    spk = "spike-edits"
+    good_spike = {"sku": " CT-NEW ", "start_date": (date.today() - timedelta(days=10)).isoformat(),
+                  "end_date": (date.today() - timedelta(days=3)).isoformat(), "reason_code": "one_off_order",
+                  "reason_note": "  big order  "}
+    sv = {"session_id"}   # per-side sessions: their ids differ by construction
+    return [
+        # ── sessions: list ──────────────────────────────────────────────────
+        Case("r2 sessions list", "GET", S, route=sess),
+        Case("r2 sessions list viewer", "GET", S, who="viewer", route=sess),
+        Case("r2 sessions list read key", "GET", S, who="key_read", route=sess),
+        Case("r2 sessions list all", "GET", f"{S}?archived=all&limit=3&skip=1", route=sess),
+        Case("r2 sessions list archived", "GET", f"{S}?archived=archived", route=sess),
+        Case("r2 sessions list bad scope", "GET", f"{S}?archived=deleted", route=sess),
+        Case("r2 sessions list bad ints", "GET", f"{S}?skip=-1&limit=501", route=sess),
+        Case("r2 sessions list int parsing", "GET", f"{S}?limit=abc&skip=1.0", route=sess),
+        Case("r2 sessions list last wins", "GET", f"{S}?limit=0&limit=2", route=sess),
+        Case("r2 sessions list no auth", "GET", S, who="none", route=sess),
+        Case("r2 sessions list expired", "GET", S, who="expired", route=sess),
+        # ── sessions: summary ───────────────────────────────────────────────
+        Case("r2 summary", "GET", SS, route=summ),
+        Case("r2 summary search", "GET", f"{SS}?q=%20r2%20MAIN&archived=all", route=summ),
+        Case("r2 summary wildcard literal", "GET", f"{SS}?q=50%25_x", route=summ),
+        Case("r2 summary statuses", "GET", f"{SS}?status=DRAFT&status=QUEUED&archived=all", route=summ),
+        Case("r2 summary dataset", "GET", f"{SS}?dataset_id=ds_ct_r2_main&archived=all", route=summ),
+        Case("r2 summary sort name asc", "GET", f"{SS}?sort=name&order=asc&archived=all&limit=4", route=summ),
+        Case("r2 summary sort accuracy", "GET", f"{SS}?sort=accuracy", route=summ),
+        Case("r2 summary sort horizon", "GET", f"{SS}?sort=horizon&order=asc", route=summ),
+        Case("r2 summary dates", "GET", f"{SS}?created_from=2020-01-01&created_to=2099-12-31", route=summ),
+        Case("r2 summary bad patterns", "GET",
+             f"{SS}?created_from=2026-1-1&sort=size&order=up&archived=x&q={'q' * 201}&dataset_id={'d' * 101}",
+             route=summ),
+        Case("r2 summary impossible date", "GET", f"{SS}?created_from=2026-13-45", route=summ),
+        Case("r2 summary page past end", "GET", f"{SS}?skip=400&limit=500", route=summ),
+        Case("r2 summary read key", "GET", SS, who="key_read", route=summ),
+        # ── sessions: one ───────────────────────────────────────────────────
+        Case("r2 session get", "GET", f"{S}/{{s_main}}", route=one),
+        Case("r2 session get viewer", "GET", f"{S}/{{s_main}}", who="viewer", route=one),
+        Case("r2 session get read key", "GET", f"{S}/{{s_main}}", who="key_read", route=one),
+        Case("r2 session get archived", "GET", f"{S}/{{s_archived}}", route=one),
+        Case("r2 session get backtest", "GET", f"{S}/{{s_backtest}}", route=one),
+        Case("r2 session get not found", "GET", f"{S}/sess_nope", route=one),
+        Case("r2 session get wrong tenant", "GET", f"{S}/{{s_other_tenant}}", route=one),
+        # ── sessions: archive ───────────────────────────────────────────────
+        Case("r2 archive viewer denied", "DELETE", f"{S}/{{s_arch}}", who="viewer", route=arch,
+             state_check=r2_check_unchanged("{s_arch}", False, ph)),
+        Case("r2 archive read key denied", "DELETE", f"{S}/{{s_arch}}", who="key_read", route=arch,
+             state_check=r2_check_unchanged("{s_arch}", False, ph)),
+        Case("r2 archive analyst", "DELETE", f"{S}/{{s_arch}}", who="analyst", route=arch,
+             state_check=r2_check_session_state("{s_arch}", "session.archive", ph)),
+        Case("r2 archive again (no second row)", "DELETE", f"{S}/{{s_arch}}", who="analyst", route=arch,
+             state_check=r2_check_session_state("{s_arch}", "session.archive", ph)),
+        Case("r2 archive write key", "DELETE", f"{S}/{{s_archkey}}", who="key_write", route=arch,
+             state_check=r2_check_session_state("{s_archkey}", "session.archive", ph)),
+        Case("r2 archive running refused", "DELETE", f"{S}/{{s_running}}", route=arch,
+             state_check=lambda fx, rp, rr, db: [] if _session_row(db, ph["{s_running}"][0])[0] is False
+             else ["the running session was archived"]),
+        Case("r2 archive not found", "DELETE", f"{S}/sess_nope", route=arch),
+        Case("r2 archive wrong tenant", "DELETE", f"{S}/{{s_other_tenant}}", route=arch),
+        Case("r2 archive literal summary", "DELETE", f"{S}/summary", route=arch),
+        Case("r2 archive no auth", "DELETE", f"{S}/{{s_arch}}", who="none", route=arch),
+        Case("r2 archived session still readable", "GET", f"{S}/{{s_arch}}", route=one,
+             volatile=sv | {"archived_at"}),
+        # ── sessions: restore ───────────────────────────────────────────────
+        Case("r2 restore viewer denied", "POST", f"{S}/{{s_restore}}/restore", who="viewer", route=rest,
+             state_check=r2_check_unchanged("{s_restore}", True, ph)),
+        Case("r2 restore read key denied", "POST", f"{S}/{{s_restore}}/restore", who="key_read", route=rest),
+        Case("r2 restore analyst", "POST", f"{S}/{{s_restore}}/restore", who="analyst", route=rest,
+             volatile=sv, state_check=r2_check_session_state("{s_restore}", "session.restore", ph)),
+        Case("r2 restore active (no-op)", "POST", f"{S}/{{s_restore}}/restore", route=rest, volatile=sv,
+             state_check=r2_check_session_state("{s_restore}", "session.restore", ph)),
+        Case("r2 restore write key", "POST", f"{S}/{{s_archkey}}/restore", who="key_write", route=rest,
+             volatile=sv, state_check=r2_check_session_state("{s_archkey}", "session.restore", ph)),
+        Case("r2 restore not found", "POST", f"{S}/sess_nope/restore", route=rest),
+        Case("r2 restore wrong tenant", "POST", f"{S}/{{s_other_tenant}}/restore", route=rest),
+        Case("r2 restore with a body", "POST", f"{S}/{{s_main}}/restore", body={"x": 1}, route=rest),
+        # ── schedule ────────────────────────────────────────────────────────
+        Case("r2 schedule get none", "GET", f"{S}/{{s_sched}}/schedule", route="GET " + sch),
+        Case("r2 schedule get not found", "GET", f"{S}/sess_nope/schedule", route="GET " + sch),
+        Case("r2 schedule save viewer denied", "POST", f"{S}/{{s_sched}}/schedule", who="viewer",
+             body={"cron_expr": "0 6 * * 1"}, route="POST " + sch),
+        Case("r2 schedule save read key denied", "POST", f"{S}/{{s_sched}}/schedule", who="key_read",
+             body={"cron_expr": "0 6 * * 1"}, route="POST " + sch),
+        Case("r2 schedule save create", "POST", f"{S}/{{s_sched}}/schedule", who="analyst",
+             body={"cron_expr": "  0 6 * * 1 ", "enabled": True}, route="POST " + sch, volatile=sv,
+             state_check=r2_check_schedule(ph, "audit.schedule.saved")),
+        Case("r2 schedule save update keeps mode", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": "30 2 * * 1-5", "enabled": "no"}, route="POST " + sch, volatile=sv,
+             state_check=r2_check_schedule(ph, "audit.schedule.saved")),
+        Case("r2 schedule save reforecast", "POST", f"{S}/{{s_sched}}/schedule", who="key_write",
+             body={"cron_expr": "0 0 L * *", "retrain_mode": "reforecast"}, route="POST " + sch, volatile=sv,
+             state_check=r2_check_schedule(ph, "audit.schedule.saved")),
+        Case("r2 schedule save nth weekday", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": "15 8 * JAN-MAR mon#2", "retrain_mode": None}, route="POST " + sch, volatile=sv,
+             state_check=r2_check_schedule(ph, "audit.schedule.saved")),
+        Case("r2 schedule save impossible date", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": "0 6 31 2 *"}, route="POST " + sch, volatile=sv | {"next_run"}),
+        Case("r2 schedule get", "GET", f"{S}/{{s_sched}}/schedule", route="GET " + sch,
+             volatile=sv | {"next_run"}),
+        Case("r2 schedule save four fields", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": "0 6 * *"}, route="POST " + sch),
+        Case("r2 schedule save croniter refuses", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": "0 99 * * 1", "enabled": "maybe", "retrain_mode": "weekly"}, route="POST " + sch),
+        Case("r2 schedule save more refusals", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": "*/0 * * * *", "retrain_mode": 5}, route="POST " + sch),
+        Case("r2 schedule save hashed", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": "H 6 * * 1"}, route="POST " + sch),
+        Case("r2 schedule save mixed nth", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": "0 0 * * 1,2#3"}, route="POST " + sch),
+        Case("r2 schedule save wrong types", "POST", f"{S}/{{s_sched}}/schedule",
+             body={"cron_expr": 6}, route="POST " + sch),
+        Case("r2 schedule save no body", "POST", f"{S}/{{s_sched}}/schedule", route="POST " + sch),
+        Case("r2 schedule save invalid json", "POST", f"{S}/{{s_sched}}/schedule", raw_body=b"{nope",
+             route="POST " + sch, volatile={"ctx", "loc"}),
+        Case("r2 schedule save not found", "POST", f"{S}/sess_nope/schedule",
+             body={"cron_expr": "0 6 * * 1"}, route="POST " + sch),
+        Case("r2 schedules list", "GET", f"{API}/schedules", route="GET /schedules",
+             volatile={"session_id", "session_name", "next_run"}),
+        Case("r2 schedules list read key", "GET", f"{API}/schedules", who="key_read", route="GET /schedules",
+             volatile={"session_id", "session_name", "next_run"}),
+        Case("r2 schedule history", "GET", f"{API}/schedules/history", route="GET /schedules/history"),
+        Case("r2 schedule history limit 1", "GET", f"{API}/schedules/history?limit=0", route="GET /schedules/history"),
+        Case("r2 schedule history huge", "GET", f"{API}/schedules/history?limit=99999999999999999999",
+             route="GET /schedules/history"),
+        Case("r2 schedule history bad", "GET", f"{API}/schedules/history?limit=x", route="GET /schedules/history"),
+        Case("r2 schedule delete viewer denied", "DELETE", f"{S}/{{s_sched}}/schedule", who="viewer",
+             route="DELETE " + sch),
+        Case("r2 schedule delete", "DELETE", f"{S}/{{s_sched}}/schedule", who="analyst", route="DELETE " + sch,
+             volatile=sv | {"deleted"}, state_check=r2_check_schedule(ph, "audit.schedule.deleted")),
+        Case("r2 schedule delete again", "DELETE", f"{S}/{{s_sched}}/schedule", route="DELETE " + sch,
+             volatile=sv | {"deleted"}, state_check=r2_check_schedule(ph, "audit.schedule.deleted")),
+        Case("r2 schedule delete not found", "DELETE", f"{S}/sess_nope/schedule", route="DELETE " + sch),
+        # ── spike edits ─────────────────────────────────────────────────────
+        Case("r2 spike list", "GET", f"{S}/{{s_spike}}/spike-edits", route="GET " + spk,
+             volatile={"dataset_id", "applied_at"}),
+        Case("r2 spike list viewer", "GET", f"{S}/{{s_spike}}/spike-edits?include_reverted=yes&sku=CT-SPK",
+             who="viewer", route="GET " + spk, volatile={"dataset_id", "applied_at"}),
+        Case("r2 spike list other sku", "GET", f"{S}/{{s_spike}}/spike-edits?sku=NOPE", route="GET " + spk),
+        Case("r2 spike list bad query", "GET",
+             f"{S}/{{s_spike}}/spike-edits?include_reverted=maybe&sku={'s' * 201}", route="GET " + spk),
+        Case("r2 spike list no dataset", "GET", f"{S}/{{s_nodata}}/spike-edits", route="GET " + spk),
+        Case("r2 spike list not found", "GET", f"{S}/sess_nope/spike-edits", route="GET " + spk),
+        Case("r2 spike list read key refused", "GET", f"{S}/{{s_spike}}/spike-edits", who="key_read",
+             route="GET " + spk),
+        Case("r2 spike create analyst", "POST", f"{S}/{{s_spike}}/spike-edits", who="analyst", body=good_spike,
+             route="POST " + spk, volatile={"dataset_id"}, state_check=r2_check_spike),
+        Case("r2 spike create overlap", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={**good_spike, "sku": "CT-SPK", "start_date": R2_PAST}, route="POST " + spk,
+             volatile={"spike_edit_id"}),
+        Case("r2 spike create viewer denied", "POST", f"{S}/{{s_spike}}/spike-edits", who="viewer",
+             body=good_spike, route="POST " + spk, state_check=r2_check_no_spike_written),
+        Case("r2 spike create write key refused", "POST", f"{S}/{{s_spike}}/spike-edits", who="key_write",
+             body=good_spike, route="POST " + spk),
+        Case("r2 spike create validation", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={"sku": "", "start_date": 5, "reason_note": "n" * 301}, route="POST " + spk),
+        Case("r2 spike create blank sku", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={**good_spike, "sku": "   ", "reason_code": "nope"}, route="POST " + spk),
+        Case("r2 spike create bad reason", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={**good_spike, "reason_code": "nope"}, route="POST " + spk),
+        Case("r2 spike create other without note", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={**good_spike, "reason_code": "other", "reason_note": "   "}, route="POST " + spk),
+        Case("r2 spike create bad date", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={**good_spike, "end_date": "2026/01/01"}, route="POST " + spk),
+        Case("r2 spike create reversed", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={**good_spike, "start_date": "2026-03-01", "end_date": "2026-02-01"}, route="POST " + spk),
+        Case("r2 spike create too long", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={**good_spike, "start_date": "2024-01-01", "end_date": "2025-06-01"}, route="POST " + spk),
+        Case("r2 spike create future", "POST", f"{S}/{{s_spike}}/spike-edits",
+             body={**good_spike, "end_date": (date.today() + timedelta(days=2)).isoformat()}, route="POST " + spk),
+        Case("r2 spike create no dataset", "POST", f"{S}/{{s_nodata}}/spike-edits", body=good_spike,
+             route="POST " + spk),
+        Case("r2 spike create not found", "POST", f"{S}/sess_nope/spike-edits", body=good_spike,
+             route="POST " + spk),
+        Case("r2 spike create no body", "POST", f"{S}/{{s_spike}}/spike-edits", route="POST " + spk),
+        Case("r2 spike revert viewer denied", "POST", f"{API}/spike-edits/{{spk}}/revert", who="viewer",
+             route="POST /spike-edits/{id}/revert"),
+        Case("r2 spike revert analyst", "POST", f"{API}/spike-edits/{{spk}}/revert", who="analyst",
+             route="POST /spike-edits/{id}/revert", volatile={"dataset_id", "reverted_at"},
+             state_check=r2_check_spike),
+        Case("r2 spike revert again", "POST", f"{API}/spike-edits/{{spk}}/revert",
+             route="POST /spike-edits/{id}/revert", volatile={"spike_edit_id"}),
+        Case("r2 spike revert not found", "POST", f"{API}/spike-edits/nope/revert",
+             route="POST /spike-edits/{id}/revert"),
+        Case("r2 spike revert write key refused", "POST", f"{API}/spike-edits/{{spk}}/revert", who="key_write",
+             route="POST /spike-edits/{id}/revert"),
+        Case("r2 spike list after revert", "GET", f"{S}/{{s_spike}}/spike-edits?include_reverted=1",
+             route="GET " + spk, volatile={"dataset_id", "reverted_at", "applied_at"}),
+    ]
+
+
 # ── Runner ───────────────────────────────────────────────────────────────────
 
 def auth_for(fx: Fixture, who: str) -> Optional[str]:
@@ -951,7 +1336,9 @@ def run(args) -> int:
         # Each implementation edits a row it created itself, so a PATCH on one
         # side never changes what the other side's PATCH starts from.
         cd = {"py": seed_commitment(args.python, fx), "rs": seed_commitment(args.rust, fx)}
-        for case in build_cases(fx):
+        # R2 (sessions / schedule / spike edits) needs --db to seed its rows.
+        ph = r2_prepare(args.python, args.rust, fx, db) if db is not None else {}
+        for case in build_cases(fx) + (build_r2_cases(fx, ph) if ph else []):
             if args.only and args.only not in case.name:
                 continue
             token = auth_for(fx, case.who)
@@ -962,6 +1349,8 @@ def run(args) -> int:
             path_rs = case.path.replace("{cd}", cd["rs"])
             extra = {k: (fx.tokens.get(v[1:-1], "") if v.startswith("{") else v)
                      for k, v in case.headers.items()}
+            for k, (v_py, v_rs) in ph.items():
+                path_py, path_rs = path_py.replace(k, v_py), path_rs.replace(k, v_rs)
             kw = dict(token=token, body=case.body, raw_body=case.raw_body,
                       content_type=case.content_type, headers=extra)
             if case.setup is not None and db is not None:
