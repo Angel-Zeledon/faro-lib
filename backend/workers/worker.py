@@ -347,6 +347,16 @@ def _inventory_alert_loop() -> None:
         except Exception as e:
             log.error("Contract materialisation error: %s", e, exc_info=True)
         try:
+            # Renewal and expiry alerts for active contracts (60/30/7 days by
+            # default). Independent of the passes around it; idempotent (the
+            # event row records what was already raised).
+            from backend.inventory.contract_renewal_alerts import (
+                run_daily_contract_renewal_alerts,
+            )
+            run_daily_contract_renewal_alerts()
+        except Exception as e:
+            log.error("Contract renewal alert error: %s", e, exc_info=True)
+        try:
             from backend.inventory.service import run_daily_inventory_alerts
             run_daily_inventory_alerts()
         except Exception as e:

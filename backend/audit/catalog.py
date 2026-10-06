@@ -176,6 +176,7 @@ LEGACY: dict[str, tuple[str, str]] = {
     "supply_contract.created":         ("supply_contract", "supply_contract.created"),
     "supply_contract.revised":         ("supply_contract", "supply_contract.revised"),
     "supply_contract.status_changed":  ("supply_contract", "supply_contract.status_changed"),
+    "supply_contract.renewed":         ("supply_contract", "supply_contract.renewed"),
     "purchase_budget.created":       ("purchase_budget", "purchase_budget.created"),
     "purchase_budget.revised":       ("purchase_budget", "purchase_budget.revised"),
     "purchase_budget.exceeded":      ("purchase_budget", "purchase_budget.exceeded"),

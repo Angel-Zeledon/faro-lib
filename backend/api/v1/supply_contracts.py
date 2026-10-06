@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from backend.activity.events import record_event
 from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
+from backend.inventory import contract_renewal as renewal
 from backend.inventory import supply_contract_service as svc
 from backend.schemas.common import ok
 
@@ -55,6 +56,12 @@ class TermsBody(BaseModel):
     # False when the sales history already contains this customer's demand.
     on_top_of_base: bool = True
     note: Optional[str] = Field(default=None, max_length=svc.MAX_NOTE_LENGTH)
+    # Renewal tracking (inventory/contract_renewal.py). A revision that leaves
+    # these out keeps the current revision's values; the service enforces the
+    # ranges with its own codes, the bounds here only stop absurd payloads.
+    notice_days: Optional[int] = Field(default=None, ge=0, le=renewal.MAX_NOTICE_DAYS)
+    auto_renew: bool = False
+    renewal_lead_days: Optional[list[int]] = Field(default=None, max_length=renewal.MAX_LEAD_ENTRIES)
 
 
 class CreateBody(TermsBody):
@@ -76,6 +83,9 @@ def _terms(body: TermsBody) -> dict:
     d = body.model_dump(exclude={"status", "expected_revision"})
     d["lines"] = [ln.model_dump() for ln in body.lines]
     d["releases"] = None if body.releases is None else [r.model_dump() for r in body.releases]
+    for k in ("notice_days", "auto_renew", "renewal_lead_days"):
+        if k not in body.model_fields_set:
+            d.pop(k)          # not sent: a revision keeps the current value
     return d
 
 

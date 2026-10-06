@@ -180,6 +180,21 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("customer", "lines", "revision", "status"),
     ),
+    # A person renewed a contract: the next term was created as a new draft
+    # contract (the detail renewed_from is the lineage it renews).
+    "supply_contract.renewed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status", "renewed_from"),
+    ),
+    # Raised by the daily pass (inventory/contract_renewal_alerts.py) at each
+    # alert lead time before an ACTIVE contract's notice deadline / end date,
+    # and once when it ended while still active. A warning: somebody has to
+    # decide, and an expired contract the buyer still plans against is silent.
+    "supply_contract.renewal_due": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("customer", "days_left", "lead_days", "expiry_date",
+                     "notice_deadline", "auto_renew"),
+    ),
     # Purchase budgets (inventory/purchase_budget_service.py): who set or changed
     # a cap, and every order that went past what a cap had left (with the reason
     # a person gave, when an administrator overrode a hard cap).
@@ -573,6 +588,11 @@ REASONS: tuple[str, ...] = (
     "sql_source_refresh_failed",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
+    # contract renewal alerts: the end date is near, the notice deadline is near,
+    # the end date passed with the contract still active
+    "contract_expiring",
+    "contract_notice_deadline",
+    "contract_expired",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )
