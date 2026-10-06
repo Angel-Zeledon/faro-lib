@@ -237,8 +237,24 @@ class TestThePublicPageShowsNoMoreThanItShould:
                 "VALUES (%s, %s, %s, %s, 5, 5, 1, 'approved', 'principal')",
                 (po_id, tid, foreign_sku, s2))
         _send(client, auth_headers, po_id, mail)
-        view = client.get(f"{PORTAL}/{_token(mail, 0)}")
-        assert foreign_sku not in view.text and s2 not in view.text
+        # The send loop visits suppliers in name order, which is random here, so
+        # the first e-mail is NOT necessarily s1's: pick each link by the
+        # supplier the message was addressed to.
+        links = {e["supplier_name"]: e["confirm_url"].rsplit("/", 1)[1] for e in mail["email"]}
+        assert set(links) == {s1, s2}
+
+        mine = client.get(f"{PORTAL}/{links[s1]}")
+        assert mine.status_code == 200
+        data = mine.json()["data"]
+        assert data["supplier"] == s1
+        assert {l["sku"] for l in data["lines"]} == {v["sku"] for v in lines.values()}
+        assert foreign_sku not in mine.text and s2 not in mine.text
+
+        # And the other supplier's link shows only the other supplier's line.
+        theirs = client.get(f"{PORTAL}/{links[s2]}").json()["data"]
+        assert theirs["supplier"] == s2
+        assert [l["sku"] for l in theirs["lines"]] == [foreign_sku]
+        assert not ({v["sku"] for v in lines.values()} & {l["sku"] for l in theirs["lines"]})
 
 
 # ── Bad links are indistinguishable ──────────────────────────────────────────
