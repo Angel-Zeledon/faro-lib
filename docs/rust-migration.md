@@ -827,3 +827,18 @@ auth plan in section 10 does.
 memory and time on a large tenant (both services build the archive in memory;
 neither was measured); a Postgres whose session zone is not UTC; production
 data volumes; any release build (all runs used the debug binary).
+
+**Whole harness, same run setup (Python `:8072`, Rust `:8073`, disposable
+`rust_w2b`): 603 of 603 cases pass, 0 fail**, i.e. the earlier 477-case
+foundation + R1-R4 suite plus the 126 wave 2b cases. `cargo test` is green
+(135 passed, 2 ignored).
+
+**Status at hand-over (owner slowed the migration on 2026-10-06).** Done and
+contract-verified: everything in section 12. Registered in `routes/mod.rs`
+through one line (`w2b::router()`): only those five routes, each complete.
+Gateway examples exist for each (`50` to `53` in `deploy/rust-api/routes.d/`);
+none is enabled, and the tenant erasure example (`51`) carries a warning.
+Nothing is half-ported. Next, in order: the section 10 `TESTING_MODE=false`
+run of the existing guards, then the rest of wave 2 once the outbox and the
+users port land. Run the harness for this section alone with
+`python tests/contract/w2b_cases.py --db ... --sections freshness,export,erase,capabilities`.
