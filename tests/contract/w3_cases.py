@@ -654,6 +654,7 @@ def run_w3(args, fx_a, db, h) -> list:
         print("W3 cases skipped: they need --db (the fixtures are database rows)")
         return []
     secret = fx_a.secret
+    fx_a = h.make_fixture(args.python, secret)  # own tenant: earlier sections leave stock and warehouses on the shared one
     fx_b = h.make_fixture(args.python, secret)
     fx_c = h.make_fixture(args.python, secret)
     print(f"W3 tenants: python {fx_a.tenant_id}, rust {fx_b.tenant_id}, foreign {fx_c.tenant_id}")
@@ -733,6 +734,6 @@ def run_w3(args, fx_a, db, h) -> list:
                         [] if untouched else ["another tenant's rows were written"]))
     finally:
         if not args.keep:
-            for fx in (fx_b, fx_c):
+            for fx in (fx_a, fx_b, fx_c):
                 h.erase_fixture(args.python, fx)
     return results
