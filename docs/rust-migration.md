@@ -367,7 +367,42 @@ Modules: `config`, `pycompat` (`isoformat`, `date.fromisoformat`,
 8. `api_keys.last_used` update failure: Python would raise (500), and Rust
    logs and continues.
 
-## 9. Results (contract run, local, 2026-10-05)
+## 9. Results
+
+### Integrated branch: foundation + R1-R4, resynced with main (2026-10-06)
+
+One full harness run, Python dev API on `:8011` running current main, Rust
+release build on `:8040`, both on the dev database through the SSH tunnel,
+`TESTING_MODE=true`. **477 cases: 474 PASS, 3 SKIP, 0 FAIL, 0 STALE**
+(STALE is now only allowed with `--allow-stale`; against a Python running
+main a difference is a failure). Three throwaway tenants, erased by id.
+
+| Group | Routes | Cases |
+|---|---|---|
+| Foundation | `/health` 1/1, `/entitlements` 19/19, committed-demand `POST` 22/22, `/bulk` 6/6, `PATCH` 16/16, `/status` 11/11, 405 shape 1/1 | 76/76 |
+| R1 | models 3/3, preferences 7/7 + 15/15, alerts 11/11, activity 15/15, kinds 3/3, read 6/6, me/activity 10/10 + 3/3, currency 11/11 + 13/13, timezone 7/7 | 104/104 |
+| R2 | sessions 11/11, summary 13/13, `/{id}` 8/8, archive 10/10, restore 8/8, schedule 3/3 + 16/16 + 4/4, schedules 2/2, history 4/4, spike edits 8/8 + 15/15 + 5/5 | 107/107 |
+| R3 | webhooks 7/7, events 3/3, deliveries 6/6, enable 4/4, rotate 3/3 + 1 skip, delete 8/8; api-keys 25/25 + 2 skip, list 4/4, usage 10/10, revoke 9/9; audit 15/15, filters 4/4, export 6/6 | 104/104 + 3 skip |
+| R4 | mark-paid 19/19, mark-unpaid 6/6, cancel 21/21, uncancel 6/6, signal thresholds 5/5 + 18/18 + 7/7, tenant scope 1/1 | 83/83 |
+
+New in this run: 19 committed-demand cases for main's rules (scoped caller
+must name an own warehouse, company-wide rows are 404 to them, contract field
+lock, withdrawn and inactive-contract guards, `commitment.fulfilled` queued
+once per transition with the same envelope), and the `purchase_order.cancelled`
+delivery each side queues on a real cancel (none on the idempotent repeat).
+The first full run failed that last check: Rust read `po_number` (INT4) as
+text, the emitter logged and swallowed it, and nothing was queued. Fixed.
+
+SKIP (`TESTING_MODE=true` turns them off on both sides): `max_api_keys`
+ceiling, `plan_feature_locked` on api-keys and on rotate/enable. Also not
+contract-verified: rate limits, `TRIAL_EXPIRED`, a revoked `jti`, the
+`sessions_invalid_before` cut, Python's in-memory `degraded` health state.
+
+Build (8 logical CPUs, private target dir): first release build with
+dependencies 3 min 30 s, release rebuild after a crate change about 45 s,
+`cargo test` 120 passed, 2 ignored. Release binary 5.9 MB.
+
+### Foundation alone (contract run, local, 2026-10-05)
 
 The run used the Python dev API on `:8011` and the Rust debug build on
 `:8021`. Both talked to the same dev database (through an SSH tunnel) with
