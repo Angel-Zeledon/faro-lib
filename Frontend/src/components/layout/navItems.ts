@@ -4,7 +4,7 @@ import {
   TrendingUp, Package, MessagesSquare, Users, User,
   ShoppingCart, Truck, Upload, ClipboardList, History, Database,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
-  ScrollText, Settings, ScanLine, ClipboardCheck, FileCheck2, CreditCard,
+  ScrollText, Settings, ScanLine, ClipboardCheck, FileCheck2, CreditCard, Mail,
 } from 'lucide-react'
 import { has, UNKNOWN_FACTS, type TenantFacts } from '@/hooks/useTenantFacts'
 
@@ -77,6 +77,9 @@ export const SCREENS: Screen[] = [
   // Who must approve which purchase orders. A row in the hub, never in the
   // sidebar; it only matters to a tenant that wants the workflow.
   { href: '/aprobaciones',          labelKey: 'nav.po_approval',     Icon: ClipboardCheck, parent: SETTINGS_HREF, adminOnly: true },
+  // Recurring management reports by email. Admins and analysts define them; a
+  // viewer who opens the URL is told it is not for them.
+  { href: '/reportes-programados',  labelKey: 'nav.scheduled_reports', Icon: Mail,        parent: SETTINGS_HREF },
   { href: '/automatizacion',        labelKey: 'nav.automation',      Icon: Clock,        parent: SETTINGS_HREF, adminOnly: true },
   // NOT adminOnly: an analyst is exactly who wires a customer's own system up
   // to the public API, and the page only ever acts with the key the reader

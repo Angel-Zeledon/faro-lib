@@ -2962,3 +2962,102 @@ export const startReforecast = (sessionId: string, datasetId?: string | null) =>
   request<{ session_id: string; job_id: string; parent_session_id: string }>(
     'POST', `/sessions/${sessionId}/reforecast`, datasetId ? { dataset_id: datasetId } : undefined,
   )
+
+// ── Scheduled management reports (served by the Rust API: no Python route) ───
+
+export type ReportSection = 'purchasing_summary' | 'budget_vs_spend' | 'committed_demand' | 'supplier_scorecard'
+export type ReportFrequency = 'weekly' | 'monthly'
+
+export interface ReportRecipient {
+  id: string
+  kind: 'user' | 'external'
+  user_id: string | null
+  email: string | null
+  full_name: string | null
+  unsubscribed: boolean
+  /** False when the worker would skip this person right now, with `skip_reason`. */
+  would_send: boolean
+  skip_reason: string | null
+}
+
+export interface ReportSchedule {
+  id: string
+  name: string
+  sections: ReportSection[]
+  frequency: ReportFrequency
+  weekday: number | null
+  day_of_month: number | null
+  hour: number
+  timezone: string
+  enabled: boolean
+  paused_reason: string | null
+  paused_at: string | null
+  consecutive_failures: number
+  next_run_at: string
+  last_run_at: string | null
+  last_status: string | null
+  last_error: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  recipients: ReportRecipient[]
+}
+
+export interface ReportRun {
+  id: string
+  period: string
+  due_at: string
+  status: 'building' | 'queued' | 'skipped' | 'failed'
+  attempts: number
+  recipients_queued: number
+  recipients_skipped: { recipient: string; kind: string; reason: string }[]
+  error: string | null
+  started_at: string
+  finished_at: string | null
+  delivery: { sent: number; pending: number; failed: number; abandoned: number }
+}
+
+export interface ReportCatalog {
+  sections: ReportSection[]
+  frequencies: ReportFrequency[]
+  timezone: string
+  limits: { schedules: number; recipients: number; allowed_external: number; name_length: number }
+}
+
+export interface ReportScheduleInput {
+  name: string
+  sections: ReportSection[]
+  frequency: ReportFrequency
+  weekday?: number | null
+  day_of_month?: number | null
+  hour: number
+  user_ids: string[]
+  external_emails: string[]
+}
+
+export const getReportCatalog = () =>
+  request<ReportCatalog>('GET', '/scheduled-reports/catalog', undefined, { silent: true })
+export const listReportSchedules = () =>
+  request<{ items: ReportSchedule[] }>('GET', '/scheduled-reports', undefined, { silent: true })
+export const createReportSchedule = (body: ReportScheduleInput) =>
+  request<ReportSchedule>('POST', '/scheduled-reports', body)
+export const updateReportSchedule = (id: string, body: Partial<ReportScheduleInput>) =>
+  request<ReportSchedule>('PATCH', `/scheduled-reports/${id}`, body)
+export const deleteReportSchedule = (id: string) =>
+  request<{ deleted: boolean }>('DELETE', `/scheduled-reports/${id}`)
+export const pauseReportSchedule = (id: string) =>
+  request<ReportSchedule>('POST', `/scheduled-reports/${id}/pause`)
+export const resumeReportSchedule = (id: string) =>
+  request<ReportSchedule>('POST', `/scheduled-reports/${id}/resume`)
+export const listReportRuns = (id: string) =>
+  request<{ items: ReportRun[] }>('GET', `/scheduled-reports/${id}/runs?limit=20`, undefined, { silent: true })
+export const previewReport = (body: { schedule_id?: string; sections?: ReportSection[]; frequency?: ReportFrequency; name?: string }) =>
+  request<{ preview: boolean; sent: boolean; report: Record<string, unknown>; html: string }>(
+    'POST', '/scheduled-reports/preview', body)
+export const listAllowedReportRecipients = () =>
+  request<{ items: { email: string; added_by: string; created_at: string }[]; max: number }>(
+    'GET', '/scheduled-reports/allowed-recipients', undefined, { silent: true })
+export const addAllowedReportRecipient = (email: string) =>
+  request<{ email: string; created: boolean }>('POST', '/scheduled-reports/allowed-recipients', { email })
+export const removeAllowedReportRecipient = (email: string) =>
+  request<{ removed: boolean }>('DELETE', `/scheduled-reports/allowed-recipients/${encodeURIComponent(email)}`)
