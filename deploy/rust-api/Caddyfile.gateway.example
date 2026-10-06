@@ -31,6 +31,17 @@
 {
 	admin localhost:2019
 	auto_https off
+
+	# Keep the X-Forwarded-For chain the frontend sent and APPEND the peer,
+	# instead of replacing it with the peer. Without this the gateway hides the
+	# client's address from both APIs and the per-tenant IP allowlist would
+	# judge the frontend container. Only private ranges are trusted, so a
+	# request that reaches the gateway from anywhere else cannot extend a chain.
+	# The hop count that goes with it is TRUSTED_PROXY_HOPS (docs/rust-migration.md,
+	# "IP allowlist").
+	servers {
+		trusted_proxies static private_ranges
+	}
 }
 
 :8010 {

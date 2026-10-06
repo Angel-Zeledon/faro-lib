@@ -528,3 +528,97 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. IP allowlist (per tenant, 2026-10-06)
+
+A corporate security feature, available on every tier (no plan gate): an admin
+lists the IPv4 / IPv6 addresses and CIDR ranges that may reach the account, and
+turns the list on. Tables `ip_allowlist_policies` (one row per tenant, `enabled`)
+and `ip_allowlist_entries` (`cidr` stored normalised, `label`, `created_by`,
+`created_at`, unique per tenant) are created by Python's additive migration. A
+tenant with no policy row, or a disabled one, is not filtered: with nothing
+configured nothing changes.
+
+**The admin routes exist only in Rust, so there is no Python failover for
+them** (`GET /ip-allowlist`, `POST /ip-allowlist/entries`,
+`DELETE /ip-allowlist/entries/{id}`, `PUT /ip-allowlist/policy`; admin only,
+never callable with a key, Caddy file `routes.d/50-ip-allowlist.caddy.example`).
+With `api-rs` down the settings card shows an error and the policies already
+stored keep being enforced, because **enforcement runs in both services**: after
+authentication on every JWT and `sk_live_*` call (Rust `auth::current_user`,
+Python `get_current_user` and `_authenticate_api_key`), on login and refresh
+(Python), and on the training-progress websocket (Python). A refusal is
+`403 ip_not_allowed` with `error_params: {"ip": ...}`; for a key it comes before
+the rate window and the meter, so a refused call is neither counted nor billed;
+at login it comes after the password matched, so a wrong password reveals
+nothing about which tenants filter. Not covered: the SCIM bearer token, the
+signed inbound webhooks (Twilio, inbound e-mail) and the public trial endpoint,
+which are not the tenant's people or keys.
+
+**Lockout guard** (same spirit as SSO "require"): enabling is refused with
+`409 ip_allowlist_lockout` unless the caller's current address is covered by the
+entries, and so is deleting the entry that leaves it uncovered. A caller whose
+address cannot be read cannot enable (`ip_allowlist_address_unknown`).
+`GET /ip-allowlist` returns `your_ip` and `your_ip_covered`, which is exactly
+what the guard will decide, and the screen shows it. Disabling is never blocked
+(from an allowed address; an outside caller is refused like everything else).
+
+**Events.** `account.ip_allowlist_changed` (warning; reason says what was done:
+entry added / removed, policy enabled / disabled) and `account.ip_access_refused`
+(warning, one row per tenant and address per 10 minutes, written by whichever
+service saw it first). Both are in `backend/activity/events.py`,
+`backend/audit/catalog.py` (LEGACY, target `ip_allowlist`) and the Rust mirrors
+(`activity.rs`, `routes/r1/alerts.rs`, `audit/catalog.rs`, size asserts updated).
+
+### The client address (the trap)
+
+`X-Forwarded-For` is written by the caller, so reading its first entry would let
+anyone claim an allowed address (`api/v1/trial.py` does that for a speed bump
+that nothing depends on; the allowlist must not). Proxies **append** the address
+they saw, so the trustworthy entries are the ones the deployment's own proxies
+wrote, counted **from the right**. The rule, identical in `ip_allowlist.rs` and
+`backend/ip_allowlist/service.py`: build the chain as the header entries plus the
+socket peer, and the client is the entry `TRUSTED_PROXY_HOPS` positions from the
+right end (a shorter chain resolves to its first entry). Anything a client put
+further left is ignored. With the default `0` the header is not read at all and
+the socket peer is the client. The value is a new environment-only setting
+(`TRUSTED_PROXY_HOPS`, in the registry, read by both services from the same
+`.env`). An IPv4-mapped IPv6 address is the IPv4 address; an unreadable value is
+outside every allowlist.
+
+Hop counts per topology (derived from how each hop treats the header, **not
+measured on the production box**):
+
+| Topology | What the API sees | `TRUSTED_PROXY_HOPS` |
+|---|---|---|
+| Today: Caddy -> Next.js -> API | public Caddy sets `client`; Next's rewrite proxy appends its peer (`client, caddy`); the API's peer is the frontend | 2 |
+| With the gateway: Caddy -> Next.js -> gateway -> API | the gateway (private ranges trusted, see `Caddyfile.gateway.example`) appends the frontend; the API's peer is the gateway | 3 |
+
+The public Caddy must keep Caddy's default (no `trusted_proxies`), which
+overwrites any incoming `X-Forwarded-For` with the real peer: that is the line
+that stops a browser from injecting a chain. The API ports must be reachable only
+through the proxies, or a direct caller can write the whole chain.
+
+**Calibrate, do not trust the table**: with the allowlist still off, open the
+card as an admin. "Your current address" is what the server derives; raise or
+lower `TRUSTED_PROXY_HOPS` until it shows your real public address, and only then
+add it and enable. A wrong count cannot lock anyone out by surprise: the guard
+refuses to enable a list that does not cover the address the server sees. It can
+still be wrong in a quieter way: a count too low makes the server see a proxy,
+so the list would judge the proxy (shared by every visitor) instead of the
+person. The card shows the address next to the entries so that is visible before
+enabling.
+
+### Tests and what was run
+
+* `backend/tests/test_ip_allowlist.py` (22): derivation (spoofed prefix, hops,
+  mapped IPv6, garbage), JWT and key enforcement, forged chain, IPv6 ranges,
+  disabled / empty / other-tenant policy, refusal event throttle and actor, key
+  not metered, login after password and no refresh token minted, refresh.
+* `cargo test`: 10 new in `ip_allowlist.rs` (derivation, CIDR parse / normalise /
+  match, what is refused).
+* `tests/contract/contract_test.py` `run_ip_allowlist` (40 cases): the Rust-only
+  routes have nothing to diff against, so each step asserts the Rust answer and
+  the rows; the enforcement requests go to Python AND Rust and the two refusals
+  must be identical. Needs both servers started with `TRUSTED_PROXY_HOPS=1`.
+  Full harness on a throwaway database: **517 cases, 514 pass, 3 skip, 0 fail**.

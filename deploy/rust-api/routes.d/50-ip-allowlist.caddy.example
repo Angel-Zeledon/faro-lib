@@ -1,0 +1,37 @@
+# DISABLED EXAMPLE. Rename to 50-ip-allowlist.caddy inside the gateway's
+# /etc/caddy/routes.d/ to serve the IP allowlist admin routes.
+#
+# Per-tenant IP allowlist admin routes (backend-rs/src/routes/ip_allowlist.rs):
+#   GET    /api/v1/ip-allowlist
+#   POST   /api/v1/ip-allowlist/entries
+#   DELETE /api/v1/ip-allowlist/entries/{id}
+#   PUT    /api/v1/ip-allowlist/policy
+#
+# THESE ROUTES EXIST ONLY IN RUST. There is no Python twin, so unlike every
+# other group there is NO failover: the `api` upstream is deliberately absent
+# below, because Python would answer 404 and a 404 on a security screen reads
+# as "the feature is gone". With api-rs down the screen shows an error and
+# nothing else changes: ENFORCEMENT runs inside both APIs (Python on every
+# JWT / key call, login, refresh and the progress websocket; Rust on its own
+# routes) and keeps working, because it only reads the tables.
+#
+# Moving this file to off/ therefore hides the admin screen's backend (the
+# screen answers 404) without touching enforcement of policies already stored.
+#
+# CLIENT ADDRESS: enforcement judges the address `TRUSTED_PROXY_HOPS` hops from
+# the right of X-Forwarded-For. This gateway must therefore ALSO forward the
+# chain instead of replacing it: see `servers { trusted_proxies ... }` in
+# Caddyfile.gateway.example, and docs/rust-migration.md ("IP allowlist") for
+# the hop count of each topology.
+
+@rs_ip_allowlist {
+	method GET POST DELETE PUT
+	path_regexp ^/api/v1/ip-allowlist(/(entries(/[^/]+)?|policy))?$
+}
+handle @rs_ip_allowlist {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

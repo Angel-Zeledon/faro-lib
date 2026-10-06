@@ -2739,6 +2739,191 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
     return out
 
 
+# ── IP allowlist: Rust-only admin routes, enforced by BOTH services ─────────
+#
+# The four admin routes exist only in Rust, so there is nothing to diff them
+# against: each step asserts the Rust answer and the database rows. The
+# enforcement is the part both services share, so the same request goes to
+# Python and to Rust and the two refusals must be identical.
+#
+# Needs both servers started with TRUSTED_PROXY_HOPS=1 (the harness sends the
+# client address the way one proxy would, in X-Forwarded-For). Without it the
+# section skips itself rather than report a configuration problem as a defect.
+
+IPA = f"{API}/ip-allowlist"
+IPA_OFFICE = "203.0.113.0/24"
+IPA_ME = "203.0.113.5"
+IPA_OUTSIDE = "192.0.2.9"
+
+
+def run_ip_allowlist(args, fx: Fixture, db) -> list:
+    results: list = []
+    if db is None:
+        print("IP allowlist cases skipped: they need --db (state is asserted on rows)")
+        return results
+    route = "ip-allowlist"
+    cur = db.cursor()
+
+    def record(name: str, problems: list[str]) -> None:
+        if args.only and args.only not in name:
+            return
+        results.append((Case(name, "-", "-", route=route), "FAIL" if problems else "PASS", problems))
+
+    def rs(method, path, who="admin", body=None, ip=IPA_ME, raw_body=None):
+        return http(args.rust, method, path, token=auth_for(fx, who), body=body, raw_body=raw_body,
+                    headers={"X-Forwarded-For": ip} if ip else {})
+
+    def py(method, path, who="admin", ip=IPA_ME):
+        return http(args.python, method, path, token=auth_for(fx, who),
+                    headers={"X-Forwarded-For": ip} if ip else {})
+
+    def rows():
+        cur.execute("SELECT cidr, label FROM ip_allowlist_entries WHERE tenant_id = %s ORDER BY cidr",
+                    (fx.tenant_id,))
+        return cur.fetchall()
+
+    def enabled():
+        cur.execute("SELECT enabled FROM ip_allowlist_policies WHERE tenant_id = %s", (fx.tenant_id,))
+        r = cur.fetchone()
+        return bool(r and r[0])
+
+    def events(action, extra=""):
+        cur.execute(f"SELECT context FROM activity_logs WHERE tenant_id = %s AND action = %s {extra} "
+                    "ORDER BY created_at", (fx.tenant_id, action))
+        return [r[0] for r in cur.fetchall()]
+
+    def expect(r, status, code=None):
+        out = []
+        if r.status != status:
+            out.append(f"status {r.status}, wanted {status}: {json.dumps(r.body)[:200]}")
+        elif code is not None and (r.body or {}).get("error_code") != code:
+            out.append(f"error_code {(r.body or {}).get('error_code')!r}, wanted {code!r}")
+        return out
+
+    probe = rs("GET", IPA)
+    if probe.status != 200 or probe.body["data"].get("your_ip") != IPA_ME:
+        print(f"IP allowlist cases skipped: Rust did not read {IPA_ME} from X-Forwarded-For "
+              f"(status {probe.status}); start both servers with TRUSTED_PROXY_HOPS=1")
+        return results
+
+    # Permission pairs and the three refusals before any role check.
+    r = rs("GET", IPA, who="viewer")
+    record("viewer cannot read the allowlist", expect(r, 403, "role_not_permitted"))
+    r = rs("GET", IPA, who="analyst")
+    record("analyst cannot read the allowlist", expect(r, 403, "role_not_permitted"))
+    r = rs("GET", IPA, who="none")
+    record("no token is 401", expect(r, 401))
+    if fx.write_key:
+        r = rs("GET", IPA, who="key_write")
+        record("a key never reaches the admin routes", expect(r, 403, "api_key_route_not_exposed"))
+    r = rs("POST", f"{IPA}/entries", who="viewer", body={"cidr": IPA_OFFICE})
+    record("viewer cannot add an entry (nothing written)", expect(r, 403) + ([] if rows() == [] else ["row written"]))
+    r = rs("PUT", f"{IPA}/policy", who="analyst", body={"enabled": True})
+    record("analyst cannot enable (nothing written)", expect(r, 403) + ([] if not enabled() else ["enabled"]))
+
+    # Initial state.
+    r = rs("GET", IPA)
+    d = (r.body or {}).get("data", {})
+    record("admin reads the empty allowlist", expect(r, 200) + (
+        [] if d.get("enabled") is False and d.get("entries") == [] and d.get("your_ip") == IPA_ME
+        and d.get("your_ip_covered") is False and d.get("max_entries") == 100 else [f"unexpected state {d}"]))
+
+    # Lockout guard on enabling.
+    r = rs("PUT", f"{IPA}/policy", body={"enabled": True})
+    record("enabling without covering yourself is a lockout", expect(r, 409, "ip_allowlist_lockout")
+           + ([] if (r.body or {}).get("error_params") == {"ip": IPA_ME} else ["params lack the ip"])
+           + ([] if not enabled() else ["policy was enabled"]))
+    r = rs("PUT", f"{IPA}/policy", body={"enabled": True}, ip="garbage")
+    record("an unreadable address cannot enable", expect(r, 409, "ip_allowlist_address_unknown"))
+    r = rs("PUT", f"{IPA}/policy", body={})
+    record("policy without enabled is a validation error", expect(r, 422, "validation_error"))
+
+    # Validation and the stored (normalised) form.
+    for bad in ("300.1.1.1", "10.0.0.0/33", "::ffff:1.2.3.4", "a, b", ""):
+        r = rs("POST", f"{IPA}/entries", body={"cidr": bad})
+        record(f"entry {bad!r} is refused", expect(r, 422, "ip_allowlist_invalid_cidr") + ([] if rows() == [] else ["row written"]))
+    r = rs("POST", f"{IPA}/entries", body={"label": "no cidr"})
+    record("entry without cidr is a validation error", expect(r, 422, "validation_error"))
+    r = rs("POST", f"{IPA}/entries", body={"cidr": IPA_OFFICE, "label": "x" * 101})
+    record("a 101-character label is refused", expect(r, 422, "validation_error") + ([] if rows() == [] else ["row written"]))
+
+    r = rs("POST", f"{IPA}/entries", body={"cidr": "203.0.113.77/24", "label": " Head office "})
+    record("a range is stored normalised, label stripped", expect(r, 201) + (
+        [] if rows() == [(IPA_OFFICE, "Head office")] else [f"rows {rows()}"])
+        + ([] if (r.body or {}).get("data", {}).get("your_ip_covered") is True else ["view says not covered"]))
+    r = rs("POST", f"{IPA}/entries", body={"cidr": IPA_OFFICE})
+    record("the same range twice is a duplicate", expect(r, 409, "ip_allowlist_duplicate_entry") + (
+        [] if len(rows()) == 1 else ["duplicate row"]))
+    r = rs("POST", f"{IPA}/entries", body={"cidr": "2001:db8::1/32"})
+    record("an IPv6 range is stored compressed", expect(r, 201) + (
+        [] if ("2001:db8::/32", "") in rows() else [f"rows {rows()}"]))
+    ev = events("account.ip_allowlist_changed")
+    record("adding writes warning events with the reason", [] if len(ev) == 2 and all(
+        e.get("severity") == "warning" and e.get("reason") == "ip_allowlist_entry_added" for e in ev)
+        and ev[0].get("cidr") == IPA_OFFICE and ev[0].get("label") == "Head office"
+        else [f"events {ev}"])
+
+    # Enable now that the caller is covered.
+    r = rs("PUT", f"{IPA}/policy", body={"enabled": True})
+    record("enabling a covering list works", expect(r, 200) + (
+        [] if enabled() and (r.body or {}).get("data", {}).get("enabled") is True else ["not enabled"]))
+    r = rs("PUT", f"{IPA}/policy", body={"enabled": True})
+    ev = events("account.ip_allowlist_changed", "AND context->>'reason' = 'ip_allowlist_enabled'")
+    record("enabling twice records one event", expect(r, 200) + ([] if len(ev) == 1 else [f"{len(ev)} events"]))
+
+    # Enforcement on both services: same request, same refusal.
+    for label, who in (("person", "admin"), ("read key", "key_read")):
+        if who.startswith("key_") and not fx.read_key:
+            continue
+        for ip, status in ((IPA_ME, 200), (IPA_OUTSIDE, 403), (f"{IPA_ME}, {IPA_OUTSIDE}", 403)):
+            rp = py("GET", f"{API}/entitlements", who=who, ip=ip)
+            rr = rs("GET", f"{API}/entitlements", who=who, ip=ip)
+            problems = expect(rp, status, "ip_not_allowed" if status == 403 else None)
+            problems += [f"rust: {p}" for p in expect(rr, status, "ip_not_allowed" if status == 403 else None)]
+            if status == 403:
+                problems += diff(normalize(rp.body, set()), normalize(rr.body, set()))
+                shown = ip.split(",")[-1].strip()
+                if (rr.body or {}).get("error_params") != {"ip": shown}:
+                    problems.append(f"params {(rr.body or {}).get('error_params')}, wanted ip {shown}")
+            record(f"{label} from {ip!r} is {status} on python and rust", problems)
+    ev = events("account.ip_access_refused", f"AND context->>'ip' = '{IPA_OUTSIDE}'")
+    # Python wrote the first refusal; the others (Rust, the key, the forged
+    # chain) fall inside the 10-minute window for the same address.
+    record("refusals of one address are one row across both services",
+           [] if len(ev) == 1 else [f"{len(ev)} rows"])
+    record("a refusal row carries the reason and severity",
+           [] if ev and ev[0].get("reason") == "ip_not_in_allowlist" and ev[0].get("severity") == "warning"
+           else [f"events {ev}"])
+
+    # Lockout guard on deleting; the delete that does not strand the caller.
+    cur.execute("SELECT id, cidr FROM ip_allowlist_entries WHERE tenant_id = %s", (fx.tenant_id,))
+    ids = {c: i for i, c in cur.fetchall()}
+    r = rs("DELETE", f"{IPA}/entries/{ids[IPA_OFFICE]}")
+    record("deleting the entry that covers you is a lockout", expect(r, 409, "ip_allowlist_lockout")
+           + ([] if (IPA_OFFICE, "Head office") in rows() else ["row was deleted"]))
+    r = rs("DELETE", f"{IPA}/entries/{ids['2001:db8::/32']}")
+    record("deleting another entry works", expect(r, 200) + (
+        [] if ("2001:db8::/32", "") not in rows() else ["row survives"]))
+    r = rs("DELETE", f"{IPA}/entries/ipa_nope")
+    record("deleting an unknown id is 404", expect(r, 404, "ip_allowlist_entry_not_found"))
+    r = rs("DELETE", f"{IPA}/entries/{ids[IPA_OFFICE]}", who="viewer")
+    record("viewer cannot delete (row kept)", expect(r, 403) + ([] if (IPA_OFFICE, "Head office") in rows() else ["deleted"]))
+
+    # Disabling is never blocked, and lifts the filter on both services.
+    r = rs("PUT", f"{IPA}/policy", body={"enabled": False}, ip=IPA_OUTSIDE)
+    record("an outside caller cannot even disable", expect(r, 403, "ip_not_allowed") + (
+        [] if enabled() else ["policy was disabled"]))
+    r = rs("PUT", f"{IPA}/policy", body={"enabled": False})
+    record("disabling works", expect(r, 200) + ([] if not enabled() else ["still enabled"]))
+    r = rs("PUT", f"{IPA}/policy", body={"enabled": False})
+    ev = events("account.ip_allowlist_changed", "AND context->>'reason' = 'ip_allowlist_disabled'")
+    record("disabling twice records one event", expect(r, 200) + ([] if len(ev) == 1 else [f"{len(ev)} events"]))
+    for name, call in (("python", py), ("rust", rs)):
+        r = call("GET", f"{API}/entitlements", ip=IPA_OUTSIDE)
+        record(f"a disabled policy filters nobody on {name}", expect(r, 200))
+    return results
+
+
 def run(args) -> int:
     env = read_env_file(args.env_file) if args.env_file else {}
     secret = os.environ.get("SECRET_KEY") or env.get("SECRET_KEY")
@@ -2806,6 +2991,7 @@ def run(args) -> int:
             results.append((case, "FAIL" if hard else "PASS", problems))
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
+        results += run_ip_allowlist(args, fx, db)
         results += run_cd_resync(args, fx, db)
     finally:
         if not args.keep:
