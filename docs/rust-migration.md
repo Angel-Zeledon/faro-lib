@@ -672,3 +672,18 @@ audit actions 116, stored actions 120) and `contract_test.py` (each adds one
    the level unfillable until the chain is edited.
 6. The requester may reject their own order only if they fit the open level; they
    can never approve a level.
+
+**Results (2026-10-06, disposable database, Python and Rust on private ports).**
+`cargo test`: 138 passed, 2 ignored (including `fixtures_agree_with_python`,
+900 cases). New pytest: 21 pure-core and 25 database tests
+(`test_cost_center_chain_core.py`, `test_cost_center_chains.py`); with the
+approval, budget, audit, event, error-code, public-surface and tenant-export
+suites that the change touches, 413 passed. `run_cost_centers` in
+`tests/contract/contract_test.py`: 59/59 (the rest of that run: 79/79).
+`chain_differential.py`: 12,012 resolutions over 80 seeded configurations and
+5,314 over 40 more, 0 mismatches. A mutation of two expectations in the harness
+turned both red. The cost-center and chain cards were exercised in a browser at
+phone width (create a center, a child, a default chain; the list renders with
+paths, the chain text and the es copy); the cart picker, the budget scope option
+and the "assign a cost center" control on an unresolved order were type-checked
+and compiled but not clicked.
