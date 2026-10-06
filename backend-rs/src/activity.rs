@@ -81,7 +81,7 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
-            Event::SessionPolicyChanged => ("account.session_policy_changed", "account", "warning", &["changed"]),
+            Event::SessionPolicyChanged => ("account.session_policy_changed", "account", "warning", &["settings"]),
             Event::UserUnlocked => ("account.user_unlocked", "account", "warning", &["email"]),
         }
     }

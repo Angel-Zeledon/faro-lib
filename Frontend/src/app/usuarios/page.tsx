@@ -15,6 +15,7 @@ import {
 import type { Warehouse } from '@/lib/types'
 import { WarehouseScope } from '@/components/users/WarehouseScope'
 import { SsoSettings } from '@/components/users/SsoSettings'
+import { SessionPolicyCard } from '@/components/users/SessionPolicySettings'
 import Card from '@/components/ui/Card'
 import { thStyle } from '@/components/ui/Table'
 import Input, { Field, Select } from '@/components/ui/Input'
@@ -765,6 +766,7 @@ export default function UsersPage() {
       )}
 
       <SsoSettings />
+      <SessionPolicyCard />
 
       {/* Modals */}
       {showCreate && (

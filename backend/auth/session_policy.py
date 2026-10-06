@@ -180,7 +180,7 @@ def reject_password_against_policy(password: str, tenant_id: Optional[str]) -> N
         "The password does not meet your organization's password policy.",
         status_code=400,
         params={
-            "min_length": policy.min_password_length or 0,
+            "min_length": policy.min_password_length or 8,
             "require_mixed_case": policy.require_mixed_case,
             "require_symbol": policy.require_symbol,
             "broken": broken,

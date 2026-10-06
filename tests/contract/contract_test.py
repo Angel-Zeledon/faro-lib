@@ -2885,7 +2885,7 @@ def run_session_policy(args, fx: Fixture, db) -> list:
         sp.check("PUT recorded one warning event naming the settings, no values",
                  len(ev) == 1 and ctx.get("severity") == "warning" and ctx.get("kind") == "account"
                  and ctx.get("reason") == "changed_by_an_account_admin"
-                 and ctx.get("changed") == ["max_session_hours", "idle_timeout_minutes",
+                 and ctx.get("settings") == ["max_session_hours", "idle_timeout_minutes",
                                             "min_password_length", "password_max_age_days",
                                             "max_concurrent_sessions", "lockout_threshold",
                                             "lockout_minutes", "require_mixed_case"]

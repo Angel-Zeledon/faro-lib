@@ -483,7 +483,7 @@ EVENTS: dict[str, EventSpec] = {
     # a value that could weaken a guess); a lockout is the thing an admin is
     # asked about the next morning, and an unlock says who lifted it.
     "account.session_policy_changed": EventSpec(
-        kind="account", severity=WARNING, detail_keys=("changed",),
+        kind="account", severity=WARNING, detail_keys=("settings",),
     ),
     "account.user_locked_out": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email", "attempts"),

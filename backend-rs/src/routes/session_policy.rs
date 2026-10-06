@@ -399,7 +399,7 @@ async fn record_changed(state: &AppState, user: &CurrentUser, changed: &[&str]) 
         return;
     }
     let mut details = Map::new();
-    details.insert("changed".into(), json!(changed));
+    details.insert("settings".into(), json!(changed));
     record_event_with_reason(
         &state.pool, &user.tenant_id, &user.user_id, Event::SessionPolicyChanged,
         Some("session-policy"), details, Some(REASON),

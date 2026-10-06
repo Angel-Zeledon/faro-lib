@@ -49,7 +49,7 @@ function publish(next: AttentionState) {
 async function refresh(force = false): Promise<void> {
   if (inflight) return inflight
   if (!force && Date.now() - fetchedAt < TTL_MS) return
-  const silent = { silent: true }
+  const silent = { silent: true, background: true }
   inflight = Promise.allSettled([
     getOverduePOs(silent), getSupplierContactHealth(silent), getSupplierLeadTimeAlerts(silent),
     getPOApprovalPending(silent),

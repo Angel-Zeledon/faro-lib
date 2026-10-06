@@ -57,7 +57,7 @@ export default function MessagesPage() {
   activeRef.current = activeId
 
   const loadConversations = useCallback(async () => {
-    try { setConversations(await getDmConversations()) } catch { /* toast via interceptor */ }
+    try { setConversations(await getDmConversations({ background: true })) } catch { /* toast via interceptor */ }
   }, [])
 
   useEffect(() => {
@@ -70,7 +70,7 @@ export default function MessagesPage() {
   const loadThread = useCallback(async (userId: string, showSpinner: boolean) => {
     if (showSpinner) setThreadLoading(true)
     try {
-      const data = await getDmThread(userId)
+      const data = await getDmThread(userId, undefined, { background: !showSpinner })
       // The user may have switched threads while this request was in flight.
       if (activeRef.current !== userId) return
       setActiveName(displayName(data.counterpart))
