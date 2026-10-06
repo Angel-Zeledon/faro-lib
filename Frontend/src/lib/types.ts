@@ -1216,6 +1216,33 @@ export interface CommittedDemand {
 
 export type OutlookVerdict = 'on_track' | 'at_risk' | 'will_miss' | 'insufficient_data'
 
+/** Money at risk of one commitment. Amounts are exact decimal STRINGS in the
+ *  tenant base currency; null means "not available" (see `status`), never 0. */
+export interface OutlookMoney {
+  status: 'computed' | 'no_price' | 'no_shortfall' | 'not_applicable'
+  amount_at_risk: string | null
+  margin_at_risk: string | null
+  margin_status: 'computed' | 'no_cost' | 'no_price' | 'no_shortfall' | 'not_applicable'
+  /** The shortfall is a lower bound, so the amount is "at least". */
+  is_minimum: boolean
+  unit_price: string | null
+  price_source: 'contract' | 'sku' | null
+  unit_cost: string | null
+}
+
+export interface OutlookMoneyTotals {
+  /** at_risk + will_miss rows. */
+  eligible: number
+  computed: number
+  excluded_no_price: number
+  excluded_no_shortfall: number
+  amount_at_risk: string
+  has_minimum: boolean
+  margin_rows: number
+  margin_at_risk: string
+  margin_excluded: number
+}
+
 export interface OutlookReason {
   /** Stable code; the sentence is `outlook.reason.<code>` with these figures. */
   code: string
@@ -1252,6 +1279,7 @@ export interface CommitmentOutlook {
   stock: number | null
   lead_time_days: number | null
   lead_time_source: 'learned' | 'sku' | 'rule' | null
+  money: OutlookMoney | null
 }
 
 export interface OutlookSummary {
@@ -1264,6 +1292,7 @@ export interface OutlookSummary {
   shortfall_units: number
   shortfall_has_minimum: boolean
   first_problem_date: string | null
+  money: OutlookMoneyTotals
 }
 
 export interface OutlookList {
