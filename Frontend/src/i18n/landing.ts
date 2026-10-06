@@ -106,6 +106,18 @@ export interface LandingCopy {
   cases: { tag: string; title: string; lead: string; doesLabel: string; items: Case[] }
   compare: { tag: string; title: string; lead: string; head: [string, string, string, string]; rows: Compare[] }
   start: { tag: string; title: string; lead: string; needTitle: string; need: string[]; notNeedTitle: string; notNeed: string[] }
+  // The only commercial offer shown on the landing (owner, 2026-10-06): the
+  // source code, one price. The plans (free / Full / corporate) still exist in
+  // the product; the landing just does not sell them any more.
+  source: {
+    tag: string; title: string; lead: string
+    price: string; priceNote: string
+    itemsTitle: string; items: string[]
+    closing: string
+    cta: string
+    // Prefilled WhatsApp text and email subject for asking about the purchase.
+    waPrefill: string; mailSubject: string
+  }
   pricing: {
     tag: string; title: string; lead: string
     // What the price is weighed against. Qualitative on purpose: no figure
@@ -270,7 +282,7 @@ const es: LandingCopy = {
     title2: 'decidiendo contigo qué comprar.',
     // Nine models: router.py ROUTING_TABLE (8) + the global model (global_trainer.py).
     lead: 'StockAI entrena una inteligencia artificial para cada uno de tus productos: hasta nueve modelos compiten sobre tu propio historial y se queda el que menos te cuesta equivocarse. Cada mañana te dice qué se va a quebrar, cuántas unidades pedir, a qué proveedor, y cuánto dinero tienes parado en lo que no rota.',
-    cta: 'Empieza gratis con datos de ejemplo',
+    cta: 'Empieza con datos de ejemplo',
     ctaTrial: 'Probar sin registrarme',
     trialNote: 'Cuenta de prueba al instante: usuario y contraseña temporales, 24 horas, sin tarjeta.',
     frame: 'StockAI · Panel de compras',
@@ -303,31 +315,31 @@ const es: LandingCopy = {
     lead: 'Así se ve un día de compras cuando la IA ya hizo el trabajo pesado durante la noche. Cada paso es una pantalla o un canal que existe hoy en StockAI.',
     steps: [
       // Daily alert loop: backend/workers/worker.py; channels: notifications/email.py, whatsapp.py
-      { when: 'Antes de que llegues', title: 'Lo urgente ya te está esperando', desc: 'El resumen diario de los productos que entraron en riesgo llega a tu correo, y a tu WhatsApp en el plan Completo. Si dejaste el recálculo programado, la lista ya está al día con las ventas de ayer.' },
+      { when: 'Antes de que llegues', title: 'Lo urgente ya te está esperando', desc: 'El resumen diario de los productos que entraron en riesgo llega a tu correo, y a tu WhatsApp. Si dejaste el recálculo programado, la lista ya está al día con las ventas de ayer.' },
       // Dashboard screen (tour: panel)
       { when: 'Al abrir el panel', title: 'Una pantalla, lo único que hay que decidir', desc: 'Cuántos productos están en riesgo hoy y cuántos esta semana, un resumen escrito con los riesgos, las oportunidades y las acciones del día, y los pedidos que ya debían haber llegado.' },
       // Inventory screen + backend/inventory/service.py (incoming in the quantity)
       { when: 'En inventario', title: 'Qué pedir, y cuánto, ya calculado', desc: 'Todo tu catálogo en PEDIR YA, PEDIR PRONTO, OK y SOBRESTOCK. La cantidad sugerida ya descuenta lo que viene en camino y está medida contra el plazo real de cada proveedor.' },
       // Purchase orders: grouped by supplier, sent by email/WhatsApp, CSV/PDF export
-      { when: 'En pedidos', title: 'La orden sale armada por proveedor', desc: 'Con el motivo de cada línea. La revisas, la ajustas y la envías por correo (o por WhatsApp, en el plan Completo), o la exportas en PDF para tu sistema.' },
+      { when: 'En pedidos', title: 'La orden sale armada por proveedor', desc: 'Con el motivo de cada línea. La revisas, la ajustas y la envías por correo (o por WhatsApp), o la exportas en PDF para tu sistema.' },
       // Receptions: MIN_LEAD_TIME_OBSERVATIONS = 3 in backend/inventory/service.py
       { when: 'Cuando llega la mercadería', title: 'Cada recepción enseña algo', desc: 'Registras la llegada, completa o parcial, y StockAI anota cuántos días tardó de verdad. Desde la tercera entrega, ese proveedor se planifica con su plazo real.' },
       // AI analyst (web) and WhatsApp share backend/assistant/ — read-only tools;
       // the WhatsApp write tools are suspended (backend/whatsapp/agent.py)
-      { when: 'Cuando surge una duda', title: 'Le preguntas a tu analista de IA', desc: 'En la aplicación o, en el plan Completo, por WhatsApp: qué está en rojo, qué pedidos siguen pendientes, cómo viene el pronóstico. Responde con las cifras de tu propia cuenta y te lleva a la pantalla donde se hace cada cosa: aprobar y recibir órdenes sigue siendo tuyo, en la aplicación.' },
+      { when: 'Cuando surge una duda', title: 'Le preguntas a tu analista de IA', desc: 'En la aplicación o por WhatsApp: qué está en rojo, qué pedidos siguen pendientes, cómo viene el pronóstico. Responde con las cifras de tu propia cuenta y te lleva a la pantalla donde se hace cada cosa: aprobar y recibir órdenes sigue siendo tuyo, en la aplicación.' },
     ],
   },
   features: {
     tag: 'Funciones',
-    title: 'Un software de inventario y compras completo. La API, el MCP y el bot de WhatsApp, desde el plan Completo.',
+    title: 'Un software de inventario y compras completo. Con API, servidor MCP y bot de WhatsApp.',
     lead: 'Todo lo que hace StockAI, agrupado como lo piensa quien compra.',
     groups: [
       { name: 'Compras', items: [
         'Lista de qué pedir hoy, ordenada por urgencia',
         'Cantidad sugerida por producto, descontando lo que ya viene en camino',
         'Órdenes de compra armadas por proveedor, con el motivo de cada línea',
-        'Resumen diario de los productos en riesgo, por correo, y por WhatsApp en el plan Completo',
-        'Envío al proveedor por correo, o por WhatsApp en el plan Completo; exportación en CSV o PDF',
+        'Resumen diario de los productos en riesgo, por correo, y por WhatsApp',
+        'Envío al proveedor por correo, o por WhatsApp; exportación en CSV o PDF',
         'Optimizador del pedido de menor costo total, con el flete fijo incluido',
         'Escalas de precio por volumen: cuánto falta para el siguiente escalón',
       ] },
@@ -364,10 +376,10 @@ const es: LandingCopy = {
         'Carga por CSV o Excel, tal como sale de tu sistema',
         'Conexión directa a tu base de datos Postgres o MySQL',
         // backend/api/public_surface.py: every tenant-scoped action a key can hold the role for
-        'API REST con las acciones de la aplicación, para tu propio sistema (desde el plan Completo)',
-        'Servidor MCP de solo lectura para asistentes de IA (desde el plan Completo)',
+        'API REST con las acciones de la aplicación, para tu propio sistema',
+        'Servidor MCP de solo lectura para asistentes de IA',
         'Roles de administrador, analista y solo lectura',
-        'Mensajería interna, con aviso por WhatsApp en el plan Completo',
+        'Mensajería interna, con aviso por WhatsApp',
       ] },
     ],
   },
@@ -386,7 +398,7 @@ const es: LandingCopy = {
       { title: 'Pronóstico con rango', desc: 'El ganador se vuelve a entrenar con todo tu historial, incluido lo más reciente, y proyecta la demanda con un rango probable alrededor.', detail: 'Diario, semanal, mensual o trimestral' },
       // Signal thresholds and safety stock: backend/inventory/service.py
       { title: 'Semáforo y cantidad', desc: 'La demanda pronosticada se cruza con tus existencias y con el plazo de tu proveedor. Cada producto queda en PEDIR YA, PEDIR PRONTO, OK o SOBRESTOCK, con la cantidad sugerida.', detail: 'La regla está publicada y se puede hacer a mano' },
-      { title: 'Orden de compra', desc: 'La orden sale armada por proveedor, con el motivo de cada línea. La revisas, la ajustas y la envías por correo, o por WhatsApp en el plan Completo.', detail: 'Exportable en CSV o PDF' },
+      { title: 'Orden de compra', desc: 'La orden sale armada por proveedor, con el motivo de cada línea. La revisas, la ajustas y la envías por correo, o por WhatsApp.', detail: 'Exportable en CSV o PDF' },
       // Learned lead time: backend/inventory/service.py (MIN_LEAD_TIME_OBSERVATIONS = 3)
       { title: 'Recepción que enseña el plazo', desc: 'Cuando registras la llegada, StockAI anota cuántos días tardó de verdad. A partir de la tercera entrega de un proveedor planifica con ese plazo, no con el prometido.', detail: 'Y ese plazo vuelve al paso del semáforo' },
     ],
@@ -487,7 +499,7 @@ const es: LandingCopy = {
         does: [
           'Punto de reorden por producto, con el plazo real del proveedor: a partir de la tercera recepción registrada deja de usar el prometido.',
           'La orden de compra sale armada por proveedor, con cantidad sugerida y el motivo de cada línea.',
-          'Resumen diario de los productos que entran en riesgo, al correo de quien decide, y a su WhatsApp en el plan Completo.',
+          'Resumen diario de los productos que entran en riesgo, al correo de quien decide, y a su WhatsApp.',
         ],
       },
       {
@@ -561,6 +573,24 @@ const es: LandingCopy = {
       'No necesitas un mínimo de productos. Funciona igual con 80 códigos que con 4.000.',
     ],
   },
+  source: {
+    tag: 'Precio',
+    title: 'StockAI se vende como código fuente.',
+    lead: 'Una sola oferta: el código fuente completo de StockAI, para instalarlo en tu propia infraestructura y operarlo como tuyo.',
+    price: '$14.999',
+    priceNote: 'USD · pago único',
+    itemsTitle: 'Qué recibes',
+    items: [
+      'El código fuente completo: el motor de pronóstico, la API, el frontend y el worker',
+      'Todas las funciones del producto: pronóstico con IA, semáforo, órdenes de compra, bodegas, optimizador, alertas, API, servidor MCP y bot de WhatsApp',
+      'Instalación en tu propio servidor con Docker Compose, con tus datos solo en tu infraestructura',
+      'El panel de instalación para configurar correo, WhatsApp, IA y el resto de servicios',
+    ],
+    closing: 'Escríbenos y cerramos la compra y los detalles de la entrega contigo.',
+    cta: 'Quiero el código fuente',
+    waPrefill: 'Hola, quiero comprar el código fuente de StockAI.',
+    mailSubject: 'StockAI — compra del código fuente',
+  },
   pricing: {
     tag: 'Precio',
     title: 'Un motor de IA completo. Desde el primer día, también gratis.',
@@ -589,7 +619,7 @@ const es: LandingCopy = {
       ['Tamaño de archivo', '25 MB', '100 MB'],
     ],
     closing: 'Empieza gratis hoy. Cuando te quede corto — un catálogo que creció, una segunda bodega, un tercero en el equipo — escríbenos y lo ampliamos. Te respondemos en menos de 24 horas.',
-    ctaSignup: 'Crear mi cuenta gratis',
+    ctaSignup: 'Crear mi cuenta',
     ctaWhatsapp: 'Escríbenos por WhatsApp',
     ctaEmail: 'Escríbenos por correo',
     upgradeTitle: 'Cómo se amplía',
@@ -602,8 +632,8 @@ const es: LandingCopy = {
     noStringsCheckout: ['El plan gratis no pide tarjeta', 'El plan gratis no vence', 'El plan completo se cancela cuando quieras'],
     ctaFull: 'Empezar el plan completo',
     ctaFullNote: 'Crea tu cuenta y contrátalo desde la app, con tarjeta o PayPal. El pago lo procesa Stripe o PayPal en su propia página.',
-    waPrefill: 'Hola, quiero ampliar los límites de StockAI.',
-    mailSubject: 'StockAI — quiero una cotización',
+    waPrefill: 'Hola, quiero comprar el código fuente de StockAI.',
+    mailSubject: 'StockAI — compra del código fuente',
     paidFrom: 'Desde {price}',
     perMonth: 'al mes',
     calcLink: 'Calcula tu estimado',
@@ -694,12 +724,12 @@ const es: LandingCopy = {
   final: {
     title: 'Pon tu propia IA a trabajar en tus compras. Hoy.',
     lead: 'Tres formas de empezar, según cuánto quieras comprometer ahora. Las tres llegan al mismo producto.',
-    signupTitle: 'Crea tu cuenta gratis',
-    signupDesc: 'Para siempre, con el motor completo. Sube tu archivo de ventas y ve tu primera lista de qué pedir.',
+    signupTitle: 'Crea tu cuenta',
+    signupDesc: 'Con el motor completo. Sube tu archivo de ventas y ve tu primera lista de qué pedir.',
     trialTitle: 'Mira antes de dar tu correo',
     trialDesc: 'Una cuenta de prueba al instante, con datos de ejemplo. Dura 24 horas y después se borra.',
     talkTitle: 'Habla con nosotros',
-    talkDesc: 'Si tu operación ya no cabe en el plan gratis, o quieres verlo con tus datos y acompañado. Respondemos en menos de 24 horas.',
+    talkDesc: 'Si quieres comprar el código fuente, o verlo con tus datos y acompañado. Respondemos en menos de 24 horas.',
     reach: 'Ventas y contacto: {email}. Teléfono: {phone}.',
     madeIn: 'Hecho en Costa Rica para distribuidores de Latinoamérica.',
   },
@@ -782,18 +812,18 @@ const es: LandingCopy = {
       { q: '¿Cómo decide StockAI cuánto pedir?', a: 'Mira tu posición de inventario — lo que tienes más lo que ya viene en camino, sea de un proveedor o de un traslado entre bodegas — y sugiere lo que falta para cubrir el plazo del proveedor con su colchón de seguridad, respetando el mínimo de compra. Así no te pide otra vez lo que ya ordenaste. La cantidad es una sugerencia: en la orden la puedes ajustar antes de enviarla.' },
       // backend/whatsapp/tools.py: semaphore_status, list_pending_pos,
       // forecast_summary; read-only since the shared assistant core (backend/assistant/).
-      { q: '¿Puedo usar StockAI desde WhatsApp?', a: 'Sí, con el plan Completo, para lo del día a día. Cada persona vincula y verifica su número, y desde ahí puede preguntar qué productos están en rojo, qué pedidos siguen pendientes y cómo viene el pronóstico, con las cifras de su propia cuenta. El asistente solo consulta: para aprobar o recibir una orden te indica la pantalla de la aplicación donde se hace. El resumen diario de productos en riesgo y las órdenes a proveedores también salen por WhatsApp.' },
+      { q: '¿Puedo usar StockAI desde WhatsApp?', a: 'Sí, para lo del día a día. Cada persona vincula y verifica su número, y desde ahí puede preguntar qué productos están en rojo, qué pedidos siguen pendientes y cómo viene el pronóstico, con las cifras de su propia cuenta. El asistente solo consulta: para aprobar o recibir una orden te indica la pantalla de la aplicación donde se hace. El resumen diario de productos en riesgo y las órdenes a proveedores también salen por WhatsApp.' },
       { q: '¿StockAI reemplaza a mi ERP?', a: 'No, lo complementa. Tu ERP registra lo que pasó: ventas, existencias, compras. StockAI lee esa historia, la exportes en un archivo o la traiga directo de tu base de datos, y te dice qué comprar, cuánto y a quién. Sigues facturando y contabilizando donde siempre.' },
-      { q: '¿Cómo paso del plan gratis al completo?', a: 'Escribiéndonos, por WhatsApp o por correo. No hay checkout ni se pide tarjeta. En la página de precios hay una calculadora que te da un estimado antes de escribirnos; después conversamos sobre tu operación — cuántos productos, bodegas y personas —, acordamos el precio y ampliamos los límites en tu misma cuenta, con tus datos tal como están. Mientras tanto el plan gratis sigue funcionando, con sus topes y sin la API, el MCP ni el bot de WhatsApp; no vence.' },
+      { q: '¿Cómo compro StockAI?', a: 'StockAI se vende solo como código fuente: $14.999 USD, en un pago único. Lo instalas en tu propia infraestructura. Escríbenos por WhatsApp o por correo y cerramos la compra y los detalles de la entrega contigo.' },
       { q: '¿En qué formato debo tener mis datos de ventas?', a: 'StockAI acepta archivos Excel (.xlsx) y CSV. El archivo debe tener al menos una columna de fecha, una columna de identificador del producto (SKU o nombre) y una columna de cantidad vendida. El sistema detecta automáticamente qué columna es cuál.' },
       { q: '¿Qué pasa si tengo productos con muy pocas ventas históricas o datos incompletos?', a: 'StockAI necesita al menos 20 períodos de historial por producto para entrenarlo. Los que no llegan a ese mínimo quedan fuera del pronóstico: no se les inventa una proyección. Antes de correr nada, la revisión del archivo te dice cuántos productos están por debajo del umbral, y si ninguno lo alcanza el archivo se detiene con la explicación en pantalla en vez de producir un resultado vacío. Esos productos siguen apareciendo en tu inventario marcados SIN DATOS — sin señal ni cantidad sugerida — para que la decisión sea tuya y no de un número inventado.' },
       { q: '¿Mis datos están seguros? ¿Quién tiene acceso a ellos?', a: 'Los datos que subes a StockAI son exclusivamente tuyos: no se venden ni se usan para entrenar modelos de otras empresas — cada pronóstico se entrena únicamente con el historial de tu propia cuenta, en nuestro servidor. La única excepción es el asistente de IA: cuando le haces una pregunta, esa pregunta y los datos de tu cuenta que necesita para responderla se envían a un proveedor externo de modelos de lenguaje (DeepSeek) para redactar la respuesta. Fuera de eso, tus datos solo salen cuando tú lo pides: una orden de compra que envías por correo o WhatsApp, o una alerta que elegiste recibir. Cada consulta va filtrada por empresa y el acceso se controla por rol: administrador, analista o solo lectura. Las credenciales de tus integraciones — el usuario y la contraseña de tu base de datos — se guardan cifradas. Tus archivos de ventas y los modelos entrenados se guardan en el servidor de StockAI, en una carpeta separada por empresa; el cifrado del disco depende del servidor donde corre, no lo hace la aplicación. Y la eliminación es completa de verdad: borra cada tabla y cada archivo asociado a tu cuenta, no solo el registro principal.' },
       { q: '¿Cuánto tiempo toma empezar a usar StockAI en mi empresa?', a: 'En la mayoría de casos, menos de un día. Si tienes un archivo de ventas histórico, puedes subirlo y ver tu primera lista de qué pedir en menos de una hora. Para integraciones con ERP o sistemas propios, el tiempo varía según la complejidad.' },
       { q: '¿Se puede integrar con nuestro ERP o sistema de inventario actual?', a: 'La carga normal es por archivo: exportas de tu sistema y subes el CSV o Excel. También puedes conectar StockAI directamente a tu base de datos Postgres o MySQL y traer las ventas con una consulta, sin archivos de por medio. Una integración a medida con tu ERP la armamos con nuestro equipo técnico sobre tu operación, caso por caso — escríbenos y lo vemos.' },
       { q: '¿Cada cuánto se actualiza lo que me dice que pida?', a: 'Cada vez que cargas ventas nuevas. Puedes lanzarlo tú al subir el archivo del mes, o dejar el recálculo programado para que corra solo: cada lunes a las 6, todos los días, solo días hábiles, cada hora o el primero de cada mes.' },
-      { q: '¿StockAI sirve si tengo más de una bodega?', a: 'Sí. El plan gratis trae una bodega, el plan completo dos, y el corporativo las que acuerdes en la cotización. Defines rutas entre bodegas con los días de tránsito y el costo. Cuando un producto está corto en una bodega y sobrado en otra, StockAI sugiere mover en lugar de comprar, y solo lo sugiere si a la bodega que presta le quedan al menos 30 días de cobertura.' },
+      { q: '¿StockAI sirve si tengo más de una bodega?', a: 'Sí. Defines rutas entre bodegas con los días de tránsito y el costo. Cuando un producto está corto en una bodega y sobrado en otra, StockAI sugiere mover en lugar de comprar, y solo lo sugiere si a la bodega que presta le quedan al menos 30 días de cobertura.' },
       { q: '¿De dónde saca StockAI el plazo de entrega de cada proveedor?', a: 'Al principio, del que escribes tú en la ficha del proveedor. Cada vez que registras una recepción, StockAI guarda cuántos días pasaron de verdad entre la orden y la entrega. A partir de la tercera recepción de ese proveedor empieza a usar el promedio real en lugar del plazo declarado, y te muestra cuál de los dos está usando.' },
-      { q: '¿Qué tan grande puede ser el archivo de ventas que subo?', a: 'En el plan gratis, hasta 25 MB por archivo; el plan completo llega a 100 MB y el corporativo, a 2 GB. Para dimensionarlo: 3 años de historial con 5.000 productos y venta diaria son unos 5 millones de filas, del orden de 200 MB en CSV — dentro del plan corporativo.' },
+      { q: '¿Qué tan grande puede ser el archivo de ventas que subo?', a: 'Para dimensionarlo: 3 años de historial con 5.000 productos y venta diaria son unos 5 millones de filas, del orden de 200 MB en CSV.' },
       // Moved here from the models section on 2026-10-02 (owner): the same
       // three limits that used to sit under "Lo que no te vamos a prometer",
       // plus the one the purchase-order flow already makes true (the buyer
@@ -825,8 +855,8 @@ const es: LandingCopy = {
     related: 'Sigue leyendo',
     pricing: {
       label: 'Precios',
-      title: 'Precios de StockAI: gratis para empezar, premium cuando creces.',
-      intro: 'El plan gratis es para siempre; sus límites son de tamaño, y no incluye la API, el servidor MCP ni el bot de WhatsApp, que empiezan en el plan Completo. Aquí están esos techos, lo que cambia al ampliarlos y cómo se hace: conversando con nosotros, sin tarjeta y sin checkout.',
+      title: 'Precio de StockAI: código fuente, $14.999 USD en pago único.',
+      intro: 'StockAI se vende solo como código fuente, con un pago único. Aquí está lo que recibes y cómo comprarlo.',
     },
     how: {
       label: 'Cómo funciona',
@@ -836,7 +866,7 @@ const es: LandingCopy = {
     faq: {
       label: 'Preguntas frecuentes',
       title: 'Preguntas frecuentes sobre StockAI.',
-      intro: 'Lo que suelen preguntar los equipos de compras antes de subir su primer archivo: qué datos hacen falta, cómo se amplía el plan gratis, dónde quedan tus datos y cómo aprende el plazo de cada proveedor.',
+      intro: 'Lo que suelen preguntar los equipos de compras antes de subir su primer archivo: qué datos hacen falta, cómo se compra StockAI, dónde quedan tus datos y cómo aprende el plazo de cada proveedor.',
     },
     security: {
       label: 'Seguridad',
@@ -875,7 +905,7 @@ const en: LandingCopy = {
     title1: 'Your own team of data scientists,',
     title2: 'deciding with you what to buy.',
     lead: 'StockAI trains an artificial intelligence for every one of your products: up to nine models compete on your own history, and the one whose mistakes cost you least is kept. Every morning it tells you what is about to run out, how many units to order, from which supplier, and how much money is sitting in what does not turn.',
-    cta: 'Start free with sample data',
+    cta: 'Start with sample data',
     ctaTrial: 'Try it without signing up',
     trialNote: 'Instant trial account: temporary username and password, 24 hours, no card.',
     frame: 'StockAI · Purchasing dashboard',
@@ -907,25 +937,25 @@ const en: LandingCopy = {
     title: 'From the alert to the order sent, before your second coffee.',
     lead: 'This is what a buying day looks like when the AI has already done the heavy lifting overnight. Every step is a screen or a channel that exists in StockAI today.',
     steps: [
-      { when: 'Before you arrive', title: 'What is urgent is already waiting', desc: 'The daily summary of products that moved into risk reaches your inbox, and your WhatsApp on the Full plan. If you left the scheduled recalculation on, the list is already up to date with yesterday’s sales.' },
+      { when: 'Before you arrive', title: 'What is urgent is already waiting', desc: 'The daily summary of products that moved into risk reaches your inbox, and your WhatsApp. If you left the scheduled recalculation on, the list is already up to date with yesterday’s sales.' },
       { when: 'On the dashboard', title: 'One screen, the only thing to decide', desc: 'How many products are at risk today and this week, a written summary of the day’s risks, opportunities and actions, and the orders that should already have arrived.' },
       { when: 'In inventory', title: 'What to order, and how much, already worked out', desc: 'Your whole catalogue in ORDER NOW, ORDER SOON, OK and OVERSTOCK. The suggested quantity already accounts for what is on its way and is measured against each supplier’s real lead time.' },
-      { when: 'In orders', title: 'The order comes out grouped by supplier', desc: 'With the reason for every line. You review it, adjust it and send it by email (or by WhatsApp, on the Full plan), or export it as a PDF for your system.' },
+      { when: 'In orders', title: 'The order comes out grouped by supplier', desc: 'With the reason for every line. You review it, adjust it and send it by email (or by WhatsApp), or export it as a PDF for your system.' },
       { when: 'When the goods arrive', title: 'Every reception teaches it something', desc: 'You record the arrival, complete or partial, and StockAI notes how many days it really took. From the third delivery, that supplier is planned with its real lead time.' },
-      { when: 'When a question comes up', title: 'You ask your AI analyst', desc: 'In the app or, on the Full plan, on WhatsApp: what is in the red, which orders are still pending, how the forecast looks. It answers with your own account’s figures and points you to the screen where each thing is done: approving and receiving orders stays yours, in the app.' },
+      { when: 'When a question comes up', title: 'You ask your AI analyst', desc: 'In the app or on WhatsApp: what is in the red, which orders are still pending, how the forecast looks. It answers with your own account’s figures and points you to the screen where each thing is done: approving and receiving orders stays yours, in the app.' },
     ],
   },
   features: {
     tag: 'Features',
-    title: 'Complete inventory and purchasing software. The API, MCP and the WhatsApp bot, from the Full plan.',
+    title: 'Complete inventory and purchasing software. With an API, an MCP server and a WhatsApp bot.',
     lead: 'Everything StockAI does, grouped the way a buyer thinks about it.',
     groups: [
       { name: 'Purchasing', items: [
         'A list of what to order today, sorted by urgency',
         'A suggested quantity per product, net of what is already on its way',
         'Purchase orders grouped by supplier, with the reason for every line',
-        'A daily summary of the products at risk, by email, and by WhatsApp on the Full plan',
-        'Sent to the supplier by email, or by WhatsApp on the Full plan; exported as CSV or PDF',
+        'A daily summary of the products at risk, by email, and by WhatsApp',
+        'Sent to the supplier by email, or by WhatsApp; exported as CSV or PDF',
         'An optimiser for the lowest-total-cost order, fixed freight included',
         'Volume price breaks: how far the next tier is',
       ] },
@@ -961,10 +991,10 @@ const en: LandingCopy = {
       { name: 'Integrations and team', items: [
         'Upload by CSV or Excel, exactly as it leaves your system',
         'A direct connection to your Postgres or MySQL database',
-        'A REST API with the app’s actions, for your own system (from the Full plan)',
-        'A read-only MCP server for AI assistants (from the Full plan)',
+        'A REST API with the app’s actions, for your own system',
+        'A read-only MCP server for AI assistants',
         'Administrator, analyst and read-only roles',
-        'Internal messaging, with a WhatsApp heads-up on the Full plan',
+        'Internal messaging, with a WhatsApp heads-up',
       ] },
     ],
   },
@@ -977,7 +1007,7 @@ const en: LandingCopy = {
       { title: 'Tested against the past', desc: 'Each model has the last stretch of your history hidden from it and is asked to forecast it, over several cut-offs. The one whose mistakes cost least wins, and it has to beat two naive forecasts.', detail: 'Falling short weighs three times more than overshooting' },
       { title: 'Forecast with a range', desc: 'The winner is trained again on your whole history, the latest weeks included, and projects demand with a likely range around it.', detail: 'Daily, weekly, monthly or quarterly' },
       { title: 'Signal and quantity', desc: 'Forecast demand is set against your stock on hand and your supplier’s lead time. Every product lands on ORDER NOW, ORDER SOON, OK or OVERSTOCK, with a suggested quantity.', detail: 'The rule is published and can be done by hand' },
-      { title: 'Purchase order', desc: 'The order comes out grouped by supplier, with the reason for every line. You review it, adjust it and send it by email, or by WhatsApp on the Full plan.', detail: 'Exportable as CSV or PDF' },
+      { title: 'Purchase order', desc: 'The order comes out grouped by supplier, with the reason for every line. You review it, adjust it and send it by email, or by WhatsApp.', detail: 'Exportable as CSV or PDF' },
       { title: 'A reception that teaches the lead time', desc: 'When you record an arrival, StockAI notes how many days it really took. From a supplier’s third delivery it plans with that lead time, not the promised one.', detail: 'And that lead time feeds back into the signal' },
     ],
     illus: {
@@ -1066,7 +1096,7 @@ const en: LandingCopy = {
         does: [
           'A reorder point per product, using the supplier’s real lead time: from the third recorded delivery it stops using the promised one.',
           'The purchase order comes out grouped by supplier, with a suggested quantity and the reason for every line.',
-          'A daily summary of the products moving into risk, to the inbox of whoever decides, and to their WhatsApp on the Full plan.',
+          'A daily summary of the products moving into risk, to the inbox of whoever decides, and to their WhatsApp.',
         ],
       },
       {
@@ -1140,6 +1170,24 @@ const en: LandingCopy = {
       'You do not need a minimum number of products. It works the same with 80 codes as with 4,000.',
     ],
   },
+  source: {
+    tag: 'Pricing',
+    title: 'StockAI is sold as source code.',
+    lead: 'One offer: the complete StockAI source code, to install on your own infrastructure and run as your own.',
+    price: '$14,999',
+    priceNote: 'USD · one-time payment',
+    itemsTitle: 'What you get',
+    items: [
+      'The complete source code: the forecasting engine, the API, the frontend and the worker',
+      'Every feature in the product: AI forecasting, the stock signal, purchase orders, warehouses, the optimiser, alerts, the API, the MCP server and the WhatsApp bot',
+      'Installation on your own server with Docker Compose, with your data only on your infrastructure',
+      'The installation panel to configure email, WhatsApp, AI and the rest of the services',
+    ],
+    closing: 'Write to us and we will close the purchase and the delivery details with you.',
+    cta: 'I want the source code',
+    waPrefill: 'Hi, I would like to buy the StockAI source code.',
+    mailSubject: 'StockAI — source code purchase',
+  },
   pricing: {
     tag: 'Pricing',
     title: 'A complete AI engine. From day one, free plan included.',
@@ -1168,7 +1216,7 @@ const en: LandingCopy = {
       ['File size', '25 MB', '100 MB'],
     ],
     closing: 'Start free today. When you outgrow it — a catalogue that grew, a second warehouse, a third person on the team — write to us and we lift it. We answer within 24 hours.',
-    ctaSignup: 'Create my free account',
+    ctaSignup: 'Create my account',
     ctaWhatsapp: 'Message us on WhatsApp',
     ctaEmail: 'Email us',
     upgradeTitle: 'How it grows',
@@ -1181,8 +1229,8 @@ const en: LandingCopy = {
     noStringsCheckout: ['The free plan asks for no card', 'The free plan does not expire', 'Cancel the full plan whenever you like'],
     ctaFull: 'Start the full plan',
     ctaFullNote: 'Create your account and subscribe from inside the app, by card or PayPal. Stripe or PayPal handles the payment on its own page.',
-    waPrefill: 'Hi, I would like to lift my StockAI limits.',
-    mailSubject: 'StockAI — I would like a quote',
+    waPrefill: 'Hi, I would like to buy the StockAI source code.',
+    mailSubject: 'StockAI — source code purchase',
     paidFrom: 'From {price}',
     perMonth: 'a month',
     calcLink: 'Work out your estimate',
@@ -1273,12 +1321,12 @@ const en: LandingCopy = {
   final: {
     title: 'Put your own AI to work on your buying. Today.',
     lead: 'Three ways to start, depending on how much you want to commit right now. All three lead to the same product.',
-    signupTitle: 'Create your free account',
-    signupDesc: 'Forever, with the whole engine. Upload your sales file and see your first list of what to order.',
+    signupTitle: 'Create your account',
+    signupDesc: 'With the whole engine. Upload your sales file and see your first list of what to order.',
     trialTitle: 'Look before giving your email',
     trialDesc: 'An instant trial account with sample data. It lasts 24 hours and is then erased.',
     talkTitle: 'Talk to us',
-    talkDesc: 'If your operation no longer fits the free plan, or you want to see it with your data and someone beside you. We answer within 24 hours.',
+    talkDesc: 'If you want to buy the source code, or see it with your data and someone beside you. We answer within 24 hours.',
     reach: 'Sales and contact: {email}. Phone: {phone}.',
     madeIn: 'Made in Costa Rica for distributors across Latin America.',
   },
@@ -1353,18 +1401,18 @@ const en: LandingCopy = {
       { q: 'What is actually AI about it?', a: 'The forecast. For every product, machine-learning models — gradient-boosted trees (LightGBM and XGBoost), a neural network (LSTM) and a global model that learns from your whole catalogue at once — compete alongside classical statistical models such as ARIMA, SARIMAX, Prophet, ETS and Croston. Each one is tested against stretches of your own history it never saw, and the winner is the one whose mistakes cost least, on a cost where running out weighs three times more than overshooting. On top of that, the AI analyst answers questions about your inventory in plain language. What sets the colour of the signal, on the other hand, is a published rule you can check by hand.' },
       { q: 'What is the reorder point, and how does StockAI work it out?', a: 'It is the stock level at which it is time to order: what you will sell while you wait for the order to arrive, plus a safety buffer. StockAI works it out for every product from the demand the AI forecasts, the supplier’s real lead time and, if you order from them on a fixed cycle, that interval too. The buffer grows when the product’s sales are more variable and when the supplier is irregular in its deliveries, and its size is set by the service level you choose: for the whole company, per supplier, per category or per product. When coverage reaches the reorder point, the product moves to ORDER SOON.' },
       { q: 'How does StockAI decide how much to order?', a: 'It looks at your inventory position — what you have plus what is already on its way, whether from a supplier or a transfer between warehouses — and suggests what is missing to cover the supplier’s lead time with its safety buffer, respecting the minimum order quantity. So it never asks you to order again what you already ordered. The quantity is a suggestion: you can adjust it on the order before sending it.' },
-      { q: 'Can I use StockAI from WhatsApp?', a: 'Yes, on the Full plan, for the day-to-day. Each person links and verifies their number, and from there they can ask which products are in the red, which orders are still pending and how the forecast looks, with their own account’s figures. The assistant only reads: to approve or receive an order it points you to the screen in the app where that is done. The daily summary of at-risk products and orders to suppliers go out by WhatsApp too.' },
+      { q: 'Can I use StockAI from WhatsApp?', a: 'Yes, for the day-to-day. Each person links and verifies their number, and from there they can ask which products are in the red, which orders are still pending and how the forecast looks, with their own account’s figures. The assistant only reads: to approve or receive an order it points you to the screen in the app where that is done. The daily summary of at-risk products and orders to suppliers go out by WhatsApp too.' },
       { q: 'Does StockAI replace my ERP?', a: 'No, it complements it. Your ERP records what happened: sales, stock, purchases. StockAI reads that history, whether you export it as a file or it pulls it straight from your database, and tells you what to buy, how much and from whom. You keep invoicing and accounting where you always have.' },
-      { q: 'How do I move from the free plan to the full one?', a: 'By writing to us, on WhatsApp or by email. There is no checkout and no card is asked for. The pricing page has a calculator that gives you an estimate before you write; then we talk about your operation (how many products, warehouses and people), agree the price and lift the limits on the same account, with your data exactly as it is. Meanwhile the free plan keeps working, with its ceilings and without the API, MCP or the WhatsApp bot; it does not expire.' },
+      { q: 'How do I buy StockAI?', a: 'StockAI is sold only as source code: $14,999 USD, in a one-time payment. You install it on your own infrastructure. Write to us on WhatsApp or by email and we close the purchase and the delivery details with you.' },
       { q: 'What format does my sales data need to be in?', a: 'StockAI accepts Excel (.xlsx) and CSV. The file needs at least a date column, a product identifier column (SKU or name) and a quantity-sold column. The system works out which column is which.' },
       { q: 'What if I have products with very little sales history, or incomplete data?', a: 'StockAI needs at least 20 periods of history per product to train it. Products below that minimum stay out of the forecast: no projection is invented for them. Before anything runs, the file review tells you how many products are under the threshold, and if none of them clears it the file is stopped with the explanation on screen instead of producing an empty result. Those products still appear in your inventory marked NO DATA — no signal and no suggested quantity — so the decision is yours and not an invented number’s.' },
       { q: 'Is my data safe? Who has access to it?', a: 'The data you upload to StockAI is exclusively yours: it is not sold and it is not used to train models for other companies — every forecast is trained only on your own account’s history, on our server. The one exception is the AI assistant: when you ask it something, that question and the account data it needs to answer are sent to an external language-model provider (DeepSeek) to write the reply. Beyond that, your data only leaves when you ask it to: a purchase order you send by email or WhatsApp, or an alert you chose to receive. Every query is filtered by company and access is controlled by role: administrator, analyst or read-only. Your integration credentials — the user and password of your database — are stored encrypted. Your sales files and trained models are kept on StockAI’s server, in a folder separated per company; disk encryption is a property of the server it runs on, not something the application does. And deletion is genuinely complete: it removes every table and every file tied to your account, not just the main record.' },
       { q: 'How long does it take to start using StockAI in my company?', a: 'In most cases, under a day. If you have a historical sales file you can upload it and see your first list of what to order in under an hour. For ERP or in-house system integrations, the time depends on the complexity.' },
       { q: 'Can it integrate with our current ERP or inventory system?', a: 'The normal path is by file: export from your system and upload the CSV or Excel. You can also connect StockAI straight to your Postgres or MySQL database and pull sales with a query, with no file in between. A custom ERP integration is something we build with our technical team around your operation, case by case — write to us and we will look at it.' },
       { q: 'How often does what it tells me to order get updated?', a: 'Every time you load new sales. You can launch it yourself when you upload the month’s file, or leave the scheduled recalculation running: every Monday at 6, every day, weekdays only, hourly, or the first of each month.' },
-      { q: 'Is StockAI useful if I have more than one warehouse?', a: 'Yes. The free plan comes with one warehouse, the full plan two, and the corporate plan as many as you agree in the quote. You define routes between warehouses with transit days and cost. When a product is short in one warehouse and long in another, StockAI suggests moving instead of buying, and only suggests it if the lending warehouse keeps at least 30 days of coverage.' },
+      { q: 'Is StockAI useful if I have more than one warehouse?', a: 'Yes. You define routes between warehouses with transit days and cost. When a product is short in one warehouse and long in another, StockAI suggests moving instead of buying, and only suggests it if the lending warehouse keeps at least 30 days of coverage.' },
       { q: 'Where does StockAI get each supplier’s lead time from?', a: 'At first, from the one you type on the supplier’s card. Every time you record a reception, StockAI stores how many days actually passed between the order and the delivery. From that supplier’s third reception it starts using the real average instead of the declared lead time, and shows you which of the two it is using.' },
-      { q: 'How large can the sales file I upload be?', a: 'On the free plan, up to 25 MB per file; the full plan reaches 100 MB and the corporate plan 2 GB. For scale: 3 years of history with 5,000 products selling daily is around 5 million rows, on the order of 200 MB as CSV — within the corporate plan.' },
+      { q: 'How large can the sales file I upload be?', a: 'For scale: 3 years of history with 5,000 products selling daily is around 5 million rows, on the order of 200 MB as CSV.' },
       { q: 'What doesn’t StockAI do?', a: 'We would rather tell you before you upload your first file. We do not publish an accuracy percentage on this page: each product’s error is measured on your own history and shown on the forecast screen. The forecast range is not a guarantee: it is where sales will probably fall, and it tells you how far to trust the suggested quantity. It does not guess what never happened: a new promotion or a big new customer is tested in the scenario simulator, not in the history. And it does not buy for you: it suggests what, how much and from whom, and you review, adjust and send the order yourself.' },
     ],
   },
@@ -1392,8 +1440,8 @@ const en: LandingCopy = {
     related: 'Keep reading',
     pricing: {
       label: 'Pricing',
-      title: 'StockAI pricing: free to start, premium as you grow.',
-      intro: 'The free plan is forever; its limits are about size, and it does not include the API, the MCP server or the WhatsApp bot, which start on the Full plan. Here are those ceilings, what changes when they are lifted and how that happens: by talking to us, with no card and no checkout.',
+      title: 'StockAI price: source code, $14,999 USD one-time payment.',
+      intro: 'StockAI is sold only as source code, with a one-time payment. Here is what you receive and how to buy it.',
     },
     how: {
       label: 'How it works',
@@ -1403,7 +1451,7 @@ const en: LandingCopy = {
     faq: {
       label: 'FAQ',
       title: 'Frequently asked questions about StockAI.',
-      intro: 'What purchasing teams usually ask before uploading their first file: what data is needed, how the free plan is lifted, where your data lives and how each supplier’s lead time is learned.',
+      intro: 'What purchasing teams usually ask before uploading their first file: what data is needed, how StockAI is bought, where your data lives and how each supplier’s lead time is learned.',
     },
     security: {
       label: 'Security',

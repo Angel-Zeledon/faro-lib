@@ -9,7 +9,7 @@ import StructuredData from '@/components/landing/StructuredData'
 const TITLE = 'StockAI: software de inventario para distribuidores'
 const DESCRIPTION =
   'StockAI (Stock AI) lee tus ventas y tu inventario y cada mañana te dice qué pedir, ' +
-  'cuánto y a qué proveedor. Para distribuidores de Latinoamérica. Plan gratis, sin tarjeta.'
+  'cuánto y a qué proveedor. Para distribuidores de Latinoamérica.'
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },

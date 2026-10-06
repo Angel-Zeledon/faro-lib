@@ -11,9 +11,6 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { T } from '@/components/landing/theme'
 import { Section, Tag, H2, H3, Lead, Check, Scroller } from '@/components/landing/primitives'
 import { mailHref, waHref, CONTACT_EMAIL, CONTACT_PHONE_HREF, CONTACT_PHONE_LABEL } from '@/components/landing/contact'
-import { FULL_PLAN, CORPORATE_PLAN } from '@/components/landing/pricingModel'
-import { fill, fmtMoney, fmtNum } from '@/components/landing/PricingCalculator'
-import { useOnlineCheckout } from '@/components/landing/billingOffer'
 
 function useCopy() {
   const { lang } = useLanguage()
@@ -137,172 +134,35 @@ export function FeaturesSection({ alt = false }: { alt?: boolean }) {
 }
 
 // ── Price ─────────────────────────────────────────────────────────────────────
-// The free tier's ceilings, as advertised in L.pricing.limits. MUST match
-// backend/entitlements/plans.py — a landing page promising 200 SKUs while the
-// product stops at 100 turns the first real import into a broken promise.
-// `calcHref` points at the estimate calculator: `#calculadora` on /precios,
-// `/precios#calculadora` anywhere else.
-// `part` (the /precios page only): the page renders 'plans' right under its
-// hero (the plans, the corporate band and the "how an account grows" card),
-// the calculator after them, and 'why' (the promises and what the price is
-// weighed against) further down. The home page keeps `part="all"`: the
-// argument first, then the plans.
-export function PricingSection({ calcHref = '/precios#calculadora', showCorporate = false, part = 'all' }: { calcHref?: string; showCorporate?: boolean; part?: 'all' | 'plans' | 'why' }) {
- const { L, lang } = useCopy()
- const FREE_LIMITS = L.pricing.limits
- // Online purchase is only mentioned when it is true here AND at this price.
- const online = useOnlineCheckout()
- const fromPrice = fill(L.pricing.paidFrom, { price: fmtMoney(FULL_PLAN.baseMonthly, lang) })
- const corp = L.pricing.corporate
- const corpFrom = fill(corp.from, { price: fmtMoney(CORPORATE_PLAN.baseMonthly, lang) })
- const paidNote = fill(L.pricing.paidNote, {
-  skus: fmtNum(FULL_PLAN.included.skus, lang),
-  users: fmtNum(FULL_PLAN.included.users, lang),
-  warehouses: fmtNum(FULL_PLAN.included.warehouses, lang),
- })
- const argument = (
- <>
- <Tag>{L.pricing.tag}</Tag>
- <H2>{L.pricing.title}</H2>
- <Lead maxWidth={720}>
- {L.pricing.lead}
- </Lead>
- <ul className="no-strings">
- {(online ? L.pricing.noStringsCheckout : L.pricing.noStrings).map(t => (
- <li key={t}><Check />{t}</li>
- ))}
- </ul>
-
- {/* What the price is weighed against — qualitative on purpose: no cost of
-     a stockout and no saving is ever put in figures here (stability.md §4.5). */}
- <h3 className="lp-h3">{L.pricing.valueTitle}</h3>
- <ul className="value-list">
- {L.pricing.value.map(({ title, desc }) => (
- <li key={title} className="trust-item">
- <h4 className="trust-title">{title}</h4>
- <p className="trust-desc">{desc}</p>
- </li>
- ))}
- </ul>
-
- </>
- )
- const plans = (
- <>
- <div className="grid-2 price-grid">
- <div data-reveal className="lp-card price-card">
- <div className="lp-label" style={{ marginBottom: 10 }}>{L.pricing.freeLabel}</div>
- <div className="price-amount">{L.pricing.freePrice}</div>
- <div style={{ fontSize: 13.5, color: T.body, lineHeight: 1.7, marginBottom: 20 }}>
- {L.pricing.freeNote}
- </div>
- <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
- {FREE_LIMITS.map(([label, value]) => (
- <div key={label} className="price-row">
- <span>{label}</span>
- <span style={{ fontWeight: 700, color: T.text, whiteSpace: 'nowrap' }}>{value}</span>
- </div>
- ))}
- </div>
- </div>
-
- {/* The premium card: the one dark surface in the pricing section, in the
-     brand's petroleum. Colours come from .is-paid in theme.ts, not inline,
-     so the accent never lands teal-on-petroleum. */}
- <div data-reveal className="lp-card price-card is-paid">
- <div className="price-paid-label">{L.pricing.paidLabel}</div>
- {/* The "from" figure is the proposed base in pricingModel.ts; the link
-     goes to the calculator, which says it is an estimate. */}
- <div className="price-amount">{fromPrice} <span className="price-per">{L.pricing.perMonth}</span></div>
- <div className="price-paid-note">
- {paidNote}
- </div>
- <a href={calcHref} className="price-paid-link">{L.pricing.calcLink}</a>
- {/* Sign-up, never an embedded checkout: the purchase happens inside the
-     app, on Stripe's or PayPal's own page. Hidden unless it is true. */}
- {online && (
- <div style={{ margin: '4px 0 18px' }}>
- <Link href={appHref('/signup?plan=full')} className="btn-primary btn-sm">{L.pricing.ctaFull}</Link>
- <p className="price-paid-note" style={{ marginTop: 8, marginBottom: 0 }}>{L.pricing.ctaFullNote}</p>
- </div>
- )}
- <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
- {/* Each row states what the PAID tier actually gets. This used to print one
-     blanket "unlimited" for every row, which claimed an uncapped upload size
-     on a tier that entitlements/plans.py bounds at 2000 MB. */}
- {FREE_LIMITS.map(([label, , paid]) => (
- <div key={label} className="price-row">
- <span>{label}</span>
- <span className="price-paid-val">{paid}</span>
- </div>
- ))}
- </div>
- </div>
- </div>
-
- {/* The corporate band (owner, 2026-10-05): a position for large accounts,
-     quoted in a conversation. It has everything the Full plan has, with the ceilings lifted; the only way in is
-     the existing contact links — no checkout, no plan comparison. */}
- {showCorporate && (
- <div data-reveal className="lp-card corp-card">
- <div className="corp-main">
- <div className="lp-label" style={{ marginBottom: 10 }}>{corp.label}</div>
- <div className="price-amount">{corpFrom} <span className="price-per">{corp.perMonth}</span></div>
- <div className="corp-billing">{corp.billing}</div>
- <p className="corp-lead">{corp.lead}</p>
- </div>
- <div className="corp-side">
- <div className="lp-label" style={{ marginBottom: 10 }}>{corp.itemsTitle}</div>
- <ul className="corp-items">
- {corp.items.map(t => (
- <li key={t}><Check />{t}</li>
- ))}
- </ul>
- <p className="corp-pending">{corp.pending}</p>
- <div className="upg-foot">
- <a href={waHref(corp.waPrefill)} target="_blank" rel="noopener noreferrer" className="btn-primary btn-sm">{L.pricing.ctaWhatsapp}</a>
- <a href={mailHref(corp.mailSubject)} className="btn-ghost btn-sm">{L.pricing.ctaEmail}</a>
- </div>
- <p className="corp-foot">{corp.footnote}</p>
- </div>
- </div>
- )}
-
- {/* How a free account grows: a conversation, never a checkout. The steps
-     are a real sequence, hence the numbers. Every CTA here leads to a person
-     (WhatsApp / email) or to the free sign-up. Buying the Full plan online
-     (when the installation offers it) happens inside the app, never here. */}
- <div data-reveal className="lp-card upg-card">
- <h3 className="lp-h3" style={{ marginBottom: 22 }}>{L.pricing.upgradeTitle}</h3>
- <ol className="upg-steps">
- {L.pricing.upgradeSteps.map(({ title, desc }, i) => (
- <li key={title} className="upg-step">
- <span className="lp-step" aria-hidden>{i + 1}</span>
- <div>
- <div className="lp-card-title">{title}</div>
- <div className="lp-card-body">{desc}</div>
- </div>
- </li>
- ))}
- </ol>
- <div className="upg-foot">
- <Link href={appHref('/signup')} className="btn-primary btn-sm">{L.pricing.ctaSignup}</Link>
- <a href={waHref(L.pricing.waPrefill)} target="_blank" rel="noopener noreferrer" className="btn-ghost btn-sm">{L.pricing.ctaWhatsapp}</a>
- <a href={mailHref(L.pricing.mailSubject)} className="btn-ghost btn-sm">{L.pricing.ctaEmail}</a>
- </div>
- </div>
- </>
- )
- if (part === 'plans') {
-  return <Section id="precio" alt className="sec-plans-first">{plans}</Section>
- }
- if (part === 'why') {
-  return <Section id="por-que-este-precio" alt>{argument}</Section>
- }
+// The only commercial offer on the landing (owner, 2026-10-06): the source
+// code at one price. The plans still exist in the product (entitlements/
+// plans.py, billing); the landing just does not sell them any more. The props
+// are kept so the pages that mount this section did not have to change.
+export function PricingSection({ part = 'all' }: { calcHref?: string; showCorporate?: boolean; part?: 'all' | 'plans' | 'why' }) {
+ const { L } = useCopy()
+ // /precios used to mount this twice (plans, then why); the offer shows once.
+ if (part === 'why') return null
+ const S = L.source
  return (
  <Section id="precio" alt>
- {argument}
- {plans}
+ <Tag>{S.tag}</Tag>
+ <H2>{S.title}</H2>
+ <Lead maxWidth={720}>{S.lead}</Lead>
+ <div data-reveal className="lp-card" style={{ maxWidth: 720, marginTop: 28 }}>
+ <div className="price-amount">{S.price}</div>
+ <div className="lp-card-body" style={{ marginBottom: 18 }}>{S.priceNote}</div>
+ <h3 className="lp-h3" style={{ marginBottom: 12 }}>{S.itemsTitle}</h3>
+ <ul className="no-strings" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+ {S.items.map(t => (
+ <li key={t}><Check />{t}</li>
+ ))}
+ </ul>
+ <p className="lp-card-body" style={{ margin: '18px 0' }}>{S.closing}</p>
+ <div className="upg-foot">
+ <a href={waHref(S.waPrefill)} target="_blank" rel="noopener noreferrer" className="btn-primary btn-sm">{S.cta}</a>
+ <a href={mailHref(S.mailSubject)} className="btn-ghost btn-sm">{L.pricing.ctaEmail}</a>
+ </div>
+ </div>
  </Section>
  )
 }

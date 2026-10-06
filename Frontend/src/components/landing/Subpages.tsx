@@ -20,7 +20,6 @@ import { LandingStyles, Section, Tag, H2, Lead, useScrollReveal } from '@/compon
 import { Nav, Footer, type ChromeProps } from '@/components/landing/chrome'
 import { DecideSection, PricingSection, TrustSection, FinalSection, MorningSection, FeaturesSection } from '@/components/landing/sections'
 import { EngineFlow, ModelsSection, ENGINE_CSS } from '@/components/landing/engine'
-import { PricingCalculator, ApiPricing, CALC_CSS } from '@/components/landing/PricingCalculator'
 import { GUIDE_CSS, TourChapters } from '@/components/landing/ScreenGuide'
 import { mailHref } from '@/components/landing/contact'
 import { SUBPAGE_PATHS, SUBPAGE_ORDER, type SubpageKey as PageKey } from '@/components/landing/subpagePaths'
@@ -154,13 +153,9 @@ function RelatedPages({ current, L }: { current: PageKey; L: LandingCopy }) {
 export function PricingPage() {
   return (
     <SubpageShell page="pricing" chrome={{ onHome: false, localAnchors: ['precio', 'funciones', 'contacto'] }}>
-      <style dangerouslySetInnerHTML={{ __html: CALC_CSS }} />
-      <PricingSection calcHref="#calculadora" showCorporate part="plans" />
-      <PricingCalculator />
-      <PricingSection part="why" />
-      {/* What every tier gets — the whole list, since no feature is gated. */}
+      <PricingSection />
+      {/* What the source code includes: the whole feature list. */}
       <FeaturesSection />
-      <ApiPricing />
     </SubpageShell>
   )
 }

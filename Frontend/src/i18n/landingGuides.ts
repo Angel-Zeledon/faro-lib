@@ -71,9 +71,9 @@ const es: GuidesCopy = {
   footerHead: 'Guías',
   nextTitle: 'Otras guías',
   productTitle: 'Y para ver el producto',
-  productLinks: ['Cómo funciona StockAI', 'Precios y plan gratis', 'Cómo se calcula cada número'],
+  productLinks: ['Cómo funciona StockAI', 'Precio y código fuente', 'Cómo se calcula cada número'],
   ctaTrial: 'Probar sin registrarme',
-  ctaSignup: 'Crear cuenta gratis',
+  ctaSignup: 'Crear cuenta',
   items: {
     // ── (e) Brand page ───────────────────────────────────────────────────────
     about: {
@@ -104,7 +104,7 @@ const es: GuidesCopy = {
           h: 'Para quién es',
           p: [
             'Para quien compra mercadería a proveedores con un plazo de entrega: distribuidores, mayoristas, comercios, ferreterías, farmacias, casas de repuestos y fabricantes. Encaja sobre todo cuando hay cientos o miles de productos, el equipo es pequeño y las compras hoy se deciden con una hoja de Excel o con la memoria del comprador. Hay páginas por rubro en [industrias](/industrias).',
-            'Hay un plan gratis que no vence y trae el motor completo, con techos de tamaño y sin API, MCP ni bot de WhatsApp. Lo que cuesta ampliarlo está en [precios](/precios); en esta página no se escribe ningún precio a propósito.',
+            'StockAI se vende solo como código fuente, con un pago único, para instalarlo en tu propia infraestructura. El detalle está en [precio](/precios).',
           ],
         },
         {
@@ -121,7 +121,7 @@ const es: GuidesCopy = {
         {
           h: 'Cómo empezar',
           p: [
-            'La forma más rápida es probarlo: puedes abrir una cuenta de prueba al instante, sin registrarte, o crear una cuenta gratis y subir tu archivo. Si ya tienes ventas históricas, la primera lista de qué pedir puede estar lista en menos de una hora.',
+            'La forma más rápida es probarlo: puedes abrir una cuenta de prueba al instante, sin registrarte, o crear una cuenta y subir tu archivo. Si ya tienes ventas históricas, la primera lista de qué pedir puede estar lista en menos de una hora.',
           ],
         },
       ],
@@ -133,9 +133,9 @@ const es: GuidesCopy = {
         { q: '¿Qué es StockAI?', a: 'Es un software web de compras de inventario para distribuidores, mayoristas y comercios. Lee tus ventas y tus existencias y te dice qué pedir, cuánto y a qué proveedor.' },
         { q: '¿«Stock AI» y «StockAI» son lo mismo?', a: 'Sí. El nombre correcto es StockAI, todo junto; «stock ai» con espacio es como mucha gente lo escribe al buscarlo.' },
         { q: '¿StockAI reemplaza a mi ERP?', a: 'No, lo complementa. Tu ERP registra lo que pasó (ventas, existencias, compras); StockAI lee esa historia y te dice qué comprar. Sigues facturando y contabilizando donde siempre.' },
-        { q: '¿Es gratis?', a: 'Hay un plan gratis que no vence y trae el motor completo, con techos de tamaño y sin API, MCP ni bot de WhatsApp. Para ampliarlos o sumarlos se conversa con nosotros; los precios están en la página de precios.' },
+        { q: '¿Cuánto cuesta?', a: 'StockAI se vende solo como código fuente: $14.999 USD, en un pago único, para instalarlo en tu propia infraestructura. Escríbenos para comprarlo.' },
       ],
-      ctaLead: 'Prueba StockAI con tus propios datos en el plan gratis: sin tarjeta y con el motor completo.',
+      ctaLead: 'Prueba StockAI con tus propios datos y mira tu primera lista de compras, con el motor completo.',
       next: ['distributors', 'reorderPoint', 'forecast'],
     },
 
@@ -171,7 +171,7 @@ const es: GuidesCopy = {
           h: 'Cómo lo resuelve StockAI',
           p: [
             'Cada mañana ves una lista ordenada por urgencia con cuatro estados: PEDIR YA (menos de medio plazo de entrega de cobertura), PEDIR PRONTO (en el punto de reorden o por debajo), OK y SOBRESTOCK. No es una caja negra: la regla que decide el color es publicada y la puedes hacer a mano; está en [cómo funciona](/como-funciona) y [cómo se calcula](/como-se-calcula).',
-            'La cantidad sugerida descuenta lo que ya viene en camino, de un proveedor o de un traslado entre bodegas, y respeta el mínimo de compra. La orden la ajustas y la envías tú, por correo o, en el plan completo, por WhatsApp. Hay páginas con ejemplos por rubro, como [consumo masivo, ferretería, farmacia, autopartes y retail](/industrias).',
+            'La cantidad sugerida descuenta lo que ya viene en camino, de un proveedor o de un traslado entre bodegas, y respeta el mínimo de compra. La orden la ajustas y la envías tú, por correo o por WhatsApp. Hay páginas con ejemplos por rubro, como [consumo masivo, ferretería, farmacia, autopartes y retail](/industrias).',
           ],
         },
         {
@@ -202,7 +202,7 @@ const es: GuidesCopy = {
         { q: '¿Sirve si tengo varias bodegas?', a: 'Sí. Puedes definir rutas entre bodegas con sus días de tránsito, y StockAI sugiere un traslado antes de comprar cuando una bodega tiene de sobra lo que otra necesita.' },
         { q: '¿Qué datos necesito para empezar?', a: 'Un archivo de ventas con fecha, producto y cantidad vendida, en CSV o Excel, con al menos 20 periodos de historial por producto. Las existencias actuales y el plazo de cada proveedor completan el cálculo.' },
       ],
-      ctaLead: 'Sube tu historial al plan gratis y mira tu primera lista de compras: sin tarjeta, con el motor completo.',
+      ctaLead: 'Sube tu historial y mira tu primera lista de compras, con el motor completo.',
       next: ['reorderPoint', 'safetyStock', 'about'],
     },
 
@@ -269,7 +269,7 @@ const es: GuidesCopy = {
         { q: '¿Cada cuánto hay que recalcularlo?', a: 'Cada vez que cambie la demanda o el plazo del proveedor. En StockAI se recalcula cuando cargas ventas nuevas, o con un recálculo programado.' },
         { q: '¿Qué hace StockAI cuando se cruza el punto de reorden?', a: 'El producto pasa a PEDIR PRONTO (o a PEDIR YA si la cobertura es menor que medio plazo de entrega) y aparece con una cantidad sugerida que descuenta lo que ya viene en camino.' },
       ],
-      ctaLead: 'Deja que StockAI calcule el punto de reorden de cada producto con tu historial: plan gratis, sin tarjeta.',
+      ctaLead: 'Deja que StockAI calcule el punto de reorden de cada producto con tu historial.',
       next: ['safetyStock', 'forecast', 'distributors'],
     },
 
@@ -336,7 +336,7 @@ const es: GuidesCopy = {
         { q: '¿Stock de seguridad y stock mínimo son lo mismo?', a: 'No. El stock mínimo suele ser un número fijo decidido a mano; el de seguridad se calcula con la variabilidad real de la venta y del plazo.' },
         { q: '¿Qué pasa con los productos que casi no se venden?', a: 'Con muchos periodos en cero la fórmula normal no cumple con precisión el nivel de servicio, y StockAI lo avisa en la fila en vez de mostrar un porcentaje que no se sostiene. Con menos de 20 periodos de historial, el producto queda en SIN DATOS.' },
       ],
-      ctaLead: 'Mira el colchón de cada producto calculado con tu propio historial: plan gratis, sin tarjeta.',
+      ctaLead: 'Mira el colchón de cada producto calculado con tu propio historial.',
       next: ['reorderPoint', 'forecast', 'about'],
     },
 
@@ -404,7 +404,7 @@ const es: GuidesCopy = {
         { q: '¿Qué pasa con una promoción nueva?', a: 'El modelo no puede conocer lo que nunca ocurrió. Se prueba en el simulador de escenarios, que muestra qué cambia en la compra.' },
         { q: '¿Cada cuánto se actualiza el pronóstico?', a: 'Cada vez que cargas ventas nuevas, o con un recálculo programado: semanal, diario, solo días hábiles, cada hora o mensual.' },
       ],
-      ctaLead: 'Sube tu historial y mira el pronóstico y el error de cada producto: plan gratis, sin tarjeta.',
+      ctaLead: 'Sube tu historial y mira el pronóstico y el error de cada producto.',
       next: ['reorderPoint', 'safetyStock', 'distributors'],
     },
   },
@@ -414,9 +414,9 @@ const en: GuidesCopy = {
   footerHead: 'Guides',
   nextTitle: 'More guides',
   productTitle: 'And to see the product',
-  productLinks: ['How StockAI works', 'Pricing and the free plan', 'How every number is calculated'],
+  productLinks: ['How StockAI works', 'Price and source code', 'How every number is calculated'],
   ctaTrial: 'Try it without signing up',
-  ctaSignup: 'Create a free account',
+  ctaSignup: 'Create an account',
   items: {
     about: {
       label: 'What is StockAI',
@@ -446,7 +446,7 @@ const en: GuidesCopy = {
           h: 'Who it is for',
           p: [
             'For anyone who buys goods from suppliers with a delivery time: distributors, wholesalers, shops, hardware stores, pharmacies, spare-parts houses and manufacturers. It fits best when there are hundreds or thousands of products, the team is small and purchases are decided today with an Excel sheet or the buyer’s memory. There are pages by industry under [industries](/industrias).',
-            'There is a free plan that never expires and has the whole engine, with size ceilings and no API, MCP or WhatsApp bot. What lifting them costs is on [pricing](/precios); no price is written on this page on purpose.',
+            'StockAI is sold only as source code, with a one-time payment, to install on your own infrastructure. The detail is on [price](/precios).',
           ],
         },
         {
@@ -463,7 +463,7 @@ const en: GuidesCopy = {
         {
           h: 'How to start',
           p: [
-            'The fastest way is to try it: you can open a trial account instantly, without signing up, or create a free account and upload your file. If you already have sales history, your first what-to-order list can be ready in under an hour.',
+            'The fastest way is to try it: you can open a trial account instantly, without signing up, or create an account and upload your file. If you already have sales history, your first what-to-order list can be ready in under an hour.',
           ],
         },
       ],
@@ -475,9 +475,9 @@ const en: GuidesCopy = {
         { q: 'What is StockAI?', a: 'It is web software for inventory purchasing, for distributors, wholesalers and shops. It reads your sales and stock and tells you what to order, how much and from which supplier.' },
         { q: 'Are “Stock AI” and “StockAI” the same?', a: 'Yes. The right name is StockAI, as one word; “stock ai” with a space is how many people type it when searching.' },
         { q: 'Does StockAI replace my ERP?', a: 'No, it complements it. Your ERP records what happened (sales, stock, purchases); StockAI reads that history and tells you what to buy. You keep invoicing and accounting where you always did.' },
-        { q: 'Is it free?', a: 'There is a free plan that never expires and has the whole engine, with size ceilings and no API, MCP or WhatsApp bot. To raise them or add those you talk to us; prices are on the pricing page.' },
+        { q: 'How much does it cost?', a: 'StockAI is sold only as source code: $14,999 USD, in a one-time payment, to install on your own infrastructure. Write to us to buy it.' },
       ],
-      ctaLead: 'Try StockAI with your own data on the free plan: no card, the whole engine.',
+      ctaLead: 'Try StockAI with your own data and see your first purchase list, with the whole engine.',
       next: ['distributors', 'reorderPoint', 'forecast'],
     },
 
@@ -512,7 +512,7 @@ const en: GuidesCopy = {
           h: 'How StockAI solves it',
           p: [
             'Every morning you see a list ordered by urgency with four states: PEDIR YA (less than half a lead time of cover), PEDIR PRONTO (at or below the reorder point), OK and SOBRESTOCK (overstock). It is not a black box: the rule that decides the colour is published and you can work it out by hand; see [how it works](/como-funciona) and [how it is calculated](/como-se-calcula).',
-            'The suggested quantity subtracts what is already on its way, from a supplier or a transfer between warehouses, and respects the minimum order. You adjust the order and send it yourself, by email or, on the full plan, by WhatsApp. There are pages with examples by industry, such as [consumer goods, hardware, pharmacy, auto parts and retail](/industrias).',
+            'The suggested quantity subtracts what is already on its way, from a supplier or a transfer between warehouses, and respects the minimum order. You adjust the order and send it yourself, by email or by WhatsApp. There are pages with examples by industry, such as [consumer goods, hardware, pharmacy, auto parts and retail](/industrias).',
           ],
         },
         {
@@ -543,7 +543,7 @@ const en: GuidesCopy = {
         { q: 'Does it work with several warehouses?', a: 'Yes. You can define routes between warehouses with their transit days, and StockAI suggests a transfer before buying when one warehouse has spare what another needs.' },
         { q: 'What data do I need to start?', a: 'A sales file with date, product and quantity sold, as CSV or Excel, with at least 20 periods of history per product. Current stock and each supplier’s lead time complete the calculation.' },
       ],
-      ctaLead: 'Upload your history to the free plan and see your first purchase list: no card, the whole engine.',
+      ctaLead: 'Upload your history and see your first purchase list, with the whole engine.',
       next: ['reorderPoint', 'safetyStock', 'about'],
     },
 
@@ -609,7 +609,7 @@ const en: GuidesCopy = {
         { q: 'How often should it be recalculated?', a: 'Whenever demand or the supplier’s lead time changes. In StockAI it is recalculated when you upload new sales, or on a scheduled recalculation.' },
         { q: 'What does StockAI do when the reorder point is crossed?', a: 'The product moves to PEDIR PRONTO (or PEDIR YA if cover is below half a lead time) and shows up with a suggested quantity that subtracts what is already on its way.' },
       ],
-      ctaLead: 'Let StockAI compute every product’s reorder point from your history: free plan, no card.',
+      ctaLead: 'Let StockAI compute every product’s reorder point from your history.',
       next: ['safetyStock', 'forecast', 'distributors'],
     },
 
@@ -675,7 +675,7 @@ const en: GuidesCopy = {
         { q: 'Are safety stock and minimum stock the same?', a: 'No. Minimum stock is usually a fixed number decided by hand; safety stock is computed from the real variability of sales and lead time.' },
         { q: 'What about products that hardly sell?', a: 'With many zero periods the normal formula does not hold the service level precisely, and StockAI says so on the row instead of showing a percentage that does not hold. With fewer than 20 periods of history, the product is marked SIN DATOS (no data).' },
       ],
-      ctaLead: 'See each product’s cushion computed from your own history: free plan, no card.',
+      ctaLead: 'See each product’s cushion computed from your own history.',
       next: ['reorderPoint', 'forecast', 'about'],
     },
 
@@ -742,7 +742,7 @@ const en: GuidesCopy = {
         { q: 'What about a new promotion?', a: 'The model cannot know what never happened. It is tried in the scenario simulator, which shows what changes in the purchase.' },
         { q: 'How often is the forecast updated?', a: 'Whenever you upload new sales, or on a scheduled recalculation: weekly, daily, business days only, hourly or monthly.' },
       ],
-      ctaLead: 'Upload your history and see each product’s forecast and error: free plan, no card.',
+      ctaLead: 'Upload your history and see each product’s forecast and error.',
       next: ['reorderPoint', 'safetyStock', 'distributors'],
     },
   },
