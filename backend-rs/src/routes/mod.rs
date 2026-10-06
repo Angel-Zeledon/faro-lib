@@ -11,6 +11,7 @@ pub mod webhooks;
 pub mod po_cancellation;
 pub mod po_payments;
 pub mod signal_thresholds;
+pub mod w3;
 
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
@@ -44,6 +45,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/committed-demand/{commitment_id}", patch(committed_demand::update))
         .route("/api/v1/committed-demand/{commitment_id}/status", post(committed_demand::set_status))
         .merge(r1::router())
+        .merge(w3::router())
         .merge(sessions::router()).merge(schedule::router()).merge(spike_edits::router())
         // R3: API keys, webhook subscriptions, audit trail reads.
         .route("/api/v1/api-keys", post(api_keys::create).get(api_keys::list))

@@ -2807,6 +2807,8 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        import w3_cases  # wave 3 (inventory hub): its own file, its own tenants
+        results += w3_cases.run_w3(args, fx, db, sys.modules[__name__])
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
