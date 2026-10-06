@@ -1648,6 +1648,9 @@ class POLogRequest(BaseModel):
     # (recorded in the audit trail when given); REQUIRED, from an administrator,
     # to place an order past a hard-capped one. See api/v1/purchase_budget.py.
     budget_override_reason: Optional[str] = Field(default=None, max_length=500)
+    # The cost center this order's spend is attributed to (optional; see
+    # inventory/po_chain_service.py). Checked against the tenant's active centers.
+    cost_center_id: Optional[str] = Field(default=None, max_length=64)
 
 
 _IDEMPOTENCY_KEY_DOC = (
@@ -1705,6 +1708,10 @@ def log_po(
     po_destination = wscope.scoped_destination(
         user, body.destination_warehouse if body else None)
     decisions_recorded = bool(body and body.items)
+    cost_center_id = (body.cost_center_id or "").strip() or None if body else None
+    if cost_center_id:
+        from backend.inventory import po_chain_service as _chains
+        _chains.require_active_center(user.tenant_id, cost_center_id)
     if idempotency_key and not decisions_recorded:
         # The no-body path re-derives the lines from the CURRENT semaforo,
         # which the first order has already changed (its units now count as
@@ -1756,7 +1763,7 @@ def log_po(
         if budget_lines:
             budget_warnings, budget_overridden = _budget_api.enforce_on_order(
                 user, budget_lines, po_destination,
-                body.budget_override_reason if body else None)
+                body.budget_override_reason if body else None, cost_center_id)
 
     record = log_po_generation(
         user.tenant_id, session_id, po_items,
@@ -1767,6 +1774,10 @@ def log_po(
         # product marking its own homework. See log_po_generation.
         decisions_recorded=decisions_recorded,
         idempotency_key=idempotency_key,
+        cost_center_id=cost_center_id,
+        # An order that went past a budget needs the top band of its approval
+        # chain, whatever its value (po_chain_service).
+        chain_escalate=bool(budget_warnings),
     )
     if record.get("replayed"):
         # Nothing was written, so nothing is recorded: the activity log must

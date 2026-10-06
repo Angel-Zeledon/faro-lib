@@ -297,6 +297,34 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("reference", "value", "decision_comment"),
     ),
+    # Cost centers and approval chains (inventory/po_chain_service.py; the
+    # management routes are Rust). A chained order is approved only when its
+    # LAST level approves; each earlier level is recorded here instead, so the
+    # feed never says "approved" about an order that still waits for somebody.
+    "purchase.approval_level_approved": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "value", "level", "decision_comment"),
+    ),
+    "purchase.order_cost_center_set": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "cost_center"),
+    ),
+    "cost_center.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("code", "cost_center_name"),
+    ),
+    "cost_center.updated": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("code", "cost_center_name", "active"),
+    ),
+    "approval_chain.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("chain_name", "levels"),
+    ),
+    "approval_chain.updated": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("chain_name", "levels", "active"),
+    ),
 
     # ── Sales received by e-mail (backend/inbound_email/) ────────────────────
     "inbound_email.ingested": EventSpec(

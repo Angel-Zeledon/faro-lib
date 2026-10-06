@@ -35,7 +35,7 @@ class BudgetBody(BaseModel):
     period_end: Optional[str] = None
     amount: float = Field(ge=0, le=svc.MAX_AMOUNT)
     currency: Optional[str] = Field(default=None, max_length=8)
-    scope_type: str = Field(default="company", pattern="^(company|warehouse|supplier|category)$")
+    scope_type: str = Field(default="company", pattern="^(company|warehouse|supplier|category|cost_center)$")
     scope_value: Optional[str] = Field(default=None, max_length=200)
     parent_root_id: Optional[str] = Field(default=None, max_length=64)
     hard_cap: bool = False
@@ -49,7 +49,7 @@ class BudgetPatch(BaseModel):
     period_start: Optional[str] = None
     period_end: Optional[str] = None
     amount: Optional[float] = Field(default=None, ge=0, le=svc.MAX_AMOUNT)
-    scope_type: Optional[str] = Field(default=None, pattern="^(company|warehouse|supplier|category)$")
+    scope_type: Optional[str] = Field(default=None, pattern="^(company|warehouse|supplier|category|cost_center)$")
     scope_value: Optional[str] = Field(default=None, max_length=200)
     parent_root_id: Optional[str] = Field(default=None, max_length=64)
     hard_cap: Optional[bool] = None
@@ -74,6 +74,7 @@ class CheckLine(BaseModel):
 class CheckBody(BaseModel):
     lines: list[CheckLine] = Field(min_length=1, max_length=2000)
     destination_warehouse: Optional[str] = Field(default=None, max_length=200)
+    cost_center_id: Optional[str] = Field(default=None, max_length=64)
 
 
 def _scope_label(row: dict) -> str:
@@ -157,13 +158,14 @@ def budget_check(body: CheckBody, user: CurrentUser = Depends(get_current_user))
     allowed = wscope.scope_warehouse_ids(user)
     lines = [ln.model_dump() for ln in body.lines]
     return ok({"exceeded": svc.check_order(user, allowed, lines, body.destination_warehouse,
-                                           date.today())})
+                                           date.today(), body.cost_center_id)})
 
 
 # ── The order hook ───────────────────────────────────────────────────────────
 
 def enforce_on_order(user: CurrentUser, lines: list[dict], destination: Optional[str],
-                     override_reason: Optional[str]) -> tuple[list[dict], bool]:
+                     override_reason: Optional[str],
+                     cost_center_id: Optional[str] = None) -> tuple[list[dict], bool]:
     """Run before an order is written. Returns (exceeded budgets, hard cap
     overridden).
 
@@ -173,7 +175,7 @@ def enforce_on_order(user: CurrentUser, lines: list[dict], destination: Optional
       never an API key) passes a reason.
     """
     allowed = wscope.scope_warehouse_ids(user)
-    exceeded = svc.check_order(user, allowed, lines, destination, date.today())
+    exceeded = svc.check_order(user, allowed, lines, destination, date.today(), cost_center_id)
     reason = (override_reason or "").strip() or None
     hard = [e for e in exceeded if e["hard_cap"]]
     if not hard:
