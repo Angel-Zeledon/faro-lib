@@ -2739,6 +2739,295 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
     return out
 
 
+# ── Audit stream: configuration, cursor and delivery-log routes ─────────────
+#
+# NEW routes with no Python twin (docs/rust-migration.md: no Python failover),
+# so there is nothing to diff against: each case states what must be true and
+# reads the database to prove it. What IS checked across both services is the
+# half Python still owns: rows written by a Python handler and by a Rust
+# handler must both carry the stream position the column defaults stamp, and
+# both must land after a cursor taken between them.
+
+def run_audit_stream(args, fx: Fixture, db) -> list:
+    rs, py = args.rust, args.python
+    out: list = []
+    if db is None:
+        return [(Case("audit-stream (all)", "-", "-", route="audit-stream"), "SKIP",
+                 ["audit-stream needs --db: the stream's state lives in the database"])]
+    route = "audit-stream"
+    tid = fx.tenant_id
+    S = f"{API}/audit-stream"
+
+    def qa(sql, params=()):
+        cur = db.cursor()
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+    def stream():
+        rows = qa("""SELECT url, secret, enabled, disabled_reason, cursor_xid, cursor_seq, batch_size,
+                            test_requested_at, created_by FROM audit_streams WHERE tenant_id = %s""", (tid,))
+        return rows[0] if rows else None
+
+    def audit_rows(action):
+        return qa("""SELECT user_id, context FROM activity_logs WHERE tenant_id = %s AND action = %s
+                      ORDER BY stream_seq DESC""", (tid, action))
+
+    def expect(name, method, path, *, who="admin", body=None, status=200, code=None, check=None,
+               base=None, raw_body=None):
+        if args.only and args.only not in name:
+            return None
+        token = None if who == "none" else auth_for(fx, who)
+        r = http(base or rs, method, path, token=token, body=body, raw_body=raw_body)
+        problems = []
+        if r.status != status:
+            problems.append(f"status {r.status}, expected {status}: {r.raw[:300]!r}")
+        elif code is not None and (r.body or {}).get("error_code") != code:
+            problems.append(f"error_code {(r.body or {}).get('error_code')!r}, expected {code!r}")
+        if check is not None and not problems:
+            problems += check(r) or []
+        if args.dump:
+            print(f"\n--- {name}\n{r.status} {r.raw[:1200]!r}")
+        out.append((Case(name, method, path, who=who, route=route), "FAIL" if problems else "PASS", problems))
+        return r
+
+    def data(r):
+        return (r.body or {}).get("data") if r is not None else None
+
+    execute = lambda sql, params=(): db.cursor().execute(sql, params)
+    execute("DELETE FROM audit_stream_deliveries WHERE tenant_id = %s", (tid,))
+    execute("DELETE FROM audit_streams WHERE tenant_id = %s", (tid,))
+
+    expect("audit-stream unconfigured", "GET", S,
+           check=lambda r: [] if data(r) == {"configured": False} else [f"data {data(r)!r}"])
+    expect("audit-stream no token", "GET", S, who="none", status=401)
+    for who in ("viewer", "analyst"):
+        for method, path, body in (("GET", S, None), ("PUT", S, {"url": "https://93.184.216.34/in"}),
+                                   ("DELETE", S, None), ("POST", f"{S}/enable", None),
+                                   ("POST", f"{S}/disable", None), ("POST", f"{S}/rotate-secret", None),
+                                   ("POST", f"{S}/replay", {"cursor": "0:0"}), ("POST", f"{S}/test", None),
+                                   ("GET", f"{S}/deliveries", None)):
+            expect(f"audit-stream {who} {method} {path.removeprefix(API)} refused", method, path, who=who,
+                   body=body, status=403, code="role_not_permitted")
+    expect("audit-stream refused callers wrote nothing", "GET", S,
+           check=lambda r: [] if stream() is None else ["a refused caller created a destination"])
+    for who in ("key_read", "key_write"):
+        if auth_for(fx, who) is None:
+            out.append((Case(f"audit-stream {who} refused", "-", "-", route=route), "SKIP", ["no API key in this tenant"]))
+            continue
+        expect(f"audit-stream {who} GET not exposed", "GET", S, who=who, status=403, code="api_key_route_not_exposed")
+        expect(f"audit-stream {who} PUT not exposed", "PUT", S, who=who, body={"url": "https://93.184.216.34/in"},
+               status=403, code="api_key_route_not_exposed")
+
+    # Validation and the save-time SSRF guard.
+    expect("audit-stream put needs a url", "PUT", S, body={}, status=422, code="validation_error")
+    expect("audit-stream put refuses a non-json body", "PUT", S, raw_body=b"nope", status=422, code="validation_error")
+    for url in ("http://93.184.216.34/in", "https://u:p@93.184.216.34/in", "https://93.184.216.34:0/in", "ftp://a.com/x"):
+        expect(f"audit-stream put refuses {url}", "PUT", S, body={"url": url}, status=422, code="audit_stream_url_invalid")
+    expect("audit-stream put refuses the metadata address", "PUT", S, body={"url": "https://169.254.169.254/latest"},
+           status=422, code="audit_stream_host_forbidden")
+    expect("audit-stream put refuses a link-local IPv6", "PUT", S, body={"url": "https://[fe80::1]/in"},
+           status=422, code="audit_stream_host_forbidden")
+    for size in (0, 1001, "5", 1.5, True):
+        expect(f"audit-stream put refuses batch_size {size!r}", "PUT", S,
+               body={"url": "https://93.184.216.34/in", "batch_size": size}, status=422, code="validation_error")
+    expect("audit-stream refused puts wrote nothing", "GET", S,
+           check=lambda r: [] if stream() is None else ["a refused PUT created a destination"])
+
+    # A Python-written row BEFORE connecting, a cursor, then one row from each service AFTER.
+    http(py, "PATCH", f"{API}/tenant/timezone", token=auth_for(fx, "admin"), body={"timezone": "America/Bogota"})
+    before = qa("""SELECT stream_xid, stream_seq FROM activity_logs WHERE tenant_id = %s
+                    ORDER BY stream_xid DESC, stream_seq DESC LIMIT 1""", (tid,))
+
+    def created(r):
+        d, problems = data(r), []
+        if not (d.get("configured") and isinstance(d.get("secret"), str) and len(d["secret"]) == 64):
+            return [f"create must show a 64-hex secret once: {d!r}"]
+        row = stream()
+        if row is None:
+            return ["no audit_streams row after create"]
+        if row[1] != d["secret"]:
+            problems.append("stored secret is not the one shown")
+        if row[0] != "https://93.184.216.34/in" or not row[2] or row[3] is not None:
+            problems.append(f"row {row[0]!r} enabled={row[2]} reason={row[3]!r}")
+        if row[8] != fx.admin_id:
+            problems.append(f"created_by {row[8]!r}")
+        if row[6] != 50:
+            problems.append(f"batch_size {row[6]}")
+        if before and (before[0][0], before[0][1]) > (row[4], row[5]):
+            problems.append(f"the cursor {(row[4], row[5])} is behind a row written before connecting {before[0]}")
+        return problems
+
+    expect("audit-stream create", "PUT", S, body={"url": "https://93.184.216.34/in", "batch_size": 50}, check=created)
+
+    def no_secret(r):
+        text = json.dumps(r.body)
+        row = stream()
+        return ["the signing secret was read back"] if row and row[1] in text else []
+
+    expect("audit-stream get never reads the secret back", "GET", S, check=no_secret)
+    expect("audit-stream get shows state", "GET", S, check=lambda r: [] if (
+        data(r)["configured"] and data(r)["enabled"] and data(r)["host"] == "93.184.216.34"
+        and "secret" not in data(r) and data(r)["batch_size"] == 50) else [f"{data(r)!r}"])
+
+    http(py, "PATCH", f"{API}/tenant/timezone", token=auth_for(fx, "admin"), body={"timezone": "America/Lima"})
+    http(rs, "POST", f"{S}/test", token=auth_for(fx, "admin"))   # a Rust-side write of its own
+    # (the test route writes an audit row through the Rust writer)
+
+    def both_after_the_cursor(r):
+        row = stream()
+        rows = qa("""SELECT action, stream_xid, stream_seq FROM activity_logs WHERE tenant_id = %s
+                      AND action IN ('audit.config.changed', 'audit.audit_stream.tested')
+                      AND stream_xid IS NOT NULL ORDER BY stream_seq DESC LIMIT 4""", (tid,))
+        problems = []
+        seen = {a for a, _, _ in rows}
+        for want in ("audit.config.changed", "audit.audit_stream.tested"):
+            if want not in seen:
+                problems.append(f"no stamped {want} row (written by {'Python' if 'config' in want else 'Rust'})")
+        for a, x, s in rows[:2]:
+            if (x, s) <= (row[4], row[5]):
+                problems.append(f"{a} row {(x, s)} is not after the cursor {(row[4], row[5])}")
+        return problems
+
+    expect("audit-stream rows from Python and Rust handlers are stamped and after the cursor", "GET", S,
+           check=both_after_the_cursor)
+
+    def pending_counts(r):
+        d = data(r)
+        n = qa("""SELECT COUNT(*) FROM activity_logs WHERE tenant_id = %s AND stream_xid IS NOT NULL
+                   AND (stream_xid, stream_seq) > (%s, %s)""", (tid, stream()[4], stream()[5]))[0][0]
+        return [] if d["pending_records"] == n and n >= 2 else [f"pending {d['pending_records']} vs db {n}"]
+
+    expect("audit-stream pending matches the database", "GET", S, check=pending_counts)
+
+    # Update: url optional, secret stays hidden and unchanged.
+    old_secret = stream()[1]
+    expect("audit-stream update keeps the secret", "PUT", S, body={"batch_size": 100}, check=lambda r: (
+        [] if "secret" not in data(r) and stream()[1] == old_secret and stream()[6] == 100 else ["secret/batch_size"]))
+    expect("audit-stream new url is validated on update", "PUT", S, body={"url": "https://169.254.169.254/x"},
+           status=422, code="audit_stream_host_forbidden")
+    expect("audit-stream update url", "PUT", S, body={"url": "https://93.184.216.35/in"},
+           check=lambda r: [] if stream()[0] == "https://93.184.216.35/in" else [f"url {stream()[0]}"])
+
+    # Enable / disable.
+    expect("audit-stream disable", "POST", f"{S}/disable", check=lambda r: (
+        [] if not data(r)["enabled"] and data(r)["disabled_reason"] == "manual" and stream()[2] is False
+        else [f"{data(r)!r}"]))
+    execute("UPDATE audit_streams SET disabled_reason = 'failing_for_days' WHERE tenant_id = %s", (tid,))
+    expect("audit-stream disable again keeps the original reason", "POST", f"{S}/disable",
+           check=lambda r: [] if stream()[3] == "failing_for_days" else [f"reason {stream()[3]!r}"])
+    execute("UPDATE audit_streams SET failure_days = 2, consecutive_failures = 9, last_error = 'x' WHERE tenant_id = %s", (tid,))
+    expect("audit-stream enable clears the failure state", "POST", f"{S}/enable", check=lambda r: (
+        [] if data(r)["enabled"] and data(r)["disabled_reason"] is None and data(r)["failure_days"] == 0
+        and data(r)["consecutive_failures"] == 0 and data(r)["last_error"] is None else [f"{data(r)!r}"]))
+
+    # Rotate.
+    before_rotate = stream()[1]
+
+    def rotated(r):
+        s = data(r)["secret"]
+        row = stream()
+        problems = []
+        if len(s) != 64 or s == before_rotate or row[1] != s:
+            problems.append("rotated secret is not new, 64-hex and stored")
+        for action in ("audit.audit_stream.secret_rotated",):
+            for _, ctx in audit_rows(action):
+                if s in json.dumps(ctx) or before_rotate in json.dumps(ctx):
+                    problems.append("a secret is in the audit row")
+        return problems
+
+    expect("audit-stream rotate", "POST", f"{S}/rotate-secret", check=rotated)
+
+    # Replay: backwards only.
+    head = stream()
+    expect("audit-stream replay forward is refused", "POST", f"{S}/replay", body={"cursor": f"{head[4] + 1000}:1"},
+           status=422, code="audit_stream_cursor_ahead")
+    expect("audit-stream a refused replay left the cursor alone", "GET", S,
+           check=lambda r: [] if stream()[4:6] == head[4:6] else ["a refused replay moved the cursor"])
+    for bad in ("", "x", "1", "1:", "-1:2", "1:2:3"):
+        expect(f"audit-stream replay refuses cursor {bad!r}", "POST", f"{S}/replay", body={"cursor": bad},
+               status=422, code="audit_stream_replay_invalid")
+    expect("audit-stream replay needs exactly one of cursor/since", "POST", f"{S}/replay", body={},
+           status=422, code="audit_stream_replay_invalid")
+    expect("audit-stream replay refuses both", "POST", f"{S}/replay", body={"cursor": "0:0", "since": "2026-01-01"},
+           status=422, code="audit_stream_replay_invalid")
+    expect("audit-stream replay refuses a malformed since", "POST", f"{S}/replay", body={"since": "yesterday"},
+           status=422, code="audit_stream_replay_invalid")
+    expect("audit-stream replay since the future is a no-op", "POST", f"{S}/replay", body={"since": "2999-01-01"},
+           check=lambda r: [] if data(r)["moved"] is False and stream()[4:6] == head[4:6] else [f"{data(r)!r}"])
+
+    def replay_since(r):
+        first = qa("""SELECT stream_xid, stream_seq FROM activity_logs WHERE tenant_id = %s AND stream_xid IS NOT NULL
+                       AND created_at >= %s::timestamptz ORDER BY stream_xid, stream_seq LIMIT 1""",
+                   (tid, f"{date.today().isoformat()}T00:00:00+00:00"))
+        row = stream()
+        want = (first[0][0], first[0][1] - 1)
+        return [] if data(r)["moved"] and (row[4], row[5]) == want else [f"cursor {(row[4], row[5])}, wanted {want}"]
+
+    expect("audit-stream replay since a date puts the cursor just before its first row", "POST", f"{S}/replay",
+           body={"since": (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()}, check=replay_since)
+    expect("audit-stream replay to the beginning", "POST", f"{S}/replay", body={"cursor": "0:0"},
+           check=lambda r: [] if data(r) == {"cursor": "0:0", "moved": True} and stream()[4:6] == (0, 0) else [f"{data(r)!r}"])
+    expect("audit-stream replay is audited without leaking", "GET", S, check=lambda r: (
+        [] if len(audit_rows("audit.audit_stream.replayed")) >= 2 else ["no replay audit rows"]))
+
+    # Test request.
+    execute("UPDATE audit_streams SET test_requested_at = NULL WHERE tenant_id = %s", (tid,))
+    expect("audit-stream test queues one", "POST", f"{S}/test", check=lambda r: (
+        [] if data(r) == {"queued": True} and stream()[7] is not None else ["test_requested_at not set"]))
+
+    # Delivery log (rows the Python loop would write, and another tenant's).
+    execute("DELETE FROM audit_stream_deliveries WHERE tenant_id = %s", (tid,))
+    for i, (kind, status, code_) in enumerate((("batch", "delivered", 200), ("batch", "failed", 503),
+                                               ("test", "delivered", 200), ("batch", "superseded", 200))):
+        execute("""INSERT INTO audit_stream_deliveries (tenant_id, kind, status, records, bytes, first_cursor,
+                       last_cursor, status_code, created_at) VALUES (%s, %s, %s, %s, 10, '1:1', '1:2', %s,
+                       NOW() - (%s || ' minutes')::interval)""", (tid, kind, status, i + 1, code_, str(10 - i)))
+    # Another tenant's log row (a real tenant row: tenant_id has a foreign key).
+    other = "ten_ctr_" + secrets.token_hex(4)
+    execute("""INSERT INTO tenants (id, name, slug, status, quota, settings, tier, created_at)
+               VALUES (%s, %s, %s, 'active', '{}', '{}', 'free', NOW())""", (other, other, other))
+    execute("""INSERT INTO audit_stream_deliveries (tenant_id, kind, status) VALUES (%s, 'batch', 'failed')""", (other,))
+    try:
+        expect("audit-stream deliveries newest first", "GET", f"{S}/deliveries", check=lambda r: (
+            [] if [d["status"] for d in data(r)] == ["superseded", "delivered", "failed", "delivered"]
+            and "error" in data(r)[0] and "secret" not in json.dumps(r.body) else [f"{[d['status'] for d in data(r)]}"]))
+        expect("audit-stream deliveries filter by status", "GET", f"{S}/deliveries?status=failed", check=lambda r: (
+            [] if [d["status"] for d in data(r)] == ["failed"] else ["status filter"]))
+        expect("audit-stream deliveries filter by kind", "GET", f"{S}/deliveries?kind=test", check=lambda r: (
+            [] if [d["kind"] for d in data(r)] == ["test"] else ["kind filter"]))
+        expect("audit-stream deliveries limit", "GET", f"{S}/deliveries?limit=2", check=lambda r: (
+            [] if len(data(r)) == 2 else ["limit"]))
+        expect("audit-stream deliveries bad status", "GET", f"{S}/deliveries?status=nope", status=422, code="validation_error")
+        expect("audit-stream deliveries limit 0", "GET", f"{S}/deliveries?limit=0", status=422, code="validation_error")
+        expect("audit-stream deliveries limit too big", "GET", f"{S}/deliveries?limit=201", status=422, code="validation_error")
+    finally:
+        execute("DELETE FROM audit_stream_deliveries WHERE tenant_id = %s", (other,))
+        execute("DELETE FROM tenants WHERE id = %s", (other,))
+
+    # The trail carries the configuration actions, read by Rust AND Python.
+    for side, base in (("rust", rs), ("python", py)):
+        expect(f"audit-stream actions are in the trail ({side})", "GET", f"{API}/audit?target_type=audit_stream&limit=100",
+               base=base, check=lambda r: (lambda names: [] if {
+                   "audit_stream.configured", "audit_stream.disabled", "audit_stream.enabled",
+                   "audit_stream.secret_rotated", "audit_stream.replayed", "audit_stream.tested"} <= names
+                   else [f"missing from {sorted(names)}"])({i["action"] for i in data(r)["items"]}))
+
+    # Delete.
+    execute("INSERT INTO audit_stream_deliveries (tenant_id, kind, status) VALUES (%s, 'batch', 'failed')", (tid,))
+    expect("audit-stream delete", "DELETE", S, check=lambda r: (
+        [] if stream() is None and not qa("SELECT 1 FROM audit_stream_deliveries WHERE tenant_id = %s", (tid,))
+        else ["destination or log survived the delete"]))
+    expect("audit-stream delete again is 404", "DELETE", S, status=404, code="audit_stream_not_configured")
+    for method, path, body in (("POST", f"{S}/enable", None), ("POST", f"{S}/disable", None),
+                               ("POST", f"{S}/rotate-secret", None), ("POST", f"{S}/test", None),
+                               ("POST", f"{S}/replay", {"cursor": "0:0"})):
+        expect(f"audit-stream {path.removeprefix(API)} without a destination is 404", method, path, body=body,
+               status=404, code="audit_stream_not_configured")
+    expect("audit-stream replay since without a destination is 404", "POST", f"{S}/replay", body={"since": "2999-01-01"},
+           status=404, code="audit_stream_not_configured")
+    return out
+
+
 def run(args) -> int:
     env = read_env_file(args.env_file) if args.env_file else {}
     secret = os.environ.get("SECRET_KEY") or env.get("SECRET_KEY")
@@ -2807,6 +3096,7 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        results += run_audit_stream(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
