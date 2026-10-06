@@ -2549,6 +2549,7 @@ def erase_orphans(py: str, secret: str, db) -> None:
 # end removes them.
 
 R4_RECEIVABLE = ("pending", "partial", "not_received")
+R4_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 @dataclass
@@ -2564,6 +2565,9 @@ class R4Case:
     prepare: Optional[Callable] = None   # (env, side) -> None, before each side
     capture: Optional[Callable] = None   # (env, side, po_id, since) -> value
     route: str = ""
+    # The response lists orders of BOTH sides (an inbox spans the tenant):
+    # mask every seeded order, not only this side's.
+    mask_all: bool = False
 
 
 @dataclass
@@ -2574,7 +2578,9 @@ class R4Env:
     norte_id: str = ""
     other_tenant: Optional[Fixture] = None
     other_po: str = ""
+    supplier_id: str = ""
     pairs: dict = field(default_factory=dict)
+    pa_mail: dict = field(default_factory=dict)   # case name -> outbox rows Rust queued
 
 
 def _r4_signup(py: str, secret: str) -> Fixture:
@@ -2629,10 +2635,20 @@ def _r4_seed_po(db, tenant_id: str, admin_id: str, sku: str, spec: dict) -> str:
         cur.execute(
             """INSERT INTO inventory_po_items
                    (po_log_id, tenant_id, sku, recommended_qty, final_qty, received_qty, status, supplier,
-                    warehouse)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    warehouse, unit_cost, supplier_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (po_id, tenant_id, sku + ln.get("sfx", ""), ln["qty"], ln["qty"], ln.get("received"),
-             ln.get("status", "approved"), ln.get("supplier"), ln.get("warehouse", "principal")))
+             ln.get("status", "approved"), ln.get("supplier"), ln.get("warehouse", "principal"),
+             ln.get("unit_cost"), ln.get("supplier_id")))
+    ap = spec.get("approval")
+    if ap:
+        cur.execute("""INSERT INTO po_approvals (tenant_id, po_log_id, status, amount, requested_by, request_note,
+                                                 decided_by, decided_at, comment)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, CASE WHEN %s THEN NOW() END, %s)""",
+                    (tenant_id, po_id, ap.get("status", "requested"), ap["amount"], ap["by_id"], ap.get("note"),
+                     ap.get("decided_by_id"), ap.get("status", "requested") != "requested", ap.get("comment")))
+        cur.execute("UPDATE inventory_po_log SET approval_status = %s, approved_amount = %s WHERE id = %s",
+                    (ap.get("po_state", "pending_approval"), ap.get("approved_amount"), po_id))
     if spec.get("received_at"):
         cur.execute("UPDATE inventory_po_log SET received_at = NOW() - INTERVAL '1 day', received_by = %s "
                     "WHERE id = %s", (admin_id, po_id))
@@ -2649,6 +2665,13 @@ def _r4_seed_po(db, tenant_id: str, admin_id: str, sku: str, spec: dict) -> str:
 
 def _r4_pair(env: R4Env, name: str, spec: dict) -> dict:
     if name not in env.pairs:
+        if spec.get("approval"):
+            ids = {"admin": env.fx.admin_id, "analyst": env.fx.analyst_id, "viewer": env.fx.viewer_id}
+            ap = dict(spec["approval"])
+            ap["by_id"] = ids[ap.pop("by", "analyst")]
+            if ap.get("decided_by"):
+                ap["decided_by_id"] = ids[ap.pop("decided_by")]
+            spec = {**spec, "approval": ap}
         env.pairs[name] = {
             side: _r4_seed_po(env.db, env.fx.tenant_id, env.fx.admin_id, f"R4-{name}-{side}", spec)
             for side in ("py", "rs")}
@@ -2669,7 +2692,8 @@ def _r4_mask(value: Any, subs: dict) -> Any:
         for k, v in value.items():
             if k in ("timestamp",):
                 out[k] = "<masked>"
-            elif k in ("paid_at", "cancelled_at", "updated_at") and v is not None:
+            elif k in ("paid_at", "cancelled_at", "updated_at", "created_at", "requested_at", "decided_at") \
+                    and v is not None:
                 out[k] = "<ts>"
             elif k == "po_number" and v is not None and v == subs.get("__number__"):
                 out[k] = "<num>"
@@ -2680,6 +2704,8 @@ def _r4_mask(value: Any, subs: dict) -> Any:
         return [_r4_mask(v, subs) for v in value]
     if isinstance(value, str) and value in subs:
         return subs[value]
+    if isinstance(value, str) and R4_UUID.match(value):
+        return "<uuid>"          # a rule / approval / webhook id, per side
     if isinstance(value, str) and value.startswith("R4-"):
         # A seeded SKU carries its side (the stock rows are per tenant, so the
         # two sides cannot share a SKU): R4-<name>-py<line> becomes R4-<name><line>.
@@ -2687,7 +2713,7 @@ def _r4_mask(value: Any, subs: dict) -> Any:
     return value
 
 
-def _r4_subs(env: R4Env, po_id: Optional[str]) -> dict:
+def _r4_subs(env: R4Env, po_id: Optional[str], all_pos: bool = False) -> dict:
     """Strings to replace anywhere (the side's PO id and its OC reference),
     plus the side's PO number, replaced only under a `po_number` key."""
     if not po_id:
@@ -2697,6 +2723,14 @@ def _r4_subs(env: R4Env, po_id: Optional[str]) -> dict:
     if n:
         subs["__number__"] = n
         subs[f"OC-{int(n):06d}"] = "<ref>"
+    if all_pos:
+        for sides in env.pairs.values():
+            for other in sides.values():
+                if other != po_id:
+                    subs[other] = "<po>"
+                    m = _r4_number(env.db, other)
+                    if m:
+                        subs[f"OC-{int(m):06d}"] = "<ref>"
     return subs
 
 
@@ -2775,6 +2809,84 @@ def po_name_of(po_id: str, env: R4Env) -> str:
     return ""
 
 
+# ── Wave 2: purchase-order approval ─────────────────────────────────────────
+
+def pa_state(rules=(), approvers=("admin", "analyst")):
+    """prepare: the tenant's approval rules become exactly `rules` and the
+    people flagged as approvers exactly `approvers` (admin / analyst /
+    scoped), identically before each side runs."""
+    def prepare(env: R4Env, side: str) -> None:
+        cur = env.db.cursor()
+        fx = env.fx
+        ensure_contract_hook(fx, env.db)
+        cur.execute("DELETE FROM po_approval_rules WHERE tenant_id = %s", (fx.tenant_id,))
+        # Invited users stay 'invited' until they verify; only an active person can approve.
+        cur.execute("UPDATE users SET can_approve_po = FALSE, status = 'active' WHERE tenant_id = %s",
+                    (fx.tenant_id,))
+        ids = {"admin": fx.admin_id, "analyst": fx.analyst_id, "viewer": fx.viewer_id,
+               **getattr(fx, "user_ids", {})}
+        for who in approvers:
+            cur.execute("UPDATE users SET can_approve_po = TRUE WHERE id = %s", (ids[who],))
+        for i, rule in enumerate(rules):
+            cur.execute("""INSERT INTO po_approval_rules (tenant_id, threshold, warehouse, supplier_id,
+                               self_approve_below, active, created_by, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, NOW() - %s * INTERVAL '1 minute')""",
+                        (fx.tenant_id, rule["threshold"], rule.get("warehouse"),
+                         env.supplier_id if rule.get("supplier") else None, rule.get("self_approve_below"),
+                         rule.get("active", True), fx.admin_id, 100 - i))
+    return prepare
+
+
+def _norm_uuids(value):
+    if isinstance(value, dict):
+        return {k: _norm_uuids(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_norm_uuids(v) for v in value]
+    return "<uuid>" if isinstance(value, str) and R4_UUID.match(value) else value
+
+
+def r4_capture_pa(env: R4Env, side: str, po_id: str, since, *, case: str = ""):
+    """Everything an approval route may touch: the order's approval state and
+    requests, the tenant's rules and approver flags, the activity and audit
+    rows since the request, the webhook deliveries queued for the order, and
+    (Rust side only, kept apart) the mail it queued on the outbox."""
+    cur = env.db.cursor()
+    out = {}
+    if po_id:
+        cur.execute("SELECT approval_status, approved_amount FROM inventory_po_log WHERE id = %s", (po_id,))
+        out["header"] = list(cur.fetchone() or [])
+        cur.execute("""SELECT status, amount, requested_by, request_note, decided_by, comment,
+                              decided_at IS NOT NULL FROM po_approvals WHERE po_log_id = %s
+                        ORDER BY requested_at, id""", (po_id,))
+        out["approvals"] = [list(r) for r in cur.fetchall()]
+    cur.execute("""SELECT threshold, warehouse, supplier_id, self_approve_below, active, created_by
+                     FROM po_approval_rules WHERE tenant_id = %s ORDER BY threshold, warehouse, supplier_id""",
+                (env.fx.tenant_id,))
+    out["rules"] = [list(r) for r in cur.fetchall()]
+    cur.execute("SELECT id, can_approve_po FROM users WHERE tenant_id = %s ORDER BY id", (env.fx.tenant_id,))
+    out["flags"] = [list(r) for r in cur.fetchall()]
+    cur.execute("""SELECT action, user_id, resource, context, status FROM activity_logs
+                    WHERE tenant_id = %s AND created_at >= %s
+                      AND (resource = %s OR action LIKE 'audit.%%')
+                    ORDER BY created_at, action""", (env.fx.tenant_id, since, po_id or ""))
+    out["events"] = [list(r) for r in cur.fetchall()]
+    out["webhooks"] = hook_deliveries(env.db, env.fx.tenant_id, "po_log_id", po_id, since) if po_id else []
+    cur.execute("""SELECT channel, kind, recipient, params, status, created_by, dedupe_key FROM outbound_messages
+                    WHERE tenant_id = %s AND created_at >= %s ORDER BY created_at""",
+                (env.fx.tenant_id, since))
+    mail = [list(r) for r in cur.fetchall()]
+    if side == "rs":
+        env.pa_mail[case] = _norm_uuids(_r4_mask(mail, _r4_subs(env, po_id)))
+    elif mail:
+        out["python_queued_mail"] = mail        # Python sends directly: the outbox stays empty
+    return _norm_uuids(_r4_mask(out, _r4_subs(env, po_id)))
+
+
+def pa_capture(case: str):
+    return lambda env, side, po_id, since: r4_capture_pa(env, side, po_id, since, case=case)
+
+
+
 def r4_capture_po_history(history: str):
     return lambda env, side, po_id, since: r4_capture_po(env, side, po_id, since, history=history)
 
@@ -2817,10 +2929,11 @@ def r4_setup(args, fx: Fixture, db) -> R4Env:
     env.norte_id = cur.fetchone()[0]
     # Two warehouse-scoped analysts, set up through the Python API: one
     # limited to Norte, one limited to nothing at all.
-    for who, ids in (("scoped", [env.norte_id]), ("scoped_none", [])):
+    for who, ids, role in (("scoped", [env.norte_id], "analyst"), ("scoped_none", [], "analyst"),
+                           ("scoped_admin", [env.norte_id], "admin")):
         r = http(args.python, "POST", f"{API}/users", token=fx.admin_token, body={
             "email": f"contract-{secrets.token_hex(3)}-{who}@stockai.demo".replace("_", "-"),
-            "role": "analyst", "full_name": f"Contract {who}"})
+            "role": role, "full_name": f"Contract {who}"})
         if r.status != 201:
             raise SystemExit(f"creating the {who} analyst failed: {r.status} {r.body}")
         uid = r.body["data"]["user"]["id"]
@@ -2828,7 +2941,10 @@ def r4_setup(args, fx: Fixture, db) -> R4Env:
                  body={"warehouse_ids": ids})
         if r.status != 200:
             raise SystemExit(f"scoping the {who} analyst failed: {r.status} {r.body}")
-        fx.tokens[who] = mint_access_token(fx.secret, uid, fx.tenant_id, "analyst")
+        fx.tokens[who] = mint_access_token(fx.secret, uid, fx.tenant_id, role)
+        fx.user_ids = {**getattr(fx, "user_ids", {}), who: uid}
+    cur.execute("""INSERT INTO suppliers (tenant_id, name) VALUES (%s, 'ACME PA') RETURNING id""", (fx.tenant_id,))
+    env.supplier_id = cur.fetchone()[0]
     env.other_tenant = _r4_signup(args.python, fx.secret)
     env.other_po = _r4_seed_po(db, env.other_tenant.tenant_id, env.other_tenant.admin_id,
                                "R4-OTHER", {"sent": True})
@@ -3029,6 +3145,7 @@ def build_r4_cases(env: R4Env) -> list[R4Case]:
                capture=r4_capture_thresholds, route=sdel),
         R4Case("thresholds delete write key", "DELETE", st, who="key_write", route=sdel),
     ]
+    cases += build_pa_cases(env)
     # ── wave 1b: the reception / send reversals ────────────────────────────
     unrec, unsend = "POST /inventory/po/{id}/unreceive", "POST /inventory/po/{id}/unsend"
     revcap = r4_capture_reversal
@@ -3113,6 +3230,327 @@ def build_r4_cases(env: R4Env) -> list[R4Case]:
     return cases
 
 
+# What the Rust side must have queued for the requester, by case. Python sends
+# the mail itself, so there is no row to compare; instead the row Rust wrote
+# is checked against what the decision implies.
+PA_MAIL_EXPECTED: dict[str, Optional[dict]] = {}
+
+
+def pa_mail_verdicts(env: R4Env, args) -> list:
+    out = []
+    for name, rows in env.pa_mail.items():
+        want = PA_MAIL_EXPECTED.get(name)
+        problems = []
+        if want is None:
+            if rows:
+                problems.append(f"expected no mail, Rust queued {rows}")
+        elif len(rows) != 1:
+            problems.append(f"expected one queued mail, got {rows}")
+        else:
+            channel, kind, recipient, params, status, created_by, dedupe = rows[0]
+            people = {"admin": env.fx.admin_id, "analyst": env.fx.analyst_id, **getattr(env.fx, "user_ids", {})}
+            requester, decider = people[want.get("requester", "analyst")], people[want.get("decider", "admin")]
+            expected_params = {"po_log_id": "<po>", "amount": want["amount"], "approved": want["approved"],
+                               "requester_id": requester, "decider_id": decider}
+            if want.get("comment"):
+                expected_params["comment"] = want["comment"]
+            if (channel, kind, status, created_by) != ("email", "po_approval_decision", "pending", decider):
+                problems.append(f"row shape: {rows[0]}")
+            if params != expected_params:
+                problems.append(f"params {params} != {expected_params}")
+            if not str(dedupe).startswith("po_approval_decision:"):
+                problems.append(f"dedupe key {dedupe!r}")
+            cur = env.db.cursor()
+            cur.execute("SELECT email FROM users WHERE id = %s", (requester,))
+            if recipient != cur.fetchone()[0]:
+                problems.append(f"recipient {recipient!r} is not the requester")
+        out.append((R4Case(f"mail: {name}", "-", "-", route="outbox (approvals)"),
+                    "FAIL" if problems else "PASS", problems))
+    return out
+
+
+def build_pa_cases(env: R4Env) -> list[R4Case]:
+    A = f"{API}/inventory"
+    po = f"{A}/po/{{po}}/approval"
+    S, RULES, APPR, PEND = (f"{A}/po-approval/settings", f"{A}/po-approval/rules", f"{A}/po-approval/approvers",
+                            f"{A}/po-approval/pending")
+    st, cr, pa, de, ap, pe, ga, aa, rj = (
+        "GET /inventory/po-approval/settings", "POST /inventory/po-approval/rules",
+        "PATCH /inventory/po-approval/rules/{id}", "DELETE /inventory/po-approval/rules/{id}",
+        "PUT /inventory/po-approval/approvers/{id}", "GET /inventory/po-approval/pending",
+        "GET /inventory/po/{id}/approval", "POST /inventory/po/{id}/approval/approve",
+        "POST /inventory/po/{id}/approval/reject")
+    sup = env.supplier_id
+
+    def line(cost, qty=10, **kw):
+        return {"sfx": "a", "qty": qty, "unit_cost": cost, "supplier": "ACME PA", "supplier_id": sup, **kw}
+
+    big = {"lines": [line(100)]}                                  # 1,000
+    small = {"lines": [line(5)]}                                  # 50
+    unpriced = {"lines": [{"sfx": "a", "qty": 10}]}
+    norte_big = {"lines": [line(100, warehouse="Norte")], "destination": "Norte"}
+    asked = lambda by, **kw: {"by": by, "amount": 1000.0, "note": "please", **kw}  # noqa: E731
+    open_analyst = {**big, "approval": asked("analyst")}
+    open_admin = {**big, "approval": asked("admin")}
+    approved = {**big, "approval": asked("analyst", status="approved", decided_by="admin", comment="fine",
+                                         po_state="approved", approved_amount=1000.0)}
+    grown = {**big, "approval": asked("analyst", status="approved", decided_by="admin", comment="fine",
+                                      po_state="approved", approved_amount=500.0, amount=500.0)}
+    rejected = {**big, "approval": asked("analyst", status="rejected", decided_by="admin", comment="no way",
+                                         po_state="rejected")}
+    r100 = [{"threshold": 100}]
+    r_self = [{"threshold": 100, "self_approve_below": 5000}]
+    r_mixed = [{"threshold": 100, "warehouse": "Norte"}, {"threshold": 500},
+               {"threshold": 300, "supplier": True, "self_approve_below": 900}]
+    r_off = [{"threshold": 100, "active": False}]
+    both = pa_state(r100)
+    none = pa_state([], approvers=())
+    cap = pa_capture
+    good_rule = {"threshold": 250.5, "self_approve_below": 1000, "warehouse": "  norte ", "supplier_id": sup}
+
+    def C(name, method, path, **kw):
+        kw.setdefault("route", {"GET": "", "POST": "", "PATCH": "", "PUT": "", "DELETE": ""}[method])
+        return R4Case(name, method, path, capture=kw.pop("capture", cap(name)), **kw)
+
+    def mail(name, **want):
+        PA_MAIL_EXPECTED[name] = want
+
+    mail("pa approve by admin", approved=True, amount=1000.0)
+    mail("pa reject by admin", approved=False, amount=1000.0, comment="too expensive")
+    mail("pa approve with comment", approved=True, amount=1000.0, comment="go ahead")
+    mail("pa approve with a null body", approved=True, amount=1000.0)
+    mail("pa approve scoped own warehouse", approved=True, amount=1000.0, requester="admin", decider="scoped")
+    mail("pa approve rule dropped afterwards", approved=True, amount=1000.0)
+    mail("pa approve when the order grew", approved=True, amount=400.0)
+    cases = [
+        # ── settings ───────────────────────────────────────────────────────
+        C("pa settings none", "GET", S, prepare=none, route=st),
+        C("pa settings rules and approvers", "GET", S, prepare=pa_state(r_mixed + r_off), route=st),
+        C("pa settings viewer", "GET", S, who="viewer", prepare=pa_state(r_mixed, ("admin",)), route=st),
+        C("pa settings approver sees is_approver", "GET", S, who="analyst", prepare=both, route=st),
+        C("pa settings scoped hides other warehouses", "GET", S, who="scoped",
+          prepare=pa_state(r_mixed + [{"threshold": 50, "warehouse": "Sur"}]), route=st),
+        C("pa settings scoped to nothing", "GET", S, who="scoped_none", prepare=pa_state(r_mixed), route=st),
+        C("pa settings read key", "GET", S, who="key_read", route=st),
+        C("pa settings no auth", "GET", S, who="none", route=st),
+        # ── rules: create ──────────────────────────────────────────────────
+        C("pa rule create", "POST", RULES, body=good_rule, prepare=both, route=cr),
+        C("pa rule create minimal", "POST", RULES, body={"threshold": 10}, prepare=both, route=cr),
+        C("pa rule create no approver", "POST", RULES, body={"threshold": 10}, prepare=none, route=cr),
+        C("pa rule create analyst denied", "POST", RULES, who="analyst", body={"threshold": 10}, prepare=both,
+          route=cr),
+        C("pa rule create viewer denied", "POST", RULES, who="viewer", body={"threshold": 10}, prepare=both,
+          route=cr),
+        C("pa rule create scoped admin refused", "POST", RULES, who="scoped_admin", body={"threshold": 10},
+          prepare=both, route=cr),
+        C("pa rule create write key", "POST", RULES, who="key_write", body={"threshold": 10}, route=cr),
+        C("pa rule create no auth", "POST", RULES, who="none", body={"threshold": 10}, route=cr),
+        C("pa rule create limit not above threshold", "POST", RULES, body={"threshold": 10, "self_approve_below": 10},
+          prepare=both, route=cr),
+        C("pa rule create unknown supplier", "POST", RULES, body={"threshold": 10, "supplier_id": "sup-nowhere"},
+          prepare=both, route=cr),
+        C("pa rule create unknown warehouse is kept", "POST", RULES, body={"threshold": 10, "warehouse": " Sur\u200b "},
+          prepare=both, route=cr),
+        C("pa rule create warehouse only invisible", "POST", RULES, body={"threshold": 10, "warehouse": "\u200b\u202e"},
+          prepare=both, route=cr),
+        C("pa rule create blank warehouse and supplier", "POST", RULES,
+          body={"threshold": 10, "warehouse": "   ", "supplier_id": " "}, prepare=both, route=cr),
+        C("pa rule create nulls", "POST", RULES,
+          body={"threshold": 10, "warehouse": None, "supplier_id": None, "self_approve_below": None},
+          prepare=both, route=cr),
+        C("pa rule create zero threshold", "POST", RULES, body={"threshold": 0}, route=cr),
+        C("pa rule create huge threshold", "POST", RULES, body={"threshold": 1e12 * 2, "self_approve_below": -1},
+          route=cr),
+        C("pa rule create max threshold", "POST", RULES, body={"threshold": 1e12}, prepare=both, route=cr),
+        C("pa rule create text threshold", "POST", RULES, body={"threshold": "12.5"}, prepare=both, route=cr),
+        C("pa rule create wrong types", "POST", RULES,
+          body={"threshold": "abc", "warehouse": 5, "supplier_id": [], "self_approve_below": {}}, route=cr),
+        C("pa rule create long names", "POST", RULES,
+          body={"threshold": 5, "warehouse": "w" * 121, "supplier_id": "s" * 65}, route=cr),
+        C("pa rule create missing threshold", "POST", RULES, body={"warehouse": "Norte"}, route=cr),
+        C("pa rule create no body", "POST", RULES, route=cr),
+        C("pa rule create invalid json", "POST", RULES, raw_body=b"{nope", route=cr),
+        # ── rules: update and delete ───────────────────────────────────────
+        C("pa rule patch threshold", "PATCH", f"{RULES}/{{rule}}", body={"threshold": 200},
+          prepare=pa_state([{"threshold": 100, "warehouse": "Norte", "supplier": True}]), route=pa),
+        C("pa rule patch clears with null", "PATCH", f"{RULES}/{{rule}}",
+          body={"warehouse": None, "supplier_id": None, "self_approve_below": None},
+          prepare=pa_state([{"threshold": 100, "warehouse": "Norte", "supplier": True, "self_approve_below": 500}]),
+          route=pa),
+        C("pa rule patch explicit null threshold", "PATCH", f"{RULES}/{{rule}}", body={"threshold": None},
+          prepare=both, route=pa),
+        C("pa rule patch deactivate", "PATCH", f"{RULES}/{{rule}}", body={"active": False}, prepare=both, route=pa),
+        C("pa rule patch active null keeps", "PATCH", f"{RULES}/{{rule}}", body={"active": None}, prepare=r_off and
+          pa_state(r_off), route=pa),
+        C("pa rule patch reactivate", "PATCH", f"{RULES}/{{rule}}", body={"active": "yes"}, prepare=pa_state(r_off),
+          route=pa),
+        C("pa rule patch reactivate no approver", "PATCH", f"{RULES}/{{rule}}", body={"active": True},
+          prepare=pa_state(r_off, ()), route=pa),
+        C("pa rule patch empty body", "PATCH", f"{RULES}/{{rule}}", body={}, prepare=both, route=pa),
+        C("pa rule patch limit below the threshold", "PATCH", f"{RULES}/{{rule}}",
+          body={"threshold": 900}, prepare=pa_state([{"threshold": 100, "self_approve_below": 500}]), route=pa),
+        C("pa rule patch warehouse spelling", "PATCH", f"{RULES}/{{rule}}", body={"warehouse": "NORTE"},
+          prepare=both, route=pa),
+        C("pa rule patch unknown supplier", "PATCH", f"{RULES}/{{rule}}", body={"supplier_id": "sup-nowhere"},
+          prepare=both, route=pa),
+        C("pa rule patch not found", "PATCH", f"{RULES}/rule-nowhere", body={"threshold": 5}, prepare=both, route=pa),
+        C("pa rule patch validation before not found", "PATCH", f"{RULES}/rule-nowhere", body={"threshold": -1},
+          route=pa),
+        C("pa rule patch analyst denied", "PATCH", f"{RULES}/{{rule}}", who="analyst", body={"threshold": 5},
+          prepare=both, route=pa),
+        C("pa rule patch scoped admin refused", "PATCH", f"{RULES}/{{rule}}", who="scoped_admin",
+          body={"threshold": 5}, prepare=both, route=pa),
+        C("pa rule patch no body", "PATCH", f"{RULES}/{{rule}}", prepare=both, route=pa),
+        C("pa rule patch wrong types", "PATCH", f"{RULES}/{{rule}}", body={"active": "maybe", "threshold": []},
+          prepare=both, route=pa),
+        C("pa rule delete", "DELETE", f"{RULES}/{{rule}}", prepare=pa_state(r_mixed), route=de),
+        C("pa rule delete not found", "DELETE", f"{RULES}/rule-nowhere", prepare=both, route=de),
+        C("pa rule delete analyst denied", "DELETE", f"{RULES}/{{rule}}", who="analyst", prepare=both, route=de),
+        C("pa rule delete scoped admin refused", "DELETE", f"{RULES}/{{rule}}", who="scoped_admin", prepare=both,
+          route=de),
+        C("pa rule delete no auth", "DELETE", f"{RULES}/{{rule}}", who="none", route=de),
+        # ── approvers ──────────────────────────────────────────────────────
+        C("pa approver set", "PUT", f"{APPR}/{env.fx.analyst_id}", body={"can_approve": True},
+          prepare=pa_state([], ("admin",)), route=ap),
+        C("pa approver lax bool", "PUT", f"{APPR}/{env.fx.analyst_id}", body={"can_approve": "yes"},
+          prepare=pa_state([], ("admin",)), route=ap),
+        C("pa approver unset", "PUT", f"{APPR}/{env.fx.analyst_id}", body={"can_approve": False},
+          prepare=both, route=ap),
+        C("pa approver last one refused", "PUT", f"{APPR}/{env.fx.admin_id}", body={"can_approve": False},
+          prepare=pa_state(r100, ("admin",)), route=ap),
+        C("pa approver last one fine without rules", "PUT", f"{APPR}/{env.fx.admin_id}",
+          body={"can_approve": False}, prepare=pa_state([], ("admin",)), route=ap),
+        C("pa approver inactive rule does not hold", "PUT", f"{APPR}/{env.fx.admin_id}",
+          body={"can_approve": False}, prepare=pa_state(r_off, ("admin",)), route=ap),
+        C("pa approver viewer cannot be one", "PUT", f"{APPR}/{env.fx.viewer_id}", body={"can_approve": True},
+          prepare=both, route=ap),
+        C("pa approver viewer can be removed", "PUT", f"{APPR}/{env.fx.viewer_id}", body={"can_approve": False},
+          prepare=both, route=ap),
+        C("pa approver unknown user", "PUT", f"{APPR}/usr-nowhere", body={"can_approve": True}, prepare=both,
+          route=ap),
+        C("pa approver analyst denied", "PUT", f"{APPR}/{env.fx.analyst_id}", who="analyst",
+          body={"can_approve": True}, prepare=both, route=ap),
+        C("pa approver scoped admin refused", "PUT", f"{APPR}/{env.fx.analyst_id}", who="scoped_admin",
+          body={"can_approve": True}, prepare=both, route=ap),
+        C("pa approver missing flag", "PUT", f"{APPR}/{env.fx.analyst_id}", body={}, prepare=both, route=ap),
+        C("pa approver null flag", "PUT", f"{APPR}/{env.fx.analyst_id}", body={"can_approve": None},
+          prepare=both, route=ap),
+        C("pa approver junk flag", "PUT", f"{APPR}/{env.fx.analyst_id}", body={"can_approve": "perhaps"},
+          prepare=both, route=ap),
+        C("pa approver no body", "PUT", f"{APPR}/{env.fx.analyst_id}", prepare=both, route=ap),
+        C("pa approver no auth", "PUT", f"{APPR}/{env.fx.analyst_id}", who="none", body={"can_approve": True},
+          route=ap),
+        # ── the approver's inbox ───────────────────────────────────────────
+        C("pa pending as approver", "GET", PEND, mask_all=True, po=("pa-pend-1", open_analyst), prepare=both, route=pe),
+        C("pa pending shows own request too", "GET", PEND, mask_all=True, po=("pa-pend-2", open_admin), prepare=pa_state(r_self),
+          route=pe),
+        C("pa pending self approval allowed above limit", "GET", PEND, mask_all=True, po=("pa-pend-2", open_admin),
+          prepare=pa_state([{"threshold": 100, "self_approve_below": 800}]), route=pe),
+        C("pa pending not an approver", "GET", PEND, mask_all=True, who="viewer", prepare=both, route=pe),
+        C("pa pending approver without rules", "GET", PEND, mask_all=True, prepare=pa_state([], ("admin",)), route=pe),
+        C("pa pending scoped approver", "GET", PEND, mask_all=True, who="scoped", po=("pa-pend-norte", {**norte_big,
+          "approval": asked("admin")}), prepare=pa_state(r100, ("admin", "scoped")), route=pe),
+        C("pa pending scoped does not see the default warehouse", "GET", PEND, mask_all=True, who="scoped",
+          prepare=pa_state(r100, ("admin", "scoped")), route=pe),
+        C("pa pending no auth", "GET", PEND, mask_all=True, who="none", route=pe),
+        C("pa pending key refused", "GET", PEND, mask_all=True, who="key_write", route=pe),
+        # ── one order ──────────────────────────────────────────────────────
+        C("pa get no rules", "GET", po, po=("pa-get-none", small), prepare=none, route=ga),
+        C("pa get below every threshold", "GET", po, po=("pa-get-small", small), prepare=both, route=ga),
+        C("pa get unpriced", "GET", po, po=("pa-get-unpriced", unpriced), prepare=both, route=ga),
+        C("pa get needs approval", "GET", po, po=("pa-get-big", big), prepare=both, route=ga),
+        C("pa get strictest rule wins", "GET", po, po=("pa-get-big", big), prepare=pa_state(r_mixed), route=ga),
+        C("pa get supplier rule", "GET", po, po=("pa-get-big", big),
+          prepare=pa_state([{"threshold": 100, "supplier": True, "self_approve_below": 2000}]), route=ga),
+        C("pa get warehouse rule other warehouse", "GET", po, po=("pa-get-big", big),
+          prepare=pa_state([{"threshold": 100, "warehouse": "Sur"}]), route=ga),
+        C("pa get inactive rule", "GET", po, po=("pa-get-big", big), prepare=pa_state(r_off), route=ga),
+        C("pa get pending as approver", "GET", po, po=("pa-get-open", open_analyst), prepare=both, route=ga),
+        C("pa get pending as the requester", "GET", po, who="analyst", po=("pa-get-open", open_analyst),
+          prepare=pa_state(r100, ("analyst",)), route=ga),
+        C("pa get pending viewer", "GET", po, who="viewer", po=("pa-get-open", open_analyst), prepare=both,
+          route=ga),
+        C("pa get own request below the self limit", "GET", po, po=("pa-get-own", open_admin),
+          prepare=pa_state(r_self), route=ga),
+        C("pa get own request above the self limit", "GET", po, po=("pa-get-own", open_admin),
+          prepare=pa_state([{"threshold": 100, "self_approve_below": 500}]), route=ga),
+        C("pa get approved", "GET", po, po=("pa-get-approved", approved), prepare=both, route=ga),
+        C("pa get approved then grown", "GET", po, po=("pa-get-grown", grown), prepare=both, route=ga),
+        C("pa get rejected", "GET", po, po=("pa-get-rejected", rejected), prepare=both, route=ga),
+        C("pa get scoped default warehouse refused", "GET", po, who="scoped", po=("pa-get-big", big),
+          prepare=both, route=ga),
+        C("pa get scoped own warehouse", "GET", po, who="scoped", po=("pa-get-norte", norte_big), prepare=both,
+          route=ga),
+        C("pa get not found", "GET", f"{A}/po/nope-123/approval", prepare=both, route=ga),
+        C("pa get other tenant's po", "GET", f"{A}/po/{env.other_po}/approval", prepare=both, route=ga),
+        C("pa get no auth", "GET", po, who="none", po=("pa-get-big", big), route=ga),
+        C("pa get key refused", "GET", po, who="key_read", po=("pa-get-big", big), route=ga),
+        # ── decisions ──────────────────────────────────────────────────────
+        C("pa approve by admin", "POST", f"{po}/approve", po=("pa-dec-1", open_analyst), prepare=both, route=aa),
+        C("pa approve again is idempotent", "POST", f"{po}/approve", po=("pa-dec-1", open_analyst),
+          prepare=both, route=aa),
+        C("pa reject after approve refused", "POST", f"{po}/reject", po=("pa-dec-1", open_analyst),
+          body={"comment": "changed my mind"}, prepare=both, route=rj),
+        C("pa reject by admin", "POST", f"{po}/reject", po=("pa-dec-2", open_analyst),
+          body={"comment": "  too expensive  "}, prepare=both, route=rj),
+        C("pa reject again is idempotent", "POST", f"{po}/reject", po=("pa-dec-2", open_analyst),
+          body={"comment": "whatever"}, prepare=both, route=rj),
+        C("pa approve after reject refused", "POST", f"{po}/approve", po=("pa-dec-2", open_analyst),
+          prepare=both, route=aa),
+        C("pa approve with comment", "POST", f"{po}/approve", po=("pa-dec-3", open_analyst),
+          body={"comment": " go ahead "}, prepare=both, route=aa),
+        C("pa approve with a null body", "POST", f"{po}/approve", po=("pa-dec-4", open_analyst),
+          raw_body=b"null", prepare=both, route=aa),
+        C("pa approve own request refused", "POST", f"{po}/approve", po=("pa-dec-own", open_admin),
+          prepare=pa_state(r100), route=aa),
+        C("pa approve own request below the self limit", "POST", f"{po}/approve", po=("pa-dec-own-ok", open_admin),
+          prepare=pa_state([{"threshold": 100, "self_approve_below": 5000}]), route=aa),
+        C("pa reject own request is allowed", "POST", f"{po}/reject", po=("pa-dec-own-rej", open_admin),
+          body={"comment": "my mistake"}, prepare=pa_state(r100), route=rj),
+        C("pa approve not an approver", "POST", f"{po}/approve", who="analyst", po=("pa-dec-5", open_admin),
+          prepare=pa_state(r100, ("admin",)), route=aa),
+        C("pa approve nobody asked", "POST", f"{po}/approve", po=("pa-dec-none", big), prepare=both, route=aa),
+        C("pa reject nobody asked", "POST", f"{po}/reject", po=("pa-dec-none", big), body={"comment": "nope"},
+          prepare=both, route=rj),
+        C("pa reject without a comment", "POST", f"{po}/reject", po=("pa-dec-6", open_analyst),
+          body={"comment": "   "}, prepare=both, route=rj),
+        C("pa reject comment too short", "POST", f"{po}/reject", po=("pa-dec-6", open_analyst),
+          body={"comment": "no"}, prepare=both, route=rj),
+        C("pa reject comment missing", "POST", f"{po}/reject", po=("pa-dec-6", open_analyst), body={},
+          prepare=both, route=rj),
+        C("pa reject no body", "POST", f"{po}/reject", po=("pa-dec-6", open_analyst), prepare=both, route=rj),
+        C("pa reject body is a list", "POST", f"{po}/reject", po=("pa-dec-6", open_analyst), body=["x"],
+          prepare=both, route=rj),
+        C("pa approve comment too long", "POST", f"{po}/approve", po=("pa-dec-6", open_analyst),
+          body={"comment": "c" * 501}, prepare=both, route=aa),
+        C("pa approve comment wrong type", "POST", f"{po}/approve", po=("pa-dec-6", open_analyst),
+          body={"comment": 5}, prepare=both, route=aa),
+        C("pa approve text body", "POST", f"{po}/approve", po=("pa-dec-6", open_analyst), raw_body=b"stop it",
+          content_type="text/plain", prepare=both, route=aa),
+        C("pa approve invalid json", "POST", f"{po}/approve", po=("pa-dec-6", open_analyst), raw_body=b"{nope",
+          prepare=both, route=aa),
+        C("pa approve viewer denied", "POST", f"{po}/approve", who="viewer", po=("pa-dec-7", open_analyst),
+          prepare=both, route=aa),
+        C("pa approve no auth", "POST", f"{po}/approve", who="none", po=("pa-dec-7", open_analyst), route=aa),
+        C("pa approve key refused", "POST", f"{po}/approve", who="key_write", po=("pa-dec-7", open_analyst),
+          route=aa),
+        C("pa approve scoped default warehouse refused", "POST", f"{po}/approve", who="scoped",
+          po=("pa-dec-7", open_analyst), prepare=pa_state(r100, ("admin", "scoped")), route=aa),
+        C("pa approve scoped own warehouse", "POST", f"{po}/approve", who="scoped",
+          po=("pa-dec-norte", {**norte_big, "approval": asked("admin")}),
+          prepare=pa_state(r100, ("admin", "scoped")), route=aa),
+        C("pa approve not found", "POST", f"{A}/po/nope-123/approval/approve", prepare=both, route=aa),
+        C("pa reject other tenant's po", "POST", f"{A}/po/{env.other_po}/approval/reject",
+          body={"comment": "nope nope"}, prepare=both, route=rj),
+        C("pa approve then the order is approved", "GET", po, po=("pa-dec-1", open_analyst), prepare=both, route=ga),
+        C("pa approve rule dropped afterwards", "POST", f"{po}/approve", po=("pa-dec-8", open_analyst),
+          prepare=pa_state([]), route=aa),
+        C("pa approve when the order grew", "POST", f"{po}/approve", po=("pa-dec-9", {**big, "approval":
+          asked("analyst", amount=400.0)}), prepare=both, route=aa),
+    ]
+    return cases
+
+
 def run_r4(args, fx: Fixture, db) -> list:
     """The R4 section; returns (case, verdict, problems) like the main loop."""
     if db is None:
@@ -3135,10 +3573,16 @@ def run_r4(args, fx: Fixture, db) -> list:
                     case.prepare(env, side)
                 since = _r4_since(db)
                 path = case.path.replace("{po}", po_id or "")
+                if "{rule" in path:
+                    cur = db.cursor()
+                    cur.execute("SELECT id FROM po_approval_rules WHERE tenant_id = %s "
+                                "ORDER BY threshold, created_at", (fx.tenant_id,))
+                    rule_ids = [r[0] for r in cur.fetchall()] + ["rule-nowhere"] * 2
+                    path = path.replace("{rule}", rule_ids[0]).replace("{rule2}", rule_ids[1])
                 r = http(base, case.method, path, token=token, body=case.body,
                          raw_body=case.raw_body, content_type=case.content_type)
                 resps[side] = r
-                masked[side] = _r4_mask(r.body, _r4_subs(env, po_id))
+                masked[side] = _r4_mask(r.body, _r4_subs(env, po_id, all_pos=case.mask_all))
                 if case.capture:
                     caps[side] = case.capture(env, side, po_id, since)
             rp, rr = resps["py"], resps["rs"]
@@ -3159,6 +3603,7 @@ def run_r4(args, fx: Fixture, db) -> list:
                     print(f"STATE PY {json.dumps(caps['py'], default=str)[:1500]}"
                           f"\nSTATE RS {json.dumps(caps['rs'], default=str)[:1500]}")
             results.append((case, "FAIL" if problems else "PASS", problems))
+        results += pa_mail_verdicts(env, args)
         # The other tenant's order must be exactly as it was seeded.
         cur = db.cursor()
         cur.execute("""SELECT paid_at, cancelled_at FROM inventory_po_log WHERE id = %s""",
@@ -3179,7 +3624,8 @@ def run_r4(args, fx: Fixture, db) -> list:
 # emits. Its URL is on a reserved `.invalid` name: the Python delivery loop
 # may try it, and the name never resolves, so nothing leaves the machine.
 
-HOOK_EVENTS = ["purchase_order.cancelled", "commitment.fulfilled"]
+HOOK_EVENTS = ["purchase_order.cancelled", "commitment.fulfilled", "purchase_order.approved",
+               "purchase_order.rejected"]
 
 
 def ensure_contract_hook(fx: Fixture, db) -> None:

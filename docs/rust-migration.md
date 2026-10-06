@@ -109,13 +109,12 @@ notification, no file storage, no hub.
 * Done (R1, `routes/r1/`): preferences GET/PATCH; `GET /me/activity`,
   `GET /me/activity/action-types`; `GET /models`; alerts `GET /alerts`,
   `/alerts/activity`, `/alerts/kinds`, `POST /alerts/read`; currency GET/PATCH;
-  timezone GET. `PATCH /tenant/timezone` stays Python for now (it re-anchors
-  schedules; the croniter port from R2 makes it a candidate).
+  timezone GET. `PATCH /tenant/timezone` moved in wave 1b.
 * Done (R2): sessions `GET /sessions`, `GET /sessions/summary`, `GET /{id}`,
   `DELETE /{id}` (archives), `POST /{id}/restore`; the five schedule routes
   (croniter 6.2.2 + zoneinfo ported in `routes/schedule/`; non-ASCII digits in
   a cron are a known gap); spike_edits, all three routes. `POST /sessions` and
-  `PATCH /sessions/{id}` stay Python.
+  `PATCH /sessions/{id}` moved in wave 1b.
 * Done (R3): webhooks `GET`, `GET /events`, `DELETE /{id}`,
   `POST /{id}/enable`, `POST /{id}/rotate-secret`, `GET /{id}/deliveries`;
   api-keys `POST`, `GET`, `GET /usage`, `DELETE /{id}`; audit `GET`,
@@ -368,6 +367,80 @@ Modules: `config`, `pycompat` (`isoformat`, `date.fromisoformat`,
    logs and continues.
 
 ## 9. Results
+
+### Wave 1b and the start of wave 2 (2026-10-06, branch feat/rust-wave1b)
+
+Harness: Python from this worktree on `:8012`, Rust debug build on `:8040`,
+both on a DISPOSABLE database (`rust_wave1b`, local Postgres 18, timezone
+UTC), `TESTING_MODE=true`, `SCHEDULER_ENABLED=false` (no worker loops).
+Final full-filter run (`--only "pa "`, which also pulls in the committed-demand
+cases): **286/286 pass**. The groups below were each run on their own earlier.
+A complete unfiltered run of the whole harness was NOT repeated after the last
+commit; run it before enabling any proxy file.
+
+| Group | Routes | Cases |
+|---|---|---|
+| Timezone write | `PATCH /tenant/timezone` (re-anchors armed schedules with the croniter port) | 15 |
+| Sessions write | `POST /sessions` (ceiling under the tenant lock, `session_configs`, audit), `PATCH /sessions/{id}` | 49 |
+| Lineage | `GET /sessions/{id}/manifest`, `GET /training/run-durations` | 57 |
+| Reception reversals | `POST /inventory/po/{id}/unreceive`, `/unsend` | 34 |
+| PO approvals | settings, rules POST/PATCH/DELETE, approvers PUT, pending, `GET /po/{id}/approval`, approve, reject (9 of 10) | 130+ |
+| Outbox | writer parity, drain outcomes | 6 |
+
+New gateway examples: `33-sessions` (renamed from the duplicated `30-`),
+`34-lineage`, `42-reception-reversals`, `43-po-approvals`; `30-settings-reads`
+gains `PATCH /tenant/timezone`.
+
+**The outbox (wave 2 foundation).** Table `outbound_messages` (additive
+migration `backend/notifications/outbox_migrations.py`), Python drain loop
+`outbox-drain` in `backend/workers/worker.py` (5 s poll, `FOR UPDATE SKIP
+LOCKED` claim with a lease, 5 attempts on 30 s / 2 min / 10 min / 40 min, then
+`failed`), rendering through the existing `send_*` functions. A row names an
+English `kind` plus data (`params`), never the text; the Spanish stays in the
+Python catalog. `params` is scrubbed when a row ends and a row nobody
+delivered by `expires_at` is abandoned and scrubbed. Trial addresses are
+`abandoned` with `trial_address`; no transport is `failed` with the reason
+code. Rust writer: `backend-rs/src/outbox.rs` (registry parity with
+`outbox.KINDS` checked by a unit test that reads the Python source). Erasure
+and export know the table (export without `params`). Python tests:
+`backend/tests/test_outbox.py` (22). Contract: `run_outbox` writes the same
+scenarios with Rust and Python and compares the rows, then drains both.
+Only the first consumer is wired: approve/reject queue the requester's mail.
+Nothing else moved onto it. Delivery is at-least-once.
+
+**Stayed Python, and why.**
+* `POST /webhooks`: the SSRF check relies on Python's `ipaddress` properties
+  (`is_private`, `is_reserved`, `is_global`, version dependent), `urlsplit`
+  quirks and live DNS. A port that is looser by one range is a security hole
+  and cannot be proven equal here. Left alone.
+* Committed-demand reads: the only GET is the list, which needs the at-risk
+  verdict (inventory hub). No other read exists.
+* `service_level_classes`: reads the inventory status snapshot (hub).
+* `POST /po/{id}/approval/request`: its answer carries `notified`, the number
+  of approver mails that actually left. An outbox can only say "queued".
+  Changing that answer is a product decision, not a port.
+* Users (16 routes): NOT started (owner paused the migration). Several send
+  mail synchronously and answer `email_sent`, the same problem as above.
+* Auth, social, sso, messages, trial, freshness, tenant_data: untouched.
+
+**Not verified / hidden by TESTING_MODE=true.** The `max_sessions` ceiling
+(`PLAN_LIMIT_REACHED`) on `POST /sessions`, rate limits, `TRIAL_EXPIRED`, a
+revoked `jti`, the `sessions_invalid_before` cut. The `max_sessions` path is
+ported line for line from `limit_guard` and unit-tested, not contract-tested.
+The real mail path was never exercised (senders replaced by a recorder).
+Manifest numbers: Python prints tiny floats as `1e-05`, Rust as `1e-5` (same
+JSON value, different bytes). `run-durations` NaN / inf durations stored as
+strings are not matched. Raw `created_at` bytes carry `+00:00` only because
+the database timezone is UTC (known divergence 5). Docker was off, so the
+compose files are untested. One shared-scratchpad mishap: another session's
+helper script was briefly overwritten and restored; both sessions use their
+own files now.
+
+**Next** (when the owner resumes): run the full harness against a Python on
+the same commit, then users (DB-only parts: list, status, permissions,
+warehouse scope, delete), then auth with its own contract cases
+(`TESTING_MODE=false` on a disposable database for throttling, rotation and
+the `sessions_invalid_before` cut).
 
 ### Integrated branch: foundation + R1-R4, resynced with main (2026-10-06)
 

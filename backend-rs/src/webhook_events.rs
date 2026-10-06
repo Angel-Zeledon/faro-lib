@@ -138,8 +138,10 @@ fn ts(v: Option<DateTime<Utc>>) -> Value {
 }
 
 /// `emit_po_event`: the order as it is NOW, after the change that caused it.
-pub async fn emit_po_event(pool: &PgPool, tenant_id: &str, event_type: &str, po_log_id: &str) -> usize {
-    match emit_po_inner(pool, tenant_id, event_type, po_log_id).await {
+pub async fn emit_po_event(pool: &PgPool, tenant_id: &str, event_type: &str, po_log_id: &str,
+    decided_by: Option<&str>) -> usize
+{
+    match emit_po_inner(pool, tenant_id, event_type, po_log_id, decided_by).await {
         Ok(n) => n,
         Err(e) => {
             tracing::error!(error = ?e, event_type, po = po_log_id, "[webhooks] could not build the event");
@@ -151,8 +153,8 @@ pub async fn emit_po_event(pool: &PgPool, tenant_id: &str, event_type: &str, po_
 type PoRow = (String, Option<i64>, Option<String>, Option<i64>, Option<f64>, Option<f64>, Option<f64>,
     Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<String>);
 
-async fn emit_po_inner(pool: &PgPool, tenant_id: &str, event_type: &str, po_log_id: &str)
-    -> Result<usize, crate::error::ApiError>
+async fn emit_po_inner(pool: &PgPool, tenant_id: &str, event_type: &str, po_log_id: &str,
+    decided_by: Option<&str>) -> Result<usize, crate::error::ApiError>
 {
     let hooks = subscribers(pool, tenant_id, event_type).await?;
     if hooks.is_empty() {
@@ -179,6 +181,9 @@ async fn emit_po_inner(pool: &PgPool, tenant_id: &str, event_type: &str, po_log_
     data.insert("sku_count".into(), json!(sku_count));
     data.insert("total_units".into(), num(total_units));
     data.insert("total_value".into(), num(total_value));
+    if keys.contains(&"decided_by") {
+        data.insert("decided_by".into(), json!(decided_by));
+    }
     if keys.contains(&"approved_amount") {
         data.insert("approved_amount".into(), num(approved_amount));
     }

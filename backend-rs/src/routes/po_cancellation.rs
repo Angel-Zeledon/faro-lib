@@ -195,7 +195,7 @@ pub async fn cancel(
     };
     tracing::info!("[po-cancel] CANCEL tenant={} po={} by={}", user.tenant_id, po_log_id, user.user_id);
     // Past the conditional UPDATE: only the call that really cancelled emits.
-    crate::webhook_events::emit_po_event(pool, &user.tenant_id, "purchase_order.cancelled", &po_log_id).await;
+    crate::webhook_events::emit_po_event(pool, &user.tenant_id, "purchase_order.cancelled", &po_log_id, None).await;
 
     let mut details = Map::new();
     details.insert("reference".into(), Value::String(format_po_number(po.po_number, &po_log_id)));
