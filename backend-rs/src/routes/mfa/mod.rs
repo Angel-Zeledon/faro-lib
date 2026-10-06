@@ -518,7 +518,7 @@ async fn get_policy(
         "SELECT u.id, u.email, u.full_name, u.role,
                 EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.status = 'active')
            FROM users u
-          WHERE u.tenant_id = $1 AND COALESCE(u.status, 'active') = 'active'
+          WHERE u.tenant_id = $1 AND COALESCE(u.status, 'active') NOT IN ('inactive', 'suspended')
           ORDER BY u.email
           LIMIT 1000",
     )
