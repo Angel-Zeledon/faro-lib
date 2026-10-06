@@ -1,0 +1,49 @@
+# DISABLED EXAMPLE. Rename to 44-po-approval-delegations.caddy inside the
+# gateway's /etc/caddy/routes.d/ to turn purchase-order approval delegation on.
+#
+# Purchase-order approval delegation (backend-rs/src/routes/po_delegations.rs):
+# three routes, written in Rust ONLY.
+#
+#   GET  /api/v1/inventory/po-approval/delegations
+#   POST /api/v1/inventory/po-approval/delegations
+#   POST /api/v1/inventory/po-approval/delegations/{id}/revoke
+#
+# THERE IS NO PYTHON FAILOVER for this group. Python has no implementation of
+# these paths, so, unlike every other file in this directory, the upstream list
+# names ONLY api-rs: if the Rust container is down the screen gets a 502 (not a
+# silent 404 from Python, which would look like "the feature does not exist"),
+# and moving this file to routes.d/off/ makes the three paths answer Python's
+# own 404 and the delegation card on /pedidos disappears.
+#
+# What keeps working without Rust: delegations that already exist. Python's
+# approve / reject routes read the po_approval_delegations table at decision
+# time (dates, revocation, the delegator's warehouse scope and limits), so a
+# substitute can still decide while the Rust service is down; only creating,
+# listing and revoking are unavailable.
+#
+# Everything else under /inventory/po-approval/ (settings, rules, approvers,
+# pending) and /inventory/po/{id}/approval/... stays on Python, so the match
+# names exactly these paths.
+
+@rs_po_approval_delegations_revoke {
+	method POST
+	path_regexp ^/api/v1/inventory/po-approval/delegations/[^/]+/revoke$
+}
+@rs_po_approval_delegations_collection {
+	method GET POST
+	path /api/v1/inventory/po-approval/delegations
+}
+handle @rs_po_approval_delegations_collection {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_po_approval_delegations_revoke {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

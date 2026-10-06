@@ -1,0 +1,50 @@
+# DISABLED EXAMPLE. Rename to 50-multicurrency.caddy inside the gateway's
+# /etc/caddy/routes.d/ to serve the exchange-rate routes; move it to off/ and
+# `caddy reload` to switch them off.
+#
+# Multi-currency (backend-rs/src/routes/fx_rates.rs). These routes are NEW and
+# exist ONLY in Rust: Python has no twin, so unlike every other group there is
+# NO Python upstream and NO failover. With api-rs down they answer 502 (the
+# screen then shows no rates and says so); with this file removed they are a 404.
+# Nothing else breaks either way: Python orders, budgets and the cash calendar
+# READ the exchange_rates table directly with the same rules (backend/fx/), so a
+# purchase order is still written, with a foreign-currency line left unconverted
+# (counted and reported, never valued at 1.0) when no rate can be read.
+#
+# Paths are EXACT, and each matcher names its methods. The rate id is a single
+# path segment (`{rate_id}`), so a prefix with a wildcard is the narrowest match
+# Caddy offers for it; the Rust router answers 404 for anything that is not one.
+
+@rs_fx_read {
+	method GET
+	path /api/v1/tenant/currency/rates /api/v1/tenant/currency/rates/resolve
+}
+@rs_fx_create {
+	method POST
+	path /api/v1/tenant/currency/rates /api/v1/tenant/currency/convert
+}
+@rs_fx_item {
+	method PATCH DELETE
+	path /api/v1/tenant/currency/rates/*
+}
+handle @rs_fx_read {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_fx_create {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_fx_item {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

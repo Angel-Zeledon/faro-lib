@@ -1,0 +1,28 @@
+# DISABLED EXAMPLE. Rename to 48-mfa.caddy inside the gateway's
+# /etc/caddy/routes.d/ to serve two-step sign-in management.
+#
+# Everything under /api/v1/mfa/ (backend-rs/src/routes/mfa/): status, enroll
+# begin/confirm, disable, recovery-code regeneration, the tenant policy and the
+# admin reset. These are NEW routes. THERE IS NO PYTHON TWIN, so this group has
+# NO failover upstream on purpose: if api-rs is down, a request here must fail
+# (502), not be handed to a Python that answers 404 and makes "two-step
+# sign-in is not set up" look like the truth.
+#
+# POST /api/v1/auth/mfa/verify (the login challenge) and the changed
+# POST /api/v1/auth/login are PYTHON routes and are not in this file.
+#
+# Moving this file to off/ turns the management screens off (they show the
+# error); the login challenge keeps working because it never depended on it.
+# The kill switch for the sign-in step itself is the data: with no rows in
+# user_mfa and tenants.mfa_required false, login is exactly what it was.
+
+@rs_mfa {
+	path /api/v1/mfa/*
+}
+handle @rs_mfa {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

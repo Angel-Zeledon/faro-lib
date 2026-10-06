@@ -1,0 +1,37 @@
+# DISABLED EXAMPLE. Rename to 50-custom-roles.caddy inside the gateway's
+# /etc/caddy/routes.d/ to switch the custom-roles management routes on.
+#
+# These routes exist ONLY in the Rust API: there is no Python code to fail over
+# to, so the upstream list has api-rs alone (a second upstream would answer
+# FastAPI's 404 and hide an outage). Without this file the role screens get a
+# 404 and the users list simply shows no role selector; nothing else changes.
+# Enforcement does NOT depend on this file: the permission check runs inside
+# BOTH APIs (backend/auth/permissions.py and backend-rs/src/auth/permissions.rs),
+# so a role assigned earlier keeps binding every request whichever side serves it.
+#
+# GET/POST /api/v1/roles, GET /api/v1/roles/permissions, GET /api/v1/roles/me,
+# GET/PATCH/DELETE /api/v1/roles/{id}, PUT /api/v1/users/{id}/custom-role
+# (backend-rs/src/routes/roles.rs). Every other /users route stays on Python:
+# the matcher is method + path, so PUT .../custom-role cannot catch them.
+
+@rs_roles {
+	path /api/v1/roles /api/v1/roles/*
+}
+@rs_user_custom_role {
+	method PUT
+	path_regexp user_custom_role ^/api/v1/users/[^/]+/custom-role$
+}
+handle @rs_roles {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_user_custom_role {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

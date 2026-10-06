@@ -1,0 +1,53 @@
+# DISABLED EXAMPLE. Rename to 44-approval-links.caddy inside the gateway's
+# /etc/caddy/routes.d/ to serve this group; move it to off/ and `caddy reload`
+# to stop serving it.
+#
+# backend-rs/src/routes/approval_links.rs: NEW routes, written in Rust only
+# ("approve or reject a purchase order from a message").
+#
+#   GET  /api/v1/approval-links/{token}                        public: the page's data (reads only)
+#   POST /api/v1/approval-links/{token}/decision               public: the decision, an explicit POST
+#   POST /api/v1/inventory/po/{id}/approval/links              analyst+: re-issue and queue the links
+#   POST /api/v1/inventory/po/{id}/approval/links/revoke       analyst+: kill every open link
+#
+# NO PYTHON FAILOVER, on purpose: there is no Python twin of these routes. The
+# upstream list names only api-rs; with the Rust container down the gateway
+# answers 502 instead of letting Python answer a confusing 404 (FastAPI's own
+# "Not Found" is how a stale backend looks, see the running-stockai skill).
+# Turning this group off (or never turning it on) is safe ONLY together with
+# APPROVAL_LINKS_ENABLED=false on the Python API: with the switch on, an
+# approval request puts a link in the message, and a link that nothing answers
+# is worse than no link. Turn the switch on AFTER this file is active.
+#
+# The decision runs through the same function as the in-app approve and reject
+# (po_approvals.rs::decide_core), so group 43 may be on or off independently:
+# a decision taken in Python (group 43 off) revokes the open links too.
+#
+# Requires the Python `outbox-drain` worker loop (the links reach people
+# through outbound_messages) and a database Python already migrated
+# (po_approval_links, po_approvals.decided_channel).
+#
+# The public page is /aprobar/<token> in the Next.js app; it calls the two
+# public routes above through the usual /api rewrite.
+
+@rs_approval_links_public {
+	path_regexp ^/api/v1/approval-links/[^/]+(/decision)?$
+}
+@rs_approval_links_hooks {
+	method POST
+	path_regexp ^/api/v1/inventory/po/[^/]+/approval/links(/revoke)?$
+}
+handle @rs_approval_links_public {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_approval_links_hooks {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

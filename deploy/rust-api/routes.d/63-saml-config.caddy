@@ -1,0 +1,35 @@
+# DISABLED EXAMPLE. Rename to 50-saml-config.caddy inside the gateway's
+# /etc/caddy/routes.d/ to serve the SAML configuration routes; move it to off/
+# and `caddy reload` to take them away.
+#
+# SAML 2.0 single sign-on, configuration side (backend-rs/src/routes/saml.rs):
+#   GET, PUT, DELETE /api/v1/auth/saml/config
+#   GET              /api/v1/auth/saml/sp-metadata
+#
+# NEW ROUTES, RUST ONLY: unlike every other file in this directory there is no
+# Python implementation of these paths, so this group has NO FAILOVER and no
+# kill switch back to Python. The upstream list names `api-rs` alone: with it
+# down (or this file moved to off/) the admin card answers 502/404 and nothing
+# else changes. People can still sign in through SAML in that case, because
+# the sign-in endpoints are Python and read the rows Rust already wrote.
+#
+# NOT in this file, and they must stay on Python (no matcher below touches
+# them): GET /api/v1/auth/saml/start and POST /api/v1/auth/saml/acs. They end
+# in session issuance and run the assertion validation
+# (backend/auth/saml/). The path matcher is exact so a future route under
+# /auth/saml/ does not silently move here.
+#
+# Needs: ENTERPRISE_SSO_ENABLED on both services (the routes answer 409
+# `sso_instance_disabled` otherwise) and the same DATABASE_URL.
+
+@rs_saml_config {
+	method GET PUT DELETE
+	path /api/v1/auth/saml/config /api/v1/auth/saml/sp-metadata
+}
+handle @rs_saml_config {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
