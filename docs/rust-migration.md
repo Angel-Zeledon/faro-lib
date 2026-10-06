@@ -528,3 +528,71 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. New routes written in Rust only: approval delegation
+
+Everything above moves routes that already exist in Python. Purchase-order
+**approval delegation** (a corporate feature: an approver names a substitute
+for a date range) is the first feature whose routes exist **only in Rust**:
+
+| Route | Who | What |
+|---|---|---|
+| `GET /inventory/po-approval/delegations` | any signed-in user (`?all=true`: admin) | the delegations the caller gave or received, plus, for a current approver, the colleagues they could name |
+| `POST /inventory/po-approval/delegations` | analyst or above, and a current approver | name a substitute for `starts_on`..`ends_on` (UTC days, inclusive) |
+| `POST /inventory/po-approval/delegations/{id}/revoke` | the giver or an admin | end it now (idempotent) |
+
+Code: `backend-rs/src/routes/po_delegations.rs`. Gateway file:
+`deploy/rust-api/routes.d/42-po-approval-delegations.caddy.example`.
+
+**These routes have no Python failover.** Unlike every group above, the
+gateway file lists `api-rs` as the only upstream. With the Rust service down
+the three paths answer 502; with the file in `routes.d/off/` they answer
+Python's own 404 and the delegation card on `/pedidos` stays hidden. The kill
+switch for this feature is therefore "delegation off", not "delegation on
+Python". Rolling back Rust does not remove data: the table and the Python
+decision path stay in place.
+
+**What Python still does.** `POST /inventory/po/{id}/approval/approve|reject`
+and `GET .../pending` are still served by Python, so
+`backend/inventory/po_delegation_service.py` implements, in Python, the same
+rules the Rust routes enforce at creation, applied at decision time. Both
+sides must be changed together:
+
+* The schema is Python's (`backend/inventory/po_delegation_migrations.py`):
+  table `po_approval_delegations`, and two columns on `po_approvals`
+  (`decided_on_behalf_of`, `delegation_id`) so "approved by X on behalf of Y"
+  is a fact in the row. Additive: with no delegation nothing changes, and the
+  pending response keeps its old shape.
+* Creation rules (Rust): never to yourself (422), never to a viewer or an
+  inactive user (409), only a current approver may delegate (403), dates not
+  backwards, not already over, at most 366 days, no overlap with a live
+  delegation to the same person (409).
+* Decision rules (Python): the dates are compared with the UTC date at the
+  moment of the decision (no cleanup job, an expired or not-yet-started
+  delegation does nothing); revoked ones do nothing; the delegator must still
+  be an approver; the order's destination warehouse must be inside the
+  delegator's warehouse scope (an empty, unreadable or stale scope is "none":
+  fail closed) on top of the delegate's own scope, which the route guard
+  already applies; if the delegator asked for the order, the same
+  self-approval limit applies to the substitute (approving is refused above
+  it; rejecting is not a self-approval); a delegation is never transitive.
+  A refusal that comes from a delegation answers
+  `po_approval_delegation_not_permitted` (403), otherwise
+  `po_approval_not_approver`.
+* The decision events (`purchase.approval_approved|rejected`) gain an
+  `on_behalf_of` detail; two new events (`approval_delegation.created|revoked`)
+  and the audit target `approval_delegation` exist in
+  `backend/activity/events.py`, `backend/audit/catalog.py` and their Rust
+  mirrors (`routes/r1/alerts.rs`, `audit/catalog.rs`, whose tests pin the new
+  sizes: LEGACY 75, target types 29, audit actions 110, stored actions 114).
+  The `purchase_order.approved|rejected` webhook payload is unchanged.
+
+**Tests.** `cargo test` (the pure window, delegate and body rules);
+`backend/tests/test_po_approval_delegation.py` (the Python decision path with
+rows written the way Rust writes them: delegate decides, expired, not yet
+started, revoked, delegator no longer an approver, viewer, transitive, own
+request, delegator scope and a scope that cannot be read, the delegate's own
+scope, the delegate's inbox); and `run_delegation` in
+`tests/contract/contract_test.py`, a sequence rather than a diff because there
+is nothing to diff against: Rust creates, lists and revokes, Python decides,
+and every refusal is checked against the database.

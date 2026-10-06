@@ -2739,6 +2739,186 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
     return out
 
 
+# ── Approval delegation: Rust-only routes, honoured by Python ────────────────
+#
+# The three delegation routes exist ONLY in Rust, so there is nothing to diff.
+# What the harness pins instead is the cross-service contract: rows written by
+# Rust are honoured by Python's approve / reject (still Python), a revoked or
+# expired delegation is refused there, and every refusal leaves the database
+# as it was. Needs --db (the people and the order are database rows).
+
+DELEGATIONS = f"{API}/inventory/po-approval/delegations"
+
+
+def _dg_count(db, tenant_id: str) -> int:
+    cur = db.cursor()
+    cur.execute("SELECT COUNT(*) FROM po_approval_delegations WHERE tenant_id = %s", (tenant_id,))
+    return cur.fetchone()[0]
+
+
+def run_delegation(args, fx: Fixture, db) -> list:
+    if db is None:
+        print("delegation cases skipped: they need --db")
+        return []
+    results = []
+    cur = db.cursor()
+
+    def record(name: str, problems: list) -> None:
+        results.append((R4Case(name, "-", "-", route="po-approval delegations"),
+                        "FAIL" if problems else "PASS", problems))
+
+    def expect(name: str, r: Resp, status: int, code: Optional[str] = None, extra=None) -> None:
+        problems = []
+        if r.status != status:
+            problems.append(f"status {r.status} (wanted {status}): {json.dumps(r.body)[:300]}")
+        elif code and (r.body or {}).get("error_code") != code:
+            problems.append(f"error_code {(r.body or {}).get('error_code')!r} (wanted {code!r})")
+        if extra and not problems:
+            problems += extra()
+        record(name, problems)
+
+    admin, analyst, viewer = (auth_for(fx, w) for w in ("admin", "analyst", "viewer"))
+    # A second analyst, the substitute (the fixture's own analyst is the approver).
+    tag = secrets.token_hex(4)
+    r = http(args.python, "POST", f"{API}/users", token=admin, body={
+        "email": f"contract-{tag}-sub@stockai.demo", "role": "analyst", "full_name": "Contract substitute"})
+    if r.status != 201:
+        record("setup: create the substitute", [f"{r.status} {r.body}"])
+        return results
+    sub_id = r.body["data"]["user"]["id"]
+    sub = mint_access_token(fx.secret, sub_id, fx.tenant_id, "analyst")
+
+    # The workflow: the analyst may approve, a rule needs approval above 500,
+    # three orders worth 1000 asked for by the admin.
+    cur.execute("UPDATE users SET can_approve_po = TRUE WHERE id = %s", (fx.analyst_id,))
+    cur.execute("""INSERT INTO po_approval_rules (tenant_id, threshold, created_by)
+                   VALUES (%s, 500, %s)""", (fx.tenant_id, fx.admin_id))
+    pos = []
+    for n in range(3):
+        po = _r4_seed_po(db, fx.tenant_id, fx.admin_id, f"DG-{tag}-{n}", {"sent": False, "qty": 10})
+        cur.execute("UPDATE inventory_po_items SET unit_cost = 100 WHERE po_log_id = %s", (po,))
+        pos.append(po)
+        rr = http(args.python, "POST", f"{API}/inventory/po/{po}/approval/request", token=admin, body={})
+        if rr.status != 200:
+            record("setup: request approval", [f"{rr.status} {rr.body}"])
+            return results
+
+    start, end = today_plus(0), today_plus(3)
+    good = {"delegate_id": sub_id, "starts_on": start, "ends_on": end, "note": "holiday"}
+    before = _dg_count(db, fx.tenant_id)
+
+    expect("viewer cannot delegate", http(args.rust, "POST", DELEGATIONS, token=viewer, body=good),
+           403, "role_not_permitted")
+    expect("a non-approver cannot delegate", http(args.rust, "POST", DELEGATIONS, token=admin, body=good),
+           403, "po_delegation_not_approver")
+    expect("never to yourself", http(args.rust, "POST", DELEGATIONS, token=analyst,
+           body={**good, "delegate_id": fx.analyst_id}), 422, "po_delegation_self")
+    expect("never to a viewer", http(args.rust, "POST", DELEGATIONS, token=analyst,
+           body={**good, "delegate_id": fx.viewer_id}), 409, "po_delegation_delegate_role")
+    expect("dates backwards", http(args.rust, "POST", DELEGATIONS, token=analyst,
+           body={**good, "starts_on": end, "ends_on": start}), 422, "po_delegation_dates_invalid")
+    expect("already over", http(args.rust, "POST", DELEGATIONS, token=analyst,
+           body={**good, "starts_on": today_plus(-9), "ends_on": today_plus(-2)}), 422, "po_delegation_dates_invalid")
+    expect("unknown delegate", http(args.rust, "POST", DELEGATIONS, token=analyst,
+           body={**good, "delegate_id": "no-such-user"}), 404, "user_not_found")
+    expect("missing fields are a 422", http(args.rust, "POST", DELEGATIONS, token=analyst, body={}),
+           422, "validation_error")
+    record("refused creates wrote nothing",
+           [] if _dg_count(db, fx.tenant_id) == before else ["a refused create wrote a row"])
+    if fx.write_key:
+        expect("an API key never reaches it", http(args.rust, "POST", DELEGATIONS,
+               token=fx.write_key, body=good), 403, "api_key_route_not_exposed")
+
+    r = http(args.rust, "POST", DELEGATIONS, token=analyst, body=good)
+
+    def created_ok():
+        cur.execute("""SELECT delegator_id, delegate_id, note, created_by, revoked_at
+                         FROM po_approval_delegations WHERE tenant_id = %s""", (fx.tenant_id,))
+        rows = cur.fetchall()
+        problems = []
+        if rows != [(fx.analyst_id, sub_id, "holiday", fx.analyst_id, None)]:
+            problems.append(f"stored row {rows}")
+        cur.execute("""SELECT user_id, context FROM activity_logs
+                        WHERE tenant_id = %s AND action = 'approval_delegation.created'""", (fx.tenant_id,))
+        ev = cur.fetchall()
+        if len(ev) != 1 or ev[0][0] != fx.analyst_id or ev[0][1].get("delegate") != "Contract substitute":
+            problems.append(f"activity {ev}")
+        if (r.body["data"] or {}).get("status") != "active":
+            problems.append(f"status {(r.body['data'] or {}).get('status')}")
+        return problems
+    expect("an approver delegates to a colleague", r, 201, extra=created_ok)
+    did = (r.body or {}).get("data", {}).get("id") if r.status == 201 else None
+    expect("an overlapping delegation is refused", http(args.rust, "POST", DELEGATIONS, token=analyst, body=good),
+           409, "po_delegation_overlap")
+
+    lst = http(args.rust, "GET", DELEGATIONS, token=analyst)
+    expect("the giver lists it and sees candidates", lst, 200, extra=lambda: (
+        [] if [i["id"] for i in lst.body["data"]["items"]] == [did]
+        and sub_id in [c["id"] for c in lst.body["data"]["candidates"]]
+        and fx.analyst_id not in [c["id"] for c in lst.body["data"]["candidates"]]
+        else [f"list {json.dumps(lst.body)[:400]}"]))
+    lst = http(args.rust, "GET", DELEGATIONS, token=sub)
+    expect("the substitute lists it and gets no candidates", lst, 200, extra=lambda: (
+        [] if [i["id"] for i in lst.body["data"]["items"]] == [did] and lst.body["data"]["candidates"] == []
+        else [f"list {json.dumps(lst.body)[:400]}"]))
+    lst = http(args.rust, "GET", DELEGATIONS, token=viewer)
+    expect("a viewer lists nothing", lst, 200, extra=lambda: (
+        [] if lst.body["data"]["items"] == [] else ["a viewer saw delegations"]))
+    expect("all=true is for admins", http(args.rust, "GET", DELEGATIONS + "?all=true", token=analyst),
+           403, "role_not_permitted")
+    expect("an admin lists the whole company", http(args.rust, "GET", DELEGATIONS + "?all=true", token=admin), 200)
+
+    # Python honours what Rust wrote.
+    def decided_for(po, who_id, behalf_id):
+        cur.execute("""SELECT status, decided_by, decided_on_behalf_of, delegation_id
+                         FROM po_approvals WHERE po_log_id = %s""", (po,))
+        row = cur.fetchone()
+        return [] if row and row[1] == who_id and row[2] == behalf_id and row[3] == did else [f"row {row}"]
+
+    r = http(args.python, "POST", f"{API}/inventory/po/{pos[0]}/approval/approve", token=sub, body={})
+    expect("python: the substitute approves on behalf of the approver", r, 200,
+           extra=lambda: decided_for(pos[0], sub_id, fx.analyst_id) + (
+               [] if r.body["data"].get("on_behalf_of_name") else ["no on_behalf_of_name"]))
+
+    # Revoking.
+    expect("only the giver or an admin revokes (the substitute sees 404)",
+           http(args.rust, "POST", f"{DELEGATIONS}/{did}/revoke", token=sub, body={}), 404, "po_delegation_not_found")
+    r = http(args.rust, "POST", f"{DELEGATIONS}/{did}/revoke", token=analyst, body={})
+    expect("the giver revokes it", r, 200, extra=lambda: (
+        [] if r.body["data"]["changed"] is True and r.body["data"]["status"] == "revoked" else [f"body {r.body}"]))
+    r = http(args.rust, "POST", f"{DELEGATIONS}/{did}/revoke", token=analyst, body={})
+    expect("revoking again changes nothing", r, 200, extra=lambda: (
+        [] if r.body["data"]["changed"] is False else [f"body {r.body}"]))
+    cur.execute("""SELECT COUNT(*) FROM activity_logs WHERE tenant_id = %s
+                     AND action = 'approval_delegation.revoked'""", (fx.tenant_id,))
+    record("one revocation, one event", [] if cur.fetchone()[0] == 1 else ["event count"])
+
+    def untouched(po):
+        cur.execute("SELECT status, decided_by FROM po_approvals WHERE po_log_id = %s", (po,))
+        return [] if cur.fetchone() == ("requested", None) else ["the order was decided"]
+
+    r = http(args.python, "POST", f"{API}/inventory/po/{pos[1]}/approval/approve", token=sub, body={})
+    expect("python: a revoked delegation no longer approves", r, 403, "po_approval_not_approver",
+           extra=lambda: untouched(pos[1]))
+
+    # Expiry needs no job: the same row, a few days older.
+    r = http(args.rust, "POST", DELEGATIONS, token=analyst,
+             body={**good, "starts_on": today_plus(1), "ends_on": today_plus(2)})
+    expect("a delegation can start in the future", r, 201, extra=lambda: (
+        [] if r.body["data"]["status"] == "scheduled" else [f"status {r.body['data']['status']}"]))
+    future_id = (r.body or {}).get("data", {}).get("id")
+    r2 = http(args.python, "POST", f"{API}/inventory/po/{pos[2]}/approval/approve", token=sub, body={})
+    expect("python: it does not work before it starts", r2, 403, "po_approval_not_approver",
+           extra=lambda: untouched(pos[2]))
+    cur.execute("""UPDATE po_approval_delegations
+                      SET starts_on = CURRENT_DATE - 5, ends_on = CURRENT_DATE - 1
+                    WHERE id = %s""", (future_id,))
+    r3 = http(args.python, "POST", f"{API}/inventory/po/{pos[2]}/approval/approve", token=sub, body={})
+    expect("python: an expired delegation is refused with no cleanup job", r3, 403,
+           "po_approval_not_approver", extra=lambda: untouched(pos[2]))
+    return results
+
+
 def run(args) -> int:
     env = read_env_file(args.env_file) if args.env_file else {}
     secret = os.environ.get("SECRET_KEY") or env.get("SECRET_KEY")
@@ -2807,6 +2987,7 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        results += run_delegation(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
