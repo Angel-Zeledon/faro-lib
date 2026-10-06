@@ -53,14 +53,14 @@ pub enum Event {
     PurchaseOrderUnpaid,
     PurchaseOrderCancelled,
     PurchaseOrderUncancelled,
-    ReceptionUndone,
-    OrderUnsent,
     ApprovalApproved,
     ApprovalRejected,
     ApiKeyCreated,
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    ApprovalDelegationCreated,
+    ApprovalDelegationRevoked,
 }
 
 impl Event {
@@ -73,16 +73,12 @@ impl Event {
                 "purchase.order_cancelled", "purchase", "warning", &["reference", "cancel_reason"],
             ),
             Event::PurchaseOrderUncancelled => ("purchase.order_uncancelled", "purchase", "warning", &["reference"]),
-            Event::ReceptionUndone => (
-                "purchase.reception_undone", "purchase", "warning", &["reference", "sku_count", "units", "warehouse"],
-            ),
             Event::ApprovalApproved => (
-                "purchase.approval_approved", "purchase", "info", &["reference", "value", "decision_comment"],
+                "purchase.approval_approved", "purchase", "info", &["reference", "value", "decision_comment", "on_behalf_of"],
             ),
             Event::ApprovalRejected => (
-                "purchase.approval_rejected", "purchase", "info", &["reference", "value", "decision_comment"],
+                "purchase.approval_rejected", "purchase", "info", &["reference", "value", "decision_comment", "on_behalf_of"],
             ),
-            Event::OrderUnsent => ("purchase.order_unsent", "purchase", "warning", &["reference"]),
             Event::CommittedDemandCreated => (
                 "committed_demand.created", "purchase", "info",
                 &["sku", "quantity", "delivery_date", "customer"],
@@ -93,6 +89,10 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::ApprovalDelegationCreated => (
+                "approval_delegation.created", "purchase", "info", &["delegate", "starts_on", "ends_on"],
+            ),
+            Event::ApprovalDelegationRevoked => ("approval_delegation.revoked", "purchase", "info", &["delegate"]),
         }
     }
 }

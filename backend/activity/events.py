@@ -289,13 +289,25 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("reference", "value"),
     ),
+    # `on_behalf_of` names the approver a substitute stood in for (approval
+    # delegation); absent when the approver decided for themselves.
     "purchase.approval_approved": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("reference", "value", "decision_comment"),
+        detail_keys=("reference", "value", "decision_comment", "on_behalf_of"),
     ),
     "purchase.approval_rejected": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("reference", "value", "decision_comment"),
+        detail_keys=("reference", "value", "decision_comment", "on_behalf_of"),
+    ),
+    # An approver named a substitute for a date range, or ended that early. The
+    # actor is the delegator; `delegate` is the substitute's name.
+    "approval_delegation.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("delegate", "starts_on", "ends_on"),
+    ),
+    "approval_delegation.revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("delegate",),
     ),
 
     # ── Sales received by e-mail (backend/inbound_email/) ────────────────────

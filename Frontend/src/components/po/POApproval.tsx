@@ -106,6 +106,7 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
   const errorDetail = useErrorDetail()
   const [items, setItems] = useState<POApprovalPendingItem[] | null>(null)
   const [isApprover, setIsApprover] = useState(false)
+  const [isDelegate, setIsDelegate] = useState(false)
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
@@ -113,7 +114,7 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
 
   const load = useCallback(() => {
     getPOApprovalPending({ silent: true })
-      .then(r => { setItems(r.items); setIsApprover(r.is_approver) })
+      .then(r => { setItems(r.items); setIsApprover(r.is_approver); setIsDelegate(Boolean(r.is_delegate)) })
       .catch(() => setItems([]))
   }, [])
   useEffect(() => { load() }, [load])
@@ -130,7 +131,7 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
     } finally { setBusy(null) }
   }
 
-  if (!isApprover || items === null) return null
+  if (!(isApprover || isDelegate) || items === null) return null
   if (items.length === 0 && !alwaysShow) return null
 
   return (
@@ -141,6 +142,9 @@ export function ApprovalInbox({ onChanged, alwaysShow = false, focusId }: {
         {t('po_approval.inbox_title')}
       </h2>
       <p style={{ margin: '0 0 12px', fontSize: 12.5, color: C.muted }}>{t('po_approval.inbox_hint')}</p>
+      {isDelegate && !isApprover && (
+        <p style={{ margin: '0 0 12px', fontSize: 12.5, color: C.dim }}>{t('po_delegation.inbox_covering')}</p>
+      )}
       {items.length === 0 && <p style={{ margin: 0, fontSize: 13, color: C.dim }}>{t('po_approval.inbox_empty')}</p>}
       {error && <p role="alert" style={{ margin: '0 0 10px', fontSize: 12, color: C.red }}>{error}</p>}
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>

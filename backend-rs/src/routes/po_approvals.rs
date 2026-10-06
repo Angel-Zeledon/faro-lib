@@ -449,8 +449,11 @@ struct HistoryRow {
     decided_by: Option<String>,
     decided_at: Option<DateTime<Utc>>,
     comment: Option<String>,
+    decided_on_behalf_of: Option<String>,
+    delegation_id: Option<String>,
     requested_by_name: Option<String>,
     decided_by_name: Option<String>,
+    decided_on_behalf_of_name: Option<String>,
 }
 
 impl HistoryRow {
@@ -459,7 +462,9 @@ impl HistoryRow {
             "id": self.id, "status": self.status, "amount": self.amount, "requested_by": self.requested_by,
             "requested_at": iso(self.requested_at), "request_note": self.request_note,
             "decided_by": self.decided_by, "decided_at": iso(self.decided_at), "comment": self.comment,
+            "decided_on_behalf_of": self.decided_on_behalf_of, "delegation_id": self.delegation_id,
             "requested_by_name": self.requested_by_name, "decided_by_name": self.decided_by_name,
+            "decided_on_behalf_of_name": self.decided_on_behalf_of_name,
         })
     }
 }
@@ -467,12 +472,14 @@ impl HistoryRow {
 async fn history(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Vec<HistoryRow>, ApiError> {
     let rows = sqlx::query(
         "SELECT a.id, a.status, a.amount, a.requested_by, a.requested_at, a.request_note, \
-                a.decided_by, a.decided_at, a.comment, \
+                a.decided_by, a.decided_at, a.comment, a.decided_on_behalf_of, a.delegation_id, \
                 rq.full_name AS requested_by_name, rq.email AS requested_by_email, \
-                dc.full_name AS decided_by_name, dc.email AS decided_by_email \
+                dc.full_name AS decided_by_name, dc.email AS decided_by_email, \
+                ob.full_name AS on_behalf_full_name, ob.email AS on_behalf_email \
            FROM po_approvals a \
            LEFT JOIN users rq ON rq.id = a.requested_by \
            LEFT JOIN users dc ON dc.id = a.decided_by \
+           LEFT JOIN users ob ON ob.id = a.decided_on_behalf_of \
           WHERE a.po_log_id = $1 AND a.tenant_id = $2 \
           ORDER BY a.requested_at DESC, a.id DESC",
     )
@@ -486,6 +493,8 @@ async fn history(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Vec<
         let rq_email: Option<String> = r.try_get("requested_by_email")?;
         let dc_name: Option<String> = r.try_get("decided_by_name")?;
         let dc_email: Option<String> = r.try_get("decided_by_email")?;
+        let ob_name: Option<String> = r.try_get("on_behalf_full_name")?;
+        let ob_email: Option<String> = r.try_get("on_behalf_email")?;
         out.push(HistoryRow {
             id: r.try_get("id")?,
             status: r.try_get("status")?,
@@ -496,22 +505,111 @@ async fn history(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Vec<
             decided_by: r.try_get("decided_by")?,
             decided_at: r.try_get("decided_at")?,
             comment: r.try_get("comment")?,
+            decided_on_behalf_of: r.try_get("decided_on_behalf_of")?,
+            delegation_id: r.try_get("delegation_id")?,
             requested_by_name: name_of(rq_name.as_deref(), rq_email.as_deref()),
             decided_by_name: name_of(dc_name.as_deref(), dc_email.as_deref()),
+            decided_on_behalf_of_name: name_of(ob_name.as_deref(), ob_email.as_deref()),
         });
     }
     Ok(out)
 }
 
-/// `_may_decide`.
-fn may_decide(is_approver: bool, user_id: &str, requested_by: &str, amount: f64, req: &Req) -> bool {
-    if !is_approver {
-        return false;
+/// A delegation in force for a substitute (`po_delegation_service._shape`,
+/// the part the decision path reads).
+struct Delegation {
+    id: String,
+    delegator_id: String,
+    delegator_name: Option<String>,
+}
+
+/// `po_delegation_service.active_for_delegate`: delegations in force today
+/// (UTC days, inclusive) for this person, oldest first. Nothing expires them:
+/// a revoked or expired one stops working at once.
+async fn active_for_delegate(pool: &PgPool, tenant_id: &str, delegate_id: &str) -> Result<Vec<Delegation>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT d.id, d.delegator_id, dr.full_name AS delegator_full_name, dr.email AS delegator_email \
+           FROM po_approval_delegations d \
+           LEFT JOIN users dr ON dr.id = d.delegator_id AND dr.tenant_id = d.tenant_id \
+          WHERE d.tenant_id = $1 AND d.delegate_id = $2 AND d.revoked_at IS NULL \
+            AND d.starts_on <= (NOW() AT TIME ZONE 'UTC')::date \
+            AND d.ends_on >= (NOW() AT TIME ZONE 'UTC')::date \
+          ORDER BY d.created_at, d.id",
+    )
+    .bind(tenant_id)
+    .bind(delegate_id)
+    .fetch_all(pool)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for r in &rows {
+        let full: Option<String> = r.try_get("delegator_full_name")?;
+        let email: Option<String> = r.try_get("delegator_email")?;
+        out.push(Delegation {
+            id: r.try_get("id")?,
+            delegator_id: r.try_get("delegator_id")?,
+            delegator_name: name_of(full.as_deref(), email.as_deref()),
+        });
+    }
+    Ok(out)
+}
+
+/// `po_delegation_service.authority_for`: (the delegation that lets
+/// `delegate_id` decide this request, whether any delegation was in force).
+/// The first delegation whose delegator is still an approver, whose warehouse
+/// scope covers the order and who could themselves decide this request wins.
+#[allow(clippy::too_many_arguments)]
+async fn authority_for(
+    pool: &PgPool,
+    tenant_id: &str,
+    delegate_id: &str,
+    po: &Po,
+    requested_by: &str,
+    amount: f64,
+    req: &Req,
+    decision: &str,
+) -> Result<(Option<Delegation>, bool), ApiError> {
+    let candidates = active_for_delegate(pool, tenant_id, delegate_id).await?;
+    let had = !candidates.is_empty();
+    for d in candidates {
+        if !is_approver(pool, tenant_id, &d.delegator_id).await? {
+            continue;
+        }
+        if !wscope::user_scope_covers(pool, tenant_id, &d.delegator_id, po.destination_warehouse.as_deref()).await? {
+            continue;
+        }
+        if decision == "approved" && requested_by == d.delegator_id
+            && !req.self_approve_below.is_some_and(|below| amount < below)
+        {
+            continue;
+        }
+        return Ok((Some(d), true));
+    }
+    Ok((None, had))
+}
+
+/// `_may_decide`. `approver` is whether the caller is a current approver; a
+/// substitute may decide only what a delegation reaches.
+#[allow(clippy::too_many_arguments)]
+async fn may_decide(
+    pool: &PgPool,
+    tenant_id: &str,
+    approver: bool,
+    user_id: &str,
+    requested_by: &str,
+    amount: f64,
+    req: &Req,
+    po: &Po,
+) -> Result<bool, ApiError> {
+    if !approver {
+        let (via, _) = authority_for(pool, tenant_id, user_id, po, requested_by, amount, req, "approved").await?;
+        if via.is_none() {
+            return Ok(false);
+        }
     }
     if requested_by != user_id {
-        return true;
+        return Ok(true);
     }
-    req.self_approve_below.is_some_and(|below| amount < below)
+    Ok(req.self_approve_below.is_some_and(|below| amount < below))
 }
 
 async fn is_approver(pool: &PgPool, tenant_id: &str, user_id: &str) -> Result<bool, ApiError> {
@@ -525,7 +623,10 @@ async fn describe(pool: &PgPool, tenant_id: &str, po_log_id: &str, user_id: &str
     let hist = history(pool, tenant_id, po_log_id).await?;
     let open = hist.iter().find(|h| h.status == "requested");
     let can_decide = match open {
-        Some(o) => may_decide(is_approver(pool, tenant_id, user_id).await?, user_id, &o.requested_by, o.amount, &req),
+        Some(o) => {
+            let approver = is_approver(pool, tenant_id, user_id).await?;
+            may_decide(pool, tenant_id, approver, user_id, &o.requested_by, o.amount, &req, &po).await?
+        }
         None => false,
     };
     let mut m = Map::new();
@@ -599,7 +700,7 @@ pub async fn pending(
     let pool = &state.pool;
     let tenant = &user.tenant_id;
     let approver = is_approver(pool, tenant, &user.user_id).await?;
-    if !approver {
+    if !approver && active_for_delegate(pool, tenant, &user.user_id).await?.is_empty() {
         return Ok(ok(json!({"is_approver": false, "items": []})));
     }
     let rows = sqlx::query(
@@ -640,11 +741,16 @@ pub async fn pending(
             "requested_by_name": name_of(rq_name.as_deref(), rq_email.as_deref()),
             "requested_at": iso(r.try_get("requested_at")?),
             "note": r.try_get::<Option<String>, _>("request_note")?,
-            "can_decide": may_decide(true, &user.user_id, &requested_by, amount, &req),
+            "can_decide": may_decide(pool, tenant, approver, &user.user_id, &requested_by, amount, &req, &po).await?,
         });
         if allowed.as_ref().map_or(true, |a| a.contains(&po_log_id)) {
             items.push(item);
         }
+    }
+    if !approver {
+        // A substitute sees only the orders their delegation lets them decide.
+        items.retain(|i| i["can_decide"] == json!(true));
+        return Ok(ok(json!({"is_approver": false, "is_delegate": true, "items": items})));
     }
     Ok(ok(json!({"is_approver": true, "items": items})))
 }
@@ -1032,8 +1138,24 @@ async fn decide(
         return Err(already_decided(&last.status));
     }
     let req = requirement_of(pool, tenant, &po).await?;
+    // The delegation this decision stands on, when the person is a substitute.
+    let mut via: Option<Delegation> = None;
     if !is_approver(pool, tenant, &user.user_id).await? {
-        return Err(app_err("po_approval_not_approver", "You are not allowed to approve orders", 403, json!({})));
+        let (found, had_delegation) =
+            authority_for(pool, tenant, &user.user_id, &po, &last.requested_by, last.amount, &req, decision).await?;
+        if found.is_none() && had_delegation {
+            // A delegation is in force but does not reach THIS order.
+            return Err(app_err(
+                "po_approval_delegation_not_permitted",
+                "Your delegation does not allow you to decide this order",
+                403,
+                json!({}),
+            ));
+        }
+        if found.is_none() {
+            return Err(app_err("po_approval_not_approver", "You are not allowed to approve orders", 403, json!({})));
+        }
+        via = found;
     }
     let own = last.requested_by == user.user_id;
     if own && decision == "approved" && !req.self_approve_below.is_some_and(|b| last.amount < b) {
@@ -1044,12 +1166,15 @@ async fn decide(
 
     let mut tx = pool.begin().await?;
     let won: Option<(String,)> = sqlx::query_as(
-        "UPDATE po_approvals SET status = $1, decided_by = $2, decided_at = NOW(), comment = $3 \
-          WHERE id = $4 AND tenant_id = $5 AND status = 'requested' RETURNING id",
+        "UPDATE po_approvals SET status = $1, decided_by = $2, decided_at = NOW(), comment = $3, \
+                decided_on_behalf_of = $4, delegation_id = $5 \
+          WHERE id = $6 AND tenant_id = $7 AND status = 'requested' RETURNING id",
     )
     .bind(decision)
     .bind(&user.user_id)
     .bind(&clean)
+    .bind(via.as_ref().map(|d| d.delegator_id.as_str()))
+    .bind(via.as_ref().map(|d| d.id.as_str()))
     .bind(&last.id)
     .bind(tenant)
     .fetch_optional(&mut *tx)
@@ -1085,11 +1210,14 @@ async fn decide(
     m.insert("po_number".into(), json!(po.po_number));
     m.insert("amount".into(), json!(last.amount));
     m.insert("comment".into(), json!(clean));
+    let on_behalf_of = via.as_ref().and_then(|d| d.delegator_name.clone());
+    m.insert("on_behalf_of_name".into(), json!(on_behalf_of));
 
     let mut details = Map::new();
     details.insert("reference".into(), json!(format_po_number(po.po_number, po_log_id)));
     details.insert("value".into(), json!(last.amount));
     details.insert("decision_comment".into(), json!(clean));
+    details.insert("on_behalf_of".into(), json!(on_behalf_of));
     let event = if decision == "approved" { Event::ApprovalApproved } else { Event::ApprovalRejected };
     record_event_with_reason(pool, tenant, &user.user_id, event, Some(po_log_id), details, None).await;
     Ok(ok(Value::Object(m)))

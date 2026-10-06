@@ -139,6 +139,40 @@ pub async fn scope_names(pool: &PgPool, user: &CurrentUser) -> Result<Scope, Api
     Ok(Some(names.into_iter().map(|(n,)| n).collect()))
 }
 
+/// `po_delegation_service._scope_allows`: whether the warehouse scope of a user
+/// known only by id covers an order's destination. Fails closed: no row, an
+/// unreadable value or a stale id all mean "not covered". An empty destination
+/// is the tenant's default warehouse (not `effective_name`'s `principal`).
+pub async fn user_scope_covers(
+    pool: &PgPool,
+    tenant_id: &str,
+    user_id: &str,
+    destination: Option<&str>,
+) -> Result<bool, ApiError> {
+    let row: Option<(Option<Value>,)> =
+        sqlx::query_as("SELECT warehouse_scope FROM users WHERE id = $1 AND tenant_id = $2")
+            .bind(user_id)
+            .bind(tenant_id)
+            .fetch_optional(pool)
+            .await?;
+    let Some((raw,)) = row else { return Ok(false) };
+    let Some(ids) = stored_ids(raw) else { return Ok(true) };
+    if ids.is_empty() {
+        return Ok(false);
+    }
+    let names: Vec<(String,)> = sqlx::query_as("SELECT name FROM warehouses WHERE tenant_id = $1 AND id = ANY($2)")
+        .bind(tenant_id)
+        .bind(&ids)
+        .fetch_all(pool)
+        .await?;
+    let mut target = py_strip(destination.unwrap_or("")).to_string();
+    if target.is_empty() {
+        target = tenant_default(pool, tenant_id).await?;
+    }
+    let target = fold(&target);
+    Ok(names.iter().any(|(n,)| fold(n) == target))
+}
+
 /// `require_company_wide`.
 pub async fn require_company_wide(pool: &PgPool, user: &CurrentUser) -> Result<(), ApiError> {
     if is_scoped(pool, user).await? {

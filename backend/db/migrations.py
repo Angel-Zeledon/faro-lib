@@ -2058,6 +2058,8 @@ from backend.inventory.po_confirmation_migrations import MIGRATIONS as _PO_CONFI
 _MIGRATIONS += _PO_CONFIRMATIONS
 from backend.notifications.outbox_migrations import MIGRATIONS as _OUTBOX  # noqa: E402
 _MIGRATIONS += _OUTBOX
+from backend.inventory.po_delegation_migrations import MIGRATIONS as _PO_DELEGATIONS  # noqa: E402
+_MIGRATIONS += _PO_DELEGATIONS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
