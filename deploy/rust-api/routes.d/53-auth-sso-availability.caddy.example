@@ -1,0 +1,23 @@
+# DISABLED EXAMPLE. Rename to 53-auth-sso-availability.caddy inside the
+# gateway's /etc/caddy/routes.d/ to send this route to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# Wave 2b (backend-rs/src/routes/w2b/capabilities.rs::sso_availability): ONLY
+# GET /api/v1/auth/sso/availability, a public read of one configuration switch.
+# Authentication is NOT migrated: every other /api/v1/auth/* route (login,
+# refresh, signup, password reset, social, SSO) stays on Python. Never add a
+# prefix match such as /api/v1/auth/*. 15/15 contract cases.
+
+@rs_sso_availability {
+	method GET
+	path /api/v1/auth/sso/availability
+}
+handle @rs_sso_availability {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

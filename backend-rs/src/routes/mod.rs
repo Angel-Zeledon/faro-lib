@@ -14,6 +14,7 @@ pub mod po_approvals;
 pub mod po_payments;
 pub mod reception_reversals;
 pub mod signal_thresholds;
+pub mod w2b;
 
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
@@ -73,6 +74,8 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // Wave 2b: freshness, tenant data.
+        .merge(w2b::router())
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }

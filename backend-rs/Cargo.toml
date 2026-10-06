@@ -31,6 +31,8 @@ tracing = "0.1"
 # and the streamed audit CSV export. Both are already in the dependency graph.
 getrandom = "0.2"
 futures-util = { version = "0.3", default-features = false }
+# Wave 2b: the tenant export ZIP (Python: zipfile, ZIP_DEFLATED).
+zip = { version = "2", default-features = false, features = ["deflate"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "std", "ansi"] }
 
 [profile.release]
