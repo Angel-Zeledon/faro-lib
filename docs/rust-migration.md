@@ -628,3 +628,25 @@ and answers `insufficient_data` when that date does not exist.
 8. No `commitment.at_risk` event/alert: it would need a scheduled scan in
    Python (the Rust API has no worker) that re-implements this arithmetic, which
    is exactly the second authority this feature avoids.
+
+### Results of the outlook (2026-10-06)
+
+* `cargo test`: 144 passed, 2 ignored (the 24 new tests: 20 unit tests of the
+  core, 3 of the route helpers, and `differential_against_python`). The
+  differential replays 1,500 SKU cases (3,981 commitment verdicts, 900 random
+  and 600 built on a rule's edge), 600 order-line arrivals, 400 supplier lead
+  times, 400 SKU lead times and 239 roll-ups against the Python reference:
+  exact equality, floats bit for bit.
+* Python: `test_commitment_fulfillment_reference_pure.py` 3 passed (same
+  shortfall as `allocate_risk` over 1,500 seeded cases, missing stock, fixture
+  freshness).
+* Contract (`cf_outlook_cases.py`), disposable Postgres, Python on `:8061` and
+  the Rust debug build on `:8066`, `TESTING_MODE=true`: **53 of 53 pass**
+  (list 36, summary 6, detail 11). In the same full harness run, 18 cases of
+  OTHER routes failed on one cause that is not this feature: that machine's
+  Python session reports timestamps as `-06:00` and Rust as `+00:00` (known
+  divergence 5, which assumes a UTC database session).
+* The frontend panel was type-checked (`tsc --noEmit`, clean) and the i18n
+  parity and missing-key scripts pass. **It was not opened in a browser.**
+* Not verified: the Caddy example against a real Caddy, and the routes behind
+  the gateway; rate limits and `TRIAL_EXPIRED` (as for every Rust route).
