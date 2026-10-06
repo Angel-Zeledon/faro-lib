@@ -528,3 +528,63 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. Custom roles with enforced permissions (new Rust routes, 2026-10-06)
+
+The defect: the product stored 12 per-user permissions (`user_permissions`,
+`PATCH /users/{id}/permissions`) that no code ever read. The owner already
+removed their checkboxes on 2026-10-02 for that reason. They are still stored
+and still **not enforced**, on purpose (enforcing rows nobody meant would lock
+people out); the enforced mechanism is the **custom role**.
+
+* **Schema (Python owns it, additive):** `custom_roles` (tenant, name unique
+  per tenant ignoring case, `permissions TEXT[]`) and `users.custom_role_id`.
+  No foreign keys: a role id that points at nothing reads as "no permissions".
+  Whole-tenant erasure and the data export carry the table.
+* **One catalogue, two languages:** `backend/auth/permissions.json` (17
+  permissions, the path rules and a `probes` table) and its byte-identical copy
+  `backend-rs/src/auth/permissions.json`. Python (`backend/auth/permissions.py`)
+  and Rust (`auth/permissions.rs`) run the same longest-prefix matcher over
+  route templates, with every `{param}` normalised, and the same probes.
+  `test_permission_catalogue_parity.py` fails on any difference, on a
+  permission no rule uses, and on any mutating route (Python app, and Rust
+  sources scanned) with no rule.
+* **Enforcement:** inside `get_current_user` (Python) and `auth::current_user`
+  (Rust, the matched template comes from a route layer), for people only. A
+  user with no custom role is never touched. A user with one is checked on
+  every request against a fresh database read: **there is no cache, so the
+  staleness bound is zero** (the JWT's built-in role keeps its 15 minutes).
+  Fail closed: dangling or foreign role id, a name outside the catalogue, an
+  unreadable row (`permission_check_failed`), and a mutating route no rule
+  covers (`permission_denied` with `unclassified_route`) all answer 403. An
+  unclassified GET stays readable (the sensitive reads are listed).
+* **A custom role narrows, never widens.** The route's built-in role guard
+  still runs; a viewer holding a role with every permission is still a viewer.
+  API keys are untouched (read / write scope as before).
+* **New Rust routes, no Python failover:** `GET/POST /roles`,
+  `GET /roles/permissions`, `GET /roles/me`, `GET/PATCH/DELETE /roles/{id}`,
+  `PUT /users/{id}/custom-role`. Example `deploy/rust-api/routes.d/
+  50-custom-roles.caddy.example` lists `api-rs` alone. Without it the role
+  screens 404 and the users list shows no selector; enforcement still holds.
+* **Escalation rules (all tested end to end):** only a built-in admin edits
+  roles; nobody grants, changes, removes or assigns what is outside their own
+  set (an unrestricted admin holds the whole catalogue, so a restricted editor
+  cannot touch a user who has no role, remove anybody's role, or demote the
+  unrestricted admin); nobody edits, deletes or assigns the role they hold, or
+  assigns one to themselves; the last active admin without a role cannot be
+  given one (`custom_role_last_admin`); a role in use cannot be deleted; every
+  write runs under the tenant advisory lock.
+* **Audit:** `audit.role.created|updated|deleted` and `audit.user.role_assigned`
+  with before/after (catalogue entries in both languages, listed in
+  `RUST_ONLY_ROUTES` for the "catalogued routes exist" test), plus the activity
+  events `account.custom_role_created|updated|deleted|assigned` (warning, so
+  they reach the bell).
+* **Tests:** Rust unit tests (matcher, probes, decisions, validation), 20
+  pytest cases of enforcement on the Python-served routes, 15 catalogue and
+  coverage tests, and 63 cases in `tests/contract/custom_roles_cases.py`
+  (hooked into `contract_test.py`), including identical 403s on both servers.
+
+Known gaps: the mobile users screen (`UsersMobile`) has no role selector; the
+users list has no "role" column; Python's own user delete / demote / suspend
+still do not guard against removing the last admin (pre-existing, outside this
+feature).
