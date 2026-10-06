@@ -182,6 +182,10 @@ class TestSignatures:
         # Refused for the structure (and, independently, because it is a second Assertion).
         assert code_of(idp, xml) in ("saml_signature_invalid", "saml_assertion_invalid")
 
+    def test_a_benign_object_element_inside_the_signature_is_refused(self, idp):
+        xml = signed(idp, sig_kw=dict(extra_children="<ds:Object>harmless</ds:Object>"))
+        assert code_of(idp, xml) == "saml_signature_invalid"
+
     def test_two_references_are_refused(self, idp):
         a_text, aid = idp.assertion(request_id=REQ, sp_entity=SP, acs=ACS, email="a@victim.example.com")
         sig = idp.signature_block(a_text, aid)
@@ -268,6 +272,39 @@ class TestSignatureWrapping:
         evil, _ = idp.assertion(request_id=REQ, sp_entity=SP, acs=ACS, email="boss@victim.example.com")
         tampered = xml.replace("</samlp:Response>", evil + "</samlp:Response>")
         assert code_of(idp, tampered) in ("saml_signature_invalid", "saml_assertion_invalid")
+
+    def test_the_only_assertion_hidden_inside_extensions_is_refused(self, idp):
+        # One assertion, validly covered by a signed Response, but not where the
+        # protocol puts it: it must be a direct child of the Response.
+        a_text, _ = idp.assertion(request_id=REQ, sp_entity=SP, acs=ACS, email="a@victim.example.com")
+        wrapped = f'<samlp:Extensions xmlns:samlp="{P}">{a_text}</samlp:Extensions>'
+        r_text, rid = idp.response(request_id=REQ, acs=ACS, assertion_text=wrapped)
+        r_text = idp.put_signature(r_text, idp.signature_block(r_text, rid))
+        assert code_of(idp, r_text) == "saml_assertion_invalid"
+
+    def test_an_id_shared_with_any_other_element_is_refused_even_with_one_assertion(self, idp):
+        a_text, aid = idp.assertion(request_id=REQ, sp_entity=SP, acs=ACS, email="a@victim.example.com")
+        a_text = idp.put_signature(a_text, idp.signature_block(a_text, aid))
+        r_text, _ = idp.response(request_id=REQ, acs=ACS, assertion_text=a_text)
+        r_text = r_text.replace("<samlp:Status>", f'<samlp:Status ID="{aid}">', 1)
+        assert code_of(idp, r_text) == "saml_duplicate_id"
+
+    def test_a_validly_signed_signature_in_an_unexpected_place_is_refused(self, idp):
+        advice_core = f'<saml:Advice xmlns:saml="{A}" ID="_adv1"></saml:Advice>'
+        sig = idp.signature_block(advice_core, "_adv1")
+        advice = f'<saml:Advice ID="_adv1">{sig}</saml:Advice>'
+        a_text, aid = idp.assertion(request_id=REQ, sp_entity=SP, acs=ACS, email="a@victim.example.com")
+        a_text = a_text.replace("</saml:Assertion>", advice + "</saml:Assertion>")
+        a_text = idp.put_signature(a_text, idp.signature_block(a_text, aid))
+        r_text, _ = idp.response(request_id=REQ, acs=ACS, assertion_text=a_text)
+        assert code_of(idp, r_text) == "saml_signature_invalid"
+
+    def test_every_signature_must_verify_not_just_the_first(self, idp, attacker):
+        a_text, aid = idp.assertion(request_id=REQ, sp_entity=SP, acs=ACS, email="a@victim.example.com")
+        a_text = idp.put_signature(a_text, attacker.signature_block(a_text, aid))   # forged, inner
+        r_text, rid = idp.response(request_id=REQ, acs=ACS, assertion_text=a_text)
+        r_text = idp.put_signature(r_text, idp.signature_block(r_text, rid))        # genuine, outer
+        assert code_of(idp, r_text) == "saml_signature_invalid"
 
     def test_comment_injection_cannot_truncate_the_identity(self, idp):
         # The IdP signs "ana@victim.example.com.evil.test". A parser that read only the

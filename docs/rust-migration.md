@@ -554,7 +554,7 @@ xmldsig crate cached), so each side would be a hand-written exclusive
 canonicalizer plus verifier; two of those agreeing on every hostile document is
 a claim the tests cannot make, and a disagreement would be a security hole in
 exactly one language. One implementation, attacked hard (`test_saml_xmlsig.py`,
-87 cases written against hand-canonicalized documents, not against the code
+92 cases written against hand-canonicalized documents, not against the code
 itself), is the safer shape. Moving it to Rust later means writing the
 differential harness first.
 
@@ -604,7 +604,7 @@ differential harness first.
 * `cargo test`: all green, 33 new unit tests (`saml::cert`, `saml::metadata`,
   `saml::rules`, `routes::saml`), including a test that re-reads the Python
   free-mail list so the two cannot drift.
-* `pytest`: `test_saml_xmlsig.py` (87), `test_saml_sso.py` (46), plus the
+* `pytest`: `test_saml_xmlsig.py` (92), `test_saml_sso.py` (46), plus the
   existing SSO, audit, route-audit and tenant-erasure suites.
 * `tests/contract/contract_test.py --only saml`: 78 cases against a real
   Python and a real Rust server on one database: every refusal checks the rows
