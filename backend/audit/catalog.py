@@ -101,6 +101,14 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("POST", "/webhooks/{webhook_id}/rotate-secret"): _r("webhook.secret_rotated", "webhook", "webhook_id"),
     ("POST", "/webhooks/{webhook_id}/test"):        _r("webhook.tested", "webhook", "webhook_id"),
     ("POST", "/webhooks/{webhook_id}/enable"):      _r("webhook.enabled", "webhook", "webhook_id"),
+    # continuous audit export to the customer's SIEM (backend-rs/src/routes/audit_stream.rs)
+    ("PUT", "/audit-stream"):                       _r("audit_stream.configured", "audit_stream"),
+    ("DELETE", "/audit-stream"):                    _r("audit_stream.deleted", "audit_stream"),
+    ("POST", "/audit-stream/enable"):               _r("audit_stream.enabled", "audit_stream"),
+    ("POST", "/audit-stream/disable"):              _r("audit_stream.disabled", "audit_stream"),
+    ("POST", "/audit-stream/rotate-secret"):        _r("audit_stream.secret_rotated", "audit_stream"),
+    ("POST", "/audit-stream/replay"):               _r("audit_stream.replayed", "audit_stream"),
+    ("POST", "/audit-stream/test"):                 _r("audit_stream.tested", "audit_stream"),
     ("POST", "/documents"):                         _r("document.created", "document"),
     ("DELETE", "/documents/{doc_id}"):              _r("document.deleted", "document", "doc_id"),
     # a person telling us what happened (the text itself is never audited)
@@ -199,6 +207,7 @@ LEGACY: dict[str, tuple[str, str]] = {
     "billing.plan_downgraded":         ("billing", "billing.plan_downgraded"),
     "billing.payment_failed":          ("billing", "billing.payment_failed"),
     "billing.subscription_changed":    ("billing", "billing.subscription_changed"),
+    "audit_stream.auto_disabled":      ("audit_stream", "audit_stream.auto_disabled"),
 }
 
 # The target types the trail can be filtered by.

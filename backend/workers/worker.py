@@ -611,6 +611,16 @@ def _webhook_delivery_loop() -> None:
             time.sleep(_WEBHOOK_POLL_SECONDS)
 
 
+# Continuous audit export (backend/audit_stream/service.py). Python, not Rust,
+# on purpose: delivery goes through the webhook SSRF guard and retry/signing
+# code, which exist once. The config and cursor routes are Rust and only write
+# `audit_streams`; the loop claims due destinations with a lease, so a second
+# instance is harmless.
+def _audit_stream_loop() -> None:
+    from backend.audit_stream.service import run_loop
+    run_loop()
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -625,7 +635,7 @@ def enabled_components() -> list[str]:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
             "operator-digest", "trial-reaper", "billing-sweep",
-            "webhook-deliveries",
+            "webhook-deliveries", "audit-stream",
         ]
     return components
 
@@ -638,6 +648,7 @@ _COMPONENT_TARGETS = {
     "trial-reaper":       _trial_reaper_loop,
     "billing-sweep":      _billing_sweep_loop,
     "webhook-deliveries": _webhook_delivery_loop,
+    "audit-stream":       _audit_stream_loop,
 }
 
 

@@ -444,6 +444,13 @@ EVENTS: dict[str, EventSpec] = {
     "webhook.auto_disabled": EventSpec(
         kind="account", severity=WARNING, detail_keys=("host",),
     ),
+    # The continuous audit export (backend/audit_stream/) failed on several
+    # different days, or its address was refused, and was switched off. Warning:
+    # the customer's SIEM no longer receives the trail until an admin re-enables
+    # it (the cursor is kept, so nothing is skipped).
+    "audit_stream.auto_disabled": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("host",),
+    ),
     # SCIM provisioning (backend/scim/). The actor is "scim": the company's
     # identity provider did these, not a person in the app. Losing or regaining
     # access and a changed role are warnings - the things an admin is asked
@@ -573,6 +580,9 @@ REASONS: tuple[str, ...] = (
     "sql_source_refresh_failed",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
+    # the audit stream gave up on `days` different days, or its address is refused
+    "audit_stream_failing_for_days",
+    "audit_stream_host_refused",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )
