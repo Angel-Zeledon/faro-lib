@@ -217,10 +217,6 @@ function SignupPageContent() {
               ...cardStyle,
               animation: 'auth-fade-up 0.7s cubic-bezier(0.16,1,0.3,1) 0.08s both',
             }}>
-              {/* Social sign-in: renders nothing unless the installation
-                  enabled a provider. Above the form, additive. */}
-              <SocialButtons intent="signup" />
-
               {error && (
                 <div style={{
                   display: 'flex', gap: 8, alignItems: 'center',
@@ -365,6 +361,10 @@ function SignupPageContent() {
                   {loading ? t('auth.creating_workspace') : t('auth.create_workspace')}
                 </button>
               </form>
+
+              {/* Social sign-in: below the form (owner's request); renders
+                  nothing unless the installation enabled a provider. */}
+              <SocialButtons intent="signup" />
             </div>
 
             <p className="auth-enter" style={{

@@ -117,8 +117,6 @@ function LoginPageContent() {
             </p>
           </div>
 
-          <SocialButtons intent="login" />
-
           {error && (
             <div role="alert" style={{
               display: 'flex', flexDirection: 'column', gap: 8,
@@ -219,6 +217,8 @@ function LoginPageContent() {
               )}
             </button>
           </form>
+
+          <SocialButtons intent="login" />
 
           <SsoSignIn initialEmail={email} forceOpen={ssoRequired} />
         </div>

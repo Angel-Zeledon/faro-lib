@@ -122,8 +122,15 @@ export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {
     hintTimer.current = setTimeout(() => setHint(null), 3500)
   }
 
+  // The divider sits between the form and the buttons: the buttons come
+  // below the form (owner's request, 2026-10-06), so the "or" goes above them.
   return (
-    <div className="auth-enter" style={{ marginBottom: 22, animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.06s both' }}>
+    <div className="auth-enter" style={{ marginTop: 22, animation: 'auth-fade-up 0.6s cubic-bezier(0.16,1,0.3,1) 0.06s both' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <span style={{ flex: 1, height: 1, background: 'var(--a-line)' }} />
+        <span style={{ fontSize: 12, color: 'var(--a-muted)' }}>{t('auth.social_divider')}</span>
+        <span style={{ flex: 1, height: 1, background: 'var(--a-line)' }} />
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {shown.map(p => {
           if (!providers.includes(p)) {
@@ -193,11 +200,6 @@ export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {
           ? t(`auth.social_inactive_${hint}`)
           : <TermsSentence templateKey="auth.social_terms_notice" linkStyle={{ color: 'var(--a-muted)', textDecoration: 'underline', textUnderlineOffset: 2 }} />}
       </p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 20 }}>
-        <span style={{ flex: 1, height: 1, background: 'var(--a-line)' }} />
-        <span style={{ fontSize: 12, color: 'var(--a-muted)' }}>{t('auth.social_divider')}</span>
-        <span style={{ flex: 1, height: 1, background: 'var(--a-line)' }} />
-      </div>
     </div>
   )
 }
