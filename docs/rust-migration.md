@@ -528,3 +528,92 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. New feature written in Rust: stock allocation among committed customers
+
+Owner-approved 2026-10-06. When the stock on hand plus the arrivals that can
+be counted cannot cover every open commitment of a SKU, `/api/v1/allocation/*`
+says who gets what and who is short by how much. **These routes are new: Python
+has no twin, so there is NO failover** (`deploy/rust-api/routes.d/
+50-stock-allocation.caddy.example` names `api-rs` as the only upstream; with the
+Rust container down the answer is an honest 502, not a Python 404).
+
+| Route | Role | What |
+|---|---|---|
+| `GET /allocation/priorities` | any signed-in | customer tiers, fair-share tiers, customers on open commitments with no tier yet |
+| `PUT /allocation/priorities` | analyst+ | set or clear tiers (`tier: null`), set the fair-share tiers |
+| `POST /allocation/preview` | any signed-in | one SKU's allocation; what-if tier overrides, fair-share tiers and hypothetical arrivals, nothing saved |
+| `POST /allocation/apply` | analyst+ | records reservations; needs the preview's `result_hash` |
+| `POST /allocation/release` | analyst+ | releases a SKU's active reservations |
+| `GET /allocation/reservations` | any signed-in | active reservations, flagged stale when the commitment moved |
+| `GET /allocation/overview` | any signed-in | every SKU where someone is short |
+
+**Rules (the owner should confirm the starred ones).**
+* Order of service: tier 1 first ... tier 9 last; `*` a customer with no tier is
+  served at tier 5 (`DEFAULT_TIER`). Inside a tier: earliest delivery date first
+  (ties by commitment id), or, for a tenant-chosen fair-share tier,
+  proportionally to the units each member asks for.
+* A claim is served only from supply that exists by its delivery date (stock +
+  counted arrivals dated on or before it; an overdue claim counts as due today).
+  Supply arriving later never serves it: that claim stays short and the later
+  supply goes to the claims it can reach. `*` This is deliberately strict.
+* Units are `quantity x probability`, exactly what the semaforo uses
+  (`committed_demand_service.committed_units`). `on_top_of_base` is ignored here
+  too: a customer already inside the baseline still wants the units.
+* `*` Fair-share floors to a micro-unit (1e-6): the few micro-units a floor
+  drops are never handed to someone else.
+* Inputs are the SAME as the commitment fulfillment outlook
+  (`feat/commitment-fulfillment`, `fulfillment/data.rs`): open commitments
+  company-wide, stock summed over warehouses (a SKU with no stock row has no
+  verdict, `stock_unknown`, never "all short"), open PO lines dated by an
+  accepted supplier promise else generated + lead time (learned from >= 3
+  receptions, else the supplier card; never the 15-day default), transfers in
+  transit available today. A PO line with no usable date is listed under
+  `incoming_not_counted`, not counted. `allocation/supply.rs` duplicates those
+  reads until the two branches merge; then it should call the fulfillment
+  loader (both return `(day, qty)`), and `allocation::core` does not change.
+* `*` A caller limited to some warehouses is refused (`warehouse_scope_company_totals`):
+  stock is a company-wide figure.
+* Not exposed to API keys or MCP (internal route: the decision is recorded under
+  a person's name). No plan gate: available on every tier.
+
+**It is advisory, and a test says so.** Nothing writes `inventory_stock`; the four
+tables (`allocation_customer_priorities`, `allocation_tier_policy`,
+`allocation_runs`, `stock_reservations`, additive migration in
+`backend/inventory/stock_allocation_migrations.py`) are NOT status inputs and no
+Python module reads them, so the purchase recommendation (semaforo) is untouched:
+one authority for how committed demand moves it.
+`backend/tests/test_stock_allocation_schema.py` pins this (not in
+`STATUS_INPUT_TABLES`, no status triggers, no Python reader, the Rust sources
+write only those four tables). A reservation stores the commitment's quantity,
+probability and date at apply time, so an edit or closing shows as stale at read
+time instead of silently standing for a different order. Apply is serialised per
+SKU by an advisory lock, refuses a preview whose inputs changed
+(`allocation_stale`), and a re-apply releases the old rows (history kept; a
+partial unique index allows one active reservation per commitment).
+
+**Events:** `allocation.priorities_changed`, `allocation.applied`,
+`allocation.released` (activity feed and audit trail, es/en copy), mirrored in
+`activity.rs`, `r1/alerts.rs` and `audit/catalog.rs` (size asserts updated).
+
+**Tests.**
+* Rust: 142 unit tests pass (2 ignored), including the differential test
+  `allocation::core::tests::matches_the_python_reference_exactly`: 2,600 seeded
+  cases solved by `tests/contract/allocation_reference.py` (written
+  independently with `fractions.Fraction`, re-evaluating every constraint from
+  scratch), exact integer equality. `gen_allocation_fixtures.py --check` and
+  `backend/tests/test_allocation_reference.py` fail on a stale fixture and check
+  the reference's invariants on cases outside the fixture.
+* Contract (`tests/contract/allocation_contract.py`, `--only allocation`, Rust
+  only, asserts the database): 40 cases pass, covering a permission pair on every
+  write, validation shapes, the advisory guarantee (stock row unchanged after
+  preview, apply and release), stale hash, hypothetical-supply refusal, stale
+  reservation on edit and on close, scoped caller, API key, other tenant.
+* Python: `test_stock_allocation_schema.py` (constraints, one active reservation,
+  cascade, whole-tenant erasure, advisory-only guards, events) and
+  `test_allocation_reference.py`.
+* Browser: the screen (committed-demand view of `/inventario`, below the
+  commitments) was driven through a throwaway gateway that sends
+  `/api/v1/allocation*` to Rust and everything else to Python: overview, preview,
+  apply and the re-read of the reservations, stock unchanged. Phone width has no
+  horizontal page scroll.
