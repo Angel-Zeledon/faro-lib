@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from typing import Any, Iterable, Optional
 
 PERIOD_TYPES = ("month", "quarter", "custom")
-SCOPE_TYPES = ("company", "warehouse", "supplier", "category")
+SCOPE_TYPES = ("company", "warehouse", "supplier", "category", "cost_center")
 MAX_PERIOD_DAYS = 3660
 OPEN_RECEPTION = ("pending", "partial", "not_received")
 
@@ -146,6 +146,10 @@ def scope_matcher(scope_type: str, scope_names: dict[str, Any]):
     if scope_type == "category":
         want = _fold(scope_names.get("category"))
         return lambda row: bool(want) and _fold(row.get("category")) == want
+    if scope_type == "cost_center":
+        # `cost_center_ids`: the budget's center and every center below it.
+        ids = frozenset(scope_names.get("cost_center_ids") or ())
+        return lambda row: bool(ids) and row.get("cost_center_id") in ids
     raise ValueError(f"unknown scope type {scope_type!r}")
 
 

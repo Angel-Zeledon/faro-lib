@@ -2111,7 +2111,7 @@ export interface IncomingSource {
 
 // ── Purchase budgets (a cap on purchasing spend) ─────────────────────────────
 export type BudgetPeriodType = 'month' | 'quarter' | 'custom'
-export type BudgetScopeType = 'company' | 'warehouse' | 'supplier' | 'category'
+export type BudgetScopeType = 'company' | 'warehouse' | 'supplier' | 'category' | 'cost_center'
 
 export interface PurchaseBudget {
   id: string
@@ -2329,7 +2329,7 @@ export interface POLogEntry {
 
 // ── PO approval (opt-in workflow) ────────────────────────────────────────────
 export type POApprovalStatus =
-  'not_required' | 'approval_needed' | 'pending_approval' | 'approved' | 'rejected'
+  'not_required' | 'approval_needed' | 'pending_approval' | 'approved' | 'rejected' | 'chain_unresolved'
 export interface POApprovalBadge { required: boolean; status: POApprovalStatus }
 export interface POApprovalEntry {
   id: string
@@ -2346,6 +2346,8 @@ export interface POApprovalEntry {
   /** Set when a substitute decided: the approver they stood in for. */
   decided_on_behalf_of?: string | null
   decided_on_behalf_of_name?: string | null
+  /** One per level, only on a request made under an approval chain. */
+  steps?: ChainStep[]
 }
 export type POApprovalDelegationStatus = 'active' | 'scheduled' | 'expired' | 'revoked'
 export interface POApprovalDelegation {
@@ -2364,6 +2366,8 @@ export interface POApprovalDelegation {
 /** A colleague an approver may name as a substitute. */
 export interface POApprovalDelegationCandidate { id: string; name: string; role: string }
 export interface POApproval extends POApprovalBadge {
+  /** What the chain says about this order (only when the tenant has one). */
+  chain?: ChainResolution
   po_log_id: string
   amount: number | null
   amount_known: boolean | null
@@ -2399,6 +2403,9 @@ export interface POApprovalPendingItem {
   requested_at: string
   note: string | null
   can_decide: boolean
+  /** Only for a request under an approval chain: the level now open and how many there are. */
+  level_no?: number | null
+  levels_total?: number
 }
 
 // ── Forecast adjustments and their measured value ────────────────────────────
@@ -3711,4 +3718,71 @@ export interface CustomerPortalPublicView {
     promised_date?: string
     my_response: CustomerPortalAnswer | null
   }[]
+// ── Cost centers and approval chains (served by the Rust API only) ───────────
+export interface CostCenter {
+  id: string
+  code: string
+  name: string
+  parent_id: string | null
+  active: boolean
+  depth?: number
+  path?: string
+  chain_id?: string | null
+  created_at: string
+  updated_at: string
+}
+export type ChainLevel =
+  | { kind: 'role'; role: 'admin' | 'analyst' }
+  | { kind: 'users'; user_ids: string[]; users?: { id: string; name: string | null }[] }
+export interface ChainBand { min_amount: number; levels: ChainLevel[] }
+export interface ApprovalChain {
+  id: string
+  name: string
+  cost_center_id: string | null
+  cost_center_code: string | null
+  cost_center_name: string | null
+  active: boolean
+  bands: ChainBand[]
+  created_at: string
+  updated_at: string
+}
+export interface ChainCandidate { id: string; name: string; role: string }
+export type ChainUnresolvedReason =
+  'no_cost_center' | 'no_chain' | 'cost_center_invalid' | 'chain_invalid' | 'amount_unknown'
+export interface ChainResolution {
+  state: 'not_required' | 'required' | 'unresolved'
+  reason: ChainUnresolvedReason | null
+  chain_id: string | null
+  min_amount: number | null
+  levels: ChainLevel[] | null
+  fingerprint: string | null
+  escalated: boolean
+  cost_center_id: string | null
+}
+export interface ChainStep {
+  level_no: number
+  level: ChainLevel
+  status: 'pending' | 'approved' | 'rejected'
+  decided_by: string | null
+  decided_by_name: string | null
+  decided_at: string | null
+  comment: string | null
+}
+export interface CostCenterSpendRow {
+  id: string
+  code: string
+  name: string
+  parent_id: string | null
+  active: boolean
+  own_ordered: number
+  rolled_up_ordered: number
+  unknown_cost_lines: number
+  orders: number
+  budgets: { root_id: string; amount: number; currency: string; hard_cap: boolean; period_start: string; period_end: string }[]
+}
+export interface CostCenterSpend {
+  from: string
+  to: string
+  items: CostCenterSpendRow[]
+  unattributed: { ordered: number; unknown_cost_lines: number; orders: number }
 }

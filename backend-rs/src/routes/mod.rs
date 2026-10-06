@@ -4,6 +4,7 @@ pub mod commitment_outlook;
 pub mod audit_stream;
 pub mod committed_demand;
 pub mod customer_portal;
+pub mod cost_centers;
 pub mod entitlements;
 pub mod fx_rates;
 pub mod health;
@@ -144,6 +145,14 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/org/consolidated/stock-signals", get(org_consolidated::stock_signals))
         .route("/api/v1/org/consolidated/purchase-orders", get(org_consolidated::purchase_orders))
         .route("/api/v1/org/consolidated/budgets", get(org_consolidated::budgets))
+        // NEW (Rust only, no Python route): cost centers, approval chains, attribution.
+        .route("/api/v1/cost-centers", get(cost_centers::list_centers).post(cost_centers::create_center))
+        .route("/api/v1/cost-centers/spend", get(cost_centers::spend))
+        .route("/api/v1/cost-centers/{center_id}", patch(cost_centers::update_center))
+        .route("/api/v1/approval-chains", get(cost_centers::list_chains).post(cost_centers::create_chain))
+        .route("/api/v1/approval-chains/evaluate", post(cost_centers::evaluate))
+        .route("/api/v1/approval-chains/{chain_id}", patch(cost_centers::update_chain))
+        .route("/api/v1/inventory/po/{po_log_id}/cost-center", put(cost_centers::set_po_cost_center))
         // After every route above: records (method, matched template) for the
         // custom-role permission check in auth::current_user.
         .route_layer(axum::middleware::from_fn(crate::auth::permissions::record_route))

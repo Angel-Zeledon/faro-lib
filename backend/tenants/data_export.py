@@ -109,6 +109,10 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("po_approval_rules", "po_approval_rules", "*"),
     ("po_approvals", "po_approvals", "*"),
     ("po_approval_delegations", "po_approval_delegations", "*"),
+    ("po_approval_steps", "po_approval_steps", "*"),
+    ("cost_centers", "cost_centers", "*"),
+    ("approval_chains", "approval_chains", "*"),
+    ("approval_chain_bands", "approval_chain_bands", "*"),
     ("scheduled_jobs", "scheduled_jobs", "*"),
     ("schedule_runs", "schedule_runs", "*"),
     ("session_manifests", "session_manifests", "*"),
@@ -290,8 +294,12 @@ _DELETE_ORDER: list[str] = [
     "chat_messages",
     "chats",
     "po_approval_delegations",
+    "po_approval_steps",
     "po_approvals",
     "po_approval_rules",
+    "approval_chain_bands",
+    "approval_chains",
+    "cost_centers",
     "forecast_adjustments",
     # Customer portal (2026-10-06): all three cascade from tenants (the promised
     # dates also from the commitment they belong to, so they go first here);

@@ -237,8 +237,19 @@ def _rule_matches(rule: dict, amount: float, facts: dict) -> bool:
 
 
 def requirement(tenant_id: str, po: dict, rules: Optional[list[dict]] = None,
-                facts: Optional[dict] = None) -> dict:
-    """What approval means for this order right now.
+                facts: Optional[dict] = None, chain_ctx: Optional[dict] = None) -> dict:
+    """The rule-based requirement, then the approval chain laid over it (see
+    `po_chain_service.overlay`: with no active chain it returns this untouched).
+    `chain_ctx` is a preloaded `po_chain_service.context()` for a caller walking
+    a list."""
+    from backend.inventory import po_chain_service as chains
+    base = _rule_requirement(tenant_id, po, rules, facts)
+    return chains.overlay(tenant_id, po, base, facts, chain_ctx)
+
+
+def _rule_requirement(tenant_id: str, po: dict, rules: Optional[list[dict]] = None,
+                      facts: Optional[dict] = None) -> dict:
+    """What the approval RULES mean for this order right now.
 
     `status`: not_required | approval_needed (never asked) | pending_approval |
     approved | rejected. `required` is True for every status but not_required
@@ -285,7 +296,8 @@ def assert_sendable(tenant_id: str, po_log_id: Optional[str] = None,
     The single enforcement point. Cheap when no rule exists (one indexed read),
     which is every tenant that has not opted in.
     """
-    if not has_active_rules(tenant_id):
+    from backend.inventory import po_chain_service as chains
+    if not has_active_rules(tenant_id) and not chains.chains_active(tenant_id):
         return
     if po is None:
         po = query_one("SELECT * FROM inventory_po_log WHERE id = %s AND tenant_id = %s",
@@ -294,6 +306,8 @@ def assert_sendable(tenant_id: str, po_log_id: Optional[str] = None,
             return            # the caller reports "not found" in its own words
     req = requirement(tenant_id, po)
     if req["required"]:
+        if req["status"] == chains.STATUS_UNRESOLVED:
+            raise chains.unresolved_error(req)
         raise AppError(
             "po_approval_required",
             "This order needs approval before it can be sent",
@@ -364,8 +378,10 @@ def describe(tenant_id: str, po_log_id: str, user_id: Optional[str] = None) -> d
     can_decide = False
     if open_request and user_id:
         can_decide = _may_decide(tenant_id, user_id, open_request, req, po)
-    return {"po_log_id": po_log_id, **req, "history": hist,
-            "open_request": open_request, "can_decide": can_decide}
+    from backend.inventory import po_chain_service as chains
+    return chains.decorate(tenant_id, po, user_id, {
+        "po_log_id": po_log_id, **req, "history": hist,
+        "open_request": open_request, "can_decide": can_decide})
 
 
 def _may_decide(tenant_id: str, user_id: str, request_row: dict, req: dict,
@@ -393,6 +409,12 @@ def request_approval(tenant_id: str, po_log_id: str, user_id: str,
         raise AppError("po_cancelled",
                        "This order was cancelled; reopen it before sending it",
                        status_code=409)
+    req = requirement(tenant_id, po)
+    from backend.inventory import po_chain_service as chains
+    handled = chains.on_request(tenant_id, po_log_id, po, req, user_id, note)
+    if handled is not None:
+        return handled
+    po = _get_po(tenant_id, po_log_id)      # a stale open request may have been replaced
     req = requirement(tenant_id, po)
     if req["status"] == APPROVED:
         return {**describe(tenant_id, po_log_id, user_id), "changed": False, "notified": 0}
@@ -463,6 +485,10 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
                        "This request was already decided", status_code=409,
                        params={"decision": latest["status"]})
 
+    from backend.inventory import po_chain_service as chains
+    chained = chains.route_decision(tenant_id, po, latest, user_id, decision, clean_comment)
+    if chained is not None:
+        return chained
     req = requirement(tenant_id, po)
     via = None   # the delegation this decision stands on, when the person is a substitute
     if not is_approver(tenant_id, user_id):
@@ -581,9 +607,19 @@ def annotate_orders(tenant_id: str, rows: list[dict]) -> list[dict]:
     """Add `approval` ({required, status}) to PO history rows. No rule, no work:
     the rows come back untouched and carry no `approval` key at all."""
     rules = list_rules(tenant_id)
-    if not any(r["active"] for r in rules) or not rows:
+    from backend.inventory import po_chain_service as chains
+    chain_ctx = chains.context(tenant_id)
+    if (not any(r["active"] for r in rules) and chain_ctx is None) or not rows:
         return rows
     ids = [r["id"] for r in rows]
+    # The listing queries select explicit columns, so the cost center and the
+    # escalation flag are not on the rows: read them here. A row that silently
+    # lacked them would look centerless and come out "unresolved".
+    centers = {}
+    if chain_ctx is not None:
+        centers = {c["id"]: c for c in query(
+            "SELECT id, cost_center_id, chain_escalate FROM inventory_po_log "
+            "WHERE tenant_id = %s AND id = ANY(%s)", (tenant_id, ids))}
     lines = query(
         """SELECT po_log_id, supplier, supplier_id, warehouse, final_qty, unit_cost,
                   currency, value_base
@@ -609,7 +645,8 @@ def annotate_orders(tenant_id: str, rows: list[dict]) -> list[dict]:
             "supplier_names": {(l.get("supplier") or "").strip().lower()
                                for l in po_lines if (l.get("supplier") or "").strip()},
         }
-        req = requirement(tenant_id, r, rules=rules, facts=facts)
+        po_view = {**r, **{k: centers[r["id"]][k] for k in ("cost_center_id", "chain_escalate")}}             if r["id"] in centers else r
+        req = requirement(tenant_id, po_view, rules=rules, facts=facts, chain_ctx=chain_ctx)
         out.append({**r, "approval": {"required": req["required"], "status": req["status"]}})
     return out
 

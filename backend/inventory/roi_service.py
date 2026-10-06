@@ -317,6 +317,8 @@ def log_po_generation(
     destination_warehouse: str | None = None,
     decisions_recorded: bool = True,
     idempotency_key: str | None = None,
+    cost_center_id: str | None = None,
+    chain_escalate: bool = False,
 ) -> dict:
     """
     Called every time a user exports a PO.
@@ -361,6 +363,9 @@ def log_po_generation(
                    # upgrade is still a replay.
                    **({"currency": i["currency"]} if i.get("currency") else {})}
                   for i in norm],
+        # Only when set, so the fingerprint of every order without a center is
+        # what it always was; the same cart for another center is another order.
+        **({"cost_center_id": cost_center_id} if cost_center_id else {}),
     })
 
     # No key: fall back to the content. A keyed submission keeps its own,
@@ -419,10 +424,10 @@ def log_po_generation(
                     skus_order_now, skus_order_soon,
                     suggested_count, approved_count, modified_count, rejected_count,
                     destination_warehouse, idempotency_key, idempotency_fingerprint,
-                    fx_unconverted_lines, po_number)
+                    fx_unconverted_lines, po_number, cost_center_id, chain_escalate)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        (SELECT COALESCE(MAX(po_number), 0) + 1
-                          FROM inventory_po_log WHERE tenant_id = %s))
+                          FROM inventory_po_log WHERE tenant_id = %s), %s, %s)
                RETURNING *""",
             (tenant_id, session_id,
              # 'forecast' is the column default and means "the buyer decided
@@ -434,7 +439,8 @@ def log_po_generation(
              skus_order_now, skus_order_soon,
              suggested_count, approved_count, modified_count, rejected_count,
              destination_warehouse, idempotency_key, fingerprint,
-             fx["unconverted"], tenant_id),
+             fx["unconverted"], tenant_id,
+             cost_center_id, bool(chain_escalate)),
             conn=conn,
         )
 

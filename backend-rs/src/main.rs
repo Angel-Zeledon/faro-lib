@@ -9,6 +9,7 @@
 mod activity;
 mod audit;
 mod auth;
+mod chain;
 mod config;
 mod entitlements;
 mod error;

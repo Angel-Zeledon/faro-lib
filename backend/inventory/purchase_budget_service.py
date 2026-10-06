@@ -140,7 +140,12 @@ def require_writable(scope: Optional[frozenset], terms: dict, tenant_id: Optiona
 def _names(tenant_id: str, rows: list[dict]) -> dict[tuple[str, str], str]:
     wh = {r["scope_value"] for r in rows if r["scope_type"] == "warehouse"}
     sup = {r["scope_value"] for r in rows if r["scope_type"] == "supplier"}
+    ccs = {r["scope_value"] for r in rows if r["scope_type"] == "cost_center"}
     out: dict[tuple[str, str], str] = {}
+    if ccs:
+        for r in query("SELECT id, code, name FROM cost_centers WHERE tenant_id = %s AND id = ANY(%s)",
+                       (tenant_id, list(ccs))):
+            out[("cost_center", r["id"])] = f"{r['code']} {r['name']}"
     if wh:
         for r in query("SELECT id, name FROM warehouses WHERE tenant_id = %s AND id = ANY(%s)",
                        (tenant_id, list(wh))):
@@ -160,7 +165,7 @@ def _fmt(row: dict, names: dict) -> dict:
         if out.get(k) is not None and hasattr(out[k], "isoformat"):
             out[k] = out[k].isoformat()
     out["scope_label"] = (names.get((row["scope_type"], row["scope_value"]))
-                          if row["scope_type"] in ("warehouse", "supplier")
+                          if row["scope_type"] in ("warehouse", "supplier", "cost_center")
                           else row["scope_value"])
     return out
 
@@ -218,10 +223,14 @@ def _validate_scope_target(tenant_id: str, terms: dict, conn=None) -> None:
     elif st == "supplier":
         ok_ = query_one("SELECT 1 AS x FROM suppliers WHERE id = %s AND tenant_id = %s",
                         (sv, tenant_id), conn=conn)
+    elif st == "cost_center":
+        # An inactive center cannot get a new budget: nothing may be ordered to it.
+        ok_ = query_one("SELECT 1 AS x FROM cost_centers WHERE id = %s AND tenant_id = %s "
+                        "AND active", (sv, tenant_id), conn=conn)
     else:
         ok_ = True
     if not ok_:
-        raise AppError("purchase_budget_scope_not_found", "That warehouse or supplier does not exist",
+        raise AppError("purchase_budget_scope_not_found", "That warehouse, supplier or cost center does not exist",
                        status_code=422, params={"scope_type": st})
 
 
@@ -344,7 +353,7 @@ def _po_item_rows(tenant_id: str, start: date, end: date) -> list[dict]:
     from backend.auth.warehouse_scope import _tenant_default
     default = _tenant_default(tenant_id)
     rows = query(
-        """SELECT l.destination_warehouse, l.reception_status,
+        """SELECT l.destination_warehouse, l.reception_status, l.cost_center_id,
                   i.sku, i.supplier, i.supplier_id, i.final_qty, i.unit_cost,
                   i.currency, i.fx_base_currency, i.value_base
              FROM inventory_po_log l
@@ -362,7 +371,7 @@ def _po_item_rows(tenant_id: str, start: date, end: date) -> list[dict]:
         entry = {
             "warehouse": (r["destination_warehouse"] or "").strip() or default,
             "supplier": r["supplier"], "supplier_id": r["supplier_id"],
-            "category": cats.get(r["sku"]),
+            "category": cats.get(r["sku"]), "cost_center_id": r["cost_center_id"],
             "value": None if cost is None else float(r["final_qty"] or 0) * float(cost),
             "open": (r["reception_status"] or "pending") in bm.OPEN_RECEPTION,
         }
@@ -402,6 +411,12 @@ def _scope_names(tenant_id: str, row: dict) -> dict[str, Any]:
         return {"supplier_id": sv, "supplier": r["name"] if r else None}
     if st == "category":
         return {"category": sv}
+    if st == "cost_center":
+        # The center and everything below it: a parent's budget covers its children.
+        from backend.inventory import cost_center_chain_core as cc
+        centers = [dict(r) for r in query(
+            "SELECT id, parent_id, active FROM cost_centers WHERE tenant_id = %s", (tenant_id,))]
+        return {"cost_center_ids": cc.descendants(centers, sv)}
     return {}
 
 
@@ -466,7 +481,7 @@ def status(tenant_id: str, scope: Optional[frozenset], today: date,
     else:
         running = [r for r in rows if r["period_start"] <= today <= r["period_end"]]
         # Company-wide first, then the narrower ones; newest period inside a kind.
-        rank = {"company": 0, "warehouse": 1, "supplier": 2, "category": 3}
+        rank = {"company": 0, "warehouse": 1, "supplier": 2, "category": 3, "cost_center": 4}
         running.sort(key=lambda r: (rank[r["scope_type"]], -r["period_start"].toordinal()))
         chosen = running[0] if running else None
 
@@ -576,6 +591,12 @@ def plan(user, scope: Optional[frozenset], today: date, root_id: Optional[str] =
             raise AppError("no_completed_session", "No completed session for this tenant yet",
                            status_code=400)
     row = _current(tenant_id, st["budget"]["root_id"])
+    if row["scope_type"] == "cost_center":
+        # Recommendations belong to no cost center (an order is attributed to
+        # one when it is placed), so there is nothing to allocate here. Say so
+        # rather than present an empty plan as "nothing to fund".
+        return {**st, "lines": [], "summary": None, "session_id": session_id,
+                "warnings": [*st["warnings"], {"code": "cost_center_plan_unavailable", "params": {}}]}
     items, _period = candidate_rows(user, session_id, row)
     by_key: dict[str, dict] = {}
     lines = []
@@ -601,7 +622,7 @@ def plan(user, scope: Optional[frozenset], today: date, root_id: Optional[str] =
 # ── The order hook ───────────────────────────────────────────────────────────
 
 def check_order(user, scope: Optional[frozenset], lines: list[dict], destination: Optional[str],
-                today: date) -> list[dict]:
+                today: date, cost_center_id: Optional[str] = None) -> list[dict]:
     """Which active budgets running today would the order push past what is
     left? `lines`: {sku, qty, unit_cost, supplier, supplier_id, warehouse,
     category}. Returns one entry per exceeded budget (empty = fits or none apply).
@@ -631,6 +652,7 @@ def check_order(user, scope: Optional[frozenset], lines: list[dict], destination
             "warehouse": (ln.get("warehouse") or destination or "").strip() or default,
             "supplier": ln.get("supplier"), "supplier_id": ln.get("supplier_id"),
             "category": ln.get("category") or cats.get(ln.get("sku")),
+            "cost_center_id": cost_center_id,
             "value": None if cost is None else qty * float(cost), "open": True,
         }
         if pl.get("currency"):

@@ -27,9 +27,10 @@ export interface CartCheckLine {
   supplier?: string | null; supplier_id?: string | null
 }
 
-export default function BudgetCartCheck({ lines, destination, reason, onReason, onExceeded }: {
+export default function BudgetCartCheck({ lines, destination, costCenterId, reason, onReason, onExceeded }: {
   lines: CartCheckLine[]
   destination?: string
+  costCenterId?: string
   reason: string
   onReason: (v: string) => void
   /** Lets the page know whether the cart is over a budget (for its own copy). */
@@ -41,14 +42,14 @@ export default function BudgetCartCheck({ lines, destination, reason, onReason, 
   const [exceeded, setExceeded] = useState<BudgetExceeded[]>([])
 
   const signature = useMemo(
-    () => JSON.stringify([destination ?? '', lines.map(l => [l.sku, l.qty, l.unit_cost, l.currency ?? '', l.supplier_id ?? l.supplier ?? ''])]),
-    [lines, destination])
+    () => JSON.stringify([destination ?? '', costCenterId ?? '', lines.map(l => [l.sku, l.qty, l.unit_cost, l.currency ?? '', l.supplier_id ?? l.supplier ?? ''])]),
+    [lines, destination, costCenterId])
 
   useEffect(() => {
     if (lines.length === 0) { setExceeded([]); onExceeded?.([]); return }
     let alive = true
     const timer = setTimeout(() => {
-      checkBudgetOrder(lines, destination, { silent: true })
+      checkBudgetOrder(lines, destination, { silent: true }, costCenterId)
         .then(r => { if (alive) { setExceeded(r.exceeded); onExceeded?.(r.exceeded) } })
         // A failed preview must not look like "fits": the server check at
         // submit time still decides, so say nothing rather than guess.

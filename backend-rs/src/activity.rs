@@ -91,6 +91,11 @@ pub enum Event {
     OrgLinkRevoked,
     OrgGrantAdded,
     OrgGrantRemoved,
+    CostCenterCreated,
+    CostCenterUpdated,
+    ApprovalChainCreated,
+    ApprovalChainUpdated,
+    PurchaseOrderCostCenterSet,
 }
 
 impl Event {
@@ -160,6 +165,11 @@ impl Event {
             Event::OrgLinkRevoked => ("org.link_revoked", "account", "warning", &["label"]),
             Event::OrgGrantAdded => ("org.grant_added", "account", "info", &["label", "member"]),
             Event::OrgGrantRemoved => ("org.grant_removed", "account", "info", &["label", "member"]),
+            Event::CostCenterCreated => ("cost_center.created", "purchase", "info", &["code", "cost_center_name"]),
+            Event::CostCenterUpdated => ("cost_center.updated", "purchase", "info", &["code", "cost_center_name", "active"]),
+            Event::ApprovalChainCreated => ("approval_chain.created", "purchase", "info", &["chain_name", "levels"]),
+            Event::ApprovalChainUpdated => ("approval_chain.updated", "purchase", "info", &["chain_name", "levels", "active"]),
+            Event::PurchaseOrderCostCenterSet => ("purchase.order_cost_center_set", "purchase", "info", &["reference", "cost_center"]),
         }
     }
 }

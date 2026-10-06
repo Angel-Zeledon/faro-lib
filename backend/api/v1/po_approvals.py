@@ -118,6 +118,10 @@ def set_approver(user_id: str, body: ApproverBody,
 @router.get("/po-approval/pending")
 def pending(user: CurrentUser = Depends(get_current_user)):
     inbox = svc.list_pending(user.tenant_id, user.user_id)
+    # Chained requests are decided level by level: this person's inbox holds the
+    # ones whose OPEN level they fit (a no-op for a tenant with no chain).
+    from backend.inventory import po_chain_service as chains
+    inbox = chains.merge_inbox(user.tenant_id, user.user_id, inbox)
     # An order belongs to its destination warehouse (see wscope.po_guard): a
     # scoped approver's inbox holds only the orders they may open.
     return ok({**inbox, "items": wscope.filter_po_rows(user, inbox["items"], key="po_log_id")})
@@ -174,6 +178,16 @@ def _reference(tenant_id: str, po_log_id: str) -> str:
 
 def _decide(user: CurrentUser, po_log_id: str, decision: str, comment: Optional[str]) -> dict:
     result = svc.decide(user.tenant_id, po_log_id, user.user_id, decision, comment)
+    if result["changed"] and result.get("level_progress"):
+        # One level of a chain approved; the order is NOT approved yet.
+        record_event(
+            user.tenant_id, user.user_id, "purchase.approval_level_approved",
+            resource=po_log_id,
+            details={"reference": format_po_number(result.get("po_number"), po_log_id),
+                     "value": result.get("amount"), "level": result.get("level"),
+                     "decision_comment": result.get("comment")},
+        )
+        return result
     if result["changed"]:
         record_event(
             user.tenant_id, user.user_id,

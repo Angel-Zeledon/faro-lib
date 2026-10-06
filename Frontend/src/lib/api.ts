@@ -1871,6 +1871,31 @@ export const createPOApprovalDelegation = (body: {
 export const revokePOApprovalDelegation = (id: string) =>
   request<import('./types').POApprovalDelegation & { changed: boolean }>(
     'POST', `/inventory/po-approval/delegations/${id}/revoke`, {})
+// Cost centers and approval chains. Served by the Rust API only (no Python
+// route, no failover): with it down these answer 404 and the screen says so.
+export const listCostCenters = (opts?: RequestOpts) =>
+  request<{ items: import('./types').CostCenter[] }>('GET', '/cost-centers', undefined, opts)
+export const createCostCenter = (body: { code: string; name: string; parent_id?: string | null }) =>
+  request<import('./types').CostCenter>('POST', '/cost-centers', body)
+export const updateCostCenter = (id: string, body: {
+  code?: string; name?: string; parent_id?: string | null; active?: boolean
+}) => request<import('./types').CostCenter & { changed: boolean }>('PATCH', `/cost-centers/${id}`, body)
+export const getCostCenterSpend = (opts?: RequestOpts) =>
+  request<import('./types').CostCenterSpend>('GET', '/cost-centers/spend', undefined, opts)
+export const listApprovalChains = (opts?: RequestOpts) =>
+  request<{ items: import('./types').ApprovalChain[]; candidates: import('./types').ChainCandidate[];
+            max_levels: number; max_bands: number }>('GET', '/approval-chains', undefined, opts)
+export type ApprovalChainBody = {
+  name?: string; cost_center_id?: string | null; active?: boolean
+  bands?: { min_amount: number; levels: import('./types').ChainLevel[] }[]
+}
+export const createApprovalChain = (body: ApprovalChainBody) =>
+  request<import('./types').ApprovalChain>('POST', '/approval-chains', body)
+export const updateApprovalChain = (id: string, body: ApprovalChainBody) =>
+  request<import('./types').ApprovalChain & { changed: boolean }>('PATCH', `/approval-chains/${id}`, body)
+export const setPOCostCenter = (poLogId: string, costCenterId: string | null) =>
+  request<{ po_log_id: string; cost_center_id: string | null; changed: boolean }>(
+    'PUT', `/inventory/po/${poLogId}/cost-center`, { cost_center_id: costCenterId })
 export const getPOApprovalPending = (opts?: RequestOpts) =>
   request<{ is_approver: boolean; is_delegate?: boolean; items: import('./types').POApprovalPendingItem[] }>(
     'GET', '/inventory/po-approval/pending', undefined, opts)
@@ -1985,10 +2010,11 @@ export const checkBudgetOrder = (
   lines: { sku: string; qty: number; unit_cost: number | null; currency?: string | null; supplier?: string | null; supplier_id?: string | null }[],
   destinationWarehouse?: string,
   opts?: RequestOpts,
+  costCenterId?: string,
 ) =>
   request<{ exceeded: import('./types').BudgetExceeded[] }>(
     'POST', '/inventory/budget/check',
-    { lines, destination_warehouse: destinationWarehouse ?? null }, opts)
+    { lines, destination_warehouse: destinationWarehouse ?? null, cost_center_id: costCenterId ?? null }, opts)
 
 // ── Blanket supply contracts (their releases become committed demand) ───────
 export const getSupplyContracts = () =>
@@ -2184,13 +2210,18 @@ export const logPOGeneration = (
   destinationWarehouse?: string,
   opts?: RequestOpts,
   budgetOverrideReason?: string,
+  costCenterId?: string,
 ) => {
   // destination_warehouse omitted = tenant default warehouse (mono-warehouse
   // tenants never send it, so their behavior is byte-identical to before 5.4).
-  const body: { items?: POLineDecision[]; destination_warehouse?: string; budget_override_reason?: string } = {}
+  const body: {
+    items?: POLineDecision[]; destination_warehouse?: string; budget_override_reason?: string
+    cost_center_id?: string
+  } = {}
   if (items && items.length) body.items = items
   if (destinationWarehouse) body.destination_warehouse = destinationWarehouse
   if (budgetOverrideReason && budgetOverrideReason.trim()) body.budget_override_reason = budgetOverrideReason.trim()
+  if (costCenterId) body.cost_center_id = costCenterId
   return request<POLogEntry>(
     'POST',
     `/inventory/log-po?session_id=${sessionId}`,

@@ -2091,6 +2091,8 @@ _MIGRATIONS += _FX
 # Organization hierarchy (holding + subsidiary tenants): after tenants and users.
 from backend.organizations.migrations import MIGRATIONS as _ORGANIZATIONS  # noqa: E402
 _MIGRATIONS += _ORGANIZATIONS
+from backend.inventory.cost_center_migrations import MIGRATIONS as _COST_CENTERS  # noqa: E402
+_MIGRATIONS += _COST_CENTERS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
