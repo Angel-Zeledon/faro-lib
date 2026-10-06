@@ -3898,6 +3898,10 @@ def run(args) -> int:
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
         results += run_outbox(args, fx, db)
+        # Approve or reject from a message: its own file, Rust-only routes.
+        from approval_links_contract import run_approval_links  # noqa: PLC0415
+        results += run_approval_links(args, fx, db, {"http": http, "Case": Case, "API": API, "auth_for": auth_for,
+                                                     "signup": _r4_signup, "mint": mint_access_token})
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

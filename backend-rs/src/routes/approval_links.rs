@@ -113,16 +113,18 @@ fn too_many() -> ApiError {
 
 /// The URL is the secret: never cached, never sent on as a referrer, never indexed.
 fn no_store(e: ApiError) -> ApiError {
-    e.with_header("Cache-Control", "no-store")
-        .with_header("Referrer-Policy", "no-referrer")
-        .with_header("X-Robots-Tag", "noindex, nofollow")
+    // Lower case: `HeaderName::from_static` panics on anything else, and a panic
+    // here would drop the connection on exactly the error paths.
+    e.with_header("cache-control", "no-store")
+        .with_header("referrer-policy", "no-referrer")
+        .with_header("x-robots-tag", "noindex, nofollow")
 }
 
 type Guarded = ([(&'static str, &'static str); 3], Json<Value>);
 
 fn guarded(body: Json<Value>) -> Guarded {
     (
-        [("Cache-Control", "no-store"), ("Referrer-Policy", "no-referrer"), ("X-Robots-Tag", "noindex, nofollow")],
+        [("cache-control", "no-store"), ("referrer-policy", "no-referrer"), ("x-robots-tag", "noindex, nofollow")],
         body,
     )
 }

@@ -99,6 +99,29 @@ fn the_client_address_is_the_first_forwarded_one() {
 }
 
 #[test]
+fn every_answer_carries_the_no_store_headers_and_building_them_cannot_panic() {
+    // an error path: the headers ride on the ApiError (a bad name would panic here)
+    let e = no_store(not_found());
+    let get = |name: &str| {
+        e.headers.iter().find(|(k, _)| k.as_str() == name).map(|(_, v)| v.to_str().unwrap().to_string())
+    };
+    assert_eq!(get("cache-control").as_deref(), Some("no-store"));
+    assert_eq!(get("referrer-policy").as_deref(), Some("no-referrer"));
+    assert_eq!(get("x-robots-tag").as_deref(), Some("noindex, nofollow"));
+    // the success path: the same three, through axum's own response conversion
+    use axum::response::IntoResponse;
+    let resp = guarded(ok(json!({"x": 1}))).into_response();
+    assert_eq!(resp.status().as_u16(), 200);
+    assert_eq!(resp.headers()["cache-control"], "no-store");
+    assert_eq!(resp.headers()["referrer-policy"], "no-referrer");
+    assert_eq!(resp.headers()["x-robots-tag"], "noindex, nofollow");
+    // and an error response keeps them and the neutral status
+    let resp = no_store(too_many()).into_response();
+    assert_eq!(resp.status().as_u16(), 429);
+    assert_eq!(resp.headers()["cache-control"], "no-store");
+}
+
+#[test]
 fn every_bad_link_is_the_same_answer() {
     let e = not_found();
     assert_eq!(e.status.as_u16(), 404);
