@@ -230,6 +230,20 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("customer", "lines", "revision", "status"),
     ),
+    # Recurring delivery schedules (backend-rs, routes/recurring_deliveries.rs):
+    # who created, edited, paused or cancelled a standing delivery instruction.
+    "recurring_delivery.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku", "quantity", "frequency", "revision", "status"),
+    ),
+    "recurring_delivery.revised": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku", "quantity", "frequency", "revision", "status"),
+    ),
+    "recurring_delivery.status_changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku", "quantity", "frequency", "revision", "status"),
+    ),
     # Purchase budgets (inventory/purchase_budget_service.py): who set or changed
     # a cap, and every order that went past what a cap had left (with the reason
     # a person gave, when an administrator overrode a hard cap).

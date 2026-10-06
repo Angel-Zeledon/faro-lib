@@ -44,6 +44,9 @@ pub async fn log_action(
     Ok(())
 }
 
+/// Detail keys of the three `recurring_delivery.*` events (events.py).
+const RECURRING_KEYS: &[&str] = &["customer", "sku", "quantity", "frequency", "revision", "status"];
+
 #[derive(Debug, Clone, Copy)]
 pub enum Event {
     CommittedDemandCreated,
@@ -52,6 +55,9 @@ pub enum Event {
     AllocationPrioritiesChanged,
     AllocationApplied,
     AllocationReleased,
+    RecurringDeliveryCreated,
+    RecurringDeliveryRevised,
+    RecurringDeliveryStatusChanged,
     PurchaseOrderPaid,
     PurchaseOrderUnpaid,
     PurchaseOrderCancelled,
@@ -126,6 +132,12 @@ impl Event {
             Event::AllocationPrioritiesChanged => ("allocation.priorities_changed", "purchase", "info", &["customers"]),
             Event::AllocationApplied => ("allocation.applied", "purchase", "info", &["sku", "reserved", "short"]),
             Event::AllocationReleased => ("allocation.released", "purchase", "info", &["sku", "reservations"]),
+            Event::RecurringDeliveryCreated => (
+                "recurring_delivery.created", "purchase", "info", RECURRING_KEYS),
+            Event::RecurringDeliveryRevised => (
+                "recurring_delivery.revised", "purchase", "info", RECURRING_KEYS),
+            Event::RecurringDeliveryStatusChanged => (
+                "recurring_delivery.status_changed", "purchase", "info", RECURRING_KEYS),
             Event::ApiKeyCreated => ("account.api_key_created", "account", "warning", &["key_name", "role"]),
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),

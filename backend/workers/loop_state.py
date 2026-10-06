@@ -40,8 +40,11 @@ log = logging.getLogger(__name__)
 INVENTORY_ALERTS = "inventory_alerts"
 MONTHLY_OVERSTOCK = "monthly_overstock"
 OPERATOR_DIGEST = "operator_digest"
+# Written by the Rust service (backend-rs/src/recurring/materialiser.rs), which
+# owns recurring delivery schedules; Python only reports it.
+RECURRING_DELIVERIES = "recurring_deliveries"
 
-LOOPS = (INVENTORY_ALERTS, MONTHLY_OVERSTOCK, OPERATOR_DIGEST)
+LOOPS = (INVENTORY_ALERTS, MONTHLY_OVERSTOCK, OPERATOR_DIGEST, RECURRING_DELIVERIES)
 
 # How late a missed boundary may still be run.
 #

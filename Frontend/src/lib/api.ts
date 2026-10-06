@@ -2049,6 +2049,23 @@ export const setSupplyContractStatus = (rootId: string, status: 'active' | 'clos
   request<import('./types').SupplyContract>('POST', `/supply-contracts/${encodeURIComponent(rootId)}/status`,
     { status, expected_revision: expectedRevision })
 
+// ── Recurring delivery schedules (Rust service: no Python route behind them) ─
+export const getRecurringDeliveries = () =>
+  request<{ statuses: import('./types').RecurringDeliveryStatus[]; items: import('./types').RecurringDelivery[] }>(
+    'GET', '/recurring-deliveries')
+export const getRecurringDelivery = (id: string) =>
+  request<import('./types').RecurringDelivery>('GET', `/recurring-deliveries/${encodeURIComponent(id)}`)
+export const previewRecurringDelivery = (terms: import('./types').RecurringDeliveryTerms) =>
+  request<import('./types').RecurringDeliveryPreview>('POST', '/recurring-deliveries/preview', terms)
+export const createRecurringDelivery = (terms: import('./types').RecurringDeliveryTerms) =>
+  request<import('./types').RecurringDelivery>('POST', '/recurring-deliveries', terms)
+export const reviseRecurringDelivery = (id: string, terms: import('./types').RecurringDeliveryTerms, expectedRevision: number) =>
+  request<import('./types').RecurringDelivery>('PATCH', `/recurring-deliveries/${encodeURIComponent(id)}`,
+    { ...terms, expected_revision: expectedRevision })
+export const setRecurringDeliveryStatus = (id: string, status: import('./types').RecurringDeliveryStatus, expectedRevision: number) =>
+  request<import('./types').RecurringDelivery>('POST', `/recurring-deliveries/${encodeURIComponent(id)}/status`,
+    { status, expected_revision: expectedRevision })
+
 // ── Demand plan versions (a frozen plan and its sign-off; changes no purchase) ─
 export const listDemandPlans = () =>
   request<import('./types').DemandPlanList>('GET', '/demand-plans')

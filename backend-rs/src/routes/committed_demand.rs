@@ -704,6 +704,18 @@ pub async fn set_status(
         .bind(current.get("contract_root_id").and_then(Value::as_str))
         .fetch_optional(&state.pool)
         .await?;
+        // A row made by a recurring delivery schedule: its "contract" is the
+        // schedule (same rule as the Python service).
+        let live = match live {
+            Some(l) => Some(l),
+            None => sqlx::query_as::<_, (String,)>(
+                "SELECT status FROM recurring_delivery_schedules WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(&user.tenant_id)
+            .bind(current.get("contract_root_id").and_then(Value::as_str))
+            .fetch_optional(&state.pool)
+            .await?,
+        };
         if live.map_or(true, |(s,)| s != "active") {
             return Err(ApiError::app("committed_demand_contract_inactive",
                 "Its contract is no longer active, so it cannot be reopened", 409, json!({})));

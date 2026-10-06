@@ -21,6 +21,7 @@ pub mod po_approvals;
 pub mod po_delegations;
 pub mod po_payments;
 pub mod saml;
+pub mod recurring_deliveries;
 pub mod signal_thresholds;
 pub mod w2b;
 pub mod w3;
@@ -162,6 +163,13 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/allocation/release", post(stock_allocation::release))
         .route("/api/v1/allocation/reservations", get(stock_allocation::reservations))
         .route("/api/v1/allocation/overview", get(stock_allocation::overview))
+        // Recurring delivery schedules (Rust-only: no Python route, no failover).
+        .route("/api/v1/recurring-deliveries",
+            get(recurring_deliveries::list).post(recurring_deliveries::create))
+        .route("/api/v1/recurring-deliveries/preview", post(recurring_deliveries::preview))
+        .route("/api/v1/recurring-deliveries/{schedule_id}",
+            get(recurring_deliveries::get).patch(recurring_deliveries::update))
+        .route("/api/v1/recurring-deliveries/{schedule_id}/status", post(recurring_deliveries::set_status))
         // After every route above: records (method, matched template) for the
         // custom-role permission check in auth::current_user.
         .route_layer(axum::middleware::from_fn(crate::auth::permissions::record_route))

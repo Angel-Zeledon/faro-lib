@@ -66,6 +66,7 @@ import AllocationPanel from '@/components/inventory/AllocationPanel'
 import AnalogyPanel from '@/components/inventory/AnalogyPanel'
 import SupplyContractsPanel from '@/components/inventory/SupplyContractsPanel'
 import CustomerPortalPanel from '@/components/inventory/CustomerPortalPanel'
+import RecurringDeliveriesPanel from '@/components/inventory/RecurringDeliveriesPanel'
 import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -4199,6 +4200,8 @@ export default function InventoryPage() {
   <SupplyContractsPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
   {/* Customer portal: a private read-only link where a customer sees only their own commitments. */}
   <CustomerPortalPanel reloadToken={commitmentsVersion} />
+  {/* Standing deliveries: "N units every week / month", materialised ahead as commitments. */}
+  <RecurringDeliveriesPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
   {/* Forecast by analogy: a new product with no history plans from products it sells like. */}
   <AnalogyPanel onChanged={() => { if (sessionId) load(sessionId) }} />
  </div>
