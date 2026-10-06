@@ -59,6 +59,8 @@ ALLOWED: dict[str, str] = {
     "inventory_import.py:po_import_preview":
         "A dry run over the caller's own uploaded file; writes nothing and reads no "
         "stored stock. The import itself (po_import) is guarded.",
+    "webhooks.py:list_event_types":
+        "A static catalogue of event names and payload keys; no tenant data.",
     "inventory.py:supplier_scorecard":
         "Supplier-level statistics (lead time, on-time and fill rate). Not keyed by "
         "warehouse and shows no stock or warehouse names.",

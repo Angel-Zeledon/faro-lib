@@ -98,6 +98,9 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # integrations a person wires up
     ("POST", "/webhooks"):                          _r("webhook.created", "webhook"),
     ("DELETE", "/webhooks/{webhook_id}"):           _r("webhook.deleted", "webhook", "webhook_id"),
+    ("POST", "/webhooks/{webhook_id}/rotate-secret"): _r("webhook.secret_rotated", "webhook", "webhook_id"),
+    ("POST", "/webhooks/{webhook_id}/test"):        _r("webhook.tested", "webhook", "webhook_id"),
+    ("POST", "/webhooks/{webhook_id}/enable"):      _r("webhook.enabled", "webhook", "webhook_id"),
     ("POST", "/documents"):                         _r("document.created", "document"),
     ("DELETE", "/documents/{doc_id}"):              _r("document.deleted", "document", "doc_id"),
     # a person telling us what happened (the text itself is never audited)

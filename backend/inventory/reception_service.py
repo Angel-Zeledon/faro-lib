@@ -104,12 +104,17 @@ def mark_po_sent(tenant_id: str, po_log_id: str) -> None:
     """
     from backend.inventory import po_approval_service as approval_svc
     approval_svc.assert_sendable(tenant_id, po_log_id)
-    execute(
+    stamped = query_one(
         """UPDATE inventory_po_log
               SET sent_at = NOW()
-            WHERE id = %s AND tenant_id = %s AND sent_at IS NULL""",
+            WHERE id = %s AND tenant_id = %s AND sent_at IS NULL
+        RETURNING id""",
         (po_log_id, tenant_id),
     )
+    if stamped is not None:
+        # First send only (a resend finds sent_at already set and emits nothing).
+        from backend.webhooks.service import emit_po_event
+        emit_po_event(tenant_id, "purchase_order.sent", po_log_id)
 
 
 def receive_po(

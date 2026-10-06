@@ -1103,13 +1103,28 @@ export const getApiKeyUsage = (month?: string) =>
 
 // ── Webhooks ──────────────────────────────────────────────────────────────────
 export const createWebhook = (url: string, events: string[]) =>
-  request<import('./types').Webhook>('POST', '/webhooks', { url, events })
+  request<import('./types').CreatedWebhook>('POST', '/webhooks', { url, events })
 
 export const listWebhooks = (opts?: RequestOpts) =>
   request<import('./types').Webhook[]>('GET', '/webhooks', undefined, opts)
 
 export const deleteWebhook = (id: string) =>
   request<{ deleted: string }>('DELETE', `/webhooks/${id}`)
+
+export const listWebhookEvents = () =>
+  request<{ api_version: string; events: import('./types').WebhookEventInfo[] }>('GET', '/webhooks/events')
+
+export const rotateWebhookSecret = (id: string) =>
+  request<{ id: string; secret: string }>('POST', `/webhooks/${id}/rotate-secret`)
+
+export const sendWebhookTest = (id: string) =>
+  request<{ delivery_id: string }>('POST', `/webhooks/${id}/test`)
+
+export const enableWebhook = (id: string) =>
+  request<{ id: string; enabled: boolean }>('POST', `/webhooks/${id}/enable`)
+
+export const listWebhookDeliveries = (id: string, opts?: RequestOpts) =>
+  request<import('./types').WebhookDelivery[]>('GET', `/webhooks/${id}/deliveries`, undefined, opts)
 
 // ── Schedules ─────────────────────────────────────────────────────────────────
 // "No schedule configured" is a legitimate state, not an error: ask silently

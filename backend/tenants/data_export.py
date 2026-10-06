@@ -102,7 +102,16 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("api_keys", "api_keys", "id, tenant_id, name, last_used, created_at"),
     # Calls per key per day: what a call-based bill is computed from.
     ("api_usage_daily", "api_usage_daily", "*"),
-    ("webhooks", "webhooks", "id, tenant_id, url, events, created_at"),
+    ("webhooks", "webhooks",
+     "id, tenant_id, url, events, created_at, created_by, warehouse_scope, "
+     "disabled_at, disabled_reason, failure_days, last_failure_on, secret_rotated_at"),
+    # The delivery log without the payload (the receiver has it). The
+    # once-per-transition state table is internal bookkeeping, erased but not
+    # exported.
+    ("webhook_deliveries", "webhook_deliveries",
+     "id, tenant_id, webhook_id, event_id, event_type, is_test, status, attempts, "
+     "last_status_code, last_error, next_attempt_at, created_at, last_attempt_at, "
+     "delivered_at"),
     ("user_permissions", "user_permissions", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
     # Microsoft / Apple is the person's data, so it travels with the export.
@@ -261,6 +270,8 @@ _DELETE_ORDER: list[str] = [
     "session_accuracy_tracking",
     "inbound_email_messages",
     "inbound_email_addresses",
+    "webhook_deliveries",
+    "webhook_transition_state",
     "webhooks",
     "api_usage_daily",
     "api_keys",

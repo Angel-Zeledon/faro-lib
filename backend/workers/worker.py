@@ -359,6 +359,14 @@ def _inventory_alert_loop() -> None:
         except Exception as e:
             log.error("Supplier lead-time alert error: %s", e, exc_info=True)
         try:
+            # `commitment.at_risk` webhooks: once per commitment that newly
+            # became at risk. After the contract materialisation above, so a
+            # release that entered the horizon today is already a commitment.
+            from backend.webhooks.service import run_daily_commitment_transitions
+            run_daily_commitment_transitions()
+        except Exception as e:
+            log.error("Commitment webhook pass error: %s", e, exc_info=True)
+        try:
             # Last of the three on purpose: a tenant with real stockouts gets
             # the actionable digest first, and this only adds why their numbers
             # may not be trustworthy. It is also the only one of the three that
@@ -582,6 +590,27 @@ def _billing_sweep_loop() -> None:
         time.sleep(_BILLING_SWEEP_SECONDS)
 
 
+# Outbound webhook deliveries (backend/webhooks/service.py). The queue is the
+# `webhook_deliveries` table; retries are scheduled there with their own
+# next_attempt_at, so this only has to look often. SKIP LOCKED makes a second
+# instance harmless.
+_WEBHOOK_POLL_SECONDS = 5
+
+
+def _webhook_delivery_loop() -> None:
+    log.info("Webhook delivery loop started")
+    while True:
+        handled = 0
+        try:
+            from backend.webhooks.service import process_due
+            handled = process_due()
+        except Exception as e:
+            log.error("Webhook delivery error: %s", e, exc_info=True)
+        # A full batch means more is waiting: go again without the pause.
+        if handled < 20:
+            time.sleep(_WEBHOOK_POLL_SECONDS)
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -596,6 +625,7 @@ def enabled_components() -> list[str]:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
             "operator-digest", "trial-reaper", "billing-sweep",
+            "webhook-deliveries",
         ]
     return components
 
@@ -607,6 +637,7 @@ _COMPONENT_TARGETS = {
     "operator-digest":    _operator_digest_loop,
     "trial-reaper":       _trial_reaper_loop,
     "billing-sweep":      _billing_sweep_loop,
+    "webhook-deliveries": _webhook_delivery_loop,
 }
 
 
