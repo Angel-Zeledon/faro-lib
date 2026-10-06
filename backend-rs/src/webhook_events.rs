@@ -148,7 +148,7 @@ pub async fn emit_po_event(pool: &PgPool, tenant_id: &str, event_type: &str, po_
     }
 }
 
-type PoRow = (String, Option<String>, Option<String>, Option<i64>, Option<f64>, Option<f64>, Option<f64>,
+type PoRow = (String, Option<i64>, Option<String>, Option<i64>, Option<f64>, Option<f64>, Option<f64>,
     Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<String>);
 
 async fn emit_po_inner(pool: &PgPool, tenant_id: &str, event_type: &str, po_log_id: &str)
@@ -159,7 +159,7 @@ async fn emit_po_inner(pool: &PgPool, tenant_id: &str, event_type: &str, po_log_
         return Ok(0);
     }
     let po: Option<PoRow> = sqlx::query_as(
-        "SELECT id, po_number, destination_warehouse, sku_count::bigint, total_units::float8,
+        "SELECT id, po_number::bigint, destination_warehouse, sku_count::bigint, total_units::float8,
                 total_value::float8, approved_amount::float8, sent_at, cancelled_at, cancelled_by
            FROM inventory_po_log WHERE id = $1 AND tenant_id = $2",
     )

@@ -822,6 +822,7 @@ def r1_seed_trainings(fx, db, side):
                  (f"job_ct{i}{tag}", fx.tenant_id, f"ses_ct{sess}{tag}", fx.admin_id, status, mins,
                   started, mins))
     sc["trainings"] = True
+    sc["training_job_ids"] = [f"job_ct{i}{tag}" for i in range(len(jobs))]
 
 
 def r1_check_one_training(fx, rp, rr, db):
@@ -830,12 +831,12 @@ def r1_check_one_training(fx, rp, rr, db):
     `daily_cap.count_trainings_today`'s conditions."""
     other = _r1_exec(db, """SELECT COUNT(*) FROM jobs j
                               JOIN sessions s ON s.id = j.session_id AND s.tenant_id = j.tenant_id
-                             WHERE j.tenant_id = %s AND j.id NOT LIKE 'job_ct%%'
+                             WHERE j.tenant_id = %s AND NOT (j.id = ANY(%s::text[]))
                                AND j.created_at >= NOW() - INTERVAL '2 hours'
                                AND NOT s.is_backtest AND NOT s.is_reforecast
                                AND (s.family_id IS NULL OR s.family_id = s.id)
                                AND NOT (j.started_at IS NULL AND j.status IN ('FAILED', 'CANCELLED'))""",
-                     (fx.tenant_id,)).fetchone()[0]
+                     (fx.tenant_id, _r1_scratch(fx).get("training_job_ids", []))).fetchone()[0]
     want = 1 + other
     got = [r.body["data"]["usage"].get("trainings_today") if r.status == 200 else None for r in (rp, rr)]
     return [] if got == [want, want] else [f"trainings_today python={got[0]} rust={got[1]} (expected {want})"]
