@@ -4095,6 +4095,8 @@ export interface CustomerPortalPublicView {
     promised_date?: string
     my_response: CustomerPortalAnswer | null
   }[]
+}
+
 // ── Cost centers and approval chains (served by the Rust API only) ───────────
 export interface CostCenter {
   id: string
@@ -4162,6 +4164,8 @@ export interface CostCenterSpend {
   to: string
   items: CostCenterSpendRow[]
   unattributed: { ordered: number; unknown_cost_lines: number; orders: number }
+}
+
 // ── Recurring delivery schedules (Rust service; their rows are committed demand) ──
 export type RecurringDeliveryFrequency = 'weekly' | 'fortnightly' | 'semimonthly' | 'monthly'
 export type RecurringDeliveryStatus = 'active' | 'paused' | 'cancelled'
