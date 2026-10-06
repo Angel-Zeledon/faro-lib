@@ -375,9 +375,14 @@ class TestWarehouseScope:
         assert seen["data"]["scope"] == "warehouses"
         before = len(_rows(world.tid))
         for hidden in (company, sur):
-            assert client.patch(f"{BUDGETS}/{hidden['root_id']}",
-                                json={"expected_revision": 1, "amount": 1}, headers=world.norte).status_code == 404
+            gone = client.patch(f"{BUDGETS}/{hidden['root_id']}",
+                                json={"expected_revision": 1, "amount": 1}, headers=world.norte)
+            assert gone.status_code == 404 and gone.json()["error_code"] == "purchase_budget_not_found"
             assert client.get(f"{BUDGETS}/{hidden['root_id']}/history", headers=world.norte).status_code == 404
+        assert len(_rows(world.tid)) == before
+        moved = client.patch(f"{BUDGETS}/{norte['root_id']}",
+                             json={"expected_revision": 1, "scope_value": world.wh["Sur"]}, headers=world.norte)
+        assert moved.status_code == 403 and moved.json()["error_code"] == "warehouse_out_of_scope"
         assert len(_rows(world.tid)) == before
         ok = client.patch(f"{BUDGETS}/{norte['root_id']}", json={"expected_revision": 1, "amount": 250},
                           headers=world.norte)
@@ -385,11 +390,13 @@ class TestWarehouseScope:
 
     def test_scoped_user_cannot_create_company_or_foreign_warehouse_budgets(self, client, world):
         before = len(_rows(world.tid))
-        for body in (_body(), _body(scope_type="warehouse", scope_value=world.wh["Sur"]),
-                     _body(scope_type="supplier", scope_value="x")):
+        cases = [(_body(), "warehouse_scope_company_setting"),
+                 (_body(scope_type="supplier", scope_value="x"), "warehouse_scope_company_setting"),
+                 (_body(scope_type="warehouse", scope_value=world.wh["Sur"]), "warehouse_out_of_scope")]
+        for body, code in cases:
             r = client.post(BUDGETS, json=body, headers=world.norte)
             assert r.status_code == 403, r.text
-            assert r.json()["error_code"] == "purchase_budget_scope_denied"
+            assert r.json()["error_code"] == code
         assert len(_rows(world.tid)) == before
         mine = client.post(BUDGETS, json=_body(scope_type="warehouse", scope_value=world.wh["Norte"]),
                            headers=world.norte)
