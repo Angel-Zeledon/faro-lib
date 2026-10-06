@@ -2,3 +2,4 @@
 //! fulfillment outlook"). `core` is the arithmetic; `data` reads the rows.
 
 pub mod core;
+pub mod data;
