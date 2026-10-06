@@ -14,6 +14,7 @@ mod entitlements;
 mod error;
 mod inventory;
 mod fulfillment;
+mod ip_allowlist;
 mod limits;
 mod middleware;
 mod outbox;
@@ -125,7 +126,8 @@ async fn main() {
         let _ = tokio::signal::ctrl_c().await;
         tracing::info!("shutting down");
     };
-    if let Err(e) = axum::serve(listener, app).with_graceful_shutdown(shutdown).await {
+    if let Err(e) = axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+        .with_graceful_shutdown(shutdown).await {
         tracing::error!(error = %e, "server error");
     }
 }

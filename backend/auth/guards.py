@@ -87,6 +87,16 @@ def _authenticate_api_key(credential: str, scope: dict | None = None) -> Current
             detail="API key is invalid or expired",
         )
 
+    # The tenant's IP allowlist, right after the key is known to be real and
+    # before anything is counted: a refused call is not metered or rate-counted.
+    if scope is not None:
+        from backend.ip_allowlist import service as ip_allowlist
+        from starlette.requests import HTTPConnection
+        ip_allowlist.enforce(
+            HTTPConnection(scope), key["tenant_id"],
+            api_key_auth.actor_id(key["id"]),
+        )
+
     # Plan entitlement, checked on EVERY call and not only when the key was
     # minted: a tenant that is (or falls back to) a tier without the API keeps
     # its old keys in the table, and they must stop working — and say why,
@@ -246,6 +256,11 @@ def get_current_user(
             )
 
     _reject_if_predates_password_change(payload)
+
+    # The tenant's IP allowlist, after the token proved who this is and before
+    # the actor is published: a refused request has no actor to record.
+    from backend.ip_allowlist import service as ip_allowlist
+    ip_allowlist.enforce(request, payload["tenant_id"], payload["sub"])
 
     from backend.auth.actor_context import set_person_actor
     set_person_actor(request.scope, payload["tenant_id"], payload["sub"])

@@ -52,6 +52,9 @@ pub struct ActorsInner {
     pub machine: Option<(String, String)>,
     /// (tenant_id, user_id) once a JWT passed every check.
     pub person: Option<(String, String)>,
+    /// The socket peer, set by the middleware: the proxy's address behind a
+    /// proxy, the caller's otherwise. Input to the IP allowlist.
+    pub peer: Option<std::net::IpAddr>,
 }
 
 impl RequestActors {
@@ -60,6 +63,14 @@ impl RequestActors {
     }
     pub fn person(&self) -> Option<(String, String)> {
         self.0.lock().ok().and_then(|g| g.person.clone())
+    }
+    pub fn peer(&self) -> Option<std::net::IpAddr> {
+        self.0.lock().ok().and_then(|g| g.peer)
+    }
+    pub fn set_peer(&self, peer: Option<std::net::IpAddr>) {
+        if let Ok(mut g) = self.0.lock() {
+            g.peer = peer;
+        }
     }
     fn set_machine(&self, tenant: &str, actor: &str) {
         if let Ok(mut g) = self.0.lock() {
@@ -140,7 +151,7 @@ pub async fn current_user(
 ) -> Result<CurrentUser, ApiError> {
     let credential = bearer_credential(headers)?;
     if api_key::looks_like_api_key(&credential) {
-        return authenticate_api_key(state, &credential, route, actors).await;
+        return authenticate_api_key(state, headers, &credential, route, actors).await;
     }
 
     let payload = jwt::decode_token(&credential, state.settings.secret_key.as_bytes(), now_f64())
@@ -176,6 +187,9 @@ pub async fn current_user(
     let user_id = field("sub")?;
     let tenant_id = field("tenant_id")?;
     let role = field("role")?;
+    // The tenant's IP allowlist, after the token proved who this is and before
+    // the actor is published: a refused request has no actor to record.
+    crate::ip_allowlist::enforce(state, actors, headers, &tenant_id, &user_id).await?;
     actors.set_person(&tenant_id, &user_id);
     Ok(CurrentUser {
         user_id,
@@ -211,6 +225,7 @@ async fn reject_if_predates_password_change(
 /// `_authenticate_api_key`, check for check.
 async fn authenticate_api_key(
     state: &AppState,
+    headers: &HeaderMap,
     credential: &str,
     route: RouteAuth,
     actors: &RequestActors,
@@ -219,6 +234,10 @@ async fn authenticate_api_key(
     let key = api_key::resolve(pool, credential)
         .await?
         .ok_or_else(|| ApiError::http(401, "API key is invalid or expired"))?;
+
+    // The tenant's IP allowlist, right after the key is known to be real and
+    // before anything is counted: a refused call is not metered or rate-counted.
+    crate::ip_allowlist::enforce(state, actors, headers, &key.tenant_id, &api_key::actor_id(&key.id)).await?;
 
     if route.is_mcp {
         entitlements::ensure_feature(

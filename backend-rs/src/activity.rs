@@ -68,6 +68,8 @@ pub enum Event {
     CustomerPortalPromiseSet,
     CustomerPortalReceived,
     CustomerPortalDateObjected,
+    IpAllowlistChanged,
+    IpAccessRefused,
 }
 
 impl Event {
@@ -111,6 +113,8 @@ impl Event {
             Event::CustomerPortalDateObjected => (
                 "customer_portal.date_objected", "purchase", "warning", &["customer", "sku", "delivery_date"],
             ),
+            Event::IpAllowlistChanged => ("account.ip_allowlist_changed", "account", "warning", &["cidr", "label"]),
+            Event::IpAccessRefused => ("account.ip_access_refused", "account", "warning", &["ip"]),
         }
     }
 }

@@ -201,6 +201,20 @@ CORE = Service(
             default="development", example="development",
         ),
         ConfigField(
+            key="trusted_proxy_hops", env="TRUSTED_PROXY_HOPS", kind="int",
+            editable=False,
+            doc="How many reverse proxies in front of the API append to "
+                "X-Forwarded-For (public proxy, web server, internal gateway). "
+                "The client address the per-tenant IP allowlist judges is the "
+                "entry that many hops from the right of the header chain; "
+                "anything a client writes further left is ignored. 0 (default) "
+                "uses the socket peer and ignores the header, which behind a "
+                "proxy makes every caller look like the proxy: set it before a "
+                "tenant enables an allowlist, and keep the API port reachable "
+                "only through the proxies.",
+            default="0", example="0",
+        ),
+        ConfigField(
             key="app_name", env="APP_NAME", editable=False,
             doc="Product name in email subjects and the API's OpenAPI title.",
             default="ForecastPlatform", example="StockAI",

@@ -1111,6 +1111,36 @@ export const updateScimToken = (manage_admins: boolean) =>
 export const revokeScimToken = () =>
   request<{ revoked: boolean }>('DELETE', '/auth/sso/scim/token')
 
+// ── IP allowlist (admin; served by the Rust API, no Python twin) ────────────
+export interface IpAllowlistEntry {
+  id: string
+  cidr: string
+  label: string
+  created_by: string | null
+  created_at: string | null
+}
+
+export interface IpAllowlistState {
+  enabled: boolean
+  entries: IpAllowlistEntry[]
+  /** The address the server sees for this request, null when unreadable. */
+  your_ip: string | null
+  /** Whether the entries cover `your_ip`: what the lockout guard decides. */
+  your_ip_covered: boolean
+  max_entries: number
+}
+
+export const getIpAllowlist = () => request<IpAllowlistState>('GET', '/ip-allowlist')
+
+export const addIpAllowlistEntry = (cidr: string, label: string) =>
+  request<IpAllowlistState>('POST', '/ip-allowlist/entries', { cidr, label })
+
+export const deleteIpAllowlistEntry = (id: string) =>
+  request<{ deleted: string }>('DELETE', `/ip-allowlist/entries/${encodeURIComponent(id)}`)
+
+export const setIpAllowlistEnabled = (enabled: boolean) =>
+  request<IpAllowlistState>('PUT', '/ip-allowlist/policy', { enabled })
+
 // ── Accuracy Tracking ─────────────────────────────────────────────────────────
 export const getAccuracyReport = (sessionId: string, threshold?: number) =>
   request<import('./types').AccuracyReport>(

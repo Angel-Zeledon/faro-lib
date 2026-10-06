@@ -29,7 +29,7 @@ export type ServiceKey =
 export type FieldKey =
   | 'secret_key' | 'database_url' | 'frontend_url' | 'allowed_origins'
   | 'instance_admin_emails' | 'environment' | 'app_name' | 'app_version'
-  | 'access_token_expire_minutes' | 'algorithm' | 'storage_path' | 'testing_mode'
+  | 'trusted_proxy_hops' | 'access_token_expire_minutes' | 'algorithm' | 'storage_path' | 'testing_mode'
   | 'deepseek_api_key' | 'deepseek_model' | 'deepseek_base_url'
   | 'resend_api_key' | 'email_from' | 'smtp_server' | 'smtp_port'
   | 'smtp_user' | 'smtp_pass'
@@ -273,6 +273,7 @@ const es: ServiceConfigCopy = {
     environment: 'development | staging | production. En producción el servidor se NIEGA a arrancar con TESTING_MODE=true.',
     app_name: 'Nombre del producto en los asuntos de correo y en el título de la documentación de la API.',
     app_version: 'Versión que reportan /health y el documento OpenAPI.',
+    trusted_proxy_hops: 'Cuántos proxies delante de la API agregan su dirección a X-Forwarded-For (proxy público, servidor web, pasarela interna). La lista de IP permitidas juzga la dirección que está a esa cantidad de saltos desde la derecha; lo que el cliente escriba más a la izquierda se ignora. Con 0 (por defecto) se usa la conexión directa y se ignora la cabecera: detrás de un proxy todos parecen el proxy, así que configúralo antes de que una cuenta active la lista.',
     access_token_expire_minutes: 'Duración del token de acceso. El frontend lo renueva en silencio, así que esto es una ventana de seguridad, no de experiencia.',
     algorithm: 'Algoritmo de firma del JWT. Déjalo en HS256 salvo que también cambies el material de la llave.',
     storage_path: 'Carpeta con los archivos subidos, los artefactos de modelo y los documentos. Postgres guarda los metadatos; acá están los bytes. NO entra en el respaldo de la base — respáldala aparte.',
@@ -542,6 +543,7 @@ const en: ServiceConfigCopy = {
     environment: 'development | staging | production. In production the server REFUSES to boot with TESTING_MODE=true.',
     app_name: 'Product name in email subjects and in the API documentation title.',
     app_version: 'Version reported by /health and the OpenAPI document.',
+    trusted_proxy_hops: 'How many reverse proxies in front of the API append to X-Forwarded-For (public proxy, web server, internal gateway). The IP allowlist judges the address that many hops from the right; anything a client writes further left is ignored. With 0 (default) the direct connection is used and the header is ignored: behind a proxy everyone looks like the proxy, so set it before an account turns the list on.',
     access_token_expire_minutes: 'Access-token lifetime. The frontend refreshes silently, so this is a security window, not a UX one.',
     algorithm: 'JWT signing algorithm. Leave it at HS256 unless you are also changing the key material.',
     storage_path: 'Directory holding uploaded files, model artifacts and documents. Postgres holds the metadata; these are the bytes. It is NOT in the database backup — back it up separately.',

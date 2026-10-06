@@ -11,7 +11,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 _security = HTTPBearer(auto_error=False)
@@ -292,7 +292,7 @@ async def resend_verification(body: ResendVerificationRequest):
 
 
 @router.post("/login")
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, request: Request):
     _check_rate(f"login:{body.email.lower()}", max_attempts=5, window_secs=300)
     entry = _lookup_email(body.email)
     if not entry:
@@ -333,6 +333,11 @@ async def login(body: LoginRequest):
     # here stranded anyone whose verification mail landed in spam — with no
     # self-service way out and nothing of the product seen.
     email_verified = bool(user.get("email_verified"))
+
+    # The tenant's IP allowlist, after the password matched (so a refusal tells
+    # nobody guessing addresses which tenants filter by network).
+    from backend.ip_allowlist import service as ip_allowlist
+    ip_allowlist.enforce(request, entry["tenant_id"], user["id"])
 
     user_status = user.get("status", "active")
     if user_status != "active":
@@ -376,7 +381,7 @@ async def login(body: LoginRequest):
 
 
 @router.post("/refresh")
-async def refresh(body: RefreshRequest):
+async def refresh(body: RefreshRequest, request: Request):
     token_hash = hash_token(body.refresh_token)
     user = user_svc.validate_refresh_token(token_hash)
     if not user:
@@ -391,6 +396,10 @@ async def refresh(body: RefreshRequest):
             "This trial account has ended. Start a new one from the home page.",
             status_code=401,
         )
+
+    # A session opened inside the office must not keep renewing outside it.
+    from backend.ip_allowlist import service as ip_allowlist
+    ip_allowlist.enforce(request, user["tenant_id"], user["id"])
 
     # Re-read from the row, not from the old token: a user who verifies mid
     # session gets the full-access claim on their next refresh (≤15 min) with
