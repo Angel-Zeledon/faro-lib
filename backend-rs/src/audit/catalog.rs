@@ -164,6 +164,9 @@ pub const LEGACY: &[(&str, &str, &str)] = &[
     ("customer_portal.promise_set", "customer_portal_link", "customer_portal_link.promise_set"),
     ("customer_portal.received", "customer_portal_link", "customer_portal_link.acknowledged"),
     ("customer_portal.date_objected", "customer_portal_link", "customer_portal_link.date_objected"),
+    ("allocation.priorities_changed", "stock_allocation", "stock_allocation.priorities_changed"),
+    ("allocation.applied", "stock_allocation", "stock_allocation.applied"),
+    ("allocation.released", "stock_allocation", "stock_allocation.released"),
     ("supply_contract.created", "supply_contract", "supply_contract.created"),
     ("supply_contract.revised", "supply_contract", "supply_contract.revised"),
     ("supply_contract.status_changed", "supply_contract", "supply_contract.status_changed"),
@@ -275,10 +278,10 @@ mod tests {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
         assert_eq!(ROUTES.len(), 69);
-        assert_eq!(LEGACY.len(), 104);
-        assert_eq!(target_types().len(), 39);
-        assert_eq!(audit_actions().len(), 151);
-        assert_eq!(all_stored_actions().len(), 155);
+        assert_eq!(LEGACY.len(), 107);
+        assert_eq!(target_types().len(), 40);
+        assert_eq!(audit_actions().len(), 154);
+        assert_eq!(all_stored_actions().len(), 158);
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),

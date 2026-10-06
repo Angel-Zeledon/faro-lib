@@ -1991,6 +1991,22 @@ export const reopenPortalLink = (id: string) =>
 export const setPortalPromisedDate = (id: string, commitment_id: string, promised_date: string | null) =>
   request<{ commitment_id: string; promised_date: string | null }>(
     'PUT', `/customer-portal/links/${encodeURIComponent(id)}/promised-dates`, { commitment_id, promised_date })
+// ── Stock allocation among committed customers (advisory, never moves stock) ─
+export const getAllocationPriorities = () =>
+  request<import('./types').AllocationPriorities>('GET', '/allocation/priorities')
+export const saveAllocationPriorities = (body: { priorities?: { customer: string; tier: number | null }[]; fair_share_tiers?: number[] }) =>
+  request<{ priorities: import('./types').AllocationPriority[]; fair_share_tiers: number[]; changed: number }>('PUT', '/allocation/priorities', body)
+export const getAllocationOverview = () =>
+  request<import('./types').AllocationOverview>('GET', '/allocation/overview')
+export const previewAllocation = (body: import('./types').AllocationWhatIf) =>
+  request<import('./types').AllocationPreview>('POST', '/allocation/preview', body)
+export const applyAllocation = (body: import('./types').AllocationWhatIf & { result_hash: string }) =>
+  request<{ run_id: string; sku: string; reservations: number; reserved: number; short: number; customers_short: number }>('POST', '/allocation/apply', body)
+export const releaseAllocation = (sku: string) =>
+  request<{ sku: string; released: number }>('POST', '/allocation/release', { sku })
+export const getAllocationReservations = (sku?: string) =>
+  request<{ items: import('./types').AllocationReservation[]; stale: number }>(
+    'GET', `/allocation/reservations${sku ? `?sku=${encodeURIComponent(sku)}` : ''}`)
 // ── Purchase budgets (a cap on purchasing spend) ────────────────────────────
 export const listBudgets = (includeInactive = false) =>
   request<{ items: import('./types').PurchaseBudget[]; scope: 'company' | 'warehouses'; currency: string }>(

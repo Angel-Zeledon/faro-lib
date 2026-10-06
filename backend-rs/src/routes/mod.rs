@@ -28,6 +28,7 @@ pub mod roles;
 pub mod session_policy;
 pub mod org;
 pub mod org_consolidated;
+pub mod stock_allocation;
 
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
@@ -153,6 +154,14 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/approval-chains/evaluate", post(cost_centers::evaluate))
         .route("/api/v1/approval-chains/{chain_id}", patch(cost_centers::update_chain))
         .route("/api/v1/inventory/po/{po_log_id}/cost-center", put(cost_centers::set_po_cost_center))
+        // Stock allocation among committed customers: new routes, Rust only.
+        .route("/api/v1/allocation/priorities",
+            get(stock_allocation::get_priorities).put(stock_allocation::put_priorities))
+        .route("/api/v1/allocation/preview", post(stock_allocation::preview))
+        .route("/api/v1/allocation/apply", post(stock_allocation::apply))
+        .route("/api/v1/allocation/release", post(stock_allocation::release))
+        .route("/api/v1/allocation/reservations", get(stock_allocation::reservations))
+        .route("/api/v1/allocation/overview", get(stock_allocation::overview))
         // After every route above: records (method, matched template) for the
         // custom-role permission check in auth::current_user.
         .route_layer(axum::middleware::from_fn(crate::auth::permissions::record_route))

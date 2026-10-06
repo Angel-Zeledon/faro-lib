@@ -49,6 +49,7 @@ from typing import Any, Callable, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cf_outlook_cases  # noqa: E402  (fulfillment outlook cases, Rust-only routes)
 import cf_money_cases  # noqa: E402  (money at risk on the outlook)
+from allocation_contract import run_allocation  # noqa: E402
 
 API = "/api/v1"
 # Generous: a dev backend talking to its database through an SSH tunnel takes
@@ -6893,11 +6894,11 @@ def run(args) -> int:
         results += run_saml(args, fx, db)
         results += run_audit_stream(args, fx, db)
         results += run_org(args, fx, db)
-        results += run_r3(args, fx, db)
-        results += run_r4(args, fx, db)
-        results += run_cd_resync(args, fx, db)
         results += run_cost_centers(args, fx, db)
         results += cf_money_cases.run_money(args, fx, db, sys.modules[__name__])
+        results += run_allocation(args, fx, db, dict(http=http, API=API, auth_for=auth_for, today_plus=today_plus, Case=Case,
+                                                     mint_access_token=mint_access_token, make_fixture=make_fixture,
+                                                     erase_fixture=erase_fixture))
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

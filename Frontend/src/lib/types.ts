@@ -1420,6 +1420,107 @@ export interface CommittedDemandCustomer {
   first_safe_order_date: string | null
 }
 
+// ── Stock allocation among committed customers (advisory) ──────────────────
+
+export interface AllocationPriority { customer: string; customer_key: string; tier: number }
+export interface AllocationUnassignedCustomer { customer: string; customer_key: string; open_commitments: number; units: number }
+export interface AllocationPriorities {
+  default_tier: number
+  tiers: number[]
+  priorities: AllocationPriority[]
+  fair_share_tiers: number[]
+  unassigned_customers: AllocationUnassignedCustomer[]
+  commitments_without_customer: number
+}
+export interface AllocationArrival {
+  kind: 'po' | 'transfer' | 'what_if'
+  reference: string | null
+  quantity: number
+  date: string | null
+  source: string
+}
+export interface AllocationLine {
+  commitment_id: string
+  customer: string | null
+  tier: number
+  tier_source: 'customer' | 'default'
+  delivery_date: string
+  overdue: boolean
+  quantity: number
+  probability: number
+  units: number
+  allocated: number | null
+  short: number | null
+  reserved: number | null
+  reservation_stale: 'commitment_changed' | 'commitment_closed' | null
+}
+export interface AllocationCustomerRow {
+  customer: string | null
+  tier: number
+  commitments: number
+  units: number
+  allocated: number | null
+  short: number | null
+}
+export interface AllocationPreview {
+  sku: string
+  as_of: string
+  scope: 'company'
+  status: 'ok' | 'stock_unknown'
+  contested: boolean
+  advisory: true
+  what_if: boolean
+  stock: number | null
+  incoming: AllocationArrival[]
+  incoming_not_counted: AllocationArrival[]
+  fair_share_tiers: number[]
+  totals: { demand: number; allocated: number | null; short: number | null; commitments: number; commitments_short: number | null }
+  customers: AllocationCustomerRow[]
+  lines: AllocationLine[]
+  result_hash: string
+}
+export interface AllocationWhatIf {
+  sku: string
+  tier_overrides?: { customer: string; tier: number }[]
+  fair_share_tiers?: number[]
+  extra_arrivals?: { date: string; quantity: number }[]
+}
+export interface AllocationOverviewItem {
+  sku: string
+  commitments: number
+  commitments_short: number
+  customers_short: number
+  demand: number
+  allocated: number
+  short: number
+  has_reservations: boolean
+}
+export interface AllocationOverview {
+  as_of: string
+  advisory: true
+  skus_with_commitments: number
+  contested: AllocationOverviewItem[]
+  stock_unknown: { sku: string; commitments: number; demand: number }[]
+  too_many_commitments: { sku: string; open: number }[]
+  fair_share_tiers: number[]
+}
+export interface AllocationReservation {
+  id: string
+  run_id: string
+  sku: string
+  commitment_id: string
+  customer: string | null
+  tier: number
+  delivery_date: string
+  units: number
+  reserved: number
+  short: number
+  created_by: string
+  created_at: string
+  stale: boolean
+  stale_reason: 'commitment_changed' | 'commitment_closed' | null
+}
+
 // ── Demand plan versions ─────────────────────────────────────────────────────
 
 export type DemandPlanStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'superseded'

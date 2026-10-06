@@ -2093,6 +2093,8 @@ from backend.organizations.migrations import MIGRATIONS as _ORGANIZATIONS  # noq
 _MIGRATIONS += _ORGANIZATIONS
 from backend.inventory.cost_center_migrations import MIGRATIONS as _COST_CENTERS  # noqa: E402
 _MIGRATIONS += _COST_CENTERS
+from backend.inventory.stock_allocation_migrations import MIGRATIONS as _STOCK_ALLOCATION  # noqa: E402
+_MIGRATIONS += _STOCK_ALLOCATION
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
