@@ -215,6 +215,20 @@ LEGACY: dict[str, tuple[str, str]] = {
     "scheduled_report.unsubscribed":   ("report_schedule", "report_schedule.unsubscribed"),
 }
 
+# Catalogue entries whose route exists ONLY in the Rust API (new routes have no
+# Python implementation: docs/rust-migration.md). `test_audit_trail` checks every
+# other entry against the FastAPI routes; these are checked by a Rust unit test
+# that reads this tuple and asserts the Rust router serves each one.
+RUST_ONLY: tuple[tuple[str, str], ...] = (
+    ("POST", "/scheduled-reports"),
+    ("PATCH", "/scheduled-reports/{schedule_id}"),
+    ("DELETE", "/scheduled-reports/{schedule_id}"),
+    ("POST", "/scheduled-reports/{schedule_id}/pause"),
+    ("POST", "/scheduled-reports/{schedule_id}/resume"),
+    ("POST", "/scheduled-reports/allowed-recipients"),
+    ("DELETE", "/scheduled-reports/allowed-recipients/{email}"),
+)
+
 # The target types the trail can be filtered by.
 TARGET_TYPES = sorted({r.target_type for r in ROUTES.values()}
                       | {t for t, _ in LEGACY.values()})

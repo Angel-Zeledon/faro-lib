@@ -98,6 +98,27 @@ fn validate_body(obj: &Map<String, Value>) -> Result<SaveScheduleRequest, ApiErr
 
 // ── Time zone and next run ───────────────────────────────────────────────────
 
+/// `timezone.timezone_of`: the IANA NAME of the tenant's supported zone
+/// (scheduled reports store which zone their next run was computed in).
+pub(crate) async fn tenant_zone_name(state: &AppState, tenant_id: &str) -> Result<String, ApiError> {
+    let row: Option<(Option<Value>,)> = sqlx::query_as("SELECT settings FROM tenants WHERE id = $1")
+        .bind(tenant_id)
+        .fetch_optional(&state.pool)
+        .await?;
+    let name = row
+        .and_then(|r| r.0)
+        .and_then(|s| s.get("timezone").cloned())
+        .filter(crate::pycompat::truthy);
+    Ok(match name {
+        Some(Value::String(s)) if tz::Zone::from_name(&s).is_some() => s,
+        Some(other) => {
+            tracing::warn!(tenant = tenant_id, zone = %other, "[timezone] unsupported zone");
+            tz::DEFAULT_TZ.to_string()
+        }
+        None => tz::DEFAULT_TZ.to_string(),
+    })
+}
+
 /// `timezone.timezone_of` + `zoneinfo_of`: the tenant's supported zone.
 pub(crate) async fn tenant_zone(state: &AppState, tenant_id: &str) -> Result<tz::Zone, ApiError> {
     let row: Option<(Option<Value>,)> = sqlx::query_as("SELECT settings FROM tenants WHERE id = $1")

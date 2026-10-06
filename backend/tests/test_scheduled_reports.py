@@ -125,6 +125,10 @@ class TestInternalRenderAuth:
         assert not internal_api._verified("k", None, sig, body, now=now)
         assert not internal_api._verified("k", "abc", sig, body, now=now)
 
+    def test_the_signature_is_pinned_for_the_rust_client(self):
+        # The same string is asserted by backend-rs/.../pyclient.rs.
+        assert internal_api.sign("k", "1800000000.0", b'{"a":1}') == "263db5cf08e56b77b22456e01e8198f84221272de31275eb590d58838b5c34b4"
+
     def test_endpoint_is_closed_without_the_signature(self, client):
         r = client.post("/internal/scheduled-reports/render", json={"tenant_id": "x"})
         assert r.status_code == 401

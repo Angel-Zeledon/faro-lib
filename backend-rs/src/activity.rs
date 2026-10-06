@@ -61,6 +61,8 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    ScheduledReportUnsubscribed,
+    ScheduledReportAutoPaused,
 }
 
 impl Event {
@@ -93,6 +95,12 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::ScheduledReportUnsubscribed => (
+                "scheduled_report.unsubscribed", "data", "info", &["schedule_name", "email"],
+            ),
+            Event::ScheduledReportAutoPaused => (
+                "scheduled_report.auto_paused", "data", "warning", &["schedule_name", "failures"],
+            ),
         }
     }
 }
