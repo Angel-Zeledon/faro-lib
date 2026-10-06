@@ -180,6 +180,31 @@ def enforce_on_order(user: CurrentUser, lines: list[dict], destination: Optional
         return exceeded, False
     first = hard[0]
     params = {k: first[k] for k in ("over_by", "remaining", "order_value") if k in first}
+    # A hard cap that is flagged only because part of the order could not be
+    # converted (no exchange rate) is not "over the cap": its own code says what
+    # is missing, so the buyer enters the rate instead of hunting for an excess.
+    over = [e for e in hard if e.get("exceeds", True)]
+    if not over:
+        params = {"unconverted_lines": first.get("unconverted_lines", 0)}
+        if user.role == "admin" and not user.is_machine:
+            if reason:
+                return exceeded, True
+            raise AppError("purchase_budget_fx_rate_missing",
+                           "Part of this order is priced in a currency with no exchange rate, "
+                           "so it cannot be checked against a hard purchasing budget. Enter the "
+                           "rate, or an administrator can override with a reason.",
+                           status_code=409, params={**params, "override_possible": True})
+        if reason:
+            raise AppError("purchase_budget_override_requires_admin",
+                           "Only an administrator can override a hard purchasing budget.",
+                           status_code=403, params=params)
+        raise AppError("purchase_budget_fx_rate_missing",
+                       "Part of this order is priced in a currency with no exchange rate, "
+                       "so it cannot be checked against a hard purchasing budget. Enter the "
+                       "rate, or ask an administrator to override.",
+                       status_code=409, params={**params, "override_possible": False})
+    first = over[0]
+    params = {k: first[k] for k in ("over_by", "remaining", "order_value") if k in first}
     if user.role == "admin" and not user.is_machine:
         if reason:
             return exceeded, True
@@ -202,6 +227,8 @@ def record_order_budget_events(user: CurrentUser, exceeded: list[dict], overridd
     """One audited row per exceeded budget, written once the order exists."""
     reason = (override_reason or "").strip() or None
     for e in exceeded:
+        if not e.get("exceeds", True) and not (e["hard_cap"] and overridden):
+            continue  # flagged only for an unconverted line: a warning, not an excess
         record_event(
             user.tenant_id, user.user_id,
             "purchase_budget.override" if (e["hard_cap"] and overridden) else "purchase_budget.exceeded",

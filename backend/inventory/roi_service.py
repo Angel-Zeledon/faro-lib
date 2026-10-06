@@ -140,8 +140,11 @@ def _insert_lines(
             """INSERT INTO inventory_po_items
                    (po_log_id, tenant_id, sku, display_name, supplier,
                     supplier_id, signal, recommended_qty, final_qty,
-                    unit_cost, status, warehouse)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    unit_cost, status, warehouse,
+                    currency, fx_base_currency, fx_rate, fx_rate_date,
+                    fx_rate_id, value_base)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       %s, %s, %s, %s, %s, %s)""",
             (po_log_id, tenant_id, str(i.get("sku") or ""),
              i.get("display_name"), i.get("supplier"),
              i.get("supplier_id"), i.get("signal"),
@@ -149,7 +152,11 @@ def _insert_lines(
              _ordered_qty(i) if i.get("status", "approved") in _ORDERED else 0.0,
              (float(i["unit_cost"]) if i.get("unit_cost") is not None else None),
              i.get("status", "approved"),
-             i.get("warehouse") or destination_warehouse or _DEFAULT_WAREHOUSE),
+             i.get("warehouse") or destination_warehouse or _DEFAULT_WAREHOUSE,
+             # Multi-currency (backend/fx): all NULL for a tenant-currency line,
+             # which is every line written before the feature existed.
+             i.get("currency"), i.get("fx_base_currency"), i.get("fx_rate"),
+             i.get("fx_rate_date"), i.get("fx_rate_id"), i.get("value_base")),
             conn=conn,
         )
 
@@ -346,9 +353,13 @@ def log_po_generation(
         "kind": "forecast", "session_id": session_id,
         "destination_warehouse": destination_warehouse,
         "decisions_recorded": decisions_recorded,
-        "lines": [{k: i.get(k) for k in ("sku", "supplier", "supplier_id", "status",
-                                          "final_qty", "recommended_qty", "unit_cost",
-                                          "warehouse")}
+        "lines": [{**{k: i.get(k) for k in ("sku", "supplier", "supplier_id", "status",
+                                             "final_qty", "recommended_qty", "unit_cost",
+                                             "warehouse")},
+                   # Only when set: an order with no currency hashes exactly as
+                   # it did before multi-currency, so a replay across the
+                   # upgrade is still a replay.
+                   **({"currency": i["currency"]} if i.get("currency") else {})}
                   for i in norm],
     })
 
@@ -386,6 +397,18 @@ def log_po_generation(
             value_parts.append(_ordered_qty(i) * float(cost))
     total_value: float | None = sum(value_parts) if value_parts else None
 
+    # Multi-currency: lines priced in a currency other than the tenant's are
+    # converted at the rate in force today and the rate is recorded on each line.
+    # `total_value` is then the order's value in the tenant's own currency over
+    # the lines that could be valued (the same "only lines that carry a price"
+    # rule as above); `fx_unconverted_lines` says how many costed foreign lines
+    # had no rate. With no foreign line this changes nothing, byte for byte.
+    from backend.fx import service as fx_service
+    fx = fx_service.price_lines(tenant_id, norm,
+                                ordered=[i["status"] in _ORDERED for i in norm])
+    if fx["foreign"]:
+        total_value = float(fx["total"]) if fx["total"] is not None else None
+
     def _insert(conn=None) -> dict | None:
         # po_number is computed inside the INSERT so number and row commit
         # atomically. Volume is human-driven, so MAX+1 contention is rare;
@@ -396,8 +419,8 @@ def log_po_generation(
                     skus_order_now, skus_order_soon,
                     suggested_count, approved_count, modified_count, rejected_count,
                     destination_warehouse, idempotency_key, idempotency_fingerprint,
-                    po_number)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    fx_unconverted_lines, po_number)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        (SELECT COALESCE(MAX(po_number), 0) + 1
                           FROM inventory_po_log WHERE tenant_id = %s))
                RETURNING *""",
@@ -410,7 +433,8 @@ def log_po_generation(
              sku_count, total_units, total_value,
              skus_order_now, skus_order_soon,
              suggested_count, approved_count, modified_count, rejected_count,
-             destination_warehouse, idempotency_key, fingerprint, tenant_id),
+             destination_warehouse, idempotency_key, fingerprint,
+             fx["unconverted"], tenant_id),
             conn=conn,
         )
 
@@ -445,27 +469,11 @@ def create_manual_po(
     fingerprint = po_fingerprint({
         "kind": "manual", "supplier_id": supplier["id"],
         "destination_warehouse": destination_warehouse,
-        "lines": [{k: l.get(k) for k in ("sku", "qty", "unit_cost")} for l in lines],
+        "lines": [{**{k: l.get(k) for k in ("sku", "qty", "unit_cost")},
+                   **({"currency": l["currency"]} if l.get("currency") else {})}
+                  for l in lines],
     }) if idempotency_key else None
 
-    def _insert(conn=None) -> dict | None:
-        return query_one(
-            """INSERT INTO inventory_po_log
-                   (tenant_id, session_id, source, sku_count, total_units,
-                    total_value, destination_warehouse, idempotency_key,
-                    idempotency_fingerprint, po_number)
-               VALUES (%s, NULL, 'manual', %s, %s, %s, %s, %s, %s,
-                       (SELECT COALESCE(MAX(po_number), 0) + 1
-                          FROM inventory_po_log WHERE tenant_id = %s))
-               RETURNING *""",
-            (tenant_id, len(lines), total_units, total_value,
-             destination_warehouse, idempotency_key, fingerprint, tenant_id),
-            conn=conn,
-        )
-
-    # A manual order is typed line by line, so a line lost on the way to the
-    # database is a line the buyer wrote and nobody will ever see again. Same
-    # transaction as the forecast path.
     items = [{
         "sku":             str(l["sku"]),
         "display_name":    l.get("display_name"),
@@ -476,7 +484,33 @@ def create_manual_po(
         "final_qty":       float(l["qty"]),
         "unit_cost":       l.get("unit_cost"),
         "status":          "approved",
+        "currency":        l.get("currency"),
     } for l in lines]
+    # Multi-currency, as in `log_po_generation`.
+    from backend.fx import service as fx_service
+    fx = fx_service.price_lines(tenant_id, items)
+    if fx["foreign"]:
+        total_value = float(fx["total"]) if fx["total"] is not None else None
+
+    def _insert(conn=None) -> dict | None:
+        return query_one(
+            """INSERT INTO inventory_po_log
+                   (tenant_id, session_id, source, sku_count, total_units,
+                    total_value, destination_warehouse, idempotency_key,
+                    idempotency_fingerprint, fx_unconverted_lines, po_number)
+               VALUES (%s, NULL, 'manual', %s, %s, %s, %s, %s, %s, %s,
+                       (SELECT COALESCE(MAX(po_number), 0) + 1
+                          FROM inventory_po_log WHERE tenant_id = %s))
+               RETURNING *""",
+            (tenant_id, len(lines), total_units, total_value,
+             destination_warehouse, idempotency_key, fingerprint,
+             fx["unconverted"], tenant_id),
+            conn=conn,
+        )
+
+    # A manual order is typed line by line, so a line lost on the way to the
+    # database is a line the buyer wrote and nobody will ever see again. Same
+    # transaction as the forecast path.
     return _write_po_atomically(_insert, tenant_id, items, destination_warehouse,
                                 idempotency_key=idempotency_key, fingerprint=fingerprint)
 

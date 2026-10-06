@@ -26,6 +26,24 @@ def slugify_supplier_name(name: str) -> str:
     return slug or "supplier"
 
 
+def _amounts_text(priced: list, currency: dict) -> str:
+    """The order's total as text. One currency (the only case before
+    multi-currency): the amount, exactly as before. Several: one amount per
+    currency joined with " + " -- never one figure from adding different
+    currencies."""
+    from backend.fx.service import currency_dict
+    totals: dict[str, float] = {}
+    order: list[dict] = []
+    for i in priced:
+        cur = currency_dict(i.get("currency"), currency)
+        code = cur.get("code") or ""
+        if code not in totals:
+            order.append(cur)
+            totals[code] = 0.0
+        totals[code] += (i.get("final_qty") or 0) * float(i["unit_cost"])
+    return " + ".join(money(totals[c.get("code") or ""], currency=c) for c in order)
+
+
 def _total_line(priced: list, items: list, total_value: float, currency) -> str:
     """The order's total, stated for exactly the lines that have a price.
 
@@ -39,7 +57,7 @@ def _total_line(priced: list, items: list, total_value: float, currency) -> str:
     """
     if not priced:
         return render_es("po_pdf_total_none")
-    amount = money(total_value, currency=currency)
+    amount = _amounts_text(priced, currency)
     if len(priced) == len(items):
         return render_es("po_pdf_total", amount=amount)
     return render_es("po_pdf_total_partial",
@@ -69,6 +87,7 @@ def generate_po_pdf(
     if currency is None:
         from backend.api.v1.currency import currency_of
         currency = currency_of(tenant_id)
+    from backend.fx.service import currency_dict
 
     # A line whose cost nobody recorded is priced as UNKNOWN, not as zero.
     # `unit_cost or 0` used to make this document — which leaves the tenant and
@@ -138,6 +157,7 @@ def generate_po_pdf(
             qty = i.get("final_qty") or 0
             cost = i.get("unit_cost")
             unknown = render_es("po_pdf_cost_unknown")
+            line_cur = currency_dict(i.get("currency"), currency)
             rows.append([
                 str(i.get("sku", "")),
                 str(i.get("display_name") or i.get("sku", "")),
@@ -146,8 +166,8 @@ def generate_po_pdf(
                 # decimals hardcoded here rendered "₡8.50" for a colón cost the
                 # app itself shows as "₡9" everywhere else, and would have shown
                 # phantom cents for every 0-decimal currency in SUPPORTED.
-                unknown if cost is None else money(cost, currency=currency),
-                unknown if cost is None else money(qty * float(cost), currency=currency),
+                unknown if cost is None else money(cost, currency=line_cur),
+                unknown if cost is None else money(qty * float(cost), currency=line_cur),
             ])
         table = Table(rows, colWidths=[1.1*inch, 2.3*inch, 1*inch, 1.1*inch, 1*inch])
         table.setStyle(TableStyle([
@@ -182,7 +202,7 @@ def generate_po_pdf(
             qty = i.get("final_qty") or 0
             cost = i.get("unit_cost")
             shown = (render_es("po_pdf_cost_unknown") if cost is None
-                     else money(cost, currency=currency))
+                     else money(cost, currency=currency_dict(i.get("currency"), currency)))
             lines.append(f"  {i.get('sku')}: {i.get('display_name') or ''} — {qty:,.0f} x {shown}")
         lines.append(f"\n{_total_line(priced, items, total_value, currency)}")
         path.with_suffix(".txt").write_text("\n".join(lines), encoding="utf-8")

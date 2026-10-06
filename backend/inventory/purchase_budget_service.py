@@ -345,7 +345,8 @@ def _po_item_rows(tenant_id: str, start: date, end: date) -> list[dict]:
     default = _tenant_default(tenant_id)
     rows = query(
         """SELECT l.destination_warehouse, l.reception_status,
-                  i.sku, i.supplier, i.supplier_id, i.final_qty, i.unit_cost
+                  i.sku, i.supplier, i.supplier_id, i.final_qty, i.unit_cost,
+                  i.currency, i.fx_base_currency, i.value_base
              FROM inventory_po_log l
              JOIN inventory_po_items i ON i.po_log_id = l.id
             WHERE l.tenant_id = %s AND l.cancelled_at IS NULL
@@ -358,13 +359,36 @@ def _po_item_rows(tenant_id: str, start: date, end: date) -> list[dict]:
     out = []
     for r in rows:
         cost = r["unit_cost"]
-        out.append({
+        entry = {
             "warehouse": (r["destination_warehouse"] or "").strip() or default,
             "supplier": r["supplier"], "supplier_id": r["supplier_id"],
             "category": cats.get(r["sku"]),
             "value": None if cost is None else float(r["final_qty"] or 0) * float(cost),
             "open": (r["reception_status"] or "pending") in bm.OPEN_RECEPTION,
-        })
+        }
+        if r.get("currency"):
+            # A line priced in another currency counts for the value recorded
+            # when the order was written (in the currency it was converted
+            # into), or not at all when it had no rate: never qty x cost in a
+            # currency that is not the budget's.
+            entry["value_currency"] = r.get("fx_base_currency")
+            entry["value"] = (None if cost is None or r.get("value_base") is None
+                              else float(r["value_base"]))
+            entry["unconverted"] = cost is not None and r.get("value_base") is None
+        out.append(entry)
+    return out
+
+
+def _in_budget_currency(rows: list[dict], budget_currency: str) -> list[dict]:
+    """Rows as a budget in `budget_currency` may sum them: a converted line is
+    only usable when it was converted INTO that currency; otherwise it is
+    unconverted for this budget (counted, not summed)."""
+    out = []
+    for r in rows:
+        vc = r.get("value_currency")
+        if vc is not None and vc != budget_currency and r.get("value") is not None:
+            r = {**r, "value": None, "unconverted": True}
+        out.append(r)
     return out
 
 
@@ -389,13 +413,14 @@ def usage(tenant_id: str, row: dict, today: date, _po_rows: Optional[list[dict]]
     end = end if isinstance(end, date) else _as_date(end, "period_end")
     rows = _po_rows if _po_rows is not None else _po_item_rows(tenant_id, start, end)
     matcher = bm.scope_matcher(row["scope_type"], _scope_names(tenant_id, row))
-    ordered = bm.ordered_value(rows, matcher)
+    ordered = bm.ordered_value(_in_budget_currency(rows, row["currency"]), matcher)
     used = ordered["spent"] + ordered["committed"]
     own_free = bm.remaining(row["amount"], ordered["spent"], ordered["committed"])
     return {
         "spent": ordered["spent"], "committed": ordered["committed"], "ordered": round(used, 2),
         "remaining": own_free,
         "unknown_cost_lines": ordered["unknown_cost_lines"],
+        "unconverted_lines": ordered.get("unconverted_lines", 0),
         "burn": bm.burn(row["amount"], used, start, end, today),
     }
 
@@ -470,6 +495,9 @@ def status(tenant_id: str, scope: Optional[frozenset], today: date,
     if use["unknown_cost_lines"]:
         out["warnings"].append({"code": "ordered_lines_without_cost",
                                 "params": {"count": use["unknown_cost_lines"]}})
+    if use["unconverted_lines"]:
+        out["warnings"].append({"code": "ordered_lines_unconverted",
+                                "params": {"count": use["unconverted_lines"]}})
     if fm["limited_by"] == "parent":
         out["warnings"].append({"code": "limited_by_parent", "params": {}})
     return out
@@ -589,33 +617,51 @@ def check_order(user, scope: Optional[frozenset], lines: list[dict], destination
     cats = {r["sku"]: r["category"] for r in query(
         "SELECT DISTINCT ON (sku) sku, category FROM inventory_stock "
         "WHERE tenant_id = %s AND category IS NOT NULL ORDER BY sku", (tenant_id,))}
+    # Lines priced in another currency are converted at the rate in force today
+    # (the same rule the order itself will be written with); a line with no rate
+    # is unconverted, never valued at 1.0.
+    from backend.fx import service as fx_service
+    priced = [dict(ln) for ln in lines]
+    fx_service.price_lines(tenant_id, priced, as_of=today)
     shaped = []
-    for ln in lines:
+    for ln, pl in zip(lines, priced):
         cost = ln.get("unit_cost")
         qty = float(ln.get("qty") or 0)
-        shaped.append({
+        entry = {
             "warehouse": (ln.get("warehouse") or destination or "").strip() or default,
             "supplier": ln.get("supplier"), "supplier_id": ln.get("supplier_id"),
             "category": ln.get("category") or cats.get(ln.get("sku")),
             "value": None if cost is None else qty * float(cost), "open": True,
-        })
+        }
+        if pl.get("currency"):
+            entry["value_currency"] = pl.get("fx_base_currency")
+            entry["value"] = (None if cost is None or pl.get("value_base") is None
+                              else float(pl["value_base"]))
+            entry["unconverted"] = cost is not None and pl.get("value_base") is None
+        shaped.append(entry)
     out = []
     for row in live:
         matcher = bm.scope_matcher(row["scope_type"], _scope_names(tenant_id, row))
-        mine = bm.ordered_value(shaped, matcher)
+        mine = bm.ordered_value(_in_budget_currency(shaped, row["currency"]), matcher)
         if not mine["lines"]:
             continue
         order_value = mine["spent"] + mine["committed"]
         fm = free_money(tenant_id, row, today)
         chk = bm.order_check(order_value, fm["free"], mine["unknown_cost_lines"])
-        if not chk["exceeds"]:
+        fx_missing = mine.get("unconverted_lines", 0)
+        # An order whose value cannot be fully known is flagged even when the
+        # part that can be valued fits: a hard cap must not wave it through.
+        if not chk["exceeds"] and not fx_missing:
             continue
         shown = visible(scope, row)
         entry = {"root_id": row["root_id"] if shown else None,
                  "scope_type": row["scope_type"], "hard_cap": row["hard_cap"],
-                 "visible": shown, "currency": row["currency"]}
+                 "visible": shown, "currency": row["currency"],
+                 "exceeds": chk["exceeds"]}
         if shown:
             entry.update({k: chk[k] for k in ("order_value", "remaining", "over_by",
                                               "unknown_cost_lines")})
+        if fx_missing:
+            entry["unconverted_lines"] = fx_missing
         out.append(entry)
     return out

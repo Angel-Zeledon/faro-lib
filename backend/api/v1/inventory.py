@@ -1635,6 +1635,11 @@ class POLineItem(BaseModel):
     recommended_qty: float           = Field(default=0, ge=0, le=_MAX_QTY)
     final_qty:       float           = Field(default=0, ge=0, le=_MAX_QTY)
     unit_cost:       Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
+    # ISO 4217 code of `unit_cost` when it is NOT the company's own currency
+    # (a supplier that charges in dollars). Omitted = the company currency, as
+    # before. A foreign line is converted at the rate in force today; with no
+    # rate its value is left out and reported, never valued at 1.0.
+    currency:        Optional[str]   = Field(default=None, max_length=8)
     status:               str             = "approved"
     warehouse:               Optional[str]   = None
 
@@ -1750,7 +1755,8 @@ def log_po(
              "qty": ((i.get("final_qty") if i.get("final_qty") is not None else i.get("recommended_qty")) or 0)
                     if (i.get("status") or "approved") in ("approved", "modified") else 0,
              "unit_cost": i.get("unit_cost"), "supplier": i.get("supplier"),
-             "supplier_id": i.get("supplier_id"), "warehouse": i.get("warehouse")}
+             "supplier_id": i.get("supplier_id"), "warehouse": i.get("warehouse"),
+             "currency": i.get("currency")}
             for i in po_items]
         budget_lines = [ln for ln in budget_lines if (ln["qty"] or 0) > 0]
         if budget_lines:
@@ -1803,6 +1809,8 @@ class ManualPOLine(BaseModel):
     sku:          str
     qty:          float = Field(gt=0, le=_MAX_QTY)
     unit_cost:    Optional[float] = Field(default=None, ge=0, le=_MAX_MONEY)
+    # See POLineItem.currency.
+    currency:     Optional[str] = Field(default=None, max_length=8)
     display_name: Optional[str] = None
 
 
@@ -2762,6 +2770,10 @@ class SupplierPatch(BaseModel):
 class SkuSupplierUpsert(BaseModel):
     is_primary:     bool  = True
     unit_cost:      Optional[float] = None
+    # ISO 4217 code `unit_cost` is quoted in, when it is not the company's own
+    # currency. Omitted = leave as is; "" or the company's own code = the
+    # company's currency.
+    currency:       Optional[str]   = Field(default=None, max_length=8)
     moq:            float = Field(default=1, ge=1)
     lead_time_days: Optional[int]   = Field(default=None, ge=1, le=365)
     notes:          Optional[str]   = None
@@ -3133,7 +3145,12 @@ def assign_sku_supplier(
     supplier = sup_svc.get_supplier(user.tenant_id, supplier_id)
     if not supplier:
         raise AppError("supplier_not_found", "Supplier not found", status_code=404)
-    link = sup_svc.upsert_sku_supplier(user.tenant_id, sku, supplier_id, body.model_dump(exclude_none=True))
+    data = body.model_dump(exclude_none=True)
+    if "currency" in data:
+        from backend.fx import service as fx_service
+        data["currency"] = fx_service.clean_line_currency(
+            data["currency"], fx_service.base_currency(user.tenant_id))
+    link = sup_svc.upsert_sku_supplier(user.tenant_id, sku, supplier_id, data)
     return ok(link)
 
 

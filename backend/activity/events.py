@@ -183,6 +183,20 @@ EVENTS: dict[str, EventSpec] = {
     # Purchase budgets (inventory/purchase_budget_service.py): who set or changed
     # a cap, and every order that went past what a cap had left (with the reason
     # a person gave, when an administrator overrode a hard cap).
+    # Exchange rates (backend-rs/src/routes/fx_rates.rs): who entered, changed
+    # or removed a rate that purchase totals and budget checks convert with.
+    "currency_rate.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("currency", "rate", "effective_date"),
+    ),
+    "currency_rate.changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("currency", "rate", "effective_date"),
+    ),
+    "currency_rate.deleted": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("currency", "rate", "effective_date"),
+    ),
     "purchase_budget.created": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("budget_scope", "amount", "period"),

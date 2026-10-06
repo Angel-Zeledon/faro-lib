@@ -201,14 +201,17 @@ def set_approver(tenant_id: str, user_id: str, can_approve: bool) -> dict:
 def _order_facts(tenant_id: str, po: dict) -> dict:
     """Value, warehouses and suppliers of the ordered lines."""
     lines = query(
-        """SELECT i.supplier, i.supplier_id, i.warehouse, i.final_qty, i.unit_cost
+        """SELECT i.supplier, i.supplier_id, i.warehouse, i.final_qty, i.unit_cost,
+                  i.currency, i.value_base
              FROM inventory_po_items i
             WHERE i.po_log_id = %s AND i.tenant_id = %s
               AND i.status IN ('approved', 'modified')""",
         (po["id"], tenant_id),
     )
-    priced = [float(l["final_qty"] or 0) * float(l["unit_cost"])
-              for l in lines if l.get("unit_cost") is not None]
+    # In the tenant's own currency; a foreign line counts for the value recorded
+    # when the order was written, and not at all when it had no rate.
+    from backend.fx.service import line_base_value
+    priced = [v for v in (line_base_value(l) for l in lines) if v is not None]
     warehouses = {(l.get("warehouse") or "").strip().lower() for l in lines}
     if po.get("destination_warehouse"):
         warehouses.add(str(po["destination_warehouse"]).strip().lower())
@@ -548,7 +551,8 @@ def annotate_orders(tenant_id: str, rows: list[dict]) -> list[dict]:
         return rows
     ids = [r["id"] for r in rows]
     lines = query(
-        """SELECT po_log_id, supplier, supplier_id, warehouse, final_qty, unit_cost
+        """SELECT po_log_id, supplier, supplier_id, warehouse, final_qty, unit_cost,
+                  currency, value_base
              FROM inventory_po_items
             WHERE tenant_id = %s AND po_log_id = ANY(%s)
               AND status IN ('approved', 'modified')""",
@@ -559,8 +563,8 @@ def annotate_orders(tenant_id: str, rows: list[dict]) -> list[dict]:
     out = []
     for r in rows:
         po_lines = by_po.get(r["id"], [])
-        priced = [float(l["final_qty"] or 0) * float(l["unit_cost"])
-                  for l in po_lines if l.get("unit_cost") is not None]
+        from backend.fx.service import line_base_value
+        priced = [v for v in (line_base_value(l) for l in po_lines) if v is not None]
         whs = {(l.get("warehouse") or "").strip().lower() for l in po_lines}
         if r.get("destination_warehouse"):
             whs.add(str(r["destination_warehouse"]).strip().lower())

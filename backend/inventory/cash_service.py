@@ -184,8 +184,12 @@ def get_payables(tenant_id: str, horizon_days: int = 30) -> dict:
                   l.sent_at,
                   i.supplier,
                   SUM(CASE WHEN i.unit_cost > 0
-                           THEN i.final_qty * i.unit_cost ELSE 0 END) AS amount,
-                  COUNT(*) FILTER (WHERE i.unit_cost IS NULL OR i.unit_cost <= 0)
+                           THEN COALESCE(CASE WHEN i.currency IS NULL
+                                              THEN i.final_qty * i.unit_cost
+                                              ELSE i.value_base::float8 END, 0)
+                           ELSE 0 END) AS amount,
+                  COUNT(*) FILTER (WHERE i.unit_cost IS NULL OR i.unit_cost <= 0
+                                      OR (i.currency IS NOT NULL AND i.value_base IS NULL))
                       AS uncosted_lines
              FROM inventory_po_log l
              JOIN inventory_po_items i ON i.po_log_id = l.id

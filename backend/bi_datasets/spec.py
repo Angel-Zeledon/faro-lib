@@ -156,7 +156,10 @@ PURCHASE_ORDER_LINES = Dataset(
         _c("received_qty", "number", "Units received so far (null before any reception)."),
         _c("outstanding_qty", "number", "Ordered units still to arrive (0 for rejected lines)."),
         _c("unit_cost", "number", "Cost per unit (null when unknown)."),
-        _c("line_value", "number", "final_qty x unit_cost (null when the cost is unknown)."),
+        _c("currency", "string", "ISO 4217 code of unit_cost; null means the company's own currency."),
+        _c("line_value", "number", "final_qty x unit_cost, in the company's currency (null when the cost is "
+                                   "unknown; for a line in another currency, the value converted when the "
+                                   "order was written, null when it had no exchange rate)."),
     ),
     sort=("ordered_at", "po_log_id", "supplier", "sku", "line_id"),
     updated_since_column="updated_at",
@@ -187,7 +190,10 @@ RECEPTIONS = Dataset(
         _c("received_qty", "number", "Units received so far."),
         _c("outstanding_qty", "number", "Ordered units still to arrive."),
         _c("unit_cost", "number", "Cost per unit (null when unknown)."),
-        _c("received_value", "number", "received_qty x unit_cost (null when the cost is unknown)."),
+        _c("currency", "string", "ISO 4217 code of unit_cost; null means the company's own currency."),
+        _c("received_value", "number", "received_qty x unit_cost, in the company's currency (null when the "
+                                       "cost is unknown; for a line in another currency, converted at the "
+                                       "rate recorded on the line, null when it had none)."),
     ),
     sort=("received_at", "po_log_id", "sku", "line_id"),
     updated_since_column="received_at",

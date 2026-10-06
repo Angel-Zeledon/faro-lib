@@ -57,6 +57,9 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    CurrencyRateCreated,
+    CurrencyRateChanged,
+    CurrencyRateDeleted,
 }
 
 impl Event {
@@ -79,6 +82,9 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::CurrencyRateCreated => ("currency_rate.created", "purchase", "info", &["currency", "rate", "effective_date"]),
+            Event::CurrencyRateChanged => ("currency_rate.changed", "purchase", "info", &["currency", "rate", "effective_date"]),
+            Event::CurrencyRateDeleted => ("currency_rate.deleted", "purchase", "info", &["currency", "rate", "effective_date"]),
         }
     }
 }
