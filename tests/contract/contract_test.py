@@ -2807,6 +2807,8 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        import w2b_cases  # noqa: PLC0415 - wave 2b section, its own file
+        results += w2b_cases.run_w2b(args, secret, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

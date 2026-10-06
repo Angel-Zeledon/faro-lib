@@ -1,0 +1,41 @@
+# DISABLED EXAMPLE. Rename to 51-tenant-data.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# Wave 2b (backend-rs/src/routes/w2b/tenant_data.rs): the tenant export ZIP and
+# the whole-tenant ERASURE. DELETE /api/v1/tenant is destructive and
+# irreversible: enable this group only after reading "Wave 2b" in
+# docs/rust-migration.md (what the 33 erase cases proved and did not prove).
+# The tables erased and exported are GENERATED from backend/tenants/
+# data_export.py (scripts/gen_rust_tenant_tables.py); regenerate and rebuild
+# api-rs whenever those Python lists change, or the harness fails.
+#
+# Failover note: only dial failures are retried, so an erase is never sent
+# twice; if api-rs is down the same request goes to Python.
+
+@rs_tenant_data {
+	method GET
+	path /api/v1/tenant/export
+}
+@rs_tenant_erase {
+	method DELETE
+	path /api/v1/tenant
+}
+handle @rs_tenant_data {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_tenant_erase {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

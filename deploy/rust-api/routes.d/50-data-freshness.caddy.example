@@ -1,0 +1,22 @@
+# DISABLED EXAMPLE. Rename to 50-data-freshness.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# Wave 2b (backend-rs/src/routes/w2b/freshness.rs): the READ half of
+# freshness. 41/41 contract cases (tests/contract/w2b_cases.py). The daily
+# reminder loop that e-mails and WhatsApps stale tenants stays in the Python
+# worker; nothing here sends anything.
+
+@rs_freshness {
+	method GET
+	path /api/v1/data-freshness
+}
+handle @rs_freshness {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

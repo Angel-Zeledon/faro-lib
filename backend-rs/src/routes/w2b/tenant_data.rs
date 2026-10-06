@@ -52,11 +52,224 @@ pub const ROUTE: RouteAuth = RouteAuth {
 // ── Cells and Python's json.dumps(indent=2, ensure_ascii=False) ──────────────
 
 /// One column value. `Float` carries NaN and the infinities, which a JSON
-/// `Value` cannot, and which `json.dumps` writes as `NaN` / `Infinity`.
+/// `Value` cannot, and which `json.dumps` writes as `NaN` / `Infinity`. `Json`
+/// is a JSONB column, kept apart from `Value` because Python's `json.loads`
+/// keeps integers of any size (`serde_json` would turn 10^20 into a float).
 #[derive(Debug, Clone)]
 enum Cell {
     Val(Value),
     Float(f64),
+    Json(Pj),
+}
+
+/// A parsed JSON document as Python sees it: integers stay integers whatever
+/// their size (their digits are kept as text), everything with a fraction or an
+/// exponent is a float.
+#[derive(Debug, Clone, PartialEq)]
+enum Pj {
+    Null,
+    Bool(bool),
+    Int(String),
+    Float(f64),
+    Str(String),
+    Arr(Vec<Pj>),
+    Obj(Vec<(String, Pj)>),
+}
+
+/// Parse the canonical JSON text Postgres prints for a json / jsonb value.
+fn parse_pj(text: &str) -> Option<Pj> {
+    let b = text.as_bytes();
+    let mut i = 0;
+    let v = pj_value(b, &mut i)?;
+    pj_ws(b, &mut i);
+    (i == b.len()).then_some(v)
+}
+
+fn pj_ws(b: &[u8], i: &mut usize) {
+    while *i < b.len() && matches!(b[*i], b' ' | b'\t' | b'\n' | b'\r') {
+        *i += 1;
+    }
+}
+
+fn pj_value(b: &[u8], i: &mut usize) -> Option<Pj> {
+    pj_ws(b, i);
+    match *b.get(*i)? {
+        b'n' if b[*i..].starts_with(b"null") => {
+            *i += 4;
+            Some(Pj::Null)
+        }
+        b't' if b[*i..].starts_with(b"true") => {
+            *i += 4;
+            Some(Pj::Bool(true))
+        }
+        b'f' if b[*i..].starts_with(b"false") => {
+            *i += 5;
+            Some(Pj::Bool(false))
+        }
+        b'"' => pj_string(b, i).map(Pj::Str),
+        b'[' => {
+            *i += 1;
+            let mut items = Vec::new();
+            pj_ws(b, i);
+            if b.get(*i) == Some(&b']') {
+                *i += 1;
+                return Some(Pj::Arr(items));
+            }
+            loop {
+                items.push(pj_value(b, i)?);
+                pj_ws(b, i);
+                match *b.get(*i)? {
+                    b',' => *i += 1,
+                    b']' => {
+                        *i += 1;
+                        return Some(Pj::Arr(items));
+                    }
+                    _ => return None,
+                }
+            }
+        }
+        b'{' => {
+            *i += 1;
+            let mut items = Vec::new();
+            pj_ws(b, i);
+            if b.get(*i) == Some(&b'}') {
+                *i += 1;
+                return Some(Pj::Obj(items));
+            }
+            loop {
+                pj_ws(b, i);
+                let k = pj_string(b, i)?;
+                pj_ws(b, i);
+                if *b.get(*i)? != b':' {
+                    return None;
+                }
+                *i += 1;
+                items.push((k, pj_value(b, i)?));
+                pj_ws(b, i);
+                match *b.get(*i)? {
+                    b',' => *i += 1,
+                    b'}' => {
+                        *i += 1;
+                        return Some(Pj::Obj(items));
+                    }
+                    _ => return None,
+                }
+            }
+        }
+        b'-' | b'0'..=b'9' => {
+            let start = *i;
+            while *i < b.len() && matches!(b[*i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
+                *i += 1;
+            }
+            let tok = std::str::from_utf8(&b[start..*i]).ok()?;
+            if tok.contains(['.', 'e', 'E']) {
+                Some(Pj::Float(tok.parse().ok()?))
+            } else {
+                // Python prints int("-0") as 0.
+                let digits = if tok == "-0" { "0" } else { tok };
+                Some(Pj::Int(digits.to_string()))
+            }
+        }
+        _ => None,
+    }
+}
+
+fn pj_string(b: &[u8], i: &mut usize) -> Option<String> {
+    if *b.get(*i)? != b'"' {
+        return None;
+    }
+    *i += 1;
+    let mut out = String::new();
+    let mut units: Vec<u16> = Vec::new();
+    let flush = |units: &mut Vec<u16>, out: &mut String| {
+        if !units.is_empty() {
+            out.push_str(&String::from_utf16_lossy(units));
+            units.clear();
+        }
+    };
+    loop {
+        let c = *b.get(*i)?;
+        match c {
+            b'"' => {
+                *i += 1;
+                flush(&mut units, &mut out);
+                return Some(out);
+            }
+            b'\\' => {
+                *i += 1;
+                let e = *b.get(*i)?;
+                *i += 1;
+                if e == b'u' {
+                    let hex = std::str::from_utf8(b.get(*i..*i + 4)?).ok()?;
+                    units.push(u16::from_str_radix(hex, 16).ok()?);
+                    *i += 4;
+                    continue;
+                }
+                flush(&mut units, &mut out);
+                out.push(match e {
+                    b'"' => '"',
+                    b'\\' => '\\',
+                    b'/' => '/',
+                    b'b' => '\u{08}',
+                    b'f' => '\u{0c}',
+                    b'n' => '\n',
+                    b'r' => '\r',
+                    b't' => '\t',
+                    _ => return None,
+                });
+            }
+            _ => {
+                flush(&mut units, &mut out);
+                // Copy one UTF-8 scalar.
+                let len = match c {
+                    0..=0x7f => 1,
+                    0xc0..=0xdf => 2,
+                    0xe0..=0xef => 3,
+                    _ => 4,
+                };
+                out.push_str(std::str::from_utf8(b.get(*i..*i + len)?).ok()?);
+                *i += len;
+            }
+        }
+    }
+}
+
+fn dump_pj(v: &Pj, level: usize, out: &mut String) {
+    match v {
+        Pj::Null => out.push_str("null"),
+        Pj::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Pj::Int(d) => out.push_str(d),
+        Pj::Float(f) => dump_float(*f, out),
+        Pj::Str(s) => dump_str(s, out),
+        Pj::Arr(items) if items.is_empty() => out.push_str("[]"),
+        Pj::Arr(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                pad(out, level + 1);
+                dump_pj(item, level + 1, out);
+            }
+            pad(out, level);
+            out.push(']');
+        }
+        Pj::Obj(items) if items.is_empty() => out.push_str("{}"),
+        Pj::Obj(items) => {
+            out.push('{');
+            for (i, (k, item)) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                pad(out, level + 1);
+                dump_str(k, out);
+                out.push_str(": ");
+                dump_pj(item, level + 1, out);
+            }
+            pad(out, level);
+            out.push('}');
+        }
+    }
 }
 
 fn dump_str(s: &str, out: &mut String) {
@@ -144,6 +357,7 @@ fn dump_cell(c: &Cell, level: usize, out: &mut String) {
     match c {
         Cell::Val(v) => dump_value(v, level, out),
         Cell::Float(f) => dump_float(*f, out),
+        Cell::Json(v) => dump_pj(v, level, out),
     }
 }
 
@@ -191,8 +405,8 @@ fn dump_rows(rows: &[Vec<(String, Cell)>]) -> String {
 fn native(udt: &str) -> bool {
     matches!(
         udt,
-        "int2" | "int4" | "int8" | "bool" | "float8" | "text" | "varchar" | "bpchar" | "name" | "json"
-            | "jsonb" | "timestamptz" | "timestamp" | "date" | "_text" | "_varchar"
+        "int2" | "int4" | "int8" | "bool" | "float8" | "text" | "varchar" | "bpchar" | "name"
+            | "timestamptz" | "timestamp" | "date" | "_text" | "_varchar"
     )
 }
 
@@ -221,7 +435,11 @@ async fn select_list(pool: &PgPool, table: &str, cols: &str) -> Result<(String, 
             kinds.push((name, udt));
         } else {
             exprs.push(format!("\"{name}\"::text AS \"{name}\""));
-            let kind = if udt == "float4" { "float4_text" } else { "text_cast" };
+            let kind = match udt.as_str() {
+                "float4" => "float4_text",
+                "json" | "jsonb" => "json_text",
+                _ => "text_cast",
+            };
             kinds.push((name, kind.to_string()));
         }
     }
@@ -257,7 +475,15 @@ fn cell_of(row: &PgRow, idx: usize, kind: &str) -> Result<Cell, sqlx::Error> {
                 },
             }
         }
-        "json" | "jsonb" => opt!(Value, Cell::Val),
+        "json_text" => {
+            let v: Option<String> = row.try_get(idx)?;
+            match v {
+                None => Cell::Val(Value::Null),
+                Some(t) => Cell::Json(
+                    parse_pj(&t).ok_or_else(|| sqlx::Error::Decode("unparseable JSON text from Postgres".into()))?,
+                ),
+            }
+        }
         "timestamptz" => opt!(DateTime<Utc>, |x: DateTime<Utc>| Cell::Val(Value::String(isoformat_utc(&x)))),
         "timestamp" => opt!(NaiveDateTime, |x: NaiveDateTime| {
             let micros = x.and_utc().timestamp_subsec_micros();
@@ -557,6 +783,21 @@ mod tests {
         );
         assert_eq!(dump_rows(&rows), expected);
         assert_eq!(dump_rows(&[]), "[]");
+    }
+
+    #[test]
+    fn json_keeps_python_integers_and_floats() {
+        let v = parse_pj(
+            r#"["a", 1, 2.0, 100000000000000000000, -0, 1.5e-7, {"k": [null, true, "xé😀\n"]}, {}, []]"#,
+        )
+        .unwrap();
+        let mut out = String::new();
+        dump_pj(&v, 0, &mut out);
+        assert!(out.contains("\n  100000000000000000000,\n"));
+        assert!(out.contains("\n  0,\n"));
+        assert!(out.contains("\n  1.5e-07,\n"));
+        assert!(out.contains("\"x\u{e9}\u{1f600}\\n\""));
+        assert_eq!(parse_pj("[1,"), None);
     }
 
     #[test]

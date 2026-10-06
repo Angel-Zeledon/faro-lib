@@ -1,4 +1,4 @@
-# DISABLED EXAMPLE. Rename to 30-settings-reads.caddy inside the gateway's
+# DISABLED EXAMPLE. Rename to 33-settings-reads.caddy inside the gateway's
 # /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
 # `caddy reload` to send it back to Python.
 #

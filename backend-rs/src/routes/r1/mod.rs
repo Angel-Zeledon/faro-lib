@@ -10,7 +10,7 @@
 //! | `api/v1/timezone.py`       | `timezone`      | GET `/tenant/timezone` (PATCH stays Python, see the module) |
 //!
 //! Kept in one sub-router so the group is ONE line in `routes/mod.rs` and in
-//! the proxy (`deploy/rust-api/routes.d/30-settings-reads.caddy.example`).
+//! the proxy (`deploy/rust-api/routes.d/33-settings-reads.caddy.example`).
 
 pub mod alerts;
 pub mod currency;
