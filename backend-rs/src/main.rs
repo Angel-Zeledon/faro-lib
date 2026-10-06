@@ -8,6 +8,7 @@
 
 mod activity;
 mod audit;
+mod contract_renewal;
 mod auth;
 mod config;
 mod entitlements;

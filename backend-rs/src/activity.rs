@@ -49,6 +49,7 @@ pub enum Event {
     CommittedDemandCreated,
     CommittedDemandImported,
     CommittedDemandChanged,
+    SupplyContractRenewed,
     PurchaseOrderPaid,
     PurchaseOrderUnpaid,
     PurchaseOrderCancelled,
@@ -75,6 +76,10 @@ impl Event {
             ),
             Event::CommittedDemandImported => ("committed_demand.imported", "purchase", "info", &["rows"]),
             Event::CommittedDemandChanged => ("committed_demand.changed", "purchase", "info", &["sku", "status"]),
+            Event::SupplyContractRenewed => (
+                "supply_contract.renewed", "purchase", "info",
+                &["customer", "lines", "revision", "status", "renewed_from"],
+            ),
             Event::ApiKeyCreated => ("account.api_key_created", "account", "warning", &["key_name", "role"]),
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),

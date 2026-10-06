@@ -1,6 +1,7 @@
 pub mod api_keys;
 pub mod audit;
 pub mod committed_demand;
+pub mod contract_renewals;
 pub mod entitlements;
 pub mod health;
 pub mod r1;
@@ -43,6 +44,11 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/v1/committed-demand/{commitment_id}", patch(committed_demand::update))
         .route("/api/v1/committed-demand/{commitment_id}/status", post(committed_demand::set_status))
+        // Contract renewals: new routes, Rust only (no Python implementation, no
+        // failover). Literal `/renewals` first: Python would read it as a root id.
+        .route("/api/v1/supply-contracts/renewals", get(contract_renewals::renewals))
+        .route("/api/v1/supply-contracts/{root_id}/comparison", get(contract_renewals::comparison))
+        .route("/api/v1/supply-contracts/{root_id}/renew", post(contract_renewals::renew))
         .merge(r1::router())
         .merge(sessions::router()).merge(schedule::router()).merge(spike_edits::router())
         // R3: API keys, webhook subscriptions, audit trail reads.
