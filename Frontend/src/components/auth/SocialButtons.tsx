@@ -71,7 +71,9 @@ function brand(provider: SocialProvider, dark: boolean): BrandStyle {
     : { bg: '#000000', fg: '#FFFFFF', border: '#000000', logo: <AppleLogo color="#FFFFFF" /> }
 }
 
-const ALWAYS_SHOWN: SocialProvider[] = ['google', 'microsoft']
+// Microsoft is hidden until it is configured (owner's request, 2026-10-06):
+// add 'microsoft' back here to show its disabled mould again.
+const ALWAYS_SHOWN: SocialProvider[] = ['google']
 const ORDER: SocialProvider[] = ['google', 'microsoft', 'apple']
 
 const BASE_STYLE = {
@@ -111,7 +113,7 @@ export function SocialButtons({ intent }: { intent: 'login' | 'signup' }) {
   }, [])
 
   const dark = theme === 'dark'
-  // Apple only when the backend reports it; Google and Microsoft always.
+  // Microsoft and Apple only when the backend reports them; Google always.
   const shown = ORDER.filter(p => ALWAYS_SHOWN.includes(p) || providers.includes(p))
 
   const showHint = (p: SocialProvider) => {
