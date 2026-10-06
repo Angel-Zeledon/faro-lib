@@ -2739,6 +2739,12 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
     return out
 
 
+def run_fx_section(args, fx: Fixture, db) -> list:
+    """Multi-currency (new Rust-only routes + the Python order path): tests/contract/fx_cases.py."""
+    import fx_cases  # noqa: PLC0415 - lives next to this file
+    return fx_cases.run(args, fx, db, sys.modules[__name__])
+
+
 def run(args) -> int:
     env = read_env_file(args.env_file) if args.env_file else {}
     secret = os.environ.get("SECRET_KEY") or env.get("SECRET_KEY")
@@ -2807,6 +2813,7 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        results += run_fx_section(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

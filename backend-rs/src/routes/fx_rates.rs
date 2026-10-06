@@ -164,15 +164,6 @@ fn row_json(r: &sqlx::postgres::PgRow) -> Result<Map<String, Value>, ApiError> {
     Ok(m)
 }
 
-async fn get_row(pool: &PgPool, tenant_id: &str, id: &str) -> Result<Option<Map<String, Value>>, ApiError> {
-    let row = sqlx::query(&format!("SELECT {COLS} FROM exchange_rates WHERE tenant_id = $1 AND id = $2"))
-        .bind(tenant_id)
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
-    row.as_ref().map(row_json).transpose()
-}
-
 /// The rate in force for currency -> base on `on`, with its exact text.
 /// `None` when there is none (rule 4: never a substitute).
 async fn resolve_rate(
