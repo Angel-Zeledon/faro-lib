@@ -528,3 +528,62 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+### Wave 3 (inventory hub), partial (2026-10-06)
+
+Stopped on the owner's instruction to slow the migration; what exists is below.
+Nothing here is deployed and **no Caddy example exists for any wave-3 group**.
+
+**Map of `backend/api/v1/inventory*.py` (87 + 6 + 9 + 2 + 2 + 4 + 2 routes), by risk.**
+Highest (money decided by the numbers): `GET /inventory/status`, `/optimize`,
+`/status/export-po`, `/morning-briefing`, `/dashboard-summary`, `POST /alerts/send-now`,
+`/events/simulate`, service-level-classes (all need the semaforo or the optimizer or
+notifications: **stay Python**). High (writes stock): stock rows, counts, transfers,
+reception and reversals, shrinkage, bulk import (pandas/file: stays Python). Medium:
+suppliers, warehouses, lanes, price breaks, BOM, events, cash calendar, PO log/send/PDF
+(files, email: stay Python for now). Low: reads of history, lists.
+
+**Registered in `routes/w3/mod.rs` and contract-verified: 20 routes, 271/271 cases.**
+`GET /inventory/stock`, `/stock/page`, `/stock/lookup`, `/stock/{sku}`; `PUT`, `PATCH`,
+`DELETE /stock/{sku}`; the nine `/stock-counts` routes; `POST /po/{id}/unreceive` and
+`/unsend`. Run: `python tests/contract/run_w3.py` (two identically seeded tenants, one per
+service, a third as the foreign tenant; compares status, error code and params, masked
+bodies, and the rows each side added or removed in 12 tables). Python ran on the worktree
+code (`:8052`), Rust release on `:8051`, a disposable local Postgres (`rust_w3`, timezone
+UTC), `TESTING_MODE=true`. First run found 22 divergences, all fixed: the Rust side must
+answer 404 for `%2F` inside a path parameter (Starlette routes on the decoded path;
+`inventory::scope::reject_slash`), and the database must be UTC (divergence 5).
+Per route: stock 7+21+23+9+38+19+8, counts 20+9+8+33+6+10+9+16+10, reversals 13+11.
+
+**Written, differential-tested where numeric, but NOT registered (no contract result yet):**
+`routes/w3/receive.rs` (`GET /po/{id}/items`, `POST /po/{id}/receive`), `transfers.rs`
+(create, list, receive, cancel, close), `shrinkage.rs` (create, list, reasons). The cases
+exist (`tests/contract/w3_cases_3b.py`, about 150) but the run did not complete before the
+stop. Next step: build, start both services, run `run_w3.py`, fix, then register.
+
+**Numerics, bit-exact against Python (`backend-rs/src/inventory/calc.rs`, `pydt.rs`).**
+`cargo test differential` replays `backend-rs/tests/fixtures/inventory_calc.json`, written by
+the Python implementation (`tests/contract/gen_inventory_fixtures.py`, seeded, `--check`
+detects staleness): z quantile (Acklam), semaforo signal, measured and modelled safety stock,
+recommended quantity with MOQ, lead-time cascade and learned lead time, ABC/XYZ and class
+summary, fill rate, unit margin, forecast averages, `format(x,"g")`, and CPython 3.12
+`datetime.fromisoformat` (5,049 strings, one measured quirk reproduced). About 25,700 cases,
+every f64 compared by bits. Reproduced exactly: `round()` ties-to-even, compensated `sum()`
+of CPython 3.12, Python `max`/`min` on NaN, `pow(x, 2.0)` through libm (not `x*x`).
+Mutating `py_sum` to a plain sum turns the suite red, so the comparison can fail.
+Caveat: `log` and `pow` come from the platform libm; verified on Windows only. Production
+Python and the distroless Rust image are both Debian 12 glibc, which is the intended match,
+unverified here.
+
+**Stays Python (and why).** Semaforo status, optimizer, `service_level_classes` (read the
+status; the numerics are ported but the route needs `_compute_inventory_status`, 700 lines
+over session results), planning, PDF, email/WhatsApp sends, bulk and PO imports (pandas,
+files), `receive_po` side effects beyond the DB are none, so it is a candidate once verified.
+
+**Divergences and gaps.** Ours stronger: stock writes, shrinkage and the reversals run in one
+transaction where Python uses several autocommits. `SELECT *` without ORDER BY (a SKU in two
+warehouses on `GET /stock/{sku}`) relies on the same heap order. Not covered: ceilings
+(`max_skus`, `max_locations`) and `plan_feature_locked`, because `TESTING_MODE=true` turns
+them off on both sides; rate limits; `TRIAL_EXPIRED`. Python `float()` of non-ASCII digits
+and ordinal ISO dates are not reproduced. Rust handlers of waves 1-2 probably need the same
+`%2F` 404 guard.
