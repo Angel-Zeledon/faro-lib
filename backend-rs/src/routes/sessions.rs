@@ -33,7 +33,7 @@ use sqlx::{Column, PgPool, Row, TypeInfo};
 
 use crate::activity::log_action;
 use crate::auth::{self, Exposure, RequestActors, RouteAuth};
-use crate::entitlements::{tenant_limits, tenant_tier, TenantRow};
+use crate::limits;
 use crate::error::ApiError;
 use crate::pycompat::{isoformat_date, isoformat_utc, py_strip};
 use crate::routes::ok;
@@ -688,12 +688,11 @@ pub async fn restore(
     // limit_guard: one transaction holding the tenant's advisory lock for the
     // count and the check.
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
-        .bind(&user.tenant_id)
-        .execute(&mut *tx)
-        .await?;
+    limits::take_tenant_lock(&mut tx, &user.tenant_id).await?;
     let current = count_sessions(&mut tx, &user.tenant_id, "active").await?;
-    if let Err(e) = enforce_limit(&state, &mut tx, &user.tenant_id, "max_sessions", current).await {
+    if let Err(e) = limits::enforce_limit(&state.pool, &mut tx, state.settings.testing_mode, &user.tenant_id,
+        "max_sessions", current, 1).await
+    {
         drop(tx); // rollback, like the raising `with` block
         return Err(e);
     }
@@ -712,54 +711,6 @@ pub async fn restore(
     log_action(&state.pool, &user.tenant_id, &user.user_id, "session.restore", Some(&session_id),
         &json!({"name": s.get("name").cloned().unwrap_or(Value::Null)}), "success").await?;
     Ok(ok(restored.map(Value::Object).unwrap_or(Value::Null)))
-}
-
-/// `entitlements.service.enforce_limit` (adding = 1). A no-op in testing
-/// mode, like Python. A refusal records `limit.reached` on its own
-/// connection first, so it survives the caller's rollback.
-async fn enforce_limit(
-    state: &AppState,
-    conn: &mut sqlx::PgConnection,
-    tenant_id: &str,
-    limit_key: &str,
-    current: i64,
-) -> Result<(), ApiError> {
-    if state.settings.testing_mode {
-        return Ok(());
-    }
-    let row: Option<(String, Value, Option<DateTime<Utc>>)> =
-        sqlx::query_as("SELECT tier, quota, trial_ends_at FROM tenants WHERE id = $1")
-            .bind(tenant_id)
-            .fetch_optional(&mut *conn)
-            .await?;
-    let tenant = row
-        .map(|(tier, quota, trial_ends_at)| TenantRow { tier: Some(tier), quota, trial_ends_at })
-        .unwrap_or_default();
-    let max_allowed = tenant_limits(&tenant).get(limit_key).cloned().unwrap_or(Value::Null);
-    let Some(max) = max_allowed.as_f64() else { return Ok(()) };
-    if (current + 1) as f64 > max {
-        let context = json!({
-            "limit": limit_key,
-            "ceiling": max_allowed,
-            "severity": "warning",
-            "kind": "limit",
-            "reason": "plan_limit_reached",
-            "reason_params": {"limit": limit_key, "current": current, "max": max_allowed},
-        });
-        if let Err(e) = log_action(&state.pool, tenant_id, "system", "limit.reached", Some(limit_key),
-            &context, "error").await
-        {
-            tracing::error!(error = %e, tenant = tenant_id, "could not record the ceiling");
-        }
-        return Err(ApiError::http_dict(403, json!({
-            "code": "PLAN_LIMIT_REACHED",
-            "limit": limit_key,
-            "current": current,
-            "max": max_allowed,
-            "tier": tenant_tier(&tenant),
-        })));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

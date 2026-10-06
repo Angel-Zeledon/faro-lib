@@ -19,7 +19,7 @@ use chrono::{Local, NaiveDate};
 use serde_json::{json, Map, Value};
 use sqlx::{PgPool, Row};
 
-use crate::activity::log_action;
+use crate::activity::{record_event, Event};
 use crate::auth::{self, Exposure, RequestActors, RouteAuth};
 use crate::error::ApiError;
 use crate::pycompat::{date_fromisoformat, isoformat_date, py_strip, take_chars};
@@ -49,25 +49,12 @@ const COLS: &str = "e.id, e.dataset_id, e.sku, e.start_date, e.end_date, e.reaso
 
 // ── The two activity events (backend/activity/events.py) ─────────────────────
 
-const DETAIL_KEYS: [&str; 3] = ["sku", "period", "spike_reason"];
-
 /// `record_event` for `forecast.spike_excluded` / `forecast.spike_restored`
 /// (kind `training`, INFO, detail keys sku / period / spike_reason). Never
 /// fails the caller.
-async fn record_spike_event(pool: &PgPool, tenant_id: &str, user_id: &str, action: &str, row: &Map<String, Value>) {
-    let details = details(row);
-    let mut ctx = Map::new();
-    for k in DETAIL_KEYS {
-        if let Some(v) = details.get(k).filter(|v| !v.is_null()) {
-            ctx.insert(k.to_string(), v.clone());
-        }
-    }
-    ctx.insert("severity".into(), json!("info"));
-    ctx.insert("kind".into(), json!("training"));
+async fn record_spike_event(pool: &PgPool, tenant_id: &str, user_id: &str, event: Event, row: &Map<String, Value>) {
     let resource = row.get("id").and_then(Value::as_str);
-    if let Err(e) = log_action(pool, tenant_id, user_id, action, resource, &Value::Object(ctx), "success").await {
-        tracing::error!(error = %e, action, tenant = tenant_id, "record_event: could not record");
-    }
+    record_event(pool, tenant_id, user_id, event, resource, details(row)).await;
 }
 
 /// `_details`: ISO dates joined by "..", language-neutral.
@@ -307,7 +294,7 @@ pub async fn create(
     .await?;
     tx.commit().await?;
     let row = get(&state.pool, &user.tenant_id, &new_id).await?;
-    record_spike_event(&state.pool, &user.tenant_id, &user.user_id, "forecast.spike_excluded", &row).await;
+    record_spike_event(&state.pool, &user.tenant_id, &user.user_id, Event::SpikeExcluded, &row).await;
     Ok((StatusCode::CREATED, ok(Value::Object(row))))
 }
 
@@ -336,7 +323,7 @@ pub async fn revert(
             json!({"spike_edit_id": existing["id"]})));
     }
     let row = get(&state.pool, &user.tenant_id, &spike_edit_id).await?;
-    record_spike_event(&state.pool, &user.tenant_id, &user.user_id, "forecast.spike_restored", &row).await;
+    record_spike_event(&state.pool, &user.tenant_id, &user.user_id, Event::SpikeRestored, &row).await;
     Ok(ok(Value::Object(row)))
 }
 

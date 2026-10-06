@@ -27,7 +27,7 @@ use regex::Regex;
 use serde_json::{json, Map, Value};
 use std::sync::OnceLock;
 
-use crate::activity::log_action;
+use crate::activity::{record_event_with_reason, Event};
 use crate::auth::api_key::{hash_key, KEY_PREFIX, RATE_MAX_PER_MINUTE};
 use crate::auth::{self, warehouse_scope as wscope, CurrentUser, Exposure, RequestActors, RouteAuth};
 use crate::entitlements::{self, tenant_limits, TenantRow};
@@ -251,29 +251,22 @@ pub fn validate_create(obj: &Map<String, Value>) -> Result<CreateKey, ApiError> 
 
 // ── Events (backend/activity/events.py) ──────────────────────────────────────
 
-/// `record_event(..., "account.api_key_*", reason="changed_by_an_account_admin")`:
-/// WARNING, kind `account`, whitelisted detail keys in spec order.
+/// `record_event(..., "account.api_key_*", reason="changed_by_an_account_admin")`.
 async fn record_account_event(
     state: &AppState,
     user: &CurrentUser,
-    action: &str,
+    event: Event,
     resource: &str,
     details: &[(&str, Option<String>)],
 ) {
-    let mut ctx = Map::new();
+    let mut d = Map::new();
     for (k, v) in details {
         if let Some(v) = v {
-            ctx.insert((*k).to_string(), json!(v));
+            d.insert((*k).to_string(), json!(v));
         }
     }
-    ctx.insert("severity".into(), json!("warning"));
-    ctx.insert("kind".into(), json!("account"));
-    ctx.insert("reason".into(), json!("changed_by_an_account_admin"));
-    if let Err(e) = log_action(&state.pool, &user.tenant_id, &user.user_id, action, Some(resource),
-        &Value::Object(ctx), "success").await
-    {
-        tracing::error!(error = %e, action, tenant = %user.tenant_id, "record_event: could not record");
-    }
+    record_event_with_reason(&state.pool, &user.tenant_id, &user.user_id, event, Some(resource), d,
+        Some("changed_by_an_account_admin")).await;
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -348,7 +341,7 @@ pub async fn create(
 
     // The name and scope are safe to log; the key never is.
     tracing::info!("[api-keys] created name={} scope={} tenant={}", req.name, req.scope, user.tenant_id);
-    record_account_event(&state, &user, "account.api_key_created", &req.name,
+    record_account_event(&state, &user, Event::ApiKeyCreated, &req.name,
         &[("key_name", Some(req.name.clone())), ("role", Some(req.role.clone()))]).await;
     Ok(ok(json!({
         "key": raw,
@@ -576,7 +569,7 @@ async fn revoke_inner(state: AppState, actors: RequestActors, key_id: String, he
         .bind(&user.tenant_id)
         .execute(&state.pool)
         .await?;
-    record_account_event(&state, &user, "account.api_key_revoked", &key_id, &[("key_name", name)]).await;
+    record_account_event(&state, &user, Event::ApiKeyRevoked, &key_id, &[("key_name", name)]).await;
     Ok(ok(json!({"revoked": key_id})))
 }
 

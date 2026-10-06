@@ -53,6 +53,10 @@ pub enum Event {
     PurchaseOrderUnpaid,
     PurchaseOrderCancelled,
     PurchaseOrderUncancelled,
+    ApiKeyCreated,
+    ApiKeyRevoked,
+    SpikeExcluded,
+    SpikeRestored,
 }
 
 impl Event {
@@ -71,6 +75,10 @@ impl Event {
             ),
             Event::CommittedDemandImported => ("committed_demand.imported", "purchase", "info", &["rows"]),
             Event::CommittedDemandChanged => ("committed_demand.changed", "purchase", "info", &["sku", "status"]),
+            Event::ApiKeyCreated => ("account.api_key_created", "account", "warning", &["key_name", "role"]),
+            Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
+            Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
         }
     }
 }
@@ -96,8 +104,7 @@ pub fn event_context(event: Event, details: &Map<String, Value>) -> Value {
     Value::Object(ctx)
 }
 
-/// `record_event` for an INFO event (none of the migrated ones carry a
-/// reason). Never fails the caller: a lost audit row is logged at ERROR.
+/// `record_event` for an INFO event without a reason. Never fails the caller: a lost audit row is logged at ERROR.
 pub async fn record_event(
     pool: &PgPool,
     tenant_id: &str,
