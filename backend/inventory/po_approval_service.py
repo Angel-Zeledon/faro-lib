@@ -487,6 +487,10 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
 
     log.info("[po-approval] %s tenant=%s po=%s by=%s", decision.upper(), tenant_id,
              po_log_id, user_id)
+    # Only the decision that WON the race reaches here, so one decision is one
+    # event, however many times the call is repeated.
+    from backend.webhooks.service import emit_po_event
+    emit_po_event(tenant_id, f"purchase_order.{decision}", po_log_id, decided_by=user_id)
     _notify_requester(tenant_id, po, latest["requested_by"], decision, clean_comment,
                       float(latest["amount"]), user_id)
     return {**describe(tenant_id, po_log_id, user_id), "changed": True,

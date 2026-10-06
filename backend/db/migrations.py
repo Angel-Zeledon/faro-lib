@@ -2050,6 +2050,8 @@ from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  #
 _MIGRATIONS += _SKU_ANALOGIES
 from backend.inventory.demand_plan_migrations import MIGRATIONS as _DEMAND_PLANS  # noqa: E402
 _MIGRATIONS += _DEMAND_PLANS
+from backend.webhooks.migrations import MIGRATIONS as _WEBHOOK_DELIVERY  # noqa: E402
+_MIGRATIONS += _WEBHOOK_DELIVERY
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

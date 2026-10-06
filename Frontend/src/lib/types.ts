@@ -1016,6 +1016,41 @@ export interface Webhook {
   url:        string
   events:     string[]
   created_at: string
+  /** null = company-wide; otherwise the warehouses it is confined to. */
+  warehouse_ids:     string[] | null
+  disabled_at:       string | null
+  disabled_reason:   string | null
+  failure_days:      number
+  secret_rotated_at: string | null
+}
+
+/** Returned once, by create: the only time the signing secret is visible. */
+export interface CreatedWebhook {
+  id: string; url: string; events: string[]
+  warehouse_ids: string[] | null; secret: string
+}
+
+export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'failed' | 'abandoned'
+
+export interface WebhookDelivery {
+  id:               string
+  event_id:         string
+  event_type:       string
+  is_test:          boolean
+  status:           WebhookDeliveryStatus
+  attempts:         number
+  last_status_code: number | null
+  last_error:       string | null
+  next_attempt_at:  string | null
+  created_at:       string
+  last_attempt_at:  string | null
+  delivered_at:     string | null
+}
+
+export interface WebhookEventInfo {
+  type: string
+  data_keys: string[]
+  warehouse_aware: boolean
 }
 
 // ── Job Schedule ──────────────────────────────────────────────────────────────

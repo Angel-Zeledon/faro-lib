@@ -404,10 +404,26 @@ DOCS: dict[tuple[str, str], tuple[str, str]] = {
         "Outgoing webhooks and the events they subscribe to."),
     ("POST", "/webhooks"): (
         "Create a webhook",
-        "Subscribes an https URL to job.completed / job.failed events."),
+        "Subscribes an https URL to business events (purchase orders, stockouts, "
+        "commitments, jobs). The signing secret is returned once."),
+    ("GET", "/webhooks/events"): (
+        "List webhook events",
+        "The events a webhook can subscribe to and the data keys each carries."),
     ("DELETE", "/webhooks/{webhook_id}"): (
         "Delete a webhook",
-        "Removes the webhook."),
+        "Removes the webhook and its delivery log."),
+    ("POST", "/webhooks/{webhook_id}/rotate-secret"): (
+        "Rotate a webhook secret",
+        "Issues a new signing secret, returned once. The old one stops verifying at once."),
+    ("POST", "/webhooks/{webhook_id}/test"): (
+        "Send a test event",
+        "Queues a signed webhook.test delivery to the webhook."),
+    ("POST", "/webhooks/{webhook_id}/enable"): (
+        "Re-enable a webhook",
+        "Switches a webhook back on after it was disabled for repeated failures."),
+    ("GET", "/webhooks/{webhook_id}/deliveries"): (
+        "List webhook deliveries",
+        "The delivery log: status, attempts, last status code, last error and next retry."),
 }
 
 

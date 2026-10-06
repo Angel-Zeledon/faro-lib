@@ -5042,6 +5042,33 @@ def record_notification_delivery(
         log.warning("notification activity log failed user=%s action=%s: %s", user_id, action, e)
 
 
+def _stockout_webhook_pass(tenant_id: str, items: list[dict], *, session_id: str,
+                           **inputs) -> Optional[list[dict]]:
+    """Emit `stockout.imminent` for every SKU (per warehouse when the tenant has
+    several) that newly entered PEDIR_YA since the last daily pass. Never raises:
+    a webhook problem must not cost the tenant its alert email.
+
+    Returns the per-warehouse status rows when it had to compute them, so the
+    caller can reuse them; None otherwise.
+    """
+    from backend.inventory import warehouse_service as wh_svc
+    from backend.webhooks import service as hooks
+    try:
+        if not hooks.subscribers(tenant_id, "stockout.imminent"):
+            hooks.run_transition(tenant_id, "stockout", "stockout.imminent", {})
+            return None
+        multi = wh_svc.count_warehouses(tenant_id) >= 2
+        rows = (get_inventory_status_by_warehouse(tenant_id, session_id, **inputs)
+                if multi else items)
+        hooks.stockout_transitions(
+            tenant_id, rows, default_warehouse=wh_svc.get_default_warehouse_name(tenant_id))
+        return rows if multi else None
+    except Exception as e:  # noqa: BLE001
+        log.error("inventory_alert: stockout webhooks failed tenant=%s: %s", tenant_id, e,
+                  exc_info=True)
+        return None
+
+
 def run_daily_inventory_alerts() -> None:
     """
     Called once per day by the scheduler.
@@ -5101,6 +5128,17 @@ def run_daily_inventory_alerts() -> None:
             critical = [i for i in items if i["signal"] == "PEDIR_YA"]
             warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
 
+            # `stockout.imminent` webhooks: before the "nothing at risk" early
+            # exit below, because a SKU LEAVING PEDIR_YA must be noticed too (it
+            # is what lets the next entry count as a new transition). Its
+            # per-warehouse rows are reused by the scoped digest, not recomputed.
+            webhook_wh_items = _stockout_webhook_pass(
+                tid, items,
+                forecasts=forecasts, stock_rows=stock_rows,
+                learned_lead_times=learned_lead_times,
+                incoming_qty=incoming_qty, period=period, session_id=sid,
+            )
+
             # Users limited to some warehouses get the digest of THEIR
             # warehouses (notifications/scoped_digest.py), so the tenant-wide
             # "nothing at risk" verdict must not end the run for them: the
@@ -5114,9 +5152,9 @@ def run_daily_inventory_alerts() -> None:
             # computed — for tenants with 2+ warehouses.
             from backend.inventory import warehouse_service as wh_svc
             transfer_count = 0
-            wh_items = None
+            wh_items = webhook_wh_items
             scoped_error: Optional[Exception] = None
-            if scoped_recipients:
+            if scoped_recipients and wh_items is None:
                 # The exact computation their screens read. A failure here must
                 # reach them as a failed row (below) without costing the
                 # company digest its send.
