@@ -51,9 +51,28 @@ def _create(client, headers, **overrides):
     return r.json()["data"]
 
 
+def _strings(x):
+    if isinstance(x, dict):
+        for v in x.values():
+            yield from _strings(v)
+    elif isinstance(x, (list, tuple)):
+        for v in x:
+            yield from _strings(v)
+    elif x is not None:
+        yield str(x)
+
+
 def _no_secret(*blobs, secret):
+    """The secret must not leak. A long secret is searched as a substring; a SHORT
+    one (a test database whose password is the word 'postgres' also appears inside
+    'postgresql') is searched as a whole value or in the URL form `:secret@`."""
     for blob in blobs:
-        assert secret not in json.dumps(blob, default=str)
+        text = json.dumps(blob, default=str)
+        if len(secret) >= 12:
+            assert secret not in text
+        else:
+            assert secret not in set(_strings(blob))
+            assert f":{secret}@" not in text
 
 
 # ── Parse ─────────────────────────────────────────────────────────────────────
@@ -105,18 +124,7 @@ class TestCreate:
         assert ds_secrets.decrypt(stored["password_enc"]) == own["password"]
         assert "password_enc" not in src["sql_config"] and src["sql_config"]["has_password"] is True
         if own["password"]:
-            # Exact-value check, not a substring one: a test database whose password is
-            # a common word ('postgres') legitimately appears inside 'postgresql'.
-            def _strings(x):
-                if isinstance(x, dict):
-                    for v in x.values():
-                        yield from _strings(v)
-                elif isinstance(x, list):
-                    for v in x:
-                        yield from _strings(v)
-                elif isinstance(x, str):
-                    yield x
-            assert own["password"] not in set(_strings(r.json()))
+            _no_secret(r.json(), secret=own["password"])
             _no_secret(_audit(test_tenant["id"], src["id"], "audit.dataset.created"), secret=own["password"])
 
     def test_private_literal_refused_when_the_installation_does_not_allow_it(
