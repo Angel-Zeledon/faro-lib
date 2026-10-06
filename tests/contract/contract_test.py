@@ -4725,6 +4725,10 @@ def run_ip_allowlist(args, fx: Fixture, db) -> list:
         r = call("GET", f"{API}/entitlements", ip=IPA_OUTSIDE)
         record(f"a disabled policy filters nobody on {name}", expect(r, 200))
     return results
+def run_fx_section(args, fx: Fixture, db) -> list:
+    """Multi-currency (new Rust-only routes + the Python order path): tests/contract/fx_cases.py."""
+    import fx_cases  # noqa: PLC0415 - lives next to this file
+    return fx_cases.run(args, fx, db, sys.modules[__name__])
 
 
 def run(args) -> int:
@@ -4807,6 +4811,7 @@ def run(args) -> int:
         # MFA (tests/contract/mfa_cases.py): Rust-only routes + the Python login challenge.
         from mfa_cases import run_mfa  # noqa: PLC0415
         results += run_mfa(sys.modules[__name__], args, fx, db)
+        results += run_fx_section(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

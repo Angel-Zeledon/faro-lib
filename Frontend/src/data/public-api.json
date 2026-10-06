@@ -8292,6 +8292,13 @@
             "nullable": true
            },
            {
+            "name": "currency",
+            "required": false,
+            "type": "string",
+            "max_length": 8,
+            "nullable": true
+           },
+           {
             "name": "status",
             "required": false,
             "type": "string",
@@ -8588,6 +8595,13 @@
             "nullable": true
            },
            {
+            "name": "currency",
+            "required": false,
+            "type": "string",
+            "max_length": 8,
+            "nullable": true
+           },
+           {
             "name": "display_name",
             "required": false,
             "type": "string",
@@ -8611,6 +8625,7 @@
          "sku": "SKU-001",
          "qty": 1.0,
          "unit_cost": 1.0,
+         "currency": "CRC",
          "display_name": "Example name"
         }
        ],
@@ -11432,6 +11447,13 @@
          "nullable": true
         },
         {
+         "name": "currency",
+         "required": false,
+         "type": "string",
+         "max_length": 8,
+         "nullable": true
+        },
+        {
          "name": "moq",
          "required": false,
          "type": "number",
@@ -11457,6 +11479,7 @@
       "example": {
        "is_primary": true,
        "unit_cost": 1.0,
+       "currency": "CRC",
        "moq": 1,
        "lead_time_days": 1,
        "notes": "Free-text note"

@@ -75,6 +75,9 @@ pub enum Event {
     MfaRecoveryCodesRegenerated,
     MfaReset,
     MfaPolicyChanged,
+    CurrencyRateCreated,
+    CurrencyRateChanged,
+    CurrencyRateDeleted,
 }
 
 impl Event {
@@ -125,6 +128,9 @@ impl Event {
             Event::MfaRecoveryCodesRegenerated => ("account.mfa_recovery_codes_regenerated", "account", "info", &[]),
             Event::MfaReset => ("account.mfa_reset", "account", "warning", &["email"]),
             Event::MfaPolicyChanged => ("account.mfa_policy_changed", "account", "warning", &["mfa_required"]),
+            Event::CurrencyRateCreated => ("currency_rate.created", "purchase", "info", &["currency", "rate", "effective_date"]),
+            Event::CurrencyRateChanged => ("currency_rate.changed", "purchase", "info", &["currency", "rate", "effective_date"]),
+            Event::CurrencyRateDeleted => ("currency_rate.deleted", "purchase", "info", &["currency", "rate", "effective_date"]),
         }
     }
 }

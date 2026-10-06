@@ -15,6 +15,8 @@ mod error;
 mod inventory;
 mod fulfillment;
 mod ip_allowlist;
+mod fx;
+mod fx_eval;
 mod limits;
 mod middleware;
 mod outbox;
@@ -63,6 +65,11 @@ async fn healthcheck() -> i32 {
 async fn main() {
     if std::env::args().nth(1).as_deref() == Some("healthcheck") {
         std::process::exit(healthcheck().await);
+    }
+    // Pure arithmetic filter for the differential test against the Python
+    // reference; touches no database and no network.
+    if std::env::args().nth(1).as_deref() == Some("fx-eval") {
+        std::process::exit(fx_eval::main());
     }
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_env("RUST_LOG").unwrap_or_else(|_| EnvFilter::new("info")))

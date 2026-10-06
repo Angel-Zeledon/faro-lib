@@ -22,6 +22,8 @@ import { getUser } from '@/lib/auth'
 
 export interface CartCheckLine {
   sku: string; qty: number; unit_cost: number | null
+  /** ISO code `unit_cost` is quoted in when it is not the company's own currency. */
+  currency?: string | null
   supplier?: string | null; supplier_id?: string | null
 }
 
@@ -39,7 +41,7 @@ export default function BudgetCartCheck({ lines, destination, reason, onReason, 
   const [exceeded, setExceeded] = useState<BudgetExceeded[]>([])
 
   const signature = useMemo(
-    () => JSON.stringify([destination ?? '', lines.map(l => [l.sku, l.qty, l.unit_cost, l.supplier_id ?? l.supplier ?? ''])]),
+    () => JSON.stringify([destination ?? '', lines.map(l => [l.sku, l.qty, l.unit_cost, l.currency ?? '', l.supplier_id ?? l.supplier ?? ''])]),
     [lines, destination])
 
   useEffect(() => {
@@ -69,11 +71,14 @@ export default function BudgetCartCheck({ lines, destination, reason, onReason, 
         <p key={e.root_id ?? `hidden-${i}`} style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <AlertTriangle size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 3, color: e.hard_cap ? '#C0504D' : '#B7791F' }} />
           <span>
-            {e.visible
+            {e.exceeds === false
+              ? t(e.hard_cap ? 'budget.cart_unconverted_hard' : 'budget.cart_unconverted_soft', { n: e.unconverted_lines ?? 0 })
+              : e.visible
               ? t(e.hard_cap ? 'budget.cart_over_hard' : 'budget.cart_over_soft', {
                   over: formatMoney(e.over_by ?? 0), remaining: formatMoney(e.remaining ?? 0),
                 })
               : t(e.hard_cap ? 'budget.cart_over_hidden_hard' : 'budget.cart_over_hidden_soft')}
+            {e.exceeds !== false && e.unconverted_lines ? ` ${t('budget.cart_unconverted_extra', { n: e.unconverted_lines })}` : ''}
             {e.unknown_cost_lines ? ` ${t('budget.cart_unknown_cost', { n: e.unknown_cost_lines })}` : ''}
           </span>
         </p>

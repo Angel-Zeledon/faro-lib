@@ -56,7 +56,7 @@ fn entry(code: &str) -> Option<Value> {
     })
 }
 
-fn sorted_codes() -> Vec<&'static str> {
+pub(crate) fn sorted_codes() -> Vec<&'static str> {
     let mut v: Vec<&str> = SUPPORTED.iter().map(|(c, ..)| *c).collect();
     v.sort_unstable();
     v
@@ -110,6 +110,17 @@ pub(crate) fn supported_or_default<'a>(
             Ok(default.to_string())
         }
     }
+}
+
+/// Is `code` one of `SUPPORTED` (exact, upper-case match).
+pub(crate) fn is_supported(code: &str) -> bool {
+    entry(code).is_some()
+}
+
+/// The tenant's base (reporting) currency code: `currency_of(tenant)["code"]`.
+pub(crate) async fn currency_code_of(pool: &PgPool, tenant_id: &str) -> Result<String, ApiError> {
+    let cur = currency_of(pool, tenant_id).await?;
+    cur["code"].as_str().map(str::to_string).ok_or_else(ApiError::internal)
 }
 
 /// `currency_of`.

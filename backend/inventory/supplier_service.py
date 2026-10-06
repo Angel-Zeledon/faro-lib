@@ -440,6 +440,7 @@ def get_sku_suppliers(tenant_id: str, sku: str) -> list[dict]:
                ss.supplier_id,
                ss.is_primary,
                ss.unit_cost,
+               ss.currency,
                ss.moq,
                ss.lead_time_days,
                ss.notes,
@@ -457,7 +458,7 @@ def get_sku_suppliers(tenant_id: str, sku: str) -> list[dict]:
 
 
 def upsert_sku_supplier(tenant_id: str, sku: str, supplier_id: str, data: dict) -> dict:
-    allowed = {"is_primary", "unit_cost", "moq", "lead_time_days", "notes"}
+    allowed = {"is_primary", "unit_cost", "currency", "moq", "lead_time_days", "notes"}
     safe = {k: v for k, v in data.items() if k in allowed}
 
     # Build the ON CONFLICT branch. When there is nothing to set, use DO

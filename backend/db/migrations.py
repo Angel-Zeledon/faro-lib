@@ -2062,6 +2062,8 @@ from backend.inventory.po_delegation_migrations import MIGRATIONS as _PO_DELEGAT
 _MIGRATIONS += _PO_DELEGATIONS
 from backend.inventory.customer_portal_migrations import MIGRATIONS as _CUSTOMER_PORTAL  # noqa: E402
 _MIGRATIONS += _CUSTOMER_PORTAL
+from backend.fx.migrations import MIGRATIONS as _FX  # noqa: E402
+_MIGRATIONS += _FX
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

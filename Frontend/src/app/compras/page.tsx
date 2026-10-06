@@ -1371,7 +1371,7 @@ export default function HoyPage() {
    // another session.
    if (e instanceof ApiError && e.kind === 'permission') {
     addToast(t('states.err_permission_title'), t('states.err_permission_body'), 'error')
-   } else if (e instanceof ApiError && (e.code === 'purchase_budget_hard_cap' || e.code === 'purchase_budget_override_requires_admin')) {
+   } else if (e instanceof ApiError && (e.code === 'purchase_budget_hard_cap' || e.code === 'purchase_budget_fx_rate_missing' || e.code === 'purchase_budget_override_requires_admin')) {
     // Refused by a hard-capped budget: the cart stays as it is, and the
     // reason box above it (admins) is where the way forward is.
     addToast(t('budget.toast_blocked_title'), errorDetail(e), 'error', { duration: 12000 })

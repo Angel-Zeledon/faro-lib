@@ -79,7 +79,8 @@ def get_po_items(tenant_id: str, po_log_id: str, conn: Optional[Any] = None) -> 
     return query(
         """SELECT id, sku, display_name, supplier, supplier_id, signal, status,
                   recommended_qty, final_qty, received_qty, unit_cost,
-                  warehouse
+                  warehouse, currency, fx_base_currency, fx_rate, fx_rate_date,
+                  value_base
            FROM inventory_po_items
            WHERE po_log_id = %s AND tenant_id = %s
            ORDER BY supplier NULLS LAST, sku""",
@@ -857,7 +858,8 @@ def get_supplier_scorecard(tenant_id: str) -> list[dict]:
                   pol.reception_status               AS reception_status,
                   COALESCE(SUM(poi.received_qty), 0) AS total_received,
                   COALESCE(SUM(poi.final_qty), 0)    AS order_total,
-                  SUM(poi.final_qty * poi.unit_cost) AS purchased_value,
+                  SUM(CASE WHEN poi.currency IS NULL THEN poi.final_qty * poi.unit_cost
+                           ELSE poi.value_base::float8 END) AS purchased_value,
                   COUNT(*)::int                      AS n_lines,
                   COUNT(poi.unit_cost)::int          AS n_lines_costed
            FROM inventory_po_items poi
