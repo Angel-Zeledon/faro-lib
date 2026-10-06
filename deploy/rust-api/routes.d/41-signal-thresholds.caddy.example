@@ -1,0 +1,22 @@
+# DISABLED EXAMPLE. Rename to 41-signal-thresholds.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust.
+#
+# The semáforo's lead-time multipliers (backend-rs/src/routes/
+# signal_thresholds.rs): GET, PUT and DELETE on the exact path.
+# POST /api/v1/inventory/signal-thresholds/preview stays on Python: it runs the
+# real semáforo (the inventory hub) twice. The exact `path` (no `*`) is what
+# keeps it there.
+
+@rs_signal_thresholds {
+	method GET PUT DELETE
+	path /api/v1/inventory/signal-thresholds
+}
+handle @rs_signal_thresholds {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

@@ -102,8 +102,19 @@ access log, NUL-path guard, 404/405 envelopes. Plus `GET /health`.
 notification, no file storage, no hub.
 * Done: `GET /entitlements`; committed-demand `POST`, `POST /bulk`,
   `PATCH /{id}`, `POST /{id}/status`.
+* Done (R4): `POST /inventory/po/{id}/mark-paid`, `/mark-unpaid`,
+  `/cancel`, `/uncancel` (with the warehouse-scope PO guard ported in
+  `backend-rs/src/auth/warehouse_scope.rs`); `GET`, `PUT`, `DELETE
+  /inventory/signal-thresholds` (with the `audit.config.changed` row
+  `AuditMiddleware` writes). Contract: 132 cases in the full run, 131 passed.
+  The one failure (`cancel` with a `text/plain` body: Python's 422 `input` is
+  the bytes repr `"b'stop it'"`) is fixed and covered by a unit test. Its
+  contract rerun did not finish: another run erased the fixture tenant.
+  Not migrated: `POST /inventory/signal-thresholds/preview`, which runs the
+  semáforo (inventory hub). There are no other stock-defaults HTTP routes:
+  `stock_defaults_service` is only called internally.
 * Next, in this order: preferences, activity, alerts, timezone, currency,
-  models, spike_edits, po_payments, po_cancellation, sessions (read and
+  models, spike_edits, sessions (read and
   archive/restore; not `/train`), schedule, webhooks CRUD (dispatch stays
   Python), api_keys, audit. Roughly 60 routes. Each one needs the audit-route
   catalogue (`backend/audit/catalog.py`) ported for its paths, because

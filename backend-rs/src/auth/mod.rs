@@ -8,6 +8,7 @@
 
 pub mod api_key;
 pub mod jwt;
+pub mod warehouse_scope;
 
 use std::sync::{Arc, Mutex};
 
