@@ -269,14 +269,15 @@ def claim_next(now: datetime) -> Optional[dict]:
             return {}
         late = now - due > timedelta(hours=catalog.CATCHUP_HOURS[sched["frequency"]])
         run = query_one(
-            """INSERT INTO report_schedule_runs (tenant_id, schedule_id, period_key, due_at, status, error, finished_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO report_schedule_runs
+                      (tenant_id, schedule_id, period_key, due_at, status, error, finished_at, started_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (schedule_id, period_key) DO NOTHING
             RETURNING *""",
             (tenant_id, sched["id"], local_key(due, tz_name), due,
              "skipped" if late else "building",
              "missed_beyond_catchup_window" if late else None,
-             now if late else None), conn=conn)
+             now if late else None, now), conn=conn)
         execute("UPDATE report_schedules SET next_run_at = %s, updated_at = NOW() WHERE id = %s",
                 (nxt, sched["id"]), conn=conn)
         if run is None:
