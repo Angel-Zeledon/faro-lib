@@ -43,12 +43,13 @@ PINNED_COLUMNS = {
         "source", "destination_warehouse", "line_warehouse", "supplier", "sku",
         "display_name", "signal", "line_status", "is_ordered", "recommended_qty",
         "final_qty", "received_qty", "outstanding_qty", "unit_cost", "line_value",
+        "currency",
     ],
     "receptions": [
         "po_number", "po_log_id", "line_id", "received_at", "ordered_at",
         "days_to_last_reception", "reception_status", "po_cancelled", "supplier", "sku",
         "display_name", "warehouse", "final_qty", "received_qty", "outstanding_qty",
-        "unit_cost", "received_value",
+        "unit_cost", "received_value", "currency",
     ],
     "forecast-points": [
         "session_id", "period", "sku", "warehouse", "model", "model_is_champion",
@@ -193,7 +194,8 @@ class TestCsv:
                 "reception_status": "received", "po_cancelled": False,
                 "supplier": "Acme, S.A.", "sku": "A-1", "display_name": 'Tornillo "inox"',
                 "warehouse": "principal", "final_qty": 100, "received_qty": 100.0,
-                "outstanding_qty": 0.0, "unit_cost": None, "received_value": None}
+                "outstanding_qty": 0.0, "unit_cost": None, "received_value": None,
+                "currency": None}
         return {**base, **kw}
 
     def test_header_is_the_declared_columns_in_order(self):
