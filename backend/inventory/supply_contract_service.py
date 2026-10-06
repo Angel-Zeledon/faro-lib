@@ -48,6 +48,7 @@ import psycopg2.extras
 
 from backend.db.connection import query, query_one, transaction
 from backend.errors import AppError
+from backend.inventory import contract_renewal as renewal
 
 log = logging.getLogger(__name__)
 
@@ -375,6 +376,12 @@ def clean_contract(raw: dict, today: Optional[date] = None) -> dict:
         "warehouse_id": str(raw.get("warehouse_id") or "").strip() or None,
         "on_top_of_base": bool(True if raw.get("on_top_of_base") is None else raw["on_top_of_base"]),
         "note": str(raw.get("note") or "").strip()[:MAX_NOTE_LENGTH] or None,
+        # Renewal tracking (contract_renewal.py). Absent = nothing recorded; a
+        # revision that omits them keeps the current revision's (see `revise`).
+        "notice_days": renewal.clean_notice_days(raw.get("notice_days")),
+        "auto_renew": bool(raw.get("auto_renew") or False),
+        "renewal_lead_days": renewal.clean_lead_days(raw.get("renewal_lead_days")),
+        "renewed_from_root_id": None,
     }
     if not explicit:
         n = len(expand_releases(contract))
@@ -530,6 +537,7 @@ _COLS = """s.id, s.root_id, s.revision, s.customer, s.reference, s.lines,
            s.period_start, s.period_end, s.schedule_kind, s.releases,
            s.tolerance_pct, s.status, s.warehouse_id, s.on_top_of_base, s.note,
            s.created_by, s.created_at, s.superseded_by, s.superseded_at,
+           s.notice_days, s.auto_renew, s.renewal_lead_days, s.renewed_from_root_id,
            w.name AS warehouse_name,
            COALESCE(NULLIF(u.full_name, ''), split_part(u.email, '@', 1)) AS created_by_name"""
 
@@ -554,6 +562,11 @@ def _terms(row: dict) -> dict:
         "warehouse_id": row.get("warehouse_id"),
         "on_top_of_base": bool(row.get("on_top_of_base", True)),
         "note": row.get("note"),
+        "notice_days": row.get("notice_days"),
+        "auto_renew": bool(row.get("auto_renew", False)),
+        "renewal_lead_days": (None if row.get("renewal_lead_days") is None
+                              else [int(x) for x in row["renewal_lead_days"]]),
+        "renewed_from_root_id": row.get("renewed_from_root_id"),
     }
 
 
@@ -597,14 +610,17 @@ def _insert_revision(conn, new_id: str, tenant_id: str, user_id: str, root_id: s
         """INSERT INTO supply_contracts
                (id, tenant_id, root_id, revision, customer, reference, lines,
                 period_start, period_end, schedule_kind, releases, tolerance_pct,
-                status, warehouse_id, on_top_of_base, note, created_by)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                status, warehouse_id, on_top_of_base, note, created_by,
+                notice_days, auto_renew, renewal_lead_days, renewed_from_root_id)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                   %s, %s, %s, %s)
         RETURNING id""",
         (new_id, tenant_id, root_id, revision, c["customer"], c["reference"],
          psycopg2.extras.Json(c["lines"]), c["period_start"], c["period_end"],
          c["schedule_kind"], None if releases is None else psycopg2.extras.Json(releases),
          c["tolerance_pct"], status, c["warehouse_id"], c["on_top_of_base"], c["note"],
-         user_id), conn=conn)
+         user_id, c.get("notice_days"), bool(c.get("auto_renew")),
+         c.get("renewal_lead_days"), c.get("renewed_from_root_id")), conn=conn)
 
 
 def _supersede(conn, tenant_id: str, old_id: str, new_id: str) -> None:
@@ -717,6 +733,12 @@ def revise(tenant_id: str, user_id: str, scope: Optional[frozenset], root_id: st
     new_name = _warehouse_name(tenant_id, c["warehouse_id"])
     with transaction() as conn:
         cur = _current(tenant_id, root_id, conn=conn, lock=True)
+        # A form that does not know the renewal fields must not wipe them: what
+        # the request did not send stays as the current revision has it.
+        for k in ("notice_days", "auto_renew", "renewal_lead_days"):
+            if k not in raw:
+                c[k] = _terms(cur)[k]
+        c["renewed_from_root_id"] = cur.get("renewed_from_root_id")
         require_writable(scope, _warehouse_name(tenant_id, cur["warehouse_id"], conn=conn))
         require_writable(scope, new_name)
         if int(expected_revision) != int(cur["revision"]):
@@ -812,6 +834,12 @@ def _with_progress(row: dict, commitments: list[dict], leads: dict[str, float],
                                         terms["tolerance_pct"], horizon, row["status"])
     out["horizon_days"] = horizon
     out["period_ended"] = terms["period_end"] < today
+    lead = renewal.effective_lead_days(terms["renewal_lead_days"])
+    out["renewal_lead_days_effective"] = lead
+    out["renewal_lead_days_is_default"] = terms["renewal_lead_days"] is None
+    out["renewal"] = (renewal.renewal_view(terms["period_end"], terms["notice_days"],
+                                            terms["auto_renew"], lead, today)
+                      if row["status"] == "active" else None)
     return out
 
 

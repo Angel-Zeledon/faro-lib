@@ -128,6 +128,11 @@ notification, no file storage, no hub.
   stays Python (semaforo).
 * Rust-only (new feature, no Python route, **no failover**): the organization
   hierarchy, `/org/*`; see "Organization hierarchy" at the end.
+* Done (contract renewals, new routes with NO Python implementation): `GET /supply-contracts/renewals`,
+  `GET /supply-contracts/{root_id}/comparison`, `POST /supply-contracts/{root_id}/renew`. See "Contract
+  renewals" below: **these have no Python failover** (Python would read `renewals` as a contract id and
+  answer "not found"), so their proxy file lists `api-rs` only. Python owns the additive schema and the daily
+  alert pass.
 * Shared modules, one implementation each: `audit/` (the whole
   `backend/audit/catalog.py` as data, and `audit::record`, the
   `AuditMiddleware` writer every catalogued Rust route calls with its route
@@ -2356,3 +2361,114 @@ cancel finality, scope, the loop picking up a schedule written straight to the
 table, `/health` on both services). Not verified in a browser (the browser
 extension was not connected): the panel type-checks and its page compiles, and
 the same calls were made through the Next proxy with curl.
+### Contract renewals (new Rust-only routes, 2026-10-06)
+
+Owner request: finish more corporate features, writing each new one in Rust.
+This one tracks the end of a blanket supply contract: expiry and notice dates,
+a renewals list, committed-vs-delivered over the term, alerts at 60/30/7 days,
+and a Renew action.
+
+**Who owns what.**
+
+| Piece | Where | Why |
+|---|---|---|
+| Schema (`notice_days`, `auto_renew`, `renewal_lead_days`, `renewed_from_root_id` on `supply_contracts`, additive) | Python, `supply_contract_migrations.py` | Python owns the schema |
+| Create / revise / status with the new fields; a revision that omits them keeps them | Python, `supply_contract_service.py` | still the writer of those paths |
+| Renewals list, comparison, renew | **Rust**, `routes/contract_renewals.rs` + `contract_renewal.rs` | new routes, new logic |
+| Daily alert pass | Python, `inventory/contract_renewal_alerts.py`, called from the 08:00 UTC loop after the contract materialisation | the loop and `record_event` are Python |
+| The maths, as a reference | Python `inventory/contract_renewal.py`, replayed by Rust | differential test |
+
+**No Python failover.** The three routes exist only in Rust. If they were
+served by Python, `GET /supply-contracts/renewals` would match
+`GET /supply-contracts/{root_id}` and answer "contract not found", so the
+proxy example (`deploy/rust-api/routes.d/45-contract-renewals.caddy.example`)
+names `api-rs` only, and the renewals panel turns that exact 404 into "not
+available on this server yet". Without the routes file the product behaves as
+before, plus the new optional fields on the contract form.
+
+**Alerts through the existing registry.** `supply_contract.renewal_due`
+(warning, kind `purchase`) reaches the bell and the history through the same
+`EVENTS` registry; the Rust copy (`routes/r1/alerts.rs`) carries it, and the
+unit test that re-reads `events.py` keeps the two lists equal. The reason codes
+are `contract_expiring`, `contract_notice_deadline` and `contract_expired`.
+`supply_contract.renewed` (info) is what the Renew action records, mirrored in
+`activity.rs` and in the audit catalogue (`LEGACY`, 73 -> 74).
+
+**Decision rules the owner should confirm.**
+
+1. **A renewal is a new contract (a new draft lineage, revision 1), not a new
+   revision of the old one.** The fulfilment of a lineage is every fulfilled
+   commitment of that lineage, so moving the same lineage into the next term
+   would show last term's deliveries as this term's. The new contract points at
+   the old one (`renewed_from_root_id`); the old one is not touched. It is a
+   DRAFT: nothing is materialised, so no purchase decision moves until a person
+   activates it through the existing status route. Unit prices are carried and
+   the UI says so.
+2. The renewed term has the same length (whole calendar months when the old
+   term was whole months, so 2027-01-01..12-31 renews to 2028-01-01..12-31
+   whatever the leap year does; else the same day count). An explicit schedule
+   is shifted by the same amount; a release that would fall outside the new term
+   refuses the renewal (422) instead of being clamped.
+3. Renew is refused when the new term has already ended (422): activating it
+   would make every release an overdue commitment at once.
+4. "Late" means fulfilled after the **contract's** release date, using the UTC
+   date of the commitment's `status_changed_at`; a person may move
+   `delivery_date`, which must not hide lateness. A fulfilled row with no
+   fulfilment time is counted in `fulfilled_undated`, never as on time or late.
+5. The fill rate is delivered / due to date and is `null` (not 100%) when
+   nothing is due. It is not capped: an over-delivery reads above 100.
+6. With a notice period the alert counts down to the notice deadline, not to
+   the end date. Of the lead times already crossed only the nearest is raised
+   (a contract entered 5 days before the end is one alert), and an active
+   contract past its end date is raised once as expired. The event row itself
+   is the "already sent" record, so a catch-up run or a second worker never
+   repeats one, and extending the term restarts the countdown.
+7. `auto_renew` is a label for the screens and the alert wording. Nothing
+   creates a contract on its own.
+8. `renewal_lead_days` is NULL until somebody sets it (the screen says "defaults
+   60/30/7"); a default must not look like a choice.
+9. "Today" in the new code is the UTC date. Python's existing contract progress
+   uses the server's local date, which is the same on a UTC server.
+10. The alert carries the customer's name to the tenant-wide bell, like
+    `committed_demand.created` does in the activity history. A scoped user
+    therefore sees the alert of a contract in a warehouse they cannot open.
+    The renewals list and comparison do apply the warehouse scope.
+
+**Tests.**
+
+* `cargo test`: 137 pass, 2 ignored (the integrated branch had 120; this adds
+  the maths, the scope and body-validation tests, the event registry rows and
+  the 530-case differential replay).
+* Differential: `tests/contract/renewal_diff_cases.json` (530 cases: 90
+  `expand_releases`, 90 `renewal_view`, 120 `due_alert`, 90 `renewal_terms`,
+  140 `commitment_comparison`) is generated from the Python reference by
+  `backend/tests/test_contract_renewal_pure.py`, which fails when the file is
+  stale; the Rust test `contract_renewal::tests::matches_the_python_reference`
+  replays it, numbers compared within 1e-9. It passed on the first replay.
+* pytest: `test_contract_renewal_pure.py` (24) and `test_contract_renewal.py`
+  (20, against Postgres: fields persisted and carried through revisions and
+  status changes, the 60/30/7 countdown exactly once each, late entry, notice
+  deadline, custom lead times, term extension, draft/closed/renewed contracts
+  not alerted, a cancelled renewal not silencing the alert, one failing
+  contract not stopping the pass, the loop wiring). The existing supply-contract
+  and event suites still pass (170 in the neighbouring files).
+* Contract harness, `run_cr()` in `tests/contract/contract_test.py`, 53 cases
+  that have no Python side to diff, so they check the database against
+  expectations the harness computes itself, and Python where it has an opinion:
+  auth failures, key refusal, viewer allowed to read and denied to renew, body
+  and query validation, 404s, list buckets and order, comparison against rows
+  seeded with SQL fulfilment times (late, short, undated) and against Python's
+  own progress, renew (the stored row, the untouched old rows, the event row,
+  stale revision, draft, elapsed term, twice, explicit schedule, two
+  simultaneous renews give one 201 and one 409), Python reading and activating
+  what Rust created and a cancelled renewal freeing the contract, warehouse
+  scope, and `/alerts`, `/alerts/activity`, `/alerts/kinds` byte-identical
+  between Python and Rust with a `supply_contract.renewal_due` row present.
+  Full harness, Python dev API on a disposable Postgres (UTC), Rust debug
+  build: **530/530 pass**.
+
+**Not verified.** The browser walk of the new panel (the type check passes; no
+screen was driven), the daily loop itself at 08:00 UTC (the pass is called
+directly in the tests and the loop wiring is checked from the source), the
+Docker image and the Caddy file (Docker is off on this machine), and the
+plan-gate-free assumption that all roles may read the renewals.

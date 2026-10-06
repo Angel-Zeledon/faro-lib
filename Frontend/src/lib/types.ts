@@ -1360,6 +1360,11 @@ export interface SupplyContractTerms {
   warehouse_id?: string | null
   on_top_of_base: boolean
   note?: string | null
+  /** Renewal tracking. Omitted on a revision = keep the current values. */
+  notice_days?: number | null
+  auto_renew?: boolean
+  /** null = nobody chose: the product default (60/30/7) applies. */
+  renewal_lead_days?: number[] | null
 }
 
 /** fulfilled / open / cancelled come from the release's commitment;
@@ -1405,9 +1410,104 @@ export interface SupplyContract extends SupplyContractTerms {
   horizon_days: number
   period_ended: boolean
   progress: SupplyContractProgress
+  renewal_lead_days_effective?: number[]
+  renewal_lead_days_is_default?: boolean
+  renewed_from_root_id?: string | null
   revisions?: { id: string; revision: number; status: SupplyContractStatus; created_by_name: string | null; created_at: string }[]
   materialised?: number
   withdrawn?: number
+}
+
+export type ContractRenewalBucket = 'expired' | 'notice_passed' | 'due_soon' | 'upcoming'
+
+export interface ContractRenewalView {
+  expiry_date: string
+  days_to_expiry: number
+  notice_days: number | null
+  notice_deadline: string | null
+  days_to_notice: number | null
+  auto_renew: boolean
+  bucket: ContractRenewalBucket
+}
+
+/** Committed units against delivered units over the term (the server's maths). */
+export interface ContractComparisonSummary {
+  committed_units: number
+  due_to_date: number
+  delivered_units: number
+  shortfall_to_date: number
+  /** delivered / due to date; null when nothing is due yet (never an invented 100%). */
+  fill_rate_pct: number | null
+  term_fill_pct: number | null
+  late_deliveries: number
+  overdue_open: number
+  fulfilled_undated: number
+}
+
+export interface ContractComparison extends ContractComparisonSummary {
+  late_units: number
+  max_days_late: number
+  remaining_units: number
+  overdue_open_units: number
+  lines: {
+    sku: string; committed: number; due_to_date: number; delivered: number
+    fill_rate_pct: number | null; late_deliveries: number; late_units: number
+  }[]
+}
+
+export interface ContractRenewalItem {
+  root_id: string
+  revision: number
+  customer: string
+  reference: string | null
+  status: SupplyContractStatus
+  warehouse_id: string | null
+  warehouse_name: string | null
+  period_start: string
+  period_end: string
+  renewal: ContractRenewalView
+  renewal_lead_days: number[] | null
+  renewal_lead_days_effective: number[]
+  renewal_lead_days_is_default: boolean
+  comparison: ContractComparisonSummary
+}
+
+export interface ContractRenewalList {
+  today: string
+  within_days: number
+  default_lead_days: number[]
+  items: ContractRenewalItem[]
+  later_count: number
+  hidden_renewed: number
+  filtered_out_by_bucket: number
+}
+
+export interface ContractComparisonResponse {
+  root_id: string
+  revision: number
+  customer: string
+  status: SupplyContractStatus
+  period_start: string
+  period_end: string
+  tolerance_pct: number
+  term_days: number
+  elapsed_days: number
+  renewal: ContractRenewalView | null
+  renewed_to_root_id: string | null
+  renewed_from_root_id: string | null
+  comparison: ContractComparison
+}
+
+export interface ContractRenewResult {
+  root_id: string
+  revision: number
+  status: 'draft'
+  customer: string
+  renewed_from_root_id: string
+  period_start: string
+  period_end: string
+  releases: number | null
+  prices_carried: boolean
 }
 
 /** One line of the "by customer" summary of open commitments. */

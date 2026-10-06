@@ -9,6 +9,7 @@
 mod activity;
 mod allocation;
 mod audit;
+mod contract_renewal;
 mod auth;
 mod chain;
 mod config;

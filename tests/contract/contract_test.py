@@ -7139,6 +7139,448 @@ def run_rd(args, fx: Fixture, db) -> list:
             check("rd rows carry the schedule's warehouse", [] if wh_rows == [wid] else [f"warehouses {wh_rows}"])
     else:
         check("rd scope setup", [f"creating the scoped analyst failed: {r.status} {r.body}"])
+# ── Contract renewals: Rust-only routes ─────────────────────────────────────
+#
+# `GET /supply-contracts/renewals`, `GET /supply-contracts/{id}/comparison` and
+# `POST /supply-contracts/{id}/renew` have NO Python implementation, so there is
+# nothing to diff them against. They are checked three other ways:
+#
+#   * against the database, with expectations the harness computes on its own
+#     from the rows it seeded (fulfilment times set by SQL, so "late" is
+#     deterministic), never from the answer under test;
+#   * against Python where Python has an opinion: the contract's own progress
+#     (`GET /supply-contracts/{id}`) must agree with the comparison on what was
+#     scheduled, due and delivered, and Python must read, activate and revise a
+#     contract Rust created;
+#   * for the alert registry, a `supply_contract.renewal_due` row written the
+#     way the Python worker writes it must come back identical from Python's
+#     `/alerts` and Rust's.
+
+def _cr_utc_today() -> date:
+    return datetime.now(timezone.utc).date()
+
+
+def _cr_add_months(d: date, k: int) -> date:
+    import calendar  # noqa: PLC0415
+    m = d.month - 1 + k
+    y, m = d.year + m // 12, m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def run_cr(args, fx: Fixture, db) -> list:
+    route = "contract renewals (Rust only)"
+    if db is None:
+        return [(Case("cr (all)", "-", "-", route=route), "SKIP",
+                 ["needs --db: the rows are seeded and checked in the database"])]
+    out: list = []
+    cur = db.cursor()
+    py, rs = args.python, args.rust
+    sc = f"{API}/supply-contracts"
+    T = _cr_utc_today()
+    tag = secrets.token_hex(3)
+
+    def rec(name, problems, method="-", path="-"):
+        out.append((Case(name, method, path, route=route), "FAIL" if problems else "PASS", problems))
+
+    def call(base, method, path, who="admin", body=None, raw=None, headers=None):
+        return http(base, method, path, token=auth_for(fx, who), body=body, raw_body=raw, headers=headers)
+
+    def expect(name, r, status, code=None, extra=None, method="-", path="-"):
+        problems = []
+        if r.status != status:
+            problems.append(f"status {r.status}, expected {status}: {json.dumps(r.body)[:200]}")
+        elif code is not None and (r.body or {}).get("error_code") != code:
+            problems.append(f"error_code {(r.body or {}).get('error_code')!r}, expected {code!r}")
+        if not problems and extra:
+            problems += extra()
+        if args.dump:
+            print(f"\n--- {name}\n{r.status} {json.dumps(r.body)[:1200]}")
+        rec(name, problems, method, path)
+        return r
+
+    def create(customer, start, end, *, status="active", lines=None, kind="monthly", releases=None,
+               who="admin", **extra):
+        body = {"customer": f"{customer} {tag}", "lines": lines or [{"sku": f"CR-{tag}", "total_quantity": 600,
+                                                                   "unit_price": 12.5}],
+                "period_start": start.isoformat(), "period_end": end.isoformat(),
+                "schedule_kind": kind, "status": status, **extra}
+        if releases is not None:
+            body["releases"] = releases
+        r = call(py, "POST", sc, who, body)
+        if r.status != 201:
+            raise SystemExit(f"cr: creating a contract failed: {r.status} {r.body}")
+        return r.body["data"]
+
+    def contracts_rows(root):
+        cur.execute("""SELECT id, root_id, revision, status, superseded_by, customer, period_start, period_end,
+                              schedule_kind, lines, releases, tolerance_pct::float8, warehouse_id,
+                              notice_days, auto_renew, renewal_lead_days, renewed_from_root_id, created_by
+                         FROM supply_contracts WHERE tenant_id = %s AND root_id = %s ORDER BY revision""",
+                    (fx.tenant_id, root))
+        return cur.fetchall()
+
+    def n_contracts():
+        cur.execute("SELECT COUNT(*) FROM supply_contracts WHERE tenant_id = %s", (fx.tenant_id,))
+        return cur.fetchone()[0]
+
+    def commitments(root):
+        cur.execute("""SELECT sku, contract_release_date, quantity::float8, status
+                         FROM committed_demand WHERE tenant_id = %s AND contract_root_id = %s
+                          AND contract_withdrawn_at IS NULL ORDER BY contract_release_date, sku""",
+                    (fx.tenant_id, root))
+        return cur.fetchall()
+
+    def events(action, resource):
+        cur.execute("SELECT user_id, context FROM activity_logs WHERE tenant_id = %s AND action = %s "
+                    "AND resource = %s", (fx.tenant_id, action, resource))
+        return cur.fetchall()
+
+    # ── fixtures ─────────────────────────────────────────────────────────────
+    notice_c = create("Notice", T - timedelta(days=150), T + timedelta(days=20), notice_days=30, auto_renew=True)
+    expired_c = create("Expired", T - timedelta(days=200), T - timedelta(days=5))
+    later_c = create("Later", T - timedelta(days=10), T + timedelta(days=300))
+    draft_c = create("Draft", T - timedelta(days=10), T + timedelta(days=30), status="draft")
+    soon_c = create("Soon", T - timedelta(days=60), T + timedelta(days=45), renewal_lead_days=[60, 14])
+
+    # ── authentication, roles, validation, not found ─────────────────────────
+    for path, label in ((f"{sc}/renewals", "list"), (f"{sc}/{soon_c['root_id']}/comparison", "comparison")):
+        expect(f"cr {label} without a token", http(rs, "GET", path), 401, method="GET", path=path)
+        expect(f"cr {label} key refused (internal route)", call(rs, "GET", path, "key_read"), 403,
+               "api_key_route_not_exposed", method="GET", path=path)
+        expect(f"cr {label} viewer allowed", call(rs, "GET", path, "viewer"), 200, method="GET", path=path)
+    expect("cr renew without a token", http(rs, "POST", f"{sc}/{soon_c['root_id']}/renew",
+                                            body={"expected_revision": 1}), 401)
+    expect("cr renew key refused", call(rs, "POST", f"{sc}/{soon_c['root_id']}/renew", "key_write",
+                                        {"expected_revision": 1}), 403, "api_key_route_not_exposed")
+    before = n_contracts()
+    expect("cr renew viewer denied", call(rs, "POST", f"{sc}/{soon_c['root_id']}/renew", "viewer",
+                                          {"expected_revision": 1}), 403, "role_not_permitted")
+    for name, body, typ in (("missing", {}, "missing"), ("not a number", {"expected_revision": "x"}, "int_parsing"),
+                            ("zero", {"expected_revision": 0}, "greater_than_equal"),
+                            ("null", {"expected_revision": None}, "int_type"),
+                            ("fraction", {"expected_revision": 1.5}, "int_from_float")):
+        r = call(rs, "POST", f"{sc}/{soon_c['root_id']}/renew", "analyst", body)
+        expect(f"cr renew body {name}", r, 422, "validation_error",
+               lambda r=r, typ=typ: [] if r.body["detail"][0]["type"] == typ
+               else [f"type {r.body['detail'][0]['type']}, expected {typ}"])
+    expect("cr renew bad JSON", call(rs, "POST", f"{sc}/{soon_c['root_id']}/renew", "analyst", raw=b"{nope"), 422)
+    for q, why in (("within_days=0", "below 1"), ("within_days=731", "above 730"), ("within_days=abc", "not a number"),
+                   ("bucket=later", "unknown bucket")):
+        expect(f"cr list query {why}", call(rs, "GET", f"{sc}/renewals?{q}", "analyst"), 422, "validation_error")
+    expect("cr comparison unknown contract", call(rs, "GET", f"{sc}/nope-{tag}/comparison"), 404,
+           "supply_contract_not_found")
+    expect("cr renew unknown contract", call(rs, "POST", f"{sc}/nope-{tag}/renew", "analyst",
+                                             {"expected_revision": 1}), 404, "supply_contract_not_found")
+    rec("cr refused renewals wrote nothing", [] if n_contracts() == before else ["a refused renew wrote a contract"])
+
+    # ── the renewals list ────────────────────────────────────────────────────
+    r = call(rs, "GET", f"{sc}/renewals", "analyst")
+
+    def check_list():
+        d = r.body["data"]
+        items = {i["root_id"]: i for i in d["items"]}
+        problems = []
+        want = {notice_c["root_id"]: "notice_passed", expired_c["root_id"]: "expired",
+                soon_c["root_id"]: "due_soon"}
+        for root, bucket in want.items():
+            if root not in items:
+                problems.append(f"{root} missing from the list")
+            elif items[root]["renewal"]["bucket"] != bucket:
+                problems.append(f"{items[root]['customer']}: bucket {items[root]['renewal']['bucket']}, want {bucket}")
+        for root in (later_c["root_id"], draft_c["root_id"]):
+            if root in items:
+                problems.append(f"{root} must not be listed")
+        if d["later_count"] < 1:
+            problems.append("the contract ending in 300 days must be counted in later_count")
+        ends = [i["period_end"] for i in d["items"]]
+        if ends != sorted(ends):
+            problems.append("not sorted by end date")
+        n = items.get(notice_c["root_id"])
+        if n:
+            if n["renewal"]["days_to_notice"] != -10 or n["renewal"]["days_to_expiry"] != 20:
+                problems.append(f"notice maths {n['renewal']}")
+            if n["renewal"]["auto_renew"] is not True:
+                problems.append("auto_renew lost")
+            if n["renewal_lead_days_is_default"] is not True or n["renewal_lead_days_effective"] != [60, 30, 7]:
+                problems.append("default lead times not reported as the default")
+        s = items.get(soon_c["root_id"])
+        if s and (s["renewal_lead_days"] != [60, 14] or s["renewal_lead_days_is_default"]):
+            problems.append(f"configured lead times {s['renewal_lead_days']}")
+        e = items.get(expired_c["root_id"])
+        if e and e["renewal"]["days_to_expiry"] != -5:
+            problems.append(f"expired days {e['renewal']['days_to_expiry']}")
+        return problems
+
+    expect("cr list buckets, order, defaults", r, 200, extra=check_list, method="GET", path=f"{sc}/renewals")
+    r = call(rs, "GET", f"{sc}/renewals?within_days=10", "analyst")
+    expect("cr list within 10 days shows only the expired one", r, 200,
+           extra=lambda: [] if [i["root_id"] for i in r.body["data"]["items"]] == [expired_c["root_id"]]
+           else ["wrong items"], method="GET")
+    r = call(rs, "GET", f"{sc}/renewals?bucket=due_soon", "analyst")
+    expect("cr list bucket filter", r, 200,
+           extra=lambda: [] if {i["renewal"]["bucket"] for i in r.body["data"]["items"]} == {"due_soon"}
+           else ["bucket filter leaked other buckets"], method="GET")
+
+    # ── comparison against rows the harness set itself ───────────────────────
+    cmp_c = create("Compare", T - timedelta(days=70), T + timedelta(days=110),
+                   lines=[{"sku": f"CR-A-{tag}", "total_quantity": 600}, {"sku": f"CR-B-{tag}", "total_quantity": 300}])
+    root = cmp_c["root_id"]
+    rows = commitments(root)
+    past = sorted([x for x in rows if x[1] <= T], key=lambda x: (x[1], x[0]))
+    cur.execute("SELECT 1")
+    sku_a = f"CR-A-{tag}"
+    a_past = [x for x in past if x[0] == sku_a]
+    on_time, late = a_past[0], a_past[1] if len(a_past) > 1 else None
+    cur.execute("""UPDATE committed_demand SET status = 'fulfilled', status_changed_at = %s
+                    WHERE tenant_id = %s AND contract_root_id = %s AND sku = %s AND contract_release_date = %s""",
+                (datetime.combine(on_time[1], datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=12),
+                 fx.tenant_id, root, on_time[0], on_time[1]))
+    short = None
+    if late:
+        short = round(late[2] * 0.5, 2)
+        cur.execute("""UPDATE committed_demand SET status = 'fulfilled', quantity = %s, status_changed_at = %s
+                        WHERE tenant_id = %s AND contract_root_id = %s AND sku = %s AND contract_release_date = %s""",
+                    (short, datetime.combine(late[1], datetime.min.time(), tzinfo=timezone.utc)
+                     + timedelta(days=10, hours=12), fx.tenant_id, root, late[0], late[1]))
+    rows = commitments(root)
+    rel_all = rows  # materialised ones; releases beyond the horizon are not commitments
+    prog = call(py, "GET", f"{sc}/{root}", "admin").body["data"]["progress"]
+    sched = sum(x["quantity"] for x in prog["releases"])
+    due = sum(x["quantity"] for x in prog["releases"] if x["date"] <= T.isoformat())
+    delivered = on_time[2] + (short or 0)
+    overdue = [x for x in prog["releases"] if x["date"] < T.isoformat() and x["state"] != "fulfilled"
+               and x["state"] != "cancelled"]
+    r = call(rs, "GET", f"{sc}/{root}/comparison", "viewer")
+
+    def check_cmp():
+        c = r.body["data"]["comparison"]
+        want = {"committed_units": round(sched, 4), "due_to_date": round(due, 4),
+                "delivered_units": round(delivered, 4), "late_deliveries": 1 if late else 0,
+                "max_days_late": 10 if late else 0, "overdue_open": len(overdue),
+                "fill_rate_pct": round(delivered / due * 100, 1), "fulfilled_undated": 0,
+                "late_units": round(short or 0, 4)}
+        problems = [f"{k}: rust {c[k]!r}, expected {v!r}" for k, v in want.items() if abs(c[k] - v) > 1e-9]
+        by_sku = {l["sku"]: l for l in c["lines"]}
+        if set(by_sku) != {sku_a, f"CR-B-{tag}"}:
+            problems.append(f"lines {sorted(by_sku)}")
+        return problems
+
+    expect("cr comparison against seeded rows", r, 200, extra=check_cmp, method="GET", path=f"{sc}/{root}/comparison")
+    rec("cr comparison seeded a late and an on-time delivery", [] if late else ["no second past release to seed"])
+    local_today = date.today()
+    if local_today == T:
+        def check_progress():
+            c = r.body["data"]["comparison"]
+            return [f"{k}: comparison {c[a]!r} vs python progress {prog[b]!r}" for a, b, k in (
+                ("committed_units", "scheduled_total", "scheduled"), ("due_to_date", "due_to_date", "due"),
+                ("delivered_units", "delivered", "delivered"), ("overdue_open", "overdue_count", "overdue"),
+                ("overdue_open_units", "overdue_units", "overdue units")) if abs(c[a] - prog[b]) > 1e-9]
+        expect("cr comparison agrees with Python's own progress", r, 200, extra=check_progress)
+    else:
+        out.append((Case("cr comparison agrees with Python's own progress", "-", "-", route=route), "SKIP",
+                    ["the machine's local date differs from UTC right now (Python's progress uses local time)"]))
+    # A fulfilled row with no fulfilment time is counted, never on time or late.
+    cur.execute("""UPDATE committed_demand SET status_changed_at = NULL WHERE tenant_id = %s
+                      AND contract_root_id = %s AND sku = %s AND contract_release_date = %s""",
+                (fx.tenant_id, root, on_time[0], on_time[1]))
+    r2 = call(rs, "GET", f"{sc}/{root}/comparison", "viewer")
+    expect("cr comparison counts a fulfilled row without a date apart", r2, 200,
+           extra=lambda: [] if r2.body["data"]["comparison"]["fulfilled_undated"] == 1
+           and r2.body["data"]["comparison"]["late_deliveries"] == (1 if late else 0)
+           else [f"undated {r2.body['data']['comparison']['fulfilled_undated']}"])
+
+    # ── renew ────────────────────────────────────────────────────────────────
+    first_of = T.replace(day=1)
+    r_start = _cr_add_months(first_of, -2)
+    r_end = _cr_add_months(r_start, 6) - timedelta(days=1)
+    ren = create("Renew", r_start, r_end, notice_days=20, auto_renew=True, renewal_lead_days=[45, 10],
+                 tolerance_pct=5, note="keep me", reference="REF-1")
+    rroot = ren["root_id"]
+    snapshot = contracts_rows(rroot)
+    rcm_before = commitments(rroot)
+    z = create("Elapsed", T - timedelta(days=900), T - timedelta(days=800))
+    n_pre = n_contracts()
+    stale = call(rs, "POST", f"{sc}/{rroot}/renew", "analyst", {"expected_revision": 7})
+    expect("cr renew stale revision", stale, 409, "supply_contract_stale",
+           lambda: [] if stale.body["error_params"] == {"revision": 1} else ["params"])
+    draft_r = call(rs, "POST", f"{sc}/{draft_c['root_id']}/renew", "analyst", {"expected_revision": 1})
+    expect("cr renew a draft refused", draft_r, 409, "supply_contract_renewal_status_invalid")
+    expect("cr renew whose new term already ended", call(rs, "POST", f"{sc}/{z['root_id']}/renew", "analyst",
+                                                        {"expected_revision": 1}), 422,
+           "supply_contract_renewal_period_elapsed")
+    rec("cr stale, draft and elapsed renewals wrote nothing",
+        [] if n_contracts() == n_pre else ["a refused renew wrote a contract"])
+    count_before = n_contracts()
+    resp = call(rs, "POST", f"{sc}/{rroot}/renew", "analyst", {"expected_revision": 1})
+    new_start = r_end + timedelta(days=1)
+    new_end = _cr_add_months(new_start, 6) - timedelta(days=1)
+
+    def check_renew():
+        d = resp.body["data"]
+        problems = []
+        rows_new = contracts_rows(d["root_id"])
+        if len(rows_new) != 1:
+            return [f"{len(rows_new)} rows for the new lineage"]
+        n = rows_new[0]
+        o = contracts_rows(rroot)
+        (n_id, n_root, n_rev, n_status, n_sup, n_cust, n_ps, n_pe, n_kind, n_lines, n_rel, n_tol, n_wh, n_notice,
+         n_auto, n_leads, n_from, n_by) = n
+        if (n_root, n_id, n_rev, n_status, n_sup) != (d["root_id"], d["root_id"], 1, "draft", None):
+            problems.append(f"new row identity {n[:5]}")
+        if (n_ps, n_pe) != (new_start, new_end):
+            problems.append(f"new term {n_ps}..{n_pe}, expected {new_start}..{new_end}")
+        if n_from != rroot:
+            problems.append(f"renewed_from_root_id {n_from}")
+        old = snapshot[0]
+        for i, label in ((5, "customer"), (8, "schedule"), (9, "lines"), (11, "tolerance"), (12, "warehouse"),
+                         (13, "notice_days"), (14, "auto_renew"), (15, "lead times")):
+            if n[i] != old[i]:
+                problems.append(f"{label} not carried: {n[i]!r} vs {old[i]!r}")
+        if n_by != fx.analyst_id:
+            problems.append(f"created_by {n_by}")
+        if o != snapshot:
+            problems.append("the renewed contract's rows changed")
+        if commitments(d["root_id"]):
+            problems.append("a draft renewal must not materialise commitments")
+        if commitments(rroot) != rcm_before:
+            problems.append("renewing moved the old contract's commitments")
+        ev = events("supply_contract.renewed", d["root_id"])
+        if len(ev) != 1 or ev[0][1].get("renewed_from") != rroot or ev[0][0] != fx.analyst_id:
+            problems.append(f"renewed event {ev}")
+        if d["prices_carried"] is not True or d["materialised"] != 0:
+            problems.append("response flags")
+        if count_before + 1 != n_contracts():
+            problems.append("renew wrote more or less than one contract")
+        return problems
+
+    expect("cr renew creates the next term as a draft", resp, 201, extra=check_renew, method="POST",
+           path=f"{sc}/{{id}}/renew")
+    new_root = resp.body["data"]["root_id"] if resp.status == 201 else None
+    again = call(rs, "POST", f"{sc}/{rroot}/renew", "analyst", {"expected_revision": 1})
+    expect("cr renew twice refused", again, 409, "supply_contract_already_renewed",
+           lambda: [] if again.body["error_params"] == {"renewed_root_id": new_root} else ["params"])
+    if new_root:
+        got = call(py, "GET", f"{sc}/{new_root}", "analyst")
+        expect("cr Python reads the contract Rust created", got, 200,
+               extra=lambda: [] if (got.body["data"]["status"] == "draft"
+                                    and got.body["data"]["renewed_from_root_id"] == rroot
+                                    and got.body["data"]["notice_days"] == 20
+                                    and got.body["data"]["renewal_lead_days"] == [45, 10]
+                                    and got.body["data"]["period_start"] == new_start.isoformat())
+               else [f"python sees {json.dumps(got.body['data'])[:300]}"])
+        lst = call(rs, "GET", f"{sc}/renewals?within_days=365", "analyst")
+        expect("cr the renewed contract leaves the list, counted", lst, 200,
+               extra=lambda: [] if (rroot not in [i["root_id"] for i in lst.body["data"]["items"]]
+                                    and lst.body["data"]["hidden_renewed"] >= 1)
+               else ["renewed contract still listed or not counted"])
+        act = call(py, "POST", f"{sc}/{new_root}/status", "analyst", {"status": "active", "expected_revision": 1})
+        expect("cr Python activates the renewal (materialises its releases)", act, 200,
+               extra=lambda: [] if (len(commitments(new_root)) > 0
+                                    and contracts_rows(new_root)[-1][16] == rroot)
+               else ["no commitments or renewed_from lost on the status revision"])
+        # A cancelled renewal frees the contract to be renewed again.
+        c1 = call(py, "POST", f"{sc}/{new_root}/status", "analyst", {"status": "cancelled", "expected_revision": 2})
+        expect("cr Python cancels the renewal", c1, 200)
+        again2 = call(rs, "POST", f"{sc}/{rroot}/renew", "analyst", {"expected_revision": 1})
+        expect("cr a cancelled renewal frees the contract to be renewed again", again2, 201)
+
+    # explicit schedule: releases shift with the term
+    e_start = _cr_add_months(first_of, 1)
+    e_end = _cr_add_months(e_start, 3) - timedelta(days=1)
+    esku = f"CR-E-{tag}"
+    erel = [{"sku": esku, "date": (_cr_add_months(e_start, k) + timedelta(days=d)).isoformat(), "quantity": q}
+            for k, d, q in ((0, 4, 10), (1, 14, 20), (2, 24, 30))]
+    ex = create("Explicit", e_start, e_end, kind="explicit", releases=erel,
+                lines=[{"sku": esku, "total_quantity": 60}])
+    er = call(rs, "POST", f"{sc}/{ex['root_id']}/renew", "analyst", {"expected_revision": 1})
+
+    def check_explicit():
+        rows_new = contracts_rows(er.body["data"]["root_id"])
+        got = sorted((x["date"], x["quantity"]) for x in rows_new[0][10])
+        want = sorted(((_cr_add_months(date.fromisoformat(x["date"]), 3)).isoformat(), x["quantity"]) for x in erel)
+        return [] if got == want and er.body["data"]["releases"] == 3 else [f"shifted {got}, expected {want}"]
+
+    expect("cr renew shifts an explicit schedule by the term", er, 201, extra=check_explicit)
+
+    # concurrency: two renews at once, exactly one wins
+    k = create("Race", T - timedelta(days=30), T + timedelta(days=150))
+    import concurrent.futures  # noqa: PLC0415
+    with concurrent.futures.ThreadPoolExecutor(2) as pool:
+        futs = [pool.submit(call, rs, "POST", f"{sc}/{k['root_id']}/renew", "analyst", {"expected_revision": 1})
+                for _ in range(2)]
+        statuses = sorted(f.result().status for f in futs)
+    cur.execute("SELECT COUNT(*) FROM supply_contracts WHERE tenant_id = %s AND renewed_from_root_id = %s",
+                (fx.tenant_id, k["root_id"]))
+    rec("cr two simultaneous renews: one 201, one 409, one row",
+        [] if statuses == [201, 409] and cur.fetchone()[0] == 1 else [f"statuses {statuses}"])
+
+    # ── warehouse scope ──────────────────────────────────────────────────────
+    wh = {}
+    for name in ("CR-Norte", "CR-Sur"):
+        cur.execute("""INSERT INTO warehouses (tenant_id, name) VALUES (%s, %s)
+                       ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id""",
+                    (fx.tenant_id, name))
+        wh[name] = cur.fetchone()[0]
+    ru = http(py, "POST", f"{API}/users", token=auth_for(fx, "admin"), body={
+        "email": f"contract-{tag}-crscoped@stockai.demo", "role": "analyst", "full_name": "Contract cr scoped"})
+    if ru.status != 201:
+        rec("cr scope setup", [f"creating the scoped analyst failed: {ru.status} {ru.body}"])
+        return out
+    uid = ru.body["data"]["user"]["id"]
+    try:
+        rp = http(py, "PUT", f"{API}/users/{uid}/warehouse-scope", token=auth_for(fx, "admin"),
+                  body={"warehouse_ids": [wh["CR-Norte"]]})
+        if rp.status != 200:
+            rec("cr scope setup", [f"scoping failed: {rp.status} {rp.body}"])
+            return out
+        fx.tokens["cr_scoped"] = mint_access_token(fx.secret, uid, fx.tenant_id, "analyst")
+        norte = create("Norte", T - timedelta(days=30), T + timedelta(days=40), warehouse_id=wh["CR-Norte"])
+        sur = create("Sur", T - timedelta(days=30), T + timedelta(days=40), warehouse_id=wh["CR-Sur"])
+        company = create("Company", T - timedelta(days=30), T + timedelta(days=40))
+        lst = call(rs, "GET", f"{sc}/renewals", "cr_scoped")
+        expect("cr scoped list shows only its warehouse", lst, 200,
+               extra=lambda: [] if {i["root_id"] for i in lst.body["data"]["items"]} == {norte["root_id"]}
+               else [f"listed {[i['customer'] for i in lst.body['data']['items']]}"])
+        expect("cr scoped comparison of another warehouse", call(rs, "GET", f"{sc}/{sur['root_id']}/comparison",
+                                                                  "cr_scoped"), 403, "warehouse_out_of_scope")
+        expect("cr scoped comparison of a company-wide contract",
+               call(rs, "GET", f"{sc}/{company['root_id']}/comparison", "cr_scoped"), 403,
+               "supply_contract_scope_company_wide")
+        expect("cr scoped comparison of its own", call(rs, "GET", f"{sc}/{norte['root_id']}/comparison",
+                                                       "cr_scoped"), 200)
+        n0 = n_contracts()
+        expect("cr scoped renew of another warehouse", call(rs, "POST", f"{sc}/{sur['root_id']}/renew", "cr_scoped",
+                                                            {"expected_revision": 1}), 403, "warehouse_out_of_scope")
+        expect("cr scoped renew of a company-wide contract", call(rs, "POST", f"{sc}/{company['root_id']}/renew",
+                                                                  "cr_scoped", {"expected_revision": 1}), 403,
+               "supply_contract_scope_company_wide")
+        rec("cr refused scoped renewals wrote nothing", [] if n_contracts() == n0 else ["a refused renew wrote"])
+        ok_r = call(rs, "POST", f"{sc}/{norte['root_id']}/renew", "cr_scoped", {"expected_revision": 1})
+        expect("cr scoped renew of its own keeps the warehouse", ok_r, 201,
+               extra=lambda: [] if contracts_rows(ok_r.body["data"]["root_id"])[0][12] == wh["CR-Norte"]
+               else ["warehouse not carried"])
+    finally:
+        cur.execute("UPDATE users SET warehouse_scope = NULL WHERE id = %s", (uid,))
+
+    # ── alert registry parity ────────────────────────────────────────────────
+    # Written exactly as `record_event` writes the Python worker's alert.
+    ctx = {"customer": f"Alerted {tag}", "days_left": 7, "lead_days": 7, "expiry_date": today_plus(7),
+           "notice_deadline": today_plus(0), "auto_renew": True, "severity": "warning", "kind": "purchase",
+           "reason": "contract_expiring"}
+    cur.execute("""INSERT INTO activity_logs (id, tenant_id, user_id, action, resource, context, status, created_at)
+                   VALUES (%s, %s, 'system', 'supply_contract.renewal_due', %s, %s, 'success', NOW())""",
+                (f"act_cr{tag}x", fx.tenant_id, soon_c["root_id"], json.dumps(ctx)))
+    for path in (f"{API}/alerts", f"{API}/alerts/activity", f"{API}/alerts/kinds"):
+        a, b = call(py, "GET", path, "analyst"), call(rs, "GET", path, "analyst")
+        problems = [] if a.status == b.status == 200 else [f"status python={a.status} rust={b.status}"]
+        problems += diff(normalize(a.body, set()), normalize(b.body, set()))
+        if path.endswith("/alerts"):
+            items = [i for i in (b.body or {}).get("data", {}).get("items", [])
+                     if i.get("action") == "supply_contract.renewal_due"]
+            if len(items) != 1 or items[0].get("severity") != "warning" or items[0].get("reason") != "contract_expiring" \
+                    or items[0].get("details", {}).get("customer") != f"Alerted {tag}":
+                problems.append(f"the bell does not carry the renewal alert: {items}")
+        rec(f"cr alert registry parity {path.replace(API, '')}", problems, "GET", path)
     return out
 
 
@@ -7244,6 +7686,7 @@ def run(args) -> int:
                                                      mint_access_token=mint_access_token, make_fixture=make_fixture,
                                                      erase_fixture=erase_fixture))
         results += run_rd(args, fx, db)
+        results += run_cr(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

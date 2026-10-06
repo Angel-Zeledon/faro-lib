@@ -58,6 +58,7 @@ pub enum Event {
     RecurringDeliveryCreated,
     RecurringDeliveryRevised,
     RecurringDeliveryStatusChanged,
+    SupplyContractRenewed,
     PurchaseOrderPaid,
     PurchaseOrderUnpaid,
     PurchaseOrderCancelled,
@@ -138,6 +139,10 @@ impl Event {
                 "recurring_delivery.revised", "purchase", "info", RECURRING_KEYS),
             Event::RecurringDeliveryStatusChanged => (
                 "recurring_delivery.status_changed", "purchase", "info", RECURRING_KEYS),
+            Event::SupplyContractRenewed => (
+                "supply_contract.renewed", "purchase", "info",
+                &["customer", "lines", "revision", "status", "renewed_from"],
+            ),
             Event::ApiKeyCreated => ("account.api_key_created", "account", "warning", &["key_name", "role"]),
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),

@@ -107,6 +107,8 @@ const EVENTS: &[Spec] = &[
     ("recurring_delivery.created", "purchase", INFO, &["customer", "sku", "quantity", "frequency", "revision", "status"]),
     ("recurring_delivery.revised", "purchase", INFO, &["customer", "sku", "quantity", "frequency", "revision", "status"]),
     ("recurring_delivery.status_changed", "purchase", INFO, &["customer", "sku", "quantity", "frequency", "revision", "status"]),
+    ("supply_contract.renewed", "purchase", INFO, &["customer", "lines", "revision", "status", "renewed_from"]),
+    ("supply_contract.renewal_due", "purchase", WARNING, &["customer", "days_left", "lead_days", "expiry_date", "notice_deadline", "auto_renew"]),
     ("purchase_budget.created", "purchase", INFO, &["budget_scope", "amount", "period"]),
     ("purchase_budget.revised", "purchase", INFO, &["budget_scope", "amount", "period"]),
     ("purchase_budget.exceeded", "purchase", INFO, &["budget_scope", "over_by", "override_reason", "reference"]),
