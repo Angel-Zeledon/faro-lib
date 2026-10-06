@@ -1,0 +1,27 @@
+# DISABLED EXAMPLE. Rename to 50-recurring-deliveries.caddy inside the
+# gateway's /etc/caddy/routes.d/ to send this group to Rust.
+#
+# backend-rs/src/routes/recurring_deliveries.rs (a NEW feature, Rust only):
+#   GET, POST   /api/v1/recurring-deliveries
+#   POST        /api/v1/recurring-deliveries/preview
+#   GET, PATCH  /api/v1/recurring-deliveries/{id}
+#   POST        /api/v1/recurring-deliveries/{id}/status
+#
+# NO PYTHON FAILOVER: Python has no such route, so `api:8010` is deliberately
+# NOT listed as a second upstream. With api-rs down these paths answer 502 (the
+# frontend shows the load error); everything else keeps working. The schedules'
+# materialiser loop also lives in the api-rs process: when it is down, no new
+# commitments are generated and `/health` shows `recurring_deliveries` going
+# stale. Rows already materialised keep counting in Python.
+
+@rs_recurring_deliveries {
+	path /api/v1/recurring-deliveries /api/v1/recurring-deliveries/*
+}
+handle @rs_recurring_deliveries {
+	reverse_proxy api-rs:8021 {
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

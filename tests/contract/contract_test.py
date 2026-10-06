@@ -2739,6 +2739,349 @@ def run_cd_resync(args, fx: Fixture, db) -> list:
     return out
 
 
+# ── Recurring delivery schedules (Rust-only routes, no Python twin) ──────────
+#
+# These routes exist only in the Rust service, so there is nothing to diff
+# against: each case asserts the answer AND the rows in the database, and the
+# dates are checked against the Python reference module the Rust port is
+# differentially tested against (tests/contract/gen_recurring_fixtures.py).
+# The periodic materialiser case needs the Rust service started with
+# RECURRING_MATERIALISER_INTERVAL_SECS=5 (it reports a note, not a failure,
+# when no pass happens within 40 s).
+
+def _load_reference():
+    import importlib.util
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "backend", "inventory",
+                        "recurring_delivery_dates.py")
+    spec = importlib.util.spec_from_file_location("recurring_delivery_dates_ref", os.path.abspath(path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def run_rd(args, fx: Fixture, db) -> list:
+    route = "(recurring deliveries)"
+    if db is None:
+        return [(Case("rd (all)", "-", "-", route=route), "SKIP",
+                 ["needs --db: the rows are checked in the database"])]
+    ref = _load_reference()
+    cur = db.cursor()
+    out: list = []
+    tag = secrets.token_hex(3)
+    sku = f"RD-{tag}"
+    today = date.today()
+    RS, base = args.rust, f"{API}/recurring-deliveries"
+
+    def check(name: str, problems: list, notes: Optional[list] = None):
+        out.append((Case(name, "-", "-", route=route), "FAIL" if problems else "PASS",
+                    problems + (notes or [])))
+
+    def expect(r: Resp, status: int, code: Optional[str] = None) -> list:
+        p = []
+        if r.status != status:
+            p.append(f"status {r.status}, wanted {status}: {json.dumps(r.body)[:300]}")
+        elif code is not None and (r.body or {}).get("error_code") != code:
+            p.append(f"error_code {(r.body or {}).get('error_code')!r}, wanted {code!r}")
+        return p
+
+    def rows(sid, only_live=True):
+        cur.execute("""SELECT id, contract_release_date, delivery_date, quantity::float8, status, customer,
+                              source, contract_id, contract_root_id, probability::float8, updated_at,
+                              contract_withdrawn_at IS NOT NULL
+                         FROM committed_demand WHERE contract_root_id = %s
+                          AND (%s = FALSE OR contract_withdrawn_at IS NULL)
+                        ORDER BY contract_release_date, id""", (sid, only_live))
+        return cur.fetchall()
+
+    def n_schedules():
+        cur.execute("SELECT COUNT(*) FROM recurring_delivery_schedules WHERE tenant_id = %s", (fx.tenant_id,))
+        return cur.fetchone()[0]
+
+    def spec_of(weekday, end_days=400):
+        return {"frequency": "weekly", "weekday": weekday, "day_of_month": None, "start_date": today,
+                "end_date": today + timedelta(days=end_days), "holiday_dates": [],
+                "avoid_weekends": False, "shift_rule": "after"}
+
+    def expected(weekday, horizon=180):
+        return ref.occurrences(spec_of(weekday), today, today + timedelta(days=horizon))
+
+    def open_set(sid):
+        return sorted((r[1], r[2]) for r in rows(sid) if r[4] == "open")
+
+    body = {"customer": "Delta Corp", "sku": sku, "quantity": 25, "frequency": "weekly", "weekday": 2,
+            "start_date": today.isoformat(), "end_date": (today + timedelta(days=400)).isoformat(),
+            "reference": f"PO-{tag}"}
+
+    # A. permission pair on create
+    r = http(RS, "POST", base, token=auth_for(fx, "viewer"), body=body)
+    check("rd create viewer denied", expect(r, 403) + ([] if n_schedules() == 0 else ["a schedule was written"]))
+
+    # B. analyst creates: rows equal the Python reference, locked and idempotency-keyed
+    r = http(RS, "POST", base, token=auth_for(fx, "analyst"), body=body)
+    p = expect(r, 201)
+    sid = (r.body or {}).get("data", {}).get("id") if not p else None
+    if sid:
+        want = sorted((n, d) for n, d in expected(2))
+        got = open_set(sid)
+        if got != want:
+            p.append(f"materialised {len(got)} rows, reference wants {len(want)}")
+        if r.body["data"].get("materialised") != len(want):
+            p.append(f"response says materialised={r.body['data'].get('materialised')}")
+        for row in rows(sid):
+            if (row[6], row[7], row[8], row[9], row[3], row[5]) != ("contract", sid, sid, 1.0, 25.0, "Delta Corp"):
+                p.append(f"row {row[0]} is not a locked contract row: {row[6:10]} {row[3]} {row[5]}")
+                break
+        cur.execute("SELECT status, revision, created_by, last_materialised_at IS NOT NULL "
+                    "FROM recurring_delivery_schedules WHERE id = %s", (sid,))
+        if cur.fetchone() != ("active", 1, fx.analyst_id, True):
+            p.append("the schedule row is not active/rev 1/by the analyst/stamped")
+        cur.execute("SELECT COUNT(*) FROM activity_logs WHERE tenant_id = %s AND action = %s AND resource = %s",
+                    (fx.tenant_id, "recurring_delivery.created", sid))
+        if cur.fetchone()[0] != 1:
+            p.append("no recurring_delivery.created activity row")
+    check("rd create analyst materialises the reference dates", p)
+    if not sid:
+        return out
+
+    # C. reads
+    r = http(RS, "GET", base, token=auth_for(fx, "viewer"))
+    p = expect(r, 200)
+    mine = [i for i in (r.body or {}).get("data", {}).get("items", []) if i["id"] == sid]
+    if not p and (len(mine) != 1 or mine[0]["progress"]["open"] != len(expected(2))
+                  or mine[0]["progress"]["missing"] != 0):
+        p.append(f"list item wrong: {json.dumps(mine)[:300]}")
+    check("rd list viewer sees the schedule with progress", p)
+    r = http(RS, "GET", f"{base}/{sid}", token=auth_for(fx, "viewer"))
+    p = expect(r, 200)
+    if not p and len((r.body["data"].get("deliveries") or [])) != len(expected(2)):
+        p.append("the detail lists a different number of deliveries than the rows")
+    check("rd get lists the rows it made", p)
+    r = http(RS, "GET", f"{base}/does-not-exist", token=auth_for(fx, "viewer"))
+    check("rd get unknown id is 404", expect(r, 404, "recurring_delivery_not_found"))
+    if fx.read_key:
+        r = http(RS, "GET", base, token=fx.read_key)
+        check("rd api key is refused (internal tag)", expect(r, 403))
+    r = http(RS, "GET", base)
+    check("rd unauthenticated is 401", expect(r, 401))
+    r = http(args.python, "GET", base, token=auth_for(fx, "viewer"))
+    check("rd python does not serve the route (no failover)", expect(r, 404))
+
+    # E. preview writes nothing
+    before = (n_schedules(), len(rows(sid, False)))
+    r = http(RS, "POST", f"{base}/preview", token=auth_for(fx, "viewer"),
+             body={**body, "holiday_dates": [(today + timedelta(days=20)).isoformat()], "shift_rule": "skip"})
+    p = expect(r, 200)
+    if not p:
+        d = r.body["data"]
+        ref_spec = {**spec_of(2), "holiday_dates": {today + timedelta(days=20)}, "shift_rule": "skip"}
+        pad = timedelta(days=62)
+        total = len(ref.occurrences(ref_spec, ref_spec["start_date"] - pad, ref_spec["end_date"] + pad))
+        if d["total"] != total:
+            p.append(f"preview total {d['total']} != reference {total}")
+    if (n_schedules(), len(rows(sid, False))) != before:
+        p.append("preview wrote something")
+    check("rd preview matches the reference and writes nothing", p)
+
+    # F. rows are locked
+    all_open = [r_ for r_ in rows(sid) if r_[4] == "open"]
+    r = http(RS, "PATCH", f"{API}/committed-demand/{all_open[0][0]}", token=auth_for(fx, "analyst"),
+             body={"sku": "OTHER"})
+    check("rd contract row refuses a sku edit", expect(r, 409, "committed_demand_contract_locked"))
+
+    # G/H. history survives an edit; the future follows it
+    done_id, cancelled_id, edited_id = all_open[0][0], all_open[1][0], all_open[2][0]
+    http(RS, "POST", f"{API}/committed-demand/{done_id}/status", token=auth_for(fx, "analyst"),
+         body={"status": "fulfilled"})
+    http(RS, "POST", f"{API}/committed-demand/{cancelled_id}/status", token=auth_for(fx, "analyst"),
+         body={"status": "cancelled"})
+    http(RS, "PATCH", f"{API}/committed-demand/{edited_id}", token=auth_for(fx, "analyst"), body={"quantity": 99})
+    history = {rid: [x for x in rows(sid) if x[0] == rid][0] for rid in (done_id, cancelled_id)}
+    n_open_before = len([x for x in rows(sid) if x[4] == "open"])
+    r = http(RS, "PATCH", f"{base}/{sid}", token=auth_for(fx, "analyst"),
+             body={**body, "weekday": 4, "quantity": 40, "expected_revision": 1})
+    p = expect(r, 200)
+    if not p:
+        d = r.body["data"]
+        if d["revision"] != 2:
+            p.append(f"revision {d['revision']}, wanted 2")
+        for rid, was in history.items():
+            now = [x for x in rows(sid, False) if x[0] == rid][0]
+            if now != was:
+                p.append(f"history row {rid} was touched: {was} -> {now}")
+        want = sorted(expected(4))
+        if open_set(sid) != want:
+            p.append(f"open rows after the edit: {len(open_set(sid))}, reference wants {len(want)}")
+        if any(x[3] != 40.0 for x in rows(sid) if x[4] == "open"):
+            p.append("an open row kept the old quantity")
+        cur.execute("""SELECT COUNT(*) FROM committed_demand WHERE contract_root_id = %s
+                          AND contract_withdrawn_at IS NOT NULL AND status = 'cancelled'""", (sid,))
+        withdrawn = cur.fetchone()[0]
+        if withdrawn != n_open_before:
+            p.append(f"withdrawn {withdrawn}, wanted every old open row ({n_open_before})")
+        if d.get("withdrawn") != n_open_before:
+            p.append(f"response withdrawn={d.get('withdrawn')}")
+        cur.execute("SELECT COUNT(*) FROM activity_logs WHERE tenant_id = %s AND action = %s AND resource = %s",
+                    (fx.tenant_id, "recurring_delivery.revised", sid))
+        if cur.fetchone()[0] != 1:
+            p.append("no recurring_delivery.revised activity row")
+    check("rd edit revises only future open rows, history untouched", p)
+
+    # I. refusals leave the schedule alone
+    def schedule_state():
+        cur.execute("SELECT revision, weekday, quantity::float8, status FROM recurring_delivery_schedules "
+                    "WHERE id = %s", (sid,))
+        return cur.fetchone()
+    s0 = schedule_state()
+    for name, patch, status_code, code in [
+        ("stale revision", {"expected_revision": 1}, 409, "recurring_delivery_stale"),
+        ("sku change", {"sku": "OTHER", "expected_revision": 2}, 409, "recurring_delivery_sku_locked"),
+        ("bad frequency", {"frequency": "daily", "expected_revision": 2}, 422, "recurring_delivery_frequency_invalid"),
+        ("bad period", {"end_date": (today - timedelta(days=2)).isoformat(), "expected_revision": 2}, 422, None),
+        ("weekday out of range", {"weekday": 9, "expected_revision": 2}, 422, "recurring_delivery_field_invalid"),
+    ]:
+        r = http(RS, "PATCH", f"{base}/{sid}", token=auth_for(fx, "analyst"),
+                 body={**body, "weekday": 4, "quantity": 40, **patch})
+        p = expect(r, status_code, code)
+        if schedule_state() != s0:
+            p.append("the schedule changed")
+        check(f"rd edit refused: {name}", p)
+    r = http(RS, "PATCH", f"{base}/{sid}", token=auth_for(fx, "viewer"),
+             body={**body, "weekday": 4, "quantity": 40, "expected_revision": 2})
+    p = expect(r, 403)
+    if schedule_state() != s0:
+        p.append("a viewer changed the schedule")
+    check("rd edit viewer denied", p)
+
+    # J. the periodic materialiser: a schedule written straight to the table
+    # (as if it had been created while the loop was down) is picked up, and the
+    # rerun never duplicates.
+    direct = f"rds_{secrets.token_hex(6)}"
+    cur.execute("""INSERT INTO recurring_delivery_schedules
+                       (id, tenant_id, customer, sku, quantity, frequency, weekday, start_date, end_date,
+                        created_by)
+                   VALUES (%s, %s, 'Loop Corp', %s, 7, 'weekly', 0, %s, %s, %s)""",
+                (direct, fx.tenant_id, f"{sku}-L", today, today + timedelta(days=60), fx.admin_id))
+    loop_spec = {**spec_of(0, 60)}
+    want_loop = sorted(ref.occurrences(loop_spec, today, today + timedelta(days=180)))
+    deadline = time.time() + 40
+    while time.time() < deadline and len(rows(direct)) < len(want_loop):
+        time.sleep(2)
+    if len(rows(direct)) == 0:
+        out.append((Case("rd loop materialises a schedule", "-", "-", route=route), "PASS",
+                    ["(no pass within 40 s: start the Rust service with RECURRING_MATERIALISER_INTERVAL_SECS=5)"]))
+    else:
+        p = []
+        if sorted((x[1], x[2]) for x in rows(direct)) != want_loop:
+            p.append("the loop's rows differ from the reference")
+        time.sleep(12)   # at least one more pass: nothing may be added
+        if len(rows(direct)) != len(want_loop):
+            p.append("a rerun changed the row count")
+        cur.execute("SELECT last_run_at, last_status, last_error FROM system_loop_runs "
+                    "WHERE loop = 'recurring_deliveries'")
+        run = cur.fetchone()
+        if not run or run[1] != "completed" or run[2] is not None:
+            p.append(f"loop state {run}")
+        cur.execute("SELECT last_materialised_at IS NOT NULL FROM recurring_delivery_schedules WHERE id = %s",
+                    (direct,))
+        if not cur.fetchone()[0]:
+            p.append("the schedule was not stamped")
+        check("rd loop materialises a schedule and reruns are idempotent", p)
+        for base_url, label in ((args.python, "python"), (args.rust, "rust")):
+            h = http(base_url, "GET", "/health").body
+            loops = {e["loop"]: e for e in h.get("loops", [])}
+            check(f"rd /health reports the loop ({label})",
+                  [] if loops.get("recurring_deliveries", {}).get("last_status") == "completed"
+                  else [f"loop entry: {loops.get('recurring_deliveries')}"])
+
+    # K. pause withdraws the future, resume brings it back, history is never duplicated
+    def status(who, st, rev):
+        return http(RS, "POST", f"{base}/{sid}/status", token=auth_for(fx, who),
+                    body={"status": st, "expected_revision": rev})
+    r = status("viewer", "paused", 2)
+    p = expect(r, 403)
+    if schedule_state() != s0:
+        p.append("a viewer paused it")
+    check("rd status viewer denied", p)
+    r = status("analyst", "paused", 2)
+    p = expect(r, 200)
+    if not p and [x for x in rows(sid) if x[4] == "open"]:
+        p.append("a paused schedule still has open rows")
+    for rid, was in history.items():
+        if [x for x in rows(sid, False) if x[0] == rid][0] != was:
+            p.append(f"history row {rid} touched by the pause")
+    check("rd pause withdraws future open rows", p)
+    r = status("analyst", "active", 3)
+    p = expect(r, 200)
+    if not p and open_set(sid) != sorted(expected(4)):
+        p.append("resume did not restore the reference rows")
+    cur.execute("""SELECT contract_release_date, COUNT(*) FROM committed_demand
+                    WHERE contract_root_id = %s AND contract_withdrawn_at IS NULL
+                    GROUP BY 1 HAVING COUNT(*) > 1""", (sid,))
+    if cur.fetchall():
+        p.append("a nominal date holds two live rows")
+    check("rd resume restores the future without duplicates", p)
+    check("rd status active to active refused",
+          expect(status("analyst", "active", 4), 409, "recurring_delivery_transition_invalid"))
+    check("rd status unknown refused",
+          expect(status("analyst", "ended", 4), 422, "recurring_delivery_status_invalid"))
+
+    # M. cancel is final
+    r = status("analyst", "cancelled", 4)
+    p = expect(r, 200)
+    if not p and [x for x in rows(sid) if x[4] == "open"]:
+        p.append("a cancelled schedule still has open rows")
+    check("rd cancel withdraws future open rows", p)
+    check("rd edit after cancel refused", expect(
+        http(RS, "PATCH", f"{base}/{sid}", token=auth_for(fx, "analyst"),
+             body={**body, "expected_revision": 5}), 409, "recurring_delivery_final"))
+    check("rd resume after cancel refused",
+          expect(status("analyst", "active", 5), 409, "recurring_delivery_transition_invalid"))
+    r = http(RS, "POST", f"{API}/committed-demand/{done_id}/status", token=auth_for(fx, "analyst"),
+             body={"status": "open"})
+    p = expect(r, 409, "committed_demand_contract_inactive")
+    if [x for x in rows(sid, False) if x[0] == done_id][0] != history[done_id]:
+        p.append("the fulfilled row changed")
+    check("rd fulfilled row of a cancelled schedule cannot be reopened", p)
+
+    # N. warehouse scope
+    cur.execute("""INSERT INTO warehouses (tenant_id, name) VALUES (%s, %s)
+                   ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id""",
+                (fx.tenant_id, f"RD-{tag}"))
+    wid = cur.fetchone()[0]
+    r = http(args.python, "POST", f"{API}/users", token=auth_for(fx, "admin"), body={
+        "email": f"contract-{tag}-rdscoped@stockai.demo", "role": "analyst", "full_name": "Contract rd scoped"})
+    if r.status == 201:
+        uid = r.body["data"]["user"]["id"]
+        http(args.python, "PUT", f"{API}/users/{uid}/warehouse-scope", token=auth_for(fx, "admin"),
+             body={"warehouse_ids": [wid]})
+        fx.tokens["rd_scoped"] = mint_access_token(fx.secret, uid, fx.tenant_id, "analyst")
+        r = http(RS, "POST", base, token=fx.tokens["rd_scoped"], body={**body, "sku": f"{sku}-S"})
+        check("rd scoped analyst must name a warehouse", expect(r, 422, "recurring_delivery_warehouse_required"))
+        r = http(RS, "POST", base, token=fx.tokens["rd_scoped"],
+                 body={**body, "sku": f"{sku}-S", "warehouse_id": "nope"})
+        check("rd scoped analyst cannot name a foreign warehouse", expect(r, 403))
+        r = http(RS, "POST", base, token=fx.tokens["rd_scoped"],
+                 body={**body, "sku": f"{sku}-S", "warehouse_id": wid})
+        p = expect(r, 201)
+        own = r.body["data"]["id"] if not p else None
+        check("rd scoped analyst creates in their warehouse", p)
+        r = http(RS, "GET", f"{base}/{sid}", token=fx.tokens["rd_scoped"])
+        check("rd company-wide schedule is a 404 to a scoped user", expect(r, 404, "recurring_delivery_not_found"))
+        r = http(RS, "PATCH", f"{base}/{sid}", token=fx.tokens["rd_scoped"], body={**body, "expected_revision": 6})
+        check("rd scoped user cannot edit an out-of-scope schedule", expect(r, 404))
+        r = http(RS, "GET", base, token=fx.tokens["rd_scoped"])
+        ids = [i["id"] for i in (r.body or {}).get("data", {}).get("items", [])]
+        check("rd scoped list shows only their warehouse's schedules",
+              [] if ids == [own] else [f"list ids {ids}, wanted [{own}]"])
+        if own:
+            cur.execute("SELECT DISTINCT warehouse_id FROM committed_demand WHERE contract_root_id = %s", (own,))
+            wh_rows = [x[0] for x in cur.fetchall()]
+            check("rd rows carry the schedule's warehouse", [] if wh_rows == [wid] else [f"warehouses {wh_rows}"])
+    else:
+        check("rd scope setup", [f"creating the scoped analyst failed: {r.status} {r.body}"])
+    return out
+
+
 def run(args) -> int:
     env = read_env_file(args.env_file) if args.env_file else {}
     secret = os.environ.get("SECRET_KEY") or env.get("SECRET_KEY")
@@ -2759,6 +3102,9 @@ def run(args) -> int:
     print(f"throwaway tenant {fx.tenant_id} (admin {fx.admin_id})")
     results = []
     try:
+        if args.only_rd:
+            results += run_rd(args, fx, db)
+            return _report(args, fx, results)
         # Each implementation edits a row it created itself, so a PATCH on one
         # side never changes what the other side's PATCH starts from.
         cd = {"py": seed_commitment(args.python, fx), "rs": seed_commitment(args.rust, fx)}
@@ -2807,10 +3153,16 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        results += run_rd(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
+    return _report(args, fx, results)
 
+
+def _report(args, fx, results) -> int:
+    if not results:
+        return 1
     width = max(len(c.name) for c, _, _ in results)
     print()
     for case, verdict, problems in results:
@@ -2837,6 +3189,8 @@ def main() -> None:
     ap.add_argument("--db", default=None)
     ap.add_argument("--only", default=None, help="run only cases whose name contains this")
     ap.add_argument("--dump", action="store_true", help="print both bodies for every case")
+    ap.add_argument("--only-rd", action="store_true",
+                    help="run only the recurring-delivery section (needs --db)")
     ap.add_argument("--keep", action="store_true", help="do not erase the throwaway tenant")
     ap.add_argument("--allow-stale", action="store_true",
                     help="R3: accept a Python answer that predates the source when Rust matches the source")

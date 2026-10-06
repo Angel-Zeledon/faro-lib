@@ -3468,3 +3468,74 @@ export interface InboundEmailState {
   allowed_senders: string[]
   messages:        InboundEmailMessage[]
 }
+
+// ── Recurring delivery schedules (Rust service; their rows are committed demand) ──
+export type RecurringDeliveryFrequency = 'weekly' | 'fortnightly' | 'semimonthly' | 'monthly'
+export type RecurringDeliveryStatus = 'active' | 'paused' | 'cancelled'
+export type RecurringDeliveryShiftRule = 'skip' | 'before' | 'after'
+
+export interface RecurringDeliveryTerms {
+  customer: string
+  reference?: string | null
+  sku: string
+  warehouse_id?: string | null
+  quantity: number
+  frequency: RecurringDeliveryFrequency
+  weekday?: number | null
+  day_of_month?: number | null
+  start_date: string
+  end_date: string
+  holiday_dates: string[]
+  avoid_weekends: boolean
+  shift_rule: RecurringDeliveryShiftRule
+  horizon_days?: number
+  on_top_of_base: boolean
+  note?: string | null
+}
+
+export interface RecurringDeliveryRow {
+  id: string
+  nominal_date: string | null
+  delivery_date: string
+  quantity: number
+  status: 'open' | 'fulfilled' | 'cancelled'
+}
+
+export interface RecurringDelivery extends RecurringDeliveryTerms {
+  id: string
+  status: RecurringDeliveryStatus
+  revision: number
+  warehouse_name: string | null
+  effective_horizon_days: number
+  created_by: string
+  created_at: string
+  updated_at: string
+  last_materialised_at: string | null
+  last_materialise_error: string | null
+  period_ended: boolean
+  progress: {
+    open: number
+    open_units: number
+    fulfilled: number
+    delivered_units: number
+    cancelled: number
+    overdue: number
+    /** Deliveries owed inside the horizon that are not commitments yet. */
+    missing: number
+    next_delivery: { date: string; quantity: number } | null
+  }
+  deliveries?: RecurringDeliveryRow[]
+  /** Only on the answer to a write. */
+  materialised?: number
+  updated?: number
+  withdrawn?: number
+}
+
+export interface RecurringDeliveryPreview {
+  deliveries: { nominal_date: string; delivery_date: string; shifted: boolean; past: boolean }[]
+  total: number
+  truncated: boolean
+  skipped: number
+  quantity: number
+  total_units: number
+}

@@ -528,3 +528,83 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. Recurring delivery schedules (a new feature written in Rust first)
+
+Owner request, 2026-10-06: corporate contract lines of the form "N units every
+month / fortnight / week from date A to date B", materialised ahead as
+committed demand. Unlike everything above this is NOT a port: **there is no
+Python implementation of these routes, so there is no failover.** The gateway
+file `routes.d/50-recurring-deliveries.caddy.example` therefore lists only
+`api-rs` as upstream. With the Rust service down the screen shows its load
+error and no new commitments are generated; the rows already materialised keep
+counting, because they are ordinary `committed_demand` rows read by Python.
+
+What lives where:
+
+* **Schema (Python, additive):** `recurring_delivery_schedules`
+  (`backend/inventory/recurring_delivery_migrations.py`). Rows made by a
+  schedule are `committed_demand` rows with `source = 'contract'`,
+  `contract_id = contract_root_id = <schedule id>` and
+  `contract_release_date = <nominal date>`, so they reuse the blanket-contract
+  lock (sku, warehouse, customer, probability and the on-top flag cannot be
+  edited on the row) and the partial unique index that makes materialisation
+  idempotent.
+* **Routes (Rust, `routes/recurring_deliveries.rs`):** `GET` list and one,
+  `POST` create, `POST /preview`, `PATCH /{id}`, `POST /{id}/status`. No
+  `DELETE`: cancel instead. Internal tag (no API key). Warehouse scope follows
+  committed demand. Events `recurring_delivery.created / revised /
+  status_changed` in both the Python and Rust event and audit catalogues.
+* **Core (Rust, `recurring/`):** `dates.rs` (pure date rules), `materialise.rs`
+  (rows), `materialiser.rs` (the loop). The date rules have an independent
+  Python statement, `backend/inventory/recurring_delivery_dates.py`, and a
+  differential test: `tests/contract/gen_recurring_fixtures.py` writes 4,000
+  cases and `cargo test -- --ignored recurring_dates_match_python` replays them.
+* **Python honours it where it still serves the path:** reopening a commitment
+  a schedule made follows the schedule's status (`set_status` in
+  `committed_demand_service.py`, mirrored in Rust); whole-tenant export and
+  erasure list the table; `loop_state.LOOPS` and `/health` report the loop.
+
+Rules (decisions the owner should confirm are marked *):
+
+* Frequencies: `weekly`, `fortnightly` (every 14 days from the first chosen
+  weekday on or after the start), `semimonthly` (the 15th and the last day),
+  `monthly` (a day of the month, 31 = last day). *"Fortnight" is read both ways
+  on purpose, as two options.
+* Holidays: the existing calendar catalog holds commercial events, not public
+  holidays, so each schedule carries its own list of customer holidays
+  (at most 50) plus an optional "avoid weekends" for monthly/semimonthly. A
+  delivery on such a day is skipped, or moved to the previous / next working
+  day. The nominal date is the identity of a delivery; the moved date is where
+  the commitment sits. *A moved date may fall after `end_date`.
+* Horizon: the schedule's own `horizon_days` (default 180), raised to the
+  SKU's longest lead time plus 60 days (same rule as blanket contracts), capped
+  at 730. A delivery inside the protection interval that was not materialised
+  would be under-bought silently, so `progress.missing` counts them and the
+  card shows it.
+* Nothing in the past is created: a schedule starting last year does not invent
+  a year of overdue orders. *
+* Editing a schedule rewrites or withdraws only rows that are `open` and dated
+  today or later; fulfilled, cancelled, withdrawn and past rows are history and
+  keep their slot. *A hand edit of quantity or date on a future open row is
+  overwritten by a schedule edit (not by the periodic pass).* The product (sku)
+  of a schedule cannot change.
+* Pausing or cancelling withdraws future open rows (cancelled, stamped
+  `contract_withdrawn_at`); resuming creates them again. Cancelled is final.
+* The loop runs in the Rust process: every 6 h (and at start when the last
+  pass is older), writes `system_loop_runs` row `recurring_deliveries`
+  (`completed`, or `failed` with how many schedules failed; the failure is also
+  stored on the schedule). Env: `RECURRING_MATERIALISER_ENABLED=false` turns it
+  off, `RECURRING_MATERIALISER_INTERVAL_SECS` sets the period. These are
+  Rust-only knobs and are not in the Python settings registry. A schedule
+  created or edited through the API materialises immediately, in the request.
+
+Verification (2026-10-06, disposable database, Python and Rust dev builds):
+Rust unit tests 140 pass, 3 ignored (one is the differential) (4,000 fixtures against the
+Python reference, all equal); `backend/tests/test_recurring_deliveries.py` 27
+pass; `contract_test.py --only-rd` 36/36 pass (permission pairs, rows checked in
+the database against the reference, history untouched by edits, pause/resume,
+cancel finality, scope, the loop picking up a schedule written straight to the
+table, `/health` on both services). Not verified in a browser (the browser
+extension was not connected): the panel type-checks and its page compiles, and
+the same calls were made through the Next proxy with curl.
