@@ -10,6 +10,7 @@ pub mod spike_edits;
 pub mod webhooks;
 pub mod po_cancellation;
 pub mod po_payments;
+pub mod saml;
 pub mod signal_thresholds;
 
 use axum::routing::{delete, get, patch, post};
@@ -70,6 +71,12 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // SAML 2.0 SSO configuration (NEW in Rust, no Python twin, no failover).
+        .route(
+            "/api/v1/auth/saml/config",
+            get(saml::get_config).put(saml::put_config).delete(saml::delete_config),
+        )
+        .route("/api/v1/auth/saml/sp-metadata", get(saml::sp_metadata))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }

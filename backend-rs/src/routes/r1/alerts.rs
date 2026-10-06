@@ -141,6 +141,8 @@ const EVENTS: &[Spec] = &[
     ("account.sso_sign_in_refused", "account", WARNING, &["email"]),
     ("account.sso_config_changed", "account", WARNING, &["issuer", "enabled", "enforce_sso", "domains"]),
     ("account.sso_config_removed", "account", WARNING, &["issuer"]),
+    ("account.saml_config_changed", "account", WARNING, &["idp_entity_id", "enabled", "enforce_sso", "domains"]),
+    ("account.saml_config_removed", "account", WARNING, &["idp_entity_id"]),
     ("account.warehouse_scope_changed", "account", WARNING, &["email", "warehouses"]),
     ("webhook.auto_disabled", "account", WARNING, &["host"]),
     ("account.scim_user_created", "account", INFO, &["email", "role"]),

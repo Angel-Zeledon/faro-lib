@@ -31,6 +31,9 @@ tracing = "0.1"
 # and the streamed audit CSV export. Both are already in the dependency graph.
 getrandom = "0.2"
 futures-util = { version = "0.3", default-features = false }
+# SAML (docs/rust-migration.md): the IdP metadata import reads untrusted XML
+# with a namespace-aware pull parser. It validates nothing cryptographic.
+quick-xml = "0.38"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "std", "ansi"] }
 
 [profile.release]

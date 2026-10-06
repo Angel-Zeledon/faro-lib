@@ -240,6 +240,13 @@ fn resolve(settings: &Settings, overrides: &HashMap<String, String>, key: &str) 
     }
 }
 
+/// `effective().enterprise_sso_enabled` at instance scope: the one switch both
+/// the OIDC and the SAML sign-in obey.
+pub async fn enterprise_sso_enabled(pool: &PgPool, settings: &Settings) -> bool {
+    let overrides = instance_overrides(pool, settings).await.unwrap_or_default();
+    resolve(settings, &overrides, "enterprise_sso_enabled").truthy()
+}
+
 /// `effective().contact_whatsapp` / `contact_email`, as `_contact()` sends them.
 pub async fn contact(pool: &PgPool, settings: &Settings) -> Map<String, Value> {
     let overrides = instance_overrides(pool, settings).await.unwrap_or_default();

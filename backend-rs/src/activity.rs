@@ -57,6 +57,8 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    SamlConfigChanged,
+    SamlConfigRemoved,
 }
 
 impl Event {
@@ -79,6 +81,11 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::SamlConfigChanged => (
+                "account.saml_config_changed", "account", "warning",
+                &["idp_entity_id", "enabled", "enforce_sso", "domains"],
+            ),
+            Event::SamlConfigRemoved => ("account.saml_config_removed", "account", "warning", &["idp_entity_id"]),
         }
     }
 }
