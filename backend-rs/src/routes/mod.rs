@@ -2,6 +2,7 @@ pub mod api_keys;
 pub mod audit;
 pub mod commitment_outlook;
 pub mod committed_demand;
+pub mod customer_portal;
 pub mod entitlements;
 pub mod health;
 pub mod lineage;
@@ -83,6 +84,8 @@ pub fn router() -> Router<AppState> {
         // NEW (Rust only, no Python route): purchase-order approval delegation.
         .route("/api/v1/inventory/po-approval/delegations", get(po_delegations::list).post(po_delegations::create))
         .route("/api/v1/inventory/po-approval/delegations/{delegation_id}/revoke", post(po_delegations::revoke))
+        // Customer portal (new in Rust, no Python twin): tenant link management and the public token routes.
+        .merge(customer_portal::router())
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }

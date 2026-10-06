@@ -64,6 +64,7 @@ import CommittedDemandPanel from '@/components/inventory/CommittedDemandPanel'
 import CommitmentOutlookPanel from '@/components/inventory/CommitmentOutlookPanel'
 import AnalogyPanel from '@/components/inventory/AnalogyPanel'
 import SupplyContractsPanel from '@/components/inventory/SupplyContractsPanel'
+import CustomerPortalPanel from '@/components/inventory/CustomerPortalPanel'
 import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
 
 // Maps the active UI language to a concrete BCP-47 locale for date formatting,
@@ -4193,6 +4194,8 @@ export default function InventoryPage() {
   <CommitmentOutlookPanel reloadToken={commitmentsVersion} />
   {/* Blanket contracts: their releases become the commitments listed above. */}
   <SupplyContractsPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
+  {/* Customer portal: a private read-only link where a customer sees only their own commitments. */}
+  <CustomerPortalPanel reloadToken={commitmentsVersion} />
   {/* Forecast by analogy: a new product with no history plans from products it sells like. */}
   <AnalogyPanel onChanged={() => { if (sessionId) load(sessionId) }} />
  </div>

@@ -40,6 +40,7 @@ import secrets
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -4013,6 +4014,531 @@ def run_delegation(args, fx: Fixture, db) -> list:
     expect("python: an expired delegation is refused with no cleanup job", r3, 403,
            "po_approval_not_approver", extra=lambda: untouched(pos[2]))
     return results
+# ── Customer portal: Rust-only routes, asserted against expectations ─────────
+#
+# There is no Python twin to diff against (the group is new in Rust, with no
+# failover), so these cases assert the contract itself: status, error code, the
+# SHAPE of the public page, and the rows and activity events left in the
+# database. They run against `--rust` only; Python is used to seed the tenant
+# (commitments through the real API) and to erase it.
+#
+# Needs `--db` (stock and promise rows are seeded and checked there) and a
+# database whose schema includes the three `customer_portal_*` tables, i.e. one
+# the Python API of THIS branch has migrated.
+
+PORTAL = f"{API}/customer-portal"
+# Strings that live in the throwaway tenant's INTERNAL columns. None of them may
+# appear anywhere in anything a customer can fetch.
+PORTAL_SECRETS = {
+    "stock level": "4242.5", "unit cost": "77.77", "supplier name": "SECRETSUPPLIER-XYZ",
+    "stock notes": "INTERNAL-STOCK-NOTE", "commitment note": "INTERNAL-COMMIT-NOTE",
+    "other customer": "Other Corp", "min stock": "1313",
+}
+PORTAL_BANNED_KEYS = {
+    "stock", "current_stock", "min_stock", "unit_cost", "cost", "probability", "note", "notes", "warehouse",
+    "warehouse_id", "supplier", "customer_key", "token", "token_hash", "created_by", "on_top_of_base",
+    "contract_id", "source", "at_risk", "verdict", "shortfall",
+}
+
+
+def _walk_keys(value: Any):
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from _walk_keys(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _walk_keys(v)
+
+
+def run_portal(args, fx: Fixture, db) -> list:
+    route = "customer portal (rust only)"
+    out: list = []
+    if db is None:
+        return [(Case("customer portal (all)", "-", "-", route=route), "SKIP",
+                 ["needs --db: rows are seeded and checked in the database"])]
+    rs = args.rust
+    cur = db.cursor()
+    tag = secrets.token_hex(3)
+
+    def step(name, fn):
+        try:
+            problems = fn() or []
+        except Exception as exc:  # noqa: BLE001 - a crash is a failed case, not a dead run
+            problems = [f"raised {type(exc).__name__}: {exc}"]
+        out.append((Case(name, "-", "-", route=route), "FAIL" if problems else "PASS", problems))
+
+    def call(method, path, who="analyst", body=None, raw_body=None, headers=None):
+        return http(rs, method, path, token=auth_for(fx, who) if who else None, body=body,
+                    raw_body=raw_body, headers=headers)
+
+    def seed(customer, sku, qty, note=None, prob=0.37):
+        r = http(args.python, "POST", f"{API}/committed-demand", token=auth_for(fx, "admin"),
+                 body={"sku": sku, "delivery_date": today_plus(60), "quantity": qty, "customer": customer,
+                       "probability": prob, "note": note})
+        if r.status != 201:
+            raise SystemExit(f"seeding a commitment failed: {r.status} {r.body}")
+        return r.body["data"]["id"]
+
+    skus = {"a": f"PT-A-{tag}", "b": f"PT-B-{tag}", "x": f"PT-X-{tag}"}
+    for key, name in (("a", "Widget Alpha"), ("b", "Widget Beta"), ("x", "Other Widget")):
+        cur.execute("""INSERT INTO inventory_stock (tenant_id, sku, display_name, current_stock, min_stock,
+                                                     lead_time_days, unit_cost, supplier, notes)
+                       VALUES (%s, %s, %s, 4242.5, 1313, 9, 77.77, 'SECRETSUPPLIER-XYZ', 'INTERNAL-STOCK-NOTE')
+                       ON CONFLICT (tenant_id, sku, warehouse) DO NOTHING""", (fx.tenant_id, skus[key], name))
+        # The stock table has one row per warehouse: a second one must not repeat the commitment.
+        cur.execute("""INSERT INTO inventory_stock (tenant_id, sku, display_name, current_stock, warehouse)
+                       VALUES (%s, %s, %s, 1, 'norte') ON CONFLICT (tenant_id, sku, warehouse) DO NOTHING""",
+                    (fx.tenant_id, skus[key], name))
+    c_a = seed("Portal Co", skus["a"], 40, "INTERNAL-COMMIT-NOTE")
+    c_b = seed("PORTAL CO", skus["b"], 15)             # same customer, different casing
+    c_x = seed("Other Corp", skus["x"], 99)
+    cur.execute("SELECT delivery_date::text, quantity::float8, status FROM committed_demand WHERE id = %s", (c_a,))
+    before_a = cur.fetchone()
+
+    def links_count():
+        cur.execute("SELECT COUNT(*) FROM customer_portal_links WHERE tenant_id = %s", (fx.tenant_id,))
+        return cur.fetchone()[0]
+
+    def events_of(link_id, action):
+        cur.execute("""SELECT user_id, context FROM activity_logs
+                        WHERE tenant_id = %s AND resource = %s AND action = %s ORDER BY created_at""",
+                    (fx.tenant_id, link_id, action))
+        return cur.fetchall()
+
+    S: dict = {}
+
+    # ── permission pairs and validation on create ────────────────────────────
+    def create_denied():
+        n = links_count()
+        p = []
+        r = call("POST", f"{PORTAL}/links", "viewer", {"customer": "Portal Co"})
+        if r.status != 403 or r.body.get("error_code") != "role_not_permitted":
+            p.append(f"viewer create: {r.status} {r.body}")
+        r = call("POST", f"{PORTAL}/links", None, {"customer": "Portal Co"})
+        if r.status != 401:
+            p.append(f"no token create: {r.status}")
+        for who in ("key_read", "key_write"):
+            if auth_for(fx, who) is None:
+                continue
+            r = call("POST", f"{PORTAL}/links", who, {"customer": "Portal Co"})
+            if r.status != 403 or r.body.get("error_code") != "api_key_route_not_exposed":
+                p.append(f"{who} create: {r.status} {r.body.get('error_code') if isinstance(r.body, dict) else r.body}")
+        if links_count() != n:
+            p.append("a refused create wrote a link")
+        return p
+    step("portal create: viewer, no token and API keys are refused, nothing written", create_denied)
+
+    def create_validation():
+        n = links_count()
+        p = []
+        for label, body, code in (
+            ("unknown customer", {"customer": "Nobody Inc"}, "customer_portal_customer_unknown"),
+            ("blank customer", {"customer": "   "}, "customer_portal_customer_required"),
+            ("bad language", {"customer": "Portal Co", "language": "fr"}, "validation_error"),
+            ("zero days", {"customer": "Portal Co", "expires_in_days": 0}, "validation_error"),
+            ("366 days", {"customer": "Portal Co", "expires_in_days": 366}, "validation_error"),
+            ("fractional days", {"customer": "Portal Co", "expires_in_days": 1.5}, "validation_error"),
+            ("missing customer", {}, "validation_error"),
+            ("share not a bool", {"customer": "Portal Co", "share_dates": "maybe"}, "validation_error"),
+        ):
+            r = call("POST", f"{PORTAL}/links", "analyst", body)
+            if r.status != 422 or r.body.get("error_code") != code:
+                p.append(f"{label}: {r.status} {r.body.get('error_code')} (wanted 422 {code})")
+        if links_count() != n:
+            p.append("a refused create wrote a link")
+        return p
+    step("portal create: validation and unknown customer are 422, nothing written", create_validation)
+
+    def create_ok():
+        p = []
+        r = call("POST", f"{PORTAL}/links", "analyst", {"customer": "portal co", "language": "en"})
+        if r.status != 201:
+            return [f"create: {r.status} {r.body}"]
+        d = r.body["data"]
+        S["token"], S["link"] = d["token"], d["link"]["id"]
+        if len(S["token"]) != 43 or not d["url"].endswith("/cliente/" + S["token"]):
+            p.append(f"token/url shape: {len(S['token'])} {d['url']}")
+        cur.execute("""SELECT token_hash, customer, customer_key, language, share_dates, created_by,
+                              expires_at > NOW() + interval '89 days'
+                         FROM customer_portal_links WHERE id = %s AND tenant_id = %s""", (S["link"], fx.tenant_id))
+        row = cur.fetchone()
+        if not row:
+            return ["no row stored"]
+        if row[0] != hashlib.sha256(S["token"].encode()).hexdigest():
+            p.append("stored hash is not sha256(token)")
+        if row[2] != "portal co" or row[3] != "en" or row[4] is not False or row[5] != fx.analyst_id or not row[6]:
+            p.append(f"row fields: {row[1:]}")
+        cur.execute("SELECT to_jsonb(l)::text FROM customer_portal_links l WHERE id = %s", (S["link"],))
+        if S["token"] in cur.fetchone()[0]:
+            p.append("the plaintext token is in the stored row")
+        if "token_hash" in json.dumps(d["link"]) or S["token"] in json.dumps(d["link"]):
+            p.append("the link object carries the token or its hash")
+        ev = events_of(S["link"], "customer_portal.link_created")
+        if len(ev) != 1 or ev[0][0] != fx.analyst_id:
+            p.append(f"link_created events: {ev}")
+        # The token is never shown again.
+        for path in (f"{PORTAL}/links", f"{PORTAL}/links/{S['link']}"):
+            rr = call("GET", path, "viewer")
+            if rr.status != 200 or S["token"] in rr.raw.decode() or "token_hash" in rr.raw.decode():
+                p.append(f"GET {path} leaks the token or hash ({rr.status})")
+        return p
+    step("portal create: analyst gets the link once; only sha256(token) is stored; event recorded", create_ok)
+
+    # ── the public page ──────────────────────────────────────────────────────
+    PUB = f"{PORTAL}/public"
+
+    def page(token=None):
+        return call("GET", f"{PUB}/{token or S['token']}", None)
+
+    def public_shape():
+        p = []
+        r = page()
+        if r.status != 200:
+            return [f"public GET: {r.status} {r.body}"]
+        for h, v in (("cache-control", "no-store"), ("referrer-policy", "no-referrer"),
+                     ("x-robots-tag", "noindex, nofollow")):
+            if r.headers.get(h) != v:
+                p.append(f"header {h}={r.headers.get(h)!r}")
+        d = r.body["data"]
+        if set(d) != {"company", "customer", "language", "share_dates", "expires_at", "commitments"}:
+            p.append(f"page keys: {sorted(d)}")
+        ids = {c["id"] for c in d["commitments"]}
+        if ids != {c_a, c_b}:
+            p.append(f"commitments shown: {ids} (want {c_a}, {c_b}; never {c_x})")
+        for c in d["commitments"]:
+            if set(c) != {"id", "sku", "description", "quantity", "requested_date", "status", "my_response"}:
+                p.append(f"commitment keys: {sorted(c)}")
+        if {c["description"] for c in d["commitments"]} != {"Widget Alpha", "Widget Beta"}:
+            p.append("descriptions are not the stock display names")
+        if d["language"] != "en" or d["share_dates"] is not False:
+            p.append(f"language/share: {d['language']} {d['share_dates']}")
+        cur.execute("SELECT last_viewed_at IS NOT NULL FROM customer_portal_links WHERE id = %s", (S["link"],))
+        if not cur.fetchone()[0]:
+            p.append("last_viewed_at not recorded")
+        return p
+    step("portal public: whitelist shape, own commitments only, privacy headers", public_shape)
+
+    def public_leak():
+        """Nothing internal appears anywhere in anything a customer can fetch."""
+        p = []
+        raw = page().raw.decode()
+        body = json.loads(raw)
+        for key in set(_walk_keys(body)) & PORTAL_BANNED_KEYS:
+            p.append(f"banned key in the page: {key}")
+        for label, needle in PORTAL_SECRETS.items():
+            if needle in raw:
+                p.append(f"{label} ({needle}) leaked into the page")
+        if S["token"] in raw or hashlib.sha256(S["token"].encode()).hexdigest() in raw:
+            p.append("the token or its hash is in the page")
+        if skus["x"] in raw or c_x in raw:
+            p.append("another customer's commitment leaked")
+        # the same must hold for what the customer gets back after answering
+        r = call("POST", f"{PUB}/{S['token']}/respond", None,
+                 {"commitment_id": c_b, "response": "received"})
+        raw2 = r.raw.decode()
+        for label, needle in PORTAL_SECRETS.items():
+            if needle in raw2:
+                p.append(f"{label} leaked into the answer response")
+        if r.status not in (200, 201):
+            p.append(f"respond: {r.status} {r.body}")
+        return p
+    step("portal public: leak test (no stock, cost, supplier, notes, probability, other customers)", public_leak)
+
+    def promised_dates():
+        p = []
+        d = today_plus(75)
+        r = call("PUT", f"{PORTAL}/links/{S['link']}/promised-dates", "viewer",
+                 {"commitment_id": c_a, "promised_date": d})
+        if r.status != 403:
+            p.append(f"viewer promise: {r.status}")
+        cur.execute("SELECT COUNT(*) FROM customer_portal_promised_dates WHERE tenant_id = %s", (fx.tenant_id,))
+        if cur.fetchone()[0] != 0:
+            p.append("a refused promise wrote a row")
+        r = call("PUT", f"{PORTAL}/links/{S['link']}/promised-dates", "analyst", {"commitment_id": c_a, "promised_date": d})
+        if r.status != 200 or r.body["data"]["promised_date"] != d:
+            p.append(f"analyst promise: {r.status} {r.body}")
+        r = call("PUT", f"{PORTAL}/links/{S['link']}/promised-dates", "analyst",
+                 {"commitment_id": c_x, "promised_date": d})
+        if r.status != 404 or r.body.get("error_code") != "customer_portal_commitment_not_found":
+            p.append(f"another customer's commitment: {r.status} {r.body.get('error_code')}")
+        for label, bad in (("not a date", "next week"), ("far future", "2099-01-01"), ("ancient", "1990-01-01")):
+            r = call("PUT", f"{PORTAL}/links/{S['link']}/promised-dates", "analyst",
+                     {"commitment_id": c_a, "promised_date": bad})
+            if r.status != 422:
+                p.append(f"{label}: {r.status}")
+        # shared off: the customer still sees no promised date
+        if any("promised_date" in c for c in page().body["data"]["commitments"]):
+            p.append("a promised date reached the page while share_dates is off")
+        r = call("PATCH", f"{PORTAL}/links/{S['link']}", "viewer", {"share_dates": True})
+        cur.execute("SELECT share_dates FROM customer_portal_links WHERE id = %s", (S["link"],))
+        if r.status != 403 or cur.fetchone()[0] is not False:
+            p.append(f"viewer share toggle: {r.status}")
+        r = call("PATCH", f"{PORTAL}/links/{S['link']}", "analyst", {"share_dates": True})
+        if r.status != 200 or r.body["data"]["changed"] is not True:
+            p.append(f"analyst share toggle: {r.status} {r.body}")
+        shown = {c["id"]: c.get("promised_date") for c in page().body["data"]["commitments"]}
+        if shown.get(c_a) != d or shown.get(c_b) is not None:
+            p.append(f"shared promised dates: {shown}")
+        if len(events_of(S["link"], "customer_portal.promise_set")) != 1 or \
+                len(events_of(S["link"], "customer_portal.link_updated")) != 1:
+            p.append("promise_set / link_updated events missing")
+        cur.execute("SELECT delivery_date::text FROM committed_demand WHERE id = %s", (c_a,))
+        if cur.fetchone()[0] != before_a[0]:
+            p.append("setting a promised date changed the commitment's own date")
+        r = call("PUT", f"{PORTAL}/links/{S['link']}/promised-dates", "analyst", {"commitment_id": c_a, "promised_date": None})
+        cur.execute("SELECT COUNT(*) FROM customer_portal_promised_dates WHERE commitment_id = %s", (c_a,))
+        if r.status != 200 or cur.fetchone()[0] != 0:
+            p.append("clearing the promised date failed")
+        return p
+    step("portal promised dates: permission pair, scope, hidden unless shared, commitment untouched", promised_dates)
+
+    # ── probing: every bad link is the same 404 ──────────────────────────────
+    def probing():
+        p = []
+        cur.execute("""INSERT INTO customer_portal_links (tenant_id, customer, customer_key, token_hash, expires_at,
+                                                          created_by)
+                       VALUES (%s, 'Portal Co', 'portal co', %s, NOW() - interval '1 day', %s)""",
+                    (fx.tenant_id, hashlib.sha256(b"E" * 43).hexdigest(), fx.analyst_id))
+        cur.execute("""INSERT INTO customer_portal_links (tenant_id, customer, customer_key, token_hash, expires_at,
+                                                          revoked_at, created_by)
+                       VALUES (%s, 'Portal Co', 'portal co', %s, NOW() + interval '5 days', NOW(), %s)""",
+                    (fx.tenant_id, hashlib.sha256(b"R" * 43).hexdigest(), fx.analyst_id))
+        probes = {
+            "unknown": secrets.token_urlsafe(32), "expired": "E" * 43, "revoked": "R" * 43,
+            "too short": "abc", "bad chars": "!" * 43, "overlong": "a" * 5000,
+            "one off": S["token"][:-1] + ("A" if S["token"][-1] != "A" else "B"),
+            "sql-ish": "' OR '1'='1' --" + "a" * 30, "unicode": "é" * 43,
+        }
+        seen = {}
+        for label, tok in probes.items():
+            quoted = urllib.parse.quote(tok, safe="")
+            r = http(rs, "GET", f"{PUB}/{quoted}")
+            r2 = http(rs, "POST", f"{PUB}/{quoted}/respond", body={"commitment_id": c_a, "response": "received"})
+            seen[label] = (r.status, json.dumps(r.body, sort_keys=True), r2.status,
+                           json.dumps(r2.body, sort_keys=True), r.headers.get("cache-control"))
+        first = next(iter(seen.values()))
+        for label, got in seen.items():
+            if got != first:
+                p.append(f"{label} answers differently from the others: {got}")
+        if first[0] != 404 or first[2] != 404 or '"customer_portal_unavailable"' not in first[1]:
+            p.append(f"the uniform answer is not a 404 customer_portal_unavailable: {first}")
+        cur.execute("""SELECT COUNT(*) FROM customer_portal_events
+                        WHERE tenant_id = %s AND link_id <> %s""", (fx.tenant_id, S["link"]))
+        if cur.fetchone()[0] != 0:
+            p.append("a bad link wrote an answer")
+        return p
+    step("portal public: unknown, expired, revoked, malformed and overlong tokens all answer one identical 404", probing)
+
+    # ── the customer's answers ───────────────────────────────────────────────
+    def responses():
+        p = []
+        base = f"{PUB}/{S['token']}/respond"
+        cur.execute("SELECT COUNT(*) FROM customer_portal_events WHERE link_id = %s AND commitment_id = %s",
+                    (S["link"], c_a))
+        n0 = cur.fetchone()[0]
+        r = call("POST", base, None, {"commitment_id": c_a, "response": "received"})
+        if r.status != 201 or r.body["data"] != {"recorded": True, "duplicate": False, "response": "received"}:
+            p.append(f"received: {r.status} {r.body}")
+        r = call("POST", base, None, {"commitment_id": c_a, "response": "received"})
+        if r.status != 200 or r.body["data"]["duplicate"] is not True:
+            p.append(f"repeat received: {r.status} {r.body}")
+        cur.execute("SELECT COUNT(*) FROM customer_portal_events WHERE link_id = %s AND commitment_id = %s",
+                    (S["link"], c_a))
+        if cur.fetchone()[0] != n0 + 1:
+            p.append("a repeated 'received' wrote a second row")
+        ev = events_of(S["link"], "customer_portal.received")
+        if len([e for e in ev if e[1].get("sku") == skus["a"]]) != 1 or any(e[0] != fx.analyst_id for e in ev):
+            p.append(f"received events: {ev}")
+        for label, body, reason in (
+            ("no comment", {"commitment_id": c_a, "response": "date_objection"}, "comment_required"),
+            ("blank comment", {"commitment_id": c_a, "response": "date_objection", "comment": "  "}, "comment_required"),
+            ("unknown field", {"commitment_id": c_a, "response": "received", "x": 1}, "unknown_field"),
+            ("bad response", {"commitment_id": c_a, "response": "fulfilled"}, "response_invalid"),
+            ("bad id", {"commitment_id": "a b;", "response": "received"}, "commitment_invalid"),
+            ("long comment", {"commitment_id": c_a, "response": "date_objection", "comment": "x" * 501}, "comment_too_long"),
+            ("control char", {"commitment_id": c_a, "response": "date_objection", "comment": "a\u0000b"}, "comment_invalid"),
+        ):
+            r = call("POST", base, None, body)
+            got = (r.body.get("error_params") or {}).get("reason") if isinstance(r.body, dict) else None
+            if r.status != 422 or got != reason:
+                p.append(f"{label}: {r.status} {got} (wanted 422 {reason})")
+        r = call("POST", base, None, raw_body=b"not json", headers={"Content-Type": "application/json"})
+        if r.status != 422:
+            p.append(f"non-JSON body: {r.status}")
+        r = call("POST", base, None, raw_body=b" " * (20 * 1024), headers={"Content-Type": "application/json"})
+        if r.status != 413 or r.body.get("error_code") != "customer_portal_body_too_large":
+            p.append(f"oversized body: {r.status} {r.body}")
+        r = call("POST", base, None, {"commitment_id": c_x, "response": "received"})
+        if r.status != 404 or r.body.get("error_code") != "customer_portal_commitment_not_found":
+            p.append(f"another customer's commitment: {r.status} {r.body.get('error_code')}")
+        cur.execute("SELECT COUNT(*) FROM customer_portal_events WHERE commitment_id = %s", (c_x,))
+        if cur.fetchone()[0] != 0:
+            p.append("an answer was stored against another customer's commitment")
+        comment = "We need it two weeks earlier <b>please</b>"
+        r = call("POST", base, None, {"commitment_id": c_a, "response": "date_objection", "comment": comment})
+        if r.status != 201:
+            p.append(f"objection: {r.status} {r.body}")
+        cur.execute("SELECT response, comment, ip_hash FROM customer_portal_events WHERE link_id = %s AND commitment_id = %s "
+                    "AND response = 'date_objection'", (S["link"], c_a))
+        row = cur.fetchone()
+        if not row or row[1] != comment or not row[2] or len(row[2]) != 32:
+            p.append(f"objection row: {row}")
+        ev = events_of(S["link"], "customer_portal.date_objected")
+        if len(ev) != 1 or ev[0][1].get("severity") != "warning" or ev[0][1].get("reason") != "customer_date_objection" \
+                or ev[0][1].get("sku") != skus["a"] or "comment" in json.dumps(ev[0][1]):
+            p.append(f"date_objected event: {ev}")
+        cur.execute("SELECT delivery_date::text, quantity::float8, status FROM committed_demand WHERE id = %s", (c_a,))
+        if cur.fetchone() != before_a:
+            p.append("a customer answer changed the commitment")
+        v = page().body["data"]["commitments"]
+        mine = {c["id"]: c["my_response"] for c in v}
+        if mine.get(c_a) != "date_objection" or mine.get(c_b) != "received":
+            p.append(f"my_response: {mine}")
+        d = call("GET", f"{PORTAL}/links/{S['link']}", "viewer").body["data"]
+        if len(d["events"]) < 3 or not any(e["comment"] == comment for e in d["events"]):
+            p.append("the tenant does not see the customer's comment")
+        # closed commitments: an objection needs an open one, nothing is taken for a cancelled one
+        for status, response, want in (("fulfilled", "date_objection", (409,)), ("cancelled", "received", (409,)),
+                                       ("fulfilled", "received", (200, 201))):
+            cur.execute("UPDATE committed_demand SET status = %s WHERE id = %s", (status, c_b))
+            r = call("POST", base, None, {"commitment_id": c_b, "response": response,
+                                           **({"comment": "late"} if response == "date_objection" else {})})
+            if r.status not in want:
+                p.append(f"{status}/{response}: {r.status} (wanted one of {want})")
+        cur.execute("UPDATE committed_demand SET status = 'open' WHERE id = %s", (c_b,))
+        return p
+    step("portal respond: strict input, own commitments only, events and bell, commitment never changed", responses)
+
+    def per_commitment_cap():
+        p = []
+        base = f"{PUB}/{S['token']}/respond"
+        last = None
+        for _ in range(25):
+            last = call("POST", base, None, {"commitment_id": c_a, "response": "date_objection", "comment": "again"})
+            if last.status == 429:
+                break
+        if last is None or last.status != 429 or last.body.get("error_code") != "too_many_attempts":
+            p.append(f"no cap on repeated answers: {last.status if last else None}")
+        cur.execute("SELECT COUNT(*) FROM customer_portal_events WHERE link_id = %s AND commitment_id = %s",
+                    (S["link"], c_a))
+        if cur.fetchone()[0] > 20:
+            p.append("more than 20 answers stored for one commitment")
+        return p
+    step("portal respond: a link cannot flood one commitment with answers", per_commitment_cap)
+
+    # ── revoke / reopen ──────────────────────────────────────────────────────
+    def revoke_reopen():
+        p = []
+        n = len(events_of(S["link"], "customer_portal.link_revoked"))
+        r = call("POST", f"{PORTAL}/links/{S['link']}/revoke", "viewer")
+        cur.execute("SELECT revoked_at IS NULL FROM customer_portal_links WHERE id = %s", (S["link"],))
+        if r.status != 403 or not cur.fetchone()[0]:
+            p.append(f"viewer revoke: {r.status}")
+        r = call("POST", f"{PORTAL}/links/{S['link']}/revoke", "analyst")
+        if r.status != 200 or r.body["data"]["changed"] is not True or r.body["data"]["link"]["status"] != "revoked":
+            p.append(f"analyst revoke: {r.status} {r.body}")
+        r = call("POST", f"{PORTAL}/links/{S['link']}/revoke", "analyst")
+        if r.status != 200 or r.body["data"]["changed"] is not False:
+            p.append(f"repeat revoke: {r.status} {r.body}")
+        if len(events_of(S["link"], "customer_portal.link_revoked")) != n + 1:
+            p.append("revoke event count is not exactly one")
+        cur.execute("SELECT revoked_by FROM customer_portal_links WHERE id = %s", (S["link"],))
+        if cur.fetchone()[0] != fx.analyst_id:
+            p.append("revoked_by is not the analyst")
+        g = page()
+        post = call("POST", f"{PUB}/{S['token']}/respond", None, {"commitment_id": c_a, "response": "received"})
+        if g.status != 404 or post.status != 404 or g.body.get("error_code") != "customer_portal_unavailable":
+            p.append(f"a revoked link still answers: {g.status} {post.status}")
+        r = call("POST", f"{PORTAL}/links/{S['link']}/reopen", "viewer")
+        if r.status != 403:
+            p.append(f"viewer reopen: {r.status}")
+        r = call("POST", f"{PORTAL}/links/{S['link']}/reopen", "analyst")
+        if r.status != 200 or r.body["data"]["changed"] is not True or r.body["data"]["link"]["status"] != "active":
+            p.append(f"analyst reopen: {r.status} {r.body}")
+        if call("POST", f"{PORTAL}/links/{S['link']}/reopen", "analyst").body["data"]["changed"] is not False:
+            p.append("repeat reopen reported a change")
+        if page().status != 200:
+            p.append("the reopened link does not answer")
+        # an expired link is reopened too (and the earlier answers are history)
+        cur.execute("UPDATE customer_portal_links SET expires_at = NOW() - interval '1 hour' WHERE id = %s", (S["link"],))
+        if page().status != 404:
+            p.append("an expired link still answers")
+        r = call("POST", f"{PORTAL}/links/{S['link']}/reopen", "analyst")
+        if r.status != 200 or page().status != 200:
+            p.append(f"reopening an expired link: {r.status}")
+        cur.execute("SELECT COUNT(*) FROM customer_portal_events WHERE link_id = %s", (S["link"],))
+        if cur.fetchone()[0] < 3:
+            p.append("answers did not survive the revoke and reopen")
+        return p
+    step("portal revoke / reopen: permission pair, exactly one event, bad link is the uniform 404, answers kept", revoke_reopen)
+
+    # ── another tenant can neither read nor change this link ─────────────────
+    other = make_fixture(args.python, fx.secret)
+    other_tenant = other.tenant_id
+    erased = False
+    try:
+        def tenant_scope():
+            p = []
+            lid = S["link"]
+            tok = mint_access_token(other.secret, other.admin_id, other.tenant_id, "admin")
+            r = http(rs, "GET", f"{PORTAL}/links/{lid}", token=tok)
+            if r.status != 404 or r.body.get("error_code") != "customer_portal_link_not_found":
+                p.append(f"foreign GET: {r.status} {r.body.get('error_code')}")
+            for verb, path, body in (("POST", f"{PORTAL}/links/{lid}/revoke", None),
+                                     ("PATCH", f"{PORTAL}/links/{lid}", {"share_dates": False}),
+                                     ("PUT", f"{PORTAL}/links/{lid}/promised-dates",
+                                      {"commitment_id": c_a, "promised_date": today_plus(10)})):
+                r = http(rs, verb, path, token=tok, body=body)
+                if r.status != 404:
+                    p.append(f"foreign {verb}: {r.status}")
+            if any(l["id"] == lid for l in http(rs, "GET", f"{PORTAL}/links", token=tok).body["data"]):
+                p.append("the foreign tenant lists this tenant's link")
+            r = http(rs, "POST", f"{PORTAL}/links", token=tok, body={"customer": "Portal Co"})
+            if r.status != 422 or r.body.get("error_code") != "customer_portal_customer_unknown":
+                p.append(f"foreign create for this tenant's customer: {r.status} {r.body.get('error_code')}")
+            cur.execute("SELECT revoked_at IS NULL, share_dates FROM customer_portal_links WHERE id = %s", (lid,))
+            if cur.fetchone() != (True, True):
+                p.append("a foreign call changed the link")
+            return p
+        step("portal tenant scope: another tenant gets 404 on read and every write, link unchanged", tenant_scope)
+
+        def erasure():
+            p = []
+            tok = mint_access_token(other.secret, other.admin_id, other.tenant_id, "admin")
+            cur.execute("""INSERT INTO committed_demand (tenant_id, sku, delivery_date, quantity, customer, created_by)
+                           VALUES (%s, 'ER-1', CURRENT_DATE + 30, 5, 'Erase Co', %s) RETURNING id""",
+                        (other_tenant, other.admin_id))
+            cid = cur.fetchone()[0]
+            r = http(rs, "POST", f"{PORTAL}/links", token=tok, body={"customer": "Erase Co"})
+            if r.status != 201:
+                return [f"create on the second tenant: {r.status} {r.body}"]
+            lid, token = r.body["data"]["link"]["id"], r.body["data"]["token"]
+            http(rs, "POST", f"{PUB}/{token}/respond", body={"commitment_id": cid, "response": "received"})
+            http(rs, "PUT", f"{PORTAL}/links/{lid}/promised-dates", token=tok,
+                 body={"commitment_id": cid, "promised_date": today_plus(20)})
+            for table in ("customer_portal_links", "customer_portal_events", "customer_portal_promised_dates"):
+                cur.execute(f"SELECT COUNT(*) FROM {table} WHERE tenant_id = %s", (other_tenant,))
+                if cur.fetchone()[0] != 1:
+                    p.append(f"{table} was not populated before the erasure")
+            nonlocal erased
+            erase_fixture(args.python, other)
+            erased = True
+            for table in ("customer_portal_links", "customer_portal_events", "customer_portal_promised_dates"):
+                cur.execute(f"SELECT COUNT(*) FROM {table} WHERE tenant_id = %s", (other_tenant,))
+                if cur.fetchone()[0] != 0:
+                    p.append(f"{table} rows survive the tenant's erasure")
+            if http(rs, "GET", f"{PUB}/{token}").status != 404:
+                p.append("the erased tenant's link still answers")
+            return p
+        step("portal erasure: whole-tenant erasure removes links, answers and promised dates", erasure)
+    finally:
+        if not erased:
+            erase_fixture(args.python, other)
+
+    out.append((Case("portal rate limits", "-", "-", route=route), "SKIP",
+                ["per-address and per-link limits are off under TESTING_MODE=true; unit-tested (rate_keys) only"]))
+    return out
 
 
 def run(args) -> int:
@@ -4090,6 +4616,7 @@ def run(args) -> int:
         results += w3_cases.run_w3(args, fx, db, sys.modules[__name__])
         results += run_delegation(args, fx, db)
         results += cf_outlook_cases.run_cf(args, fx, db, sys.modules[__name__])
+        results += run_portal(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

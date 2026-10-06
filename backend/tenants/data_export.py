@@ -68,6 +68,15 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
      "last_viewed_at, submitted_at, reopened_at, reopened_by"),
     ("po_line_confirmations", "po_line_confirmations", "*"),
     ("po_confirmation_acceptances", "po_confirmation_acceptances", "*"),
+    # Customer portal links. The link's token hash is a credential and is never
+    # exported (nor is the keyed address hash of an answer).
+    ("customer_portal_links", "customer_portal_links",
+     "id, tenant_id, customer, customer_key, language, share_dates, expires_at, "
+     "revoked_at, revoked_by, created_by, created_at, last_viewed_at, reopened_at, "
+     "reopened_by"),
+    ("customer_portal_promised_dates", "customer_portal_promised_dates", "*"),
+    ("customer_portal_events", "customer_portal_events",
+     "id, tenant_id, link_id, commitment_id, response, comment, created_at"),
     ("inventory_shrinkage", "inventory_shrinkage", "*"),
     ("stock_counts", "stock_counts", "*"),
     ("stock_count_lines", "stock_count_lines", "*"),
@@ -254,6 +263,13 @@ _DELETE_ORDER: list[str] = [
     "po_approvals",
     "po_approval_rules",
     "forecast_adjustments",
+    # Customer portal (2026-10-06): all three cascade from tenants (the promised
+    # dates also from the commitment they belong to, so they go first here);
+    # listed because this list is the reviewable answer to "what belongs to a
+    # tenant". Answers before the links they hang from.
+    "customer_portal_events",
+    "customer_portal_promised_dates",
+    "customer_portal_links",
     "committed_demand",
     "supply_contracts",
     "purchase_budgets",

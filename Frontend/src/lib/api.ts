@@ -1653,6 +1653,27 @@ export const getCommitmentOutlookSummary = () =>
   request<import('./types').OutlookTenantSummary>('GET', '/committed-demand/outlook/summary')
 export const getCommitmentOutlookDetail = (id: string) =>
   request<import('./types').OutlookDetail>('GET', `/committed-demand/${encodeURIComponent(id)}/outlook`)
+// ── Customer portal (private read-only link for a corporate customer) ───────
+export const listPortalCustomers = () =>
+  request<import('./types').CustomerPortalCustomer[]>('GET', '/customer-portal/customers')
+export const listPortalLinks = () =>
+  request<import('./types').CustomerPortalLink[]>('GET', '/customer-portal/links')
+export const createPortalLink = (body: { customer: string; language?: 'es' | 'en'; share_dates?: boolean; expires_in_days?: number }) =>
+  request<import('./types').CustomerPortalCreated>('POST', '/customer-portal/links', body)
+export const getPortalLink = (id: string) =>
+  request<import('./types').CustomerPortalDetail>('GET', `/customer-portal/links/${encodeURIComponent(id)}`)
+export const setPortalLinkSharing = (id: string, share_dates: boolean) =>
+  request<{ link: import('./types').CustomerPortalLink; changed: boolean }>(
+    'PATCH', `/customer-portal/links/${encodeURIComponent(id)}`, { share_dates })
+export const revokePortalLink = (id: string) =>
+  request<{ link: import('./types').CustomerPortalLink; changed: boolean }>(
+    'POST', `/customer-portal/links/${encodeURIComponent(id)}/revoke`)
+export const reopenPortalLink = (id: string) =>
+  request<{ link: import('./types').CustomerPortalLink; changed: boolean }>(
+    'POST', `/customer-portal/links/${encodeURIComponent(id)}/reopen`)
+export const setPortalPromisedDate = (id: string, commitment_id: string, promised_date: string | null) =>
+  request<{ commitment_id: string; promised_date: string | null }>(
+    'PUT', `/customer-portal/links/${encodeURIComponent(id)}/promised-dates`, { commitment_id, promised_date })
 // ── Purchase budgets (a cap on purchasing spend) ────────────────────────────
 export const listBudgets = (includeInactive = false) =>
   request<{ items: import('./types').PurchaseBudget[]; scope: 'company' | 'warehouses'; currency: string }>(

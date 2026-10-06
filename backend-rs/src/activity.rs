@@ -61,6 +61,13 @@ pub enum Event {
     SpikeRestored,
     ApprovalDelegationCreated,
     ApprovalDelegationRevoked,
+    CustomerPortalLinkCreated,
+    CustomerPortalLinkRevoked,
+    CustomerPortalLinkReopened,
+    CustomerPortalLinkUpdated,
+    CustomerPortalPromiseSet,
+    CustomerPortalReceived,
+    CustomerPortalDateObjected,
 }
 
 impl Event {
@@ -93,6 +100,17 @@ impl Event {
                 "approval_delegation.created", "purchase", "info", &["delegate", "starts_on", "ends_on"],
             ),
             Event::ApprovalDelegationRevoked => ("approval_delegation.revoked", "purchase", "info", &["delegate"]),
+            Event::CustomerPortalLinkCreated => ("customer_portal.link_created", "purchase", "info", &["customer"]),
+            Event::CustomerPortalLinkRevoked => ("customer_portal.link_revoked", "purchase", "info", &["customer"]),
+            Event::CustomerPortalLinkReopened => ("customer_portal.link_reopened", "purchase", "info", &["customer"]),
+            Event::CustomerPortalLinkUpdated => ("customer_portal.link_updated", "purchase", "info", &["customer"]),
+            Event::CustomerPortalPromiseSet => (
+                "customer_portal.promise_set", "purchase", "info", &["customer", "sku", "promised_date"],
+            ),
+            Event::CustomerPortalReceived => ("customer_portal.received", "purchase", "info", &["customer", "sku"]),
+            Event::CustomerPortalDateObjected => (
+                "customer_portal.date_objected", "purchase", "warning", &["customer", "sku", "delivery_date"],
+            ),
         }
     }
 }

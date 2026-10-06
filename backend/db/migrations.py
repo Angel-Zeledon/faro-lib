@@ -2060,6 +2060,8 @@ from backend.notifications.outbox_migrations import MIGRATIONS as _OUTBOX  # noq
 _MIGRATIONS += _OUTBOX
 from backend.inventory.po_delegation_migrations import MIGRATIONS as _PO_DELEGATIONS  # noqa: E402
 _MIGRATIONS += _PO_DELEGATIONS
+from backend.inventory.customer_portal_migrations import MIGRATIONS as _CUSTOMER_PORTAL  # noqa: E402
+_MIGRATIONS += _CUSTOMER_PORTAL
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
