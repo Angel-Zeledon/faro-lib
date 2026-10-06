@@ -1065,6 +1065,52 @@ export const saveSsoConfig = (body: {
 export const deleteSsoConfig = () =>
   request<{ removed: boolean }>('DELETE', '/auth/sso/config')
 
+// ── SCIM provisioning (admin side; the protocol itself is for the IdP) ──────
+export interface ScimTokenInfo {
+  id: string
+  hint: string
+  manage_admins: boolean
+  created_at: string | null
+  created_by: string | null
+  last_used_at: string | null
+}
+
+export interface ScimEvent {
+  id: string
+  created_at: string | null
+  operation: string
+  resource_type: string
+  resource_id: string | null
+  email: string | null
+  outcome: 'success' | 'error'
+  http_status: number
+  error_code: string | null
+  changes: Record<string, unknown>
+}
+
+export interface ScimStatus {
+  sso_configured: boolean
+  sso_ready: boolean
+  base_url: string
+  token: ScimTokenInfo | null
+  last_used_at: string | null
+  last_change_at: string | null
+  events: ScimEvent[]
+}
+
+export const getScimStatus = () => request<ScimStatus>('GET', '/auth/sso/scim')
+
+/** Mints (or rotates) the token. The raw `token` is returned this once only. */
+export const mintScimToken = (manage_admins: boolean) =>
+  request<{ token: string; token_info: ScimTokenInfo; rotated: boolean; base_url: string }>(
+    'POST', '/auth/sso/scim/token', { manage_admins })
+
+export const updateScimToken = (manage_admins: boolean) =>
+  request<{ token_info: ScimTokenInfo }>('PATCH', '/auth/sso/scim/token', { manage_admins })
+
+export const revokeScimToken = () =>
+  request<{ revoked: boolean }>('DELETE', '/auth/sso/scim/token')
+
 // ── Accuracy Tracking ─────────────────────────────────────────────────────────
 export const getAccuracyReport = (sessionId: string, threshold?: number) =>
   request<import('./types').AccuracyReport>(
@@ -2668,7 +2714,7 @@ export const getSessionManifest = (sessionId: string) =>
 
 export interface AuditEntry {
   id: string; at: string
-  actor: { id: string; kind: 'user' | 'api_key' | 'schedule' | 'system'; label: string | null }
+  actor: { id: string; kind: 'user' | 'api_key' | 'schedule' | 'system' | 'scim'; label: string | null }
   action: string
   target: { type: string | null; id: string | null; label: string | null }
   before: Record<string, unknown> | null

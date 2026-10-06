@@ -334,6 +334,11 @@ def delete_config(tenant_id: str) -> bool:
         row = query_one("SELECT 1 AS ok FROM sso_providers WHERE tenant_id = %s",
                         (tenant_id,), conn=conn)
         execute("DELETE FROM sso_providers WHERE tenant_id = %s", (tenant_id,), conn=conn)
+        # SCIM rides on SSO (backend/scim/): without a company sign-in its
+        # token is revoked, not merely left inert, so re-adding SSO later does
+        # not silently revive a credential an IdP may still hold.
+        execute("UPDATE scim_tokens SET revoked_at = NOW(), revoked_by = 'sso_config_removed' "
+                "WHERE tenant_id = %s AND revoked_at IS NULL", (tenant_id,), conn=conn)
     return bool(row)
 
 

@@ -45,10 +45,14 @@ def resolve_sender(phone: str) -> dict | None:
     or unverified numbers — the webhook turns that into a polite reject and
     never leaks tenant data.
     """
+    # ACTIVE users only: a person deactivated (by an admin or by the company's
+    # identity provider through SCIM) or suspended has lost access, and the
+    # bot is a way in like any other - it must not keep answering them.
     row = query_one(
         """SELECT id AS user_id, tenant_id, role
            FROM users
-           WHERE whatsapp_number = %s AND whatsapp_verified_at IS NOT NULL""",
+           WHERE whatsapp_number = %s AND whatsapp_verified_at IS NOT NULL
+             AND status = 'active'""",
         (phone,),
     )
     if not row:

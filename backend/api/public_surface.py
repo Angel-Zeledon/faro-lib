@@ -56,6 +56,7 @@ INTERNAL_TAGS: dict[str, str] = {
     "inventory-signal-thresholds": "the traffic-light cut-offs move every recommendation the tenant sees; a person changes them on the rules panel, with its preview",
     "inventory-service-level-classes": "applying a suggested service level rewrites planning values on many SKUs at once; a person reads the suggestion and accepts it class by class",
     "auth": "login, signup and session tokens: a machine holds a key, it never logs in",
+    "scim": "SCIM provisioning, authenticated by the tenant's own SCIM token (backend/scim/); creating and deactivating people is never something an API key does",
     "users": "user and password management belongs to people, not to a credential",
     "preferences": "per-person UI preferences; a key is not a person",
     "activity": "a person's own activity feed (/me/activity)",
