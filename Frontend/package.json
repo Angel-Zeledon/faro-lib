@@ -9,6 +9,7 @@
     "lint": "next lint",
     "check:samples": "node scripts/check-code-samples.mjs",
     "check:icons": "node scripts/check-icons.mjs",
+    "check:qr": "python scripts/check_qr.py",
     "check:landing-routes": "node scripts/check-landing-routes.mjs"
   },
   "dependencies": {

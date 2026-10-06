@@ -39,6 +39,7 @@ import {
   type LinkedIdentity, type SocialProvider,
 } from '@/lib/api'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import TwoStepSignIn from '@/components/security/TwoStepSignIn'
 import { useToast } from '@/contexts/ToastContext'
 import type { ActivityLog, PlanningState, PlanningPeriod } from '@/lib/types'
 
@@ -1013,6 +1014,7 @@ function SecuritySection({ t }: { t: (k: string) => string }) {
       )}
 
       <LinkedAccounts />
+      <TwoStepSignIn />
     </Card>
   )
 }
