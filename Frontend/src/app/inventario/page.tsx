@@ -61,6 +61,7 @@ import {
  PackageMinus, Search, PackagePlus, DollarSign, ArrowLeft, ScanLine, SlidersHorizontal,
 } from 'lucide-react'
 import CommittedDemandPanel from '@/components/inventory/CommittedDemandPanel'
+import AllocationPanel from '@/components/inventory/AllocationPanel'
 import AnalogyPanel from '@/components/inventory/AnalogyPanel'
 import SupplyContractsPanel from '@/components/inventory/SupplyContractsPanel'
 import ForecastAdjustPanel, { ADJUSTMENT_RELOAD_EVENT, adjustmentLine } from '@/components/forecast/ForecastAdjustPanel'
@@ -4189,6 +4190,8 @@ export default function InventoryPage() {
  /* ── Committed demand: one component for desktop and phone ── */
  <div style={{ padding: narrow ? 0 : undefined, display: 'flex', flexDirection: 'column', gap: 16 }}>
   <CommittedDemandPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
+  {/* Who gets the stock when it cannot cover every commitment (advisory, never moves stock). */}
+  <AllocationPanel reloadToken={commitmentsVersion} />
   {/* Blanket contracts: their releases become the commitments listed above. */}
   <SupplyContractsPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
   {/* Forecast by analogy: a new product with no history plans from products it sells like. */}
