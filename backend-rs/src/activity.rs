@@ -57,6 +57,10 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    CustomRoleCreated,
+    CustomRoleUpdated,
+    CustomRoleDeleted,
+    CustomRoleAssigned,
 }
 
 impl Event {
@@ -79,6 +83,10 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::CustomRoleCreated => ("account.custom_role_created", "account", "warning", &["role_name"]),
+            Event::CustomRoleUpdated => ("account.custom_role_updated", "account", "warning", &["role_name"]),
+            Event::CustomRoleDeleted => ("account.custom_role_deleted", "account", "warning", &["role_name"]),
+            Event::CustomRoleAssigned => ("account.custom_role_assigned", "account", "warning", &["email", "role_name"]),
         }
     }
 }

@@ -293,13 +293,11 @@ def delete_user(tenant_id: str, user_id: str) -> None:
 
 # ── Permissions ────────────────────────────────────────────────────────────
 
-ALL_PERMISSIONS = [
-    "view_forecasts", "run_training", "manage_sessions", "export_data",
-    "view_inventory", "manage_inventory",
-    "view_analysts", "run_analysts",
-    "view_data_sources", "manage_data_sources",
-    "view_users", "manage_users",
-]
+# The 12 permissions `user_permissions` has always stored. They are NOT
+# enforced (nothing reads them to decide access; see backend/auth/permissions.py
+# for why they stay that way): the enforced mechanism is a custom role.
+from backend.auth.permissions import LEGACY_PERMISSIONS
+ALL_PERMISSIONS = list(LEGACY_PERMISSIONS)
 
 
 def get_permissions(tenant_id: str, user_id: str) -> list[str]:

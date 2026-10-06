@@ -71,6 +71,14 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("DELETE", "/data-sources/{source_id}"):        _r("dataset.deleted", "dataset", "source_id"),
     # users (invites, role changes and deactivation are recorded by their own events)
     ("PATCH", "/users/{user_id}/permissions"):      _r("user.permissions_changed", "user", "user_id"),
+    # Custom roles. These four routes exist ONLY in the Rust API (no Python
+    # failover); the rows are written by `backend-rs/src/audit`, with the
+    # role's before/after, and `RUST_ONLY_ROUTES` below tells the Python
+    # "every catalogued route is a real route" test so.
+    ("POST", "/roles"):                             _r("role.created", "role"),
+    ("PATCH", "/roles/{role_id}"):                  _r("role.updated", "role", "role_id"),
+    ("DELETE", "/roles/{role_id}"):                 _r("role.deleted", "role", "role_id"),
+    ("PUT", "/users/{user_id}/custom-role"):        _r("user.role_assigned", "user", "user_id"),
     # warehouses
     ("POST", "/inventory/warehouses"):              _r("warehouse.created", "warehouse"),
     ("PATCH", "/inventory/warehouses/{name}"):      _r("warehouse.updated", "warehouse", "name"),
@@ -200,6 +208,16 @@ LEGACY: dict[str, tuple[str, str]] = {
     "billing.payment_failed":          ("billing", "billing.payment_failed"),
     "billing.subscription_changed":    ("billing", "billing.subscription_changed"),
 }
+
+# Catalogued routes the Python app does not serve (Rust-only, strangler-fig
+# wave 1+). The route-exists test subtracts them; the Rust contract cases
+# prove they are real.
+RUST_ONLY_ROUTES: frozenset[tuple[str, str]] = frozenset({
+    ("POST", "/roles"),
+    ("PATCH", "/roles/{role_id}"),
+    ("DELETE", "/roles/{role_id}"),
+    ("PUT", "/users/{user_id}/custom-role"),
+})
 
 # The target types the trail can be filtered by.
 TARGET_TYPES = sorted({r.target_type for r in ROUTES.values()}

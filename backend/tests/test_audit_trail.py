@@ -268,10 +268,10 @@ class TestTheAuditView:
 def test_every_catalogued_route_is_a_real_route(client):
     """The catalogue is a list of strings; a typo or a renamed route would
     silently stop auditing it."""
-    from backend.audit.catalog import ROUTES
+    from backend.audit.catalog import ROUTES, RUST_ONLY_ROUTES
     from backend.main import app
 
     real = {(m, r.path.replace("/api/v1", "", 1))
             for r in app.routes for m in (getattr(r, "methods", None) or ())}
-    missing = sorted(set(ROUTES) - real)
+    missing = sorted(set(ROUTES) - real - RUST_ONLY_ROUTES)
     assert not missing, f"audit catalogue names routes that do not exist: {missing}"

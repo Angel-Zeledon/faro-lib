@@ -8,6 +8,7 @@
 
 pub mod api_key;
 pub mod jwt;
+pub mod permissions;
 pub mod warehouse_scope;
 
 use std::sync::{Arc, Mutex};
@@ -52,6 +53,9 @@ pub struct ActorsInner {
     pub machine: Option<(String, String)>,
     /// (tenant_id, user_id) once a JWT passed every check.
     pub person: Option<(String, String)>,
+    /// (method, matched route template) of the request, set by the router's
+    /// route layer so the guard can look up the permission the route needs.
+    pub route: Option<(String, String)>,
 }
 
 impl RequestActors {
@@ -60,6 +64,14 @@ impl RequestActors {
     }
     pub fn person(&self) -> Option<(String, String)> {
         self.0.lock().ok().and_then(|g| g.person.clone())
+    }
+    pub fn route(&self) -> Option<(String, String)> {
+        self.0.lock().ok().and_then(|g| g.route.clone())
+    }
+    pub fn set_route(&self, method: &str, template: &str) {
+        if let Ok(mut g) = self.0.lock() {
+            g.route = Some((method.to_string(), template.to_string()));
+        }
     }
     fn set_machine(&self, tenant: &str, actor: &str) {
         if let Ok(mut g) = self.0.lock() {
@@ -177,6 +189,9 @@ pub async fn current_user(
     let tenant_id = field("tenant_id")?;
     let role = field("role")?;
     actors.set_person(&tenant_id, &user_id);
+    // Custom-role permissions (auth/permissions.rs): a person with no custom
+    // role passes untouched; one with a role is checked on every request.
+    permissions::enforce(&state.pool, actors.route(), &tenant_id, &user_id).await?;
     Ok(CurrentUser {
         user_id,
         tenant_id,

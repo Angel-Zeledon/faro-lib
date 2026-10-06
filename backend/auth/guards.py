@@ -250,6 +250,12 @@ def get_current_user(
     from backend.auth.actor_context import set_person_actor
     set_person_actor(request.scope, payload["tenant_id"], payload["sub"])
 
+    # Custom-role permissions (backend/auth/permissions.py). A person with no
+    # custom role passes untouched; one with a role is checked against the
+    # permission this route needs, read from the database on every request.
+    from backend.auth import permissions as _permissions
+    _permissions.enforce(request.scope, payload["tenant_id"], payload["sub"])
+
     return CurrentUser(
         user_id=payload["sub"],
         tenant_id=payload["tenant_id"],

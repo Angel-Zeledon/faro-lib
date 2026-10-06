@@ -11,6 +11,7 @@ pub mod webhooks;
 pub mod po_cancellation;
 pub mod po_payments;
 pub mod signal_thresholds;
+pub mod roles;
 
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
@@ -70,6 +71,11 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // Custom roles: Rust-only routes (no Python failover), see roles.rs.
+        .merge(roles::router())
+        // After every route above: records (method, matched template) for the
+        // custom-role permission check in auth::current_user.
+        .route_layer(axum::middleware::from_fn(crate::auth::permissions::record_route))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }
