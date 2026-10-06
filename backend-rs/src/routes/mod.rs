@@ -1,6 +1,7 @@
 pub mod api_keys;
 pub mod audit;
 pub mod committed_demand;
+pub mod cost_centers;
 pub mod entitlements;
 pub mod health;
 pub mod r1;
@@ -12,7 +13,7 @@ pub mod po_cancellation;
 pub mod po_payments;
 pub mod signal_thresholds;
 
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
@@ -70,6 +71,14 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // NEW (Rust only, no Python route): cost centers, approval chains, attribution.
+        .route("/api/v1/cost-centers", get(cost_centers::list_centers).post(cost_centers::create_center))
+        .route("/api/v1/cost-centers/spend", get(cost_centers::spend))
+        .route("/api/v1/cost-centers/{center_id}", patch(cost_centers::update_center))
+        .route("/api/v1/approval-chains", get(cost_centers::list_chains).post(cost_centers::create_chain))
+        .route("/api/v1/approval-chains/evaluate", post(cost_centers::evaluate))
+        .route("/api/v1/approval-chains/{chain_id}", patch(cost_centers::update_chain))
+        .route("/api/v1/inventory/po/{po_log_id}/cost-center", put(cost_centers::set_po_cost_center))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }

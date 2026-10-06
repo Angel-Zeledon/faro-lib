@@ -57,6 +57,11 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    CostCenterCreated,
+    CostCenterUpdated,
+    ApprovalChainCreated,
+    ApprovalChainUpdated,
+    PurchaseOrderCostCenterSet,
 }
 
 impl Event {
@@ -79,6 +84,11 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::CostCenterCreated => ("cost_center.created", "purchase", "info", &["code", "cost_center_name"]),
+            Event::CostCenterUpdated => ("cost_center.updated", "purchase", "info", &["code", "cost_center_name", "active"]),
+            Event::ApprovalChainCreated => ("approval_chain.created", "purchase", "info", &["chain_name", "levels"]),
+            Event::ApprovalChainUpdated => ("approval_chain.updated", "purchase", "info", &["chain_name", "levels", "active"]),
+            Event::PurchaseOrderCostCenterSet => ("purchase.order_cost_center_set", "purchase", "info", &["reference", "cost_center"]),
         }
     }
 }
