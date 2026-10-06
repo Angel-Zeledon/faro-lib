@@ -1040,3 +1040,124 @@ scope, the delegate's inbox); and `run_delegation` in
 `tests/contract/contract_test.py`, a sequence rather than a diff because there
 is nothing to diff against: Rust creates, lists and revokes, Python decides,
 and every refusal is checked against the database.
+## 10. Commitment fulfillment outlook (new Rust routes, no Python twin)
+
+Owner-approved feature (2026-10-06, corporate committed demand is the first
+priority). For each open committed-demand row: will it be met on its delivery
+date, given stock, the open purchase orders with their expected arrival dates
+(a supplier promise a person accepted, or generated + the supplier's lead
+time), the supplier lead-time history and the other commitments competing for
+the same stock? Per commitment: a verdict (`on_track`, `at_risk`, `will_miss`,
+`insufficient_data`), the projected shortfall in units, the date stock would
+cover it, and a reason code with the figures behind it (the frontend renders
+the es/en sentence). Plus a tenant summary with a per-customer and a
+per-contract roll-up and the list of data gaps.
+
+**These are NEW routes. There is no Python implementation to fail over to**
+(`deploy/rust-api/routes.d/42-commitment-outlook.caddy.example` has no `api`
+upstream). With the Rust container down they answer 502, the panel says "the
+outlook is not available" and the rest of the screen, served by Python, keeps
+working. Kill switch: move the file to `routes.d/off/`; the routes then 404 at
+Python and the panel degrades the same way.
+
+| Route | What |
+|---|---|
+| `GET /api/v1/committed-demand/outlook` | list; filters `sku`, `customer`, `verdict`, `contract_root_id`, `warehouse_id`, `delivery_from`, `delivery_to`, `limit` (1..2000); misses first, then by date |
+| `GET /api/v1/committed-demand/outlook/summary` | counts by verdict, shortfall, first problem date, `by_customer`, `by_contract`, `data_gaps` |
+| `GET /api/v1/committed-demand/{id}/outlook` | one commitment: the commitments competing for its stock, stock by warehouse, every arrival with its date and where the date came from, and whether it counts |
+
+Any signed-in role reads them (viewer included); an API key is refused like on
+the rest of the internal `committed-demand` tag. They write nothing. A
+warehouse-scoped caller sees only commitments naming their warehouses, judged
+on THEIR warehouses' stock and arrivals (`scope: "warehouses"`), like
+`GET /committed-demand`.
+
+### How it stays consistent with the existing at-risk verdict
+
+`GET /committed-demand` (Python) keeps its at-risk flag. The outlook is not a
+second authority: it uses the same expected units (`quantity x probability`),
+the same earliest-first allocation and the same supply-at-delivery rule as
+`allocate_risk`, and `backend/tests/test_commitment_fulfillment_reference_pure.py`
+demands the same shortfall for 1,500 seeded cases whose arrivals are all dated.
+Where it knows more it says so: `allocate_risk` assumes an open purchase order
+lands "within the lead time"; the outlook uses the order's real expected date
+and answers `insufficient_data` when that date does not exist.
+
+### Where the code is, and how it is tested
+
+* `backend-rs/src/fulfillment/core.rs`: the arithmetic only (no DB, no clock),
+  with unit tests.
+* `tests/contract/fulfillment_reference.py`: the same rules in the plainest
+  Python, the spec. `tests/contract/gen_fulfillment_fixtures.py` writes seeded
+  cases and the reference's answers to
+  `backend-rs/tests/fixtures/fulfillment_cases.json` (floats as strings, so no
+  parser moves a last digit); the Rust test `differential_against_python`
+  replays every case and demands exact equality, floats compared bit for bit.
+  The Python test `test_the_differential_fixtures_are_current` fails when the
+  fixture is stale. Mutating a rule (slack days, the `<=` on the lead time, the
+  float tolerance) turns the Rust test red, which was checked by hand.
+* `backend-rs/src/fulfillment/data.rs`: SELECTs only. Reads each number the way
+  its Python owner does: commitments and scope as `list_for_tenant`; stock as
+  `list_stock` summed over the caller's warehouses; arrivals as
+  `get_incoming_detail` (per LINE, so a promised date stays with its line);
+  the date of an order line as `get_overdue_receptions` /
+  `_effective_lead_time`; the lead time of a new order as
+  `resolve_planning_inputs` (learned > set on the SKU > supplier / category /
+  global rule).
+* `tests/contract/cf_outlook_cases.py` (called from `contract_test.py`): hand-
+  computed scenarios seeded in the database, the permission pairs, scope,
+  filters, "the reads wrote nothing", and a live comparison with Python's flag,
+  shortfall and safe order date where no purchase order is involved.
+* Frontend: `CommitmentOutlookPanel` under the committed-demand panel, copy in
+  `translations.ts` (`outlook.*`, es and en).
+
+### Decision rules to confirm (chosen here, owner to confirm)
+
+1. **Insufficient data, never a guess.** No stock row; a shortfall with no known
+   lead time (the shortfall is still shown); or a shortfall the undated order
+   units could close. The 15-day system default is NOT a lead time here:
+   nobody set it, so it is not a date.
+2. **An order with no usable date does not count as supply**: an order whose
+   expected date has already passed (overdue) or whose supplier has neither
+   three real receptions nor a declared lead time. If it is the only thing that
+   could close the gap the verdict is `insufficient_data`; if it cannot close
+   it, the shortfall is reported as a minimum (`shortfall_is_minimum`).
+3. **At risk although covered**: the cover depends on a purchase order landing
+   fewer than **3 days** before delivery (`AT_RISK_SLACK_DAYS`). A chosen
+   threshold, not a measured one.
+4. **At risk vs will miss**: with a shortfall, `at_risk` if a new order placed
+   today still arrives by the delivery date (`today + lead <= delivery`),
+   `will_miss` if not, or if the delivery date has already passed.
+5. A transfer in transit counts as available today (as `annotate_risk` does).
+6. Every open commitment competes for stock, including rows marked "already in
+   the history" (the customer still expects them), the same as the at-risk flag.
+7. **Not modelled**: the statistical forecast of other customers' sales eating
+   the stock before the delivery date, as in the existing at-risk flag. A
+   commitment shown `on_track` is covered against the OTHER commitments, not
+   against ordinary demand. Contract releases not yet materialised as
+   commitments are not evaluated (the product does not plan on them either).
+8. No `commitment.at_risk` event/alert: it would need a scheduled scan in
+   Python (the Rust API has no worker) that re-implements this arithmetic, which
+   is exactly the second authority this feature avoids.
+
+### Results of the outlook (2026-10-06)
+
+* `cargo test`: 144 passed, 2 ignored (the 24 new tests: 20 unit tests of the
+  core, 3 of the route helpers, and `differential_against_python`). The
+  differential replays 1,500 SKU cases (3,981 commitment verdicts, 900 random
+  and 600 built on a rule's edge), 600 order-line arrivals, 400 supplier lead
+  times, 400 SKU lead times and 239 roll-ups against the Python reference:
+  exact equality, floats bit for bit.
+* Python: `test_commitment_fulfillment_reference_pure.py` 3 passed (same
+  shortfall as `allocate_risk` over 1,500 seeded cases, missing stock, fixture
+  freshness).
+* Contract (`cf_outlook_cases.py`), disposable Postgres, Python on `:8061` and
+  the Rust debug build on `:8066`, `TESTING_MODE=true`: **53 of 53 pass**
+  (list 36, summary 6, detail 11). In the same full harness run, 18 cases of
+  OTHER routes failed on one cause that is not this feature: that machine's
+  Python session reports timestamps as `-06:00` and Rust as `+00:00` (known
+  divergence 5, which assumes a UTC database session).
+* The frontend panel was type-checked (`tsc --noEmit`, clean) and the i18n
+  parity and missing-key scripts pass. **It was not opened in a browser.**
+* Not verified: the Caddy example against a real Caddy, and the routes behind
+  the gateway; rate limits and `TRIAL_EXPIRED` (as for every Rust route).

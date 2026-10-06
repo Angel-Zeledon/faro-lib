@@ -1,5 +1,6 @@
 pub mod api_keys;
 pub mod audit;
+pub mod commitment_outlook;
 pub mod committed_demand;
 pub mod entitlements;
 pub mod health;
@@ -51,6 +52,7 @@ pub fn router() -> Router<AppState> {
         .merge(r1::router())
         .merge(w3::router())
         .merge(sessions::router()).merge(lineage::router()).merge(po_approvals::router()).merge(schedule::router()).merge(spike_edits::router())
+        .merge(commitment_outlook::router())
         // R3: API keys, webhook subscriptions, audit trail reads.
         .route("/api/v1/api-keys", post(api_keys::create).get(api_keys::list))
         .route("/api/v1/api-keys/usage", get(api_keys::usage).delete(api_keys::revoke_literal_usage))

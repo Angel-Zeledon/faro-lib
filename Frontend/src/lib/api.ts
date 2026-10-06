@@ -1640,6 +1640,19 @@ export const updateCommittedDemand = (id: string, body: Partial<import('./types'
   request<import('./types').CommittedDemand>('PATCH', `/committed-demand/${encodeURIComponent(id)}`, body)
 export const setCommittedDemandStatus = (id: string, status: import('./types').CommittedDemandStatus) =>
   request<import('./types').CommittedDemand>('POST', `/committed-demand/${encodeURIComponent(id)}/status`, { status })
+// Fulfillment outlook: served by the Rust API only (no Python twin to fall back to).
+export const getCommitmentOutlook = (opts?: { verdict?: import('./types').OutlookVerdict; sku?: string; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.verdict) q.set('verdict', opts.verdict)
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').OutlookList>('GET', `/committed-demand/outlook${qs ? `?${qs}` : ''}`)
+}
+export const getCommitmentOutlookSummary = () =>
+  request<import('./types').OutlookTenantSummary>('GET', '/committed-demand/outlook/summary')
+export const getCommitmentOutlookDetail = (id: string) =>
+  request<import('./types').OutlookDetail>('GET', `/committed-demand/${encodeURIComponent(id)}/outlook`)
 // ── Purchase budgets (a cap on purchasing spend) ────────────────────────────
 export const listBudgets = (includeInactive = false) =>
   request<{ items: import('./types').PurchaseBudget[]; scope: 'company' | 'warehouses'; currency: string }>(

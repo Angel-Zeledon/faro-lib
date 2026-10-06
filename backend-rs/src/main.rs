@@ -13,6 +13,7 @@ mod config;
 mod entitlements;
 mod error;
 mod inventory;
+mod fulfillment;
 mod limits;
 mod middleware;
 mod outbox;
