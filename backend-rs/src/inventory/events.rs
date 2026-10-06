@@ -34,6 +34,22 @@ pub const ORDER_UNSENT: Spec = Spec {
     keys: &["reference"],
 };
 
+/// `purchase.reception_recorded`.
+pub const RECEPTION_RECORDED: Spec = Spec {
+    action: "purchase.reception_recorded", kind: "purchase", severity: "info",
+    keys: &["reference", "sku_count", "units", "warehouse"],
+};
+/// `data.shrinkage_recorded`.
+pub const SHRINKAGE_RECORDED: Spec = Spec {
+    action: "data.shrinkage_recorded", kind: "data", severity: "info",
+    keys: &["sku", "quantity", "warehouse", "shrinkage_reason"],
+};
+/// `data.transfer_created`.
+pub const TRANSFER_CREATED: Spec = Spec {
+    action: "data.transfer_created", kind: "data", severity: "info",
+    keys: &["sku_count", "units", "from_warehouse", "to_warehouse"],
+};
+
 /// The stored context.
 pub fn context(spec: &Spec, details: &Map<String, Value>, reason: Option<&str>) -> Value {
     let mut ctx = Map::new();

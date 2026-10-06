@@ -6,6 +6,7 @@
 
 pub mod calc;
 pub mod events;
+pub mod pydt;
 pub mod scope;
 pub mod stock;
 pub mod validate;

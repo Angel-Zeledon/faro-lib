@@ -6,9 +6,12 @@
 //! reception reversals (`reversals`). What did not, and why, is in
 //! docs/rust-migration.md section "Wave 3".
 
+pub mod receive;
 pub mod reversals;
+pub mod shrinkage;
 pub mod stock;
 pub mod stock_counts;
+pub mod transfers;
 
 use axum::routing::{delete, get, post, put};
 use axum::Router;
@@ -34,4 +37,12 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/inventory/stock-counts/{count_id}/cancel", post(stock_counts::cancel))
         .route("/api/v1/inventory/po/{po_log_id}/unreceive", post(reversals::unreceive))
         .route("/api/v1/inventory/po/{po_log_id}/unsend", post(reversals::unsend))
+        .route("/api/v1/inventory/po/{po_log_id}/items", get(receive::items))
+        .route("/api/v1/inventory/po/{po_log_id}/receive", post(receive::receive))
+        .route("/api/v1/inventory/transfers", post(transfers::create).get(transfers::list))
+        .route("/api/v1/inventory/transfers/{transfer_id}/receive", post(transfers::receive))
+        .route("/api/v1/inventory/transfers/{transfer_id}/cancel", post(transfers::cancel))
+        .route("/api/v1/inventory/transfers/{transfer_id}/close", post(transfers::close))
+        .route("/api/v1/inventory/shrinkage", post(shrinkage::create).get(shrinkage::list))
+        .route("/api/v1/inventory/shrinkage/reasons", get(shrinkage::reasons))
 }

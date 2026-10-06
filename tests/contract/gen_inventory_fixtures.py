@@ -336,6 +336,77 @@ def build() -> dict:
                      "would_change": o["would_change"], "owned": o["owned"]} for o in out],
         })
     fx["class_summary"] = cases
+    # ── format(x, "g") ──────────────────────────────────────────────────────
+    cases = []
+    xs = [0.0, -0.0, 1.0, 5.0, 0.5, 100000.0, 999999.5, 999999.4, 1e6, 1234567.0, 0.0001, 0.00009999995,
+          0.00001, 12.345678, 1e-5, 1e16, 1e100, 1e-100, 0.1 + 0.2, 2.5, 3.5, 0.125, 1e5 - 0.5, 123456.5,
+          float("inf"), float("-inf"), float("nan"), 1.5e300, 5e-324, 9.999995, 99999.95, 0.000123456789]
+    xs += [r.uniform(-1000, 1000) for _ in range(300)]
+    xs += [10 ** r.uniform(-8, 10) for _ in range(500)]
+    xs += [float(r.randint(0, 2_000_000)) for _ in range(200)]
+    xs += [r.randint(0, 10 ** 7) / 8.0 for _ in range(200)]
+    for x in xs:
+        cases.append({"x": F(x), "out": format(x, "g")})
+    fx["fmt_g"] = cases
+
+    # ── datetime.fromisoformat ──────────────────────────────────────────────
+    from datetime import datetime, timezone
+    dates = ["2026-10-01", "20261001", "2026-W40-3", "2026W403", "2026-W40", "2026W40", "2026-02-29",
+             "2024-02-29", "0001-01-01", "9999-12-31", "0000-01-01", "2026-13-01", "2026-10-32", "2026-1001",
+             "202610-01", "2026-10-1", "2026-W53-1", "2020-W53-7", "2026-W00-1", "2026-W40-8", "2026-W40-0"]
+    seps = ["T", " ", "t", "_", "x", "-", "é", ""]
+    times = ["", "10", "10:30", "1030", "10:30:15", "103015", "10:30:15.5", "10:30:15.123456",
+             "10:30:15.1234567", "10:30:15,25", "10:30:15.", "24:00", "10:60", "10:30:60", "1:30", "10:3",
+             "10 30", "00:00:00", "23:59:59.999999", "10:30:15.000001", "1030:15", "10:3015", "10:30:",
+             "10:30:15:", "T", "10.5", "10:30.5", "103015.5", "10:30:15.12345678901"]
+    tzs = ["", "Z", "z", "+05:30", "-0800", "+05", "+05:30:15", "+05:30:15.123456", "+24:00", "-23:59",
+           "+5", "+05:3", "+0530:15", "Z ", "+00:00", "-00:00", "+0000", "+05:30:", "+05:30Z", "Z+05:00",
+           "+23:59:59.999999", "-05:00:00.5", "±", " +05:00"]
+    seen = set()
+    strings = []
+    for d in dates:
+        for sep in seps[:4]:
+            for t in times:
+                for tz in tzs[:12]:
+                    if r.random() < 0.06:
+                        strings.append(d + (sep + t + tz if (t or tz) else ""))
+    for d in dates[:6]:
+        for t in times:
+            for tz in tzs:
+                if r.random() < 0.25:
+                    strings.append(d + "T" + t + tz)
+    base = ["2026-10-01T10:30:15+05:30", "2026-10-01", "2026-10-01 10:30", "20261001T103015Z", "2026-W40-3T10"]
+    alphabet = "0123456789-:T +ZW.,x٣"
+    for _ in range(2500):
+        sbase = list(r.choice(base))
+        for _ in range(r.randint(1, 3)):
+            op = r.random()
+            pos = r.randrange(len(sbase) + 1)
+            if op < 0.4 and sbase:
+                sbase[min(pos, len(sbase) - 1)] = r.choice(alphabet)
+            elif op < 0.7:
+                sbase.insert(pos, r.choice(alphabet))
+            elif sbase:
+                del sbase[min(pos, len(sbase) - 1)]
+        strings.append("".join(sbase))
+    strings += ["", " ", "2026", "x" * 30, "2026-10-01T", "2026-10-01T10:30:15\u0000", " 2026-10-01", "2026-10-01 ",
+                "2026-10-01T10:30:15 "]
+    cases = []
+    for sv in strings:
+        if sv in seen:
+            continue
+        seen.add(sv)
+        try:
+            dt = datetime.fromisoformat(sv)
+        except ValueError:
+            cases.append({"s": sv, "v": None, "iso": None})
+            continue
+        off = dt.utcoffset()
+        off_us = None if off is None else (off.days * 86400 + off.seconds) * 10 ** 6 + off.microseconds
+        aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        cases.append({"s": sv, "v": [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond, off_us],
+                      "iso": aware.isoformat()})
+    fx["iso_datetime"] = cases
     return fx
 
 
@@ -343,7 +414,7 @@ def main() -> int:
     fx = build()
     text = json.dumps(fx, separators=(",", ":"), ensure_ascii=False) + "\n"
     if "--check" in sys.argv:
-        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
+        if not OUT.exists() or OUT.read_bytes().decode("utf-8").replace(chr(13) + chr(10), chr(10)) != text:
             print("inventory_calc.json is stale: regenerate with tests/contract/gen_inventory_fixtures.py")
             return 1
         print("inventory_calc.json is current")
