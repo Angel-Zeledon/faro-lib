@@ -1697,6 +1697,63 @@ export const decideDemandPlan = (id: string, action: 'submit' | 'approve' | 'rej
 export const commentDemandPlan = (id: string, comment: string) =>
   request<import('./types').DemandPlanVersion>('POST', `/demand-plans/${encodeURIComponent(id)}/comments`, { comment })
 
+// ── S&OP forecast consensus (served by the Rust API; percentages are basis points) ─
+export const getConsensusSettings = () =>
+  request<import('./types').ConsensusSettings>('GET', '/consensus/settings')
+export const saveConsensusSettings = (body: {
+  rule: import('./types').ConsensusRuleName
+  priority: import('./types').ConsensusFunction[]
+  weights: Record<import('./types').ConsensusFunction, number>
+  cap_down_bp: number; cap_up_bp: number
+  members?: Record<import('./types').ConsensusFunction, string[]>
+}) => request<import('./types').ConsensusSettings>('PUT', '/consensus/settings', body)
+export const listConsensusSubmissions = (sessionId: string, opts?: { sku?: string; includeSuperseded?: boolean; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.includeSuperseded) q.set('include_superseded', 'true')
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').ConsensusSubmissionList>(
+    'GET', `/sessions/${encodeURIComponent(sessionId)}/consensus/submissions${qs ? `?${qs}` : ''}`)
+}
+export const createConsensusSubmission = (sessionId: string, body: {
+  sku: string; function: import('./types').ConsensusFunction; start_date: string; end_date: string
+  pct_bp: number; reason_code: string; reason_note?: string | null
+}) => request<import('./types').ConsensusSubmission>(
+  'POST', `/sessions/${encodeURIComponent(sessionId)}/consensus/submissions`, body)
+export const getConsensusPreview = (sessionId: string, opts?: { sku?: string; offset?: number; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.offset) q.set('offset', String(opts.offset))
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').ConsensusPreview>(
+    'GET', `/sessions/${encodeURIComponent(sessionId)}/consensus/preview${qs ? `?${qs}` : ''}`)
+}
+export const proposeConsensus = (sessionId: string, body: { name: string; note?: string | null }) =>
+  request<import('./types').ConsensusVersionDetail>(
+    'POST', `/sessions/${encodeURIComponent(sessionId)}/consensus/versions`, body)
+export const listConsensusVersions = (sessionId?: string) =>
+  request<import('./types').ConsensusVersionList>(
+    'GET', `/consensus/versions${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`)
+export const getConsensusVersion = (id: string, opts?: { sku?: string; offset?: number; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (opts?.sku) q.set('sku', opts.sku)
+  if (opts?.offset) q.set('offset', String(opts.offset))
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return request<import('./types').ConsensusVersionDetail>(
+    'GET', `/consensus/versions/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`)
+}
+export const decideConsensus = (id: string, action: 'approve' | 'reject' | 'withdraw', comment?: string) =>
+  request<import('./types').ConsensusVersionDetail>(
+    'POST', `/consensus/versions/${encodeURIComponent(id)}/${action}`, { comment: comment || null })
+export const getConsensusFva = (sessionId: string) =>
+  request<import('./types').ConsensusFva>('GET', `/sessions/${encodeURIComponent(sessionId)}/consensus/fva`)
+export const refreshConsensusEvidence = (sessionId: string) =>
+  request<import('./types').ConsensusEvidenceRefresh>(
+    'POST', `/sessions/${encodeURIComponent(sessionId)}/consensus/evidence/refresh`, {})
+
 export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =>
   request<import('./types').AdjustmentValueAdded>(
     'GET', `/sessions/${sessionId}/adjustments/value-added`, undefined, opts)

@@ -2376,6 +2376,151 @@ export interface AdjustmentValueAdded {
   by_reason: (ValueAddedGroup & { reason: AdjustmentReason })[]
 }
 
+// ── S&OP forecast consensus (routes served by the Rust API) ──────────────────
+export type ConsensusFunction = 'sales' | 'finance' | 'operations'
+export type ConsensusRuleName = 'priority' | 'weighted'
+/** Percentages are integer basis points (1 bp = 0.01%) end to end. */
+export interface ConsensusRule {
+  rule: ConsensusRuleName
+  priority: ConsensusFunction[]
+  weights: Record<ConsensusFunction, number>
+  cap_down_bp: number
+  cap_up_bp: number
+}
+export interface ConsensusMember { user_id: string; name: string | null }
+export interface ConsensusSettings {
+  configured: boolean
+  settings: ConsensusRule
+  updated: { by: string; at: string } | null
+  functions: ConsensusFunction[]
+  reasons: string[]
+  members: Record<ConsensusFunction, ConsensusMember[]>
+  my_functions: ConsensusFunction[]
+  can_submit: Record<ConsensusFunction, boolean>
+  can_approve: boolean
+  approver_count: number
+  candidates: { user_id: string; name: string | null; role: string }[] | null
+}
+export interface ConsensusSubmission {
+  id: string
+  session_id: string
+  sku: string
+  function: ConsensusFunction
+  start_date: string
+  end_date: string
+  pct_bp: number
+  reason_code: string
+  reason_note: string | null
+  revision: number
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  superseded_by: string | null
+  superseded_at: string | null
+}
+export interface ConsensusSubmissionList {
+  functions: ConsensusFunction[]
+  reasons: string[]
+  items: ConsensusSubmission[]
+  total: number
+  limit: number
+  offset: number
+  my_functions: ConsensusFunction[]
+  can_submit: Record<ConsensusFunction, boolean>
+}
+export interface ConsensusLineInput {
+  function: ConsensusFunction
+  pct_bp: number
+  submission_id: string
+  capped: boolean
+}
+export interface ConsensusLine {
+  sku: string
+  start_date: string
+  end_date: string
+  pct_bp: number
+  source: ConsensusFunction | null
+  inputs: ConsensusLineInput[]
+}
+export interface ConsensusLinePage { items: ConsensusLine[]; total: number; offset: number; limit: number }
+export interface ConsensusPreview {
+  rule: ConsensusRule
+  n_submissions: number
+  sku_count: number
+  line_count: number
+  lines: ConsensusLinePage
+}
+export type ConsensusStatus = 'proposed' | 'approved' | 'rejected' | 'withdrawn' | 'superseded'
+export interface ConsensusVersion {
+  id: string
+  session_id: string
+  session_name: string | null
+  name: string
+  note: string | null
+  rule: ConsensusRule
+  line_count: number
+  sku_count: number
+  status: ConsensusStatus
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+  decided_by: string | null
+  decided_by_name: string | null
+  decided_at: string | null
+  decision_comment: string | null
+  self_approved: boolean
+}
+export interface ConsensusEvent {
+  id: number
+  from_status: string | null
+  to_status: ConsensusStatus
+  actor_id: string
+  actor_name: string | null
+  comment: string | null
+  created_at: string
+}
+export interface ConsensusVersionDetail extends ConsensusVersion {
+  lines: ConsensusLinePage
+  /** Inputs of this version that were revised after it was proposed. */
+  revised_inputs: number
+  /** Every period of it has already passed. */
+  expired: boolean
+  events: ConsensusEvent[]
+  approver_count: number
+  can_approve: boolean
+}
+export interface ConsensusVersionList {
+  items: ConsensusVersion[]
+  statuses: ConsensusStatus[]
+  approver_count: number
+  can_approve: boolean
+  max_versions: number
+}
+export type ConsensusFva_ = ValueAddedGroup & { actual_total: number }
+export interface ConsensusFva {
+  session_id: string
+  status: 'ok' | 'no_adjustments' | 'no_evidence'
+  n_submissions: number
+  n_neutral: number
+  n_ungraded: number
+  n_graded_submissions: number
+  evidence: { rows: number; first_period: string | null; last_period: string | null; dataset_id: string | null; refreshed_at: string | null } | null
+  by_function: (ConsensusFva_ & { function: ConsensusFunction })[]
+  by_user: (ConsensusFva_ & { user: string; name: string | null })[]
+  by_reason: (ConsensusFva_ & { reason: string })[]
+  by_submission: (ConsensusFva_ & { submission_id: string; submission: ConsensusSubmission | null })[]
+  consensus: {
+    version_id: string; name: string; status: ConsensusStatus; decided_at: string | null
+    decided_by_name: string | null; line_count: number; fva: ConsensusFva_
+  }[]
+}
+export interface ConsensusEvidenceRefresh {
+  session_id: string
+  status: string
+  rows: number
+  source: { dataset_id: string; name: string } | null
+}
+
 // A line of a PO as stored server-side, with reception progress.
 export interface POItemLine {
   id:                   string

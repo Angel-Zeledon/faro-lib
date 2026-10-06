@@ -1,0 +1,22 @@
+# DISABLED EXAMPLE. Rename to 50-consensus.caddy inside the gateway's
+# /etc/caddy/routes.d/ to enable the S&OP forecast consensus; `caddy reload`.
+#
+# These routes exist ONLY in Rust (backend-rs/src/routes/consensus.rs): there is
+# no Python twin, so there is NO failover upstream here. With this file absent,
+# or api-rs down, the screen /consenso gets 404 / 502 and nothing else changes;
+# planning keeps working because it reads the published consensus straight from
+# the database (Python, forecast_adjustment_service.active_by_sku).
+#
+# POST /api/v1/sessions/{id}/consensus/evidence/refresh is NOT matched: it reads
+# dataset files and stays on Python.
+
+@rs_consensus {
+	path_regexp consensus ^/api/v1/(consensus/settings|consensus/versions(/[^/]+(/(approve|reject|withdraw))?)?|sessions/[^/]+/consensus/(submissions|preview|versions|fva))$
+}
+handle @rs_consensus {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
