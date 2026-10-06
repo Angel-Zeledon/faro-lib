@@ -126,6 +126,12 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     # Microsoft / Apple is the person's data, so it travels with the export.
     ("user_identities", "user_identities",
      "id, user_id, tenant_id, provider, subject, email, created_at, last_used_at"),
+    # SCIM provisioning. The token travels as metadata only - never its hash.
+    ("scim_tokens", "scim_tokens",
+     "id, tenant_id, manage_admins, created_at, created_by, last_used_at, "
+     "revoked_at, revoked_by"),
+    ("scim_events", "scim_events", "*"),
+    ("scim_user_links", "scim_user_links", "*"),
     # Paying for the plan. No secret lives in these tables (keys and webhook
     # secrets are instance configuration, never per tenant); the provider ids
     # are the tenant's own records at Stripe / PayPal, so they travel.
@@ -221,6 +227,11 @@ _DELETE_ORDER: list[str] = [
     # belongs to a tenant".
     "sso_domains",
     "sso_providers",
+    # SCIM (2026-10-05): all three cascade from tenants (the links also from
+    # users); listed for the same reason. Links before `users` below.
+    "scim_events",
+    "scim_user_links",
+    "scim_tokens",
     "model_artifacts",
     # Billing (2026-10-05). The first two cascade from tenants; the event log
     # has no FK (an event may name no known tenant) and is only removed here.

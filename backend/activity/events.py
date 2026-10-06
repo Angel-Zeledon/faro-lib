@@ -443,6 +443,38 @@ EVENTS: dict[str, EventSpec] = {
     # knows which receiver to fix before re-enabling it.
     "webhook.auto_disabled": EventSpec(
         kind="account", severity=WARNING, detail_keys=("host",),
+    # SCIM provisioning (backend/scim/). The actor is "scim": the company's
+    # identity provider did these, not a person in the app. Losing or regaining
+    # access and a changed role are warnings - the things an admin is asked
+    # about - while a created person or a renamed one is history.
+    "account.scim_user_created": EventSpec(
+        kind="account", severity=INFO, detail_keys=("email", "role"),
+    ),
+    "account.scim_user_updated": EventSpec(
+        kind="account", severity=INFO, detail_keys=("email", "changes"),
+    ),
+    "account.scim_user_deactivated": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
+    "account.scim_user_reactivated": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
+    "account.scim_role_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "role", "previous_role"),
+    ),
+    # A write the provider asked for and this product refused (last admin,
+    # ceiling, another tenant's address...). The code is a reason param.
+    "account.scim_request_refused": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "operation"),
+    ),
+    "account.scim_token_created": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("manage_admins", "rotated"),
+    ),
+    "account.scim_token_revoked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=(),
+    ),
+    "account.scim_settings_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("manage_admins",),
     ),
 
     # ── Paying for the plan (backend/billing/) ───────────────────────────────
@@ -512,6 +544,10 @@ REASONS: tuple[str, ...] = (
     # sign-in the tenant's own provider flow refused (the code is a param)
     "mapped_from_identity_provider_groups",
     "sso_sign_in_refused",
+    # SCIM: the company's identity provider made the change, and a change it
+    # asked for that was refused (the code is a param)
+    "provisioned_by_identity_provider",
+    "scim_request_refused",
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",

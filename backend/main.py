@@ -345,6 +345,11 @@ from backend.api.v1 import social_auth as social_auth_router  # noqa: E402
 app.include_router(social_auth_router.router, prefix=_PREFIX)
 from backend.api.v1 import sso as sso_router  # noqa: E402
 app.include_router(sso_router.router, prefix=_PREFIX)
+# SCIM 2.0 provisioning (backend/scim/): its own bearer token, never a JWT or
+# an API key. Answers 401 until a tenant admin mints a token.
+from backend.api.v1 import scim as scim_router  # noqa: E402
+app.include_router(scim_router.router, prefix=_PREFIX)
+app.include_router(scim_router.admin_router, prefix=_PREFIX)
 app.include_router(users.router,         prefix=_PREFIX)
 app.include_router(sessions.router,      prefix=_PREFIX)
 # BEFORE the upload router: its `/datasets/{dataset_id}` would swallow the fixed

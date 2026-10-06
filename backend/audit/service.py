@@ -98,7 +98,8 @@ def _where(
 
 def _actor_labels(tenant_id: str, ids: set[str]) -> dict[str, str]:
     labels: dict[str, str] = {}
-    user_ids = [i for i in ids if not i.startswith("api_key:") and i not in ("scheduler", "system")]
+    user_ids = [i for i in ids
+                if not i.startswith("api_key:") and i not in ("scheduler", "system", "scim")]
     if user_ids:
         for row in query("SELECT id, email FROM users WHERE tenant_id = %s AND id IN %s",
                          (tenant_id, tuple(user_ids))):
@@ -118,6 +119,9 @@ def _actor_kind(actor_id: str) -> str:
         return "schedule"
     if actor_id == "system":
         return "system"
+    if actor_id == "scim":
+        # The company's identity provider, through the tenant's SCIM token.
+        return "scim"
     return "user"
 
 
@@ -150,7 +154,7 @@ def _normalise(row: dict, labels: dict[str, str]) -> dict:
         elif stored == "session.archive":
             target_label = ctx.get("name")
             before = {"name": ctx.get("name"), "status": ctx.get("status_at_archive")}
-        elif stored == "account.user_role_changed":
+        elif stored in ("account.user_role_changed", "account.scim_role_changed"):
             before, after = {"role": ctx.get("previous_role")}, {"role": ctx.get("role")}
         else:
             after = details or None

@@ -2356,6 +2356,67 @@ _BILLING = [
 _MIGRATIONS += _BILLING
 
 
+# ── SCIM 2.0 provisioning (backend/scim/) ────────────────────────────────────
+# Additive: with no token minted nothing reads or writes these tables.
+_SCIM = [
+    # One LIVE token per tenant (the partial unique index); revoked rows stay as
+    # the record of who minted and who revoked what. Only the SHA-256 of the
+    # secret is stored; the id is the non-secret half of the token.
+    ("create_scim_tokens",
+     """CREATE TABLE IF NOT EXISTS scim_tokens (
+         id             TEXT PRIMARY KEY,
+         tenant_id      TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         secret_hash    TEXT NOT NULL,
+         manage_admins  BOOLEAN NOT NULL DEFAULT FALSE,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         created_by     TEXT,
+         last_used_at   TIMESTAMPTZ,
+         revoked_at     TIMESTAMPTZ,
+         revoked_by     TEXT
+     )"""),
+    ("create_scim_tokens_live_idx",
+     "CREATE UNIQUE INDEX IF NOT EXISTS uq_scim_tokens_live "
+     "ON scim_tokens (tenant_id) WHERE revoked_at IS NULL"),
+    # The provisioning log the admin screen shows: every write the identity
+    # provider made, and every one it was refused, with the code.
+    ("create_scim_events",
+     """CREATE TABLE IF NOT EXISTS scim_events (
+         id             TEXT PRIMARY KEY,
+         tenant_id      TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         token_id       TEXT,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         operation      TEXT NOT NULL,
+         resource_type  TEXT NOT NULL,
+         resource_id    TEXT,
+         email          TEXT,
+         outcome        TEXT NOT NULL,
+         http_status    INTEGER NOT NULL,
+         error_code     TEXT,
+         changes        JSONB NOT NULL DEFAULT '{}'
+     )"""),
+    ("create_scim_events_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS idx_scim_events_tenant "
+     "ON scim_events (tenant_id, created_at DESC)"),
+    # What SCIM knows about a person that `users` has no column for: the
+    # provider's own id for them and the split name. A row here also means
+    # "this person was provisioned or adopted by the identity provider".
+    ("create_scim_user_links",
+     """CREATE TABLE IF NOT EXISTS scim_user_links (
+         user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         external_id  TEXT,
+         given_name   TEXT,
+         family_name  TEXT,
+         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_scim_user_links_external_idx",
+     "CREATE INDEX IF NOT EXISTS idx_scim_user_links_external "
+     "ON scim_user_links (tenant_id, external_id)"),
+]
+_MIGRATIONS += _SCIM
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.
