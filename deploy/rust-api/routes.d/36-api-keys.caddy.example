@@ -1,0 +1,27 @@
+# DISABLED EXAMPLE. Rename to 36-api-keys.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# API key management (backend-rs/src/routes/api_keys.rs):
+#   POST /api/v1/api-keys, GET /api/v1/api-keys, GET /api/v1/api-keys/usage,
+#   DELETE /api/v1/api-keys/{id}
+# Keys minted on either service authenticate on both (same sk_live_ format,
+# same unsalted SHA-256 lookup), and a key revoked on one is refused by both:
+# switching this group back and forth never invalidates a customer's key.
+#
+# Security-sensitive group: enable it on its own, after the other wave-1
+# groups have run on Rust, and watch the `[api-keys] created` log lines.
+
+@rs_api_keys {
+	method GET POST DELETE
+	path_regexp ^/api/v1/api-keys(/[^/]+)?$
+}
+handle @rs_api_keys {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

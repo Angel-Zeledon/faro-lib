@@ -1,0 +1,57 @@
+# DISABLED EXAMPLE. Rename to 35-webhooks.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# Webhook management (backend-rs/src/routes/webhooks.rs, the 2592d73 API):
+#   GET    /api/v1/webhooks
+#   GET    /api/v1/webhooks/events
+#   DELETE /api/v1/webhooks/{id}
+#   POST   /api/v1/webhooks/{id}/enable
+#   POST   /api/v1/webhooks/{id}/rotate-secret
+#   GET    /api/v1/webhooks/{id}/deliveries
+# STAY ON PYTHON (not matched here): POST /api/v1/webhooks (its SSRF guard
+# resolves the target host) and POST /api/v1/webhooks/{id}/test (wakes the
+# in-process delivery worker). Delivery itself is the Python worker.
+#
+# path_regexp per method: a trailing slash or any other path keeps reaching
+# Python and its own 307 / 404 / 405.
+
+@rs_webhooks_read {
+	method GET
+	path_regexp ^/api/v1/webhooks(/events|/[^/]+/deliveries)?$
+}
+@rs_webhooks_delete {
+	method DELETE
+	path_regexp ^/api/v1/webhooks/[^/]+$
+}
+@rs_webhooks_actions {
+	method POST
+	path_regexp ^/api/v1/webhooks/[^/]+/(enable|rotate-secret)$
+}
+handle @rs_webhooks_read {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_webhooks_delete {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_webhooks_actions {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

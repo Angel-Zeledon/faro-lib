@@ -8,6 +8,7 @@
 
 pub mod api_key;
 pub mod jwt;
+pub mod warehouse_scope;
 
 use std::sync::{Arc, Mutex};
 
@@ -90,15 +91,26 @@ pub struct RouteAuth {
     pub is_mcp: bool,
 }
 
-/// `fastapi.security.HTTPBearer`: the credential, or the 401 it raises.
+/// `guards._BearerOrApiKey`: `Authorization: Bearer <credential>`, or an
+/// `X-API-Key: sk_live_...` header when there is no (non-empty) Authorization
+/// header. Anything else in X-API-Key (a JWT, junk) is no credential at all.
+/// Then `fastapi.security.HTTPBearer`: the credential, or the 401 it raises.
 fn bearer_credential(headers: &HeaderMap) -> Result<String, ApiError> {
     let not_authenticated =
         || ApiError::http(401, "Not authenticated").with_header("www-authenticate", "Bearer");
-    let raw = headers
-        .get(axum::http::header::AUTHORIZATION)
-        // Starlette decodes headers as latin-1, so any byte string is a value.
-        .map(|v| v.as_bytes().iter().map(|&b| b as char).collect::<String>())
-        .unwrap_or_default();
+    // Starlette decodes headers as latin-1, so any byte string is a value.
+    let latin1 = |name| {
+        headers
+            .get(name)
+            .map(|v: &axum::http::HeaderValue| v.as_bytes().iter().map(|&b| b as char).collect::<String>())
+            .unwrap_or_default()
+    };
+    let raw = latin1(axum::http::header::AUTHORIZATION);
+    let header_key = latin1(axum::http::HeaderName::from_static("x-api-key"));
+    let header_key = py_strip(&header_key);
+    if !header_key.is_empty() && api_key::looks_like_api_key(header_key) && raw.is_empty() {
+        return Ok(header_key.to_string());
+    }
     if raw.is_empty() {
         return Err(not_authenticated());
     }
@@ -328,6 +340,20 @@ mod tests {
         }
         let e = bearer_credential(&HeaderMap::new()).unwrap_err();
         assert_eq!(e.headers[0].1, "Bearer");
+    }
+
+    #[test]
+    fn x_api_key_header_is_a_key_only_without_authorization() {
+        let mut h = HeaderMap::new();
+        h.insert("x-api-key", HeaderValue::from_static("  sk_live_abc "));
+        assert_eq!(bearer_credential(&h).unwrap(), "sk_live_abc");
+        // Authorization wins when both are sent.
+        h.insert(axum::http::header::AUTHORIZATION, HeaderValue::from_static("Bearer xyz"));
+        assert_eq!(bearer_credential(&h).unwrap(), "xyz");
+        // A JWT in X-API-Key is no credential at all.
+        let mut h = HeaderMap::new();
+        h.insert("x-api-key", HeaderValue::from_static("eyJhbGciOi.x.y"));
+        assert_eq!(bearer_credential(&h).unwrap_err().status.as_u16(), 401);
     }
 
     fn user(role: &str, machine: bool) -> CurrentUser {
