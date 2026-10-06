@@ -2417,6 +2417,35 @@ _SCIM = [
 _MIGRATIONS += _SCIM
 
 
+# ── Per-tenant IP allowlist ──────────────────────────────────────────────────
+# Additive: a tenant with no policy row (or a disabled one) is not filtered, so
+# with nothing configured every request behaves exactly as before. Python owns
+# the schema; the Rust service only reads and writes these rows.
+_IP_ALLOWLIST = [
+    ("create_ip_allowlist_policies",
+     """CREATE TABLE IF NOT EXISTS ip_allowlist_policies (
+         tenant_id   TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+         updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_by  TEXT
+     )"""),
+    # `cidr` is stored normalised (network address / prefix, IPv4 or IPv6), so
+    # the UNIQUE below is a real "no duplicates" and both services compare the
+    # same text they would parse.
+    ("create_ip_allowlist_entries",
+     """CREATE TABLE IF NOT EXISTS ip_allowlist_entries (
+         id          TEXT PRIMARY KEY,
+         tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         cidr        TEXT NOT NULL,
+         label       TEXT NOT NULL DEFAULT '',
+         created_by  TEXT,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         UNIQUE (tenant_id, cidr)
+     )"""),
+]
+_MIGRATIONS += _IP_ALLOWLIST
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.

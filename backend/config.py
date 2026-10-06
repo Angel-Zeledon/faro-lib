@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # Deployment environment: development | staging | production
     environment: str = "development"
 
+    # How many reverse proxies sit between the internet and this process and
+    # append to X-Forwarded-For. 0 = none: the socket peer is the client and the
+    # header is ignored (it is forgeable by anyone who reaches the port). The
+    # per-tenant IP allowlist (backend/ip_allowlist/) is the consumer.
+    trusted_proxy_hops: int = 0
+
     # JWT
     access_token_expire_minutes: int = 15
     algorithm: str = "HS256"

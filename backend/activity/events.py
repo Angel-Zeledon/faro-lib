@@ -478,6 +478,18 @@ EVENTS: dict[str, EventSpec] = {
         kind="account", severity=WARNING, detail_keys=("manage_admins",),
     ),
 
+    # IP allowlist (backend/ip_allowlist/, and the Rust admin routes). A change
+    # to who may reach the account is a warning (an admin did it, and "I did not
+    # do that" is only noticed if it is shown). `change` is one of added,
+    # removed, enabled, disabled. A refusal names the address that was turned
+    # away and the door it knocked on (`via`: login, refresh, token, api_key).
+    "account.ip_allowlist_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("change", "cidr", "label"),
+    ),
+    "account.ip_access_refused": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("ip", "via"),
+    ),
+
     # ── Paying for the plan (backend/billing/) ───────────────────────────────
     # Written by a VERIFIED provider webhook (or the hourly sweep applying what
     # one already stored), with "system" as the actor: no person did these.
@@ -549,6 +561,8 @@ REASONS: tuple[str, ...] = (
     # asked for that was refused (the code is a param)
     "provisioned_by_identity_provider",
     "scim_request_refused",
+    # the caller's address is outside the tenant's IP allowlist
+    "ip_not_in_allowlist",
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",
