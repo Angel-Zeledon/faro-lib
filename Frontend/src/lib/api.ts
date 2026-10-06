@@ -1569,8 +1569,18 @@ export const deletePOApprovalRule = (id: string) =>
 export const setPOApprover = (userId: string, canApprove: boolean) =>
   request<{ user_id: string; can_approve: boolean }>(
     'PUT', `/inventory/po-approval/approvers/${userId}`, { can_approve: canApprove })
+// Delegation (a substitute approver for a date range). Served by the Rust API only.
+export const listPOApprovalDelegations = (opts?: RequestOpts) =>
+  request<{ items: import('./types').POApprovalDelegation[]; candidates: import('./types').POApprovalDelegationCandidate[] }>(
+    'GET', '/inventory/po-approval/delegations', undefined, opts)
+export const createPOApprovalDelegation = (body: {
+  delegate_id: string; starts_on: string; ends_on: string; note?: string | null
+}) => request<import('./types').POApprovalDelegation>('POST', '/inventory/po-approval/delegations', body)
+export const revokePOApprovalDelegation = (id: string) =>
+  request<import('./types').POApprovalDelegation & { changed: boolean }>(
+    'POST', `/inventory/po-approval/delegations/${id}/revoke`, {})
 export const getPOApprovalPending = (opts?: RequestOpts) =>
-  request<{ is_approver: boolean; items: import('./types').POApprovalPendingItem[] }>(
+  request<{ is_approver: boolean; is_delegate?: boolean; items: import('./types').POApprovalPendingItem[] }>(
     'GET', '/inventory/po-approval/pending', undefined, opts)
 export const getPOApproval = (poLogId: string) =>
   request<import('./types').POApproval>('GET', `/inventory/po/${poLogId}/approval`)

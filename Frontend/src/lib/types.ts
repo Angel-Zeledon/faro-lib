@@ -2220,7 +2220,26 @@ export interface POApprovalEntry {
   decided_by_name: string | null
   decided_at: string | null
   comment: string | null
+  /** Set when a substitute decided: the approver they stood in for. */
+  decided_on_behalf_of?: string | null
+  decided_on_behalf_of_name?: string | null
 }
+export type POApprovalDelegationStatus = 'active' | 'scheduled' | 'expired' | 'revoked'
+export interface POApprovalDelegation {
+  id: string
+  delegator_id: string
+  delegator_name: string | null
+  delegate_id: string
+  delegate_name: string | null
+  starts_on: string
+  ends_on: string
+  note: string | null
+  status: POApprovalDelegationStatus
+  created_at: string
+  revoked_at: string | null
+}
+/** A colleague an approver may name as a substitute. */
+export interface POApprovalDelegationCandidate { id: string; name: string; role: string }
 export interface POApproval extends POApprovalBadge {
   po_log_id: string
   amount: number | null

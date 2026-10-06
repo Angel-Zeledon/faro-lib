@@ -16,6 +16,7 @@ import { getUser } from '@/lib/auth'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import PedidosMobile from './PedidosMobile'
 import { ApprovalInbox } from '@/components/po/POApproval'
+import ApprovalDelegation from '@/components/po/ApprovalDelegation'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -60,8 +61,11 @@ export default function OrdersPage() {
     if (q.get('view') === 'approvals') setApprovalLink({ open: true, po: q.get('po') })
   }, [])
   const inbox = (
-    <ApprovalInbox alwaysShow={approvalLink.open} focusId={approvalLink.po}
-                   onChanged={() => { load(); reloadAttention() }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <ApprovalInbox alwaysShow={approvalLink.open} focusId={approvalLink.po}
+                     onChanged={() => { load(); reloadAttention() }} />
+      <ApprovalDelegation />
+    </div>
   )
 
   // `silent: true` — this screen renders the failure itself as a full ErrorState,
