@@ -2220,6 +2220,8 @@ export interface POApprovalEntry {
   decided_by_name: string | null
   decided_at: string | null
   comment: string | null
+  /** null = decided in the app; 'message' = through a decision link in an email or WhatsApp message */
+  decided_channel?: 'message' | null
 }
 export interface POApproval extends POApprovalBadge {
   po_log_id: string

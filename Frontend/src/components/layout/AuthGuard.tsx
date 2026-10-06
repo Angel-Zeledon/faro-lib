@@ -13,7 +13,9 @@ import { CONTENT_PUBLIC_PATHS } from '@/components/landing/contentPaths'
 const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', '/auth/callback', ...Object.values(SUBPAGE_PATHS), ...LEGAL_PUBLIC_PATHS, ...CONTENT_PUBLIC_PATHS, '/desarrolladores', '/docs',
   // The supplier's confirmation page: a link in a message, no account. With the
   // slash: `/proveedores` (the suppliers screen) is NOT public.
-  '/proveedor/']
+  '/proveedor/',
+  // The approval decision page: a link in a message, no sign-in (the link is the credential).
+  '/aprobar/']
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router   = useRouter()

@@ -139,7 +139,9 @@ export function useEventDetails() {
       .filter(k => !OPAQUE_DETAILS.has(k) && d[k] !== null && d[k] !== '')
       .map(k => {
         const v = d[k]
-        const shown = MONEY_DETAILS.has(k) && typeof v === 'number' ? formatMoney(v) : v
+        // `channel` is a machine value (`message`): shown through the catalogue, never raw.
+        const shown = k === 'channel' ? t(`events.channel.${v}`)
+          : MONEY_DETAILS.has(k) && typeof v === 'number' ? formatMoney(v) : v
         return `${t(`events.detail.${k}`)}: ${shown}`
       })
       .join('  ·  ')
