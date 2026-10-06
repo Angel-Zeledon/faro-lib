@@ -654,6 +654,7 @@ def r2_prepare(py: str, rs: str, fx: Fixture, db) -> dict:
     cur.execute("SELECT id FROM sessions WHERE tenant_id <> %s LIMIT 1", (fx.tenant_id,))
     other = cur.fetchone()
     ph["{s_other_tenant}"] = (other[0], other[0]) if other else ("sess_none_elsewhere",) * 2
+    w1b_seed_manifests(db, fx, shared["main"], shared["backtest"])
     return ph
 
 
@@ -1514,6 +1515,78 @@ def build_w1b_session_cases(fx: Fixture, ph: dict) -> list[Case]:
         Case("w1b patch invalid json", "PATCH", P, route=up, raw_body=b"[1,", volatile={"ctx", "loc"}),
         Case("w1b patch literal summary", "PATCH", f"{S}/summary", route=up, body={"name": "nope"}),
         Case("w1b patch then get", "GET", P, route="GET /sessions/{id}", volatile=upd),
+    ]
+
+
+# ── Wave 1b: lineage manifests (read-only) ───────────────────────────────────
+
+def w1b_seed_manifests(db, fx: Fixture, main_sid: str, backtest_sid: str) -> None:
+    """Manifests the worker would have written: two for the main session (the
+    newer one FAILED), and a spread of runs for the duration aggregate that
+    covers every branch of run_metrics (untimed, odd medians, size buckets,
+    missing granularity, a string duration, float rounding ties)."""
+    cur = db.cursor()
+    rich = {"schema_version": 1, "timing": {"duration_seconds": 12.345, "stages": {"fit": 0.1, "predict": 1e-05}},
+            "counts": {"skus_forecast": 7, "ratio": 0.30000000000000004}, "session": {"granularity": "W"},
+            "trigger": {"kind": "user", "actor_id": "u", "label": "a@b.c"}, "note": "Pronóstico ☃",
+            "nested": {"z": [1, 2.5, None, True], "a": {}}}
+    cur.execute("DELETE FROM session_manifests WHERE tenant_id = %s", (fx.tenant_id,))
+
+    def put(minutes_ago, sid, outcome, manifest, job="job_ct_m"):
+        cur.execute("""INSERT INTO session_manifests (id, session_id, tenant_id, job_id, outcome, manifest, created_at)
+                       VALUES (%s, %s, %s, %s, %s, %s, NOW() - %s * INTERVAL '1 minute')""",
+                    (f"man_ct_{secrets.token_hex(5)}", sid, fx.tenant_id, job, outcome, json.dumps(manifest),
+                     minutes_ago))
+    put(500, main_sid, "COMPLETED", rich)
+    put(400, main_sid, "FAILED", {"schema_version": 1, "error": "boom", "timing": {"duration_seconds": 3}})
+    runs = [  # minutes ago, outcome, duration, series, granularity
+        (300, "COMPLETED", 10.0, 5, "D"), (290, "COMPLETED", 20.0, 40, "D"), (280, "COMPLETED", 31.25, 60, "W"),
+        (270, "COMPLETED", 0.25, 100, "W"), (260, "COMPLETED", 2.675, 300, "M"), (250, "COMPLETED", 99.99, 1500, "M"),
+        (240, "COMPLETED", 5.5, 5000, None), (230, "FAILED", 8.0, 10, "D"), (220, "COMPLETED", "abc", 10, "D"),
+        (210, "COMPLETED", None, 10, "D"), (200, "COMPLETED", " 7.5 ", "12", "D"), (190, "COMPLETED", 4.0, "12.5", "D"),
+        (180, "COMPLETED", 6.0, 0, "D"), (170, "COMPLETED", 9.0, None, "W"), (160, "COMPLETED", 1e-05, 51, "W"),
+        (150, "COMPLETED", 123456789.123, 200, "W"), (140, "COMPLETED", 15.0, 201, ""),
+    ]
+    for ago, outcome, dur, series, gran in runs:
+        m = {"timing": {"duration_seconds": dur}, "counts": {"skus_forecast": series}, "session": {"granularity": gran}}
+        if dur is None:
+            m = {"counts": {"skus_forecast": series}, "session": {"granularity": gran}}
+        put(ago, backtest_sid, outcome, m)
+
+
+def build_w1b_manifest_cases(fx: Fixture, ph: dict) -> list[Case]:
+    S = f"{API}/sessions"
+    other = "raw:Bearer " + mint_access_token(fx.secret, fx.admin_id, R1_OTHER_TENANT, "admin")
+    man, dur = "GET /sessions/{id}/manifest", "GET /training/run-durations"
+    D = f"{API}/training/run-durations"
+    return [
+        Case("w1b manifest latest", "GET", f"{S}/{{s_main}}/manifest", route=man),
+        Case("w1b manifest viewer", "GET", f"{S}/{{s_main}}/manifest", who="viewer", route=man),
+        Case("w1b manifest read key", "GET", f"{S}/{{s_main}}/manifest", who="key_read", route=man),
+        Case("w1b manifest write key", "GET", f"{S}/{{s_main}}/manifest", who="key_write", route=man),
+        Case("w1b manifest none yet", "GET", f"{S}/{{s_nodata}}/manifest", route=man),
+        Case("w1b manifest session not found", "GET", f"{S}/sess_nope/manifest", route=man),
+        Case("w1b manifest wrong tenant", "GET", f"{S}/{{s_other_tenant}}/manifest", route=man),
+        Case("w1b manifest no auth", "GET", f"{S}/{{s_main}}/manifest", who="none", route=man),
+        Case("w1b manifest expired", "GET", f"{S}/{{s_main}}/manifest", who="expired", route=man),
+        Case("w1b manifest other tenant token", "GET", f"{S}/{{s_main}}/manifest", who=other, route=man),
+        Case("w1b manifest wrong method", "POST", f"{S}/{{s_main}}/manifest", route=man),
+        Case("w1b durations default", "GET", D, route=dur),
+        Case("w1b durations viewer", "GET", D, who="viewer", route=dur),
+        Case("w1b durations read key", "GET", D, who="key_read", route=dur),
+        Case("w1b durations limit 1", "GET", f"{D}?limit=1", route=dur),
+        Case("w1b durations limit 3", "GET", f"{D}?limit=3", route=dur),
+        Case("w1b durations limit 7", "GET", f"{D}?limit=7", route=dur),
+        Case("w1b durations limit 12", "GET", f"{D}?limit=12", route=dur),
+        Case("w1b durations limit 200", "GET", f"{D}?limit=200", route=dur),
+        Case("w1b durations limit float text", "GET", f"{D}?limit=5.0", route=dur),
+        Case("w1b durations limit zero", "GET", f"{D}?limit=0", route=dur),
+        Case("w1b durations limit too big", "GET", f"{D}?limit=201", route=dur),
+        Case("w1b durations limit text", "GET", f"{D}?limit=abc", route=dur),
+        Case("w1b durations limit last wins", "GET", f"{D}?limit=1&limit=2", route=dur),
+        Case("w1b durations no runs", "GET", D, who=other, route=dur),
+        Case("w1b durations no auth", "GET", D, who="none", route=dur),
+        Case("w1b durations wrong method", "DELETE", D, route=dur),
     ]
 
 # ── R3: webhooks CRUD, API keys, audit trail reads ───────────────────────────
@@ -2999,7 +3072,7 @@ def run(args) -> int:
         cd = {"py": seed_commitment(args.python, fx), "rs": seed_commitment(args.rust, fx)}
         # R2 (sessions / schedule / spike edits) needs --db to seed its rows.
         ph = r2_prepare(args.python, args.rust, fx, db) if db is not None else {}
-        for case in build_cases(fx) + (build_r2_cases(fx, ph) + build_w1b_session_cases(fx, ph) if ph else []):
+        for case in build_cases(fx) + (build_r2_cases(fx, ph) + build_w1b_session_cases(fx, ph) + build_w1b_manifest_cases(fx, ph) if ph else []):
             if args.only and args.only not in case.name:
                 continue
             token = auth_for(fx, case.who)
