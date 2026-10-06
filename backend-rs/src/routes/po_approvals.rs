@@ -1183,9 +1183,9 @@ pub(crate) async fn decide_core(
     let req = requirement_of(pool, tenant, &po).await?;
     // The delegation this decision stands on, when the person is a substitute.
     let mut via: Option<Delegation> = None;
-    if !is_approver(pool, tenant, &user.user_id).await? {
+    if !is_approver(pool, tenant, &user_id).await? {
         let (found, had_delegation) =
-            authority_for(pool, tenant, &user.user_id, &po, &last.requested_by, last.amount, &req, decision).await?;
+            authority_for(pool, tenant, &user_id, &po, &last.requested_by, last.amount, &req, decision).await?;
         if found.is_none() && had_delegation {
             // A delegation is in force but does not reach THIS order.
             return Err(app_err(

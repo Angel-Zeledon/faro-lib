@@ -140,7 +140,6 @@ impl Event {
             Event::ApprovalLinksRevoked => {
                 ("purchase.approval_links_revoked", "purchase", "info", &["reference", "count"])
             }
-            Event::OrderUnsent => ("purchase.order_unsent", "purchase", "warning", &["reference"]),
             Event::CommittedDemandCreated => (
                 "committed_demand.created", "purchase", "info",
                 &["sku", "quantity", "delivery_date", "customer"],
