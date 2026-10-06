@@ -46,6 +46,7 @@ from typing import Any, Callable, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cf_outlook_cases  # noqa: E402  (fulfillment outlook cases, Rust-only routes)
+import cf_money_cases  # noqa: E402  (money at risk on the outlook)
 
 API = "/api/v1"
 # Generous: a dev backend talking to its database through an SSH tunnel takes
@@ -2811,6 +2812,7 @@ def run(args) -> int:
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
         results += cf_outlook_cases.run_cf(args, fx, db, sys.modules[__name__])
+        results += cf_money_cases.run_money(args, fx, db, sys.modules[__name__])
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
