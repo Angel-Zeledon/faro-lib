@@ -1,0 +1,53 @@
+# DISABLED EXAMPLE. Rename to 30-settings-reads.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# Route group R1 (backend-rs/src/routes/r1/): the small settings and read
+# routers. Every path is EXACT (no prefix match), and each matcher names its
+# methods, so nothing else under these paths can leak to Rust.
+#
+# PATCH /api/v1/tenant/timezone stays on Python: it re-anchors armed
+# schedules with croniter in the new zone (see r1/timezone.rs). Only GET of
+# that path is listed below.
+
+@rs_r1_get {
+	method GET
+	path /api/v1/me/preferences /api/v1/me/activity /api/v1/me/activity/action-types /api/v1/models /api/v1/alerts /api/v1/alerts/activity /api/v1/alerts/kinds /api/v1/tenant/currency /api/v1/tenant/timezone
+}
+handle @rs_r1_get {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+
+@rs_r1_patch {
+	method PATCH
+	path /api/v1/me/preferences /api/v1/tenant/currency
+}
+handle @rs_r1_patch {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+
+@rs_r1_post {
+	method POST
+	path /api/v1/alerts/read
+}
+handle @rs_r1_post {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

@@ -16,11 +16,37 @@ use serde_json::{json, Map, Value};
 use crate::error::ApiError;
 
 /// What FastAPI hands to the model: `None` (no body), parsed JSON, or the
-/// raw bytes when the content type is not JSON.
+/// raw bytes when the content type is not JSON. The bytes are kept as their
+/// Python `repr` (`b'...'`), which is what the 422's `input` shows.
 pub enum Body {
     Missing,
     Json(Value),
     NotJson(String),
+}
+
+/// `repr(bytes)`: single quotes unless the bytes hold `'` and no `"`; tab,
+/// newline, carriage return, the quote and the backslash escaped; any other
+/// byte outside printable ASCII as `\xNN`.
+pub fn py_bytes_repr(bytes: &[u8]) -> String {
+    let quote = if bytes.contains(&b'\'') && !bytes.contains(&b'"') { b'"' } else { b'\'' };
+    let mut out = String::from("b");
+    out.push(quote as char);
+    for &b in bytes {
+        match b {
+            b'\\' => out.push_str("\\\\"),
+            b'\t' => out.push_str("\\t"),
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            _ if b == quote => {
+                out.push('\\');
+                out.push(b as char);
+            }
+            0x20..=0x7e => out.push(b as char),
+            _ => out.push_str(&format!("\\x{b:02x}")),
+        }
+    }
+    out.push(quote as char);
+    out
 }
 
 /// FastAPI's body read: JSON when the content type is absent or
@@ -41,7 +67,7 @@ pub fn read_body(content_type: Option<&str>, bytes: &[u8]) -> Result<Body, ApiEr
         }
     };
     if !is_json {
-        return Ok(Body::NotJson(String::from_utf8_lossy(bytes).into_owned()));
+        return Ok(Body::NotJson(py_bytes_repr(bytes)));
     }
     match serde_json::from_slice::<Value>(bytes) {
         Ok(v) => Ok(Body::Json(v)),
@@ -418,6 +444,9 @@ mod tests {
     #[test]
     fn non_json_content_type_is_raw() {
         assert!(matches!(read_body(Some("text/plain"), b"{}").unwrap(), Body::NotJson(_)));
+        assert_eq!(py_bytes_repr(b"language=en"), "b'language=en'");
+        assert_eq!(py_bytes_repr(b"it's"), r#"b"it's""#);
+        assert_eq!(py_bytes_repr(b"'\"\\\t\x00\xc3\xa9"), r#"b'\'"\\\t\x00\xc3\xa9'"#);
         assert!(matches!(read_body(Some("application/vnd.x+json"), b"{}").unwrap(), Body::Json(_)));
         assert!(matches!(read_body(None, b"").unwrap(), Body::Missing));
     }

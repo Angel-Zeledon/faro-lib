@@ -102,6 +102,13 @@ access log, NUL-path guard, 404/405 envelopes. Plus `GET /health`.
 notification, no file storage, no hub.
 * Done: `GET /entitlements`; committed-demand `POST`, `POST /bulk`,
   `PATCH /{id}`, `POST /{id}/status`.
+* Done (R1, `routes/r1/`, 98/98 contract cases): preferences GET/PATCH.
+* Done (R1): activity `GET /me/activity`, `GET /me/activity/action-types`.
+* Done (R1): `GET /models` (unauthenticated, as in Python).
+* Done (R1): alerts `GET /alerts`, `/alerts/activity`, `/alerts/kinds`, `POST /alerts/read`.
+* Done (R1): currency GET/PATCH (PATCH writes the `audit.config.changed` row).
+* Done (R1): timezone GET only. `PATCH /tenant/timezone` stays Python: it re-anchors schedules with croniter.
+* Synced to main (R1): `GET /entitlements` (Full 1000/5/3, `max_trainings_per_day`, `trainings_today`), `tsb` model, new events, `X-API-Key` header.
 * Next, in this order: preferences, activity, alerts, timezone, currency,
   models, spike_edits, po_payments, po_cancellation, sessions (read and
   archive/restore; not `/train`), schedule, webhooks CRUD (dispatch stays

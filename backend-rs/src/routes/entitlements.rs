@@ -26,8 +26,41 @@ async fn count(pool: &sqlx::PgPool, sql: &str, tenant_id: &str) -> Result<i64, s
     Ok(n)
 }
 
+/// `daily_cap.count_trainings_today`: training launches (family heads only;
+/// no back-tests, no re-forecasts, no job that failed or was cancelled before
+/// a worker started it) created during the tenant's current calendar day.
+///
+/// `day_bounds_utc` builds [local midnight, next local midnight) with
+/// zoneinfo; here Postgres does the same arithmetic with its own tz database.
+/// Both resolve a midnight inside a DST gap with the offset in effect before
+/// the transition (Python's fold=0, Postgres' rule for nonexistent local
+/// times), so the bounds agree for every supported zone.
+async fn count_trainings_today(pool: &sqlx::PgPool, tenant_id: &str, tz: &str) -> Result<i64, sqlx::Error> {
+    let (n,): (i64,) = sqlx::query_as(
+        "WITH day AS (SELECT date_trunc('day', NOW() AT TIME ZONE $2) AS d)
+         SELECT COUNT(*)
+           FROM jobs j
+           JOIN sessions s ON s.id = j.session_id AND s.tenant_id = j.tenant_id, day
+          WHERE j.tenant_id = $1
+            AND j.created_at >= (day.d AT TIME ZONE $2)
+            AND j.created_at < ((day.d + INTERVAL '1 day') AT TIME ZONE $2)
+            AND NOT s.is_backtest
+            AND NOT s.is_reforecast
+            AND (s.family_id IS NULL OR s.family_id = s.id)
+            AND NOT (j.started_at IS NULL AND j.status IN ('FAILED', 'CANCELLED'))",
+    )
+    .bind(tenant_id)
+    .bind(tz)
+    .fetch_one(pool)
+    .await?;
+    Ok(n)
+}
+
 /// `_usage`: same keys as `limits`, so the UI pairs them without a table.
-async fn usage(pool: &sqlx::PgPool, tenant_id: &str) -> Result<Map<String, Value>, sqlx::Error> {
+/// `trainings_today` is the readable alias of `max_trainings_per_day`.
+async fn usage(pool: &sqlx::PgPool, tenant_id: &str) -> Result<Map<String, Value>, ApiError> {
+    let tz = crate::routes::r1::timezone::timezone_of(pool, tenant_id).await?;
+    let trainings_today = count_trainings_today(pool, tenant_id, &tz).await?;
     let (skus, users, locations, sessions, keys) = tokio::try_join!(
         count(pool, "SELECT COUNT(*) FROM inventory_stock WHERE tenant_id = $1", tenant_id),
         count(pool, "SELECT COUNT(*) FROM users WHERE tenant_id = $1", tenant_id),
@@ -37,6 +70,8 @@ async fn usage(pool: &sqlx::PgPool, tenant_id: &str) -> Result<Map<String, Value
         count(pool, "SELECT COUNT(*) FROM api_keys WHERE tenant_id = $1", tenant_id),
     )?;
     let mut m = Map::new();
+    m.insert("max_trainings_per_day".into(), json!(trainings_today));
+    m.insert("trainings_today".into(), json!(trainings_today));
     m.insert("max_skus".into(), json!(skus));
     m.insert("max_users".into(), json!(users));
     m.insert("max_locations".into(), json!(locations));

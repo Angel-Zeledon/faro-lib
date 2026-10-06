@@ -30,6 +30,8 @@ pub struct PlanDef {
     pub max_api_calls_per_day: Option<i64>,
     pub max_concurrent_jobs: Option<i64>,
     pub max_dataset_size_mb: Option<i64>,
+    /// Training launches per calendar day in the tenant's timezone.
+    pub max_trainings_per_day: Option<i64>,
     pub api_access: bool,
     pub mcp_access: bool,
     pub whatsapp_bot: bool,
@@ -48,19 +50,21 @@ pub fn plan(tier: &str) -> Option<PlanDef> {
             max_api_calls_per_day: Some(0),
             max_concurrent_jobs: Some(MAX_CONCURRENT_JOBS),
             max_dataset_size_mb: Some(25),
+            max_trainings_per_day: Some(1),
             api_access: false,
             mcp_access: false,
             whatsapp_bot: false,
         },
         PAID => PlanDef {
-            max_skus: Some(500),
-            max_users: Some(3),
-            max_locations: Some(2),
+            max_skus: Some(1000),
+            max_users: Some(5),
+            max_locations: Some(3),
             max_sessions: Some(20),
             max_api_keys: Some(3),
             max_api_calls_per_day: Some(2000),
             max_concurrent_jobs: Some(MAX_CONCURRENT_JOBS),
             max_dataset_size_mb: Some(100),
+            max_trainings_per_day: Some(10),
             api_access: true,
             mcp_access: true,
             whatsapp_bot: true,
@@ -74,6 +78,7 @@ pub fn plan(tier: &str) -> Option<PlanDef> {
             max_api_calls_per_day: None,
             max_concurrent_jobs: Some(MAX_CONCURRENT_JOBS),
             max_dataset_size_mb: Some(2000),
+            max_trainings_per_day: None,
             api_access: true,
             mcp_access: true,
             whatsapp_bot: true,
@@ -87,6 +92,7 @@ pub fn plan(tier: &str) -> Option<PlanDef> {
             max_api_calls_per_day: Some(0),
             max_concurrent_jobs: Some(1),
             max_dataset_size_mb: Some(5),
+            max_trainings_per_day: Some(1),
             api_access: false,
             mcp_access: false,
             whatsapp_bot: false,
@@ -97,7 +103,7 @@ pub fn plan(tier: &str) -> Option<PlanDef> {
 
 impl PlanDef {
     /// `_LIMIT_FIELDS` in declaration order, with their values.
-    fn limit_fields(&self) -> [(&'static str, Option<i64>); 8] {
+    fn limit_fields(&self) -> [(&'static str, Option<i64>); 9] {
         [
             ("max_skus", self.max_skus),
             ("max_users", self.max_users),
@@ -107,6 +113,7 @@ impl PlanDef {
             ("max_api_calls_per_day", self.max_api_calls_per_day),
             ("max_concurrent_jobs", self.max_concurrent_jobs),
             ("max_dataset_size_mb", self.max_dataset_size_mb),
+            ("max_trainings_per_day", self.max_trainings_per_day),
         ]
     }
 
@@ -258,22 +265,47 @@ mod tests {
         assert_eq!(Value::Object(free), json!({
             "max_skus": 100, "max_users": 2, "max_locations": 1, "max_sessions": 3,
             "max_api_keys": 0, "max_api_calls_per_day": 0, "max_concurrent_jobs": 8,
-            "max_dataset_size_mb": 25}));
+            "max_dataset_size_mb": 25, "max_trainings_per_day": 1}));
         let paid = tenant_limits(&tenant("paid", json!({})));
         assert_eq!(Value::Object(paid), json!({
-            "max_skus": 500, "max_users": 3, "max_locations": 2, "max_sessions": 20,
+            "max_skus": 1000, "max_users": 5, "max_locations": 3, "max_sessions": 20,
             "max_api_keys": 3, "max_api_calls_per_day": 2000, "max_concurrent_jobs": 8,
-            "max_dataset_size_mb": 100}));
+            "max_dataset_size_mb": 100, "max_trainings_per_day": 10}));
         let corp = tenant_limits(&tenant("corporate", json!({})));
         assert_eq!(Value::Object(corp), json!({
             "max_skus": null, "max_users": null, "max_locations": null, "max_sessions": null,
             "max_api_keys": null, "max_api_calls_per_day": null, "max_concurrent_jobs": 8,
-            "max_dataset_size_mb": 2000}));
+            "max_dataset_size_mb": 2000, "max_trainings_per_day": null}));
         let demo = tenant_limits(&tenant("demo", json!({})));
         assert_eq!(Value::Object(demo), json!({
             "max_skus": 30, "max_users": 1, "max_locations": 2, "max_sessions": 2,
             "max_api_keys": 0, "max_api_calls_per_day": 0, "max_concurrent_jobs": 1,
-            "max_dataset_size_mb": 5}));
+            "max_dataset_size_mb": 5, "max_trainings_per_day": 1}));
+    }
+
+    /// Every `PlanDef(...)` number in plans.py, re-read from the source.
+    #[test]
+    fn plan_table_matches_the_python_source() {
+        let src = include_str!("../../backend/entitlements/plans.py");
+        let body = src.split("PLANS: dict[str, PlanDef] = {").nth(1).unwrap();
+        for (py_name, tier) in [("FREE", FREE), ("PAID", PAID), ("CORPORATE", CORPORATE), ("DEMO", DEMO)] {
+            let block = body.split(&format!("{py_name}: PlanDef(")).nth(1).unwrap().split("
+    ),").next().unwrap();
+            let p = plan(tier).unwrap();
+            let mut seen = 0;
+            for (field, value) in p.limit_fields() {
+                let line = block.lines().find(|l| l.trim_start().starts_with(&format!("{field}="))).unwrap();
+                let raw = line.split('=').nth(1).unwrap().trim().trim_end_matches(',');
+                let py = match raw {
+                    "None" => None,
+                    "_MAX_CONCURRENT_JOBS" => Some(MAX_CONCURRENT_JOBS),
+                    n => Some(n.parse::<i64>().unwrap()),
+                };
+                assert_eq!(py, value, "{tier}.{field}");
+                seen += 1;
+            }
+            assert_eq!(seen, 9);
+        }
     }
 
     #[test]

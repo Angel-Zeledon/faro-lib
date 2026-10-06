@@ -248,7 +248,9 @@ def make_fixture(py: str, secret: str) -> Fixture:
 
 
 def erase_fixture(py: str, fx: Fixture) -> None:
-    r = http(py, "DELETE", f"{API}/tenant", token=fx.admin_token, body={"confirm": "DELETE"})
+    # A fresh token: the login one may have expired during a long run.
+    token = mint_access_token(fx.secret, fx.admin_id, fx.tenant_id, "admin")
+    r = http(py, "DELETE", f"{API}/tenant", token=token, body={"confirm": "DELETE"})
     print(f"\nthrowaway tenant {fx.tenant_id} erased: {r.status}")
 
 
@@ -267,6 +269,13 @@ class Case:
     # Called with (fixture, python Resp, rust Resp, db) -> list of problems.
     state_check: Optional[Callable] = None
     route: str = ""                # which migrated route this exercises
+    # Called with (fixture, db, side) right before EACH side's request, side
+    # being "py" then "rs": resets the state both must start from, and may
+    # snapshot what the Python call left before the Rust call runs.
+    setup: Optional[Callable] = None
+    # Extra request headers; a value "{key_read}" / "{key_write}" is replaced
+    # by the fixture's key.
+    headers: dict = field(default_factory=dict)
 
 
 def today_plus(days: int) -> str:
@@ -383,6 +392,7 @@ def build_cases(fx: Fixture) -> list[Case]:
              body={"status": "cancelled"}, route="POST /committed-demand/{id}/status"),
         Case("cd wrong method", "GET", f"{API}/committed-demand/{{cd}}", route="(405 shape)"),
     ]
+    cases += build_r1_cases(fx)
     return cases
 
 
@@ -457,6 +467,424 @@ def check_nothing_written(fx, rp, rr, db):
     return [] if n == 0 else [f"viewer wrote {n} rows"]
 
 
+# ── Route group R1: preferences, activity, models, alerts, currency, timezone
+
+R1_OTHER_TENANT = "t_contract_nowhere"
+
+
+def _r1_scratch(fx) -> dict:
+    if not hasattr(fx, "r1"):
+        fx.r1 = {}
+    return fx.r1
+
+
+def _r1_exec(db, sql, params=()):
+    cur = db.cursor()
+    cur.execute(sql, params)
+    return cur
+
+
+# Rows the bell and the history read back. Minutes ago, action, status,
+# context. Deliveries 1-3 are one stockout fan-out (email + WhatsApp within
+# 15 minutes of the newest) and a second run 16 minutes older; the rest are
+# system events of every severity and a failed delivery of another kind.
+R1_SEED = [
+    (10, "inventory_alert_email", "success",
+     {"channel": "email", "critical": 3, "warning": 2, "recipient": "a@x.test"}),
+    (11, "inventory_alert_whatsapp", "failed",
+     {"channel": "whatsapp", "reason": "transport_error", "critical": 3, "warning": 2}),
+    (26, "inventory_alert_email", "success", {"critical": 1, "warning": 0}),
+    (30, "training.failed", "success",
+     {"session_id": "s_ct", "session_name": "Contract", "started_by": "u", "severity": "critical",
+      "kind": "training", "reason": "engine_error"}),
+    (60, "limit.reached", "success",
+     {"limit": "max_skus", "ceiling": 100, "severity": "warning", "kind": "limit",
+      "reason": "plan_limit_reached", "reason_params": {"limit": "max_skus"}}),
+    (120, "monthly_roi_email", "failed", {"reason": "not_configured", "month": "2026-09"}),
+    (180, "data.stock_imported", "success",
+     {"rows_read": 10, "rows_written": 10, "severity": "info", "kind": "data", "secret": "x"}),
+    (240, "training.blocked", "failed",
+     {"session_id": "s_ct2", "issues": 2, "severity": "warning", "kind": "training",
+      "reason": "data_gate_blocked"}),
+    (300, "supplier_lead_time_alert_email", "success", {"suppliers": ["A", "B"], "channel": "fax"}),
+    (360, "data_freshness_reminder_whatsapp", "success",
+     {"sales_age_days": 9, "stock_age_days": None, "silent_warehouses": 1}),
+]
+
+
+def r1_seed_alerts(fx, db, side):
+    """Seed the throwaway tenant's activity_logs once (both sides read it)."""
+    sc = _r1_scratch(fx)
+    if sc.get("seeded"):
+        return
+    for i, (mins, action, status, ctx) in enumerate(R1_SEED):
+        _r1_exec(db, """INSERT INTO activity_logs (id, tenant_id, user_id, action, resource, context, status, created_at)
+                        VALUES (%s, %s, %s, %s, NULL, %s::jsonb, %s, NOW() - make_interval(mins => %s))""",
+                 (f"act_ct{secrets.token_hex(4)}", fx.tenant_id, fx.admin_id, action, json.dumps(ctx), status, mins))
+    sc["seeded"] = True
+
+
+# preferences ---------------------------------------------------------------
+
+def _prefs_row(db, user_id):
+    r = _r1_exec(db, "SELECT tenant_id, language, theme, dm_sms_enabled FROM user_preferences WHERE user_id = %s",
+                 (user_id,)).fetchone()
+    return None if r is None else dict(zip(("tenant_id", "language", "theme", "dm_sms_enabled"), r))
+
+
+def r1_prefs_reset(user_attr, preset=None):
+    """Before each side: snapshot what Python left (before Rust runs), then
+    reset the user's row to `preset` (None = no row, i.e. the defaults)."""
+    def setup(fx, db, side):
+        user_id = getattr(fx, user_attr)
+        if side == "rs":
+            _r1_scratch(fx)[f"prefs_py_{user_id}"] = _prefs_row(db, user_id)
+        _r1_exec(db, "DELETE FROM user_preferences WHERE user_id = %s", (user_id,))
+        if preset is not None:
+            _r1_exec(db, """INSERT INTO user_preferences (user_id, tenant_id, language, theme, dm_sms_enabled)
+                            VALUES (%s, %s, %s, %s, %s)""", (user_id, fx.tenant_id, *preset))
+    return setup
+
+
+def r1_prefs_check(user_attr, expect):
+    def check(fx, rp, rr, db):
+        user_id = getattr(fx, user_attr)
+        a, b = _r1_scratch(fx).get(f"prefs_py_{user_id}"), _prefs_row(db, user_id)
+        problems = [] if a == b else [f"user_preferences differ: python={a} rust={b}"]
+        if expect is not None and b != expect(fx):
+            problems.append(f"user_preferences not as expected: {b}")
+        return problems
+    return check
+
+
+# alerts/read ----------------------------------------------------------------
+
+def r1_check_mark_read(fx, rp, rr, db):
+    rows = _r1_exec(db, """SELECT user_id, resource, context, status FROM activity_logs
+                           WHERE tenant_id = %s AND action = 'alerts_marked_read' AND user_id = %s
+                           ORDER BY created_at DESC LIMIT 2""", (fx.tenant_id, fx.viewer_id)).fetchall()
+    if len(rows) != 2:
+        return [f"expected one marker row per side, found {len(rows)}"]
+    return [] if rows[0] == rows[1] else [f"marker rows differ: {rows}"]
+
+
+# tenant settings (currency / timezone) --------------------------------------
+
+def _settings(db, tenant_id):
+    r = _r1_exec(db, "SELECT settings FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
+    return r[0] if r else None
+
+
+def r1_settings_reset(key, value=None, *, remove=False):
+    """Before each side: snapshot (rs), then put settings[key] back to `value`
+    (or drop the key), keeping every other key as it was."""
+    def setup(fx, db, side):
+        if side == "py":
+            _r1_scratch(fx)["audit_before"] = len(_audit_rows(db, fx.tenant_id, 10_000))
+        if side == "rs":
+            _r1_scratch(fx)["settings_py"] = _settings(db, fx.tenant_id)
+        if remove:
+            _r1_exec(db, "UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb) - %s WHERE id = %s",
+                     (key, fx.tenant_id))
+        else:
+            _r1_exec(db, """UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb)
+                            || jsonb_build_object(%s, %s::jsonb) WHERE id = %s""",
+                     (key, json.dumps(value), fx.tenant_id))
+    return setup
+
+
+def _audit_rows(db, tenant_id, n=2):
+    return _r1_exec(db, """SELECT user_id, resource, context, status FROM activity_logs
+                           WHERE tenant_id = %s AND action = 'audit.config.changed'
+                           ORDER BY created_at DESC LIMIT %s""", (tenant_id, n)).fetchall()
+
+
+def r1_check_currency_write(expected_code):
+    def check(fx, rp, rr, db):
+        problems = []
+        a, b = _r1_scratch(fx).get("settings_py"), _settings(db, fx.tenant_id)
+        if a != b:
+            problems.append(f"tenants.settings differ: python={a} rust={b}")
+        if rp.status != 200 or rr.status != 200:
+            return problems + [f"expected 200 on both sides: python={rp.status} rust={rr.status}"]
+        if (b or {}).get("currency") != expected_code:
+            problems.append(f"settings.currency is {(b or {}).get('currency')!r}")
+        rows = _audit_rows(db, fx.tenant_id)
+        if len(rows) != 2 or rows[0] != rows[1]:
+            problems.append(f"audit rows differ or are missing: {rows}")
+        return problems
+    return check
+
+
+def r1_check_no_audit_and_settings(fx, rp, rr, db):
+    """A refused write changed nothing: settings as the setup left them and
+    no audit row added by either side."""
+    problems = []
+    a, b = _r1_scratch(fx).get("settings_py"), _settings(db, fx.tenant_id)
+    if a != b:
+        problems.append(f"tenants.settings changed: python={a} rust={b}")
+    n = len(_audit_rows(db, fx.tenant_id, 10_000)) - _r1_scratch(fx).get("audit_before", 0)
+    if n:
+        problems.append(f"{n} audit row(s) written by a refused call")
+    return problems
+
+
+def r1_set_tier(tier, quota=None):
+    """Put the throwaway tenant on `tier` (and `quota`) before each side."""
+    def setup(fx, db, side):
+        _r1_exec(db, "UPDATE tenants SET tier = %s, quota = %s::jsonb WHERE id = %s",
+                 (tier, json.dumps(quota or {}), fx.tenant_id))
+    return setup
+
+
+def r1_seed_trainings(fx, db, side):
+    """Training jobs the daily counter must and must not count, seeded once.
+    Every job is COMPLETED or FAILED, never QUEUED: the worker only claims
+    QUEUED rows, so nothing here is ever picked up."""
+    sc = _r1_scratch(fx)
+    if sc.get("trainings"):
+        return
+    tag = secrets.token_hex(3)
+    for name, backtest in (("base", False), ("bt", True)):
+        _r1_exec(db, """INSERT INTO sessions (id, tenant_id, name, status, is_backtest)
+                        VALUES (%s, %s, %s, 'COMPLETED', %s)""",
+                 (f"ses_ct{name}{tag}", fx.tenant_id, f"contract {name}", backtest))
+    jobs = [  # (session, status, started, created minutes ago)
+        ("base", "COMPLETED", True, 1),        # counted
+        ("base", "FAILED", False, 1),          # not: failed before a worker started it
+        ("bt", "COMPLETED", True, 1),          # not: back-test
+        ("base", "COMPLETED", True, 60 * 48),  # not: two days ago
+    ]
+    for i, (sess, status, started, mins) in enumerate(jobs):
+        _r1_exec(db, """INSERT INTO jobs (id, tenant_id, session_id, created_by, status, created_at, started_at)
+                        VALUES (%s, %s, %s, %s, %s, NOW() - make_interval(mins => %s),
+                                CASE WHEN %s THEN NOW() - make_interval(mins => %s) END)""",
+                 (f"job_ct{i}{tag}", fx.tenant_id, f"ses_ct{sess}{tag}", fx.admin_id, status, mins,
+                  started, mins))
+    sc["trainings"] = True
+
+
+def r1_check_one_training(fx, rp, rr, db):
+    got = [r.body["data"]["usage"].get("trainings_today") if r.status == 200 else None for r in (rp, rr)]
+    return [] if got == [1, 1] else [f"trainings_today python={got[0]} rust={got[1]} (expected 1)"]
+
+
+def r1_both(*setups):
+    def setup(fx, db, side):
+        for s in setups:
+            s(fx, db, side)
+    return setup
+
+
+def build_r1_cases(fx: Fixture) -> list[Case]:
+    other = "raw:Bearer " + mint_access_token(fx.secret, fx.admin_id, R1_OTHER_TENANT, "admin")
+    me_prefs, me_act = f"{API}/me/preferences", f"{API}/me/activity"
+    cur, tz = f"{API}/tenant/currency", f"{API}/tenant/timezone"
+    defaults_for = lambda lang, theme, sms: (lambda f: {  # noqa: E731
+        "tenant_id": f.tenant_id, "language": lang, "theme": theme, "dm_sms_enabled": sms})
+    R = {
+        "prefs_get": "GET /me/preferences", "prefs_patch": "PATCH /me/preferences",
+        "act": "GET /me/activity", "act_types": "GET /me/activity/action-types",
+        "models": "GET /models", "alerts": "GET /alerts", "alerts_act": "GET /alerts/activity",
+        "kinds": "GET /alerts/kinds", "read": "POST /alerts/read",
+        "cur_get": "GET /tenant/currency", "cur_patch": "PATCH /tenant/currency",
+        "tz_get": "GET /tenant/timezone",
+    }
+    seed = r1_seed_alerts
+    return [
+        # ── models (unauthenticated) ───────────────────────────────────────
+        Case("r1 models no auth", "GET", f"{API}/models", who="none", route=R["models"]),
+        Case("r1 models garbage auth", "GET", f"{API}/models", who="raw:Bearer abc.def", route=R["models"]),
+        Case("r1 models read key", "GET", f"{API}/models", who="key_read", route=R["models"]),
+        # ── preferences ────────────────────────────────────────────────────
+        Case("r1 prefs get defaults viewer", "GET", me_prefs, who="viewer", route=R["prefs_get"],
+             setup=r1_prefs_reset("viewer_id")),
+        Case("r1 prefs patch viewer", "PATCH", me_prefs, who="viewer", body={"language": "en"},
+             route=R["prefs_patch"], setup=r1_prefs_reset("viewer_id"),
+             state_check=r1_prefs_check("viewer_id", defaults_for("en", "dark", False))),
+        Case("r1 prefs get stored viewer", "GET", me_prefs, who="viewer", route=R["prefs_get"]),
+        Case("r1 prefs patch analyst all lax", "PATCH", me_prefs, who="analyst",
+             body={"language": "en", "theme": "light", "dm_sms_enabled": "yes"},
+             route=R["prefs_patch"], setup=r1_prefs_reset("analyst_id"),
+             state_check=r1_prefs_check("analyst_id", defaults_for("en", "light", True))),
+        Case("r1 prefs patch admin partial nulls", "PATCH", me_prefs,
+             body={"language": "en", "theme": None}, route=R["prefs_patch"],
+             setup=r1_prefs_reset("admin_id", ("es", "light", True)),
+             state_check=r1_prefs_check("admin_id", defaults_for("en", "light", True))),
+        Case("r1 prefs patch empty body object", "PATCH", me_prefs, body={}, route=R["prefs_patch"],
+             setup=r1_prefs_reset("admin_id"),
+             state_check=r1_prefs_check("admin_id", defaults_for("es", "dark", False))),
+        Case("r1 prefs patch bad language", "PATCH", me_prefs, body={"language": "fr", "theme": "blue"},
+             route=R["prefs_patch"]),
+        Case("r1 prefs patch bad theme", "PATCH", me_prefs, body={"language": "es", "theme": "blue"},
+             route=R["prefs_patch"]),
+        Case("r1 prefs patch validation", "PATCH", me_prefs,
+             body={"language": 3, "theme": ["x"], "dm_sms_enabled": "maybe"}, route=R["prefs_patch"]),
+        Case("r1 prefs patch no body", "PATCH", me_prefs, route=R["prefs_patch"]),
+        Case("r1 prefs patch list body", "PATCH", me_prefs, body=[1], route=R["prefs_patch"]),
+        Case("r1 prefs patch text body", "PATCH", me_prefs, raw_body=b"language=en",
+             content_type="text/plain", route=R["prefs_patch"]),
+        Case("r1 prefs patch invalid json no auth", "PATCH", me_prefs, who="none", raw_body=b"{x",
+             route=R["prefs_patch"], volatile={"ctx", "loc"}),
+        Case("r1 prefs patch no auth", "PATCH", me_prefs, who="none", body={"language": "en"},
+             route=R["prefs_patch"]),
+        Case("r1 prefs patch read key", "PATCH", me_prefs, who="key_read", body={"language": "en"},
+             route=R["prefs_patch"]),
+        Case("r1 prefs patch write key", "PATCH", me_prefs, who="key_write", body={"language": "en"},
+             route=R["prefs_patch"]),
+        Case("r1 prefs get read key", "GET", me_prefs, who="key_read", route=R["prefs_get"]),
+        Case("r1 prefs get no auth", "GET", me_prefs, who="none", route=R["prefs_get"]),
+        Case("r1 prefs get expired", "GET", me_prefs, who="expired", route=R["prefs_get"]),
+        Case("r1 prefs get wrong tenant", "GET", me_prefs, who=other, route=R["prefs_get"],
+             setup=r1_prefs_reset("admin_id", ("en", "light", True))),
+        Case("r1 prefs patch wrong tenant", "PATCH", me_prefs, who=other, body={"theme": "light"},
+             route=R["prefs_patch"], setup=r1_prefs_reset("admin_id", ("en", "dark", True)),
+             state_check=r1_prefs_check("admin_id", None)),
+        # ── alerts (reads first, on seeded rows, before anyone marks read) ──
+        Case("r1 alerts admin", "GET", f"{API}/alerts", route=R["alerts"], setup=seed),
+        Case("r1 alerts viewer limit 2", "GET", f"{API}/alerts?limit=2", who="viewer", route=R["alerts"]),
+        Case("r1 alerts read key", "GET", f"{API}/alerts", who="key_read", route=R["alerts"]),
+        Case("r1 alerts limit repeated", "GET", f"{API}/alerts?limit=1&limit=3", route=R["alerts"]),
+        Case("r1 alerts limit 0", "GET", f"{API}/alerts?limit=0", route=R["alerts"]),
+        Case("r1 alerts limit 101", "GET", f"{API}/alerts?limit=101", route=R["alerts"]),
+        Case("r1 alerts limit text", "GET", f"{API}/alerts?limit=5.5", route=R["alerts"]),
+        Case("r1 alerts limit 5.00", "GET", f"{API}/alerts?limit=5.00", route=R["alerts"]),
+        Case("r1 alerts no auth", "GET", f"{API}/alerts?limit=0", who="none", route=R["alerts"]),
+        Case("r1 alerts wrong tenant", "GET", f"{API}/alerts", who=other, route=R["alerts"]),
+        Case("r1 alerts activity", "GET", f"{API}/alerts/activity", route=R["alerts_act"]),
+        Case("r1 alerts activity viewer page", "GET", f"{API}/alerts/activity?limit=2&offset=1",
+             who="viewer", route=R["alerts_act"]),
+        Case("r1 alerts activity read key", "GET", f"{API}/alerts/activity", who="key_read",
+             route=R["alerts_act"]),
+        Case("r1 alerts activity kind", "GET", f"{API}/alerts/activity?kind=stockout_digest",
+             route=R["alerts_act"]),
+        Case("r1 alerts activity unknown kind", "GET", f"{API}/alerts/activity?kind=nope&limit=7",
+             route=R["alerts_act"]),
+        Case("r1 alerts activity blank kind", "GET", f"{API}/alerts/activity?kind=", route=R["alerts_act"]),
+        Case("r1 alerts activity critical", "GET", f"{API}/alerts/activity?severity=critical",
+             route=R["alerts_act"]),
+        Case("r1 alerts activity warning", "GET", f"{API}/alerts/activity?severity=warning",
+             route=R["alerts_act"]),
+        Case("r1 alerts activity info+kind", "GET", f"{API}/alerts/activity?severity=info&kind=data",
+             route=R["alerts_act"]),
+        Case("r1 alerts activity training critical", "GET",
+             f"{API}/alerts/activity?kind=training&severity=critical", route=R["alerts_act"]),
+        Case("r1 alerts activity bad severity", "GET", f"{API}/alerts/activity?severity=bogus",
+             route=R["alerts_act"]),
+        Case("r1 alerts activity blank severity", "GET", f"{API}/alerts/activity?severity=",
+             route=R["alerts_act"]),
+        Case("r1 alerts activity three errors", "GET",
+             f"{API}/alerts/activity?limit=0&offset=x&severity=CRITICAL", route=R["alerts_act"]),
+        Case("r1 alerts activity huge offset", "GET",
+             f"{API}/alerts/activity?offset=99999999999999999999", route=R["alerts_act"]),
+        Case("r1 alerts activity no auth", "GET", f"{API}/alerts/activity", who="none", route=R["alerts_act"]),
+        Case("r1 alerts kinds", "GET", f"{API}/alerts/kinds", who="viewer", route=R["kinds"]),
+        Case("r1 alerts kinds read key", "GET", f"{API}/alerts/kinds", who="key_read", route=R["kinds"]),
+        Case("r1 alerts kinds no auth", "GET", f"{API}/alerts/kinds", who="none", route=R["kinds"]),
+        Case("r1 alerts read viewer", "POST", f"{API}/alerts/read", who="viewer", route=R["read"],
+             volatile={"last_read_at"}, state_check=r1_check_mark_read),
+        Case("r1 alerts after read viewer", "GET", f"{API}/alerts", who="viewer", route=R["alerts"]),
+        Case("r1 alerts read junk body", "POST", f"{API}/alerts/read", who="viewer", raw_body=b"{nope",
+             route=R["read"], volatile={"last_read_at"}, state_check=r1_check_mark_read),
+        Case("r1 alerts read read key", "POST", f"{API}/alerts/read", who="key_read", route=R["read"]),
+        Case("r1 alerts read write key", "POST", f"{API}/alerts/read", who="key_write", route=R["read"]),
+        Case("r1 alerts read no auth", "POST", f"{API}/alerts/read", who="none", route=R["read"]),
+        Case("r1 alerts read wrong method", "GET", f"{API}/alerts/read", route=R["read"]),
+        # ── /me/activity (after the markers, so the feed has the viewer's rows)
+        Case("r1 me activity admin", "GET", me_act, route=R["act"]),
+        Case("r1 me activity page", "GET", f"{me_act}?limit=2&offset=1", route=R["act"]),
+        Case("r1 me activity action", "GET", f"{me_act}?action=training.failed", route=R["act"]),
+        Case("r1 me activity blank action", "GET", f"{me_act}?action=&limit=3", route=R["act"]),
+        Case("r1 me activity viewer", "GET", me_act, who="viewer", route=R["act"]),
+        Case("r1 me activity errors", "GET", f"{me_act}?limit=201&offset=-1", route=R["act"]),
+        Case("r1 me activity limit text", "GET", f"{me_act}?limit=+0_5", route=R["act"]),
+        Case("r1 me activity read key", "GET", me_act, who="key_read", route=R["act"]),
+        Case("r1 me activity no auth", "GET", me_act, who="none", route=R["act"]),
+        Case("r1 me activity wrong tenant", "GET", me_act, who=other, route=R["act"]),
+        Case("r1 me action types admin", "GET", f"{me_act}/action-types", route=R["act_types"]),
+        Case("r1 me action types viewer", "GET", f"{me_act}/action-types", who="viewer", route=R["act_types"]),
+        Case("r1 me action types write key", "GET", f"{me_act}/action-types", who="key_write",
+             route=R["act_types"]),
+        # ── currency ───────────────────────────────────────────────────────
+        Case("r1 currency get default viewer", "GET", cur, who="viewer", route=R["cur_get"],
+             setup=r1_settings_reset("currency", remove=True)),
+        Case("r1 currency get read key", "GET", cur, who="key_read", route=R["cur_get"]),
+        Case("r1 currency get no auth", "GET", cur, who="none", route=R["cur_get"]),
+        Case("r1 currency get wrong tenant", "GET", cur, who=other, route=R["cur_get"]),
+        Case("r1 currency patch admin", "PATCH", cur, body={"code": " usd "}, route=R["cur_patch"],
+             setup=r1_settings_reset("currency", remove=True), state_check=r1_check_currency_write("USD")),
+        Case("r1 currency patch from usd", "PATCH", cur, body={"code": "eur"}, route=R["cur_patch"],
+             setup=r1_settings_reset("currency", "USD"), state_check=r1_check_currency_write("EUR")),
+        Case("r1 currency get stored", "GET", cur, who="analyst", route=R["cur_get"]),
+        Case("r1 currency patch analyst denied", "PATCH", cur, who="analyst", body={"code": "MXN"},
+             route=R["cur_patch"], setup=r1_settings_reset("currency", "USD"),
+             state_check=r1_check_no_audit_and_settings),
+        Case("r1 currency patch viewer denied", "PATCH", cur, who="viewer", body={"code": "MXN"},
+             route=R["cur_patch"], setup=r1_settings_reset("currency", "USD"),
+             state_check=r1_check_no_audit_and_settings),
+        Case("r1 currency patch write key", "PATCH", cur, who="key_write", body={"code": "MXN"},
+             route=R["cur_patch"]),
+        Case("r1 currency patch read key", "PATCH", cur, who="key_read", body={"code": "MXN"},
+             route=R["cur_patch"]),
+        Case("r1 currency patch no auth", "PATCH", cur, who="none", body={"code": "MXN"}, route=R["cur_patch"]),
+        Case("r1 currency patch unsupported", "PATCH", cur, body={"code": " xyz"}, route=R["cur_patch"],
+             setup=r1_settings_reset("currency", "USD"), state_check=r1_check_no_audit_and_settings),
+        Case("r1 currency patch not a string", "PATCH", cur, body={"code": 5}, route=R["cur_patch"]),
+        Case("r1 currency patch missing code", "PATCH", cur, body={"currency": "USD"}, route=R["cur_patch"]),
+        Case("r1 currency patch no body", "PATCH", cur, route=R["cur_patch"]),
+        Case("r1 currency patch invalid json viewer", "PATCH", cur, who="viewer", raw_body=b"[1,",
+             route=R["cur_patch"], volatile={"ctx", "loc"}),
+        Case("r1 currency get unsupported stored", "GET", cur, route=R["cur_get"],
+             setup=r1_settings_reset("currency", "XXX")),
+        Case("r1 currency get list stored", "GET", cur, route=R["cur_get"],
+             setup=r1_settings_reset("currency", ["USD"])),
+        # ── timezone (GET only; PATCH stays on Python) ─────────────────────
+        Case("r1 timezone get default", "GET", tz, who="viewer", route=R["tz_get"],
+             setup=r1_settings_reset("timezone", remove=True)),
+        Case("r1 timezone get utc", "GET", tz, who="analyst", route=R["tz_get"],
+             setup=r1_settings_reset("timezone", "UTC")),
+        Case("r1 timezone get unsupported", "GET", tz, route=R["tz_get"],
+             setup=r1_settings_reset("timezone", "Mars/Base")),
+        Case("r1 timezone get empty string", "GET", tz, route=R["tz_get"],
+             setup=r1_settings_reset("timezone", "")),
+        Case("r1 timezone get read key", "GET", tz, who="key_read", route=R["tz_get"],
+             setup=r1_settings_reset("timezone", "Europe/Madrid")),
+        Case("r1 timezone get no auth", "GET", tz, who="none", route=R["tz_get"]),
+        Case("r1 timezone get wrong tenant", "GET", tz, who=other, route=R["tz_get"]),
+        # ── entitlements on main's plans (Full 1000/5/3, daily training cap) ─
+        Case("r1 entitlements free + trainings", "GET", f"{API}/entitlements", route="GET /entitlements",
+             setup=r1_both(r1_set_tier("free"), r1_seed_trainings), state_check=r1_check_one_training),
+        Case("r1 entitlements paid", "GET", f"{API}/entitlements", who="viewer", route="GET /entitlements",
+             setup=r1_set_tier("paid")),
+        Case("r1 entitlements corporate", "GET", f"{API}/entitlements", route="GET /entitlements",
+             setup=r1_set_tier("corporate")),
+        Case("r1 entitlements corporate read key", "GET", f"{API}/entitlements", who="key_read",
+             route="GET /entitlements", setup=r1_set_tier("corporate")),
+        Case("r1 entitlements demo", "GET", f"{API}/entitlements", route="GET /entitlements",
+             setup=r1_set_tier("demo")),
+        Case("r1 entitlements quota override", "GET", f"{API}/entitlements", route="GET /entitlements",
+             setup=r1_set_tier("paid", {"max_trainings_per_day": 2, "max_skus": None, "mcp_access": False})),
+        Case("r1 entitlements tz madrid", "GET", f"{API}/entitlements", route="GET /entitlements",
+             setup=r1_both(r1_set_tier("free"), r1_settings_reset("timezone", "Europe/Madrid")),
+             state_check=r1_check_one_training),
+        Case("r1 entitlements unknown tier", "GET", f"{API}/entitlements", route="GET /entitlements",
+             setup=r1_set_tier("enterprise")),
+        # ── X-API-Key header (guards._BearerOrApiKey) ──────────────────────
+        Case("r1 x-api-key read key", "GET", cur, who="none", headers={"X-API-Key": "{key_read}"},
+             route=R["cur_get"], setup=r1_set_tier("free")),
+        Case("r1 x-api-key on internal route", "GET", me_prefs, who="none",
+             headers={"X-API-Key": "{key_read}"}, route=R["prefs_get"]),
+        Case("r1 x-api-key jwt is no credential", "GET", cur, who="none",
+             headers={"X-API-Key": "eyJhbGciOi.x.y"}, route=R["cur_get"]),
+        Case("r1 x-api-key loses to authorization", "GET", cur, who="viewer",
+             headers={"X-API-Key": "sk_live_nope"}, route=R["cur_get"]),
+        Case("r1 x-api-key unknown key", "GET", cur, who="none",
+             headers={"X-API-Key": "sk_live_nope"}, route=R["cur_get"]),
+        Case("r1 x-api-key write on read key", "PATCH", cur, who="none",
+             headers={"X-API-Key": "{key_read}"}, body={"code": "USD"}, route=R["cur_patch"]),
+    ]
+
+
 # ── Runner ───────────────────────────────────────────────────────────────────
 
 def auth_for(fx: Fixture, who: str) -> Optional[str]:
@@ -470,6 +898,11 @@ def auth_for(fx: Fixture, who: str) -> Optional[str]:
         return mint_access_token(fx.secret, fx.admin_id, fx.tenant_id, "admin", token_type="refresh")
     if who == "hs512":
         return mint_access_token(fx.secret, fx.admin_id, fx.tenant_id, "admin", alg="HS512")
+    # Person tokens live 15 minutes and a full run over a slow tunnel takes
+    # longer: mint a fresh one per case (same claims as the login's).
+    people = {"admin": fx.admin_id, "analyst": fx.analyst_id, "viewer": fx.viewer_id}
+    if who in people:
+        return mint_access_token(fx.secret, people[who], fx.tenant_id, who)
     return fx.token(who)
 
 
@@ -527,9 +960,15 @@ def run(args) -> int:
                 continue
             path_py = case.path.replace("{cd}", cd["py"])
             path_rs = case.path.replace("{cd}", cd["rs"])
+            extra = {k: (fx.tokens.get(v[1:-1], "") if v.startswith("{") else v)
+                     for k, v in case.headers.items()}
             kw = dict(token=token, body=case.body, raw_body=case.raw_body,
-                      content_type=case.content_type)
+                      content_type=case.content_type, headers=extra)
+            if case.setup is not None and db is not None:
+                case.setup(fx, db, "py")
             rp = http(args.python, case.method, path_py, **kw)
+            if case.setup is not None and db is not None:
+                case.setup(fx, db, "rs")
             rr = http(args.rust, case.method, path_rs, **kw)
             problems = []
             if rp.status != rr.status:
