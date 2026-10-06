@@ -1,0 +1,23 @@
+# DISABLED EXAMPLE. Rename to 37-audit.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# Audit trail reads (backend-rs/src/routes/audit.rs):
+#   GET /api/v1/audit, GET /api/v1/audit/filters, GET /api/v1/audit/export
+# The export is streamed CSV and writes its own `audit.export.audit_log` row.
+# GET /api/v1/sessions/{id}/manifest and GET /api/v1/training/run-durations,
+# declared in the same Python file, are NOT here and stay on Python.
+
+@rs_audit {
+	method GET
+	path /api/v1/audit /api/v1/audit/filters /api/v1/audit/export
+}
+handle @rs_audit {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

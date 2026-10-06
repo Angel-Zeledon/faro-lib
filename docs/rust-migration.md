@@ -117,6 +117,22 @@ notification, no file storage, no hub.
   Python), api_keys, audit. Each one needs the audit-route
   catalogue (`backend/audit/catalog.py`) ported for its paths, because
   `AuditMiddleware` writes `audit.*` rows for catalogued routes.
+* Done (R3): webhooks, the 2592d73 API (scoped hooks, delivery log):
+  `GET`, `GET /events`, `DELETE /{id}`, `POST /{id}/enable`,
+  `POST /{id}/rotate-secret`, `GET /{id}/deliveries`. `POST /webhooks`
+  (its SSRF guard resolves the target host), `POST /{id}/test` (wakes the
+  in-process delivery worker) and delivery stay Python;
+  api-keys `POST`, `GET`, `GET /usage`, `DELETE /{id}`; audit `GET`,
+  `GET /filters`, `GET /export`. The whole audit catalogue
+  (`backend/audit/catalog.py`, ROUTES and LEGACY) is ported as data in
+  `backend-rs/src/audit/`, with the middleware's row writer
+  (`audit::record`), so the next catalogued route only calls it.
+  `GET /sessions/{id}/manifest` and `GET /training/run-durations` (same
+  Python file, tag `sessions`, lineage) are not part of it.
+* Next, in this order: preferences, activity, alerts, timezone, currency,
+  models, spike_edits, po_payments, po_cancellation, sessions (read and
+  archive/restore; not `/train`), schedule. Each catalogued one calls
+  `audit::record` with its route template.
 
 **Wave 2: DB plus side effects and security.** auth / social / sso, users,
 messages, po_approvals, entitlements upgrade-request, trial, freshness,
@@ -391,3 +407,88 @@ During the run the SSH tunnel dropped once. Rust `/health` answered
 `200 {"status":"degraded","database":false}` while it was down, and
 recovered by itself. The Python dev API hung and returned `503 server_busy`
 until its pooled connections recycled.
+
+### R3: webhooks, API keys, audit trail (contract runs, local, 2026-10-06)
+
+`run_r3()` in the harness is a sequence, not a flat list: keys minted by one
+service are used on the other, revoked on one and tried on both. Each run
+uses two throwaway tenants (the second for the wrong-tenant cases), erased
+by id at the end.
+
+Two runs, because the webhook API Rust implements (2592d73, scoped hooks and
+a delivery log) is on the webhooks branch, not on main:
+
+* **A. Dev database, Python dev API on `:8011` running main** (restarted
+  2026-10-06). The dev database has no 2592d73 webhook columns, so the
+  webhooks section skipped itself.
+* **B. Throwaway database `rust_r3`**, Python from this worktree (main +
+  the webhooks branch) on `:8012`, which self-migrated it, and Rust pointed
+  at the same database. The database was dropped afterwards.
+
+| Route | A: pass | B: pass |
+|---|---|---|
+| `GET /webhooks` (per scope, X-API-Key) | skipped | 7/7 |
+| `GET /webhooks/events` | skipped | 3/3 |
+| `GET /webhooks/{id}/deliveries` (filters, 422, scoped 404, other tenant) | skipped | 6/6 |
+| `POST /webhooks/{id}/enable` | skipped | 4/4 |
+| `POST /webhooks/{id}/rotate-secret` | skipped | 3/3 + 1 skip |
+| `DELETE /webhooks/{id}` (with its delivery log, other tenant, literal `/events`) | skipped | 8/8 |
+| `POST /api-keys` (cross-service auth, warehouse scope, validation) | 24/24 + 2 skip | 25/25 + 2 skip |
+| `GET /api-keys` (no reveal, no hash) | 4/4 | 4/4 |
+| `GET /api-keys/usage` | 10/10 | 10/10 |
+| `DELETE /api-keys/{id}` (revoked on one, refused by both) | 9/9 | 9/9 |
+| `GET /audit` (incl. the scoped-admin refusal) | 15/15 | 15/15 |
+| `GET /audit/filters` | 3/4 + 1 stale | 4/4 |
+| `GET /audit/export` (CSV byte-identical; export rows checked) | 6/6 | 6/6 |
+
+No R3 case failed in either run. The one STALE in A is the filter
+vocabulary: main lacks the three `webhook.*` audit entries of the webhooks
+branch, which Rust carries; against the webhooks-branch Python (B) it is a
+plain PASS. (The other failures in both runs are foundation routes:
+`/health`, `/entitlements` and committed demand have drifted from main since
+the foundation was written; see the foundation section.)
+
+What the state checks assert, straight from the database: the stored
+`key_hash` is `sha256(key)` and nothing else in the row contains the raw key;
+`last4` is the key's; no response carries a key hash; a rotated webhook
+secret is `token_hex(32)`, is the stored one, and is in neither the list nor
+its audit row; the `account.api_key_created` / `_revoked`,
+`audit.webhook.*`, `audit.export.audit_log` and `api_write` rows each side
+wrote are identical (actor, status, context); each unfiltered export lists
+its own audit row first and its note's `rows` matches the file; refused
+writes (viewer, out-of-scope warehouse, 500 on a huge expiry) wrote nothing;
+the other tenant's webhook and key survive a delete aimed at them and the
+key still authenticates.
+
+**SKIP**: the `max_api_keys` ceiling (`PLAN_LIMIT_REACHED`, plus its
+`limit.reached` event) and `plan_feature_locked` on `POST /api-keys`,
+`/rotate-secret` and `/enable`, because `TESTING_MODE=true` turns both off
+on both sides. Ported line for line (`limits.rs`: the same
+`pg_advisory_xact_lock(hashtext(tenant))` as `limit_guard`, count and insert
+in one transaction, so a Python and a Rust writer of one tenant also queue
+behind each other) and unit-tested (`limits::tests`, `entitlements::tests`).
+
+R3 divergences (none reachable through the gateway matchers, which name
+methods and exact paths):
+
+1. axum answers `HEAD` on the GET routes; FastAPI answers 405.
+2. Audit date filters: the common speedate grammar is ported (dates,
+   RFC 3339 datetimes at midnight or not, integer unix timestamps). Exotic
+   inputs (fractional timestamps, odd offsets) can get a different
+   `ctx.error` wording; the type and the 422 match.
+3. Orders Python leaves to a `set` or to equal sort keys (two actors with
+   the same label in `/audit/filters`, two keys with the same calls and name
+   in `/api-keys/usage`) may come out in a different order.
+4. `expires_in_days` or `offset` beyond 64 bits: Python sends it to Postgres
+   and gets a 500; Rust answers the same 500 without the query.
+
+Shared-file changes made by R3: `auth/mod.rs` reads `X-API-Key` (every
+route gains it, as in Python), `Cargo.toml` adds `getrandom` (OS randomness
+for keys and secrets) and `futures-util` (the streamed export). New modules:
+`audit/` (catalogue, writer, reader), `auth/warehouse_scope.rs`, `limits.rs`,
+`pyjson.rs` (Python's `json.dumps` / `repr` for the CSV and the 4000-byte
+note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
+
+Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
+release rebuild after a change to the crate 59 s, release build including
+dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.

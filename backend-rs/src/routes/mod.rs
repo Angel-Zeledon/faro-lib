@@ -1,3 +1,5 @@
+pub mod api_keys;
+pub mod audit;
 pub mod committed_demand;
 pub mod entitlements;
 pub mod health;
@@ -5,8 +7,9 @@ pub mod r1;
 pub mod schedule;
 pub mod sessions;
 pub mod spike_edits;
+pub mod webhooks;
 
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
@@ -39,6 +42,20 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/committed-demand/{commitment_id}/status", post(committed_demand::set_status))
         .merge(r1::router())
         .merge(sessions::router()).merge(schedule::router()).merge(spike_edits::router())
+        // R3: API keys, webhook subscriptions, audit trail reads.
+        .route("/api/v1/api-keys", post(api_keys::create).get(api_keys::list))
+        .route("/api/v1/api-keys/usage", get(api_keys::usage).delete(api_keys::revoke_literal_usage))
+        .route("/api/v1/api-keys/{key_id}", delete(api_keys::revoke))
+        // POST /webhooks (SSRF host check) and POST /webhooks/{id}/test stay Python.
+        .route("/api/v1/webhooks", get(webhooks::list))
+        .route("/api/v1/webhooks/events", get(webhooks::list_event_types).delete(webhooks::delete_literal_events))
+        .route("/api/v1/webhooks/{webhook_id}", delete(webhooks::delete))
+        .route("/api/v1/webhooks/{webhook_id}/rotate-secret", post(webhooks::rotate_secret))
+        .route("/api/v1/webhooks/{webhook_id}/enable", post(webhooks::enable))
+        .route("/api/v1/webhooks/{webhook_id}/deliveries", get(webhooks::deliveries))
+        .route("/api/v1/audit", get(audit::list))
+        .route("/api/v1/audit/filters", get(audit::filters_vocabulary))
+        .route("/api/v1/audit/export", get(audit::export))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }

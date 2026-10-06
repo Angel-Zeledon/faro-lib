@@ -27,6 +27,10 @@ dotenvy = "0.15"
 percent-encoding = "2"
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 tracing = "0.1"
+# R3: OS randomness for sk_live_ keys and webhook secrets (Python: `secrets`),
+# and the streamed audit CSV export. Both are already in the dependency graph.
+getrandom = "0.2"
+futures-util = { version = "0.3", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "std", "ansi"] }
 
 [profile.release]
