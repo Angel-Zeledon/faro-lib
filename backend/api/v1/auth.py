@@ -337,7 +337,7 @@ async def login(body: LoginRequest, request: Request):
     # The tenant's IP allowlist, after the password matched (so a refusal tells
     # nobody guessing addresses which tenants filter by network).
     from backend.ip_allowlist import service as ip_allowlist
-    ip_allowlist.enforce(request, entry["tenant_id"], user["id"], "login")
+    ip_allowlist.enforce(request, entry["tenant_id"], user["id"])
 
     user_status = user.get("status", "active")
     if user_status != "active":
@@ -399,7 +399,7 @@ async def refresh(body: RefreshRequest, request: Request):
 
     # A session opened inside the office must not keep renewing outside it.
     from backend.ip_allowlist import service as ip_allowlist
-    ip_allowlist.enforce(request, user["tenant_id"], user["id"], "refresh")
+    ip_allowlist.enforce(request, user["tenant_id"], user["id"])
 
     # Re-read from the row, not from the old token: a user who verifies mid
     # session gets the full-access claim on their next refresh (≤15 min) with

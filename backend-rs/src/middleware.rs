@@ -51,6 +51,11 @@ pub async fn request_context(State(state): State<AppState>, mut req: Request, ne
         .map(str::to_string)
         .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
     let actors = RequestActors::default();
+    actors.set_peer(
+        req.extensions()
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .map(|c| c.0.ip()),
+    );
     req.extensions_mut().insert(actors.clone());
 
     let mut response = next.run(req).await;

@@ -3,6 +3,7 @@ pub mod audit;
 pub mod committed_demand;
 pub mod entitlements;
 pub mod health;
+pub mod ip_allowlist;
 pub mod r1;
 pub mod schedule;
 pub mod sessions;
@@ -12,7 +13,7 @@ pub mod po_cancellation;
 pub mod po_payments;
 pub mod signal_thresholds;
 
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
@@ -70,6 +71,11 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // IP allowlist admin routes: Rust only, no Python twin.
+        .route("/api/v1/ip-allowlist", get(ip_allowlist::get))
+        .route("/api/v1/ip-allowlist/entries", post(ip_allowlist::add_entry))
+        .route("/api/v1/ip-allowlist/entries/{entry_id}", delete(ip_allowlist::delete_entry))
+        .route("/api/v1/ip-allowlist/policy", put(ip_allowlist::set_policy))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }

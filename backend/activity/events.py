@@ -480,14 +480,15 @@ EVENTS: dict[str, EventSpec] = {
 
     # IP allowlist (backend/ip_allowlist/, and the Rust admin routes). A change
     # to who may reach the account is a warning (an admin did it, and "I did not
-    # do that" is only noticed if it is shown). `change` is one of added,
-    # removed, enabled, disabled. A refusal names the address that was turned
-    # away and the door it knocked on (`via`: login, refresh, token, api_key).
+    # do that" is only noticed if it is shown). What was done is carried by the
+    # reason (entry added / removed, policy enabled / disabled), so no detail is
+    # a bare code the feed would print untranslated. A refusal names the address
+    # that was turned away; the actor says whether it was a person or a key.
     "account.ip_allowlist_changed": EventSpec(
-        kind="account", severity=WARNING, detail_keys=("change", "cidr", "label"),
+        kind="account", severity=WARNING, detail_keys=("cidr", "label"),
     ),
     "account.ip_access_refused": EventSpec(
-        kind="account", severity=WARNING, detail_keys=("ip", "via"),
+        kind="account", severity=WARNING, detail_keys=("ip",),
     ),
 
     # ── Paying for the plan (backend/billing/) ───────────────────────────────
@@ -563,6 +564,11 @@ REASONS: tuple[str, ...] = (
     "scim_request_refused",
     # the caller's address is outside the tenant's IP allowlist
     "ip_not_in_allowlist",
+    # an account admin changed the IP allowlist (written by the Rust routes)
+    "ip_allowlist_entry_added",
+    "ip_allowlist_entry_removed",
+    "ip_allowlist_enabled",
+    "ip_allowlist_disabled",
     # imports
     "rows_rejected_by_validation",
     "duplicate_rows_collapsed",

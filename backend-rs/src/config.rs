@@ -30,6 +30,9 @@ pub struct Settings {
     pub bind: String,
     /// Rust-only: pool size. The Python pool is 20; the two share one Postgres.
     pub db_max_connections: u32,
+    /// `TRUSTED_PROXY_HOPS` (same variable and meaning as Python): how many
+    /// reverse proxies append to `X-Forwarded-For` in front of this service.
+    pub trusted_proxy_hops: u32,
 }
 
 #[derive(Debug)]
@@ -106,6 +109,12 @@ impl Settings {
             .get("RUST_API_DB_MAX_CONNECTIONS")
             .and_then(|v| v.parse().ok())
             .unwrap_or(10);
+        let trusted_proxy_hops = match raw.get("TRUSTED_PROXY_HOPS").map(|v| v.trim()) {
+            None | Some("") => 0,
+            Some(v) => v
+                .parse::<u32>()
+                .map_err(|_| ConfigError(format!("TRUSTED_PROXY_HOPS is not a non-negative integer: {v:?}")))?,
+        };
         Ok(Settings {
             raw,
             secret_key,
@@ -118,6 +127,7 @@ impl Settings {
             integrations_secret_key,
             bind,
             db_max_connections,
+            trusted_proxy_hops,
         })
     }
 

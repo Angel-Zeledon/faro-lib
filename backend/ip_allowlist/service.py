@@ -98,7 +98,7 @@ def policy_entries(tenant_id: str) -> Optional[list[str]]:
     )]
 
 
-def _record_refusal(tenant_id: str, actor_id: str, ip_text: str, via: str) -> None:
+def _record_refusal(tenant_id: str, actor_id: str, ip_text: str) -> None:
     recent = query_one(
         "SELECT 1 AS x FROM activity_logs WHERE tenant_id = %s AND action = %s "
         "AND context->>'ip' = %s "
@@ -110,13 +110,13 @@ def _record_refusal(tenant_id: str, actor_id: str, ip_text: str, via: str) -> No
     from backend.activity.events import record_event
     record_event(
         tenant_id, actor_id, REFUSAL_EVENT,
-        details={"ip": ip_text, "via": via}, reason="ip_not_in_allowlist",
+        details={"ip": ip_text}, reason="ip_not_in_allowlist",
     )
 
 
-def enforce(conn: HTTPConnection, tenant_id: str, actor_id: str, via: str) -> None:
+def enforce(conn: HTTPConnection, tenant_id: str, actor_id: str) -> None:
     """Refuse (403 `ip_not_allowed`) a caller outside the tenant's enabled
-    allowlist. `via` is the door: login, refresh, token, api_key, websocket."""
+    allowlist. `actor_id` is the person, or `api_key:<id>` for an integration."""
     entries = policy_entries(tenant_id)
     if entries is None:
         return
@@ -124,7 +124,7 @@ def enforce(conn: HTTPConnection, tenant_id: str, actor_id: str, via: str) -> No
     if ip is not None and any(covers(c, ip) for c in entries):
         return
     ip_text = str(ip) if ip is not None else "unknown"
-    _record_refusal(tenant_id, actor_id, ip_text, via)
+    _record_refusal(tenant_id, actor_id, ip_text)
     raise AppError(
         "ip_not_allowed",
         "This account only accepts access from approved IP addresses.",

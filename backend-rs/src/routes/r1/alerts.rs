@@ -152,6 +152,8 @@ const EVENTS: &[Spec] = &[
     ("account.scim_token_created", "account", WARNING, &["manage_admins", "rotated"]),
     ("account.scim_token_revoked", "account", WARNING, &[]),
     ("account.scim_settings_changed", "account", WARNING, &["manage_admins"]),
+    ("account.ip_allowlist_changed", "account", WARNING, &["cidr", "label"]),
+    ("account.ip_access_refused", "account", WARNING, &["ip"]),
     ("billing.plan_activated", "billing", INFO, &["provider", "tier", "previous_tier"]),
     ("billing.plan_downgraded", "billing", CRITICAL, &["provider", "tier", "previous_tier"]),
     ("billing.payment_failed", "billing", WARNING, &["provider", "grace_until"]),

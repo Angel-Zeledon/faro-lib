@@ -94,7 +94,7 @@ def _authenticate_api_key(credential: str, scope: dict | None = None) -> Current
         from starlette.requests import HTTPConnection
         ip_allowlist.enforce(
             HTTPConnection(scope), key["tenant_id"],
-            api_key_auth.actor_id(key["id"]), "api_key",
+            api_key_auth.actor_id(key["id"]),
         )
 
     # Plan entitlement, checked on EVERY call and not only when the key was
@@ -260,7 +260,7 @@ def get_current_user(
     # The tenant's IP allowlist, after the token proved who this is and before
     # the actor is published: a refused request has no actor to record.
     from backend.ip_allowlist import service as ip_allowlist
-    ip_allowlist.enforce(request, payload["tenant_id"], payload["sub"], "token")
+    ip_allowlist.enforce(request, payload["tenant_id"], payload["sub"])
 
     from backend.auth.actor_context import set_person_actor
     set_person_actor(request.scope, payload["tenant_id"], payload["sub"])

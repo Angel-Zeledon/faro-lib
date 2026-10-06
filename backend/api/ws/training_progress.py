@@ -46,7 +46,7 @@ async def training_progress_ws(websocket: WebSocket, job_id: str):
     from backend.errors import AppError
     from backend.ip_allowlist import service as ip_allowlist
     try:
-        ip_allowlist.enforce(websocket, tenant_id, str(payload.get("sub", "")), "websocket")
+        ip_allowlist.enforce(websocket, tenant_id, str(payload.get("sub", "")))
     except AppError:
         await websocket.close(code=4003, reason="Unauthorized")
         return
