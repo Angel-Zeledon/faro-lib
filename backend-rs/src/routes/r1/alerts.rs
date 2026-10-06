@@ -143,6 +143,7 @@ const EVENTS: &[Spec] = &[
     ("account.sso_config_removed", "account", WARNING, &["issuer"]),
     ("account.warehouse_scope_changed", "account", WARNING, &["email", "warehouses"]),
     ("webhook.auto_disabled", "account", WARNING, &["host"]),
+    ("audit_stream.auto_disabled", "account", WARNING, &["host"]),
     ("account.scim_user_created", "account", INFO, &["email", "role"]),
     ("account.scim_user_updated", "account", INFO, &["email", "changes"]),
     ("account.scim_user_deactivated", "account", WARNING, &["email"]),

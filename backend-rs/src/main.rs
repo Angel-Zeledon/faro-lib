@@ -19,6 +19,7 @@ mod pyjson;
 mod query;
 mod routes;
 mod service_config;
+mod ssrf;
 mod state;
 mod validation;
 mod webhook_events;

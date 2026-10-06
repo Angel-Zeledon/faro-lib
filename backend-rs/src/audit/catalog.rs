@@ -68,6 +68,13 @@ pub const ROUTES: &[AuditRoute] = &[
     r("POST", "/webhooks/{webhook_id}/rotate-secret", "webhook.secret_rotated", "webhook", Some("webhook_id")),
     r("POST", "/webhooks/{webhook_id}/test", "webhook.tested", "webhook", Some("webhook_id")),
     r("POST", "/webhooks/{webhook_id}/enable", "webhook.enabled", "webhook", Some("webhook_id")),
+    r("PUT", "/audit-stream", "audit_stream.configured", "audit_stream", None),
+    r("DELETE", "/audit-stream", "audit_stream.deleted", "audit_stream", None),
+    r("POST", "/audit-stream/enable", "audit_stream.enabled", "audit_stream", None),
+    r("POST", "/audit-stream/disable", "audit_stream.disabled", "audit_stream", None),
+    r("POST", "/audit-stream/rotate-secret", "audit_stream.secret_rotated", "audit_stream", None),
+    r("POST", "/audit-stream/replay", "audit_stream.replayed", "audit_stream", None),
+    r("POST", "/audit-stream/test", "audit_stream.tested", "audit_stream", None),
     r("POST", "/documents", "document.created", "document", None),
     r("DELETE", "/documents/{doc_id}", "document.deleted", "document", Some("doc_id")),
     r("POST", "/feedback", "feedback.sent", "feedback", None),
@@ -155,6 +162,7 @@ pub const LEGACY: &[(&str, &str, &str)] = &[
     ("billing.plan_downgraded", "billing", "billing.plan_downgraded"),
     ("billing.payment_failed", "billing", "billing.payment_failed"),
     ("billing.subscription_changed", "billing", "billing.subscription_changed"),
+    ("audit_stream.auto_disabled", "audit_stream", "audit_stream.auto_disabled"),
 ];
 
 fn sorted_unique(mut v: Vec<String>) -> Vec<String> {
@@ -230,11 +238,11 @@ mod tests {
     fn vocabularies_have_the_python_sizes() {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
-        assert_eq!(ROUTES.len(), 56);
-        assert_eq!(LEGACY.len(), 73);
-        assert_eq!(target_types().len(), 28);
-        assert_eq!(audit_actions().len(), 108);
-        assert_eq!(all_stored_actions().len(), 112);
+        assert_eq!(ROUTES.len(), 63);
+        assert_eq!(LEGACY.len(), 74);
+        assert_eq!(target_types().len(), 29);
+        assert_eq!(audit_actions().len(), 116);
+        assert_eq!(all_stored_actions().len(), 120);
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),

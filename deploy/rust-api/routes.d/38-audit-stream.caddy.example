@@ -1,0 +1,56 @@
+# DISABLED EXAMPLE. Rename to 38-audit-stream.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to take it away.
+#
+# Continuous audit export to the customer's SIEM
+# (backend-rs/src/routes/audit_stream.rs). NEW routes: there is no Python twin,
+# so there is NO FAILOVER. This group lists only `api-rs`; with the Rust
+# container down, or this file in off/, these paths answer Python's own
+# 404 {"detail":"Not Found"} and the Settings card shows "could not be loaded".
+# Delivery itself is NOT affected by that: the Python worker loop
+# (backend/audit_stream/service.py, component `audit-stream`) keeps sending to
+# every destination already configured, because it reads the database, not
+# these routes.
+#
+#   GET    /api/v1/audit-stream               state, cursor, lag
+#   PUT    /api/v1/audit-stream               create / change the destination
+#   DELETE /api/v1/audit-stream
+#   GET    /api/v1/audit-stream/deliveries    the delivery log
+#   POST   /api/v1/audit-stream/{enable,disable,rotate-secret,replay,test}
+#
+# path_regexp per method: a trailing slash or any other path keeps reaching
+# Python and its own 404 / 405.
+
+@rs_audit_stream_read {
+	method GET
+	path_regexp ^/api/v1/audit-stream(/deliveries)?$
+}
+@rs_audit_stream_write {
+	method PUT DELETE
+	path_regexp ^/api/v1/audit-stream$
+}
+@rs_audit_stream_actions {
+	method POST
+	path_regexp ^/api/v1/audit-stream/(enable|disable|rotate-secret|replay|test)$
+}
+handle @rs_audit_stream_read {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_audit_stream_write {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_audit_stream_actions {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
