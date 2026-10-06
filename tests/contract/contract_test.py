@@ -1590,6 +1590,203 @@ def build_w1b_manifest_cases(fx: Fixture, ph: dict) -> list[Case]:
         Case("w1b durations wrong method", "DELETE", D, route=dur),
     ]
 
+
+# ── Wave 2: the message outbox ───────────────────────────────────────────────
+#
+# No Rust ROUTE writes to the outbox yet, so this section drives the Rust
+# WRITER directly (an ignored cargo test, `outbox::tests::writes_what_python_writes`)
+# and Python's own `outbox.enqueue` with the same scenarios, then compares the
+# rows each wrote. After that Python's drain runs over both sets of rows with
+# the senders replaced by a recorder (nothing is mailed) and the outcomes are
+# compared again: what a row written by Rust turns into is exactly what a row
+# written by Python turns into.
+
+OUTBOX_SCENARIOS = [
+    {"label": "otp", "channel": "email", "kind": "password_reset_otp", "recipient": " Who@Example.com ",
+     "params": {"code": "123456"}},
+    {"label": "verification", "channel": "email", "kind": "verification", "recipient": "v@example.com",
+     "params": {"verify_url": "https://app.test/verify?token=abc", "full_name": "Vera Ñ"}},
+    {"label": "reset", "channel": "email", "kind": "password_reset", "recipient": "r@example.com",
+     "params": {"reset_url": "https://app.test/reset?token=def"}},
+    {"label": "setup", "channel": "email", "kind": "account_setup", "recipient": "s@example.com",
+     "params": {"setup_url": "https://app.test/setup?token=ghi"}},
+    {"label": "change code", "channel": "email", "kind": "change_password_code", "recipient": "c@example.com",
+     "params": {"code": "654321"}},
+    {"label": "approval request", "channel": "email", "kind": "po_approval_request", "recipient": "a@example.com",
+     "params": {"po_log_id": "po-nowhere", "amount": 1234.5, "requester_id": "usr_x", "approver_id": "usr_y"}},
+    {"label": "approval decision", "channel": "email", "kind": "po_approval_decision", "recipient": "d@example.com",
+     "params": {"po_log_id": "po-nowhere", "amount": 99, "approved": False, "comment": "too much é",
+                "decider_id": "usr_z"}},
+    {"label": "whatsapp code", "channel": "whatsapp", "kind": "verification_code", "recipient": "+50688887777",
+     "params": {"code": "222222"}},
+    {"label": "trial address", "channel": "email", "kind": "password_reset_otp",
+     "recipient": "demo-abc123@stockai.demo", "params": {"code": "000000"}},
+    {"label": "dedupe first", "channel": "email", "kind": "password_reset_otp", "recipient": "dd@example.com",
+     "params": {"code": "1"}, "dedupe_key": "once"},
+    {"label": "dedupe second", "channel": "email", "kind": "password_reset_otp", "recipient": "dd@example.com",
+     "params": {"code": "1"}, "dedupe_key": "once"},
+    {"label": "ttl clamped", "channel": "email", "kind": "password_reset_otp", "recipient": "t@example.com",
+     "params": {"code": "1"}, "ttl_seconds": 10 ** 9},
+    {"label": "ttl floor", "channel": "email", "kind": "password_reset_otp", "recipient": "t2@example.com",
+     "params": {"code": "1"}, "ttl_seconds": 0},
+    {"label": "refused unknown kind", "channel": "email", "kind": "nope", "recipient": "x@example.com", "params": {}},
+    {"label": "refused wrong channel", "channel": "whatsapp", "kind": "password_reset_otp",
+     "recipient": "+50688887777", "params": {"code": "1"}},
+    {"label": "refused missing param", "channel": "email", "kind": "verification", "recipient": "x@example.com",
+     "params": {"full_name": "n"}},
+    {"label": "refused null param", "channel": "email", "kind": "password_reset_otp", "recipient": "x@example.com",
+     "params": {"code": None}},
+    {"label": "refused extra param", "channel": "email", "kind": "password_reset_otp", "recipient": "x@example.com",
+     "params": {"code": "1", "extra": True}},
+    {"label": "refused params list", "channel": "email", "kind": "password_reset_otp", "recipient": "x@example.com",
+     "params": ["code"]},
+    {"label": "refused blank recipient", "channel": "email", "kind": "password_reset_otp", "recipient": "   ",
+     "params": {"code": "1"}},
+    {"label": "refused unknown channel", "channel": "sms", "kind": "password_reset_otp", "recipient": "x",
+     "params": {"code": "1"}},
+]
+
+OUTBOX_PY_SCRIPT = r"""
+import json, sys
+sys.path.insert(0, ".")
+from backend.config import settings
+from backend.db.connection import init_pool
+init_pool(settings.database_url, min_conn=1, max_conn=2)
+from backend.notifications import outbox
+tenant, side, scenarios = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+for s in scenarios:
+    s = dict(s)
+    label = s.pop("label")
+    ids = outbox.enqueue(tenant, s["channel"], s["kind"], s["recipient"], s["params"],
+                         created_by=s.get("created_by"), dedupe_key=s.get("dedupe_key"),
+                         ttl_seconds=s.get("ttl_seconds", outbox.DEFAULT_TTL_SECONDS))
+    print("ROW", label, ids or "none")
+"""
+
+OUTBOX_DRAIN_SCRIPT = r"""
+import json, sys
+sys.path.insert(0, ".")
+from backend.config import settings
+from backend.db.connection import init_pool
+init_pool(settings.database_url, min_conn=1, max_conn=2)
+from backend.notifications import email, whatsapp, outbox
+sent = []
+email._send = lambda to, subject, html, attachment=None, tenant_id=None: sent.append(["email", to, subject])
+whatsapp._send = lambda to, body, media_url=None, tenant_id=None: sent.append(["whatsapp", to, body])
+email.is_configured = lambda tenant_id=None: True
+whatsapp.is_configured = lambda tenant_id=None: True
+total = 0
+while True:
+    n = outbox.process_due()
+    total += n
+    if n == 0:
+        break
+print("DRAINED", total)
+print("SENT", json.dumps(sorted(sent)))
+"""
+
+
+def _outbox_rows(db, tenant_id: str, side: str):
+    cur = db.cursor()
+    cur.execute("""SELECT channel, kind, recipient, params, status, attempts, last_error, created_by, dedupe_key,
+                          ROUND(EXTRACT(EPOCH FROM (expires_at - created_at)))::int, sent_at IS NOT NULL
+                     FROM outbound_messages WHERE tenant_id = %s AND created_by = %s
+                    ORDER BY created_at, kind, recipient""", (tenant_id, f"ct-{side}"))
+    out = []
+    for r in cur.fetchall():
+        r = list(r)
+        r[7] = "ct"                                        # the writer's tag, per side
+        r[8] = r[8].rsplit("-", 1)[0] if r[8] else None   # the per-side suffix of the dedupe key
+        out.append(r)
+    return out
+
+
+def run_outbox(args, fx: Fixture, db) -> list:
+    import subprocess
+
+    def verdict(name, problems):
+        return (Case(name, "-", "-", route="outbox"), "FAIL" if problems else "PASS", problems)
+
+    if db is None:
+        print("outbox cases skipped: they need --db")
+        return []
+    if args.only and args.only not in "outbox":
+        return []
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    env = {**os.environ, **(read_env_file(args.env_file) if args.env_file else {}), "DATABASE_URL": args.db}
+    tenant = fx.tenant_id
+    cur = db.cursor()
+    cur.execute("DELETE FROM outbound_messages WHERE tenant_id = %s", (tenant,))
+    ids: dict[str, dict[str, str]] = {"py": {}, "rs": {}}
+    for side in ("rs", "py"):
+        scenarios = []
+        for s in OUTBOX_SCENARIOS:
+            s = dict(s)
+            s["created_by"] = f"ct-{side}"
+            if s.get("dedupe_key"):
+                s["dedupe_key"] = f"{s['dedupe_key']}-{side}"
+            scenarios.append(s)
+        payload = json.dumps(scenarios)
+        if side == "rs":
+            cmd = ["cargo", "test", "--manifest-path", os.path.join(root, "backend-rs", "Cargo.toml"), "--quiet",
+                   "outbox::tests::writes_what_python_writes", "--", "--ignored", "--nocapture"]
+            run_env = {**env, "OUTBOX_TEST_DATABASE_URL": args.db, "OUTBOX_TEST_TENANT": tenant,
+                       "OUTBOX_TEST_SCENARIOS": payload}
+        else:
+            cmd = [sys.executable, "-c", OUTBOX_PY_SCRIPT, tenant, side, payload]
+            run_env = env
+        proc = subprocess.run(cmd, cwd=root, env=run_env, capture_output=True, text=True, timeout=900)
+        if proc.returncode != 0:
+            return [verdict(f"outbox {side} writer ran", [f"exit {proc.returncode}: {(proc.stderr or proc.stdout)[-600:]}"])]
+        for line in proc.stdout.splitlines():
+            if line.startswith("ROW "):
+                label, _, mid = line[4:].rpartition(" ")
+                ids[side][label] = mid
+    results = []
+    # 1. Which scenarios were accepted.
+    problems = []
+    for s in OUTBOX_SCENARIOS:
+        a, b = ids["py"].get(s["label"]), ids["rs"].get(s["label"])
+        if (a == "none") != (b == "none") or a is None or b is None:
+            problems.append(f"{s['label']}: python={a} rust={b}")
+    results.append(verdict("outbox acceptance matches", problems))
+    accepted = [s["label"] for s in OUTBOX_SCENARIOS if ids["py"].get(s["label"]) not in (None, "none")]
+    results.append(verdict("outbox refused requests write nothing",
+                           [] if all(not s["label"].startswith("refused") or ids["rs"][s["label"]] == "none"
+                                     for s in OUTBOX_SCENARIOS) else ["a refused scenario was queued by Rust"]))
+    # 2. The rows themselves.
+    rp, rr = _outbox_rows(db, tenant, "py"), _outbox_rows(db, tenant, "rs")
+    results.append(verdict("outbox rows are identical",
+                           [] if rp == rr else [f"python={rp}", f"rust={rr}"]))
+    results.append(verdict("outbox queued the expected number of rows",
+                           [] if len(rr) == len(accepted) else [f"{len(rr)} rows for {len(accepted)} accepted scenarios"]))
+    # 3. The drain turns both into the same outcome.
+    proc = subprocess.run([sys.executable, "-c", OUTBOX_DRAIN_SCRIPT], cwd=root, env=env, capture_output=True,
+                          text=True, timeout=600)
+    if proc.returncode != 0:
+        return results + [verdict("outbox drain ran", [f"exit {proc.returncode}: {(proc.stderr or proc.stdout)[-600:]}"])]
+    sent = json.loads(next(l for l in proc.stdout.splitlines() if l.startswith("SENT "))[5:])
+    after_p, after_r = _outbox_rows(db, tenant, "py"), _outbox_rows(db, tenant, "rs")
+    results.append(verdict("outbox drain: same outcome per row", [] if after_p == after_r else
+                           [f"python={after_p}", f"rust={after_r}"]))
+    problems = []
+    statuses = sorted((r[1], r[2], r[4], r[6]) for r in after_r)
+    if not all(r[3] == {} for r in after_r):
+        problems.append("a final row kept its params")
+    if ("verification_code", "+50688887777", "sent", None) not in statuses:
+        problems.append(f"the WhatsApp row did not send: {statuses}")
+    if ("password_reset_otp", "demo-abc123@stockai.demo", "abandoned", "trial_address") not in statuses:
+        problems.append("the trial address was not abandoned")
+    if len(sent) != 2 * sum(1 for r in after_r if r[4] == "sent"):
+        problems.append(f"{len(sent)} sends for {sum(1 for r in after_r if r[4] == 'sent')} sent rows per side")
+    mails = [s for s in sent if s[1] == "Who@Example.com"]
+    if len(mails) != 2 or not all(m[2] for m in mails):
+        problems.append(f"the otp mail (recipient stripped) was not sent once per side: {mails}")
+    results.append(verdict("outbox drain: what is sent and what is refused", problems))
+    cur.execute("DELETE FROM outbound_messages WHERE tenant_id = %s", (tenant,))
+    return results
+
+
 # ── R3: webhooks CRUD, API keys, audit trail reads ───────────────────────────
 #
 # A sequence rather than a flat list: keys minted by one service are used on
@@ -3254,6 +3451,7 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        results += run_outbox(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

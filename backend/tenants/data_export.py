@@ -121,6 +121,11 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
      "id, tenant_id, webhook_id, event_id, event_type, is_test, status, attempts, "
      "last_status_code, last_error, next_attempt_at, created_at, last_attempt_at, "
      "delivered_at"),
+    # The message outbox without its payload: `params` can hold a one-time
+    # code or a link while a row is pending (scrubbed when it ends).
+    ("outbound_messages", "outbound_messages",
+     "id, tenant_id, channel, kind, recipient, status, attempts, next_attempt_at, expires_at, "
+     "last_error, created_by, created_at, last_attempt_at, sent_at"),
     ("user_permissions", "user_permissions", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
     # Microsoft / Apple is the person's data, so it travels with the export.
@@ -298,6 +303,7 @@ _DELETE_ORDER: list[str] = [
     "inbound_email_messages",
     "inbound_email_addresses",
     "webhook_deliveries",
+    "outbound_messages",
     "webhook_transition_state",
     "webhooks",
     "api_usage_daily",

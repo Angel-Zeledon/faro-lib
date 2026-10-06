@@ -611,6 +611,25 @@ def _webhook_delivery_loop() -> None:
             time.sleep(_WEBHOOK_POLL_SECONDS)
 
 
+# Message outbox (backend/notifications/outbox.py): the table other services
+# (the Rust API) write their email / WhatsApp requests into. Polled like the
+# webhook queue, with the same SKIP LOCKED claim, so a second instance is harmless.
+_OUTBOX_POLL_SECONDS = 5
+
+
+def _outbox_drain_loop() -> None:
+    log.info("Outbox drain loop started")
+    while True:
+        handled = 0
+        try:
+            from backend.notifications.outbox import process_due
+            handled = process_due()
+        except Exception as e:
+            log.error("Outbox drain error: %s", e, exc_info=True)
+        if handled < 20:
+            time.sleep(_OUTBOX_POLL_SECONDS)
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -625,7 +644,7 @@ def enabled_components() -> list[str]:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
             "operator-digest", "trial-reaper", "billing-sweep",
-            "webhook-deliveries",
+            "webhook-deliveries", "outbox-drain",
         ]
     return components
 
@@ -638,6 +657,7 @@ _COMPONENT_TARGETS = {
     "trial-reaper":       _trial_reaper_loop,
     "billing-sweep":      _billing_sweep_loop,
     "webhook-deliveries": _webhook_delivery_loop,
+    "outbox-drain":       _outbox_drain_loop,
 }
 
 
