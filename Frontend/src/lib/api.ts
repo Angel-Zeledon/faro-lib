@@ -1655,8 +1655,32 @@ export const getAdjustmentValueAdded = (sessionId: string, opts?: RequestOpts) =
   request<import('./types').AdjustmentValueAdded>(
     'GET', `/sessions/${sessionId}/adjustments/value-added`, undefined, opts)
 
-export const sendPOToSuppliers = (poLogId: string) =>
-  request<import('./types').SendPOResult>('POST', `/inventory/po/${poLogId}/send`)
+export const sendPOToSuppliers = (poLogId: string, opts?: { requestConfirmation?: boolean }) =>
+  request<import('./types').SendPOResult>(
+    'POST', `/inventory/po/${poLogId}/send`,
+    // No body when the caller did not choose: the server then sends exactly what
+    // it always sent (no confirmation link).
+    opts?.requestConfirmation === undefined
+      ? undefined
+      : { request_confirmation: opts.requestConfirmation },
+  )
+
+// ── Supplier confirmation link (buyer side) ──────────────────────────────────
+export const getPOConfirmationSummary = () =>
+  request<import('./types').POConfirmationSummary[]>(
+    'GET', '/inventory/po-confirmations', undefined, { silent: true })
+export const getPOConfirmations = (poLogId: string) =>
+  request<import('./types').POConfirmationRequest[]>(
+    'GET', `/inventory/po/${encodeURIComponent(poLogId)}/confirmations`)
+export const acceptPOConfirmation = (poLogId: string, confirmationId: string) =>
+  request<{ changed: boolean }>(
+    'POST', `/inventory/po/${encodeURIComponent(poLogId)}/confirmations/${encodeURIComponent(confirmationId)}/accept`)
+export const reopenPOConfirmationLink = (poLogId: string, requestId: string) =>
+  request<{ changed: boolean }>(
+    'POST', `/inventory/po/${encodeURIComponent(poLogId)}/confirmation-links/${encodeURIComponent(requestId)}/reopen`)
+export const revokePOConfirmationLink = (poLogId: string, requestId: string) =>
+  request<{ changed: boolean }>(
+    'POST', `/inventory/po/${encodeURIComponent(poLogId)}/confirmation-links/${encodeURIComponent(requestId)}/revoke`)
 
 // Undoing a reception or a send. These exist because the WhatsApp assistant
 // was not allowed to record either action while they were irreversible — see

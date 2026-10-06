@@ -1,7 +1,13 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getPOItems, receivePO, sendPOToSuppliers } from '@/lib/api'
-import type { POLogEntry, POItemLine, OverdueReception, POApprovalBadge } from '@/lib/types'
+import { getPOItems, receivePO, sendPOToSuppliers, getPOConfirmationSummary } from '@/lib/api'
+import type {
+  POLogEntry, POItemLine, OverdueReception, POApprovalBadge, POConfirmationSummary,
+} from '@/lib/types'
+import {
+  ConfirmationChip, SupplierConfirmationModal, confirmationNote,
+  readRequestConfirmationPref, writeRequestConfirmationPref,
+} from '@/components/po/SupplierConfirmation'
 import AttentionChip from '@/components/layout/AttentionChip'
 import Spinner from '@/components/ui/Spinner'
 import { useErrorDetail } from '@/components/ui/States'
@@ -379,19 +385,32 @@ export function SendPOButton({ poLogId, suppliersWithoutContact, onSent, approva
         skipped.length > 0 ? `${t('po.send_confirm_skipped')}: ${skipped.join(', ')}.` : '',
       ].filter(Boolean).join(' ')
 
+      // "Ask the supplier to confirm" rides on the send question: on by default
+      // and remembered, so the buyer decides once and can still untick it here.
+      let requestConfirmation = readRequestConfirmationPref()
       const ok = await confirm({
         title: t('po.send_confirm_title'),
         message: lines || t('po.send_confirm_no_suppliers'),
         confirmLabel: t('po.send_confirm_action'),
+        checkbox: {
+          label: t('po.confirm_request'),
+          hint: t('po.confirm_request_hint'),
+          checked: requestConfirmation,
+          onChange: v => { requestConfirmation = v; writeRequestConfirmationPref(v) },
+        },
       })
       if (!ok) { setState('idle'); return }
 
-      const sendRes = await sendPOToSuppliers(poLogId)
+      const sendRes = await sendPOToSuppliers(poLogId, { requestConfirmation })
       const anySent = sendRes.sent.length > 0
       const anySkipped = sendRes.skipped.length > 0
-      const message = !anySent
-        ? t('roi.send_po_none_sent')
-        : anySkipped ? t('roi.send_po_partial') : t('roi.send_po_success')
+      const linkNote = confirmationNote(sendRes, t)
+      const message = [
+        !anySent
+          ? t('roi.send_po_none_sent')
+          : anySkipped ? t('roi.send_po_partial') : t('roi.send_po_success'),
+        linkNote,
+      ].filter(Boolean).join(' ')
       setResult({ ok: anySent, message })
       setState('done')
       if (anySent) onSent?.()
@@ -478,6 +497,17 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
   suppliersWithoutContact?: string[]
 }) {
   const { t, lang } = useLanguage()
+  // Supplier-confirmation status per order (one request for the whole list), and
+  // the order whose answers are open in the panel. A failed load shows no chips
+  // rather than a wrong one; the panel itself reports its own errors.
+  const [confirmations, setConfirmations] = useState<Record<string, POConfirmationSummary>>({})
+  const [confirmationPo, setConfirmationPo] = useState<string | null>(null)
+  const reloadConfirmations = useCallback(() => {
+    getPOConfirmationSummary()
+      .then(rows => setConfirmations(Object.fromEntries(rows.map(r => [r.po_log_id, r]))))
+      .catch(() => { /* chips simply stay absent */ })
+  }, [])
+  useEffect(() => { reloadConfirmations() }, [reloadConfirmations, entries])
   if (entries.length === 0) {
     return (
       <div style={{ padding: '40px 24px', textAlign: 'center', color: C.dim, fontSize: 13 }}>
@@ -599,6 +629,10 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
                         </button>
                       )}
                       <ApprovalChip approval={entry.approval} />
+                      {confirmations[entry.id] && (
+                        <ConfirmationChip summary={confirmations[entry.id]}
+                                          onOpen={() => setConfirmationPo(entry.id)} />
+                      )}
                       <SendPOButton poLogId={entry.id} suppliersWithoutContact={suppliersWithoutContact}
                                     approval={entry.approval} onSent={onUndone} />
                       {/* The everyday actions (receive, send) stay beside the
@@ -637,6 +671,15 @@ export function POHistoryTable({ entries, onReceive, onUndone, suppliersWithoutC
           ))}
         </tbody>
       </table>
+      {confirmationPo && (
+        <SupplierConfirmationModal
+          poId={confirmationPo}
+          onClose={() => setConfirmationPo(null)}
+          // An accepted date moves the order's expected arrival (the overdue
+          // list), so the page reloads what it shows, not just the chips.
+          onChanged={() => { reloadConfirmations(); onUndone?.() }}
+        />
+      )}
     </div>
   )
 }

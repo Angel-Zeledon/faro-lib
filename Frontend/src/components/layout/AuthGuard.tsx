@@ -10,7 +10,10 @@ import { CONTENT_PUBLIC_PATHS } from '@/components/landing/contentPaths'
 // The landing's public subpages are listed too. ConditionalShell already keeps
 // them out of the app shell (and so out of this guard); naming them here means
 // they stay public even if that ever changes.
-const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', '/auth/callback', ...Object.values(SUBPAGE_PATHS), ...LEGAL_PUBLIC_PATHS, ...CONTENT_PUBLIC_PATHS, '/desarrolladores', '/docs']
+const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password', '/prueba', '/auth/callback', ...Object.values(SUBPAGE_PATHS), ...LEGAL_PUBLIC_PATHS, ...CONTENT_PUBLIC_PATHS, '/desarrolladores', '/docs',
+  // The supplier's confirmation page: a link in a message, no account. With the
+  // slash: `/proveedores` (the suppliers screen) is NOT public.
+  '/proveedor/']
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router   = useRouter()

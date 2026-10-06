@@ -85,6 +85,8 @@ INTERNAL_TAGS: dict[str, str] = {
     "forecast-adjustments": "a forecast adjustment is a person's judgement, recorded under their name and graded per person",
     "feedback": "a report names the person who read the confirmation step and pressed Send; a key has no such person",
     "trial": "unauthenticated trial signup",
+    "supplier-portal": "public by design: a supplier answers a purchase order with the link in the message, no account; the link's 256-bit token is the credential, and a key must never read or write it",
+    "inventory-po-confirmations": "accepting a supplier's proposed date moves an order's expected arrival, so it is a person's decision, recorded under their name",
     "billing": "paying for the plan is a person's decision on the provider's own page; a machine key must never start, open or change a payment",
     "billing-webhook": "Stripe's and PayPal's webhooks (authenticated by the provider's signature, not by key) and the public offer the pricing page reads",
     "inbound-email": "the tenant's private sales-by-e-mail address is a credential, and its allow-list is edited by an administrator on the Datos screen",

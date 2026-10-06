@@ -23,7 +23,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from backend.formatting import DEFAULT_CURRENCY
-from backend.notifications.locale import render_es, render_month
+from backend.notifications.locale import render, render_es, render_month
 from backend.service_config.resolver import effective
 
 log = logging.getLogger(__name__)
@@ -896,9 +896,27 @@ def send_po_to_supplier_email(
     pdf_filename: str,
     po_ref: str | None = None,
     tenant_id: str | None = None,
+    confirm_url: str | None = None,
+    confirm_expires_text: str | None = None,
+    language: str = "es",
 ) -> bool:
-    """Send a purchase order's PDF to its supplier. Returns True if sent."""
+    """Send a purchase order's PDF to its supplier. Returns True if sent.
+
+    `confirm_url` (optional) is the supplier's confirmation link — a credential,
+    so it is only ever placed in the message addressed to that supplier."""
     ref = po_ref or po_log_id
+    confirm_html = ""
+    if confirm_url:
+        expiry = (f'<p style="color:{_DIM};font-size:11px;margin:8px 0 0;">'
+                  f'{html_lib.escape(render(language, "po_confirm_email_expiry", date=confirm_expires_text))}</p>'
+                  if confirm_expires_text else "")
+        confirm_html = (
+            f'<p style="color:{_DIM};margin:20px 0 12px;">'
+            f'{html_lib.escape(render(language, "po_confirm_email_text"))}</p>'
+            + _button(render(language, "po_confirm_email_button"),
+                      html_lib.escape(confirm_url, quote=True))
+            + expiry
+        )
     def _row(item: dict) -> str:
         sku = item.get("sku", "")
         name = item.get("display_name") or sku
@@ -934,6 +952,7 @@ def send_po_to_supplier_email(
           {render_es("po_email_body", supplier=supplier_name)}
         </p>
         {table_html}
+        {confirm_html}
         <p style="color:{_DIM};font-size:11px;margin:20px 0 0;">
           {render_es("po_email_reference", reference=ref)}
         </p>
@@ -946,6 +965,42 @@ def send_po_to_supplier_email(
         return True
     except Exception as exc:
         log.error("Failed to send PO email to supplier %s <%s>: %s", supplier_name, to, exc)
+        return False
+
+
+def send_supplier_response_email(
+    *, to: str, supplier_name: str, po_ref: str, confirmed: int, changed: int,
+    declined: int, url: str, language: str = "es", tenant_id: str | None = None,
+) -> bool:
+    """Tell the buyer that a supplier answered the confirmation link. Returns
+    True on success. The supplier's free-text notes are NOT in this message:
+    they are the supplier's words and are read on the order, escaped."""
+    safe_supplier = html_lib.escape(supplier_name)
+    safe_ref = html_lib.escape(po_ref)
+    if changed == 0 and declined == 0:
+        body = render(language, "po_response_email_all_ok",
+                      supplier=safe_supplier, reference=safe_ref)
+    else:
+        body = render(language, "po_response_email_changes",
+                      supplier=safe_supplier, reference=safe_ref,
+                      confirmed=confirmed, changed=changed, declined=declined)
+    html = _base_html(
+        render(language, "po_response_email_title"),
+        f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">
+          {render(language, "po_response_email_title")}
+        </p>
+        <p style="color:{_DIM};margin:0 0 20px;">{body}</p>
+        {_button(render(language, "po_response_email_button"), html_lib.escape(url, quote=True))}
+        """,
+    )
+    try:
+        _send(to, render(language, "po_response_email_subject",
+                         supplier=supplier_name, reference=po_ref),
+              html, tenant_id=tenant_id)
+        return True
+    except Exception as exc:
+        log.error("Failed to send supplier response email to %s: %s", to, exc)
         return False
 
 

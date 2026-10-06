@@ -2415,6 +2415,95 @@ export interface SendPOResult {
   /** Lines whose supplier could not be resolved to a supplier record at all —
    *  previously dropped in silence. */
   unresolved?: { sku: string; supplier: string | null }[]
+  /** Present only when the send asked for confirmation links: which suppliers
+   *  received one, and by which channel. */
+  confirmation_links?:  { supplier: string; email: boolean; whatsapp: boolean }[]
+  /** Suppliers whose link could not be created (the order still went out). */
+  confirmation_failed?: string[]
+}
+
+// ── Supplier confirmation link ────────────────────────────────────────────────
+export type POConfirmationStatus = 'pending' | 'confirmed' | 'changed' | 'declined'
+
+/** One row per order that has a confirmation link (the history chip). */
+export interface POConfirmationSummary {
+  po_log_id:           string
+  status:              POConfirmationStatus
+  /** Proposed changes the buyer has not accepted yet. */
+  pending_acceptance:  number
+  suppliers:           number
+}
+
+export interface POConfirmationLineResponse {
+  confirmation_id: string
+  revision:        number
+  status:          'confirmed' | 'changed' | 'declined'
+  confirmed_qty:   number | null
+  promised_date:   string | null
+  /** The supplier's own words: render as text only, never as HTML. */
+  note:            string | null
+  submitted_at:    string
+  accepted:        boolean
+  accepted_at:     string | null
+  /** A proposed change nobody accepted yet. */
+  acceptable:      boolean
+}
+
+export interface POConfirmationLine {
+  line_id:      string
+  sku:          string
+  name:         string
+  ordered_qty:  number
+  response:     POConfirmationLineResponse | null
+}
+
+export interface POConfirmationRequest {
+  request_id:          string
+  supplier:            string
+  status:              POConfirmationStatus
+  state:               'active' | 'expired' | 'revoked'
+  locked:              boolean
+  submitted_at:        string | null
+  expires_at:          string
+  requested_date:      string | null
+  pending_acceptance:  number
+  lines:               POConfirmationLine[]
+}
+
+// What a supplier sees on /proveedor/<token> (no prices, no stock, no other orders).
+export interface SupplierPortalLine {
+  line_id:        string
+  sku:            string
+  name:           string
+  quantity:       number
+  unit:           string | null
+  requested_date: string | null
+  response: null | {
+    status:        'confirmed' | 'changed' | 'declined'
+    confirmed_qty: number | null
+    promised_date: string | null
+    note:          string | null
+  }
+}
+
+export interface SupplierPortalView {
+  reference:      string
+  buyer:          string | null
+  supplier:       string
+  language:       'es' | 'en'
+  requested_date: string | null
+  expires_at:     string
+  locked:         boolean
+  submitted_at:   string | null
+  lines:          SupplierPortalLine[]
+}
+
+export interface SupplierPortalAnswer {
+  line_id:        string
+  decision:       'confirm' | 'decline'
+  confirmed_qty?: number
+  promised_date?: string
+  note?:          string
 }
 
 // ── Event / promo impact simulation (feature 2.3) ────────────────────────────
@@ -2498,6 +2587,9 @@ export interface OverdueReception {
   // Unified with the semáforo's vocabulary: 'observed' is now 'learned' and
   // 'declared' is 'supplier_rule'. Two words for one question was the bug.
   lead_time_source:  ValueSource
+  /** 'supplier_promise' when the buyer accepted a date the supplier promised
+   *  through the confirmation link; 'model' (or absent) otherwise. */
+  expected_arrival_source?: 'model' | 'supplier_promise'
 }
 
 export interface SupplierScorecardRow {
@@ -2512,6 +2604,11 @@ export interface SupplierScorecardRow {
   lead_time_declarado:  number | null
   deviation_days:      number | null
   on_time_rate:         number | null
+  /** Accepted supplier promises (confirmation link) delivered by the promised
+   *  date. null when no promise was ever accepted and received — never 0. */
+  promise_kept_rate?:      number | null
+  promises_measured?:      number
+  promise_avg_slip_days?:  number | null
   fill_rate:            number | null
   /** null when no ordered line of this supplier carries a unit cost — the same
    *  rule /impacto applies to managed_purchase_value. A confident 0 would read

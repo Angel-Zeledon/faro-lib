@@ -60,6 +60,14 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("inventory_event_multipliers", "inventory_event_multipliers", "*"),
     ("inventory_po_log", "inventory_po_log", "*"),
     ("inventory_po_items", "inventory_po_items", "*"),
+    # Supplier confirmation links. The link's token hash is a credential and is
+    # never exported — who was asked, when, and what they answered is.
+    ("po_confirmation_requests", "po_confirmation_requests",
+     "id, tenant_id, po_log_id, supplier, requested_date, language, expires_at, "
+     "revoked_at, revoked_by, created_by, created_at, token_issued_at, "
+     "last_viewed_at, submitted_at, reopened_at, reopened_by"),
+    ("po_line_confirmations", "po_line_confirmations", "*"),
+    ("po_confirmation_acceptances", "po_confirmation_acceptances", "*"),
     ("inventory_shrinkage", "inventory_shrinkage", "*"),
     ("stock_counts", "stock_counts", "*"),
     ("stock_count_lines", "stock_count_lines", "*"),
@@ -238,6 +246,12 @@ _DELETE_ORDER: list[str] = [
     "spike_edit_applications",
     "spike_edits",
     "sku_analogies",
+    # Supplier confirmation answers, newest dependency first. They cascade from
+    # the tenant, listed because this is the reviewable answer to "what belongs
+    # to a tenant".
+    "po_confirmation_acceptances",
+    "po_line_confirmations",
+    "po_confirmation_requests",
     "inventory_po_items",
     "supplier_lead_time_obs",
     "inventory_po_log",

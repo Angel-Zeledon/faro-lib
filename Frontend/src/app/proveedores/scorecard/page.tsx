@@ -46,6 +46,7 @@ function ScorecardTable({ rows, alerts }: {
   const columns = [
     t('scorecard.col_supplier'), t('scorecard.col_receptions'), t('scorecard.col_real_lead_time'),
     t('scorecard.col_declared'), t('scorecard.col_trend'), t('scorecard.col_on_time'),
+    t('scorecard.col_promise_kept'),
     t('scorecard.col_fill_rate'), t('scorecard.col_purchased_value'), t('scorecard.col_last_reception'),
   ]
 
@@ -144,6 +145,16 @@ function ScorecardTable({ rows, alerts }: {
                     </span>
                   ) : fmtPct(row.on_time_rate)}
                 </Td>
+                {/* Accepted supplier promises kept: how often the goods arrived
+                    by the date the supplier promised and the buyer accepted.
+                    A dash, never 0%, when no promise was ever accepted. */}
+                <Td size="lg" divider={false} style={{ color: C.muted }}>
+                  {row.promise_kept_rate == null ? '—' : (
+                    <span title={t('scorecard.promise_kept_hint', { n: row.promises_measured ?? 0, days: row.promise_avg_slip_days ?? 0 })}>
+                      {fmtPct(row.promise_kept_rate)} <span style={{ color: C.dim, fontSize: 11 }}>({row.promises_measured})</span>
+                    </span>
+                  )}
+                </Td>
                 <Td size="lg" divider={false} style={row.fill_rate_measurable === false ? { color: C.dim } : undefined}>
                   {/* An empty fill rate with orders still in their delivery
                       window says so. The metric used to include every
@@ -231,6 +242,10 @@ function ScorecardCards({ rows, alerts }: {
               <div><div style={label}>{t('scorecard.col_on_time')}</div>
                 <div style={{ ...value, color: row.on_time_measurable === false ? C.dim : onTimeColor }}>
                   {fmtPct(row.on_time_rate)}{row.on_time_measurable === false ? ` ${t('scorecard.rate_provisional')}` : ''}
+                </div></div>
+              <div><div style={label}>{t('scorecard.col_promise_kept')}</div>
+                <div style={{ ...value, color: row.promise_kept_rate == null ? C.dim : C.text }}>
+                  {row.promise_kept_rate == null ? '—' : `${fmtPct(row.promise_kept_rate)} (${row.promises_measured})`}
                 </div></div>
               <div><div style={label}>{t('scorecard.col_fill_rate')}</div>
                 <div style={{ ...value, color: row.fill_rate_measurable === false ? C.dim : C.text }}>

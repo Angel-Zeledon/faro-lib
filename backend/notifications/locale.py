@@ -33,6 +33,21 @@ _ES: dict[str, str] = {
     "po_forward_line":       "  • {name} — {qty}",
     "po_forward_more":       "  … y {n} más",
     "po_forward_footer":     "\nReenvía este mensaje a tu proveedor para confirmar el pedido.",
+    # Supplier confirmation link: the supplier opens it with no account and, per
+    # line, confirms the quantity and a delivery date, proposes another, or
+    # declines. The link is a credential, so it appears only in messages that go
+    # to that supplier.
+    "po_confirm_email_text":   "Para agilizar el pedido, confirma las cantidades y la fecha de entrega de cada línea en este enlace. No necesitas crear una cuenta.",
+    "po_confirm_email_button": "Confirmar el pedido",
+    "po_confirm_email_expiry": "El enlace funciona hasta el {date}.",
+    "po_confirm_whatsapp":     "✅ Confirma cantidades y fechas de entrega aquí: {url}",
+    "po_confirm_pdf_cta":      "Confirma las cantidades y las fechas de entrega en línea:",
+    # Buyer-facing: the supplier answered.
+    "po_response_email_subject":   "{supplier} respondió a la orden {reference}",
+    "po_response_email_title":     "Tu proveedor respondió",
+    "po_response_email_all_ok":    "{supplier} confirmó todas las líneas de la orden {reference}.",
+    "po_response_email_changes":   "{supplier} respondió a la orden {reference}: {confirmed} confirmada(s), {changed} con cambio propuesto y {declined} rechazada(s). Los cambios no se aplican hasta que los aceptes.",
+    "po_response_email_button":    "Ver la respuesta",
     # Data-freshness reminder: the one message that has to reach someone who
     # stopped opening the app, so it states the age and asks for one thing.
     "freshness_email_subject":       "Tus ventas son de hace {days} días — sube el archivo de este mes",
@@ -374,6 +389,16 @@ _ES: dict[str, str] = {
 # assistant's rule-based replies need this today (the web chat follows the UI
 # language); every other backend-only channel is Spanish-only.
 _EN: dict[str, str] = {
+    "po_confirm_email_text":          "To speed things up, please confirm the quantities and the delivery date of each line at this link. You do not need to create an account.",
+    "po_confirm_email_button":        "Confirm the order",
+    "po_confirm_email_expiry":        "The link works until {date}.",
+    "po_confirm_whatsapp":            "✅ Confirm quantities and delivery dates here: {url}",
+    "po_confirm_pdf_cta":             "Confirm quantities and delivery dates online:",
+    "po_response_email_subject":      "{supplier} replied to order {reference}",
+    "po_response_email_title":        "Your supplier replied",
+    "po_response_email_all_ok":       "{supplier} confirmed every line of order {reference}.",
+    "po_response_email_changes":      "{supplier} replied to order {reference}: {confirmed} confirmed, {changed} with a proposed change and {declined} declined. Changes do not apply until you accept them.",
+    "po_response_email_button":       "See the reply",
     "assistant_greeting":             "Hi {name}. ",
     "assistant_intro_not_configured": "The AI assistant is not enabled on this installation, so here is what your data says directly:",
     "assistant_intro_failed":         "I could not produce an AI answer right now, so here is what your data says at the moment:",

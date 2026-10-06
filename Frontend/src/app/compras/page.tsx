@@ -46,6 +46,10 @@ import NarrativeCard from '@/components/ui/NarrativeCard'
 import HelpTip from '@/components/ui/HelpTip'
 import { ReceptionModal } from '@/components/po/POHistory'
 import { ForwardPOActions } from '@/components/po/ForwardPOActions'
+import {
+ RequestConfirmationCheckbox, useRequestConfirmationPref, confirmationNote,
+ readRequestConfirmationPref,
+} from '@/components/po/SupplierConfirmation'
 import { RequestApprovalButton, usePOApproval } from '@/components/po/POApproval'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useToast } from '@/contexts/ToastContext'
@@ -907,6 +911,8 @@ export default function HoyPage() {
  // there was no way to retry. Nothing had been sent to anybody.
  const [sendError, setSendError]       = useState<unknown>(null)
  const [sendResult, setSendResult]     = useState<SendPOResult | null>(null)
+ // "Ask the supplier to confirm": on by default, remembered across sessions.
+ const [requestConfirmation, setRequestConfirmation] = useRequestConfirmationPref()
 
  const user    = getUser()
  // Every write this screen can start — logging a PO, converting an optimizer
@@ -1385,7 +1391,9 @@ export default function HoyPage() {
   setSendState('sending')
   setSendError(null)
   try {
-   const res = await sendPOToSuppliers(generatedPO.id)
+   // Read at the moment of sending: the phone sheet has its own copy of the
+   // checkbox, and the stored choice is what both of them write.
+   const res = await sendPOToSuppliers(generatedPO.id, { requestConfirmation: readRequestConfirmationPref() })
    setSendResult(res)
   } catch (e: unknown) {
    setSendError(e)
@@ -2102,6 +2110,9 @@ export default function HoyPage() {
               {(sendResult.unresolved ?? []).map(u => u.sku).join(', ')}
              </div>
             )}
+            {confirmationNote(sendResult, t) && (
+             <div style={{ fontSize: 12, color: C.muted }}>{confirmationNote(sendResult, t)}</div>
+            )}
            </div>
           ) : (
            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -2112,6 +2123,9 @@ export default function HoyPage() {
             )}
             {poApproval?.required && (
              <p style={{ margin: 0, fontSize: 12, color: C.muted }}>{t('po_approval.generated_hint')}</p>
+            )}
+            {!poApproval?.required && (
+             <RequestConfirmationCheckbox checked={requestConfirmation} onChange={setRequestConfirmation} />
             )}
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {poApproval?.required ? (

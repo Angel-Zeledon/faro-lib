@@ -9092,7 +9092,25 @@
        "example": "<po_log_id>"
       }
      ],
-     "request_body": null,
+     "request_body": {
+      "content_type": "application/json",
+      "required": false,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "request_confirmation",
+         "required": false,
+         "type": "boolean",
+         "default": false
+        }
+       ],
+       "nullable": true
+      },
+      "example": {
+       "request_confirmation": false
+      }
+     },
      "success_status": 200,
      "response_content_types": [
       "application/json"

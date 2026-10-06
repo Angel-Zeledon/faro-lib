@@ -2054,6 +2054,8 @@ from backend.webhooks.migrations import MIGRATIONS as _WEBHOOK_DELIVERY  # noqa:
 _MIGRATIONS += _WEBHOOK_DELIVERY
 from backend.inventory.purchase_budget_migrations import MIGRATIONS as _PURCHASE_BUDGETS  # noqa: E402
 _MIGRATIONS += _PURCHASE_BUDGETS
+from backend.inventory.po_confirmation_migrations import MIGRATIONS as _PO_CONFIRMATIONS  # noqa: E402
+_MIGRATIONS += _PO_CONFIRMATIONS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
