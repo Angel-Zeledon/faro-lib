@@ -1,0 +1,54 @@
+# DISABLED EXAMPLE. Rename to 45-contract-renewals.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust.
+#
+# Contract renewals (backend-rs/src/routes/contract_renewals.rs): three routes
+# that exist ONLY in Rust, so there is NO Python failover here, on purpose:
+#
+#   GET  /api/v1/supply-contracts/renewals
+#   GET  /api/v1/supply-contracts/{root_id}/comparison
+#   POST /api/v1/supply-contracts/{root_id}/renew
+#
+# Python would answer the first one as "contract 'renewals' not found" (its
+# `GET /supply-contracts/{root_id}` matches the literal), which reads as a lie.
+# With api-rs down these paths fail with a plain 502/503 instead, and the screen
+# says "renewals are not available on this server yet". Every OTHER
+# /supply-contracts route (create, revise, status, preview, get, list) stays on
+# Python, which also owns the schema and the daily renewal alert pass.
+#
+# Kill switch: move this file to routes.d/off/ and `caddy reload`; the renewals
+# panel then shows its "not available" note and nothing else changes. Contracts
+# renewed meanwhile stay (they are ordinary draft contracts Python reads).
+
+@rs_contract_renewals {
+	method GET
+	path /api/v1/supply-contracts/renewals
+}
+@rs_contract_comparison {
+	method GET
+	path_regexp ^/api/v1/supply-contracts/[^/]+/comparison$
+}
+@rs_contract_renew {
+	method POST
+	path_regexp ^/api/v1/supply-contracts/[^/]+/renew$
+}
+handle @rs_contract_renewals {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_contract_comparison {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_contract_renew {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
