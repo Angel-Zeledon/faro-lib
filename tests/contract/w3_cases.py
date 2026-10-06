@@ -32,6 +32,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+import w3_cases_3b as w3b  # noqa: E402
+
 API = "/api/v1"
 
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -138,19 +140,21 @@ def seed_po(db, side: Side, number: int, *, lines: list, destination: Optional[s
     cur.execute("""INSERT INTO inventory_po_log
                      (tenant_id, sku_count, total_units, reception_status, received_at, received_by,
                       sent_at, paid_at, paid_by, po_number, destination_warehouse, generated_at)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW() - INTERVAL '10 days')
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, date_trunc('day', NOW()) - INTERVAL '10 days' + INTERVAL '7 hours')
                    RETURNING id""",
                 (tid, len(lines), sum(float(l[2] or 0) for l in lines), status,
                  "2026-10-01T00:00:00+00" if received else None, side.fx.admin_id if received else None,
                  "2026-09-20T00:00:00+00" if sent else None, "2026-10-02T00:00:00+00" if paid else None,
                  side.fx.admin_id if paid else None, number, destination))
     po_id = cur.fetchone()[0]
-    for sku, wh, rq, st, supplier in lines:
+    for ln in lines:
+        sku, wh, rq, st, supplier = ln[:5]
+        final = ln[5] if len(ln) > 5 else (rq or 0)
         cur.execute("""INSERT INTO inventory_po_items
                          (po_log_id, tenant_id, sku, display_name, supplier, signal, recommended_qty,
                           final_qty, unit_cost, status, warehouse, received_qty)
                        VALUES (%s, %s, %s, %s, %s, 'PEDIR_YA', %s, %s, 2.0, %s, %s, %s)""",
-                    (po_id, tid, sku, sku, supplier, rq or 0, rq or 0, st, wh, rq))
+                    (po_id, tid, sku, sku, supplier, final, final, st, wh, rq))
     for supplier, days in observations:
         cur.execute("""INSERT INTO supplier_lead_time_obs (tenant_id, supplier, po_log_id, lead_time_days)
                        VALUES (%s, %s, %s, %s)""", (tid, supplier, po_id, days))
@@ -601,6 +605,7 @@ def build_cases() -> list[C]:
     add(C("unsend", "POST", f"{P}/{{po_sent}}/unsend", who="analyst", route=r))
     add(C("unsend again", "POST", f"{P}/{{po_sent}}/unsend", route=r))
     add(C("unsend with write key", "POST", f"{P}/{{po_sent_key}}/unsend", who="key_write", route=r))
+    cs += w3b.build_cases_3b(C)
     return cs
 
 
@@ -659,6 +664,7 @@ def run_w3(args, fx_a, db, h) -> list:
         for s in (*sides.values(), foreign):
             seed_tenant(db, s)
             seed_pos(db, s)
+            w3b.seed_pos_3b(db, s, seed_po)
         # A foreign count (its own tenant) both sides are pointed at.
         cur = db.cursor()
         cur.execute("""INSERT INTO stock_counts (tenant_id, warehouse, notes, created_by)
