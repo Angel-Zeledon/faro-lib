@@ -1214,6 +1214,95 @@ export interface CommittedDemand {
   contract_release_date?: string | null
 }
 
+export type OutlookVerdict = 'on_track' | 'at_risk' | 'will_miss' | 'insufficient_data'
+
+export interface OutlookReason {
+  /** Stable code; the sentence is `outlook.reason.<code>` with these figures. */
+  code: string
+  params: Record<string, unknown>
+}
+
+/** One open commitment's fulfillment outlook (Rust route, no Python twin). */
+export interface CommitmentOutlook {
+  id: string
+  sku: string
+  warehouse_id: string | null
+  delivery_date: string
+  overdue: boolean
+  quantity: number
+  probability: number
+  customer: string | null
+  note: string | null
+  source: 'manual' | 'contract'
+  contract_reference: string | null
+  verdict: OutlookVerdict
+  reason: OutlookReason
+  expected_units: number
+  cumulative_units: number
+  /** null when the figure does not exist: never a zero standing in for it. */
+  shortfall_units: number | null
+  /** The shortfall is a lower bound (undated units were counted as arriving). */
+  shortfall_is_minimum: boolean
+  undated_units: number
+  cover_date: string | null
+  cover_source: 'stock' | 'incoming' | 'purchase_order' | 'new_order' | null
+  late_days: number | null
+  latest_safe_order_date: string | null
+  order_date_passed: boolean | null
+  stock: number | null
+  lead_time_days: number | null
+  lead_time_source: 'learned' | 'sku' | 'rule' | null
+}
+
+export interface OutlookSummary {
+  total: number
+  on_track: number
+  at_risk: number
+  will_miss: number
+  insufficient_data: number
+  units: number
+  shortfall_units: number
+  shortfall_has_minimum: boolean
+  first_problem_date: string | null
+}
+
+export interface OutlookList {
+  as_of: string
+  scope: 'company' | 'warehouses'
+  total: number
+  items: CommitmentOutlook[]
+  summary: OutlookSummary
+}
+
+export interface OutlookTenantSummary {
+  as_of: string
+  scope: 'company' | 'warehouses'
+  summary: OutlookSummary
+  by_customer: { customer: string | null; summary: OutlookSummary }[]
+  by_contract: { contract_root_id: string; reference: string | null; customer: string | null; summary: OutlookSummary }[]
+  data_gaps: { reason: string; commitments: number; units: number; skus: string[] | null }[]
+}
+
+export interface OutlookDetail {
+  as_of: string
+  scope: 'company' | 'warehouses'
+  commitment: CommitmentOutlook
+  competing: { id: string; customer: string | null; delivery_date: string; units: number; cumulative_units: number; is_this: boolean }[]
+  later_commitments: number
+  supply: {
+    stock: number | null
+    stock_by_warehouse: { warehouse: string; current_stock: number }[]
+    arrivals: {
+      kind: 'po' | 'transfer'; reference: string; supplier: string | null; warehouse: string; qty: number
+      date: string | null; expected_date: string | null
+      source: 'supplier_promise' | 'lead_time' | 'overdue' | 'no_lead_time' | 'transfer'
+      counted: boolean
+    }[]
+    lead_time_days: number | null
+    lead_time_source: 'learned' | 'sku' | 'rule' | null
+  }
+}
+
 export type SupplyContractStatus = 'draft' | 'active' | 'closed' | 'cancelled'
 export type SupplyContractScheduleKind = 'monthly' | 'weekly' | 'explicit'
 
