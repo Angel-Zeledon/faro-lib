@@ -83,7 +83,7 @@ def _check_rate(key: str, max_attempts: int, window_secs: int) -> None:
         )
 
 
-def _reject_weak_password(password: str) -> None:
+def _reject_weak_password(password: str, tenant_id: str | None = None) -> None:
     """Guard every password entry point with one localizable code.
 
     ``validate_strength`` returns an English sentence per broken rule; the user
@@ -91,10 +91,16 @@ def _reject_weak_password(password: str) -> None:
     code and the frontend renders the full requirement list from
     ``errors.password_invalid``. The English sentence stays as the fallback
     ``message`` (and in the ``rule`` param) for clients with no mapping.
+
+    ``tenant_id`` adds the tenant's own password policy on top (minimum length,
+    mixed case, a symbol) as ``password_policy``. A path that has no tenant yet
+    (signup creates it) passes none: the product rules are all there is.
     """
     valid, msg = validate_strength(password)
     if not valid:
         raise AppError("password_invalid", msg, status_code=400, params={"rule": msg})
+    from backend.auth.session_policy import reject_password_against_policy
+    reject_password_against_policy(password, tenant_id)
 
 
 def _lookup_email(email: str) -> dict | None:
@@ -312,9 +318,18 @@ async def login(body: LoginRequest, request: Request):
             status_code=403,
         )
 
+    # The tenant's session policy, None for every tenant that set nothing (the
+    # common case: one read, then the login below is unchanged). A locked
+    # account is refused BEFORE the password is looked at.
+    from backend.auth import session_policy
+    policy = session_policy.get_policy(entry["tenant_id"])
+    session_policy.refuse_if_locked(entry["tenant_id"], entry["user_id"], policy)
+
     user = user_svc.verify_credentials(entry["tenant_id"], body.email, body.password)
     if not user:
+        session_policy.record_failed_login(entry["tenant_id"], entry["user_id"], policy)
         raise AppError("invalid_credentials", "Invalid credentials", status_code=401)
+    session_policy.clear_failed_logins(entry["tenant_id"], entry["user_id"], policy)
 
     # A trial account between its end and the hourly reaper. After the
     # password matched, so it says nothing to somebody guessing addresses.
@@ -353,6 +368,12 @@ async def login(body: LoginRequest, request: Request):
             status_code=403,
             params={"status": user_status},
         )
+
+    # After the password matched and the account is active: an expired password
+    # says nothing to somebody guessing, and the person can reset it right away.
+    expired = session_policy.password_age_refusal(user, policy)
+    if expired is not None:
+        raise expired
 
     # Second factor. Only this password door asks for it: social and
     # enterprise sign-ins carry the identity provider's own proof (and policy)
@@ -491,13 +512,21 @@ async def refresh(body: RefreshRequest, request: Request):
     # A session opened inside the office must not keep renewing outside it.
     from backend.ip_allowlist import service as ip_allowlist
     ip_allowlist.enforce(request, user["tenant_id"], user["id"])
+    # The tenant's maximum session length and idle timeout: a session past
+    # either cannot be renewed (and its refresh token is deleted).
+    from backend.auth import session_policy
+    session_policy.enforce_refresh(user, token_hash)
 
     # Re-read from the row, not from the old token: a user who verifies mid
     # session gets the full-access claim on their next refresh (≤15 min) with
     # no re-login, and a re-issued token can never upgrade itself.
+    started = user.get("session_started_at")
     access_token = create_access_token(
         user["id"], user["tenant_id"], user["role"],
         email_verified=bool(user.get("email_verified")),
+        # The new token must still know when the SESSION began (its own `iat`
+        # is now), or a maximum session length could be renewed forever.
+        session_started_at=started.timestamp() if started else None,
     )
     return ok({
         "access_token": access_token,
@@ -589,7 +618,7 @@ async def reset_password(body: ResetPasswordRequest):
 
     # Deliberately BEFORE the burn: a password rejected for being weak must
     # leave the token usable, or the user's first typo costs them the link.
-    _reject_weak_password(body.new_password)
+    _reject_weak_password(body.new_password, payload.get("tenant_id"))
 
     user_svc.update_password(payload["tenant_id"], payload["sub"], body.new_password)
     if jti and payload.get("exp"):

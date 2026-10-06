@@ -82,6 +82,8 @@ pub enum Event {
     CustomRoleUpdated,
     CustomRoleDeleted,
     CustomRoleAssigned,
+    SessionPolicyChanged,
+    UserUnlocked,
 }
 
 impl Event {
@@ -139,6 +141,8 @@ impl Event {
             Event::CustomRoleUpdated => ("account.custom_role_updated", "account", "warning", &["role_name"]),
             Event::CustomRoleDeleted => ("account.custom_role_deleted", "account", "warning", &["role_name"]),
             Event::CustomRoleAssigned => ("account.custom_role_assigned", "account", "warning", &["email", "role_name"]),
+            Event::SessionPolicyChanged => ("account.session_policy_changed", "account", "warning", &["settings"]),
+            Event::UserUnlocked => ("account.user_unlocked", "account", "warning", &["email"]),
         }
     }
 }

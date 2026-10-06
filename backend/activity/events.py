@@ -586,6 +586,20 @@ EVENTS: dict[str, EventSpec] = {
     "account.ip_access_refused": EventSpec(
         kind="account", severity=WARNING, detail_keys=("ip",),
     ),
+    # Session and password policy (backend/auth/session_policy.py; the admin
+    # routes live in the Rust API). A change to what every person of the tenant
+    # must satisfy is a warning, with the names of the settings that moved (never
+    # a value that could weaken a guess); a lockout is the thing an admin is
+    # asked about the next morning, and an unlock says who lifted it.
+    "account.session_policy_changed": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("settings",),
+    ),
+    "account.user_locked_out": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email", "attempts"),
+    ),
+    "account.user_unlocked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("email",),
+    ),
 
     # ── Paying for the plan (backend/billing/) ───────────────────────────────
     # Written by a VERIFIED provider webhook (or the hourly sweep applying what
@@ -647,6 +661,8 @@ REASONS: tuple[str, ...] = (
     # is that a person with admin rights did it. Said out loud, because the
     # only useful reaction to "I did not do that" is to look at who has access.
     "changed_by_an_account_admin",
+    # the tenant's lockout policy locked the account after repeated wrong passwords
+    "too_many_failed_logins",
     # social sign-in: the provider vouched for the address, so the account
     # gained that way in; and the variant where the password nobody had
     # verified was dropped because the provider proved the mailbox.

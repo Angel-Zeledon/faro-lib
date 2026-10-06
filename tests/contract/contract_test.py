@@ -192,6 +192,7 @@ class Fixture:
     read_key: str = ""
     write_key: str = ""
     tokens: dict = field(default_factory=dict)
+    # The admin's login, for the sections that sign in through Python.
     admin_email: str = ""
     admin_password: str = ""
 
@@ -4729,6 +4730,341 @@ def run_fx_section(args, fx: Fixture, db) -> list:
     """Multi-currency (new Rust-only routes + the Python order path): tests/contract/fx_cases.py."""
     import fx_cases  # noqa: PLC0415 - lives next to this file
     return fx_cases.run(args, fx, db, sys.modules[__name__])
+# ── Session and password policy (Rust-only admin routes) ────────────────────
+#
+# The admin routes exist only in Rust, so there is nothing to diff them
+# against: this section asserts their answers and the rows they write. What IS
+# compared python-vs-rust is the TOKEN enforcement: the same token (a session
+# past its maximum length, a person past the idle limit) must be refused with
+# the same status and error code by both guards, and a background poll must
+# leave the idle clock alone on both.
+
+SP_FIELDS = ("max_session_hours", "idle_timeout_minutes", "min_password_length",
+             "require_mixed_case", "require_symbol", "password_max_age_days",
+             "max_concurrent_sessions", "lockout_threshold", "lockout_minutes")
+
+
+class _SP:
+    def __init__(self) -> None:
+        self.results: list = []
+
+    def check(self, name: str, cond: bool, detail: str = "") -> bool:
+        self.results.append((Case(name, "-", "-", route="session policy"),
+                             "PASS" if cond else "FAIL", [] if cond else [detail]))
+        return cond
+
+
+def _sp_ctx(raw):
+    """An activity_logs context column as a dict (psycopg2 may hand back text)."""
+    return json.loads(raw) if isinstance(raw, str) else (raw or {})
+
+
+def run_session_policy(args, fx: Fixture, db) -> list:
+    if db is None:
+        return [(Case("session policy (all)", "-", "-", route="session policy"), "SKIP",
+                 ["needs --db: the policy rows and the events are checked in the database"])]
+    sp = _SP()
+    cur = db.cursor()
+    rs, py = args.rust, args.python
+    url = f"{API}/session-policy"
+
+    def admin():
+        return auth_for(fx, "admin")  # a fresh token per call
+
+    def row():
+        cur.execute("SELECT " + ", ".join(SP_FIELDS) + ", password_max_age_since "
+                    "FROM tenant_session_policies WHERE tenant_id = %s", (fx.tenant_id,))
+        return cur.fetchone()
+
+    def events(action):
+        cur.execute("SELECT context, user_id, resource FROM activity_logs "
+                    "WHERE tenant_id = %s AND action = %s ORDER BY created_at",
+                    (fx.tenant_id, action))
+        return cur.fetchall()
+
+    def user(uid):
+        cur.execute("SELECT failed_login_count, locked_until, last_activity_at "
+                    "FROM users WHERE id = %s", (uid,))
+        return cur.fetchone()
+
+    def reset_policy_rows():
+        cur.execute("DELETE FROM tenant_session_policies WHERE tenant_id = %s", (fx.tenant_id,))
+        cur.execute("UPDATE users SET failed_login_count = 0, locked_until = NULL, "
+                    "last_activity_at = NOW() WHERE tenant_id = %s", (fx.tenant_id,))
+
+    def login(password=None):
+        return http(py, "POST", f"{API}/auth/login", body={
+            "email": fx.admin_email, "password": password or fx.admin_password})
+
+    def refresh_count():
+        cur.execute("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = %s", (fx.admin_id,))
+        return cur.fetchone()[0]
+
+    reset_policy_rows()
+    try:
+        # ── permission pairs and the default view ──────────────────────────
+        for who in ("viewer", "analyst"):
+            for method, path, body in (("GET", url, None), ("PUT", url, {"max_session_hours": 8}),
+                                       ("DELETE", url, None),
+                                       ("POST", f"{url}/unlock/{fx.admin_id}", None)):
+                r = http(rs, method, path, token=auth_for(fx, who), body=body)
+                sp.check(f"{who} denied {method} {path.replace(API, '')}",
+                         r.status == 403 and r.body.get("error_code") == "role_not_permitted"
+                         and row() is None,
+                         f"{r.status} {r.body}")
+        r = http(rs, "GET", url, token=None)
+        sp.check("no auth is 401", r.status == 401, f"{r.status}")
+        for scope in ("read", "write"):
+            key = getattr(fx, f"{scope}_key")
+            if not key:
+                continue
+            r = http(rs, "PUT", url, token=key, body={"max_session_hours": 8})
+            sp.check(f"{scope} key refused",
+                     r.status == 403 and r.body.get("error_code") == "api_key_route_not_exposed"
+                     and row() is None, f"{r.status} {r.body}")
+        r = http(rs, "GET", url, token=admin())
+        d = (r.body or {}).get("data", {})
+        sp.check("default view", r.status == 200 and d.get("is_default") is True
+                 and all(d["policy"][f] in (None, False) for f in SP_FIELDS)
+                 and d["locked_users"] == [] and row() is None, f"{r.status} {r.body}")
+
+        # ── validation: nothing is stored for a refused body ───────────────
+        bad_bodies = [
+            ("unknown field", {"max_session_hour": 8}, "session_policy_unknown_field"),
+            ("hours too small", {"max_session_hours": 0}, "session_policy_out_of_range"),
+            ("hours too big", {"max_session_hours": 169}, "session_policy_out_of_range"),
+            ("idle too small", {"idle_timeout_minutes": 4}, "session_policy_out_of_range"),
+            ("length too small", {"min_password_length": 7}, "session_policy_out_of_range"),
+            ("length too big", {"min_password_length": 65}, "session_policy_out_of_range"),
+            ("age too small", {"password_max_age_days": 6}, "session_policy_out_of_range"),
+            ("sessions zero", {"max_concurrent_sessions": 0}, "session_policy_out_of_range"),
+            ("threshold small", {"lockout_threshold": 2}, "session_policy_out_of_range"),
+            ("string int", {"max_session_hours": "8"}, "session_policy_not_an_integer"),
+            ("float int", {"max_session_hours": 8.5}, "session_policy_not_an_integer"),
+            ("bool as int", {"max_session_hours": True}, "session_policy_not_an_integer"),
+            ("string bool", {"require_symbol": "yes"}, "session_policy_not_a_boolean"),
+            ("period without threshold", {"lockout_minutes": 10},
+             "session_policy_lockout_needs_threshold"),
+            ("wraps in 32 bits", {"max_session_hours": 4294967304}, "session_policy_out_of_range"),
+        ]
+        for label, body, code in bad_bodies:
+            r = http(rs, "PUT", url, token=admin(), body=body)
+            sp.check(f"PUT refused: {label}",
+                     r.status == 422 and r.body.get("error_code") == code and row() is None,
+                     f"{r.status} {r.body}")
+        r = http(rs, "PUT", url, token=admin(), raw_body=b"[1]")
+        sp.check("PUT refused: not an object", r.status == 422 and row() is None, f"{r.status}")
+
+        # ── a valid replace, the row and the event ─────────────────────────
+        full = {"max_session_hours": 8, "idle_timeout_minutes": 30, "min_password_length": 12,
+                "require_mixed_case": True, "require_symbol": False, "password_max_age_days": 90,
+                "max_concurrent_sessions": 3, "lockout_threshold": 5}
+        r = http(rs, "PUT", url, token=admin(), body=full)
+        d = (r.body or {}).get("data", {})
+        stored = dict(zip(SP_FIELDS, row()[:9])) if row() else {}
+        sp.check("PUT stores and echoes the policy",
+                 r.status == 200 and d.get("is_default") is False
+                 and stored == {**full, "lockout_minutes": 15}
+                 and d["policy"]["lockout_minutes"] == 15 and d["updated_by"] == fx.admin_id,
+                 f"{r.status} stored={stored}")
+        ev = events("account.session_policy_changed")
+        ctx = _sp_ctx(ev[0][0]) if ev else {}
+        sp.check("PUT recorded one warning event naming the settings, no values",
+                 len(ev) == 1 and ctx.get("severity") == "warning" and ctx.get("kind") == "account"
+                 and ctx.get("reason") == "changed_by_an_account_admin"
+                 and ctx.get("settings") == ["max_session_hours", "idle_timeout_minutes",
+                                            "min_password_length", "password_max_age_days",
+                                            "max_concurrent_sessions", "lockout_threshold",
+                                            "lockout_minutes", "require_mixed_case"]
+                 and ev[0][1] == fx.admin_id,
+                 f"{ev}")
+        since0 = row()[9] if row() else None
+        sp.check("password age clock started", since0 is not None, "password_max_age_since is NULL")
+        r = http(rs, "PUT", url, token=admin(), body=full)
+        sp.check("an identical PUT records nothing and keeps the age clock",
+                 r.status == 200 and len(events("account.session_policy_changed")) == 1
+                 and row()[9] == since0, f"{r.status}")
+        r = http(rs, "PUT", url, token=admin(), body={**full, "password_max_age_days": 60})
+        sp.check("changing the age limit restarts the clock",
+                 r.status == 200 and since0 is not None and row()[9] > since0
+                 and len(events("account.session_policy_changed")) == 2,
+                 f"{r.status} {row()}")
+        r = http(rs, "PUT", url, token=admin(), body={})
+        sp.check("an empty PUT clears every setting",
+                 r.status == 200 and r.body["data"]["is_default"] is True
+                 and all(v in (None, False) for v in row()[:9]) and row()[9] is None,
+                 f"{r.status} {row()}")
+
+        # ── token enforcement: the same verdict from both guards ───────────
+        def both(name, token, headers=None, expect=None):
+            rp = http(py, "GET", f"{API}/entitlements", token=token, headers=headers)
+            rr = http(rs, "GET", f"{API}/entitlements", token=token, headers=headers)
+
+            def code(x):
+                return (x.body or {}).get("error_code")
+            sp.check(f"{name}: python and rust agree",
+                     rp.status == rr.status and code(rp) == code(rr)
+                     and (expect is None or (rp.status, code(rp)) == expect),
+                     f"python {rp.status} {code(rp)} / rust {rr.status} {code(rr)}")
+
+        def token(**extra):
+            return mint_access_token(fx.secret, fx.admin_id, fx.tenant_id, "admin", extra=extra)
+
+        now = datetime.now(timezone.utc).timestamp()
+        both("no policy: a 100-hour-old session is fine", token(sat=now - 100 * 3600),
+             expect=(200, None))
+        http(rs, "PUT", url, token=admin(), body={"max_session_hours": 8, "idle_timeout_minutes": 30})
+        both("8h limit: iat 9h old", token(iat=now - 9 * 3600, exp=now + 900),
+             expect=(401, "session_max_lifetime"))
+        both("8h limit: iat 7h old", token(iat=now - 7 * 3600, exp=now + 900), expect=(200, None))
+        both("8h limit: fresh iat but sat 9h old", token(sat=now - 9 * 3600),
+             expect=(401, "session_max_lifetime"))
+        both("8h limit: fresh iat, sat 7h old", token(sat=now - 7 * 3600), expect=(200, None))
+        cur.execute("UPDATE users SET last_activity_at = NOW() - interval '31 minutes' WHERE id = %s",
+                    (fx.admin_id,))
+        both("30m idle limit: idle 31m", token(), expect=(401, "session_idle_timeout"))
+        sp.check("a refused request is not activity",
+                 user(fx.admin_id)[2] < datetime.now(timezone.utc) - timedelta(minutes=30),
+                 f"{user(fx.admin_id)}")
+        for side, base in (("python", py), ("rust", rs)):
+            cur.execute("UPDATE users SET last_activity_at = NOW() - interval '10 minutes' "
+                        "WHERE id = %s", (fx.admin_id,))
+            before = user(fx.admin_id)[2]
+            http(base, "GET", f"{API}/entitlements", token=token(),
+                 headers={"X-StockAI-Background": "1"})
+            sp.check(f"{side}: a background poll does not count as activity",
+                     user(fx.admin_id)[2] == before, f"{user(fx.admin_id)[2]} vs {before}")
+            http(base, "GET", f"{API}/entitlements", token=token())
+            sp.check(f"{side}: a person's request counts as activity",
+                     user(fx.admin_id)[2] > before, f"{user(fx.admin_id)[2]} vs {before}")
+        key = fx.read_key
+        if key:
+            cur.execute("UPDATE users SET last_activity_at = NOW() - interval '9 hours' "
+                        "WHERE id = %s", (fx.admin_id,))
+            for side, base in (("python", py), ("rust", rs)):
+                r = http(base, "GET", f"{API}/entitlements", token=key)
+                sp.check(f"{side}: an API key ignores the session policy", r.status == 200,
+                         f"{r.status} {r.body}")
+            cur.execute("UPDATE users SET last_activity_at = NOW() WHERE id = %s", (fx.admin_id,))
+
+        # ── Python login and refresh enforcement, state read back ──────────
+        http(rs, "PUT", url, token=admin(), body={"max_concurrent_sessions": 1})
+        l1, l2 = login(), login()
+        sp.check("one concurrent session: the second login evicts the first",
+                 l1.status == 200 and l2.status == 200 and refresh_count() == 1,
+                 "refresh_tokens != 1")
+        r_old = http(py, "POST", f"{API}/auth/refresh",
+                     body={"refresh_token": l1.body["data"]["refresh_token"]})
+        r_new = http(py, "POST", f"{API}/auth/refresh",
+                     body={"refresh_token": l2.body["data"]["refresh_token"]})
+        sp.check("the evicted session cannot refresh, the new one can",
+                 r_old.status == 401 and r_new.status == 200, f"{r_old.status} {r_new.status}")
+
+        http(rs, "PUT", url, token=admin(), body={"max_session_hours": 8})
+        raw = login().body["data"]["refresh_token"]
+        cur.execute("UPDATE refresh_tokens SET created_at = NOW() - interval '9 hours' "
+                    "WHERE user_id = %s", (fx.admin_id,))
+        held = refresh_count()
+        r = http(py, "POST", f"{API}/auth/refresh", body={"refresh_token": raw})
+        sp.check("refresh past the maximum session is refused and deletes that token",
+                 r.status == 401 and r.body.get("error_code") == "session_max_lifetime"
+                 and refresh_count() == held - 1, f"{r.status} {r.body} {held}->{refresh_count()}")
+        r = http(py, "POST", f"{API}/auth/refresh", body={"refresh_token": raw})
+        sp.check("the refused refresh token is now simply invalid",
+                 r.status == 401 and r.body.get("error_code") == "refresh_token_invalid",
+                 f"{r.status} {r.body}")
+
+        # ── lockout: Python counts and locks, Rust lists and unlocks ───────
+        http(rs, "PUT", url, token=admin(), body={"lockout_threshold": 3, "lockout_minutes": 20})
+        for _ in range(3):
+            login("Wrong-password-1")
+        locked = user(fx.admin_id)
+        sp.check("three wrong passwords lock the account",
+                 locked[0] == 3 and locked[1] is not None, f"{locked}")
+        r = login()
+        sp.check("a locked account refuses the correct password",
+                 r.status == 403 and r.body.get("error_code") == "account_locked"
+                 and r.body["error_params"]["minutes"] in (19, 20), f"{r.status} {r.body}")
+        r = http(rs, "GET", url, token=admin())
+        lu = r.body["data"]["locked_users"]
+        sp.check("Rust lists the locked person", len(lu) == 1 and lu[0]["user_id"] == fx.admin_id
+                 and lu[0]["email"] == fx.admin_email and lu[0]["failed_attempts"] == 3, f"{lu}")
+        sp.check("one lockout event", len(events("account.user_locked_out")) == 1,
+                 f"{events('account.user_locked_out')}")
+        cur.execute("SELECT id, failed_login_count, locked_until FROM users WHERE tenant_id <> %s "
+                    "ORDER BY id LIMIT 1", (fx.tenant_id,))
+        foreign = cur.fetchone()
+        r = http(rs, "POST", f"{url}/unlock/usr_does_not_exist", token=admin())
+        sp.check("unlock of an unknown user is 404", r.status == 404
+                 and r.body.get("error_code") == "user_not_found", f"{r.status} {r.body}")
+        if foreign:
+            r = http(rs, "POST", f"{url}/unlock/{foreign[0]}", token=admin())
+            cur.execute("SELECT id, failed_login_count, locked_until FROM users WHERE id = %s",
+                        (foreign[0],))
+            sp.check("unlock of another tenant's user is 404 and writes nothing",
+                     r.status == 404 and cur.fetchone() == foreign, f"{r.status}")
+        r = http(rs, "POST", f"{url}/unlock/{fx.admin_id}", token=admin())
+        ue = events("account.user_unlocked")
+        uctx = _sp_ctx(ue[0][0]) if ue else {}
+        sp.check("unlock clears the lock and records who and for whom",
+                 r.status == 200 and r.body["data"] == {"user_id": fx.admin_id, "unlocked": True}
+                 and user(fx.admin_id)[:2] == (0, None) and len(ue) == 1
+                 and uctx.get("email") == fx.admin_email and uctx.get("severity") == "warning"
+                 and uctx.get("reason") == "changed_by_an_account_admin" and ue[0][1] == fx.admin_id
+                 and ue[0][2] == fx.admin_id, f"{r.status} {r.body} {ue}")
+        sp.check("the unlocked person signs in", login().status == 200, "login refused")
+        r = http(rs, "POST", f"{url}/unlock/{fx.admin_id}", token=admin())
+        sp.check("unlocking again is a no-op without a second event",
+                 r.status == 200 and r.body["data"]["unlocked"] is False
+                 and len(events("account.user_unlocked")) == 1, f"{r.status} {r.body}")
+        for _ in range(3):
+            login("Wrong-password-1")
+        http(rs, "PUT", url, token=admin(), body={"max_session_hours": 8})
+        sp.check("removing the lockout setting clears existing locks",
+                 user(fx.admin_id)[:2] == (0, None) and login().status == 200,
+                 f"{user(fx.admin_id)}")
+
+        # ── password rules reach the Python endpoints ──────────────────────
+        http(rs, "PUT", url, token=admin(), body={"min_password_length": 14, "require_symbol": True})
+        cur.execute("SELECT hashed_password FROM users WHERE id = %s", (fx.admin_id,))
+        before_hash = cur.fetchone()[0]
+        reset = mint_access_token(fx.secret, fx.admin_id, fx.tenant_id, "admin",
+                                  extra={"purpose": "password_reset"})
+        for label, pw, broken in (("short and no symbol", "Abcdefg12345", ["min_length", "symbol"]),
+                                  ("long, no symbol", "Abcdefghij12345", ["symbol"])):
+            r = http(py, "POST", f"{API}/auth/reset-password",
+                     body={"token": reset, "new_password": pw})
+            cur.execute("SELECT hashed_password FROM users WHERE id = %s", (fx.admin_id,))
+            sp.check(f"reset refused by the policy: {label}",
+                     r.status == 400 and r.body.get("error_code") == "password_policy"
+                     and r.body["error_params"]["broken"] == broken
+                     and cur.fetchone()[0] == before_hash, f"{r.status} {r.body}")
+
+        # ── DELETE returns to "no policy" ───────────────────────────────────
+        n_events = len(events("account.session_policy_changed"))
+        r = http(rs, "DELETE", url, token=admin())
+        sp.check("DELETE removes the row, records the change, shows the default",
+                 r.status == 200 and r.body["data"]["is_default"] is True and row() is None
+                 and len(events("account.session_policy_changed")) == n_events + 1,
+                 f"{r.status} {r.body}")
+        r = http(rs, "DELETE", url, token=admin())
+        sp.check("DELETE again records nothing",
+                 r.status == 200 and len(events("account.session_policy_changed")) == n_events + 1,
+                 f"{r.status}")
+        # The audit trail shows the new actions on both services (LEGACY).
+        r = http(rs, "GET", f"{API}/audit?target_type=session_policy", token=admin())
+        items = (r.body or {}).get("data", {}).get("items", [])
+        sp.check("the audit trail lists the policy changes",
+                 r.status == 200 and items
+                 and all(i["action"] == "session_policy.changed" for i in items),
+                 f"{r.status} {items[:1]}")
+        rp = http(py, "GET", f"{API}/audit?target_type=session_policy", token=admin())
+        sp.check("python reads the same audit entries",
+                 rp.status == 200 and len(rp.body["data"]["items"]) == len(items),
+                 f"{rp.status}")
+    finally:
+        reset_policy_rows()
+    return sp.results
 
 
 def run(args) -> int:
@@ -4815,6 +5151,7 @@ def run(args) -> int:
         # Custom roles (Rust-only routes + enforcement on both): own file.
         from custom_roles_cases import run_custom_roles
         results += run_custom_roles(args, fx, db)
+        results += run_session_policy(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

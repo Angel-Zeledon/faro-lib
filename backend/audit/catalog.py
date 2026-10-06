@@ -166,6 +166,11 @@ LEGACY: dict[str, tuple[str, str]] = {
     "account.scim_settings_changed":   ("scim_token", "scim_token.changed"),
     "account.ip_allowlist_changed":    ("ip_allowlist", "ip_allowlist.changed"),
     "account.ip_access_refused":       ("ip_allowlist", "ip_allowlist.access_refused"),
+    # Session and password policy: the admin routes are Rust-only, so they
+    # write these events (a catalogued ROUTES entry would need a Python route).
+    "account.session_policy_changed":  ("session_policy", "session_policy.changed"),
+    "account.user_locked_out":         ("user", "user.locked_out"),
+    "account.user_unlocked":           ("user", "user.unlocked"),
     "account.api_key_created":         ("api_key", "api_key.created"),
     "account.api_key_revoked":         ("api_key", "api_key.revoked"),
     "purchase.order_generated":        ("purchase_order", "purchase_order.created"),

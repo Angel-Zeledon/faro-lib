@@ -108,7 +108,7 @@ export default function TopBar() {
 
   const poll = useCallback(async (): Promise<boolean> => {
     try {
-      const list: SessionInfo[] = await getSessions()
+      const list: SessionInfo[] = await getSessions({ background: true })
       setSessions(list)
       const fresh: LocalNotice[] = []
 

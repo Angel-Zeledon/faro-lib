@@ -517,7 +517,7 @@ def request_password_change(
     body: ChangePasswordRequest,
     user: CurrentUser = Depends(get_current_user),
 ):
-    _reject_weak_password(body.new_password)
+    _reject_weak_password(body.new_password, user.tenant_id)
 
     u = user_svc.get_user(user.tenant_id, user.user_id)
     if not u:
@@ -544,7 +544,7 @@ def confirm_password_change(
     body: ChangePasswordConfirm,
     user: CurrentUser = Depends(get_current_user),
 ):
-    _reject_weak_password(body.new_password)
+    _reject_weak_password(body.new_password, user.tenant_id)
 
     row = query_one(
         """SELECT id, code_hash FROM pw_change_codes

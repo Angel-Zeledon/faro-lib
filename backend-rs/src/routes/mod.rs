@@ -22,6 +22,7 @@ pub mod signal_thresholds;
 pub mod w2b;
 pub mod w3;
 pub mod roles;
+pub mod session_policy;
 
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
@@ -104,6 +105,12 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/ip-allowlist/policy", put(ip_allowlist::set_policy))
         // Custom roles: Rust-only routes (no Python failover), see roles.rs.
         .merge(roles::router())
+        // Session and password policy (Rust-only: no Python route, no failover).
+        .route(
+            "/api/v1/session-policy",
+            get(session_policy::get_policy).put(session_policy::put_policy).delete(session_policy::reset_policy),
+        )
+        .route("/api/v1/session-policy/unlock/{user_id}", post(session_policy::unlock))
         // After every route above: records (method, matched template) for the
         // custom-role permission check in auth::current_user.
         .route_layer(axum::middleware::from_fn(crate::auth::permissions::record_route))

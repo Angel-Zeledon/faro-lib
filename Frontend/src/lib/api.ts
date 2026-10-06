@@ -143,6 +143,11 @@ export interface RequestOpts {
    *  its own one-time token): a 401 is an answer for the form, never an
    *  expired session to renew or a redirect to /login. */
   authFlow?: boolean
+  /** A request a page makes on its own timer (a badge, a poll), not because a
+   *  person did something. The server still checks the session, but does not
+   *  count it as activity for the organization's idle timeout: otherwise a tab
+   *  left open would keep the session alive forever. */
+  background?: boolean
 }
 
 // FastAPI validation errors send `detail` as an array of {type, loc, msg, ...}
@@ -241,10 +246,13 @@ async function request<T = unknown>(
   method: string, path: string, body?: unknown, opts: RequestOpts = {},
 ): Promise<T> {
   const silent = opts.silent === true
+  const sendHeaders = opts.background
+    ? { ...opts.headers, 'X-StockAI-Background': '1' }
+    : opts.headers
 
   let res: Response
   try {
-    res = await _doFetch(method, path, body, opts.headers)
+    res = await _doFetch(method, path, body, sendHeaders)
   } catch {
     // fetch() only rejects when the request never completed: offline, DNS
     // failure, or the backend not listening. Any HTTP status resolves.
@@ -271,7 +279,7 @@ async function request<T = unknown>(
     // once, so a 15-minute token never kicks the user back to /login mid-task.
     // `_sessionLost()` never returns — it clears auth and redirects.
     if (await tryRefresh()) {
-      res = await _doFetch(method, path, body, opts.headers)
+      res = await _doFetch(method, path, body, sendHeaders)
       if (res.status === 401) _sessionLost()
     } else {
       _sessionLost()
@@ -548,8 +556,8 @@ export const authLogout = () =>
   request<{ message: string }>('POST', '/auth/logout')
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
-export const getSessions   = () =>
-  request<{ items: SessionInfo[]; total: number }>('GET', '/sessions')
+export const getSessions   = (opts?: RequestOpts) =>
+  request<{ items: SessionInfo[]; total: number }>('GET', '/sessions', undefined, opts)
     .then(r => (Array.isArray(r) ? r : r.items) ?? [])
 // Enriched history list: dataset name, horizon, SKU count, granularity.
 export const getSessionSummaries = (
@@ -1229,6 +1237,55 @@ export const deleteIpAllowlistEntry = (id: string) =>
 
 export const setIpAllowlistEnabled = (enabled: boolean) =>
   request<IpAllowlistState>('PUT', '/ip-allowlist/policy', { enabled })
+// ── Session and password policy (Rust-only admin routes) ──────────────────────
+export interface SessionPolicySettings {
+  max_session_hours: number | null
+  idle_timeout_minutes: number | null
+  min_password_length: number | null
+  require_mixed_case: boolean
+  require_symbol: boolean
+  password_max_age_days: number | null
+  max_concurrent_sessions: number | null
+  lockout_threshold: number | null
+  lockout_minutes: number | null
+}
+
+export interface SessionPolicyLockedUser {
+  user_id: string
+  email: string
+  full_name: string | null
+  locked_until: string
+  failed_attempts: number
+}
+
+export interface SessionPolicyView {
+  policy: SessionPolicySettings
+  /** True when nothing is enforced: everything behaves as before the feature. */
+  is_default: boolean
+  updated_at: string | null
+  updated_by: string | null
+  bounds: Record<string, { min: number; max: number }>
+  defaults: {
+    access_token_minutes: number
+    refresh_token_days: number
+    max_sessions_per_person: number
+    min_password_length: number
+    lockout_minutes: number
+  }
+  locked_users: SessionPolicyLockedUser[]
+}
+
+export const getSessionPolicy = () => request<SessionPolicyView>('GET', '/session-policy')
+
+/** A REPLACEMENT: a field that is null (or false) is "not set". */
+export const saveSessionPolicy = (policy: SessionPolicySettings) =>
+  request<SessionPolicyView>('PUT', '/session-policy', policy)
+
+export const resetSessionPolicy = () => request<SessionPolicyView>('DELETE', '/session-policy')
+
+export const unlockSessionPolicyUser = (userId: string) =>
+  request<{ user_id: string; unlocked: boolean }>(
+    'POST', `/session-policy/unlock/${encodeURIComponent(userId)}`)
 
 // ── Accuracy Tracking ─────────────────────────────────────────────────────────
 export const getAccuracyReport = (sessionId: string, threshold?: number) =>
@@ -2082,15 +2139,16 @@ export const updatePreferences = (body: Partial<import('./types').UserPreference
 export const getDmContacts = (opts?: RequestOpts) =>
   request<import('./types').DmContact[]>('GET', '/messages/contacts', undefined, opts)
 
-export const getDmConversations = () =>
-  request<import('./types').DmConversation[]>('GET', '/messages/conversations')
+export const getDmConversations = (opts?: RequestOpts) =>
+  request<import('./types').DmConversation[]>('GET', '/messages/conversations', undefined, opts)
 
 export const getDmUnreadCount = () =>
-  request<{ unread: number }>('GET', '/messages/unread-count', undefined, { silent: true })
+  request<{ unread: number }>('GET', '/messages/unread-count', undefined, { silent: true, background: true })
 
-export const getDmThread = (withUser: string, before?: number) =>
+export const getDmThread = (withUser: string, before?: number, opts?: RequestOpts) =>
   request<import('./types').DmThread>(
     'GET', `/messages/thread?with_user=${encodeURIComponent(withUser)}${before ? `&before=${before}` : ''}`,
+    undefined, opts,
   )
 
 export const sendDm = (recipientId: string, body: string) =>

@@ -150,6 +150,8 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("scim_user_links", "scim_user_links", "*"),
     ("ip_allowlist_policies", "ip_allowlist_policies", "*"),
     ("ip_allowlist_entries", "ip_allowlist_entries", "*"),
+    # The tenant's session and password policy: limits only, no secret.
+    ("tenant_session_policies", "tenant_session_policies", "*"),
     # Paying for the plan. No secret lives in these tables (keys and webhook
     # secrets are instance configuration, never per tenant); the provider ids
     # are the tenant's own records at Stripe / PayPal, so they travel.
@@ -257,6 +259,8 @@ _DELETE_ORDER: list[str] = [
     # IP allowlist: both cascade from tenants; listed for the same reason.
     "ip_allowlist_entries",
     "ip_allowlist_policies",
+    # Session and password policy (cascades from tenants; listed for the same reason).
+    "tenant_session_policies",
     "model_artifacts",
     # Billing (2026-10-05). The first two cascade from tenants; the event log
     # has no FK (an event may name no known tenant) and is only removed here.

@@ -261,6 +261,12 @@ def get_current_user(
     # the actor is published: a refused request has no actor to record.
     from backend.ip_allowlist import service as ip_allowlist
     ip_allowlist.enforce(request, payload["tenant_id"], payload["sub"])
+    # The tenant's session policy (maximum lifetime, idle timeout). No policy
+    # row for the tenant: one joined read, no write, no refusal.
+    from backend.auth import session_policy
+    session_policy.enforce_access_token(
+        payload, background=session_policy.is_background(request.headers),
+    )
 
     from backend.auth.actor_context import set_person_actor
     set_person_actor(request.scope, payload["tenant_id"], payload["sub"])

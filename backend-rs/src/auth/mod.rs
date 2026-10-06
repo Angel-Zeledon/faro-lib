@@ -9,6 +9,7 @@
 pub mod api_key;
 pub mod jwt;
 pub mod permissions;
+pub mod session_policy;
 pub mod warehouse_scope;
 
 use std::sync::{Arc, Mutex};
@@ -186,6 +187,13 @@ pub async fn current_user(
     }
 
     reject_if_predates_password_change(state, &payload).await?;
+
+    // The tenant's session policy (maximum lifetime, idle timeout), in the
+    // order backend/auth/guards.py runs it: after the password-change cut.
+    session_policy::enforce_access_token(
+        &state.pool, &payload, session_policy::is_background(headers), now_f64(),
+    )
+    .await?;
 
     // payload["sub"] / ["tenant_id"] / ["role"]: a KeyError in Python, i.e. a
     // 500. Only a token signed with our secret can get this far.

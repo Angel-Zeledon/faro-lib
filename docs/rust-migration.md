@@ -133,6 +133,10 @@ notification, no file storage, no hub.
   `Event` specs every Rust route records through); `webhook_events.rs` (the
   emit half of `backend/webhooks/service.py`: it only inserts
   `webhook_deliveries` rows, which Python's delivery loop sends).
+* Done (new feature, Rust-first): per-tenant session and password policy,
+  `GET`, `PUT`, `DELETE /session-policy` and `POST /session-policy/unlock/{user_id}`
+  (`routes/session_policy.rs`). **No Python twin and no Python failover for
+  these four routes**; see the section "Session and password policy" below.
 * Next: the rest of the Wave 1 list in the table above.
 
 **Wave 2b (done in `routes/w2b/`, branch `feat/rust-wave2b`): the parts of
@@ -1572,3 +1576,78 @@ Known gaps: the mobile users screen (`UsersMobile`) has no role selector; the
 users list has no "role" column; Python's own user delete / demote / suspend
 still do not guard against removing the last admin (pre-existing, outside this
 feature).
+### Session and password policy (new feature, Rust-first, 2026-10-06)
+
+Owner-approved enterprise control: per tenant, a maximum session length, an
+idle timeout, a password minimum length / mixed case / symbol, a password
+maximum age, a concurrent-session limit and a lockout after failed logins.
+**No row, or a row with nothing set, behaves exactly as before** (tests:
+`backend/tests/test_session_policy.py::TestNoPolicyChangesNothing`).
+
+**Who does what (auth stays Python this pass).**
+
+| Piece | Where |
+|---|---|
+| Schema: `tenant_session_policies`, `users.last_activity_at / password_changed_at / failed_login_count / locked_until` | Python (`backend/db/migrations.py`, additive; the table cascades from `tenants` and is in `data_export.py`'s lists) |
+| Admin routes: GET / PUT / DELETE `/session-policy`, POST `/session-policy/unlock/{user_id}` | **Rust only** (`routes/session_policy.rs`), admin only, no API key may call them |
+| Login: lockout check before the password, failure counting, password age | Python (`backend/auth/session_policy.py`, `api/v1/auth.py`) |
+| Refresh: maximum session length and idle timeout (the refresh token is deleted on a refusal) | Python |
+| Password rules at reset and change-password (`password_policy`) | Python (`_reject_weak_password(password, tenant_id)`) |
+| Concurrent sessions: oldest refresh tokens dropped at login | Python (`users/service.add_refresh_token`) |
+| Token validation: maximum session length and idle timeout on every access token | **Both guards**, check for check (`backend/auth/guards.py` and `auth/session_policy.rs`, called after the `sessions_invalid_before` cut) |
+
+**Rules a reviewer should know.**
+
+* The access token gains a `sat` claim (session auth time) on refresh only; a
+  login token has none and its own `iat` is the session start. The maximum
+  length is measured from `sat`, else `iat`; a token with neither is not
+  refused (it predates `iat` and lives 15 minutes at most).
+* Idle time is `NOW() - users.last_activity_at` computed in the database, per
+  person (not per device). Written at most once per 30 s, and **only for
+  tenants with an idle limit**. A request that sends `X-StockAI-Background: 1`
+  (the page pollers do) is checked but not counted, otherwise an open tab would
+  keep the session alive forever. API keys are never subject to either limit.
+* The password-age clock is `GREATEST(password_changed_at or created_at,
+  password_max_age_since)`, and `password_max_age_since` restarts whenever the
+  limit is set or changed, so switching it on never locks the tenant out. It is
+  enforced at password login only (a provider-only account has nothing to
+  expire); the person resets with the normal forgot-password flow.
+* Lockout: the lock is checked before the password, so a correct password
+  proves nothing to a locked account. The failure counter is one atomic
+  `UPDATE ... +1`. The lock ends by itself, by an admin unlock, or by a password
+  reset. Removing the lockout setting clears every lock of the tenant, so none
+  can come back to life later. `account.user_locked_out` is recorded once per
+  lock.
+* `PUT` is a replacement (null or absent = not set), refuses unknown fields (a
+  typo must not silently store nothing), and rejects non-integers, booleans as
+  numbers and values outside the bounds with a structured code. Bounds are in
+  the route, in `session_policy.py` and in CHECK constraints.
+* Events (`events.py` + the Rust mirrors in `activity.rs` and `r1/alerts.rs`):
+  `account.session_policy_changed` (names of the settings that moved, never a
+  value), `account.user_locked_out`, `account.user_unlocked`, reason
+  `too_many_failed_logins`. They reach the audit trail through `LEGACY` in
+  `backend/audit/catalog.py` and `audit/catalog.rs` (not `ROUTES`: that table
+  must name real Python routes, and `test_every_catalogued_route_is_a_real_route`
+  enforces it). Sizes now: 76 LEGACY, 29 target types, 111 audit actions, 115
+  stored actions.
+
+**No Python failover.** The four routes exist only in `api-rs`. With the Caddy
+group moved to `routes.d/off/` or the container down, the policy screen cannot
+load or save; stored policy keeps being enforced by Python on every path it
+serves, and by Rust on every path Rust serves. Example gateway file:
+`deploy/rust-api/routes.d/50-session-policy.caddy.example`.
+
+**Contract results** (`run_session_policy`, Python on `:58731` from this
+worktree, Rust debug build on `:58732`, throwaway database on a private
+Postgres, `TESTING_MODE=true`): 66 session-policy cases, all pass; the whole
+harness 543 cases, 540 pass, 3 skip (the same three as before). Covered: the
+permission pairs on all four routes (viewer and analyst 403 with state
+unchanged, no auth, read and write keys refused), 16 refused bodies that store
+nothing, the stored row, the event, the age clock, the same token refused (or
+accepted) with the same code by both guards, background polls and the idle
+clock on both services, concurrent sessions, refresh past the limits,
+lockout, unlock (including another tenant's user), password rules at the
+Python endpoints, the audit trail on both services. Rust unit tests: 14 new
+(134 pass in the crate). Not contract-verified: `TRIAL_EXPIRED` on the write
+routes, and the run used `TESTING_MODE=true` (the auth-rate limiter is off).
+
