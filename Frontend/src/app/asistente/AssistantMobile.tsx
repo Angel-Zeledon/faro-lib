@@ -18,13 +18,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, MessageSquare, MoreHorizontal, Search, Send, Star, Trash2, X,
 } from 'lucide-react'
-import type { AssistantWelcome, Chat, ChatMessage } from '@/lib/types'
+import type { AssistantWelcome, Chat, ChatMessage, FavoriteMessage } from '@/lib/types'
 import Spinner from '@/components/ui/Spinner'
 import BottomSheet from '@/components/mobile/BottomSheet'
 import ComposerDock, { scrollPageToBottom } from '@/components/mobile/ComposerDock'
 import { useMobileHeader } from '@/components/mobile/MobileHeaderContext'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { AssistantAvatar } from '@/components/brand/AssistantAvatar'
 import { MessageBubble, TypingBubble, previewText, clampStyle } from './parts'
+import FavoritesList from './Favorites'
 
 export interface AssistantMobileProps {
   chats: Chat[]
@@ -51,6 +53,14 @@ export interface AssistantMobileProps {
   onToggleFavorite: (id: string) => void
   onDelete: (id: string) => void
   relTime: (iso: string) => string
+  /** Star / unstar one message of the open conversation. */
+  onToggleStar: (msg: ChatMessage) => void
+  /** Saved messages (null while loading) and the actions on them. */
+  favorites: FavoriteMessage[] | null
+  favoritesError: string | null
+  onLoadFavorites: () => void
+  onOpenFavorite: (item: FavoriteMessage) => void
+  onRemoveFavorite: (item: FavoriteMessage) => void
 }
 
 export default function AssistantMobile(p: AssistantMobileProps) {
@@ -102,6 +112,7 @@ function Home(p: AssistantMobileProps) {
   const { t } = useLanguage()
   const [search, setSearch] = useState('')
   const [actionsFor, setActionsFor] = useState<Chat | null>(null)
+  const [tab, setTab] = useState<'chats' | 'favorites'>('chats')
   const busy = p.sending || p.creatingChat
   const disabled = p.assistantOff || busy
 
@@ -130,10 +141,10 @@ function Home(p: AssistantMobileProps) {
           background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <MessageSquare size={22} color="var(--accent)" strokeWidth={1.7} />
+          <AssistantAvatar size={30} />
         </span>
         <div data-testid="assistant-welcome" style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3 }}>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3 }}>
             {w ? (w.first_name ? t('analyst.greeting', { name: w.first_name }) : t('analyst.greeting_anonymous')) : t('analyst.greeting_anonymous')}
           </div>
           <div style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.55, marginTop: 4 }}>
@@ -179,9 +190,41 @@ function Home(p: AssistantMobileProps) {
 
       {/* Previous conversations */}
       <section data-tour="an.chats">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <h2 style={{ ...sectionHeading, margin: 0, flex: 1 }}>{t('analyst.recent_header')}</h2>
+        <div role="tablist" aria-label={t('analyst.recent_header')} style={{
+          display: 'flex', gap: 4, padding: 3, marginBottom: 10, borderRadius: 12,
+          background: 'var(--surface-2)', border: '1px solid var(--border)',
+        }}>
+          {(['chats', 'favorites'] as const).map(id => {
+            const on = tab === id
+            return (
+              <button
+                key={id} role="tab" type="button" aria-selected={on}
+                data-testid={`assistant-tab-${id}`}
+                onClick={() => { setTab(id); if (id === 'favorites') p.onLoadFavorites() }}
+                style={{
+                  all: 'unset', boxSizing: 'border-box', flex: 1, minHeight: 40, borderRadius: 9, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  fontSize: 14, fontWeight: 600, textAlign: 'center',
+                  color: on ? 'var(--text)' : 'var(--muted)',
+                  background: on ? 'var(--surface)' : 'transparent',
+                  boxShadow: on ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >
+                {id === 'favorites' && <Star size={14} aria-hidden="true" fill={on ? '#B7791F' : 'none'} color={on ? '#B7791F' : 'currentColor'} />}
+                {id === 'chats' ? t('analyst.tab_chats') : t('analyst.tab_favorites')}
+                {id === 'favorites' && p.favorites && p.favorites.length > 0 && (
+                  <span className="msg-meta">{p.favorites.length}</span>
+                )}
+              </button>
+            )
+          })}
         </div>
+        {tab === 'favorites' ? (
+          <FavoritesList
+            large items={p.favorites} error={p.favoritesError}
+            onOpen={p.onOpenFavorite} onRemove={p.onRemoveFavorite}
+          />
+        ) : (<>
         {p.chats.length > 4 && (
           <div style={{ position: 'relative', marginBottom: 10 }}>
             <Search size={16} aria-hidden="true" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--dim)' }} />
@@ -230,6 +273,7 @@ function Home(p: AssistantMobileProps) {
             )}
           </>
         )}
+        </>)}
       </section>
 
       {/* Per-conversation actions: favourite, delete (with undo) */}
@@ -383,7 +427,7 @@ function Thread(p: AssistantMobileProps) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 4 }}>
           {p.messages.map(m => (
-            <div key={m.id} id={`msg-${m.id}`} style={{ scrollMarginTop: 8 }}><MessageBubble msg={m} large
+            <div key={m.id} id={`msg-${m.id}`} style={{ scrollMarginTop: 8 }}><MessageBubble msg={m} large onToggleStar={p.onToggleStar}
               onRetry={p.onRetry && m.id === lastId ? p.onRetry : undefined} /></div>
           ))}
           {p.sending && <TypingBubble />}
@@ -412,6 +456,9 @@ function Composer({ input, onInput, onSend, busy, disabled, placeholder, chips, 
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 132)}px`
+    // Scroll only once the cap is reached; below it a rounding pixel would draw
+    // a scrollbar inside the one-line field.
+    el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden'
   }, [input])
   const canSend = !!input.trim() && !busy && !disabled
 

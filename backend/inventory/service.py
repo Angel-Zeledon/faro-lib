@@ -5101,24 +5101,48 @@ def run_daily_inventory_alerts() -> None:
             critical = [i for i in items if i["signal"] == "PEDIR_YA"]
             warning  = [i for i in items if i["signal"] == "PEDIR_PRONTO"]
 
-            if not critical and not warning:
+            # Users limited to some warehouses get the digest of THEIR
+            # warehouses (notifications/scoped_digest.py), so the tenant-wide
+            # "nothing at risk" verdict must not end the run for them: the
+            # aggregate can be fine while one warehouse is out.
+            scoped_recipients = get_scoped_alert_recipients(tid)
+            company_has_alert = bool(critical or warning)
+            if not company_has_alert and not scoped_recipients:
                 continue
 
             # Transfer suggestions (feature 5.4): only meaningful — and only
             # computed — for tenants with 2+ warehouses.
             from backend.inventory import warehouse_service as wh_svc
             transfer_count = 0
-            if wh_svc.count_warehouses(tid) >= 2:
+            wh_items = None
+            scoped_error: Optional[Exception] = None
+            if scoped_recipients:
+                # The exact computation their screens read. A failure here must
+                # reach them as a failed row (below) without costing the
+                # company digest its send.
                 try:
                     wh_items = get_inventory_status_by_warehouse(
                         tid, sid,
                         forecasts=forecasts, stock_rows=stock_rows,
                         learned_lead_times=learned_lead_times,
                         incoming_qty=incoming_qty,
-                        period=period,          # same reason as above
+                        period=period,
                     )
+                except Exception as e:
+                    scoped_error = e
+                    log.error("inventory_alert: scoped status failed tenant=%s: %s", tid, e)
+            if company_has_alert and wh_svc.count_warehouses(tid) >= 2:
+                try:
+                    company_wh_items = wh_items if wh_items is not None else \
+                        get_inventory_status_by_warehouse(
+                            tid, sid,
+                            forecasts=forecasts, stock_rows=stock_rows,
+                            learned_lead_times=learned_lead_times,
+                            incoming_qty=incoming_qty,
+                            period=period,          # same reason as above
+                        )
                     transfer_count = sum(
-                        1 for i in wh_items if i.get("recommended_action") == "transfer")
+                        1 for i in company_wh_items if i.get("recommended_action") == "transfer")
                 except Exception as e:
                     log.debug("alert transfer count failed tenant=%s: %s", tid, e)
 
@@ -5130,9 +5154,8 @@ def run_daily_inventory_alerts() -> None:
             # risk instead of the ten it had room to list.
             from backend.notifications import email as email_mod
             # Company totals: active, unscoped recipients only. A warehouse-
-            # scoped buyer is told in their activity log that it was withheld.
-            recipients = get_tenant_alert_recipients(tid)
-            record_digest_withheld(tid, "inventory_alert")
+            # scoped buyer gets the digest of their own warehouses below.
+            recipients = get_tenant_alert_recipients(tid) if company_has_alert else []
             for r in recipients:
                 if not r.get("email"):
                     continue
@@ -5189,6 +5212,20 @@ def run_daily_inventory_alerts() -> None:
                     },
                 )
 
+            if scoped_recipients and scoped_error is not None:
+                for r in scoped_recipients:
+                    record_notification_delivery(
+                        tid, r["id"], "inventory_alert_email", False,
+                        context={"channel": "email", "recipient": r.get("email"),
+                                 "reason": f"scoped digest failed: {scoped_error}"},
+                    )
+            elif scoped_recipients:
+                from backend.notifications.scoped_digest import send_scoped_inventory_alerts
+                send_scoped_inventory_alerts(
+                    tid, scoped_recipients, wh_items or [],
+                    inventory_url=inventory_url, period=period,
+                )
+
         except Exception as e:
             log.error("inventory_alert: tenant=%s error=%s", tid, e)
             # A crash BEFORE any send (a corrupt forecasts blob, an unreadable
@@ -5199,7 +5236,7 @@ def run_daily_inventory_alerts() -> None:
             # without a failed row, absence is ambiguous. Write one per
             # recipient so it shows up in /me/activity, where they can see it.
             try:
-                for r in get_tenant_alert_recipients(tid) or []:
+                for r in get_tenant_alert_recipients(tid, include_scoped=True) or []:
                     record_notification_delivery(
                         tid, r["id"], "inventory_alert_email", False,
                         context={"channel": "email", "recipient": r.get("email"),

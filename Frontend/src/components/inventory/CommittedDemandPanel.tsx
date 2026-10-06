@@ -23,6 +23,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { getUser } from '@/lib/auth'
+import { localeFor } from '@/lib/numberLocale'
 import { parseCommittedCsv, type CsvProblem } from '@/lib/committedDemandCsv'
 
 const C = { border: 'var(--border)', text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)', red: '#C0504D', amber: '#B7791F' }
@@ -31,7 +32,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10)
 
 interface BulkRowError { row: number; code: string; params?: Record<string, unknown> }
 
-export default function CommittedDemandPanel() {
+export default function CommittedDemandPanel({ onChanged, reloadToken }: { onChanged?: () => void; reloadToken?: number } = {}) {
   const { t, lang } = useLanguage()
   const errorDetail = useErrorDetail()
   const confirm = useConfirm()
@@ -72,7 +73,7 @@ export default function CommittedDemandPanel() {
       .finally(() => setLoaded(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [load, reloadToken])
   useEffect(() => { listWarehouses().then(setWarehouses).catch(() => setWarehouses([])) }, [])
 
   const sorted = useMemo(
@@ -85,14 +86,17 @@ export default function CommittedDemandPanel() {
   const field: React.CSSProperties = {
     width: '100%', boxSizing: 'border-box', fontSize: narrow ? 16 : 12.5, padding: narrow ? '10px 10px' : '6px 8px',
     borderRadius: narrow ? 10 : 7, border: `1px solid ${C.border}`, background: 'var(--surface-2)', color: C.text,
-    minHeight: narrow ? 44 : undefined,
+    minHeight: narrow ? 44 : 32,
   }
-  const btn = (primary = false, disabled = false): React.CSSProperties => ({
+  // `primary` is a state for the status tabs (selected) and the real primary action
+  // for Save / Send: `solid` makes the latter the one filled button in its row.
+  const btn = (primary = false, disabled = false, solid = false): React.CSSProperties => ({
     all: 'unset', cursor: disabled ? 'default' : 'pointer', boxSizing: 'border-box', display: 'inline-flex',
-    alignItems: 'center', gap: 5, padding: narrow ? '0 14px' : '5px 12px', minHeight: narrow ? 44 : undefined,
+    alignItems: 'center', justifyContent: 'center', gap: 5, padding: narrow ? '0 14px' : '5px 12px', minHeight: narrow ? 44 : undefined,
     borderRadius: narrow ? 10 : 7, fontSize: narrow ? 14 : 12, fontWeight: 600, opacity: disabled ? 0.5 : 1,
     border: `1px solid ${C.border}`, color: C.text,
     ...(primary ? { background: 'color-mix(in srgb, var(--accent) 10%, transparent)' } : {}),
+    ...(solid ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' } : {}),
   })
 
   const qty = Number(form.quantity)
@@ -132,6 +136,8 @@ export default function CommittedDemandPanel() {
     try {
       await setCommittedDemandStatus(c.id, next)
       load()
+      // A contract's progress is read from these rows: let it refresh too.
+      if (c.source === 'contract') onChanged?.()
     } catch (e: unknown) {
       setError(errorDetail(e))
     } finally { setBusy(false) }
@@ -175,11 +181,16 @@ export default function CommittedDemandPanel() {
 
   const lbl: React.CSSProperties = { fontSize: narrow ? 13 : 11.5, color: C.muted }
   const card: React.CSSProperties = {
-    background: 'var(--surface)', border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px',
+    background: narrow ? 'var(--surface)' : 'var(--surface-2)', border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px',
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: narrow ? 0 : 16 }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 12,
+      // A card of its own on desktop, like the analogy panel under it; on the
+      // phone the page already is the card.
+      ...(narrow ? {} : { padding: '16px 20px', border: `1px solid ${C.border}`, borderRadius: 12, background: 'var(--surface)' }),
+    }}>
       <p style={{ margin: 0, fontSize: 13, color: C.dim, lineHeight: 1.5 }}>{t('committed.intro')}</p>
 
       {notice && <p role="status" style={{ margin: 0, fontSize: 12.5, color: C.text }}>{notice}</p>}
@@ -196,7 +207,7 @@ export default function CommittedDemandPanel() {
         </div>
         {canWrite && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" style={btn()} onClick={() => { setFormOpen(o => !o); setError(null) }}>
+            <button type="button" style={btn(false, false, !formOpen)} onClick={() => { setFormOpen(o => !o); setError(null) }}>
               <Plus size={12} aria-hidden="true" /> {t('committed.add')}
             </button>
             <button type="button" style={btn()} onClick={() => fileRef.current?.click()}>
@@ -247,7 +258,7 @@ export default function CommittedDemandPanel() {
           </label>
           <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: 11, color: C.dim }}>{t('committed.in_history_hint')}</p>
           <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8 }}>
-            <button type="button" disabled={busy || !valid} onClick={save} style={btn(true, busy || !valid)}>
+            <button type="button" disabled={busy || !valid} onClick={save} style={btn(false, busy || !valid, true)}>
               {busy ? t('common.saving') : t('committed.save')}
             </button>
             <button type="button" onClick={() => setFormOpen(false)} style={{ ...btn(), border: 'none', color: C.muted }}>
@@ -290,7 +301,7 @@ export default function CommittedDemandPanel() {
           <div style={{ display: 'flex', gap: 8 }}>
             {csvRows && (
               <button type="button" onClick={sendCsv} disabled={busy || csvProblems.length > 0 || csvRows.length === 0}
-                style={btn(true, busy || csvProblems.length > 0 || csvRows.length === 0)}>
+                style={btn(false, busy || csvProblems.length > 0 || csvRows.length === 0, true)}>
                 {busy ? t('common.saving') : t('committed.import_send', { n: csvRows.length })}
               </button>
             )}
@@ -320,7 +331,7 @@ export default function CommittedDemandPanel() {
               <span style={{ color: C.dim }}>{t('committed.by_customer_open', { n: g.open })}</span>
               {g.at_risk > 0 ? (
                 <span style={{ color: C.red, fontWeight: 600 }}>
-                  {t('committed.by_customer_at_risk', { n: g.at_risk, units: g.shortfall.toLocaleString() })}
+                  {t('committed.by_customer_at_risk', { n: g.at_risk, units: g.shortfall.toLocaleString(localeFor(lang)) })}
                   {g.first_safe_order_date && <> · {t('committed.order_by', { date: g.first_safe_order_date })}</>}
                 </span>
               ) : g.unknown < g.open ? (
@@ -341,16 +352,21 @@ export default function CommittedDemandPanel() {
                   <CalendarClock size={13} color="var(--accent)" aria-hidden="true" />
                   <span>{c.sku}</span>
                   <span style={{ fontWeight: 500, color: C.muted }}>
-                    {t('committed.line_units', { quantity: c.quantity.toLocaleString(), probability: Math.round(c.probability * 100) })}
+                    {t('committed.line_units', { quantity: c.quantity.toLocaleString(localeFor(lang)), probability: Math.round(c.probability * 100) })}
                   </span>
                   {c.overdue && (
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: C.amber, border: `1px solid ${C.amber}`, borderRadius: 6, padding: '1px 6px' }}>
                       {t('committed.overdue')}
                     </span>
                   )}
+                  {c.source === 'contract' && (
+                    <span title={t('committed.from_contract_hint')} style={{ fontSize: 10.5, fontWeight: 600, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 6, padding: '1px 6px' }}>
+                      {t('committed.from_contract')}
+                    </span>
+                  )}
                   {c.status === 'open' && c.at_risk === true && (
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: C.red, border: `1px solid ${C.red}`, borderRadius: 6, padding: '1px 6px' }}>
-                      {t('committed.at_risk', { units: (c.shortfall ?? 0).toLocaleString() })}
+                      {t('committed.at_risk', { units: (c.shortfall ?? 0).toLocaleString(localeFor(lang)) })}
                     </span>
                   )}
                   {c.status === 'open' && c.at_risk === false && (

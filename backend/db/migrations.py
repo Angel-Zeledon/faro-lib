@@ -588,6 +588,13 @@ _MIGRATIONS = _SPANISH_SWEEP + _BASE_SCHEMA + [
      )"""),
     ("create_chat_messages_chat_idx",
      "CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_created ON chat_messages (chat_id, created_at)"),
+    # A message the person saved as a favorite: NULL = not starred, otherwise when
+    # it was starred (the Favorites list is ordered by it). Additive, nullable.
+    ("add_chat_messages_starred_at",
+     "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS starred_at TIMESTAMPTZ"),
+    ("create_chat_messages_starred_idx",
+     "CREATE INDEX IF NOT EXISTS idx_chat_messages_starred ON chat_messages (tenant_id, starred_at) "
+     "WHERE starred_at IS NOT NULL"),
     ("add_pw_change_codes_attempts",
      "ALTER TABLE pw_change_codes ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0"),
     ("create_auth_rate_events",
@@ -2034,10 +2041,15 @@ from backend.inventory.approval_migrations import MIGRATIONS as _APPROVALS  # no
 _MIGRATIONS += _APPROVALS
 from backend.inventory.committed_demand_migrations import MIGRATIONS as _COMMITTED  # noqa: E402
 _MIGRATIONS += _COMMITTED
+# Blanket supply contracts: after committed demand, whose table they extend.
+from backend.inventory.supply_contract_migrations import MIGRATIONS as _SUPPLY_CONTRACTS  # noqa: E402
+_MIGRATIONS += _SUPPLY_CONTRACTS
 from backend.inventory.spike_edit_migrations import MIGRATIONS as _SPIKE_EDITS  # noqa: E402
 _MIGRATIONS += _SPIKE_EDITS
 from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  # noqa: E402
 _MIGRATIONS += _SKU_ANALOGIES
+from backend.inventory.demand_plan_migrations import MIGRATIONS as _DEMAND_PLANS  # noqa: E402
+_MIGRATIONS += _DEMAND_PLANS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
@@ -2206,6 +2218,136 @@ _ENTERPRISE_ACCESS = [
      "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS warehouse_scope JSONB"),
 ]
 _MIGRATIONS += _ENTERPRISE_ACCESS
+
+
+# ── "Send feedback" (2026-10-05) ─────────────────────────────────────────────
+# What a signed-in person typed into the feedback dialog, plus the facts they
+# saw on the confirmation step. The screenshot is a FILE under storage/feedback/
+# (never a column): `screenshot_path` is relative to that tenant's folder. The
+# two consent flags are separate on purpose and each carries its own timestamp:
+# `consent_reply` = "you may e-mail me about this report", `consent_news` =
+# explicit opt-in to product news. No tenant FK on purpose, like most tenant
+# tables: erasure is the explicit list in tenants/data_export.py.
+_FEEDBACK = [
+    ("create_feedback_reports",
+     """CREATE TABLE IF NOT EXISTS feedback_reports (
+         id                  TEXT PRIMARY KEY,
+         tenant_id           TEXT NOT NULL,
+         user_id             TEXT NOT NULL,
+         created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         message             TEXT NOT NULL,
+         error_code          TEXT,
+         page_path           TEXT,
+         user_agent          TEXT,
+         app_version         TEXT,
+         account_email       TEXT,
+         screenshot_path     TEXT,
+         consent_reply       BOOLEAN NOT NULL DEFAULT FALSE,
+         consent_reply_at    TIMESTAMPTZ,
+         consent_news        BOOLEAN NOT NULL DEFAULT FALSE,
+         consent_news_at     TIMESTAMPTZ,
+         notified            BOOLEAN NOT NULL DEFAULT FALSE
+     )"""),
+    ("idx_feedback_reports_tenant",
+     "CREATE INDEX IF NOT EXISTS idx_feedback_reports_tenant "
+     "ON feedback_reports (tenant_id, created_at DESC)"),
+    ("idx_feedback_reports_user",
+     "CREATE INDEX IF NOT EXISTS idx_feedback_reports_user "
+     "ON feedback_reports (user_id, created_at DESC)"),
+]
+_MIGRATIONS += _FEEDBACK
+# ── Online payments (backend/billing/) ───────────────────────────────────────
+# Stripe and PayPal, hosted pages only. Everything additive: with no provider
+# configured nothing writes to these tables and every tenant behaves exactly as
+# before.
+_BILLING = [
+    # Who set the tier. 'manual' for every existing row: until today the only
+    # way onto `paid` was the owner setting the column by hand, and billing
+    # must never undo that (the grandfather rule in billing/entitlement.py).
+    # Catalog-guarded, not ADD COLUMN IF NOT EXISTS, for the lock reason
+    # written above `add_users_has_password`: `tenants` is read by every login.
+    ("add_tenants_tier_source",
+     """DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'tenants'
+               AND column_name = 'tier_source'
+          ) THEN
+            ALTER TABLE tenants ADD COLUMN tier_source TEXT NOT NULL DEFAULT 'manual';
+          END IF;
+        END $$"""),
+    ("add_tenants_tier_changed_at",
+     """DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'tenants'
+               AND column_name = 'tier_changed_at'
+          ) THEN
+            ALTER TABLE tenants ADD COLUMN tier_changed_at TIMESTAMPTZ;
+          END IF;
+        END $$"""),
+    # A tenant's customer record at each provider. One per (tenant, provider);
+    # a provider customer belongs to exactly one tenant, instance-wide.
+    ("create_billing_customers",
+     """CREATE TABLE IF NOT EXISTS billing_customers (
+         id                   TEXT PRIMARY KEY,
+         tenant_id            TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         provider             TEXT NOT NULL,
+         provider_customer_id TEXT NOT NULL,
+         created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         UNIQUE (provider, provider_customer_id),
+         UNIQUE (tenant_id, provider)
+     )"""),
+    # What the provider last told us about each subscription, as fetched from
+    # the provider when its webhook arrived. `last_event_at` is the creation
+    # time of the newest event applied: an older event arriving late is
+    # recorded and ignored, never applied over a newer one.
+    ("create_billing_subscriptions",
+     """CREATE TABLE IF NOT EXISTS billing_subscriptions (
+         id                       TEXT PRIMARY KEY,
+         tenant_id                TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         provider                 TEXT NOT NULL,
+         provider_subscription_id TEXT NOT NULL,
+         status                   TEXT NOT NULL,
+         plan                     TEXT,
+         current_period_end       TIMESTAMPTZ,
+         cancel_at_period_end     BOOLEAN NOT NULL DEFAULT FALSE,
+         past_due_since           TIMESTAMPTZ,
+         ended_at                 TIMESTAMPTZ,
+         last_event_at            TIMESTAMPTZ,
+         created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         UNIQUE (provider, provider_subscription_id)
+     )"""),
+    ("create_billing_subscriptions_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_tenant "
+     "ON billing_subscriptions (tenant_id)"),
+    # Every verified webhook, once. The UNIQUE (provider, event_id) IS the
+    # idempotency: a replay inserts nothing and therefore changes nothing.
+    # Rows are never updated after their transaction commits and never deleted
+    # except with the whole tenant. `tenant_id` is NULL for an event that
+    # named no tenant we know (kept: it is still the record that it arrived).
+    ("create_billing_events",
+     """CREATE TABLE IF NOT EXISTS billing_events (
+         id               TEXT PRIMARY KEY,
+         provider         TEXT NOT NULL,
+         event_id         TEXT NOT NULL,
+         event_type       TEXT NOT NULL,
+         tenant_id        TEXT,
+         event_created_at TIMESTAMPTZ,
+         received_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         processed_at     TIMESTAMPTZ,
+         outcome          TEXT,
+         UNIQUE (provider, event_id)
+     )"""),
+    ("create_billing_events_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS idx_billing_events_tenant "
+     "ON billing_events (tenant_id, received_at DESC)"),
+]
+_MIGRATIONS += _BILLING
 
 
 # Postgres SQLSTATE codes that mean "this object is already there", which is the

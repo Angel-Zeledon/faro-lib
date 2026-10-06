@@ -120,7 +120,7 @@ export default function PedidosMobile(props: PedidosMobileProps) {
         <>
           {loading ? (
             <LoadingState label={t('orders.loading_label')}>
-              <SkeletonCards count={4} height={92} />
+              <SkeletonCards count={3} height={92} stacked />
             </LoadingState>
           ) : error ? (
             <ErrorState error={error} onRetry={onRetry} />

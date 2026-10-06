@@ -65,6 +65,9 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # Caller-written SQL run on the customer's database: who, which source,
     # a hash of the statement and the row count (the handler's note).
     ("POST", "/data-sources/{source_id}/execute-query"): _r("dataset.query_run", "dataset", "source_id"),
+    # The staged connection test: it stores the verdict that gates every query,
+    # and it makes this server connect to the customer's database.
+    ("POST", "/data-sources/{source_id}/test-connection"): _r("dataset.connection_tested", "dataset", "source_id"),
     ("DELETE", "/data-sources/{source_id}"):        _r("dataset.deleted", "dataset", "source_id"),
     # users (invites, role changes and deactivation are recorded by their own events)
     ("PATCH", "/users/{user_id}/permissions"):      _r("user.permissions_changed", "user", "user_id"),
@@ -97,6 +100,8 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("DELETE", "/webhooks/{webhook_id}"):           _r("webhook.deleted", "webhook", "webhook_id"),
     ("POST", "/documents"):                         _r("document.created", "document"),
     ("DELETE", "/documents/{doc_id}"):              _r("document.deleted", "document", "doc_id"),
+    # a person telling us what happened (the text itself is never audited)
+    ("POST", "/feedback"):                          _r("feedback.sent", "feedback"),
     # data leaving the product
     ("GET", "/tenant/export"):                      _r("export.tenant_data", "tenant"),
     ("GET", "/inventory/status/export-po"):         _r("export.purchase_orders", "purchase_order"),
@@ -105,6 +110,11 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("GET", "/inventory/report/pdf"):               _r("export.inventory_pdf", "session"),
     ("GET", "/sessions/{session_id}/reports/{format}"): _r("export.session_report", "session", "session_id"),
     ("GET", "/audit/export"):                       _r("export.audit_log", "audit_log"),
+    # Paying for the plan. Who opened a checkout or the subscription page is
+    # audited here; what the provider then confirmed is recorded by the
+    # webhook as a `billing.*` event (LEGACY below), with "system" as actor.
+    ("POST", "/billing/checkout"):                  _r("billing.checkout_started", "billing"),
+    ("POST", "/billing/portal"):                    _r("billing.portal_opened", "billing"),
 }
 
 # Rows that already carry who/what, mapped onto the audit shape for reading.
@@ -145,6 +155,14 @@ LEGACY: dict[str, tuple[str, str]] = {
     "committed_demand.created":        ("committed_demand", "committed_demand.created"),
     "committed_demand.imported":       ("committed_demand", "committed_demand.imported"),
     "committed_demand.changed":        ("committed_demand", "committed_demand.changed"),
+    "supply_contract.created":         ("supply_contract", "supply_contract.created"),
+    "supply_contract.revised":         ("supply_contract", "supply_contract.revised"),
+    "supply_contract.status_changed":  ("supply_contract", "supply_contract.status_changed"),
+    "demand_plan.created":             ("demand_plan", "demand_plan.created"),
+    "demand_plan.submitted":           ("demand_plan", "demand_plan.submitted"),
+    "demand_plan.approved":            ("demand_plan", "demand_plan.approved"),
+    "demand_plan.rejected":            ("demand_plan", "demand_plan.rejected"),
+    "demand_plan.commented":           ("demand_plan", "demand_plan.commented"),
     "data.stock_imported":             ("bulk_import", "bulk_import.stock"),
     "data.stock_import_partial":       ("bulk_import", "bulk_import.stock"),
     "data.suppliers_imported":         ("bulk_import", "bulk_import.suppliers"),
@@ -155,6 +173,10 @@ LEGACY: dict[str, tuple[str, str]] = {
     "data.shrinkage_recorded":         ("shrinkage", "shrinkage.recorded"),
     "data.stock_count_applied":        ("stock_count", "stock_count.applied"),
     "api_write":                       ("api_call", "api_call.write"),
+    "billing.plan_activated":          ("billing", "billing.plan_activated"),
+    "billing.plan_downgraded":         ("billing", "billing.plan_downgraded"),
+    "billing.payment_failed":          ("billing", "billing.payment_failed"),
+    "billing.subscription_changed":    ("billing", "billing.subscription_changed"),
 }
 
 # The target types the trail can be filtered by.

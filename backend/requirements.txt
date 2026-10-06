@@ -57,3 +57,7 @@ SQLAlchemy==2.0.50
 # production image had never been built.
 PyMySQL==1.2.0
 pyodbc==5.3.0
+# Oracle data sources: python-oracledb in thin mode (pure Python, no Oracle
+# client libraries). The code used to name the cx_Oracle dialect, which was
+# never installed, so every Oracle source failed with a missing-module error.
+oracledb==26.0.1

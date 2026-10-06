@@ -50,7 +50,7 @@ function ResetPasswordForm() {
         <div style={{ marginBottom: 10 }}>
           <BrandMark size={40} />
         </div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px' }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '0 0 4px' }}>
           {t('auth.set_new_password_title')}
         </h1>
       </div>

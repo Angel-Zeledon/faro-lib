@@ -460,9 +460,15 @@ def send_inventory_alert_email(
     inventory_url: str,
     period: str = "daily",
     tenant_id: str | None = None,
+    scope_warehouses: list[str] | None = None,
 ) -> bool:
     """
     Daily digest: SKUs at risk of stockout. Returns True if sent.
+
+    `scope_warehouses`: set only for a recipient limited to some warehouses.
+    The lists are then their warehouses' rows, the subject and the body name
+    those warehouses, and each row says which warehouse it is in. None leaves
+    the message exactly as it was.
 
     Callers pass the FULL lists. Trimming for readability happens here, after
     the counts are taken, so the subject and body report how many SKUs are
@@ -479,6 +485,9 @@ def send_inventory_alert_email(
         days  = item.get("coverage_days")
         recom = item.get("recommended_qty")
         prov  = item.get("supplier") or "—"
+        if scope_warehouses and item.get("warehouse"):
+            # A scoped digest can hold the same SKU once per warehouse.
+            name = f'{name} · {html_lib.escape(str(item["warehouse"]))}'.strip(" ·")
         # Coverage is expressed in the tenant's OWN planning unit. This used to
         # render "días" whatever the period was, so a weekly tenant read "4
         # días" for four WEEKS of cover — the digest understating the cushion by
@@ -556,10 +565,22 @@ def send_inventory_alert_email(
         f'</span>'
     ) if n_warning else ''
 
+    scope_line = ""
+    if scope_warehouses:
+        scope_text = html_lib.escape(", ".join(scope_warehouses))
+        scope_line = (
+            f'<p style="color:{_DIM};margin:0 0 12px;font-size:13px;">'
+            f'{render_es("digest_scope_line", warehouses=scope_text)}</p>'
+        )
+        subject_prefix = render_es(
+            "digest_scope_subject", subject=subject_prefix,
+            warehouses=", ".join(scope_warehouses))
+
     html = _base_html(
         render_es("alert_email_title"),
         f"""
         <p style="font-size:20px;font-weight:700;margin:0 0 4px;">{render_es("alert_email_title")}</p>
+        {scope_line}
         <p style="color:{_DIM};margin:0 0 24px;font-size:13px;">
           {summary_critical}
           {summary_warning}
@@ -671,9 +692,13 @@ def send_data_freshness_reminder_email(
     upload_url: str,
     tenant_id: str | None = None,
     silent_warehouses: list[dict] | None = None,
+    scope_warehouses: list[str] | None = None,
 ) -> bool:
     """
     The reminder that reaches a buyer who stopped opening the app.
+
+    `scope_warehouses`: set only for a recipient limited to some warehouses;
+    the message then names them (and `silent_warehouses` holds theirs only).
 
     `silent_warehouses` ([{name, days}]) names the warehouses that stopped
     reporting while the others kept going; empty/None leaves the message as it
@@ -702,6 +727,12 @@ def send_data_freshness_reminder_email(
             f'{render_es("freshness_email_warehouses", list=_warehouse_list(silent_warehouses))}</p>'
         )
 
+    if scope_warehouses:
+        blocks.insert(0, (
+            f'<p style="color:{_DIM};margin:0 0 14px;">'
+            f'{render_es("digest_scope_line", warehouses=html_lib.escape(", ".join(scope_warehouses)))}</p>'
+        ))
+
     html = _base_html(
         render_es("freshness_email_title"),
         f"""
@@ -721,6 +752,9 @@ def send_data_freshness_reminder_email(
         subject = render_es("freshness_email_subject_stock", days=stock_age_days)
     else:
         subject = render_es("freshness_email_subject_warehouses")
+    if scope_warehouses:
+        subject = render_es("digest_scope_subject", subject=subject,
+                            warehouses=", ".join(scope_warehouses))
     try:
         _send(to, subject, html, tenant_id=tenant_id)
         return True
@@ -1095,4 +1129,52 @@ def send_upgrade_request_email(
         return True
     except Exception as exc:
         log.error("Failed to send upgrade request email to %s: %s", to, exc)
+        return False
+
+
+def send_feedback_email(
+    *,
+    to: str,
+    tenant_name: str,
+    tenant_id: str,
+    report: dict,
+    screenshot=None,
+) -> bool:
+    """Tell the instance contact about a feedback report. Returns True if sent.
+
+    Goes to us, not to a customer, so like the upgrade request it is plain
+    English and needs no locale catalog. Everything the person typed is escaped:
+    this is HTML that a person controls. The screenshot, when there is one,
+    travels as an attachment (both transports support it); the stored file in
+    `storage/feedback/` stays the record. The log line names ids only.
+    """
+    def esc(value) -> str:
+        return html_lib.escape(str(value)) if value not in (None, "") else "—"
+
+    def yes_no(flag) -> str:
+        return "yes" if flag else "no"
+
+    body = f"""
+        <p style="font-size:20px;font-weight:700;margin:0 0 8px;">Feedback from {esc(tenant_name)}</p>
+        <p style="color:{_DIM};margin:0 0 4px;">Report: <strong style="color:{_TEXT};">{esc(report.get("id"))}</strong> · tenant {esc(tenant_id)}</p>
+        <p style="color:{_DIM};margin:0 0 4px;">From: <strong style="color:{_TEXT};">{esc(report.get("account_email"))}</strong></p>
+        <p style="color:{_DIM};margin:0 0 4px;">Error code: <strong style="color:{_TEXT};">{esc(report.get("error_code"))}</strong></p>
+        <p style="color:{_DIM};margin:0 0 4px;">Page: <strong style="color:{_TEXT};">{esc(report.get("page_path"))}</strong> · app {esc(report.get("app_version"))}</p>
+        <p style="color:{_DIM};margin:0 0 4px;">Browser: {esc(report.get("user_agent"))}</p>
+        <p style="color:{_DIM};margin:0 0 4px;">May e-mail them about this report: <strong style="color:{_TEXT};">{yes_no(report.get("consent_reply"))}</strong></p>
+        <p style="color:{_DIM};margin:0 0 16px;">Product-news opt-in: <strong style="color:{_TEXT};">{yes_no(report.get("consent_news"))}</strong></p>
+        <p style="color:{_TEXT};margin:0 0 16px;white-space:pre-wrap;">{esc(report.get("message"))}</p>
+        <p style="color:{_DIM};font-size:12px;">{"Screenshot attached." if screenshot is not None else "No screenshot was included."}</p>
+    """
+    attachment = None
+    if screenshot is not None:
+        attachment = {
+            "filename": f"feedback-{report.get('id')}.{screenshot.ext}",
+            "content_bytes": screenshot.content,
+        }
+    try:
+        _send(to, f"Feedback — {tenant_name}", _base_html("Feedback", body), attachment)
+        return True
+    except Exception as exc:
+        log.error("Failed to send feedback email for report %s: %s", report.get("id"), exc)
         return False

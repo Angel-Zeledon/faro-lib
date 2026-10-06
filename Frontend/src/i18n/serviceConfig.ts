@@ -22,7 +22,8 @@ import type { Lang } from './translations'
 /** Service keys, exactly as `backend/service_config/registry.py` declares them. */
 export type ServiceKey =
   | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
-  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'api_surface' | 'operations'
+  | 'secret_storage' | 'contact' | 'billing' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'api_surface' | 'operations'
+  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'sql_sources' | 'api_surface' | 'operations'
 
 /** Field keys, exactly as the registry declares them (= `Settings` attributes). */
 export type FieldKey =
@@ -38,6 +39,9 @@ export type FieldKey =
   | 'voyageai_api_key' | 'pinecone_api_key' | 'pinecone_index' | 'pinecone_environment'
   | 'integrations_secret_key'
   | 'contact_whatsapp' | 'contact_email' | 'upgrade_notify_email'
+  | 'stripe_secret_key' | 'stripe_webhook_secret' | 'stripe_price_id_full'
+  | 'paypal_client_id' | 'paypal_client_secret' | 'paypal_webhook_id'
+  | 'paypal_plan_id_full' | 'paypal_mode' | 'billing_price_usd_full'
   | 'social_login_enabled' | 'google_oauth_client_id' | 'google_oauth_client_secret'
   | 'microsoft_oauth_client_id' | 'microsoft_oauth_client_secret'
   | 'apple_oauth_service_id' | 'apple_oauth_team_id' | 'apple_oauth_key_id'
@@ -49,6 +53,7 @@ export type FieldKey =
   | 'max_upload_size_mb' | 'dataset_editor_max_rows' | 'dataset_editor_max_mb'
   | 'sql_materialize_max_rows' | 'accuracy_degradation_threshold_pct'
   | 'reforecast_full_refit_days'
+  | 'sql_sources_allow_private_hosts' | 'sql_sources_max_concurrent_per_tenant'
   | 'public_api_only'
   // Operations thresholds (installation status panel)
   | 'ops_queue_wait_degraded_minutes' | 'ops_running_job_degraded_minutes'
@@ -200,8 +205,14 @@ const es: ServiceConfigCopy = {
     contact: {
       name: 'Contacto comercial',
       summary: 'Cómo te contacta un cliente para levantar los techos del plan gratis.',
-      whatBreaks: 'Desaparecen los botones de «escríbenos». Un tenant gratis que llega a un techo se queda sin forma de pedir más espacio — que es toda la superficie comercial del producto, porque no hay checkout.',
+      whatBreaks: 'Desaparecen los botones de «escríbenos». Un tenant gratis que llega a un techo se queda sin forma de pedir más espacio. Si el pago en línea no está configurado, esa es toda la superficie comercial del producto — y el plan corporativo solo se vende así.',
       note: 'Un canal vacío se OCULTA en vez de mostrarse roto: un botón que abre un enlace de WhatsApp en blanco es peor que ningún botón. Configura al menos uno.',
+    },
+    billing: {
+      name: 'Pago en línea (Stripe y PayPal)',
+      summary: 'Contratar el plan completo en línea, con tarjeta (Stripe) o PayPal, en sus propias páginas.',
+      whatBreaks: 'Desaparecen «Pasar al plan completo» y el pago de la sección Plan y pago; el estado dice que el pago en línea está apagado y qué variables faltan. Todo lo demás sigue igual: los clientes te escriben y tú cambias el plan a mano, como antes. Las suscripciones ya vendidas conservan su plan, pero si borras el secreto del webhook sus renovaciones y cancelaciones dejan de aplicarse: nunca vacíes un proveedor que tiene clientes.',
+      note: 'Solo páginas alojadas: ningún número de tarjeta, CVC ni contraseña de PayPal pasa por este servidor ni por el JavaScript de la app. Lo ÚNICO que cambia el plan de una empresa es un webhook con firma verificada (Stripe: HMAC-SHA256 de Stripe-Signature, 5 minutos de tolerancia; PayPal: la API verify-webhook-signature). URLs de webhook para registrar: <FRONTEND_URL>/api/v1/billing/stripe/webhook y <FRONTEND_URL>/api/v1/billing/paypal/webhook. Solo se vende el plan completo, mensual; el corporativo nunca se compra en línea. Con un pago vencido se conserva el plan 7 días; cuando la suscripción termina la empresa pasa al plan gratis y no se borra nada. Un plan completo puesto a mano nunca lo toca el pago en línea.',
     },
     social_login: {
       name: 'Inicio de sesión con Google, Microsoft y Apple',
@@ -232,6 +243,12 @@ const es: ServiceConfigCopy = {
       summary: 'Techos de tamaño que protegen la memoria y la base de datos.',
       whatBreaks: 'No se apaga nada. Son rechazos, no funciones: pasarse de uno siempre es un rechazo explicado, nunca un recorte silencioso.',
       note: 'Son techos de infraestructura y NO son los límites comerciales del plan. Esos viven en `backend/entitlements/plans.py`.',
+    },
+    sql_sources: {
+      name: 'Bases de datos de clientes',
+      summary: 'Conexiones a las bases de datos propias de cada cliente (fuentes SQL).',
+      whatBreaks: 'No se apaga nada. Deciden a qué direcciones de red puede conectarse una fuente SQL y cuántas conexiones puede tener abiertas un mismo cliente; una dirección rechazada o los cupos llenos siempre se explican en pantalla, nunca fallan en silencio.',
+      note: 'En el servicio alojado las redes privadas quedan rechazadas: un cliente no debe poder apuntar una «base de datos» a la red interna de este servidor. Una instalación propia que se conecta a un ERP en su red local pone SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true. Las direcciones link-local y de metadatos de la nube (169.254.0.0/16, fe80::/10 y las IP de metadatos conocidas) se rechazan siempre.',
     },
     api_surface: {
       name: 'Modo solo-API',
@@ -283,6 +300,15 @@ const es: ServiceConfigCopy = {
     contact_whatsapp: 'E.164 sin el «+», como lo quiere wa.me.',
     contact_email: 'Dirección que abre el botón de «escríbenos».',
     upgrade_notify_email: 'A dónde se envían por correo las solicitudes de más espacio. Si está vacío usa CONTACT_EMAIL. La solicitud también queda guardada en la base, así que un correo fallido nunca pierde el pedido.',
+    stripe_secret_key: 'Llave secreta de la API de Stripe (sk_live_… o sk_test_… en modo de prueba). Crea las sesiones de pago y del portal de clientes, y lee las suscripciones cuando llegan sus webhooks.',
+    stripe_webhook_secret: 'Secreto de firma del webhook de Stripe registrado en <FRONTEND_URL>/api/v1/billing/stripe/webhook. Sin él no se puede verificar ningún evento de Stripe, así que no se aplica ninguno.',
+    stripe_price_id_full: 'ID del precio recurrente MENSUAL del plan completo en Stripe. Su monto debe ser igual a BILLING_PRICE_USD_FULL.',
+    paypal_client_id: 'Client ID de la app REST de PayPal (Developer Dashboard > Apps & Credentials), del modo que diga PAYPAL_MODE.',
+    paypal_client_secret: 'Secreto de esa app REST de PayPal.',
+    paypal_webhook_id: 'ID que PayPal le da al webhook registrado en <FRONTEND_URL>/api/v1/billing/paypal/webhook. Cada evento se verifica contra él con la API verify-webhook-signature de PayPal.',
+    paypal_plan_id_full: 'ID del plan de facturación (mensual) del plan completo en PayPal. Su precio debe ser igual a BILLING_PRICE_USD_FULL.',
+    paypal_mode: '«sandbox» o «live». Decide a qué API de PayPal pertenecen las credenciales de arriba; cualquier otro valor apaga PayPal.',
+    billing_price_usd_full: 'Precio mensual del plan completo en USD, tal como lo MUESTRA la app. Lo que se cobra es el precio de Stripe o el plan de PayPal: mantenlos iguales. La página de precios solo ofrece la compra en línea mientras coincida con su propia cifra.',
     enterprise_sso_enabled: 'Interruptor general del inicio de sesión de empresa. En false oculta la opción y suspende el proveedor y el «exigir» de cada empresa sin borrarlos.',
     social_login_enabled: 'Interruptor general. En false oculta todos los botones sin borrar las credenciales de abajo, para pausar y reanudar la función.',
     google_oauth_client_id: 'ID de cliente OAuth de tipo «Aplicación web» en Google Cloud Console. URI de redirección autorizado: <FRONTEND_URL>/api/v1/auth/oauth/google/callback.',
@@ -304,6 +330,8 @@ const es: ServiceConfigCopy = {
     dataset_editor_max_rows: 'Filas que el editor de datos abre. Se revisa contra el conteo guardado ANTES de leer el archivo, así que uno enorme nunca se carga en memoria solo para descubrir que no cabía.',
     dataset_editor_max_mb: 'El mismo resguardo, por tamaño de archivo.',
     sql_materialize_max_rows: 'Tope de filas al convertir una consulta SQL en un archivo. Pasarse es un rechazo, nunca un recorte.',
+    sql_sources_allow_private_hosts: 'Deja que las fuentes SQL se conecten a direcciones locales y de redes privadas (RFC 1918, CGNAT, IPv6 de uso local). Apagado por defecto; enciéndelo solo en una instalación propia cuyas bases de datos estén en su propia red.',
+    sql_sources_max_concurrent_per_tenant: 'Conexiones que un mismo cliente puede tener abiertas a la vez hacia sus bases de datos (pruebas, consultas, exportaciones, actualizaciones). La siguiente espera hasta 10 segundos y luego se rechaza con un mensaje claro.',
     accuracy_degradation_threshold_pct: 'Cuánto peor (en porcentaje relativo) debe rendir un pronóstico contra las ventas reales, comparado con su precisión al entrenarse, para que la app avise una sola vez. Es solo un aviso: nada se reentrena solo.',
     reforecast_full_refit_days: 'Edad en días a partir de la cual un reentrenamiento programado en modo «actualizar a diario, reajustar periódicamente» deja de usar los modelos guardados y los entrena de nuevo. Con menos edad, las ventas nuevas solo adelantan el pronóstico.',
     public_api_only: 'Servir en esta instancia únicamente la superficie pública de integración.',
@@ -446,8 +474,14 @@ const en: ServiceConfigCopy = {
     contact: {
       name: 'Commercial contact',
       summary: 'How a customer reaches you to lift the free tier’s ceilings.',
-      whatBreaks: 'The "write to us" buttons disappear. A free tenant that hits a ceiling then has no way to ask for more room — which is the entire commercial surface of the product, since there is no checkout.',
+      whatBreaks: 'The "write to us" buttons disappear. A free tenant that hits a ceiling then has no way to ask for more room. Unless online payment is configured, that is the entire commercial surface of the product — and the corporate plan is only ever sold this way.',
       note: 'An empty channel is HIDDEN rather than shown broken: a button opening a blank WhatsApp link is worse than no button. Configure at least one.',
+    },
+    billing: {
+      name: 'Online payment (Stripe and PayPal)',
+      summary: 'Buy the full plan online, by card (Stripe) or PayPal, on their own pages.',
+      whatBreaks: 'The "Move to the full plan" button and the checkout in Plan and payment disappear; the status says online payment is off and which variables are missing. Everything else is unchanged: customers write to you and you set the plan by hand, as before. Subscriptions already sold keep their plan, but if you remove the webhook secret their renewals and cancellations stop being applied: never empty a provider that has customers.',
+      note: 'Hosted pages only: no card number, CVC or PayPal password ever passes through this server or the app\'s JavaScript. The ONLY thing that changes a company\'s plan is a webhook with a verified signature (Stripe: HMAC-SHA256 of Stripe-Signature, 5-minute tolerance; PayPal: the verify-webhook-signature API). Webhook URLs to register: <FRONTEND_URL>/api/v1/billing/stripe/webhook and <FRONTEND_URL>/api/v1/billing/paypal/webhook. Only the full plan is sold, monthly; corporate is never bought online. A past-due payment keeps the plan for 7 days; when the subscription ends the company moves to the free plan and nothing is deleted. A full plan set by hand is never touched by online payment.',
     },
     social_login: {
       name: 'Sign in with Google, Microsoft and Apple',
@@ -478,6 +512,12 @@ const en: ServiceConfigCopy = {
       summary: 'Size ceilings that protect memory and the database.',
       whatBreaks: 'Nothing turns off. These are refusals, not features: exceeding one is always a stated rejection, never a silent truncation.',
       note: 'These are infrastructure ceilings and NOT the commercial tier limits. Those live in `backend/entitlements/plans.py`.',
+    },
+    sql_sources: {
+      name: 'Customer databases',
+      summary: 'Connections to customers’ own databases (SQL data sources).',
+      whatBreaks: 'Nothing turns off. They decide which network addresses a SQL data source may reach and how many connections one tenant may hold open at once; a refused address or a full set of slots is always explained on screen, never a silent failure.',
+      note: 'Hosted deployments keep private hosts refused: a tenant must not be able to point a “database” at this server’s own network. A self-hosted installation that connects to an ERP database on its LAN sets SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true. Link-local and cloud metadata addresses (169.254.0.0/16, fe80::/10 and the known metadata IPs) are refused either way.',
     },
     api_surface: {
       name: 'Public-API-only mode',
@@ -529,6 +569,15 @@ const en: ServiceConfigCopy = {
     contact_whatsapp: 'E.164 without the "+", the way wa.me wants it.',
     contact_email: 'Address the "write to us" button opens.',
     upgrade_notify_email: 'Where in-app requests for more room are emailed. Falls back to CONTACT_EMAIL when empty. The request is also stored, so a failed email never loses the ask.',
+    stripe_secret_key: 'Stripe secret API key (sk_live_... or sk_test_... in test mode). Creates the checkout and customer-portal sessions and reads subscriptions when their webhooks arrive.',
+    stripe_webhook_secret: 'Signing secret of the Stripe webhook registered at <FRONTEND_URL>/api/v1/billing/stripe/webhook. Without it no Stripe event can be verified, so none is applied.',
+    stripe_price_id_full: 'ID of the full plan\'s recurring MONTHLY Stripe price. Its amount must equal BILLING_PRICE_USD_FULL.',
+    paypal_client_id: 'Client ID of the PayPal REST app (Developer Dashboard > Apps & Credentials), for the mode set in PAYPAL_MODE.',
+    paypal_client_secret: 'Secret of that PayPal REST app.',
+    paypal_webhook_id: 'ID PayPal gives the webhook registered at <FRONTEND_URL>/api/v1/billing/paypal/webhook. Every event is verified against it with PayPal\'s verify-webhook-signature API.',
+    paypal_plan_id_full: 'ID of the full plan\'s (monthly) PayPal billing plan. Its price must equal BILLING_PRICE_USD_FULL.',
+    paypal_mode: '"sandbox" or "live". Decides which PayPal API the credentials above belong to; any other value turns PayPal off.',
+    billing_price_usd_full: 'Monthly price of the full plan in USD, as the app SHOWS it. What is charged is the Stripe price or PayPal plan: keep them equal. The pricing page offers online purchase only while this matches its own figure.',
     enterprise_sso_enabled: 'Master switch for company sign-in. False hides the option and suspends every company\'s provider and "require" setting without deleting them.',
     social_login_enabled: 'Master switch. False hides every social button without deleting the credentials below, so the feature can be paused and resumed.',
     google_oauth_client_id: 'OAuth client ID of a "Web application" client in Google Cloud Console. Authorized redirect URI: <FRONTEND_URL>/api/v1/auth/oauth/google/callback.',
@@ -550,6 +599,8 @@ const en: ServiceConfigCopy = {
     dataset_editor_max_rows: 'Rows the in-app data editor will open. Checked against the stored row count BEFORE reading the file, so a huge one is never loaded into memory just to find out it did not fit.',
     dataset_editor_max_mb: 'The same guard, by file size.',
     sql_materialize_max_rows: 'Row ceiling when turning a SQL query into a file. Exceeding it is a refusal, never a truncation.',
+    sql_sources_allow_private_hosts: 'Let SQL data sources connect to loopback and private-network addresses (RFC 1918, CGNAT, IPv6 unique-local). Off by default; turn it on only on a self-hosted installation whose databases live on its own network.',
+    sql_sources_max_concurrent_per_tenant: 'Connections one tenant may have open to its databases at the same time (tests, queries, exports, refreshes). The next one waits up to 10 seconds, then is refused with a clear message.',
     accuracy_degradation_threshold_pct: 'How much worse (relative percent) a forecast must perform against real sales, compared with its accuracy at training, before the app raises its single alert. A notice only: nothing retrains by itself.',
     reforecast_full_refit_days: 'Age in days after which a scheduled retrain set to "update daily, refit periodically" stops using the stored models and trains them again. Younger than that, new sales only advance the forecast.',
     public_api_only: 'Serve only the public integration surface on this instance.',

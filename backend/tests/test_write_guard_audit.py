@@ -37,6 +37,8 @@ MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 # ── Deliberate exceptions ─────────────────────────────────────────────────────
 # Keyed by "METHOD /path" exactly as FastAPI reports it. The value is why.
 PUBLIC = {
+    "POST /api/v1/billing/stripe/webhook": "authenticated by the provider's signature (HMAC) over the raw body",
+    "POST /api/v1/billing/paypal/webhook": "authenticated by PayPal's verify-webhook-signature call",
     "POST /api/v1/auth/login": "you cannot be authorised before you log in",
     "POST /api/v1/auth/signup": "creates the account and its tenant",
     "POST /api/v1/trial": "the landing visitor has no account yet; it creates one",
@@ -57,6 +59,8 @@ SELF = {
     # change their own password, verify their own phone, and hold their own
     # conversations — none of that is company state.
     "PATCH /api/v1/users/me": "your own profile",
+    "PATCH /api/v1/analyst/messages/{message_id}/star": "starring your own chat message",
+    "POST /api/v1/feedback": "reporting a problem about the app, not company state",
     "POST /api/v1/users/me/whatsapp/link": "your own phone number",
     "POST /api/v1/users/me/whatsapp/confirm": "your own phone number",
     "POST /api/v1/users/me/change-password/request": "your own password",

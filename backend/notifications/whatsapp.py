@@ -182,6 +182,7 @@ def build_inventory_alert_text(
     inventory_url: str,
     transfer_count: int = 0,
     period: str = "daily",
+    scope_warehouses: list[str] | None = None,
 ) -> str:
     """
     Compact daily-alert message: WhatsApp favours short, scannable text.
@@ -201,6 +202,9 @@ def build_inventory_alert_text(
     told to order emergency stock they did not need.
     """
     lines: list[str] = []
+    if scope_warehouses:
+        # A user limited to some warehouses: say whose rows these are.
+        lines.append(render_es("digest_scope_whatsapp", warehouses=", ".join(scope_warehouses)))
     n_crit = len(critical_items)
     if n_crit:
         lines.append(render_es(
@@ -234,6 +238,7 @@ def build_freshness_reminder_text(
     stock_age_days: int | None,
     upload_url: str,
     silent_warehouses: list[dict] | None = None,
+    scope_warehouses: list[str] | None = None,
 ) -> str:
     """
     Data-freshness reminder for the highest open-rate channel in LatAm.
@@ -243,6 +248,8 @@ def build_freshness_reminder_text(
     itself with an age that is not part of the problem.
     """
     lines: list[str] = []
+    if scope_warehouses:
+        lines.append(render_es("digest_scope_whatsapp", warehouses=", ".join(scope_warehouses)))
     if sales_age_days is not None:
         lines.append(render_es("freshness_whatsapp_sales", days=sales_age_days))
     if stock_age_days is not None:

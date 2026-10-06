@@ -4,7 +4,7 @@ import {
   TrendingUp, Package, MessagesSquare, Users, User,
   ShoppingCart, Truck, Upload, ClipboardList, History, Database,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
-  ScrollText, Settings, ScanLine, ClipboardCheck,
+  ScrollText, Settings, ScanLine, ClipboardCheck, FileCheck2, CreditCard,
 } from 'lucide-react'
 import { has, UNKNOWN_FACTS, type TenantFacts } from '@/hooks/useTenantFacts'
 
@@ -61,9 +61,14 @@ export const SCREENS: Screen[] = [
   { href: '/escenarios',            labelKey: 'nav.scenarios',       Icon: FlaskConical, parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
   { href: '/impacto',               labelKey: 'nav.roi',             Icon: Target,       parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
   { href: '/historial',             labelKey: 'nav.sessions',        Icon: History,      parent: '/pronosticos', visibleWhen: f => has(f.completedSessions, 2) },
+  // Frozen demand plan versions and their sign-off (a record and a
+  // measurement; it moves no purchase recommendation).
+  { href: '/plan-de-demanda',       labelKey: 'nav.demand_plan',     Icon: FileCheck2,   parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
 
   // ── Under Configuración (the /configuracion hub lists them) ────────────────
   { href: '/mi-cuenta',             labelKey: 'nav.account',         Icon: User,         parent: SETTINGS_HREF },
+  // The plan and its payment; where Stripe / PayPal send the buyer back to.
+  { href: '/facturacion',           labelKey: 'nav.billing',         Icon: CreditCard,   parent: SETTINGS_HREF },
   { href: '/usuarios',              labelKey: 'nav.users',           Icon: Users,        parent: SETTINGS_HREF, adminOnly: true },
   // "Subir mis ventas" and "mis archivos" are one errand; the two routes are
   // tabs of each other (components/layout/DataTabs.tsx).
@@ -107,7 +112,7 @@ export const SETTINGS_ITEM: Screen = byHref(SETTINGS_HREF)
 /** Pronósticos and the three analysis screens reached from it, shown as one
  *  tab strip at the top of all four (components/layout/SectionTabs.tsx). */
 export const ANALYSIS_TABS: Screen[] =
-  ['/pronosticos', '/escenarios', '/impacto', '/historial'].map(byHref)
+  ['/pronosticos', '/escenarios', '/impacto', '/historial', '/plan-de-demanda'].map(byHref)
 
 /** Role and the screen's `visibleWhen` rule decide whether an entry is DRAWN
  *  (there are no plan locks and nothing is ever blocked: see Screen.visibleWhen).

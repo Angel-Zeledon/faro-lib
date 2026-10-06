@@ -129,6 +129,14 @@ export interface LandingCopy {
     // Short, checkable promises shown as ticks. Each must stay true: no card
     // is ever asked for, there is no checkout, and no feature is gated.
     noStrings: string[]
+    // The same promises when this installation sells the Full plan online
+    // (GET /billing/offer says so AND its price matches pricingModel.ts). "No
+    // checkout" would then be false, so a different, still-true list is shown.
+    noStringsCheckout: string[]
+    // The "start the Full plan" button on the paid card, shown only in that
+    // same case. It links to sign-up (the purchase happens inside the app, on
+    // the provider's hosted page); `ctaFullNote` says so under it.
+    ctaFull: string; ctaFullNote: string
     // Prefilled text of the WhatsApp message and the email subject line.
     waPrefill: string; mailSubject: string
     // The full plan's "from" price. `{price}` is filled from
@@ -591,6 +599,9 @@ const es: LandingCopy = {
       { title: 'Lo ampliamos con tus números', desc: 'Acordamos el precio sobre tu operación y ampliamos tu misma cuenta: sin migrar datos ni empezar de cero.' },
     ],
     noStrings: ['Sin tarjeta', 'Sin checkout', 'El plan gratis no vence'],
+    noStringsCheckout: ['El plan gratis no pide tarjeta', 'El plan gratis no vence', 'El plan completo se cancela cuando quieras'],
+    ctaFull: 'Empezar el plan completo',
+    ctaFullNote: 'Crea tu cuenta y contrátalo desde la app, con tarjeta o PayPal. El pago lo procesa Stripe o PayPal en su propia página.',
     waPrefill: 'Hola, quiero ampliar los límites de StockAI.',
     mailSubject: 'StockAI — quiero una cotización',
     paidFrom: 'Desde {price}',
@@ -1167,6 +1178,9 @@ const en: LandingCopy = {
       { title: 'We lift it, with your numbers', desc: 'We agree the price around your operation and lift the limits on the same account: no data to migrate, no starting over.' },
     ],
     noStrings: ['No card', 'No checkout', 'The free plan does not expire'],
+    noStringsCheckout: ['The free plan asks for no card', 'The free plan does not expire', 'Cancel the full plan whenever you like'],
+    ctaFull: 'Start the full plan',
+    ctaFullNote: 'Create your account and subscribe from inside the app, by card or PayPal. Stripe or PayPal handles the payment on its own page.',
     waPrefill: 'Hi, I would like to lift my StockAI limits.',
     mailSubject: 'StockAI — I would like a quote',
     paidFrom: 'From {price}',

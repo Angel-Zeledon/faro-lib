@@ -12,7 +12,8 @@ What each family does with the new actuals
 ``arima``  the fitted parameters are applied to the new history (``filter``).
 ``ets``  the smoothing parameters and initial states are applied to the new
     history. Needs the series to start where it started at training time.
-``croston``  has no fitted state beyond its constant: re-run on the new history.
+``croston`` / ``tsb`` / ``adida`` / ``imapa``  no fitted state beyond their
+    constants: re-run on the new history.
 ``prophet`` (and anything else with no carried state)  CANNOT be updated: it is
     refitted for that series, and the result says so (``mode == "refit"``).
 
@@ -238,6 +239,12 @@ def _stat_from_state(model: str, state: dict, series: np.ndarray, h: int,
     if model == "croston" and state.get("kind") == "croston":
         from forecasting_core.models.croston import croston_forecast
         return {"forecast": croston_forecast(series, alpha=float(state["alpha"]), n_ahead=h)}
+
+    if model in ("tsb", "adida", "imapa"):
+        # Same as Croston: fixed constants, no fitted state — re-run them.
+        from forecasting_core.models.intermittent import forecast_from_state
+        fc = forecast_from_state(model, state, series, h)
+        return None if fc is None else {"forecast": fc}
     return None
 
 
@@ -255,6 +262,15 @@ def _refit_stat(model: str, sku: str, df: pd.DataFrame, cfg, h: int) -> Optional
         extra = {}
     elif model == "croston":
         from forecasting_core.models.croston import run_croston_core as fn
+        extra = {}
+    elif model == "tsb":
+        from forecasting_core.models.intermittent import run_tsb_core as fn
+        extra = {}
+    elif model == "adida":
+        from forecasting_core.models.intermittent import run_adida_core as fn
+        extra = {}
+    elif model == "imapa":
+        from forecasting_core.models.intermittent import run_imapa_core as fn
         extra = {}
     elif model == "prophet":
         from forecasting_core.models.prophet import run_prophet_core as fn

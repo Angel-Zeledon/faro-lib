@@ -107,7 +107,15 @@ def _clean(*, sku, delivery_date, quantity, customer, probability, warehouse_id,
 
 _COLS = """c.id, c.sku, c.warehouse_id, c.delivery_date, c.quantity, c.customer,
            c.probability, c.on_top_of_base, c.status, c.note, c.created_by,
-           c.created_at, c.updated_at, c.status_changed_by, c.status_changed_at"""
+           c.created_at, c.updated_at, c.status_changed_by, c.status_changed_at,
+           c.source, c.contract_id, c.contract_root_id, c.contract_release_date,
+           c.contract_withdrawn_at"""
+
+# Fields a commitment materialised from a blanket contract takes from the
+# contract. Changing them belongs on the contract (a revision); on the row they
+# would also desynchronise its release key. Quantity, date and note stay
+# editable: they are how a person records the call-off that really happened.
+CONTRACT_LOCKED_FIELDS = ("sku", "warehouse_id", "customer", "probability", "on_top_of_base")
 
 
 def _fmt(row: dict, today: Optional[date] = None) -> dict:
@@ -115,7 +123,8 @@ def _fmt(row: dict, today: Optional[date] = None) -> dict:
     delivery = d.get("delivery_date")
     today = today or date.today()
     d["overdue"] = bool(d.get("status") == "open" and delivery is not None and delivery < today)
-    for k in ("delivery_date", "created_at", "updated_at", "status_changed_at"):
+    for k in ("delivery_date", "created_at", "updated_at", "status_changed_at",
+              "contract_release_date", "contract_withdrawn_at"):
         d[k] = _iso(d.get(k))
     return d
 
@@ -232,6 +241,13 @@ def update(tenant_id: str, commitment_id: str, user_id: str, **fields) -> dict:
         raise AppError("committed_demand_closed",
                        "A fulfilled or cancelled commitment cannot be edited",
                        status_code=409, params={"status": current["status"]})
+    if current.get("source") == "contract":
+        locked = [k for k in CONTRACT_LOCKED_FIELDS
+                  if k in fields and fields[k] != current.get(k)]
+        if locked:
+            raise AppError("committed_demand_contract_locked",
+                           "This commitment comes from a contract; change the contract instead",
+                           status_code=409, params={"field": locked[0]})
     merged = {
         "sku": current["sku"], "delivery_date": current["delivery_date"],
         "quantity": current["quantity"], "customer": current["customer"],
@@ -258,12 +274,27 @@ def set_status(tenant_id: str, commitment_id: str, user_id: str, status: str) ->
     if status not in STATUSES:
         raise AppError("committed_demand_status_invalid", "Unknown status",
                        params={"status": status})
-    get(tenant_id, commitment_id)
+    current = get(tenant_id, commitment_id)
+    if current.get("contract_withdrawn_at"):
+        # Withdrawn by a revision or the end of its contract: the release it
+        # stood for now belongs to the contract's current terms.
+        raise AppError("committed_demand_withdrawn",
+                       "This commitment was withdrawn when its contract changed",
+                       status_code=409)
+    if status == "open" and current.get("source") == "contract":
+        live = query_one(
+            """SELECT status FROM supply_contracts
+                WHERE tenant_id = %s AND root_id = %s AND superseded_by IS NULL""",
+            (tenant_id, current.get("contract_root_id")))
+        if not live or live["status"] != "active":
+            raise AppError("committed_demand_contract_inactive",
+                           "Its contract is no longer active, so it cannot be reopened",
+                           status_code=409)
     execute(
         """UPDATE committed_demand
               SET status = %s, status_changed_by = %s, status_changed_at = NOW(),
                   updated_at = NOW()
-            WHERE id = %s AND tenant_id = %s""",
+            WHERE id = %s AND tenant_id = %s AND contract_withdrawn_at IS NULL""",
         (status, user_id, commitment_id, tenant_id))
     return get(tenant_id, commitment_id)
 

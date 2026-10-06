@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 248,
+  "total": 251,
   "read": 154,
-  "write": 94
+  "write": 97
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -3499,7 +3499,7 @@
      "tag": "data-sources",
      "scope": "write",
      "summary": "Create a SQL data source",
-     "description": "Registers a database connection as a data source.",
+     "description": "Registers a database connection as a data source. Fields may come from a pasted `connection_string` (URL, JDBC, ADO.NET or libpq form); typed fields win. `ssl_mode` is disable, prefer, require, verify-ca or verify-full; `ssl_ca` is the server's CA certificate (PEM), stored encrypted like the password. Private and link-local hosts are refused unless the installation allows them (`data_source_host_not_allowed`).",
      "parameters": [],
      "request_body": {
       "content_type": "application/json",
@@ -3508,46 +3508,93 @@
        "type": "object",
        "fields": [
         {
-         "name": "name",
-         "required": true,
-         "type": "string"
-        },
-        {
          "name": "host",
-         "required": true,
-         "type": "string"
+         "required": false,
+         "type": "string",
+         "max_length": 260,
+         "nullable": true
         },
         {
          "name": "port",
-         "required": true,
+         "required": false,
          "type": "integer",
          "minimum": 1.0,
-         "maximum": 65535.0
+         "maximum": 65535.0,
+         "nullable": true
         },
         {
          "name": "database",
-         "required": true,
-         "type": "string"
+         "required": false,
+         "type": "string",
+         "max_length": 128,
+         "nullable": true
         },
         {
          "name": "username",
-         "required": true,
-         "type": "string"
+         "required": false,
+         "type": "string",
+         "max_length": 128,
+         "nullable": true
         },
         {
          "name": "password",
-         "required": true,
-         "type": "string"
+         "required": false,
+         "type": "string",
+         "max_length": 1024,
+         "nullable": true
         },
         {
          "name": "engine",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "ssl_mode",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "ssl_ca",
+         "required": false,
+         "type": "string",
+         "max_length": 70000,
+         "nullable": true
+        },
+        {
+         "name": "connect_timeout_s",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "statement_timeout_s",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "connection_string",
+         "required": false,
+         "type": "string",
+         "max_length": 4096,
+         "nullable": true
+        },
+        {
+         "name": "name",
          "required": true,
-         "type": "string"
+         "type": "string",
+         "min_length": 1,
+         "max_length": 200
         },
         {
          "name": "description",
          "required": false,
          "type": "string",
+         "max_length": 2000,
          "nullable": true
         }
        ]
@@ -3560,7 +3607,59 @@
        "username": "readonly",
        "password": "<password>",
        "engine": "postgresql",
+       "ssl_mode": "require",
        "description": "Nightly sales view"
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-data-sources-sql-parse",
+     "method": "POST",
+     "path": "/data-sources/sql/parse",
+     "tag": "data-sources",
+     "scope": "write",
+     "summary": "Parse a connection string",
+     "description": "Reads a connection string into engine, host, port, database, user and TLS mode. The password is never returned, only `has_password`.",
+     "parameters": [],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "connection_string",
+         "required": true,
+         "type": "string",
+         "min_length": 1,
+         "max_length": 4096
+        }
+       ]
+      },
+      "example": {
+       "connection_string": "postgresql://readonly@db.example.com:5432/erp?sslmode=require"
       }
      },
      "success_status": 200,
@@ -3991,7 +4090,7 @@
      "tag": "data-sources",
      "scope": "write",
      "summary": "Run a SQL query against a SQL source",
-     "description": "Executes ONE read statement (SELECT or WITH ... SELECT) on the customer's database, inside a read-only transaction that is always rolled back, and returns up to `limit` rows. Needs a `write`-scope key: it runs caller-written SQL on the customer's database. Anything else is refused with `sql_multiple_statements`, `sql_not_a_select`, `sql_forbidden_keyword`, `sql_forbidden_function` or `sql_unsupported_syntax`.",
+     "description": "Executes ONE read statement (SELECT or WITH ... SELECT) on the customer's database, inside a read-only transaction that is always rolled back, and returns up to `limit` rows starting at `offset`, with `has_more`. Needs a `write`-scope key: it runs caller-written SQL on the customer's database. Anything else is refused with `sql_multiple_statements`, `sql_not_a_select`, `sql_forbidden_keyword`, `sql_forbidden_function` or `sql_unsupported_syntax`.",
      "parameters": [
       {
        "name": "source_id",
@@ -4021,12 +4120,21 @@
          "minimum": 1.0,
          "maximum": 5000.0,
          "default": 500
+        },
+        {
+         "name": "offset",
+         "required": false,
+         "type": "integer",
+         "minimum": 0.0,
+         "maximum": 100000.0,
+         "default": 0
         }
        ]
       },
       "example": {
        "sql": "SELECT sku, date, quantity FROM sales",
-       "limit": 500
+       "limit": 500,
+       "offset": 0
       }
      },
      "success_status": 200,
@@ -4058,8 +4166,8 @@
      "path": "/data-sources/{source_id}/export-query",
      "tag": "data-sources",
      "scope": "write",
-     "summary": "Export a SQL query as Excel",
-     "description": "Runs the query (same read-only rules as execute-query) and returns the result as an .xlsx file. Needs a `write`-scope key.",
+     "summary": "Export a SQL query as Excel or CSV",
+     "description": "Runs the query (same read-only rules as execute-query) and returns the FULL result as an .xlsx (default) or .csv file, refusing rather than truncating past the row ceiling. Needs a `write`-scope key.",
      "parameters": [
       {
        "name": "source_id",
@@ -4084,16 +4192,16 @@
          "nullable": true
         },
         {
-         "name": "name",
+         "name": "format",
          "required": false,
          "type": "string",
-         "nullable": true
+         "default": "xlsx"
         }
        ]
       },
       "example": {
        "sql": "SELECT sku, date, quantity FROM sales",
-       "name": "Sales snapshot"
+       "format": "xlsx"
       }
      },
      "success_status": 200,
@@ -4458,13 +4566,141 @@
      ]
     },
     {
+     "id": "get-data-sources-source_id-schema",
+     "method": "GET",
+     "path": "/data-sources/{source_id}/schema",
+     "tag": "data-sources",
+     "scope": "write",
+     "summary": "List a SQL source's tables",
+     "description": "Tables and views the connection can read, with row estimates and a safely quoted preview statement for each. Cached for a few minutes; `refresh=true` re-reads.",
+     "parameters": [
+      {
+       "name": "source_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<source_id>"
+      },
+      {
+       "name": "refresh",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": false
+       },
+       "example": false
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-data-sources-source_id-schema-columns",
+     "method": "GET",
+     "path": "/data-sources/{source_id}/schema/columns",
+     "tag": "data-sources",
+     "scope": "write",
+     "summary": "List a table's columns",
+     "description": "Column names, types and nullability of one table of a SQL source.",
+     "parameters": [
+      {
+       "name": "source_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<source_id>"
+      },
+      {
+       "name": "table",
+       "in": "query",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "min_length": 1,
+        "max_length": 256
+       },
+       "example": "<table>"
+      },
+      {
+       "name": "schema",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 256,
+        "default": ""
+       },
+       "example": ""
+      },
+      {
+       "name": "refresh",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": false
+       },
+       "example": false
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
      "id": "patch-data-sources-source_id-sql-config",
      "method": "PATCH",
      "path": "/data-sources/{source_id}/sql-config",
      "tag": "data-sources",
      "scope": "write",
      "summary": "Update a SQL source's connection",
-     "description": "Changes host, port, database, user, engine or password of a SQL source.",
+     "description": "Changes any connection field of a SQL source. Omitted fields keep their stored value, the password included, except when the engine, host or port changes: then the password must be sent again (`data_source_password_required`).",
      "parameters": [
       {
        "name": "source_id",
@@ -4484,36 +4720,85 @@
        "fields": [
         {
          "name": "host",
-         "required": true,
-         "type": "string"
+         "required": false,
+         "type": "string",
+         "max_length": 260,
+         "nullable": true
         },
         {
          "name": "port",
-         "required": true,
+         "required": false,
          "type": "integer",
          "minimum": 1.0,
-         "maximum": 65535.0
+         "maximum": 65535.0,
+         "nullable": true
         },
         {
          "name": "database",
-         "required": true,
-         "type": "string"
+         "required": false,
+         "type": "string",
+         "max_length": 128,
+         "nullable": true
         },
         {
          "name": "username",
-         "required": true,
-         "type": "string"
-        },
-        {
-         "name": "engine",
-         "required": true,
-         "type": "string"
+         "required": false,
+         "type": "string",
+         "max_length": 128,
+         "nullable": true
         },
         {
          "name": "password",
          "required": false,
          "type": "string",
+         "max_length": 1024,
          "nullable": true
+        },
+        {
+         "name": "engine",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "ssl_mode",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "ssl_ca",
+         "required": false,
+         "type": "string",
+         "max_length": 70000,
+         "nullable": true
+        },
+        {
+         "name": "connect_timeout_s",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "statement_timeout_s",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "connection_string",
+         "required": false,
+         "type": "string",
+         "max_length": 4096,
+         "nullable": true
+        },
+        {
+         "name": "clear_ssl_ca",
+         "required": false,
+         "type": "boolean",
+         "default": false
         }
        ]
       },
@@ -4556,7 +4841,7 @@
      "tag": "data-sources",
      "scope": "write",
      "summary": "Test a SQL source's connection",
-     "description": "Connects to the database with the stored settings and reports whether it worked.",
+     "description": "Runs a staged test (dns, tcp, tls, auth, privileges, select, tables) and reports each stage as ok, warning, failed or skipped with a code. Warns when the login can write, with the least-privilege GRANT statements.",
      "parameters": [
       {
        "name": "source_id",

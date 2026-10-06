@@ -128,6 +128,12 @@ _ES: dict[str, str] = {
     "alert_email_col_supplier":     "Proveedor",
     "alert_email_cta":              "Ver tablero de inventario",
     "alert_email_footer":           "Esta alerta se genera automáticamente cuando hay productos en riesgo de stockout.",
+    # ── Warehouse-scoped digests (a user limited to some warehouses) ──────────
+    # The same digests as the company ones, restricted to the recipient's own
+    # warehouses; these keys only say so. `{warehouses}` is a comma-joined list.
+    "digest_scope_subject":         "{subject} (bodegas: {warehouses})",
+    "digest_scope_line":            "Este resumen cubre solo tus bodegas: <strong>{warehouses}</strong>.",
+    "digest_scope_whatsapp":        "🏬 Solo tus bodegas: {warehouses}",
     # ── Daily stockout digest (WhatsApp) ──────────────────────────────────────
     # Separate singular/plural entries wherever the verb agrees with the count —
     # a `{s}` suffix cannot express "se agota" → "se agotan".
@@ -384,6 +390,9 @@ _EN: dict[str, str] = {
     "assistant_unit_day":             "days",
     "assistant_unit_week":            "weeks",
     "assistant_unit_month":           "months",
+    "digest_scope_subject":           "{subject} (warehouses: {warehouses})",
+    "digest_scope_line":              "This summary covers only your warehouses: <strong>{warehouses}</strong>.",
+    "digest_scope_whatsapp":          "🏬 Your warehouses only: {warehouses}",
     "wa_plan_locked":                 "The WhatsApp assistant is not included in your company's plan. Ask your administrator to enable it by writing to us from StockAI; everything else stays available in the app.",
 }
 

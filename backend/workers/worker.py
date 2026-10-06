@@ -276,7 +276,8 @@ def _next_daily_run(now: datetime, hour: int) -> datetime:
 
 
 def _inventory_alert_loop() -> None:
-    """Fires inventory stockout alerts, then supplier lead-time deviation
+    """Materialises the blanket-contract releases entering the horizon, then
+    fires inventory stockout alerts, then supplier lead-time deviation
     alerts (feature 3.3), then data-freshness reminders, daily at 8:00 AM UTC.
     The three run independently: a supplier drifting late matters most while
     stock still looks healthy, which is exactly when the stockout digest sends
@@ -335,6 +336,16 @@ def _inventory_alert_loop() -> None:
                 boundary.isoformat(), already_done.isoformat(),
             )
             continue
+        try:
+            # First, so the stockout digest below already plans against the
+            # contract releases that entered the horizon today. Idempotent
+            # (one live commitment per release), so a catch-up re-run is safe.
+            from backend.inventory.supply_contract_service import (
+                run_daily_contract_materialisation,
+            )
+            run_daily_contract_materialisation()
+        except Exception as e:
+            log.error("Contract materialisation error: %s", e, exc_info=True)
         try:
             from backend.inventory.service import run_daily_inventory_alerts
             run_daily_inventory_alerts()
@@ -551,6 +562,26 @@ def _trial_reaper_loop() -> None:
         time.sleep(_TRIAL_REAPER_SECONDS)
 
 
+# Billing (backend/billing/service.py). No payment provider sends an event when
+# a grace window or a cancelled-but-paid period simply runs out, so the tier
+# that state implies is applied here. Hourly: at most an hour late, in the
+# customer's favour. A no-op on an installation with no billing rows.
+_BILLING_SWEEP_SECONDS = 3600
+
+
+def _billing_sweep_loop() -> None:
+    log.info("Billing sweep loop started")
+    while True:
+        try:
+            from backend.billing.service import reconcile_all
+            changed = reconcile_all()
+            if changed:
+                log.info("Billing sweep: %d tenant(s) changed tier", changed)
+        except Exception as e:
+            log.error("Billing sweep error: %s", e, exc_info=True)
+        time.sleep(_BILLING_SWEEP_SECONDS)
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -564,7 +595,7 @@ def enabled_components() -> list[str]:
     if settings.scheduler_enabled:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
-            "operator-digest", "trial-reaper",
+            "operator-digest", "trial-reaper", "billing-sweep",
         ]
     return components
 
@@ -575,6 +606,7 @@ _COMPONENT_TARGETS = {
     "overstock-snapshot": _monthly_overstock_snapshot_loop,
     "operator-digest":    _operator_digest_loop,
     "trial-reaper":       _trial_reaper_loop,
+    "billing-sweep":      _billing_sweep_loop,
 }
 
 

@@ -35,7 +35,7 @@ function Tile({ label, value, hint }: { label: string; value: string; hint?: str
   return (
     <Card padding={14}>
       <div title={hint} style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </Card>
   )
 }

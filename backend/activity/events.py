@@ -128,6 +128,28 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=INFO,
         detail_keys=("sku", "references"),
     ),
+    # Demand plan versions (inventory/demand_plan_service.py): a frozen plan and
+    # its sign-off. A record and a measurement; none of these moves a purchase.
+    "demand_plan.created": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "skus", "periods"),
+    ),
+    "demand_plan.submitted": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name",),
+    ),
+    "demand_plan.approved": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment", "superseded"),
+    ),
+    "demand_plan.rejected": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment"),
+    ),
+    "demand_plan.commented": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name",),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     # Customer orders placed ahead of time, entered by a person. They move the
@@ -143,6 +165,20 @@ EVENTS: dict[str, EventSpec] = {
     "committed_demand.changed": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("sku", "status"),
+    ),
+    # Blanket contracts: every save is a new revision, so the feed names who
+    # created, revised, activated, closed or cancelled one.
+    "supply_contract.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
+    ),
+    "supply_contract.revised": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
+    ),
+    "supply_contract.status_changed": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "lines", "revision", "status"),
     ),
     "purchase.order_generated": EventSpec(
         kind="purchase", severity=INFO,
@@ -236,6 +272,16 @@ EVENTS: dict[str, EventSpec] = {
     "inbound_email.rejected": EventSpec(
         kind="data", severity=WARNING,
         detail_keys=("filename", "email"),
+    ),
+
+    # ── Connected databases (SQL data sources) ──────────────────────────────
+    # A scheduled retraining could not read its connected database, so it did
+    # not train (rather than train on stale data). Critical: the forecast the
+    # buyer reads tomorrow is the old one, and the only other trace was a row
+    # in the schedule's history nobody opens.
+    "data.sql_refresh_failed": EventSpec(
+        kind="data", severity=CRITICAL,
+        detail_keys=("source_name",),
     ),
 
     # ── Data the tenant put in ───────────────────────────────────────────────
@@ -348,6 +394,32 @@ EVENTS: dict[str, EventSpec] = {
     "account.warehouse_scope_changed": EventSpec(
         kind="account", severity=WARNING, detail_keys=("email", "warehouses"),
     ),
+
+    # ── Paying for the plan (backend/billing/) ───────────────────────────────
+    # Written by a VERIFIED provider webhook (or the hourly sweep applying what
+    # one already stored), with "system" as the actor: no person did these.
+    "billing.plan_activated": EventSpec(
+        kind="billing", severity=INFO,
+        detail_keys=("provider", "tier", "previous_tier"),
+    ),
+    # Critical: everything above the free ceilings stops accepting new rows
+    # (nothing is deleted), and the admin has to hear it from us first.
+    "billing.plan_downgraded": EventSpec(
+        kind="billing", severity=CRITICAL,
+        detail_keys=("provider", "tier", "previous_tier"),
+    ),
+    # A payment bounced. The plan stays until `grace_until`; this is the
+    # moment to fix the card, not after the downgrade.
+    "billing.payment_failed": EventSpec(
+        kind="billing", severity=WARNING,
+        detail_keys=("provider", "grace_until"),
+    ),
+    # Renewal set to stop, resumed, or another state change that did not move
+    # the tier (yet).
+    "billing.subscription_changed": EventSpec(
+        kind="billing", severity=INFO,
+        detail_keys=("provider", "status", "renews_at"),
+    ),
 }
 
 
@@ -401,6 +473,14 @@ REASONS: tuple[str, ...] = (
     "inbound_file_too_large",
     "inbound_duplicate_file",
     "inbound_no_usable_attachment",
+    # paying for the plan: the provider confirmed a payment, a subscription
+    # ran out (cancelled period over, grace over, expired), a charge bounced
+    "payment_confirmed_by_provider",
+    "subscription_lapsed",
+    "payment_failed_at_provider",
+    # connected databases: the scheduled refresh could not read the source;
+    # `reason_params.error_code` names the failure for the screen to explain
+    "sql_source_refresh_failed",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

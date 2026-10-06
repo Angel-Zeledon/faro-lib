@@ -20,6 +20,8 @@ const C = {
   text: 'var(--text)', dim: 'var(--dim)', indigo: 'var(--accent)', green: '#2E8B62',
 }
 
+const VISIBLE_AT_FIRST = 3
+
 export function TransferSuggestions({ suggestions, canApprove }: {
   suggestions: WarehouseStatusItem[]
   /** False for a viewer: approving POSTs a transfer, which their role is
@@ -30,6 +32,9 @@ export function TransferSuggestions({ suggestions, canApprove }: {
   const { t } = useLanguage()
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [done, setDone] = useState<Set<string>>(new Set())
+  // A distributor with several warehouses can get a dozen of these; only the
+  // first few show so the urgent purchases below stay within reach.
+  const [showAll, setShowAll] = useState(false)
 
   if (suggestions.length === 0) return null
 
@@ -52,7 +57,7 @@ export function TransferSuggestions({ suggestions, canApprove }: {
         {t('hoy.transfers_title').replace('{n}', String(suggestions.length))}
       </h2>
       <p style={{ margin: 0, fontSize: 11.5, color: C.dim }}>{t('hoy.transfers_sub')}</p>
-      {suggestions.map(row => {
+      {(showAll ? suggestions : suggestions.slice(0, VISIBLE_AT_FIRST)).map(row => {
         const ts = row.transfer_suggestion!
         const key = `${row.sku}|${row.warehouse}`
         const isDone = done.has(key)
@@ -85,7 +90,10 @@ export function TransferSuggestions({ suggestions, canApprove }: {
                   .replace('{to}', row.warehouse)}
               </div>
               {reason && (
-                <div style={{ fontSize: 11.5, color: C.text, marginTop: 2 }}>
+                <div title={reason} style={{
+                  fontSize: 11.5, color: C.dim, marginTop: 2,
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}>
                   {reason}
                 </div>
               )}
@@ -105,6 +113,15 @@ export function TransferSuggestions({ suggestions, canApprove }: {
           </div>
         )
       })}
+      {suggestions.length > VISIBLE_AT_FIRST && (
+        <button type="button" onClick={() => setShowAll(v => !v)} aria-expanded={showAll}
+                style={{ all: 'unset', cursor: 'pointer', alignSelf: 'flex-start', padding: '4px 2px',
+                         fontSize: 12, fontWeight: 600, color: C.indigo }}>
+          {showAll
+            ? t('hoy.transfers_show_fewer')
+            : t('hoy.transfers_show_more', { n: suggestions.length - VISIBLE_AT_FIRST })}
+        </button>
+      )}
     </section>
   )
 }

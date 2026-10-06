@@ -1,5 +1,5 @@
 'use client'
-import { CheckCircle2, AlertTriangle, Info, X, Undo2, Mail, ArrowRight } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Info, X, Undo2, MessageSquareText, ArrowRight } from 'lucide-react'
 import { useToast, type ToastItem } from '@/contexts/ToastContext'
 
 const ICONS = {
@@ -43,7 +43,7 @@ function ToastRow({ t }: { t: ToastItem }) {
           }}
         >
           {t.actionKind === 'report'
-            ? <Mail size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />
+            ? <MessageSquareText size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />
             : t.actionKind === 'link'
               ? <ArrowRight size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />
               : <Undo2 size={11} style={{ verticalAlign: -1, marginRight: 4 }} aria-hidden="true" />}

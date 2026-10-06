@@ -13,6 +13,7 @@ import { Section, Tag, H2, H3, Lead, Check, Scroller } from '@/components/landin
 import { mailHref, waHref, CONTACT_EMAIL, CONTACT_PHONE_HREF, CONTACT_PHONE_LABEL } from '@/components/landing/contact'
 import { FULL_PLAN, CORPORATE_PLAN } from '@/components/landing/pricingModel'
 import { fill, fmtMoney, fmtNum } from '@/components/landing/PricingCalculator'
+import { useOnlineCheckout } from '@/components/landing/billingOffer'
 
 function useCopy() {
   const { lang } = useLanguage()
@@ -149,6 +150,8 @@ export function FeaturesSection({ alt = false }: { alt?: boolean }) {
 export function PricingSection({ calcHref = '/precios#calculadora', showCorporate = false, part = 'all' }: { calcHref?: string; showCorporate?: boolean; part?: 'all' | 'plans' | 'why' }) {
  const { L, lang } = useCopy()
  const FREE_LIMITS = L.pricing.limits
+ // Online purchase is only mentioned when it is true here AND at this price.
+ const online = useOnlineCheckout()
  const fromPrice = fill(L.pricing.paidFrom, { price: fmtMoney(FULL_PLAN.baseMonthly, lang) })
  const corp = L.pricing.corporate
  const corpFrom = fill(corp.from, { price: fmtMoney(CORPORATE_PLAN.baseMonthly, lang) })
@@ -165,7 +168,7 @@ export function PricingSection({ calcHref = '/precios#calculadora', showCorporat
  {L.pricing.lead}
  </Lead>
  <ul className="no-strings">
- {L.pricing.noStrings.map(t => (
+ {(online ? L.pricing.noStringsCheckout : L.pricing.noStrings).map(t => (
  <li key={t}><Check />{t}</li>
  ))}
  </ul>
@@ -215,6 +218,14 @@ export function PricingSection({ calcHref = '/precios#calculadora', showCorporat
  {paidNote}
  </div>
  <a href={calcHref} className="price-paid-link">{L.pricing.calcLink}</a>
+ {/* Sign-up, never an embedded checkout: the purchase happens inside the
+     app, on Stripe's or PayPal's own page. Hidden unless it is true. */}
+ {online && (
+ <div style={{ margin: '4px 0 18px' }}>
+ <Link href={appHref('/signup?plan=full')} className="btn-primary btn-sm">{L.pricing.ctaFull}</Link>
+ <p className="price-paid-note" style={{ marginTop: 8, marginBottom: 0 }}>{L.pricing.ctaFullNote}</p>
+ </div>
+ )}
  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
  {/* Each row states what the PAID tier actually gets. This used to print one
      blanket "unlimited" for every row, which claimed an uncapped upload size
@@ -259,8 +270,8 @@ export function PricingSection({ calcHref = '/precios#calculadora', showCorporat
 
  {/* How a free account grows: a conversation, never a checkout. The steps
      are a real sequence, hence the numbers. Every CTA here leads to a person
-     (WhatsApp / email) or to the free sign-up — there is no payment flow to
-     link to, on purpose (CLAUDE.md: no Stripe, no checkout). */}
+     (WhatsApp / email) or to the free sign-up. Buying the Full plan online
+     (when the installation offers it) happens inside the app, never here. */}
  <div data-reveal className="lp-card upg-card">
  <h3 className="lp-h3" style={{ marginBottom: 22 }}>{L.pricing.upgradeTitle}</h3>
  <ol className="upg-steps">

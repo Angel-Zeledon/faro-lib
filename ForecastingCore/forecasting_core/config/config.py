@@ -303,6 +303,14 @@ class SessionConfig:
             raise ConfigError("columns.group_keys must be a non-empty list")
         if not self.models:
             raise ConfigError("At least one model must be defined in models")
+        # The opt-in count objective for intermittent series: a bad value fails
+        # HERE, before a job runs, instead of silently training the default.
+        from forecasting_core.models.factory import intermittent_objective_spec
+        for name, params in self.models.items():
+            try:
+                intermittent_objective_spec(name, params if isinstance(params, dict) else {})
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
         if not 0 < self.training.train_ratio < 1:
             raise ConfigError("training.train_ratio must be between 0 and 1")
         if self.forecast.horizon < 1:
@@ -355,7 +363,8 @@ class SessionConfig:
                 },
             },
             "available_models": [
-                "lightgbm", "xgboost", "arima", "sarimax", "prophet", "ets", "croston", "lstm"
+                "lightgbm", "xgboost", "arima", "sarimax", "prophet", "ets", "croston",
+                "tsb", "lstm"
             ],
             "transforms": {
                 "auto_apply": {"type": "bool", "default": False, "label": "Auto-apply suggestions"},

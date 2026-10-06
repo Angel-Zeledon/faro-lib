@@ -45,7 +45,7 @@ function Card({ label, children, tone, tourAnchor }: {
   )
 }
 
-const BIG: React.CSSProperties = { fontSize: 20, fontWeight: 700, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }
+const BIG: React.CSSProperties = { fontSize: 17, fontWeight: 700, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }
 const SMALL: React.CSSProperties = { fontSize: 12.5, color: 'var(--dim)', lineHeight: 1.45 }
 
 /**
