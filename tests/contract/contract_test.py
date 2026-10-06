@@ -35,6 +35,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sys
 import time
@@ -2426,11 +2427,26 @@ def _r4_seed_po(db, tenant_id: str, admin_id: str, sku: str, spec: dict) -> str:
          spec.get("cancel_reason"), spec.get("reception_status", "pending"),
          spec.get("destination")))
     po_id = cur.fetchone()[0]
-    cur.execute(
-        """INSERT INTO inventory_po_items
-               (po_log_id, tenant_id, sku, recommended_qty, final_qty, received_qty, status)
-           VALUES (%s, %s, %s, %s, %s, %s, 'approved')""",
-        (po_id, tenant_id, sku, spec.get("qty", 10), spec.get("qty", 10), spec.get("received")))
+    lines = spec.get("lines") or [{"sfx": "", "qty": spec.get("qty", 10), "received": spec.get("received")}]
+    for ln in lines:
+        cur.execute(
+            """INSERT INTO inventory_po_items
+                   (po_log_id, tenant_id, sku, recommended_qty, final_qty, received_qty, status, supplier,
+                    warehouse)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (po_id, tenant_id, sku + ln.get("sfx", ""), ln["qty"], ln["qty"], ln.get("received"),
+             ln.get("status", "approved"), ln.get("supplier"), ln.get("warehouse", "principal")))
+    if spec.get("received_at"):
+        cur.execute("UPDATE inventory_po_log SET received_at = NOW() - INTERVAL '1 day', received_by = %s "
+                    "WHERE id = %s", (admin_id, po_id))
+    for (sfx, warehouse), stock in (spec.get("stock") or {}).items():
+        cur.execute("""INSERT INTO inventory_stock (tenant_id, sku, warehouse, current_stock)
+                       VALUES (%s, %s, %s, %s)
+                       ON CONFLICT (tenant_id, sku, warehouse) DO UPDATE SET current_stock = EXCLUDED.current_stock""",
+                    (tenant_id, sku + sfx, warehouse, stock))
+    for supplier in (spec.get("obs") or []):
+        cur.execute("""INSERT INTO supplier_lead_time_obs (tenant_id, supplier, po_log_id, lead_time_days)
+                       VALUES (%s, %s, %s, 9.5)""", (tenant_id, supplier, po_id))
     return po_id
 
 
@@ -2467,6 +2483,10 @@ def _r4_mask(value: Any, subs: dict) -> Any:
         return [_r4_mask(v, subs) for v in value]
     if isinstance(value, str) and value in subs:
         return subs[value]
+    if isinstance(value, str) and value.startswith("R4-"):
+        # A seeded SKU carries its side (the stock rows are per tenant, so the
+        # two sides cannot share a SKU): R4-<name>-py<line> becomes R4-<name><line>.
+        return re.sub(r"-(py|rs)(?=[a-z]*$)", "", value)
     return value
 
 
@@ -2518,6 +2538,44 @@ def r4_capture_po(env: R4Env, side: str, po_id: str, since, *, history: Optional
             if r.status == 200 else {"<history read failed>"}
         out[f"listed_as_{history}"] = po_id in ids
     return _r4_mask(out, _r4_subs(env, po_id))
+
+
+def r4_capture_reversal(env: R4Env, side: str, po_id: str, since):
+    """Everything an unreceive / unsend may touch: the PO header, its lines,
+    the stock rows and snapshots of the order's SKUs (side tag removed), the
+    lead-time observations, and the activity rows since the request."""
+    cur = env.db.cursor()
+    prefix = f"R4-{po_name_of(po_id, env)}-{side}"
+    strip = lambda sku: sku[len(prefix):]  # noqa: E731
+    cur.execute("""SELECT reception_status, received_at IS NOT NULL, received_by, sent_at IS NOT NULL,
+                          paid_at IS NOT NULL FROM inventory_po_log WHERE id = %s""", (po_id,))
+    header = list(cur.fetchone())
+    cur.execute("SELECT sku, received_qty, status, warehouse FROM inventory_po_items WHERE po_log_id = %s "
+                "ORDER BY sku", (po_id,))
+    items = [[strip(r[0]), *r[1:]] for r in cur.fetchall()]
+    cur.execute("SELECT sku, warehouse, current_stock FROM inventory_stock WHERE tenant_id = %s AND sku LIKE %s "
+                "ORDER BY sku, warehouse", (env.fx.tenant_id, prefix + "%"))
+    stock = [[strip(r[0]), *r[1:]] for r in cur.fetchall()]
+    cur.execute("SELECT sku, warehouse, current_stock FROM inventory_snapshots WHERE tenant_id = %s "
+                "AND sku LIKE %s ORDER BY recorded_at, sku, warehouse", (env.fx.tenant_id, prefix + "%"))
+    snaps = [[strip(r[0]), *r[1:]] for r in cur.fetchall()]
+    cur.execute("SELECT supplier FROM supplier_lead_time_obs WHERE tenant_id = %s AND po_log_id = %s ORDER BY 1",
+                (env.fx.tenant_id, po_id))
+    obs = [r[0] for r in cur.fetchall()]
+    cur.execute("""SELECT action, user_id, resource, context, status FROM activity_logs
+                    WHERE tenant_id = %s AND resource = %s AND created_at >= %s ORDER BY created_at""",
+                (env.fx.tenant_id, po_id, since))
+    events = [list(r) for r in cur.fetchall()]
+    return _r4_mask({"header": header, "items": items, "stock": stock, "snapshots": snaps, "obs": obs,
+                     "events": events}, _r4_subs(env, po_id))
+
+
+def po_name_of(po_id: str, env: R4Env) -> str:
+    """The pair name a PO id was seeded under."""
+    for name, sides in env.pairs.items():
+        if po_id in sides.values():
+            return name
+    return ""
 
 
 def r4_capture_po_history(history: str):
@@ -2773,6 +2831,87 @@ def build_r4_cases(env: R4Env) -> list[R4Case]:
                prepare=r4_reset_thresholds([("global", "", None, 0.4, 4.0)]),
                capture=r4_capture_thresholds, route=sdel),
         R4Case("thresholds delete write key", "DELETE", st, who="key_write", route=sdel),
+    ]
+    # ── wave 1b: the reception / send reversals ────────────────────────────
+    unrec, unsend = "POST /inventory/po/{id}/unreceive", "POST /inventory/po/{id}/unsend"
+    revcap = r4_capture_reversal
+    rec2 = {"reception_status": "received", "received_at": True, "obs": ["ACME", "Zeta"],
+            "lines": [{"sfx": "a", "qty": 10, "received": 6, "supplier": "ACME"},
+                      {"sfx": "b", "qty": 5, "received": 5, "supplier": "Zeta", "warehouse": "Norte"},
+                      {"sfx": "r", "qty": 4, "received": 4, "supplier": "ACME", "status": "rejected"}],
+            "stock": {("a", "principal"): 20, ("b", "Norte"): 5, ("r", "principal"): 4}}
+    cases += [
+        R4Case("unreceive analyst", "POST", f"{po}/unreceive", who="analyst", po=("rev-main", rec2),
+               capture=revcap, route=unrec),
+        R4Case("unreceive again refused", "POST", f"{po}/unreceive", po=("rev-main", rec2),
+               capture=revcap, route=unrec),
+        R4Case("unreceive nothing received yet", "POST", f"{po}/unreceive", po=("rev-none", sent),
+               capture=revcap, route=unrec),
+        R4Case("unreceive stock short refuses all", "POST", f"{po}/unreceive",
+               po=("rev-short", {**rec2, "stock": {("a", "principal"): 20, ("b", "Norte"): 2}}),
+               capture=revcap, route=unrec),
+        R4Case("unreceive missing stock row", "POST", f"{po}/unreceive",
+               po=("rev-nostock", {**rec2, "stock": {("a", "principal"): 20}}), capture=revcap, route=unrec),
+        R4Case("unreceive exact stock", "POST", f"{po}/unreceive",
+               po=("rev-exact", {**rec2, "stock": {("a", "principal"): 6, ("b", "Norte"): 5}}),
+               capture=revcap, route=unrec),
+        R4Case("unreceive same sku on two lines", "POST", f"{po}/unreceive",
+               po=("rev-dup", {"reception_status": "partial", "received_at": True, "obs": [],
+                               "lines": [{"sfx": "a", "qty": 5, "received": 1.5, "supplier": "ACME"},
+                                         {"sfx": "a", "qty": 5, "received": 2.25, "supplier": "ACME"}],
+                               "stock": {("a", "principal"): 10}}),
+               capture=revcap, route=unrec),
+        R4Case("unreceive line falls back to the destination", "POST", f"{po}/unreceive",
+               po=("rev-dest", {"reception_status": "partial", "received_at": True, "destination": "Norte",
+                                "lines": [{"sfx": "a", "qty": 5, "received": 3, "warehouse": ""}],
+                                "stock": {("a", "Norte"): 9}}),
+               capture=revcap, route=unrec),
+        R4Case("unreceive received_at but nothing counted", "POST", f"{po}/unreceive",
+               po=("rev-zero", {"reception_status": "received", "received_at": True,
+                                "lines": [{"sfx": "a", "qty": 5, "received": 0}]}),
+               capture=revcap, route=unrec),
+        R4Case("unreceive viewer denied", "POST", f"{po}/unreceive", who="viewer",
+               po=("rev-viewer", rec2), capture=revcap, route=unrec),
+        R4Case("unreceive read key denied", "POST", f"{po}/unreceive", who="key_read",
+               po=("rev-viewer", rec2), capture=revcap, route=unrec),
+        R4Case("unreceive no auth", "POST", f"{po}/unreceive", who="none", po=("rev-viewer", rec2),
+               route=unrec),
+        R4Case("unreceive write key", "POST", f"{po}/unreceive", who="key_write",
+               po=("rev-key", rec2), capture=revcap, route=unrec),
+        R4Case("unreceive scoped default warehouse refused", "POST", f"{po}/unreceive", who="scoped",
+               po=("rev-scoped-no", rec2), capture=revcap, route=unrec),
+        R4Case("unreceive scoped own warehouse", "POST", f"{po}/unreceive", who="scoped",
+               po=("rev-scoped-yes", {**rec2, "destination": "Norte"}), capture=revcap, route=unrec),
+        R4Case("unreceive not found", "POST", f"{API}/inventory/po/nope-123/unreceive", route=unrec),
+        R4Case("unreceive other tenant's po", "POST", f"{API}/inventory/po/{env.other_po}/unreceive",
+               route=unrec),
+        R4Case("unreceive ignores a malformed body", "POST", f"{po}/unreceive", raw_body=b"{nope",
+               po=("rev-body", rec2), capture=revcap, route=unrec),
+        R4Case("unsend analyst", "POST", f"{po}/unsend", who="analyst", po=("uns-main", sent),
+               capture=revcap, route=unsend),
+        R4Case("unsend again refused", "POST", f"{po}/unsend", po=("uns-main", sent), capture=revcap,
+               route=unsend),
+        R4Case("unsend a draft", "POST", f"{po}/unsend", po=("uns-draft", {"sent": False}), capture=revcap,
+               route=unsend),
+        R4Case("unsend after reception", "POST", f"{po}/unsend",
+               po=("uns-recv", {"reception_status": "partial"}), capture=revcap, route=unsend),
+        R4Case("unsend after payment", "POST", f"{po}/unsend", po=("uns-paid", {"paid": True}),
+               capture=revcap, route=unsend),
+        R4Case("unsend viewer denied", "POST", f"{po}/unsend", who="viewer", po=("uns-viewer", sent),
+               capture=revcap, route=unsend),
+        R4Case("unsend read key denied", "POST", f"{po}/unsend", who="key_read", po=("uns-viewer", sent),
+               route=unsend),
+        R4Case("unsend write key", "POST", f"{po}/unsend", who="key_write", po=("uns-key", sent),
+               capture=revcap, route=unsend),
+        R4Case("unsend scoped refused", "POST", f"{po}/unsend", who="scoped", po=("uns-scoped", sent),
+               capture=revcap, route=unsend),
+        R4Case("unsend scoped own warehouse", "POST", f"{po}/unsend", who="scoped",
+               po=("uns-scoped-yes", {"destination": "Norte"}), capture=revcap, route=unsend),
+        R4Case("unsend unnumbered", "POST", f"{po}/unsend", po=("uns-unnumbered", {"po_number": None}),
+               capture=revcap, route=unsend),
+        R4Case("unsend no auth", "POST", f"{po}/unsend", who="none", po=("uns-viewer", sent), route=unsend),
+        R4Case("unsend not found", "POST", f"{API}/inventory/po/nope-123/unsend", route=unsend),
+        R4Case("unsend other tenant's po", "POST", f"{API}/inventory/po/{env.other_po}/unsend", route=unsend),
     ]
     return cases
 

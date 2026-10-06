@@ -1,0 +1,23 @@
+# DISABLED EXAMPLE. Rename to 42-reception-reversals.caddy inside the gateway's
+# /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
+# `caddy reload` to send it back to Python.
+#
+# backend-rs/src/routes/reception_reversals.rs, exact paths, POST only:
+#   POST /api/v1/inventory/po/{id}/unreceive
+#   POST /api/v1/inventory/po/{id}/unsend
+# The forward actions (receive, send) stay on Python: they teach the supplier
+# lead time and call the notification senders.
+
+@rs_reception_reversals {
+	method POST
+	path_regexp ^/api/v1/inventory/po/[^/]+/(unreceive|unsend)$
+}
+handle @rs_reception_reversals {
+	reverse_proxy api-rs:8021 api:8010 {
+		lb_policy first
+		lb_try_duration 2s
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

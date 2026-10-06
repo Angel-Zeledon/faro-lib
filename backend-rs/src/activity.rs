@@ -53,6 +53,8 @@ pub enum Event {
     PurchaseOrderUnpaid,
     PurchaseOrderCancelled,
     PurchaseOrderUncancelled,
+    ReceptionUndone,
+    OrderUnsent,
     ApiKeyCreated,
     ApiKeyRevoked,
     SpikeExcluded,
@@ -69,6 +71,10 @@ impl Event {
                 "purchase.order_cancelled", "purchase", "warning", &["reference", "cancel_reason"],
             ),
             Event::PurchaseOrderUncancelled => ("purchase.order_uncancelled", "purchase", "warning", &["reference"]),
+            Event::ReceptionUndone => (
+                "purchase.reception_undone", "purchase", "warning", &["reference", "sku_count", "units", "warehouse"],
+            ),
+            Event::OrderUnsent => ("purchase.order_unsent", "purchase", "warning", &["reference"]),
             Event::CommittedDemandCreated => (
                 "committed_demand.created", "purchase", "info",
                 &["sku", "quantity", "delivery_date", "customer"],
