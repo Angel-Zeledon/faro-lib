@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AlertTriangle, Check, Copy, Clock, Database, ShieldAlert } from 'lucide-react'
-import { authLogin, createTrialAccount, type TrialAccount } from '@/lib/api'
+import { authLogin, createTrialAccount, isLoginSession, type TrialAccount } from '@/lib/api'
 import { setAuth } from '@/lib/auth'
 import { INTRO_SEEN_KEY } from '@/components/layout/AppIntro'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -123,6 +123,9 @@ export default function TrialPage() {
     setError(null)
     try {
       const res = await authLogin(acct.email, acct.password)
+      // A throwaway account never has a second step; if the answer is one
+      // anyway, say the sign-in failed instead of pretending a session exists.
+      if (!isLoginSession(res)) throw new Error('unexpected login answer')
       setAuth(res.access_token, res.refresh_token, {
         id:        res.user.id,
         email:     res.user.email,

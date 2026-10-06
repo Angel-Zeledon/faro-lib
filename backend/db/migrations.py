@@ -2422,6 +2422,75 @@ _SCIM = [
 ]
 _MIGRATIONS += _SCIM
 
+# ── MFA (TOTP + single-use recovery codes) ──────────────────────────────────
+# Additive only. Nothing here changes how a user without an enrollment signs
+# in: with no row in `user_mfa` and `tenants.mfa_required` false, login is
+# exactly what it was.
+_MFA = [
+    # One enrollment per user. `secret_enc` is the base32 TOTP secret under the
+    # Fernet key every other stored secret uses (service_config/crypto.py).
+    # `status` is 'pending' from "begin" until the first valid code confirms
+    # it ('active'); only an active row makes login ask for a code.
+    # `last_used_step` is the RFC 6238 time-step of the last accepted code: a
+    # code is accepted only for a step strictly greater than it, so one code
+    # opens at most one login.
+    ("create_user_mfa",
+     """CREATE TABLE IF NOT EXISTS user_mfa (
+         user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id      TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         secret_enc     TEXT NOT NULL,
+         status         TEXT NOT NULL DEFAULT 'pending',
+         last_used_step BIGINT,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         confirmed_at   TIMESTAMPTZ
+     )"""),
+    ("create_user_mfa_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS idx_user_mfa_tenant ON user_mfa (tenant_id)"),
+    # Only an HMAC of each recovery code is stored, never the code.
+    ("create_user_mfa_recovery_codes",
+     """CREATE TABLE IF NOT EXISTS user_mfa_recovery_codes (
+         id         BIGSERIAL PRIMARY KEY,
+         user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         code_hash  TEXT NOT NULL,
+         used_at    TIMESTAMPTZ,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_user_mfa_recovery_codes_idx",
+     "CREATE INDEX IF NOT EXISTS idx_user_mfa_recovery_user ON user_mfa_recovery_codes (user_id, code_hash)"),
+    # The opaque token between "password ok" and "code ok" (purpose 'login'),
+    # and the one that lets a user the tenant REQUIRES to enrol do so before
+    # holding any session (purpose 'enroll'). Only its SHA-256 is stored.
+    ("create_mfa_challenges",
+     """CREATE TABLE IF NOT EXISTS mfa_challenges (
+         token_hash  TEXT PRIMARY KEY,
+         user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         purpose     TEXT NOT NULL,
+         attempts    INT NOT NULL DEFAULT 0,
+         expires_at  TIMESTAMPTZ NOT NULL,
+         consumed_at TIMESTAMPTZ,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )"""),
+    ("create_mfa_challenges_user_idx",
+     "CREATE INDEX IF NOT EXISTS idx_mfa_challenges_user ON mfa_challenges (user_id)"),
+    # The tenant policy. Catalog-guarded, not ADD COLUMN IF NOT EXISTS, for the
+    # lock reason written above `add_users_has_password`: `tenants` is read by
+    # every login.
+    ("add_tenants_mfa_required",
+     """DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'tenants'
+               AND column_name = 'mfa_required'
+          ) THEN
+            ALTER TABLE tenants ADD COLUMN mfa_required BOOLEAN NOT NULL DEFAULT FALSE;
+          END IF;
+        END $$"""),
+]
+_MIGRATIONS += _MFA
+
 
 # ── Per-tenant IP allowlist ──────────────────────────────────────────────────
 # Additive: a tenant with no policy row (or a disabled one) is not filtered, so

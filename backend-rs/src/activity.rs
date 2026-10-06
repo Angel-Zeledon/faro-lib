@@ -70,6 +70,11 @@ pub enum Event {
     CustomerPortalDateObjected,
     IpAllowlistChanged,
     IpAccessRefused,
+    MfaEnrolled,
+    MfaDisabled,
+    MfaRecoveryCodesRegenerated,
+    MfaReset,
+    MfaPolicyChanged,
 }
 
 impl Event {
@@ -115,6 +120,11 @@ impl Event {
             ),
             Event::IpAllowlistChanged => ("account.ip_allowlist_changed", "account", "warning", &["cidr", "label"]),
             Event::IpAccessRefused => ("account.ip_access_refused", "account", "warning", &["ip"]),
+            Event::MfaEnrolled => ("account.mfa_enrolled", "account", "info", &[]),
+            Event::MfaDisabled => ("account.mfa_disabled", "account", "warning", &[]),
+            Event::MfaRecoveryCodesRegenerated => ("account.mfa_recovery_codes_regenerated", "account", "info", &[]),
+            Event::MfaReset => ("account.mfa_reset", "account", "warning", &["email"]),
+            Event::MfaPolicyChanged => ("account.mfa_policy_changed", "account", "warning", &["mfa_required"]),
         }
     }
 }

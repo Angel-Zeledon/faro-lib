@@ -82,6 +82,9 @@ pub const OMITTED_FROM_EXPORT: &[&str] = &[
     "refresh_tokens",
     "pw_change_codes",
     "auth_rate_events",
+    "user_mfa",
+    "user_mfa_recovery_codes",
+    "mfa_challenges",
 ];
 
 /// `_DELETE_ORDER`: children before parents, one transaction.
@@ -165,6 +168,9 @@ pub const DELETE_ORDER: &[&str] = &[
     "feedback_reports",
     "user_permissions",
     "user_identities",
+    "user_mfa_recovery_codes",
+    "user_mfa",
+    "mfa_challenges",
     "refresh_tokens",
     "pw_change_codes",
     "training_logs",

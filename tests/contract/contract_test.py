@@ -192,6 +192,8 @@ class Fixture:
     read_key: str = ""
     write_key: str = ""
     tokens: dict = field(default_factory=dict)
+    admin_email: str = ""
+    admin_password: str = ""
 
     def token(self, who: str) -> Optional[str]:
         return self.tokens.get(who)
@@ -231,7 +233,8 @@ def make_fixture(py: str, secret: str) -> Fixture:
             raise SystemExit(f"creating the {role} failed: {r.status} {r.body}")
         ids[role] = r.body["data"]["user"]["id"]
 
-    fx = Fixture(tenant_id, admin_id, admin_token, ids["analyst"], ids["viewer"], secret)
+    fx = Fixture(tenant_id, admin_id, admin_token, ids["analyst"], ids["viewer"], secret,
+                 admin_email=email, admin_password=password)
     fx.tokens = {
         "admin": admin_token,
         # The invited users have a temporary password nobody knows; their
@@ -4801,6 +4804,9 @@ def run(args) -> int:
         results += run_delegation(args, fx, db)
         results += cf_outlook_cases.run_cf(args, fx, db, sys.modules[__name__])
         results += run_portal(args, fx, db)
+        # MFA (tests/contract/mfa_cases.py): Rust-only routes + the Python login challenge.
+        from mfa_cases import run_mfa  # noqa: PLC0415
+        results += run_mfa(sys.modules[__name__], args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
@@ -4834,6 +4840,8 @@ def main() -> None:
     ap.add_argument("--keep", action="store_true", help="do not erase the throwaway tenant")
     ap.add_argument("--allow-stale", action="store_true",
                     help="R3: accept a Python answer that predates the source when Rust matches the source")
+    ap.add_argument("--rust-strict", default=None,
+                    help="MFA: URL of a second Rust API started with TESTING_MODE=false (throttle cases)")
     ap.add_argument("--erase-orphans", action="store_true",
                     help="only erase throwaway tenants left by a crashed run, then exit")
     sys.exit(run(ap.parse_args()))

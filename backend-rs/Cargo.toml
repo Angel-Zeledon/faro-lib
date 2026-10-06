@@ -19,6 +19,8 @@ serde_json = { version = "1", features = ["preserve_order"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 hmac = "0.12"
 sha2 = "0.10"
+# MFA: TOTP (RFC 6238) is HMAC-SHA1. Same RustCrypto family as sha2, already in the lock.
+sha1 = "0.10"
 base64 = "0.22"
 hex = "0.4"
 uuid = { version = "1", features = ["v4"] }

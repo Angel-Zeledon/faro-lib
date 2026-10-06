@@ -139,6 +139,10 @@ export interface RequestOpts {
    *  double tap or a retry after a dropped connection returns the order
    *  already written instead of creating a second one. */
   headers?: Record<string, string>
+  /** The call is part of a sign-in step that holds no session yet (it carries
+   *  its own one-time token): a 401 is an answer for the form, never an
+   *  expired session to renew or a redirect to /login. */
+  authFlow?: boolean
 }
 
 // FastAPI validation errors send `detail` as an array of {type, loc, msg, ...}
@@ -252,7 +256,7 @@ async function request<T = unknown>(
   if (res.status === 401) {
     // Auth endpoints return 401 for wrong credentials/tokens — surface that
     // error to the form instead of treating it as an expired session.
-    if (path.startsWith('/auth/')) {
+    if (path.startsWith('/auth/') || opts.authFlow) {
       const payload = await res.json().catch(() => ({ detail: res.statusText }))
       // `detail` stays whatever the backend said (English) — the auth screens
       // map the 401 to their own localized copy rather than rendering it.
@@ -372,20 +376,103 @@ export const authSignup = (body: {
     verify_url: string | null
   }>('POST', '/auth/signup', body)
 
+export interface LoginSession {
+  access_token:  string
+  refresh_token: string
+  token_type:    string
+  expires_in:    number
+  user: {
+    id: string; email: string; full_name: string | null; role: string
+    tenant_id: string
+    /** Unverified users log in fine — only outward actions (invites,
+     *  sending notifications) demand verification. */
+    email_verified: boolean
+  }
+}
+
+/** Password accepted, but the account is protected by a second step. */
+export interface LoginMfaChallenge {
+  mfa_required: true
+  /** Opaque, single use, minutes long: it is the proof the password was right. */
+  mfa_token: string
+  methods: ('totp' | 'recovery_code')[]
+  expires_in: number
+}
+
+/** The organization requires two-step sign-in and this person has not set it
+ *  up yet: no session is issued until they do. */
+export interface LoginMfaEnrollment {
+  mfa_enrollment_required: true
+  enrollment_token: string
+  expires_in: number
+}
+
+export type LoginOutcome = LoginSession | LoginMfaChallenge | LoginMfaEnrollment
+
+export const isLoginSession = (r: LoginOutcome): r is LoginSession => 'access_token' in r
+export const isMfaChallenge = (r: LoginOutcome): r is LoginMfaChallenge => 'mfa_required' in r
+export const isMfaEnrollment = (r: LoginOutcome): r is LoginMfaEnrollment => 'mfa_enrollment_required' in r
+
 export const authLogin = (email: string, password: string) =>
-  request<{
-    access_token:  string
-    refresh_token: string
-    token_type:    string
-    expires_in:    number
-    user: {
-      id: string; email: string; full_name: string | null; role: string
-      tenant_id: string
-      /** Unverified users log in fine — only outward actions (invites,
-       *  sending notifications) demand verification. */
-      email_verified: boolean
-    }
-  }>('POST', '/auth/login', { email, password })
+  request<LoginOutcome>('POST', '/auth/login', { email, password })
+
+/** Second step: the challenge token plus an authenticator or recovery code. */
+export const authMfaVerify = (mfa_token: string, code: string) =>
+  request<LoginSession>('POST', '/auth/mfa/verify', { mfa_token, code })
+
+// ── Two-step sign-in management (Rust: backend-rs/src/routes/mfa/) ────────────
+export interface MfaStatus {
+  enrolled: boolean
+  pending: boolean
+  recovery_codes_remaining: number
+  required_by_tenant: boolean
+  can_disable: boolean
+}
+
+export interface MfaEnrollStart {
+  secret: string
+  otpauth_uri: string
+  issuer: string
+  account: string
+  digits: number
+  period: number
+}
+
+export interface MfaPolicy {
+  required: boolean
+  enrolled_users: number
+  total_users: number
+  users: { id: string; email: string; full_name: string | null; role: string; enrolled: boolean }[]
+}
+
+export const getMfaStatus = () => request<MfaStatus>('GET', '/mfa/status', undefined, { silent: true })
+
+/** `enrollmentToken` is what login hands a person the organization requires to
+ *  enrol; without it the call uses the signed-in session. */
+export const mfaEnrollBegin = (enrollmentToken?: string) =>
+  request<MfaEnrollStart>('POST', '/mfa/enroll/begin',
+    enrollmentToken ? { enrollment_token: enrollmentToken } : {},
+    { silent: true, authFlow: !!enrollmentToken })
+
+export const mfaEnrollConfirm = (code: string, enrollmentToken?: string) =>
+  request<{ enrolled: boolean; recovery_codes: string[]; sign_in_again: boolean }>(
+    'POST', '/mfa/enroll/confirm',
+    enrollmentToken ? { code, enrollment_token: enrollmentToken } : { code },
+    { silent: true, authFlow: !!enrollmentToken })
+
+export const mfaDisable = (code: string) =>
+  request<{ enrolled: boolean }>('POST', '/mfa/disable', { code }, { silent: true })
+
+export const mfaRegenerateCodes = (code: string) =>
+  request<{ recovery_codes: string[] }>('POST', '/mfa/recovery-codes/regenerate', { code }, { silent: true })
+
+export const getMfaPolicy = () => request<MfaPolicy>('GET', '/mfa/policy', undefined, { silent: true })
+
+export const setMfaPolicy = (required: boolean) =>
+  request<{ required: boolean; sessions_ended: number }>('PUT', '/mfa/policy', { required }, { silent: true })
+
+export const resetUserMfa = (userId: string) =>
+  request<{ reset: string }>('POST', `/mfa/users/${encodeURIComponent(userId)}/reset`, undefined, { silent: true })
 
 // ── Social sign-in (Google / Microsoft / Apple) ───────────────────────────────
 // Off unless the instance operator enabled a provider; `providers` is then [].

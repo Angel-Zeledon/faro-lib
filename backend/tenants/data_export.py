@@ -161,7 +161,11 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
 # tenant's data" in the Ley 8968 / GDPR sense — refresh_tokens and
 # pw_change_codes store only hashes anyway, and auth_rate_events is keyed by a
 # generic rate-limit key (may mix identifiers across tenants), not owned rows.
-_OMITTED_FROM_EXPORT = ("refresh_tokens", "pw_change_codes", "auth_rate_events")
+_OMITTED_FROM_EXPORT = (
+    "refresh_tokens", "pw_change_codes", "auth_rate_events",
+    # MFA: an encrypted TOTP secret, hashed recovery codes and challenge tokens.
+    "user_mfa", "user_mfa_recovery_codes", "mfa_challenges",
+)
 
 
 def _json_default(obj: Any) -> str:
@@ -335,6 +339,9 @@ _DELETE_ORDER: list[str] = [
     "feedback_reports",
     "user_permissions",
     "user_identities",
+    "user_mfa_recovery_codes",
+    "user_mfa",
+    "mfa_challenges",
     "refresh_tokens",
     "pw_change_codes",
     "training_logs",
