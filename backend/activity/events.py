@@ -400,6 +400,27 @@ EVENTS: dict[str, EventSpec] = {
     "account.api_key_revoked": EventSpec(
         kind="account", severity=WARNING, detail_keys=("key_name",),
     ),
+    # Organization hierarchy (backend/organizations/): a holding reading its
+    # subsidiaries through an explicit, two-sided link. `label` is the holding's
+    # own name for the subsidiary, `member` the holding's person who got or lost
+    # access. Recorded by the Rust routes (backend-rs/src/activity.rs mirrors
+    # these specs). Ending a link is a warning: whoever depended on the
+    # consolidated view, or whoever gave access to it, should see why it stopped.
+    "org.link_created": EventSpec(
+        kind="account", severity=INFO, detail_keys=("label",),
+    ),
+    "org.link_accepted": EventSpec(
+        kind="account", severity=INFO, detail_keys=("label",),
+    ),
+    "org.link_revoked": EventSpec(
+        kind="account", severity=WARNING, detail_keys=("label",),
+    ),
+    "org.grant_added": EventSpec(
+        kind="account", severity=INFO, detail_keys=("label", "member"),
+    ),
+    "org.grant_removed": EventSpec(
+        kind="account", severity=INFO, detail_keys=("label", "member"),
+    ),
     # Social sign-in (backend/auth/social/). A new way into an account is a
     # warning, not history: "I did not link Google" is something only the owner
     # can notice, and only if it is put where they look.
@@ -573,6 +594,10 @@ REASONS: tuple[str, ...] = (
     "sql_source_refresh_failed",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
+    # organization links: which side ended it, or that an erased tenant did
+    "org_revoked_by_parent",
+    "org_revoked_by_child",
+    "org_tenant_erased",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

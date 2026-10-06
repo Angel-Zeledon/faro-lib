@@ -194,6 +194,12 @@ LEGACY: dict[str, tuple[str, str]] = {
     "data.transfer_created":           ("transfer", "transfer.created"),
     "data.shrinkage_recorded":         ("shrinkage", "shrinkage.recorded"),
     "data.stock_count_applied":        ("stock_count", "stock_count.applied"),
+    # Organization hierarchy: the handshake and the grants (backend/organizations/).
+    "org.link_created":                ("organization", "organization.link_created"),
+    "org.link_accepted":               ("organization", "organization.link_accepted"),
+    "org.link_revoked":                ("organization", "organization.link_revoked"),
+    "org.grant_added":                 ("organization", "organization.grant_added"),
+    "org.grant_removed":               ("organization", "organization.grant_removed"),
     "api_write":                       ("api_call", "api_call.write"),
     "billing.plan_activated":          ("billing", "billing.plan_activated"),
     "billing.plan_downgraded":         ("billing", "billing.plan_downgraded"),

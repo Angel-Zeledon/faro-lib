@@ -183,6 +183,13 @@ def build_export_zip(tenant_id: str) -> bytes:
             zf.writestr(f"{stem}.json", _dump(rows))
             manifest["tables"][stem] = len(rows)
 
+        # The tenant's side of the organization hierarchy. A child never gets
+        # the parent's identity (see organizations/service.py export_rows).
+        from backend.organizations.service import export_rows as _org_rows
+        for stem, rows in _org_rows(tenant_id).items():
+            zf.writestr(f"{stem}.json", _dump(rows))
+            manifest["tables"][stem] = len(rows)
+
         # The screenshots are the tenant's data like any uploaded file: they
         # travel with the export, under the report id that names them.
         shots = 0
@@ -356,6 +363,12 @@ def delete_tenant(tenant_id: str) -> dict:
     tables have no FK to `tenants` at all (see module docstring).
     """
     with get_conn() as conn:
+        # Organization links name the tenant in TWO columns (parent and child),
+        # which the `tenant_id` loop below cannot see. The surviving side of
+        # each live link is told in its own activity feed, then every link and
+        # grant is deleted. Must run before the tenants row goes.
+        from backend.organizations.service import end_links_for_erasure
+        end_links_for_erasure(conn, tenant_id)
         with conn.cursor() as cur:
             for table in _DELETE_ORDER:
                 cur.execute(f"DELETE FROM {table} WHERE tenant_id = %s", (tenant_id,))
