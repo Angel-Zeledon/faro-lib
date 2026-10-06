@@ -3898,6 +3898,8 @@ def run(args) -> int:
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
         results += run_outbox(args, fx, db)
+        import scheduled_reports_contract  # own file, same directory (sys.path[0] is this script's)
+        results += scheduled_reports_contract.run(args, fx, db, sys.modules[__name__])
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
