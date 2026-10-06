@@ -60,14 +60,19 @@ def _po(tid, warehouse=None):
 class Sent:
     """Replaces `_send`: records every request and answers from a script."""
 
-    def __init__(self, monkeypatch, *answers):
+    def __init__(self, monkeypatch, *answers, by_delivery=None):
         self.calls, self.answers = [], list(answers)
+        # delivery id -> answer: a claimed batch comes back in no guaranteed
+        # order, so a test with several deliveries must not script by call order.
+        self.by_delivery = by_delivery or {}
         monkeypatch.setattr(hooks, "_send", self)
 
     def __call__(self, url, body, headers):
         self.calls.append((url, body, headers))
-        answer = self.answers.pop(0) if self.answers else hooks.Attempt(200, None)
-        return answer
+        keyed = self.by_delivery.get(headers.get("X-StockAI-Delivery"))
+        if keyed is not None:
+            return keyed
+        return self.answers.pop(0) if self.answers else hooks.Attempt(200, None)
 
 
 def _due(delivery_id):
@@ -273,13 +278,16 @@ class TestEmitters:
         sent_hook = _hook(tid, ["purchase_order.sent"])
         cancel_hook = _hook(tid, ["purchase_order.cancelled"])
         po = _po(tid)
-        assert client.post(f"/api/v1/inventory/po/{po}/send", headers=analyst_headers
-                           ).status_code == 200
+        # The HTTP send endpoint stamps `sent_at` only when a supplier record with
+        # contact details really received the order (this PO's "Acme" has none),
+        # so the emitting step, `mark_po_sent`, is called directly.
+        from backend.inventory import reception_service
+        reception_service.mark_po_sent(tid, po)
         env = self._one(sent_hook, "purchase_order.sent")
         assert env["tenant_id"] == tid and env["data"]["po_log_id"] == po
         assert env["data"]["sent_at"] and env["data"]["total_value"] == 50.0
         # sending again is not a new "sent"
-        client.post(f"/api/v1/inventory/po/{po}/send", headers=analyst_headers)
+        reception_service.mark_po_sent(tid, po)
         assert len(_deliveries(sent_hook)) == 1
 
         other = _po(tid)
@@ -485,7 +493,8 @@ class TestRetries:
         tid = test_tenant["id"]
         hid = _hook(tid)
         gone, slow = self._delivery(tid, hid), self._delivery(tid, hid)
-        Sent(monkeypatch, hooks.Attempt(410, None), hooks.Attempt(None, "timeout"))
+        Sent(monkeypatch, by_delivery={gone: hooks.Attempt(410, None),
+                                       slow: hooks.Attempt(None, "timeout")})
         hooks.process_due()
         assert self._row(gone)["status"] == "failed" and self._row(gone)["attempts"] == 1
         assert self._row(slow)["status"] == "pending" and self._row(slow)["last_error"] == "timeout"
