@@ -286,6 +286,14 @@ def set_status(tenant_id: str, commitment_id: str, user_id: str, status: str) ->
             """SELECT status FROM supply_contracts
                 WHERE tenant_id = %s AND root_id = %s AND superseded_by IS NULL""",
             (tenant_id, current.get("contract_root_id")))
+        if live is None:
+            # A row made by a recurring delivery schedule: its "contract" is the
+            # schedule, which must still be active (paused or cancelled ones
+            # withdrew their future rows, and a closed row must not come back).
+            live = query_one(
+                """SELECT status FROM recurring_delivery_schedules
+                    WHERE tenant_id = %s AND id = %s""",
+                (tenant_id, current.get("contract_root_id")))
         if not live or live["status"] != "active":
             raise AppError("committed_demand_contract_inactive",
                            "Its contract is no longer active, so it cannot be reopened",

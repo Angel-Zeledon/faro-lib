@@ -2044,6 +2044,9 @@ _MIGRATIONS += _COMMITTED
 # Blanket supply contracts: after committed demand, whose table they extend.
 from backend.inventory.supply_contract_migrations import MIGRATIONS as _SUPPLY_CONTRACTS  # noqa: E402
 _MIGRATIONS += _SUPPLY_CONTRACTS
+# Recurring delivery schedules: after committed demand, whose rows they materialise.
+from backend.inventory.recurring_delivery_migrations import MIGRATIONS as _RECURRING_DELIVERIES  # noqa: E402
+_MIGRATIONS += _RECURRING_DELIVERIES
 from backend.inventory.spike_edit_migrations import MIGRATIONS as _SPIKE_EDITS  # noqa: E402
 _MIGRATIONS += _SPIKE_EDITS
 from backend.inventory.analogy_migrations import MIGRATIONS as _SKU_ANALOGIES  # noqa: E402

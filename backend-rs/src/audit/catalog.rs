@@ -132,6 +132,9 @@ pub const LEGACY: &[(&str, &str, &str)] = &[
     ("supply_contract.created", "supply_contract", "supply_contract.created"),
     ("supply_contract.revised", "supply_contract", "supply_contract.revised"),
     ("supply_contract.status_changed", "supply_contract", "supply_contract.status_changed"),
+    ("recurring_delivery.created", "recurring_delivery", "recurring_delivery.created"),
+    ("recurring_delivery.revised", "recurring_delivery", "recurring_delivery.revised"),
+    ("recurring_delivery.status_changed", "recurring_delivery", "recurring_delivery.status_changed"),
     ("purchase_budget.created", "purchase_budget", "purchase_budget.created"),
     ("purchase_budget.revised", "purchase_budget", "purchase_budget.revised"),
     ("purchase_budget.exceeded", "purchase_budget", "purchase_budget.exceeded"),
@@ -231,10 +234,10 @@ mod tests {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
         assert_eq!(ROUTES.len(), 56);
-        assert_eq!(LEGACY.len(), 73);
-        assert_eq!(target_types().len(), 28);
-        assert_eq!(audit_actions().len(), 108);
-        assert_eq!(all_stored_actions().len(), 112);
+        assert_eq!(LEGACY.len(), 76);
+        assert_eq!(target_types().len(), 29);
+        assert_eq!(audit_actions().len(), 111);
+        assert_eq!(all_stored_actions().len(), 115);
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),

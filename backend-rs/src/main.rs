@@ -17,6 +17,7 @@ mod middleware;
 mod pycompat;
 mod pyjson;
 mod query;
+mod recurring;
 mod routes;
 mod service_config;
 mod state;
@@ -103,6 +104,9 @@ async fn main() {
         .allow_headers(AllowHeaders::mirror_request());
 
     let bind = settings.bind.clone();
+    // The periodic materialiser of recurring delivery schedules (see
+    // `recurring::materialiser`; RECURRING_MATERIALISER_ENABLED=false turns it off).
+    recurring::materialiser::spawn(pool.clone());
     let state = AppState { settings: Arc::new(settings), pool };
     let app = routes::router()
         .layer(cors)

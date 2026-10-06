@@ -10,6 +10,7 @@ pub mod spike_edits;
 pub mod webhooks;
 pub mod po_cancellation;
 pub mod po_payments;
+pub mod recurring_deliveries;
 pub mod signal_thresholds;
 
 use axum::routing::{delete, get, patch, post};
@@ -70,6 +71,13 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // Recurring delivery schedules (Rust-only: no Python route, no failover).
+        .route("/api/v1/recurring-deliveries",
+            get(recurring_deliveries::list).post(recurring_deliveries::create))
+        .route("/api/v1/recurring-deliveries/preview", post(recurring_deliveries::preview))
+        .route("/api/v1/recurring-deliveries/{schedule_id}",
+            get(recurring_deliveries::get).patch(recurring_deliveries::update))
+        .route("/api/v1/recurring-deliveries/{schedule_id}/status", post(recurring_deliveries::set_status))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }
