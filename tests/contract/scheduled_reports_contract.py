@@ -549,7 +549,10 @@ def run(args, fx, db, ct) -> list:
     problems = []
     for week in range(3):
         # A different local minute each time: a different period, so each is a run of its own.
-        q("UPDATE report_schedules SET next_run_at = NOW() - ((1 + 60 * %s) || ' minutes')::interval WHERE id = %s",
+        # Offset by 30 minutes so the first one can never share a minute with the
+        # "Due now" run above (their period keys would collide whenever the cases
+        # above ran inside one wall-clock minute, and the pass would rightly skip it).
+        q("UPDATE report_schedules SET next_run_at = NOW() - ((30 + 60 * %s) || ' minutes')::interval WHERE id = %s",
           (week, due_id))
         p = pass_once("no_transport")
         if p.returncode != 0:
