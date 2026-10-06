@@ -563,6 +563,125 @@ warehouse scope, delete), then auth with its own contract cases
 (`TESTING_MODE=false` on a disposable database for throttling, rotation and
 the `sessions_invalid_before` cut).
 
+### Approve or reject from a message (2026-10-06, branch feat/approve-by-message)
+
+First feature written in Rust FIRST rather than ported: an approver gets an
+email (and a WhatsApp message where a verified number and a channel exist)
+with a link, opens a confirmation page and approves or rejects without opening
+the app. **The new routes are Rust only and have no Python failover** (see
+`deploy/rust-api/routes.d/44-approval-links.caddy.example`: it names only
+`api-rs`, so a Rust outage is a 502, never a confusing FastAPI 404). Python
+stays owner of the schema and still serves the paths it serves today, so it
+honours the feature there.
+
+| Route | Who | What |
+|---|---|---|
+| `GET /approval-links/{token}` | public (the link is the credential) | the page's data; READS ONLY |
+| `POST /approval-links/{token}/decision` | public | `{decision: approved or rejected, comment?}`; the only way to decide |
+| `POST /inventory/po/{id}/approval/links` | analyst, admin; order's warehouse guard | rotate and queue the links of the open request (the "resend") |
+| `POST /inventory/po/{id}/approval/links/revoke` | analyst, admin; same guard | kill every open link of the order (idempotent) |
+
+**What a link is.** 256 random bits (`po_confirmation_core.new_token`, 43
+URL-safe characters), only the SHA-256 is stored (`po_approval_links.token_hash`,
+unique), compared in constant time; bound to ONE approver, ONE approval request
+(so one order and tenant) and the scope `decide`; single use; expires after 72
+hours (`LINK_TTL_HOURS`, the same number in Python and Rust, a unit test reads
+the Python source); one row per (request, approver, channel). "Signed" here
+means unforgeable by construction (a random token looked up by hash), not a
+cryptographic signature over claims: nothing is carried in the URL, so nothing
+can be tampered with. Re-sending rotates the token (the old link dies) and
+never reopens a link already used. A malformed, unknown, used, expired, revoked
+link, a cancelled order, a closed request, or an approver who may no longer
+decide (flag removed, deactivated, demoted, outside the order's warehouse scope,
+trial expired) ALL answer the same `404 approval_link_not_found`: nobody can
+tell the cases apart or probe for orders.
+
+**GET never decides.** It writes no row at all, not even "viewed": a mail
+scanner that prefetches the URL (GET or HEAD) must not change anything, and the
+unit and contract tests snapshot the tables around repeated GETs. Deciding is an
+explicit POST from a button on the page (`/aprobar/<token>`, no account, no app
+shell). The page shows reference, supplier(s), warehouse, lines (name, SKU,
+quantity), the order TOTAL, who asked and when, and the request note. Never a
+unit cost, a line value, stock, ids or another order; the contract test checks
+the exact key set and greps the body for the seeded unit cost.
+
+**The decision is the in-app decision.** `po_approvals.rs::decide_core` is the
+one function both the app's approve/reject routes and the link use, so approver
+status, warehouse scope, the self-approval limit (a requester who is also an
+approver can reject but not approve above the limit; the page does not offer
+the button) and "a rejection needs a reason" apply identically. The link is
+consumed INSIDE the decision's transaction (a refusal such as "needs a reason"
+does not burn it, a crash cannot burn it without deciding), the row gets
+`po_approvals.decided_channel = 'message'` (NULL = decided in the app, as every
+old row), the audit event `purchase.approval_approved / rejected` carries
+`channel: message` with the approver as the actor, the requester gets the same
+decision mail and webhook as for an in-app decision, and every other open link
+of that request dies in the same transaction (for a decision in the app too, in
+Python or in Rust). A replayed link, including the same decision again, is the
+neutral 404, NOT the in-app idempotent 200. Two simultaneous uses decide once.
+Delegation does not exist on this base: `eligible_approver` in
+`approval_links.rs` is the one place a delegate would be admitted, so adding it
+later cannot make a link wider than the in-app rule.
+
+**Issuing.** Python still serves `POST /po/{id}/approval/request`, so the
+request path issues the links (`po_approval_link_service.issue_links`) and the
+approval request mail gets a second button (`decision_url`); the requester never
+gets a link. WhatsApp: only the link message, kind `po_approval_link` through
+the outbox (`plan_gated=True`: the existing `whatsapp_bot` gate, nothing new;
+only a VERIFIED number; no free-text commands exist). The Rust resend queues the
+registered kinds `po_approval_request` (now with an optional `decision_token`)
+and `po_approval_link`; the Spanish text lives in `notifications/locale.py`
+keyed by those identifiers. Resend is limited to 5 per order per hour.
+
+**Switch.** `APPROVAL_LINKS_ENABLED` (environment only, default false, in the
+config registry). Off: no link is issued, the request mail is exactly what it
+was, and the public routes answer as if no link existed (so it is also the kill
+switch for outstanding links). Turn it on AFTER group 44 is routed.
+
+**Rate limits** (`auth_rate_events`, skipped in `TESTING_MODE` like every other
+limiter; the keys hold a digest, never the token): page 120 per address and 60
+per link per 10 minutes, decision 20 per address and 10 per link per 10
+minutes, counted for every request whether or not the link is valid. They fail
+CLOSED on a database error (a public credential door that cannot count is
+refused). The address is the first `X-Forwarded-For` entry, else the peer
+address (`main.rs` now serves with connect info); a client can forge the header,
+which is why the per-link limit is the one that matters.
+
+**Tests.** Rust: 10 unit tests plus 25 database tests (`#[ignore]`, run with
+`APPROVAL_LINKS_TEST_DATABASE_URL=postgres://... cargo test approval_links --
+--ignored`) that seed their own tenant, call the handlers' own functions and
+assert state with direct queries: replay, double use (concurrent), expired,
+revoked, wrong approver, link for another order, cross-tenant (including a
+forged mixed-tenant row), prefetch changes nothing, the page leak test,
+self-approval, warehouse scope, cancelled order, trial expiry, rate limits,
+WhatsApp eligibility. Python: `backend/tests/test_po_approval_links.py` (21).
+Contract: `tests/contract/approval_links_contract.py` (16 cases, hooked into
+`contract_test.py` with four lines): the real services over HTTP, including a
+link issued by the Python code and decided through Rust, and a decision in the
+app through Python or Rust revoking Rust's links. One real defect was found only
+by that contract run and not by the database tests: mixed-case header names
+panic `HeaderName::from_static` and dropped the connection on the error paths;
+a unit test now pins it.
+
+**Shared files touched (all additive).** `main.rs` (connect info),
+`error.rs` (`ApiError::code` no longer test-only), `r1/currency.rs`
+(`currency_of` is `pub(crate)`), `po_approvals.rs` (`decide` became
+`decide_core` with a `ViaLink` argument; history gains `decided_channel`; the
+decision answer gains `channel`), `outbox.rs`, `activity.rs`, `audit/catalog.rs`
+(plus their Python sources), `data_export.py` (export without `token_hash`,
+erase before `po_approvals`), `config.py` and the registry (one field).
+`audit::catalog` size asserts are now COMPUTED from `backend/audit/catalog.py`
+instead of hard-coded numbers, so the next audit action does not need a magic
+number edited in Rust.
+
+**Not done / not verified.** No UI to resend or revoke (the two hook routes are
+there; the in-app approvals panel does not call them yet). The real Resend and
+Twilio transports were never exercised (senders are recorded or replaced). The
+page was type-checked and its copy verified for es/en parity, but not driven in
+a browser. The rate limiters were exercised by the database tests, not by the
+contract harness (which runs with `TESTING_MODE=true`). No release build and no
+Docker image were made for this branch.
+
 ### Integrated branch: foundation + R1-R4, resynced with main (2026-10-06)
 
 One full harness run, Python dev API on `:8011` running current main, Rust

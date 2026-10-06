@@ -107,6 +107,10 @@ _ES: dict[str, str] = {
     "po_approval_request_heading":  "Orden {ref} pendiente de aprobación",
     "po_approval_request_body":     "{requester} pidió aprobar la orden {ref} por {amount}. No se enviará al proveedor hasta que la apruebes.",
     "po_approval_request_cta":      "Revisar la orden",
+    # Decision link: approve or reject from the message, without opening the app.
+    "po_approval_request_decide_cta":  "Aprobar o rechazar desde este mensaje",
+    "po_approval_request_decide_note": "Este enlace es personal, funciona una sola vez y caduca en {hours} horas. No lo reenvíes.",
+    "po_approval_link_whatsapp":       "StockAI: la orden {ref} por {amount} espera tu decisión. Apruébala o recházala aquí: {url}\nEl enlace es personal, funciona una sola vez y caduca en {hours} horas.",
     "po_approval_decision_approved_title":   "Tu orden fue aprobada",
     "po_approval_decision_approved_subject": "Orden {ref} aprobada",
     "po_approval_decision_approved_heading": "Orden {ref} aprobada",

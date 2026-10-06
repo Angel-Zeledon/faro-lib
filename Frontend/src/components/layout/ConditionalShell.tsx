@@ -22,9 +22,11 @@ export default function ConditionalShell({ children }: { children: React.ReactNo
   // A supplier answering a purchase order from the link in a message: no app
   // shell, no sign-in. The trailing slash matters — `/proveedores` is the
   // signed-in suppliers screen and must keep its shell.
-  const isSupplierPortal = pathname.startsWith('/proveedor/') || pathname.startsWith('/cliente/')
+  const isSupplierPortal = pathname.startsWith('/proveedor/') || pathname.startsWith('/cliente/') || pathname.startsWith('/aprobar/')
   // The unsubscribe page of a scheduled report: same, a link in an email.
   const isReportUnsubscribe = pathname.startsWith('/reportes-programados/baja')
+  // (/aprobar/<token>, the approval decision page, is the same kind of page: a
+  // link in a message, no shell, no sign-in.)
   const isLanding = LANDING_PATHS.includes(pathname) || pathname === '/docs' || pathname.startsWith('/docs/')
     || isSupplierPortal || isReportUnsubscribe
 

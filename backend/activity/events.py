@@ -414,11 +414,11 @@ EVENTS: dict[str, EventSpec] = {
     # delegation); absent when the approver decided for themselves.
     "purchase.approval_approved": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("reference", "value", "decision_comment", "on_behalf_of"),
+        detail_keys=("reference", "value", "decision_comment", "on_behalf_of", "channel"),
     ),
     "purchase.approval_rejected": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("reference", "value", "decision_comment", "on_behalf_of"),
+        detail_keys=("reference", "value", "decision_comment", "on_behalf_of", "channel"),
     ),
     # An approver named a substitute for a date range, or ended that early. The
     # actor is the delegator; `delegate` is the substitute's name.
@@ -457,6 +457,20 @@ EVENTS: dict[str, EventSpec] = {
     "approval_chain.updated": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("chain_name", "levels", "active"),
+    ),
+    # `channel` (on approved / rejected above) is how the decision was taken:
+    # absent for the app, `message` for a decision link in an email or WhatsApp
+    # message.
+    # Decision links (approve or reject from a message). Sent and revoked are
+    # acts of a person on an order, so the trail shows them; the decision itself
+    # is the approval_approved / approval_rejected event above.
+    "purchase.approval_links_sent": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "count"),
+    ),
+    "purchase.approval_links_revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "count"),
     ),
 
     # ── Sales received by e-mail (backend/inbound_email/) ────────────────────

@@ -18,7 +18,9 @@ const PUBLIC_PATHS = ['/login', '/signup', '/verify-email', '/forgot-password', 
   '/cliente/',
   // The unsubscribe link at the foot of a scheduled report: a link in an email,
   // possibly to an address with no account.
-  '/reportes-programados/baja']
+  '/reportes-programados/baja',
+  // The approval decision page: a link in a message, no sign-in (the link is the credential).
+  '/aprobar/']
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router   = useRouter()

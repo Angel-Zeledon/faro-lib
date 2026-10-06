@@ -7692,6 +7692,10 @@ def run(args) -> int:
         results += run_consensus(args, fx, db, sys.modules[__name__])
         import scheduled_reports_contract  # own file, same directory (sys.path[0] is this script's)
         results += scheduled_reports_contract.run(args, fx, db, sys.modules[__name__])
+        # Approve or reject from a message: its own file, Rust-only routes.
+        from approval_links_contract import run_approval_links  # noqa: PLC0415
+        results += run_approval_links(args, fx, db, {"http": http, "Case": Case, "API": API, "auth_for": auth_for,
+                                                     "signup": _r4_signup, "mint": mint_access_token})
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

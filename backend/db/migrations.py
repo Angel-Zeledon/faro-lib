@@ -2103,6 +2103,9 @@ from backend.inventory.consensus_migrations import MIGRATIONS as _CONSENSUS  # n
 _MIGRATIONS += _CONSENSUS
 from backend.scheduled_reports.migrations import MIGRATIONS as _SCHEDULED_REPORTS  # noqa: E402
 _MIGRATIONS += _SCHEDULED_REPORTS
+# Decision links for purchase-order approvals (after approvals and the outbox).
+from backend.inventory.po_approval_link_migrations import MIGRATIONS as _PO_APPROVAL_LINKS  # noqa: E402
+_MIGRATIONS += _PO_APPROVAL_LINKS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

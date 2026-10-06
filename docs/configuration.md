@@ -355,6 +355,7 @@ What it does NOT buy: isolation from the database. Both instances still share on
 | Variable | Default | Notes | What it does |
 |---|---|---|---|
 | `PUBLIC_API_ONLY` | `false` | environment only | Serve only the public integration surface on this instance. |
+| `APPROVAL_LINKS_ENABLED` | `false` | environment only | Put a one-time decision link in purchase-order approval requests, so an approver can approve or reject from the message. Turn it on only once the Rust API group that serves the decision page is routed: with it off no link is issued and approvals behave exactly as before. |
 
 ## `operations` - Thresholds behind the installation status panel (queue, worker, disk, backup, latency).
 

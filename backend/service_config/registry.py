@@ -1048,6 +1048,15 @@ API_SURFACE = Service(
             doc="Serve only the public integration surface on this instance.",
             default="false", example="false",
         ),
+        ConfigField(
+            key="approval_links_enabled", env="APPROVAL_LINKS_ENABLED", kind="bool",
+            editable=False,
+            doc="Put a one-time decision link in purchase-order approval requests, so an "
+                "approver can approve or reject from the message. Turn it on only once "
+                "the Rust API group that serves the decision page is routed: with it off "
+                "no link is issued and approvals behave exactly as before.",
+            default="false", example="false",
+        ),
     ),
 )
 

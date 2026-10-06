@@ -143,14 +143,17 @@ def _order_link(po_log_id: str) -> str:
 
 
 def _send_po_approval_request(row: dict, p: dict) -> None:
+    from backend.inventory.po_approval_link_service import decision_url
     from backend.notifications import email as m
     tenant = row["tenant_id"]
     _email_ready(tenant)
+    token = p.get("decision_token")
     _delivered(m.send_po_approval_request_email(
         to=row["recipient"], approver_name=_user_name(p.get("approver_id"), tenant),
         requester_name=_user_name(p.get("requester_id"), tenant),
         po_ref=_po_reference(tenant, p["po_log_id"]), amount_text=_amount_text(tenant, p["amount"]),
-        url=_order_link(p["po_log_id"]), tenant_id=tenant), tenant)
+        url=_order_link(p["po_log_id"]), tenant_id=tenant,
+        decision_url=decision_url(token) if token else None), tenant)
 
 
 def _send_po_approval_decision(row: dict, p: dict) -> None:
@@ -191,6 +194,23 @@ def _send_whatsapp_verification_code(row: dict, p: dict) -> None:
         raise OutboxTransient(wa.failure_reason(tenant))
 
 
+def _send_whatsapp_po_approval_link(row: dict, p: dict) -> None:
+    """ONLY the link message: no free-text commands, nothing to answer."""
+    from backend.inventory.po_approval_link_service import LINK_TTL_HOURS, decision_url
+    from backend.notifications import whatsapp as wa
+    from backend.notifications.locale import render_es
+    tenant = row["tenant_id"]
+    if not wa.is_configured(tenant):
+        raise OutboxRefused(wa.failure_reason(tenant))
+    body = render_es("po_approval_link_whatsapp", ref=_po_reference(tenant, p["po_log_id"]),
+                     amount=_amount_text(tenant, p["amount"]), url=decision_url(p["decision_token"]),
+                     hours=LINK_TTL_HOURS)
+    # The bot's own gate (`whatsapp_bot`), not a new one: a plan without the bot
+    # gets the email link only.
+    if not wa.send_whatsapp(row["recipient"], body, tenant_id=tenant, plan_gated=True):
+        raise OutboxTransient(wa.failure_reason(tenant))
+
+
 def _kind(channel: str, name: str, required: tuple, optional: tuple, fn) -> Kind:
     return Kind(channel, name, required, optional, lambda row, _fn=fn: _fn(row, row["params"]))
 
@@ -201,12 +221,14 @@ KINDS: dict[tuple[str, str], Kind] = {(k.channel, k.name): k for k in [
     _kind("email", "change_password_code", ("code",), (), _send_change_password_code),
     _kind("email", "password_reset_otp", ("code",), (), _send_password_reset_otp),
     _kind("email", "account_setup", ("setup_url",), ("full_name",), _send_account_setup),
-    _kind("email", "po_approval_request", ("po_log_id", "amount"), ("approver_id", "requester_id"),
-          _send_po_approval_request),
+    _kind("email", "po_approval_request", ("po_log_id", "amount"),
+          ("approver_id", "requester_id", "decision_token"), _send_po_approval_request),
     _kind("email", "po_approval_decision", ("po_log_id", "amount", "approved"),
           ("requester_id", "decider_id", "comment"), _send_po_approval_decision),
     _kind("email", "scheduled_report", ("run_id", "recipient_id"), (), _send_scheduled_report),
     _kind("whatsapp", "verification_code", ("code",), (), _send_whatsapp_verification_code),
+    _kind("whatsapp", "po_approval_link", ("po_log_id", "amount", "decision_token"),
+          ("approver_id",), _send_whatsapp_po_approval_link),
 ]}
 
 

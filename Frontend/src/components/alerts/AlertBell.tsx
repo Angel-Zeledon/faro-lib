@@ -141,8 +141,10 @@ export function useEventDetails() {
         const v = d[k]
         // `settings` is a list of setting names (session policy): each one
         // through its own label, never as the bare identifier.
+        // `channel` is a machine value (`message`): shown through the catalogue, never raw.
         const shown = k === 'settings' && Array.isArray(v)
           ? v.map(name => t(`session_policy.field.${String(name)}`)).join(', ')
+          : k === 'channel' ? t(`events.channel.${v}`)
           : MONEY_DETAILS.has(k) && typeof v === 'number' ? formatMoney(v) : v
         return `${t(`events.detail.${k}`)}: ${shown}`
       })

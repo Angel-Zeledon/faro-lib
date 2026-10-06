@@ -2578,6 +2578,8 @@ export interface POApprovalEntry {
   decided_on_behalf_of_name?: string | null
   /** One per level, only on a request made under an approval chain. */
   steps?: ChainStep[]
+  /** null = decided in the app; 'message' = through a decision link in an email or WhatsApp message */
+  decided_channel?: 'message' | null
 }
 export type POApprovalDelegationStatus = 'active' | 'scheduled' | 'expired' | 'revoked'
 export interface POApprovalDelegation {

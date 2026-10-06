@@ -65,6 +65,8 @@ pub enum Event {
     PurchaseOrderUncancelled,
     ApprovalApproved,
     ApprovalRejected,
+    ApprovalLinksSent,
+    ApprovalLinksRevoked,
     ApiKeyCreated,
     ApiKeyRevoked,
     SpikeExcluded,
@@ -127,11 +129,18 @@ impl Event {
             ),
             Event::PurchaseOrderUncancelled => ("purchase.order_uncancelled", "purchase", "warning", &["reference"]),
             Event::ApprovalApproved => (
-                "purchase.approval_approved", "purchase", "info", &["reference", "value", "decision_comment", "on_behalf_of"],
+                "purchase.approval_approved", "purchase", "info",
+                &["reference", "value", "decision_comment", "on_behalf_of", "channel"],
             ),
             Event::ApprovalRejected => (
-                "purchase.approval_rejected", "purchase", "info", &["reference", "value", "decision_comment", "on_behalf_of"],
+                "purchase.approval_rejected", "purchase", "info",
+                &["reference", "value", "decision_comment", "on_behalf_of", "channel"],
             ),
+            Event::ApprovalLinksSent => ("purchase.approval_links_sent", "purchase", "info", &["reference", "count"]),
+            Event::ApprovalLinksRevoked => {
+                ("purchase.approval_links_revoked", "purchase", "info", &["reference", "count"])
+            }
+            Event::OrderUnsent => ("purchase.order_unsent", "purchase", "warning", &["reference"]),
             Event::CommittedDemandCreated => (
                 "committed_demand.created", "purchase", "info",
                 &["sku", "quantity", "delivery_date", "customer"],

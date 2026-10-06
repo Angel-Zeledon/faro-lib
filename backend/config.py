@@ -108,6 +108,11 @@ class Settings(BaseSettings):
     # takes down the customer's integration and the app together. Splitting that
     # is a different, much larger decision.
     public_api_only: bool = False
+    # Decision links in purchase-order approval requests (approve or reject from
+    # the message, without opening the app). OFF until the Rust API group that
+    # serves the public decision page is routed (docs/rust-migration.md): a link
+    # in a message that nothing answers is worse than no link. Environment-only.
+    approval_links_enabled: bool = False
     # Identity used to claim jobs and to recover this instance's orphans after a
     # crash. Empty falls back to the container/host name. Give each long-lived
     # worker a FIXED id (e.g. "worker-1") so its orphaned RUNNING jobs are still

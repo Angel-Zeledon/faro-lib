@@ -220,6 +220,8 @@ LEGACY: dict[str, tuple[str, str]] = {
     "cost_center.updated":              ("cost_center", "cost_center.updated"),
     "approval_chain.created":           ("approval_chain", "approval_chain.created"),
     "approval_chain.updated":           ("approval_chain", "approval_chain.updated"),
+    "purchase.approval_links_sent":    ("purchase_order", "purchase_order.approval_links_sent"),
+    "purchase.approval_links_revoked": ("purchase_order", "purchase_order.approval_links_revoked"),
     "forecast.adjusted":               ("forecast_adjustment", "forecast_adjustment.created"),
     "forecast.spike_excluded":         ("spike_edit", "spike_edit.created"),
     "forecast.spike_restored":         ("spike_edit", "spike_edit.reverted"),

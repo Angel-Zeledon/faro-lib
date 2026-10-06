@@ -124,6 +124,12 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("cost_centers", "cost_centers", "*"),
     ("approval_chains", "approval_chains", "*"),
     ("approval_chain_bands", "approval_chain_bands", "*"),
+    # Decision links: who was sent one, when, and whether it was used. The
+    # token hash is a credential and is never exported.
+    ("po_approval_links", "po_approval_links",
+     "id, tenant_id, po_log_id, approval_id, approver_id, scope, channel, expires_at, "
+     "created_by, created_at, issued_at, last_viewed_at, used_at, used_decision, "
+     "revoked_at, revoked_by, revoked_reason"),
     ("scheduled_jobs", "scheduled_jobs", "*"),
     ("schedule_runs", "schedule_runs", "*"),
     ("session_manifests", "session_manifests", "*"),
@@ -312,6 +318,7 @@ _DELETE_ORDER: list[str] = [
     "chats",
     "po_approval_delegations",
     "po_approval_steps",
+    "po_approval_links",
     "po_approvals",
     "po_approval_rules",
     "approval_chain_bands",
