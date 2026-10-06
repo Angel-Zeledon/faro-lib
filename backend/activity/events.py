@@ -443,6 +443,7 @@ EVENTS: dict[str, EventSpec] = {
     # knows which receiver to fix before re-enabling it.
     "webhook.auto_disabled": EventSpec(
         kind="account", severity=WARNING, detail_keys=("host",),
+    ),
     # SCIM provisioning (backend/scim/). The actor is "scim": the company's
     # identity provider did these, not a person in the app. Losing or regaining
     # access and a changed role are warnings - the things an admin is asked

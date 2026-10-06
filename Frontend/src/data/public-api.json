@@ -8312,6 +8312,13 @@
          "required": false,
          "type": "string",
          "nullable": true
+        },
+        {
+         "name": "budget_override_reason",
+         "required": false,
+         "type": "string",
+         "max_length": 500,
+         "nullable": true
         }
        ],
        "nullable": true
