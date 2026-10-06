@@ -111,6 +111,11 @@ def update_password(tenant_id: str, user_id: str, new_password: str) -> None:
               SET hashed_password = %s,
                   has_password = TRUE,
                   sessions_invalid_before = NOW(),
+                  -- The tenant's password-age policy measures from here, and a
+                  -- reset (proof of the mailbox) also lifts a lockout.
+                  password_changed_at = NOW(),
+                  failed_login_count = 0,
+                  locked_until = NULL,
                   updated_at = NOW()
             WHERE id = %s AND tenant_id = %s""",
         (hash_password(new_password), user_id, tenant_id),
@@ -179,7 +184,8 @@ def update_profile(
 
 def update_last_login(tenant_id: str, user_id: str) -> None:
     execute(
-        "UPDATE users SET last_login_at = NOW() WHERE id = %s AND tenant_id = %s",
+        "UPDATE users SET last_login_at = NOW(), last_activity_at = NOW() "
+        "WHERE id = %s AND tenant_id = %s",
         (user_id, tenant_id),
     )
 
@@ -325,12 +331,16 @@ def set_permissions(tenant_id: str, user_id: str, permissions: list[str]) -> Non
 # ── Refresh tokens ─────────────────────────────────────────────────────────
 
 def add_refresh_token(tenant_id: str, user_id: str, token_hash: str) -> None:
+    # Sessions kept per person: 5 as always, or the tenant's concurrent-session
+    # limit. The oldest go first; the new login is never the one dropped.
+    from backend.auth.session_policy import refresh_token_keep
+    keep = refresh_token_keep(tenant_id)
     execute(
         """DELETE FROM refresh_tokens WHERE user_id = %s AND id IN (
                SELECT id FROM refresh_tokens
-               WHERE user_id = %s ORDER BY created_at DESC OFFSET 4
+               WHERE user_id = %s ORDER BY created_at DESC, id DESC OFFSET %s
            )""",
-        (user_id, user_id),
+        (user_id, user_id, keep - 1),
     )
     from backend.auth.jwt_handler import get_refresh_expire_days
     from datetime import timezone
@@ -344,7 +354,7 @@ def add_refresh_token(tenant_id: str, user_id: str, token_hash: str) -> None:
 
 def validate_refresh_token(token_hash: str) -> Optional[dict]:
     return query_one(
-        """SELECT u.* FROM refresh_tokens rt
+        """SELECT u.*, rt.created_at AS session_started_at FROM refresh_tokens rt
            JOIN users u ON u.id = rt.user_id
            WHERE rt.hash = %s AND rt.expires_at > NOW()""",
         (token_hash,),

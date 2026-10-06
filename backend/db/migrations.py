@@ -2417,6 +2417,47 @@ _SCIM = [
 _MIGRATIONS += _SCIM
 
 
+# ── Session and password policy (backend/auth/session_policy.py) ─────────────
+# Additive: with no row in `tenant_session_policies` nothing reads a new column
+# for any decision, and every account behaves exactly as before. The Rust API
+# owns the admin routes; Python enforces the policy at login, refresh,
+# password change and token validation.
+_SESSION_POLICY = [
+    # One row per tenant; every limit NULL (or FALSE) means "not set". Bounds
+    # are checked by the admin route AND here, so a hand-written row cannot
+    # hold a value the enforcement code was never meant to see.
+    ("create_tenant_session_policies",
+     """CREATE TABLE IF NOT EXISTS tenant_session_policies (
+         tenant_id                TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         max_session_hours        INTEGER CHECK (max_session_hours BETWEEN 1 AND 168),
+         idle_timeout_minutes     INTEGER CHECK (idle_timeout_minutes BETWEEN 5 AND 1440),
+         min_password_length      INTEGER CHECK (min_password_length BETWEEN 8 AND 64),
+         require_mixed_case       BOOLEAN NOT NULL DEFAULT FALSE,
+         require_symbol           BOOLEAN NOT NULL DEFAULT FALSE,
+         password_max_age_days    INTEGER CHECK (password_max_age_days BETWEEN 7 AND 730),
+         -- When the age limit was switched on. Passwords older than the limit
+         -- on that day get the whole limit from then, not an instant lockout.
+         password_max_age_since   TIMESTAMPTZ,
+         max_concurrent_sessions  INTEGER CHECK (max_concurrent_sessions BETWEEN 1 AND 20),
+         lockout_threshold        INTEGER CHECK (lockout_threshold BETWEEN 3 AND 20),
+         lockout_minutes          INTEGER CHECK (lockout_minutes BETWEEN 1 AND 1440),
+         updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_by               TEXT
+     )"""),
+    # Last authenticated request (idle timeout), when the password was last
+    # set (its age), and the failed-login counter with its lock.
+    ("add_users_last_activity_at",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ"),
+    ("add_users_password_changed_at",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ"),
+    ("add_users_failed_login_count",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0"),
+    ("add_users_locked_until",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ"),
+]
+_MIGRATIONS += _SESSION_POLICY
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.

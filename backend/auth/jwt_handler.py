@@ -19,13 +19,20 @@ _REFRESH_EXPIRE_DAYS = 7
 
 
 def create_access_token(
-    user_id: str, tenant_id: str, role: str, email_verified: bool = True
+    user_id: str, tenant_id: str, role: str, email_verified: bool = True,
+    session_started_at: float | None = None,
 ) -> str:
     """`email_verified` travels in the token so an unverified user can still log
     in and explore (see backend/auth/guards.require_verified_email): the claim,
     not a 403 at login, is what gates the few actions that reach outside the
     tenant. Defaults to True so callers that predate the claim keep behaving
-    exactly as before."""
+    exactly as before.
+
+    `session_started_at` (epoch seconds) is when the SESSION began, for a token
+    minted by a refresh: the new token's own `iat` is later than the login. It
+    travels as `sat`, and the tenant's maximum-session-lifetime policy measures
+    from it (backend/auth/session_policy.py). A login passes nothing: its own
+    `iat` is the start, and the claim is left out so the token is unchanged."""
     payload = {
         "sub": user_id,
         "tenant_id": tenant_id,
@@ -54,6 +61,8 @@ def create_access_token(
         # (or shorter) than _ACCESS_EXPIRE_MIN by the host's UTC offset.
         "exp": (datetime.now(timezone.utc) + timedelta(minutes=_ACCESS_EXPIRE_MIN)).timestamp(),
     }
+    if session_started_at is not None:
+        payload["sat"] = float(session_started_at)
     return jwt.encode(payload, settings.secret_key, algorithm=_ALG)
 
 

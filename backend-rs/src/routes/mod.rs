@@ -11,6 +11,7 @@ pub mod webhooks;
 pub mod po_cancellation;
 pub mod po_payments;
 pub mod signal_thresholds;
+pub mod session_policy;
 
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
@@ -70,6 +71,12 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // Session and password policy (Rust-only: no Python route, no failover).
+        .route(
+            "/api/v1/session-policy",
+            get(session_policy::get_policy).put(session_policy::put_policy).delete(session_policy::reset_policy),
+        )
+        .route("/api/v1/session-policy/unlock/{user_id}", post(session_policy::unlock))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }
