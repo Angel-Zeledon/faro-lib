@@ -3321,3 +3321,29 @@ export const startReforecast = (sessionId: string, datasetId?: string | null) =>
   request<{ session_id: string; job_id: string; parent_session_id: string }>(
     'POST', `/sessions/${sessionId}/reforecast`, datasetId ? { dataset_id: datasetId } : undefined,
   )
+
+// ── Organization hierarchy (Rust-only routes: /org/*) ───────────────────────
+export const getOrgOverview = () =>
+  request<import('./orgTypes').OrgOverview>('GET', '/org/overview', undefined, { silent: true })
+export const listOrgLinks = () =>
+  request<import('./orgTypes').OrgLinks>('GET', '/org/links', undefined, { silent: true })
+export const createOrgLink = (label: string) =>
+  request<import('./orgTypes').OrgCreatedLink>('POST', '/org/links', { label })
+export const acceptOrgLink = (code: string) =>
+  request<{ link_id: string; parent_name: string; status: 'active' }>('POST', '/org/links/accept', { code })
+export const revokeOrgLink = (linkId: string) =>
+  request<{ id: string; status: 'revoked'; changed: boolean }>('DELETE', `/org/links/${encodeURIComponent(linkId)}`)
+export const listOrgLinkMembers = (linkId: string) =>
+  request<import('./orgTypes').OrgMember[]>('GET', `/org/links/${encodeURIComponent(linkId)}/members`, undefined, { silent: true })
+export const grantOrgLinkMember = (linkId: string, userId: string) =>
+  request<{ changed: boolean }>('PUT', `/org/links/${encodeURIComponent(linkId)}/members/${encodeURIComponent(userId)}`)
+export const removeOrgLinkMember = (linkId: string, userId: string) =>
+  request<{ changed: boolean }>('DELETE', `/org/links/${encodeURIComponent(linkId)}/members/${encodeURIComponent(userId)}`)
+export const getOrgCommittedDemand = () =>
+  request<import('./orgTypes').OrgCommittedDemand>('GET', '/org/consolidated/committed-demand', undefined, { silent: true })
+export const getOrgStockSignals = () =>
+  request<import('./orgTypes').OrgStockSignals>('GET', '/org/consolidated/stock-signals', undefined, { silent: true })
+export const getOrgPurchaseOrders = (days: number) =>
+  request<import('./orgTypes').OrgPurchaseOrders>('GET', `/org/consolidated/purchase-orders?days=${days}`, undefined, { silent: true })
+export const getOrgBudgets = () =>
+  request<import('./orgTypes').OrgBudgets>('GET', '/org/consolidated/budgets', undefined, { silent: true })

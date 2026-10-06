@@ -20,6 +20,7 @@ mod fx_eval;
 mod limits;
 mod middleware;
 mod outbox;
+mod org;
 mod pycompat;
 mod pyjson;
 mod query;

@@ -285,6 +285,10 @@ def update_status(tenant_id: str, user_id: str, new_status: str) -> None:
     )
     if new_status in ("inactive", "suspended"):
         execute("DELETE FROM refresh_tokens WHERE user_id = %s", (user_id,))
+    if new_status != "active":
+        # A subsidiary grant must not wait dormant for a reactivation.
+        from backend.organizations.service import drop_user_grants
+        drop_user_grants(user_id)
 
 
 def delete_user(tenant_id: str, user_id: str) -> None:

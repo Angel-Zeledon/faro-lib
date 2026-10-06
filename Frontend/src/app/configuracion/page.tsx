@@ -45,6 +45,7 @@ const SECTIONS: Section[] = [
   { id: 'team', titleKey: 'hub.team_title', rows: [
     { screen: screen('/usuarios'), descKey: 'hub.users_desc' },
     { screen: screen('/aprobaciones'), descKey: 'hub.po_approval_desc' },
+    { screen: screen('/organizacion'), descKey: 'hub.organization_desc' },
     { screen: screen('/facturacion'),  descKey: 'hub.billing_desc' },
   ] },
   { id: 'data', titleKey: 'hub.data_title', rows: [

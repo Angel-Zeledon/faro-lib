@@ -86,6 +86,11 @@ pub enum Event {
     UserUnlocked,
     SamlConfigChanged,
     SamlConfigRemoved,
+    OrgLinkCreated,
+    OrgLinkAccepted,
+    OrgLinkRevoked,
+    OrgGrantAdded,
+    OrgGrantRemoved,
 }
 
 impl Event {
@@ -150,6 +155,11 @@ impl Event {
                 &["idp_entity_id", "enabled", "enforce_sso", "domains"],
             ),
             Event::SamlConfigRemoved => ("account.saml_config_removed", "account", "warning", &["idp_entity_id"]),
+            Event::OrgLinkCreated => ("org.link_created", "account", "info", &["label"]),
+            Event::OrgLinkAccepted => ("org.link_accepted", "account", "info", &["label"]),
+            Event::OrgLinkRevoked => ("org.link_revoked", "account", "warning", &["label"]),
+            Event::OrgGrantAdded => ("org.grant_added", "account", "info", &["label", "member"]),
+            Event::OrgGrantRemoved => ("org.grant_removed", "account", "info", &["label", "member"]),
         }
     }
 }

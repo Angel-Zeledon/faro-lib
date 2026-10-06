@@ -2088,6 +2088,9 @@ from backend.inventory.customer_portal_migrations import MIGRATIONS as _CUSTOMER
 _MIGRATIONS += _CUSTOMER_PORTAL
 from backend.fx.migrations import MIGRATIONS as _FX  # noqa: E402
 _MIGRATIONS += _FX
+# Organization hierarchy (holding + subsidiary tenants): after tenants and users.
+from backend.organizations.migrations import MIGRATIONS as _ORGANIZATIONS  # noqa: E402
+_MIGRATIONS += _ORGANIZATIONS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

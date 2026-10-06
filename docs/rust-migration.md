@@ -126,6 +126,8 @@ notification, no file storage, no hub.
   (queues `purchase_order.cancelled` as main does), `/uncancel`; `GET`, `PUT`,
   `DELETE /inventory/signal-thresholds`. `POST /inventory/signal-thresholds/preview`
   stays Python (semaforo).
+* Rust-only (new feature, no Python route, **no failover**): the organization
+  hierarchy, `/org/*`; see "Organization hierarchy" at the end.
 * Shared modules, one implementation each: `audit/` (the whole
   `backend/audit/catalog.py` as data, and `audit::record`, the
   `AuditMiddleware` writer every catalogued Rust route calls with its route
@@ -1850,3 +1852,89 @@ Rust-only routes against the database (there is nothing to diff against).
 Not verified: a run against the production-sized `activity_logs` (the index is
 partial on `stream_xid IS NOT NULL`, empty on creation), the Caddy file against
 a real gateway, the screen in a browser.
+### Organization hierarchy (new feature, Rust only; 2026-10-06)
+
+A holding with subsidiary tenants and four consolidated READ-ONLY views
+(committed demand, stock by signal, purchase orders, budget vs spend). The routes
+and queries are in `backend-rs/src/{org/,routes/org.rs,routes/org_consolidated.rs}`.
+**There is no Python route behind them, so the gateway has no failover for
+them** (`deploy/rust-api/routes.d/50-organization.caddy.example` lists `api-rs`
+only; with Rust down the answer is a 502, not a Python 404 that reads as "feature
+absent"). Python owns the schema (`backend/organizations/migrations.py`,
+additive: `org_links`, `org_link_grants`) and honours the feature wherever it
+still serves the path (below).
+
+**Grant model (fail closed).**
+1. Reach exists only through an `org_links` row with `status='active'`, made by
+   a two-sided handshake: the holding's admin mints a one-time code (`orgl_` + 48
+   hex; only its SHA-256 is stored; shown once; 7 days), the subsidiary's admin
+   redeems it from its own session. The child tenant is the redeemer's own tenant,
+   never a field.
+2. A link alone shows nothing: each holding user needs an `org_link_grants` row
+   (admin role is not a grant; the admin grants themself).
+3. One level: a tenant is at most one live child, and a live parent cannot be a
+   child (and vice versa). Trial (`demo`) and non-active tenants cannot join.
+4. Read-only; routes are `Exposure::Internal`, so an `sk_live_*` key or MCP never
+   reaches them (refused again inside `resolve`). Children never see the parent
+   or siblings; the subsidiary sees only the holding's NAME (needed for consent),
+   never its label for it, who holds a grant, or other subsidiaries.
+5. Either side ends the link at any time; that deletes every grant. A new link
+   needs a new handshake (nothing is reactivated).
+
+**Where the tenant ids come from.** `org::scope::resolve` derives them on every
+request from the database: the person is read live (status `active`, not
+scoped to warehouses), then the grants join (`GRANTS_SQL`, only the caller's
+user and tenant id are bound). Every consolidated statement binds exactly that
+list (`tenant_id = ANY($1)`; a unit test pins it for each, and that none writes).
+`?tenant_ids=a,b` may only NARROW: ids are looked up in the entitled list; any
+foreign id is one flat 404 `org_tenant_not_found` (no existence oracle) and
+poisons the whole request. Management routes check the admin role in the database
+as well as in the token.
+
+**Roll-up rules that keep numbers honest.** Money is never summed across
+currencies (a list per currency). A stock snapshot counts only when fresh by
+Python's `is_fresh` rule (inputs unchanged, computed today, under an hour; the
+Python `code_hash` cannot be checked from Rust, so a deploy that changes the
+numbers can be served for up to an hour) and its rows add up to its meta; others
+are listed with a reason, never summed or dropped silently. A budget in a
+currency other than its tenant's is shown, not totalled. Lines without a cost are
+counted. Only company-wide budgets are valued (the count of other-scope budgets is
+shown). A granted subsidiary that is suspended is named under `unavailable`.
+
+**Whole-tenant erasure (`tenants/data_export.py`).** The link tables name a tenant
+in `parent_tenant_id` / `child_tenant_id`, not `tenant_id`, so `_DELETE_ORDER`
+cannot see them; `delete_tenant` calls `organizations.service.end_links_for_erasure`
+first, inside the same transaction: for each LIVE link the surviving side gets an
+`org.link_revoked` warning (reason `org_tenant_erased`; the subsidiary's row never
+carries the holding's label), then every link and grant naming the tenant is
+deleted (FKs also cascade). A guard test fails if another table gets such a
+column. The export carries the holding's links and grants (never the code hash)
+and gives a subsidiary only `{id, status, dates, side}` of its link.
+Deactivating or suspending a person (`users.update_status`, the SCIM path) drops
+their grants, so a reactivation cannot silently restore access; the Rust reads
+also refuse a non-active person.
+
+**Audit.** Events `org.link_created|accepted|revoked`, `org.grant_added|removed`
+(kind `account`, in `events.py` and mirrored in `activity.rs` / `alerts.rs`),
+trail entries as LEGACY rows with target type `organization` (the catalogue's
+sizes are now 78 legacy, 29 types, 113 actions, 117 stored). Reads are not audited.
+
+**Results (local, own throwaway Postgres 18, Rust debug build, Python dev API).**
+`cargo test`: 141 passed, 2 ignored (21 new). `pytest
+backend/tests/test_org_hierarchy_python_side.py`: 26 passed; related suites
+(audit trail, system events, tenant data, public surface, MCP, SCIM, webhooks,
+alerts, notifications): all green. Contract `--only org` (Rust-only, adversarial,
+real HTTP + database assertions): **241/241**. Mutation check: replacing the
+per-person grant condition with "any grant of the tenant" first passed all but 3
+cases (a gap); after adding "an ungranted person gets nothing while a colleague
+holds a grant" it fails 12, and the restored build passes 241/241.
+Not verified: a browser walk of `/organizacion`, the rate limiting of code
+guesses (codes are 192 bits), a production-sized snapshot.
+
+**Decision rules for the owner to confirm.** (1) A grant is a company-wide read of
+the subsidiary (a warehouse-scoped person cannot use the views at all). (2) The
+subsidiary learns the holding's name at redemption and in its link list. (3)
+Consolidated reads are not audited. (4) Stock counts only fresh snapshots, so a
+subsidiary nobody opened today is listed "out of date". (5) At most 20 waiting
+codes per holding and 200 subsidiaries per person.
+

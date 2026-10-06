@@ -25,6 +25,8 @@ pub mod w2b;
 pub mod w3;
 pub mod roles;
 pub mod session_policy;
+pub mod org;
+pub mod org_consolidated;
 
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
@@ -127,6 +129,21 @@ pub fn router() -> Router<AppState> {
             get(saml::get_config).put(saml::put_config).delete(saml::delete_config),
         )
         .route("/api/v1/auth/saml/sp-metadata", get(saml::sp_metadata))
+        // Organization hierarchy (Rust only, no Python route): links, grants and
+        // the consolidated read-only views.
+        .route("/api/v1/org/overview", get(org::overview))
+        .route("/api/v1/org/links", post(org::create_link).get(org::list_links))
+        .route("/api/v1/org/links/accept", post(org::accept))
+        .route("/api/v1/org/links/{link_id}", delete(org::revoke))
+        .route("/api/v1/org/links/{link_id}/members", get(org::list_members))
+        .route(
+            "/api/v1/org/links/{link_id}/members/{user_id}",
+            axum::routing::put(org::grant).delete(org::ungrant),
+        )
+        .route("/api/v1/org/consolidated/committed-demand", get(org_consolidated::committed_demand))
+        .route("/api/v1/org/consolidated/stock-signals", get(org_consolidated::stock_signals))
+        .route("/api/v1/org/consolidated/purchase-orders", get(org_consolidated::purchase_orders))
+        .route("/api/v1/org/consolidated/budgets", get(org_consolidated::budgets))
         // After every route above: records (method, matched template) for the
         // custom-role permission check in auth::current_user.
         .route_layer(axum::middleware::from_fn(crate::auth::permissions::record_route))

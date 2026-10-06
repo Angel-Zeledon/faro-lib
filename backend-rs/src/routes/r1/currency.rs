@@ -56,6 +56,17 @@ fn entry(code: &str) -> Option<Value> {
     })
 }
 
+/// The currency code a tenant's stored setting resolves to: the supported
+/// code, or the default for anything missing or unsupported (`currency_of`,
+/// minus the symbol). For readers that only label money, like the
+/// organization roll-ups, and must never fail on a odd stored value.
+pub(crate) fn effective_code(stored: Option<&str>) -> String {
+    match stored {
+        Some(c) if entry(c).is_some() => c.to_string(),
+        _ => DEFAULT_CODE.to_string(),
+    }
+}
+
 pub(crate) fn sorted_codes() -> Vec<&'static str> {
     let mut v: Vec<&str> = SUPPORTED.iter().map(|(c, ..)| *c).collect();
     v.sort_unstable();
