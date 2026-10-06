@@ -131,7 +131,7 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("report_schedules", "report_schedules", "*"),
     ("report_schedule_recipients", "report_schedule_recipients", "*"),
     ("report_external_allowlist", "report_external_allowlist", "*"),
-    ("report_runs", "report_runs", "*"),
+    ("report_schedule_runs", "report_schedule_runs", "*"),
     ("user_permissions", "user_permissions", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
     # Microsoft / Apple is the person's data, so it travels with the export.
@@ -310,7 +310,7 @@ _DELETE_ORDER: list[str] = [
     "inbound_email_addresses",
     "webhook_deliveries",
     "outbound_messages",
-    "report_runs",
+    "report_schedule_runs",
     "report_schedule_recipients",
     "report_schedules",
     "report_external_allowlist",

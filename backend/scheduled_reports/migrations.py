@@ -10,7 +10,7 @@ installation with no rows behaves exactly as before.
 * `report_external_allowlist`  external addresses a tenant ADMIN explicitly
   allowed. A schedule may only name an external address that is on this list,
   and the send re-checks it.
-* `report_runs`  one row per (schedule, period). The UNIQUE key is the guard
+* `report_schedule_runs`  one row per (schedule, period). The UNIQUE key is the guard
   that makes a restart, a second worker or a retried claim unable to send the
   same report twice: whoever inserts the row owns the period.
 
@@ -80,8 +80,8 @@ MIGRATIONS: list[tuple[str, str]] = [
          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
          PRIMARY KEY (tenant_id, email)
      )"""),
-    ("create_report_runs",
-     """CREATE TABLE IF NOT EXISTS report_runs (
+    ("create_report_schedule_runs",
+     """CREATE TABLE IF NOT EXISTS report_schedule_runs (
          id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
          tenant_id         TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
          schedule_id       TEXT NOT NULL,
@@ -98,7 +98,7 @@ MIGRATIONS: list[tuple[str, str]] = [
          finished_at       TIMESTAMPTZ,
          UNIQUE (schedule_id, period_key)
      )"""),
-    ("create_report_runs_tenant_idx",
-     "CREATE INDEX IF NOT EXISTS report_runs_tenant_idx "
-     "ON report_runs (tenant_id, schedule_id, started_at DESC)"),
+    ("create_report_schedule_runs_tenant_idx",
+     "CREATE INDEX IF NOT EXISTS report_schedule_runs_tenant_idx "
+     "ON report_schedule_runs (tenant_id, schedule_id, started_at DESC)"),
 ]

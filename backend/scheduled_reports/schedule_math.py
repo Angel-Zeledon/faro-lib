@@ -11,7 +11,7 @@ instant. That is the double-send guard for daylight saving time: when clocks
 go back, 02:00 happens twice and croniter fires at both instants (a different
 UTC instant each time, which a key made of the instant would treat as two
 periods and send twice). Both map to the same local text, so the second one
-finds the first one's `report_runs` row and does nothing.
+finds the first one's `report_schedule_runs` row and does nothing.
 """
 
 from __future__ import annotations

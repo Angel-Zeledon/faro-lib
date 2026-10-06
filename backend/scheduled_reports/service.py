@@ -3,7 +3,7 @@
 Guarantees, and where each one lives:
 
 * **No double send, ever.** A run is owned by whoever INSERTs its
-  `report_runs` row; the key is (schedule, local wall-clock minute), a UNIQUE
+  `report_schedule_runs` row; the key is (schedule, local wall-clock minute), a UNIQUE
   constraint. The insert and the advance of `next_run_at` happen in ONE
   transaction that holds the schedule row (`FOR UPDATE SKIP LOCKED`), so a
   second worker skips it and a restart finds the period already owned. The
@@ -108,7 +108,7 @@ def resolve_recipients(schedule: dict) -> tuple[list[dict], list[dict]]:
 def _finish_run(run_id: str, status: str, *, error: Optional[str] = None, queued: int = 0,
                 skipped: Optional[list] = None, snapshot: Optional[dict] = None) -> None:
     execute(
-        """UPDATE report_runs
+        """UPDATE report_schedule_runs
               SET status = %s, error = %s, recipients_queued = %s,
                   recipients_skipped = %s::jsonb,
                   snapshot = COALESCE(%s::jsonb, snapshot), finished_at = NOW()
@@ -183,7 +183,7 @@ def execute_run(schedule: dict, run: dict, now: Optional[datetime] = None) -> st
             _auto_pause(schedule, "no_recipients", "report_no_recipients")
             return "skipped"
         # The snapshot is stored BEFORE queueing: the mail is rendered from it.
-        execute("UPDATE report_runs SET snapshot = %s::jsonb WHERE id = %s",
+        execute("UPDATE report_schedule_runs SET snapshot = %s::jsonb WHERE id = %s",
                 (json.dumps(report), run["id"]))
         queued = 0
         for rcp in recipients:
@@ -269,7 +269,7 @@ def claim_next(now: datetime) -> Optional[dict]:
             return {}
         late = now - due > timedelta(hours=catalog.CATCHUP_HOURS[sched["frequency"]])
         run = query_one(
-            """INSERT INTO report_runs (tenant_id, schedule_id, period_key, due_at, status, error, finished_at)
+            """INSERT INTO report_schedule_runs (tenant_id, schedule_id, period_key, due_at, status, error, finished_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (schedule_id, period_key) DO NOTHING
             RETURNING *""",
@@ -296,7 +296,7 @@ def recover_stale(now: datetime) -> int:
     """Re-drive runs a dead worker left `building`; give up on the third time."""
     cutoff = now - timedelta(seconds=catalog.STALE_RUN_SECONDS)
     rows = query(
-        """UPDATE report_runs SET attempts = attempts + 1, started_at = %s
+        """UPDATE report_schedule_runs SET attempts = attempts + 1, started_at = %s
             WHERE status = 'building' AND started_at < %s AND attempts < %s
         RETURNING *""", (now, cutoff, catalog.MAX_RUN_ATTEMPTS))
     for run in rows:
@@ -307,7 +307,7 @@ def recover_stale(now: datetime) -> int:
             continue
         execute_run(sched, run, now)
     dead = query(
-        """SELECT * FROM report_runs WHERE status = 'building' AND started_at < %s AND attempts >= %s""",
+        """SELECT * FROM report_schedule_runs WHERE status = 'building' AND started_at < %s AND attempts >= %s""",
         (cutoff, catalog.MAX_RUN_ATTEMPTS))
     for run in dead:
         sched = query_one("SELECT * FROM report_schedules WHERE id = %s AND tenant_id = %s",
@@ -355,7 +355,7 @@ def render_for_delivery(tenant_id: str, run_id: str, recipient_id: str) -> tuple
     """
     from backend.config import settings
     from backend.scheduled_reports import render, tokens
-    run = query_one("SELECT * FROM report_runs WHERE id = %s AND tenant_id = %s", (run_id, tenant_id))
+    run = query_one("SELECT * FROM report_schedule_runs WHERE id = %s AND tenant_id = %s", (run_id, tenant_id))
     if run is None:
         raise DeliveryRefused("run_missing")
     schedule = query_one("SELECT * FROM report_schedules WHERE id = %s AND tenant_id = %s",
