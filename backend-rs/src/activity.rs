@@ -57,6 +57,12 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    ConsensusAdjustmentSubmitted,
+    ConsensusVersionProposed,
+    ConsensusVersionApproved,
+    ConsensusVersionRejected,
+    ConsensusVersionWithdrawn,
+    ConsensusRuleChanged,
 }
 
 impl Event {
@@ -79,6 +85,17 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::ConsensusAdjustmentSubmitted => (
+                "consensus.adjustment_submitted", "training", "info",
+                &["sku", "function", "adjustment", "adjustment_reason"],
+            ),
+            Event::ConsensusVersionProposed => ("consensus.version_proposed", "training", "info", &["plan_name", "skus", "lines"]),
+            Event::ConsensusVersionApproved => (
+                "consensus.version_approved", "training", "info", &["plan_name", "decision_comment", "superseded"],
+            ),
+            Event::ConsensusVersionRejected => ("consensus.version_rejected", "training", "info", &["plan_name", "decision_comment"]),
+            Event::ConsensusVersionWithdrawn => ("consensus.version_withdrawn", "training", "info", &["plan_name", "decision_comment"]),
+            Event::ConsensusRuleChanged => ("consensus.rule_changed", "training", "info", &["rule"]),
         }
     }
 }

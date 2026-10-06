@@ -10,6 +10,7 @@ mod activity;
 mod audit;
 mod auth;
 mod config;
+mod consensus;
 mod entitlements;
 mod error;
 mod limits;

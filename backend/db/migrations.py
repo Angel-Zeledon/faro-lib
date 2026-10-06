@@ -2056,6 +2056,9 @@ from backend.inventory.purchase_budget_migrations import MIGRATIONS as _PURCHASE
 _MIGRATIONS += _PURCHASE_BUDGETS
 from backend.inventory.po_confirmation_migrations import MIGRATIONS as _PO_CONFIRMATIONS  # noqa: E402
 _MIGRATIONS += _PO_CONFIRMATIONS
+# S&OP forecast consensus: after demand plans, whose approvers it reuses.
+from backend.inventory.consensus_migrations import MIGRATIONS as _CONSENSUS  # noqa: E402
+_MIGRATIONS += _CONSENSUS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
@@ -2079,6 +2082,9 @@ STATUS_INPUT_TABLES = (
     # The two ledgers that move demand beside the forecast. A manual adjustment was
     # missing here, so a new one left the cached status stale until it expired.
     "forecast_adjustments", "committed_demand",
+    # A published consensus moves demand the same way (the same active_by_sku
+    # reads it), so approving or withdrawing one must invalidate the cache.
+    "consensus_versions",
 )
 
 

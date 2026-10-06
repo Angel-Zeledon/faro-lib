@@ -1,6 +1,7 @@
 pub mod api_keys;
 pub mod audit;
 pub mod committed_demand;
+pub mod consensus;
 pub mod entitlements;
 pub mod health;
 pub mod r1;
@@ -45,6 +46,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/committed-demand/{commitment_id}/status", post(committed_demand::set_status))
         .merge(r1::router())
         .merge(sessions::router()).merge(schedule::router()).merge(spike_edits::router())
+        // S&OP forecast consensus: new routes, Rust only (no Python twin, no failover).
+        .merge(consensus::router())
         // R3: API keys, webhook subscriptions, audit trail reads.
         .route("/api/v1/api-keys", post(api_keys::create).get(api_keys::list))
         .route("/api/v1/api-keys/usage", get(api_keys::usage).delete(api_keys::revoke_literal_usage))
