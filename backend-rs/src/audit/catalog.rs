@@ -92,11 +92,25 @@ pub const LEGACY: &[(&str, &str, &str)] = &[
     ("account.user_invited", "user", "user.invited"),
     ("account.user_role_changed", "user", "user.role_changed"),
     ("account.user_deactivated", "user", "user.deactivated"),
+    ("account.scim_user_created", "user", "user.provisioned"),
+    ("account.scim_user_updated", "user", "user.provisioning_updated"),
+    ("account.scim_user_deactivated", "user", "user.deprovisioned"),
+    ("account.scim_user_reactivated", "user", "user.reprovisioned"),
+    ("account.scim_role_changed", "user", "user.role_changed"),
+    ("account.scim_request_refused", "user", "user.provisioning_refused"),
+    ("account.scim_token_created", "scim_token", "scim_token.created"),
+    ("account.scim_token_revoked", "scim_token", "scim_token.revoked"),
+    ("account.scim_settings_changed", "scim_token", "scim_token.changed"),
     ("account.api_key_created", "api_key", "api_key.created"),
     ("account.api_key_revoked", "api_key", "api_key.revoked"),
     ("purchase.order_generated", "purchase_order", "purchase_order.created"),
     ("purchase.order_sent", "purchase_order", "purchase_order.sent"),
     ("purchase.order_not_sent", "purchase_order", "purchase_order.not_sent"),
+    ("purchase.supplier_confirmed", "purchase_order", "purchase_order.supplier_confirmed"),
+    ("purchase.supplier_changes_proposed", "purchase_order", "purchase_order.supplier_changes_proposed"),
+    ("purchase.supplier_change_accepted", "purchase_order", "purchase_order.supplier_change_accepted"),
+    ("purchase.supplier_link_reopened", "purchase_order", "purchase_order.supplier_link_reopened"),
+    ("purchase.supplier_link_revoked", "purchase_order", "purchase_order.supplier_link_revoked"),
     ("purchase.reception_recorded", "purchase_order", "purchase_order.received"),
     ("purchase.reception_undone", "purchase_order", "purchase_order.reception_undone"),
     ("purchase.order_unsent", "purchase_order", "purchase_order.unsent"),
@@ -118,6 +132,10 @@ pub const LEGACY: &[(&str, &str, &str)] = &[
     ("supply_contract.created", "supply_contract", "supply_contract.created"),
     ("supply_contract.revised", "supply_contract", "supply_contract.revised"),
     ("supply_contract.status_changed", "supply_contract", "supply_contract.status_changed"),
+    ("purchase_budget.created", "purchase_budget", "purchase_budget.created"),
+    ("purchase_budget.revised", "purchase_budget", "purchase_budget.revised"),
+    ("purchase_budget.exceeded", "purchase_budget", "purchase_budget.exceeded"),
+    ("purchase_budget.override", "purchase_budget", "purchase_budget.override"),
     ("demand_plan.created", "demand_plan", "demand_plan.created"),
     ("demand_plan.submitted", "demand_plan", "demand_plan.submitted"),
     ("demand_plan.approved", "demand_plan", "demand_plan.approved"),
@@ -213,10 +231,10 @@ mod tests {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
         assert_eq!(ROUTES.len(), 56);
-        assert_eq!(LEGACY.len(), 55);
-        assert_eq!(target_types().len(), 26);
-        assert_eq!(audit_actions().len(), 91);
-        assert_eq!(all_stored_actions().len(), 94);
+        assert_eq!(LEGACY.len(), 73);
+        assert_eq!(target_types().len(), 28);
+        assert_eq!(audit_actions().len(), 108);
+        assert_eq!(all_stored_actions().len(), 112);
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),
