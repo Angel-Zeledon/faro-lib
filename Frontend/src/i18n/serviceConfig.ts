@@ -227,10 +227,10 @@ const es: ServiceConfigCopy = {
       note: 'Necesita un proveedor de correo que reenvíe el correo entrante a un webhook (Postmark, Mailgun, Resend o un relay) y un registro MX para el dominio de entrada. El webhook se autentica con INBOUND_EMAIL_SECRET: una cabecera HMAC `X-StockAI-Signature` o HTTP Basic cuya contraseña es el secreto. Paso a paso: docs/inbound-email.md.',
     },
     enterprise_sso: {
-      name: 'Inicio de sesión de empresa (OpenID Connect)',
+      name: 'Inicio de sesión de empresa (OpenID Connect y SAML)',
       summary: 'Cada empresa entra con su propio proveedor de identidad, además de correo y contraseña.',
       whatBreaks: 'Desaparece «Entrar con tu empresa» del inicio de sesión y los administradores de cada empresa no pueden configurar un proveedor. Correo y contraseña siguen funcionando para todos, y cualquier «exigir inicio de sesión de empresa» que una empresa ya hubiera guardado queda suspendido mientras esto esté apagado (nadie se queda fuera). Viene apagado: una instalación nueva muestra solo el formulario de correo.',
-      note: 'Cada administrador configura su proveedor dentro de la app (emisor, Client ID y secreto, dominios de correo); el secreto se guarda cifrado, así que necesita almacenamiento de secretos. La URL de redirección que se registra en el proveedor sale de FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. Las personas se crean al entrar, solo dentro de la empresa dueña de su dominio y nunca como administradores. Solo OpenID Connect: no hay SAML.',
+      note: 'Cada administrador configura su proveedor dentro de la app (emisor, Client ID y secreto, dominios de correo); el secreto se guarda cifrado, así que necesita almacenamiento de secretos. La URL de redirección que se registra en el proveedor sale de FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. Las personas se crean al entrar, solo dentro de la empresa dueña de su dominio y nunca como administradores. Con SAML 2.0 no hay secreto: el administrador pega la metadata del proveedor y registra StockAI allí con el entity ID y la URL ACS que muestra la app (la URL ACS es <FRONTEND_URL>/api/v1/auth/saml/acs). Una empresa usa un protocolo o el otro.',
     },
     worker: {
       name: 'Worker y tareas programadas',
@@ -496,10 +496,10 @@ const en: ServiceConfigCopy = {
       note: 'Needs a mail provider that can forward inbound mail to a webhook (Postmark, Mailgun, Resend or a relay) and an MX record for the inbound domain. The webhook is authenticated by INBOUND_EMAIL_SECRET: an `X-StockAI-Signature` HMAC header or HTTP Basic auth whose password is the secret. Step by step: docs/inbound-email.md.',
     },
     enterprise_sso: {
-      name: 'Company sign-in (OpenID Connect)',
+      name: 'Company sign-in (OpenID Connect and SAML)',
       summary: 'Each company signs in with its own identity provider, next to email + password.',
       whatBreaks: 'The "Sign in with your company" option disappears from the login screen and each company\'s administrators cannot configure a provider. Email + password keeps working for everyone, and any "require company sign-in" a company already saved is suspended while this is off (so nobody is locked out). Off by default: a new install shows only the email form.',
-      note: 'Each administrator configures their provider inside the app (issuer, Client ID and secret, email domains); the secret is stored encrypted, so it needs secret storage. The redirect URL registered at the provider is built from FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. People are created when they sign in, only inside the company that owns their domain and never as administrators. OpenID Connect only: there is no SAML.',
+      note: 'Each administrator configures their provider inside the app (issuer, Client ID and secret, email domains); the secret is stored encrypted, so it needs secret storage. The redirect URL registered at the provider is built from FRONTEND_URL: <FRONTEND_URL>/api/v1/auth/sso/callback. People are created when they sign in, only inside the company that owns their domain and never as administrators. With SAML 2.0 there is no secret: the administrator pastes the provider's metadata and registers StockAI there with the entity ID and ACS URL the app shows (the ACS URL is <FRONTEND_URL>/api/v1/auth/saml/acs). A company uses one protocol or the other.',
     },
     worker: {
       name: 'Worker and scheduled jobs',

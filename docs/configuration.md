@@ -271,7 +271,7 @@ Needs a mail provider that can forward inbound mail to a webhook (Postmark, Mail
 | `INBOUND_EMAIL_DOMAIN` | - | required, environment only | Domain the per-account addresses live on (sales+<token>@<domain>). Its MX record must point at your inbound mail provider. |
 | `INBOUND_EMAIL_SECRET` | - | required, secret, environment only | Shared secret that authenticates the provider's webhook calls. Use a long random string; changing it requires updating the provider's webhook settings too. |
 
-## `enterprise_sso` - Company sign-in through the customer's own OpenID Connect provider.
+## `enterprise_sso` - Company sign-in through the customer's own identity provider (OpenID Connect or SAML 2.0).
 
 *Kind:* external service. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* no.
 
@@ -283,7 +283,9 @@ Each tenant admin configures their own provider (issuer URL, client id and secre
 
     <FRONTEND_URL>/api/v1/auth/sso/callback
 
-People are created just-in-time inside the tenant that owns their e-mail domain, never as administrators. Only OpenID Connect is supported (no SAML).
+People are created just-in-time inside the tenant that owns their e-mail domain, never as administrators.
+
+SAML 2.0 is the second protocol (SP-initiated, signed assertions): the tenant admin pastes the identity provider's metadata and registers StockAI there with the entity ID and ACS URL the app shows (the ACS URL is <FRONTEND_URL>/api/v1/auth/saml/acs). SAML needs no secret, only the provider's public signing certificate. A tenant uses one protocol or the other.
 
 | Variable | Default | Notes | What it does |
 |---|---|---|---|
