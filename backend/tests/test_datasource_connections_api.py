@@ -123,7 +123,13 @@ class TestCreate:
         assert stored["ssl_mode"] == "prefer"
         assert ds_secrets.decrypt(stored["password_enc"]) == own["password"]
         assert "password_enc" not in src["sql_config"] and src["sql_config"]["has_password"] is True
-        if own["password"]:
+        # The structural guarantee holds whatever the password is.
+        assert "password" not in src["sql_config"]
+        # The textual leak check needs a password that is not ALSO the user, database
+        # or host name (a test database with user == password == 'postgres' would
+        # show that word in the response legitimately).
+        if own["password"] and own["password"] not in (
+                own["username"], own["database"], own["host"]):
             _no_secret(r.json(), secret=own["password"])
             _no_secret(_audit(test_tenant["id"], src["id"], "audit.dataset.created"), secret=own["password"])
 
