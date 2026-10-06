@@ -1646,7 +1646,7 @@ export const getBudgetPlan = (budgetId?: string, sessionId?: string, opts?: Requ
   request<import('./types').BudgetPlan>(
     'POST', '/inventory/budget/plan', { budget_id: budgetId ?? null, session_id: sessionId ?? null }, opts)
 export const checkBudgetOrder = (
-  lines: { sku: string; qty: number; unit_cost: number | null; supplier?: string | null; supplier_id?: string | null }[],
+  lines: { sku: string; qty: number; unit_cost: number | null; currency?: string | null; supplier?: string | null; supplier_id?: string | null }[],
   destinationWarehouse?: string,
   opts?: RequestOpts,
 ) =>
@@ -1987,6 +1987,28 @@ export const setTenantCurrency = (code: string) =>
   request<{ current: import('./currency').CurrencyInfo }>(
     'PATCH', '/tenant/currency', { code })
 
+// ── Exchange rates (multi-currency; tenant-entered, never fetched from a feed) ──
+/** The rate is TEXT on purpose: it is exact decimal, never a float. */
+export const listExchangeRates = (params?: { currency?: string; limit?: number; offset?: number }, opts?: RequestOpts) => {
+  const q = new URLSearchParams()
+  if (params?.currency) q.set('currency', params.currency)
+  if (params?.limit != null) q.set('limit', String(params.limit))
+  if (params?.offset != null) q.set('offset', String(params.offset))
+  const qs = q.toString()
+  return request<import('./types').ExchangeRateList>('GET', `/tenant/currency/rates${qs ? `?${qs}` : ''}`, undefined, opts)
+}
+
+/** Admin only. `rate`: 1 unit of `currency` in the company's own currency, as text. */
+export const createExchangeRate = (body: {
+  currency: string; rate: string; effective_date?: string; source_note?: string | null
+}) => request<import('./types').ExchangeRate>('POST', '/tenant/currency/rates', body)
+
+export const updateExchangeRate = (id: string, body: { rate?: string; source_note?: string | null }) =>
+  request<import('./types').ExchangeRate>('PATCH', `/tenant/currency/rates/${encodeURIComponent(id)}`, body)
+
+export const deleteExchangeRate = (id: string) =>
+  request<{ deleted: boolean; id: string }>('DELETE', `/tenant/currency/rates/${encodeURIComponent(id)}`)
+
 export const analyzeDataSource = (
   id: string,
   params: { date_col: string; target_col: string; sku_col?: string; sheet?: string; date_from?: string; date_to?: string },
@@ -2094,7 +2116,7 @@ export const sendPOToSelf = (poLogId: string) =>
 
 export const createManualPO = (body: {
   supplier_id: string
-  lines: { sku: string; qty: number; unit_cost?: number; display_name?: string }[]
+  lines: { sku: string; qty: number; unit_cost?: number; currency?: string; display_name?: string }[]
   destination_warehouse?: string
 }, opts?: RequestOpts) =>
   request<POLogEntry>('POST', '/inventory/po', body, opts)
@@ -2103,7 +2125,7 @@ export const getSkuSuppliers  = (sku: string) =>
   request<SkuSupplier[]>('GET', `/inventory/stock/${encodeURIComponent(sku)}/suppliers`)
 
 export const assignSkuSupplier = (sku: string, supplierId: string, body: {
-  is_primary?: boolean; unit_cost?: number; moq?: number; lead_time_days?: number
+  is_primary?: boolean; unit_cost?: number; currency?: string; moq?: number; lead_time_days?: number
 }) =>
   request<SkuSupplier>('PUT', `/inventory/stock/${encodeURIComponent(sku)}/suppliers/${supplierId}`, body)
 

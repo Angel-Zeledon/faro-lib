@@ -2160,6 +2160,37 @@ export interface BudgetExceeded {
   remaining?: number
   over_by?: number
   unknown_cost_lines?: number
+  /** False when the entry is only flagged because part of the order is priced in
+   *  a currency with no exchange rate (so its value cannot be fully known). */
+  exceeds?: boolean
+  /** Lines priced in another currency that could not be converted (no rate). */
+  unconverted_lines?: number
+}
+
+export interface ExchangeRate {
+  id: string
+  currency: string
+  base_currency: string
+  /** Exact decimal as text: 1 unit of `currency` = `rate` units of `base_currency`. */
+  rate: string
+  effective_date: string
+  source_note: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  /** The row used today for its currency (a later-dated rate is not in force yet). */
+  in_force?: boolean
+}
+
+export interface ExchangeRateList {
+  base_currency: string
+  items: ExchangeRate[]
+  total: number
+  limit: number
+  offset: number
+  /** Rates entered under an earlier base currency: they no longer apply. */
+  other_base_count: number
+  supported: string[]
 }
 
 export interface POLogEntry {
@@ -2175,6 +2206,9 @@ export interface POLogEntry {
   sku_count:         number
   total_units:       number
   total_value:       number | null
+  /** Costed lines priced in another currency that had no exchange rate when the
+   *  order was written: `total_value` leaves them out. */
+  fx_unconverted_lines?: number
   skus_order_now:     number
   skus_order_soon: number
   // Adoption metrics (present once a cart with decisions is logged)
@@ -2846,6 +2880,8 @@ export interface SkuSupplier {
   supplier_id:    string
   is_primary:     boolean
   unit_cost:      number | null
+  /** ISO code `unit_cost` is quoted in; null = the company's own currency. */
+  currency?:      string | null
   moq:            number
   lead_time_days: number | null  // override; null = use supplier default
   notes:          string | null
