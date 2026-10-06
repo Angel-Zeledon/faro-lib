@@ -186,6 +186,12 @@ pub const LEGACY: &[(&str, &str, &str)] = &[
     ("demand_plan.approved", "demand_plan", "demand_plan.approved"),
     ("demand_plan.rejected", "demand_plan", "demand_plan.rejected"),
     ("demand_plan.commented", "demand_plan", "demand_plan.commented"),
+    ("consensus.adjustment_submitted", "consensus_adjustment", "consensus_adjustment.submitted"),
+    ("consensus.version_proposed", "consensus_version", "consensus_version.proposed"),
+    ("consensus.version_approved", "consensus_version", "consensus_version.approved"),
+    ("consensus.version_rejected", "consensus_version", "consensus_version.rejected"),
+    ("consensus.version_withdrawn", "consensus_version", "consensus_version.withdrawn"),
+    ("consensus.rule_changed", "consensus_rule", "consensus_rule.changed"),
     ("data.stock_imported", "bulk_import", "bulk_import.stock"),
     ("data.stock_import_partial", "bulk_import", "bulk_import.stock"),
     ("data.suppliers_imported", "bulk_import", "bulk_import.suppliers"),
@@ -282,10 +288,10 @@ mod tests {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
         assert_eq!(ROUTES.len(), 69);
-        assert_eq!(LEGACY.len(), 111);
-        assert_eq!(target_types().len(), 41);
-        assert_eq!(audit_actions().len(), 158);
-        assert_eq!(all_stored_actions().len(), 162);
+        assert_eq!(LEGACY.len(), 117);
+        assert_eq!(target_types().len(), 44);
+        assert_eq!(audit_actions().len(), 164);
+        assert_eq!(all_stored_actions().len(), 168);
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),

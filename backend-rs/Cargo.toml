@@ -15,7 +15,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal
 tower-http = { version = "0.6", features = ["cors"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "chrono", "json", "tls-rustls-ring-webpki"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+# float_roundtrip: parse a JSON float to the nearest f64 (the consensus fixtures compare bit for bit).
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 hmac = "0.12"
 sha2 = "0.10"

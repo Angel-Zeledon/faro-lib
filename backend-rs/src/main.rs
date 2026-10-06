@@ -13,6 +13,7 @@ mod contract_renewal;
 mod auth;
 mod chain;
 mod config;
+mod consensus;
 mod entitlements;
 mod error;
 mod inventory;

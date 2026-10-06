@@ -106,6 +106,12 @@ pub enum Event {
     ApprovalChainCreated,
     ApprovalChainUpdated,
     PurchaseOrderCostCenterSet,
+    ConsensusAdjustmentSubmitted,
+    ConsensusVersionProposed,
+    ConsensusVersionApproved,
+    ConsensusVersionRejected,
+    ConsensusVersionWithdrawn,
+    ConsensusRuleChanged,
 }
 
 impl Event {
@@ -193,6 +199,17 @@ impl Event {
             Event::ApprovalChainCreated => ("approval_chain.created", "purchase", "info", &["chain_name", "levels"]),
             Event::ApprovalChainUpdated => ("approval_chain.updated", "purchase", "info", &["chain_name", "levels", "active"]),
             Event::PurchaseOrderCostCenterSet => ("purchase.order_cost_center_set", "purchase", "info", &["reference", "cost_center"]),
+            Event::ConsensusAdjustmentSubmitted => (
+                "consensus.adjustment_submitted", "training", "info",
+                &["sku", "function", "adjustment", "adjustment_reason"],
+            ),
+            Event::ConsensusVersionProposed => ("consensus.version_proposed", "training", "info", &["plan_name", "skus", "lines"]),
+            Event::ConsensusVersionApproved => (
+                "consensus.version_approved", "training", "info", &["plan_name", "decision_comment", "superseded"],
+            ),
+            Event::ConsensusVersionRejected => ("consensus.version_rejected", "training", "info", &["plan_name", "decision_comment"]),
+            Event::ConsensusVersionWithdrawn => ("consensus.version_withdrawn", "training", "info", &["plan_name", "decision_comment"]),
+            Event::ConsensusRuleChanged => ("consensus.rule_changed", "training", "info", &["rule"]),
         }
     }
 }

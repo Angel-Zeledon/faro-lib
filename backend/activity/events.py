@@ -150,6 +150,34 @@ EVENTS: dict[str, EventSpec] = {
         kind="training", severity=INFO,
         detail_keys=("plan_name",),
     ),
+    # S&OP forecast consensus (routes in backend-rs/src/routes/consensus.rs): a
+    # function's adjustment of the statistical forecast, the tenant's rule, and
+    # the sign-off of a frozen consensus. Unlike a demand plan, an APPROVED
+    # consensus is read by planning (inventory/forecast_adjustment_service.py).
+    "consensus.adjustment_submitted": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("sku", "function", "adjustment", "adjustment_reason"),
+    ),
+    "consensus.version_proposed": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "skus", "lines"),
+    ),
+    "consensus.version_approved": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment", "superseded"),
+    ),
+    "consensus.version_rejected": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment"),
+    ),
+    "consensus.version_withdrawn": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("plan_name", "decision_comment"),
+    ),
+    "consensus.rule_changed": EventSpec(
+        kind="training", severity=INFO,
+        detail_keys=("rule",),
+    ),
 
     # ── Purchasing ───────────────────────────────────────────────────────────
     # Customer orders placed ahead of time, entered by a person. They move the

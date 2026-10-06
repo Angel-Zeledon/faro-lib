@@ -6,6 +6,7 @@ pub mod committed_demand;
 pub mod customer_portal;
 pub mod cost_centers;
 pub mod contract_renewals;
+pub mod consensus;
 pub mod entitlements;
 pub mod fx_rates;
 pub mod health;
@@ -79,6 +80,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/tenant/currency/rates/resolve", get(fx_rates::resolve))
         .route("/api/v1/tenant/currency/rates/{rate_id}", patch(fx_rates::update).delete(fx_rates::delete))
         .route("/api/v1/tenant/currency/convert", post(fx_rates::convert))
+        // S&OP forecast consensus: new routes, Rust only (no Python twin, no failover).
+        .merge(consensus::router())
         // R3: API keys, webhook subscriptions, audit trail reads.
         .route("/api/v1/api-keys", post(api_keys::create).get(api_keys::list))
         .route("/api/v1/api-keys/usage", get(api_keys::usage).delete(api_keys::revoke_literal_usage))

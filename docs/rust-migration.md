@@ -425,6 +425,68 @@ Modules: `config`, `pycompat` (`isoformat`, `date.fromisoformat`,
 14. Invalid JSON bodies on `DELETE /tenant`: same status, type and `loc`
     shape as every other route; `ctx.error` is serde's wording (divergence 2).
 
+## 8b. Forecast consensus (S&OP): new routes, Rust only
+
+Owner-approved feature, written new in Rust per this plan (branch
+`feat/sop-consensus`). **These routes have no Python twin and no failover**:
+`deploy/rust-api/routes.d/50-consensus.caddy.example` lists only `api-rs`. With
+the file absent or `api-rs` down, `/consenso` gets 404 / 502 and nothing else
+changes.
+
+* **What it is.** Each function (sales, finance, operations) submits an
+  adjustment, in basis points, to the statistical forecast of a SKU for a period,
+  with a reason. Every revision is kept (who, when, why). A tenant rule (priority
+  function, or integer weighted average, with caps on each figure) turns the
+  current submissions into one consensus per SKU and period. A person with
+  approval authority (the demand-plan approvers) publishes a frozen version; only
+  a published version is read by planning. Once actuals arrive, each adjustment,
+  function, reason, person and the consensus are graded against the statistical
+  forecast (forecast value added).
+* **Routes (Rust, `routes/consensus.rs`).** `GET|PUT /consensus/settings`,
+  `GET|POST /sessions/{id}/consensus/submissions`, `GET .../preview`,
+  `POST .../versions`, `GET /consensus/versions[/{id}]`,
+  `POST /consensus/versions/{id}/approve|reject|withdraw`, `GET .../fva`.
+  Internal tag (no API key), analyst-or-above to write, company-wide access
+  required for all of them.
+* **Math (Rust, `consensus/math.rs`).** Integer basis points; periods are cut at
+  every submission boundary; ties and rounding are half away from zero.
+  `tests/contract/consensus_reference.py` is the Python spec and
+  `gen_consensus_fixtures.py` writes `consensus_cases.json` (200 consensus cases,
+  120 accuracy cases); the Rust unit test demands exact equality (integers; f64
+  bit for bit). The accuracy sums are sequential, because Python 3.12's `sum()`
+  is compensated: the reference agrees with the engine's own
+  `forecast_value_added` within 1e-9 and differs on one deliberate point (a
+  perfect statistical forecast an adjustment spoiled is "worsened", not
+  "neutral").
+* **Python keeps** the schema (`inventory/consensus_migrations.py`; submissions
+  append-only, versions frozen, at most one published version per forecast, all
+  enforced by triggers and a partial unique index), the planning read
+  (`forecast_adjustment_service.active_by_sku`: a published line is one more
+  adjustment, named in `adjustments_applied`; it replaces a manual adjustment only
+  on the dates it covers; nothing published means nothing changes), and the one
+  route that reads dataset files: `POST /sessions/{id}/consensus/evidence/refresh`
+  (`forecast_check/consensus_evidence.py`) copies the statistical forecast and the
+  real sales per SKU and period into `consensus_evidence`, which the Rust accuracy
+  route grades.
+* **Rules decided here, for the owner to confirm.** (1) Weighted average is
+  renormalised over the functions that submitted (a silent function neither
+  dilutes nor votes). (2) A function may not partly overlap its own earlier
+  period (409); the exact same period is a revision. (3) A proposal whose inputs
+  were revised afterwards cannot be approved (409 `consensus_version_stale`).
+  (4) The proposer cannot approve their own while another approver exists. (5)
+  Approving replaces a manual adjustment only on the dates the consensus covers.
+  (6) The rule must be chosen explicitly before anything is proposed (no default
+  is assumed). (7) Only people assigned to a function (or an admin) submit for it.
+
+Verification this run (disposable database, own ports): `cargo test` 136 pass;
+18 pytest in the two new Python files plus the existing audit, public-surface,
+no-pandas, adjustments, demand-plan, system-event, tenant-data and
+permanent-session suites; 68 Rust-only contract cases in
+`tests/contract/consensus_cases.py`, asserted against the database. Not verified:
+a click-through in a browser (the browser extension was not connected; the screen
+was only compiled, served and its API calls replayed through the Next proxy),
+the evidence refresh against a real dataset file, and the gateway file.
+
 ## 9. Results
 
 ### Wave 1b and the start of wave 2 (2026-10-06, branch feat/rust-wave1b)

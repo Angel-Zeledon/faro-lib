@@ -7687,6 +7687,9 @@ def run(args) -> int:
                                                      erase_fixture=erase_fixture))
         results += run_rd(args, fx, db)
         results += run_cr(args, fx, db)
+        # S&OP consensus: Rust-only routes, asserted against the database (consensus_cases.py).
+        from consensus_cases import run_consensus  # noqa: PLC0415
+        results += run_consensus(args, fx, db, sys.modules[__name__])
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)

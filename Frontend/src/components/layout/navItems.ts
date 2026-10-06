@@ -4,7 +4,7 @@ import {
   TrendingUp, Package, MessagesSquare, Users, User,
   ShoppingCart, Truck, Upload, ClipboardList, History, Database,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
-  ScrollText, Settings, ScanLine, ClipboardCheck, FileCheck2, CreditCard, Network,
+  ScrollText, Settings, ScanLine, ClipboardCheck, FileCheck2, CreditCard, Network, Scale,
 } from 'lucide-react'
 import { has, UNKNOWN_FACTS, type TenantFacts } from '@/hooks/useTenantFacts'
 
@@ -64,6 +64,9 @@ export const SCREENS: Screen[] = [
   // Frozen demand plan versions and their sign-off (a record and a
   // measurement; it moves no purchase recommendation).
   { href: '/plan-de-demanda',       labelKey: 'nav.demand_plan',     Icon: FileCheck2,   parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
+  // S&OP consensus: functions adjust the statistical forecast, an approver
+  // publishes one agreed version, and only that version reaches planning.
+  { href: '/consenso',              labelKey: 'nav.consensus',       Icon: Scale,        parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
 
   // ── Under Configuración (the /configuracion hub lists them) ────────────────
   { href: '/mi-cuenta',             labelKey: 'nav.account',         Icon: User,         parent: SETTINGS_HREF },
@@ -116,7 +119,7 @@ export const SETTINGS_ITEM: Screen = byHref(SETTINGS_HREF)
 /** Pronósticos and the three analysis screens reached from it, shown as one
  *  tab strip at the top of all four (components/layout/SectionTabs.tsx). */
 export const ANALYSIS_TABS: Screen[] =
-  ['/pronosticos', '/escenarios', '/impacto', '/historial', '/plan-de-demanda'].map(byHref)
+  ['/pronosticos', '/escenarios', '/impacto', '/historial', '/plan-de-demanda', '/consenso'].map(byHref)
 
 /** Role and the screen's `visibleWhen` rule decide whether an entry is DRAWN
  *  (there are no plan locks and nothing is ever blocked: see Screen.visibleWhen).
