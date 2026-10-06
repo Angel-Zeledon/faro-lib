@@ -44,7 +44,7 @@ _DIMENSIONED = re.compile(
 # Routers whose EVERY route is warehouse-dimensioned, whatever words its body
 # happens to use: the per-function text scan missed the commitments list once,
 # so a new route in one of these modules is flagged by where it lives.
-DIMENSIONED_MODULES = {"committed_demand.py"}
+DIMENSIONED_MODULES = {"committed_demand.py", "purchase_budget.py"}
 _HELPER = re.compile(r"wscope\.|warehouse_scope|_require_transfer_end_in_scope")
 _VERBS = {"get", "post", "put", "patch", "delete"}
 

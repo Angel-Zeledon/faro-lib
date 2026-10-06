@@ -1644,6 +1644,10 @@ class POLogRequest(BaseModel):
     # Where the goods should physically arrive. None = tenant default
     # warehouse ('principal'), which is the pre-5.4 behavior.
     destination_warehouse: Optional[str] = None
+    # Why the order goes past a purchasing budget. Optional for a soft budget
+    # (recorded in the audit trail when given); REQUIRED, from an administrator,
+    # to place an order past a hard-capped one. See api/v1/purchase_budget.py.
+    budget_override_reason: Optional[str] = Field(default=None, max_length=500)
 
 
 _IDEMPOTENCY_KEY_DOC = (
@@ -1733,6 +1737,27 @@ def log_po(
             if i["signal"] in ("PEDIR_YA", "PEDIR_PRONTO") and (i.get("recommended_qty") or 0) > 0
         ]
 
+    # Purchasing budgets: warn (soft) or refuse (hard cap, unless an administrator
+    # overrides with a reason) BEFORE the order is written. With no budget set this
+    # returns ([], False) and nothing about the order changes. A keyed replay is
+    # resolved first (the order already exists and counts against the budget).
+    from backend.api.v1 import purchase_budget as _budget_api
+    budget_warnings: list[dict] = []
+    budget_overridden = False
+    if not (idempotency_key and find_by_idempotency_key(user.tenant_id, idempotency_key)):
+        budget_lines = [
+            {"sku": i.get("sku"),
+             "qty": ((i.get("final_qty") if i.get("final_qty") is not None else i.get("recommended_qty")) or 0)
+                    if (i.get("status") or "approved") in ("approved", "modified") else 0,
+             "unit_cost": i.get("unit_cost"), "supplier": i.get("supplier"),
+             "supplier_id": i.get("supplier_id"), "warehouse": i.get("warehouse")}
+            for i in po_items]
+        budget_lines = [ln for ln in budget_lines if (ln["qty"] or 0) > 0]
+        if budget_lines:
+            budget_warnings, budget_overridden = _budget_api.enforce_on_order(
+                user, budget_lines, po_destination,
+                body.budget_override_reason if body else None)
+
     record = log_po_generation(
         user.tenant_id, session_id, po_items,
         destination_warehouse=po_destination,
@@ -1763,7 +1788,15 @@ def log_po(
                               for i in po_items if (i.get("supplier") or "").strip()}),
         },
     )
-    return ok(_po_response(record, response))
+    if budget_warnings:
+        _budget_api.record_order_budget_events(
+            user, budget_warnings, budget_overridden,
+            format_po_number(record.get("po_number"), str(record.get("id") or "")),
+            body.budget_override_reason if body else None)
+    out = _po_response(record, response)
+    if budget_warnings:
+        out["budget_warnings"] = budget_warnings
+    return ok(out)
 
 
 class ManualPOLine(BaseModel):

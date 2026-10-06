@@ -180,6 +180,25 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("customer", "lines", "revision", "status"),
     ),
+    # Purchase budgets (inventory/purchase_budget_service.py): who set or changed
+    # a cap, and every order that went past what a cap had left (with the reason
+    # a person gave, when an administrator overrode a hard cap).
+    "purchase_budget.created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("budget_scope", "amount", "period"),
+    ),
+    "purchase_budget.revised": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("budget_scope", "amount", "period"),
+    ),
+    "purchase_budget.exceeded": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("budget_scope", "over_by", "override_reason", "reference"),
+    ),
+    "purchase_budget.override": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("budget_scope", "over_by", "override_reason", "reference"),
+    ),
     "purchase.order_generated": EventSpec(
         kind="purchase", severity=INFO,
         detail_keys=("reference", "lines", "value", "suppliers"),

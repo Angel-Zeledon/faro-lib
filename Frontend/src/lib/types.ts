@@ -2020,8 +2020,152 @@ export interface IncomingSource {
   qty:       number
 }
 
+// ── Purchase budgets (a cap on purchasing spend) ─────────────────────────────
+export type BudgetPeriodType = 'month' | 'quarter' | 'custom'
+export type BudgetScopeType = 'company' | 'warehouse' | 'supplier' | 'category'
+
+export interface PurchaseBudget {
+  id: string
+  root_id: string
+  revision: number
+  period_type: BudgetPeriodType
+  period_start: string
+  period_end: string
+  amount: number
+  currency: string
+  scope_type: BudgetScopeType
+  scope_value: string | null
+  /** Warehouse / supplier NAME for those scopes, the category text, null for company. */
+  scope_label: string | null
+  parent_root_id: string | null
+  hard_cap: boolean
+  active: boolean
+  note: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface BudgetBurn {
+  total_days: number
+  elapsed_days: number
+  elapsed_fraction: number
+  days_left: number
+  state: 'upcoming' | 'running' | 'closed'
+  used_fraction: number | null
+  projected_total: number | null
+  projected_overrun: number | null
+  projection_reliable: boolean
+  pace: 'on_track' | 'ahead' | 'over'
+}
+
+export interface BudgetUsage {
+  spent: number
+  committed: number
+  ordered: number
+  remaining: number
+  unknown_cost_lines: number
+  burn: BudgetBurn
+  free: number
+  limited_by: 'self' | 'parent'
+  parent_remaining: number | null
+}
+
+export interface BudgetSummaryRow {
+  root_id: string
+  scope_type: BudgetScopeType
+  scope_label: string | null
+  amount: number
+  currency: string
+  period_type: BudgetPeriodType
+  period_start: string
+  period_end: string
+  running: boolean
+}
+
+export interface BudgetWarning { code: string; params: Record<string, unknown> }
+
+export interface BudgetStatus {
+  budget: PurchaseBudget | null
+  budgets: BudgetSummaryRow[]
+  usage?: BudgetUsage
+  warnings: BudgetWarning[]
+  today: string
+}
+
+export type BudgetLineStatus = 'funded' | 'partial' | 'deferred' | 'cost_unknown' | 'ignored'
+
+export interface BudgetPlanLine {
+  key: string
+  sku: string
+  display_name: string | null
+  supplier: string | null
+  warehouse: string | null
+  signal: string
+  abc: string | null
+  status: BudgetLineStatus
+  reason: string | null
+  recommended_qty: number
+  funded_qty: number
+  unit_cost: number | null
+  full_cost: number | null
+  funded_cost: number
+  money_at_risk: number | null
+  uncovered_risk: number | null
+  moq: number | null
+}
+
+export interface BudgetPlanSummary {
+  capped: boolean
+  budget_remaining_in: number | null
+  budget_remaining_after: number | null
+  funded_cost: number
+  full_cost: number
+  funded_lines: number
+  partial_lines: number
+  deferred_lines: number
+  cost_unknown_lines: number
+  money_at_risk_total: number
+  money_at_risk_uncovered: number
+  risk_unknown_lines: number
+  cost_unknown_risk: number
+}
+
+export interface BudgetPlan extends BudgetStatus {
+  lines: BudgetPlanLine[]
+  summary: BudgetPlanSummary | null
+}
+
+export interface BudgetInput {
+  period_type: BudgetPeriodType
+  period_start: string
+  period_end?: string | null
+  amount: number
+  scope_type: BudgetScopeType
+  scope_value?: string | null
+  parent_root_id?: string | null
+  hard_cap: boolean
+  active: boolean
+  note?: string | null
+}
+
+/** One budget an order would push past what it has left. A budget the caller
+ *  cannot see arrives without its figures (visible: false). */
+export interface BudgetExceeded {
+  root_id: string | null
+  scope_type: BudgetScopeType
+  hard_cap: boolean
+  visible: boolean
+  currency: string
+  order_value?: number
+  remaining?: number
+  over_by?: number
+  unknown_cost_lines?: number
+}
+
 export interface POLogEntry {
   id:                string
+  /** Budgets this order pushed past what they had left (soft warnings). */
+  budget_warnings?:  BudgetExceeded[]
   po_number?:        number | null
   // NULL for manual orders (source === 'manual'), which have no forecast
   // session behind them.

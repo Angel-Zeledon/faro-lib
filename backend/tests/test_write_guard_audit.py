@@ -114,6 +114,8 @@ READ_ONLY_POSTS = {
     "/reconcile": "recomputes a hierarchy total and returns it",
     "/run": "runs a saved scenario and returns the comparison",
     "cash-calendar/fit": "fits a payment pattern and returns it",
+    "budget/plan": "splits the current recommendations into funded / deferred under a budget and returns it; creates no order",
+    "budget/check": "previews whether an order would exceed a budget; writes nothing",
     # MCP is JSON-RPC: the method lives in the BODY, so `tools/list` and every
     # read tool arrive as a POST. The excuse holds only because the catalogue
     # (`backend/mcp/catalog.py`) is closed and every entry in it reads — which

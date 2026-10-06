@@ -77,6 +77,7 @@ INTERNAL_TAGS: dict[str, str] = {
     # that person, and "who approved this" must name one.
     "inventory-approvals": "purchase-order approval rules and decisions belong to the people who hold that authority",
     "committed-demand": "a commitment is a customer order a person entered; it moves purchase decisions, so it is recorded under a person's name",
+    "purchase-budgets": "a budget cap and its overrides are a person's decision about company money, recorded under their name; a key must not set or lift one",
     "supply-contracts": "a blanket contract is a customer agreement a person entered; its releases become commitments that move purchase decisions, so it is recorded under a person's name",
     "demand-plans": "a demand plan version is approved by a person with the authority; who approved it must name a person, not a key",
     "spike-edits": "excluding a past spike is a person's judgement about their history, recorded under their name",
