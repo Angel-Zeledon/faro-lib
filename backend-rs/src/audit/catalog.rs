@@ -255,7 +255,7 @@ mod tests {
     /// on one side only turns this red before any contract run.
     #[test]
     fn entry_counts_are_read_from_catalog_py() {
-        let src = include_str!("../../../backend/audit/catalog.py");
+        let src = include_str!("../../../backend/audit/catalog.py").replace("\r\n", "\n");
         let routes = src.split("ROUTES: dict[tuple[str, str], AuditRoute] = {").nth(1).unwrap().split("\n}\n").next().unwrap();
         let legacy = src.split("LEGACY: dict[str, tuple[str, str]] = {").nth(1).unwrap().split("\n}\n").next().unwrap();
         let route_keys = regex::Regex::new(r#"(?m)^\s+\("(GET|POST|PUT|PATCH|DELETE)", "[^"]+"\):"#).unwrap();

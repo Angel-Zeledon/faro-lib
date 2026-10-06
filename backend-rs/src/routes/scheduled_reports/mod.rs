@@ -1093,7 +1093,7 @@ mod tests {
 
     #[test]
     fn audited_routes_are_the_python_rust_only_list_and_are_catalogued() {
-        let src = include_str!("../../../../backend/audit/catalog.py");
+        let src = include_str!("../../../../backend/audit/catalog.py").replace("\r\n", "\n");
         let body = src.split("RUST_ONLY: tuple[tuple[str, str], ...] = (").nth(1).unwrap().split("\n)\n").next().unwrap();
         let re = regex::Regex::new(r#"\("(GET|POST|PUT|PATCH|DELETE)", "([^"]+)"\)"#).unwrap();
         let py: Vec<(String, String)> = re.captures_iter(body).map(|c| (c[1].to_string(), c[2].to_string())).collect();
@@ -1111,7 +1111,6 @@ mod tests {
         let src = include_str!("mod.rs");
         for (_, template) in AUDITED {
             let path = format!("\"/api/v1{template}\"");
-            let path = path.replace("{schedule_id}", "{schedule_id}");
             assert!(src.contains(&path), "no route registered for {template}");
         }
     }
