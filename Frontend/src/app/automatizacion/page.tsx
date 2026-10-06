@@ -134,8 +134,8 @@ function ApiKeysTab() {
           Leaving the warning up would have told customers the working thing does
           not work. What replaces it is the one fact they need before minting
           one — the secret is shown once and never again. */}
-      <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--text)' }}>
-        <Key size={14} style={{ flexShrink: 0, marginTop: 1, color: 'var(--accent)' }} aria-hidden="true" />
+      <div role="status" className="auto-notice">
+        <span className="auto-notice-icon"><Key size={14} aria-hidden="true" /></span>
         <span>{t('settings.api_keys_shown_once')}</span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -208,11 +208,12 @@ function ApiKeysTab() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 32 }}><Spinner /></div>
       ) : keys.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 32, color: 'var(--dim)', fontSize: 13 }}>
+        <div className="auto-empty">
+          <span className="auto-empty-icon"><Key size={18} aria-hidden="true" /></span>
           {t('settings.no_api_keys')}
         </div>
       ) : (
-        <table className="data-table">
+        <div className="auto-table"><table className="data-table">
           <thead>
             <tr><th>{t('settings.col_name')}</th><th>{t('settings.col_scope')}</th><th>{t('settings.col_created')}</th><th>{t('settings.col_last_used')}</th><th></th></tr>
           </thead>
@@ -244,7 +245,7 @@ function ApiKeysTab() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </div>
   )
@@ -477,9 +478,12 @@ function WebhooksTab() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 32 }}><Spinner /></div>
       ) : hooks.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 32, color: 'var(--dim)', fontSize: 13 }}>{t('settings.no_webhooks')}</div>
+        <div className="auto-empty">
+          <span className="auto-empty-icon"><WebhookIcon size={18} aria-hidden="true" /></span>
+          {t('settings.no_webhooks')}
+        </div>
       ) : (
-        <table className="data-table">
+        <div className="auto-table"><table className="data-table">
           <thead>
             <tr>
               <th>{t('settings.col_url')}</th><th>{t('settings.col_events')}</th>
@@ -522,7 +526,7 @@ function WebhooksTab() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {logOf && (
@@ -536,7 +540,7 @@ function WebhooksTab() {
           {!logLoading && log.length === 0 ? (
             <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t('settings.webhook_log_empty')}</div>
           ) : (
-            <table className="data-table">
+            <div className="auto-table"><table className="data-table">
               <thead>
                 <tr>
                   <th>{t('settings.webhook_log_col_time')}</th><th>{t('settings.col_events')}</th>
@@ -565,7 +569,7 @@ function WebhooksTab() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </Card>
       )}
@@ -1055,7 +1059,7 @@ export default function SettingsPage() {
       {/* Tab bar — pointless with a single tab, so it only renders when there
           is a choice to make. */}
       {TABS.length > 1 && (
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+      <div className="auto-tabs" role="tablist">
         {TABS.map(({ id, labelKey, Icon }) => {
           const active = tab === id
           return (
@@ -1063,14 +1067,8 @@ export default function SettingsPage() {
               key={id}
               onClick={() => setTab(id)}
               data-tour={`settings.${id}`}
-              style={{
-                all: 'unset', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 7,
-                padding: '8px 16px', fontSize: 13, fontWeight: active ? 600 : 400,
-                color: active ? 'var(--accent)' : 'var(--muted)',
-                borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
-                marginBottom: -1, transition: 'all 0.15s',
-              }}
+              role="tab" aria-selected={active}
+              className={`auto-tab${active ? ' is-active' : ''}`}
             >
               <Icon size={13} />
               {t(labelKey)}
@@ -1086,7 +1084,7 @@ export default function SettingsPage() {
           The tour anchor lives here rather than on a tab button: with one tab
           left there is no tab bar, and an anchor that only exists when the bar
           is drawn left the tour pointing at nothing. */}
-      <Card tone="inset" padding="20px 24px" data-tour={`settings.${tab}`}>
+      <Card padding="24px 28px" radius={14} data-tour={`settings.${tab}`} style={{ boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}>
         {ENABLED['api-keys']  && tab === 'api-keys'  && <FeatureGate feature="api"><ApiKeysTab /></FeatureGate>}
         {ENABLED['webhooks']  && tab === 'webhooks'  && <FeatureGate feature="api"><WebhooksTab /></FeatureGate>}
         {ENABLED['schedules'] && tab === 'schedules' && <SchedulesTab />}
