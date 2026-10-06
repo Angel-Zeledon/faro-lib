@@ -12,10 +12,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { getCommitmentOutlook, getCommitmentOutlookDetail, getCommitmentOutlookSummary } from '@/lib/api'
-import type { CommitmentOutlook, OutlookDetail, OutlookTenantSummary, OutlookVerdict } from '@/lib/types'
+import type { CommitmentOutlook, OutlookDetail, OutlookMoneyTotals, OutlookTenantSummary, OutlookVerdict } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { localeFor } from '@/lib/numberLocale'
+import { formatMoney } from '@/lib/currency'
 
 const C = { border: 'var(--border)', text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)', red: '#C0504D', amber: '#B7791F', green: '#3F7D58' }
 
@@ -79,6 +80,26 @@ export default function CommitmentOutlookPanel({ reloadToken }: { reloadToken?: 
   const heading: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }
 
   const s = summary?.summary
+  /** An exact decimal string from the server, shown in the tenant currency. */
+  const money = (v: string) => formatMoney(Number(v))
+  const mt = s?.money
+  const rollupText = (name: string, m: OutlookMoneyTotals) =>
+    m.computed === 0
+      ? t('outlook.rollup_none', { name, eligible: m.eligible })
+      : t(m.has_minimum ? 'outlook.rollup_line_min' : 'outlook.rollup_line',
+        { name, amount: money(m.amount_at_risk), computed: m.computed, eligible: m.eligible })
+  const rollups = (title: string, rows: { name: string; m: OutlookMoneyTotals }[]) => {
+    const shown = rows.filter(r => r.m.eligible > 0)
+    if (shown.length === 0) return null
+    return (
+      <div style={{ marginTop: 4 }}>
+        <div style={heading}>{title}</div>
+        <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, color: C.text }}>
+          {shown.map((r, i) => <li key={i}>{rollupText(r.name, r.m)}</li>)}
+        </ul>
+      </div>
+    )
+  }
   const arrivalWhen = (a: OutlookDetail['supply']['arrivals'][number]) => {
     const date = a.date ?? a.expected_date ?? ''
     const text = t(`outlook.arrival_source.${a.source}`, { date })
@@ -113,6 +134,27 @@ export default function CommitmentOutlookPanel({ reloadToken }: { reloadToken?: 
               {s.first_problem_date && <> · {t('outlook.tile_first_problem', { date: s.first_problem_date })}</>}
             </div>
           )}
+          {mt && mt.eligible > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12.5 }}>
+              {mt.computed > 0 ? (
+                <div style={{ color: C.red, fontWeight: 600 }}>
+                  {t(mt.has_minimum ? 'outlook.money_tile_min' : 'outlook.money_tile', { amount: money(mt.amount_at_risk) })}
+                  {mt.margin_rows > 0 && <> · {t(mt.has_minimum ? 'outlook.margin_tile_min' : 'outlook.margin_tile', { amount: money(mt.margin_at_risk) })}</>}
+                </div>
+              ) : (
+                <div style={{ color: C.amber }}>{t('outlook.money_none')}</div>
+              )}
+              {mt.margin_rows > 0 && mt.margin_excluded > 0 && (
+                <div style={{ color: C.dim, fontSize: 12 }}>{t('outlook.margin_coverage', { n: mt.margin_rows, total: mt.eligible })}</div>
+              )}
+              {mt.excluded_no_price > 0 && <div style={{ color: C.amber, fontSize: 12 }}>{t('outlook.money_excluded_price', { n: mt.excluded_no_price })}</div>}
+              {mt.excluded_no_shortfall > 0 && <div style={{ color: C.amber, fontSize: 12 }}>{t('outlook.money_excluded_shortfall', { n: mt.excluded_no_shortfall })}</div>}
+            </div>
+          )}
+          {summary && rollups(t('outlook.by_customer_title'),
+            summary.by_customer.map(c => ({ name: c.customer || t('committed.customer_unknown'), m: c.summary.money })))}
+          {summary && rollups(t('outlook.by_contract_title'),
+            summary.by_contract.map(c => ({ name: c.reference || c.customer || c.contract_root_id, m: c.summary.money })))}
           {(summary?.data_gaps.length ?? 0) > 0 && (
             <div style={{ marginTop: 4 }}>
               <div style={heading}>{t('outlook.gaps_title')}</div>
@@ -164,6 +206,22 @@ export default function CommitmentOutlookPanel({ reloadToken }: { reloadToken?: 
                 )}
               </div>
               <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.5 }}>{reasonText(c)}</div>
+              {c.money && c.money.status === 'computed' && c.money.amount_at_risk != null && (
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: C.red }}>
+                  {t(c.money.is_minimum ? 'outlook.row_amount_min' : 'outlook.row_amount', { amount: money(c.money.amount_at_risk) })}
+                  {c.money.margin_at_risk != null && <> · {t('outlook.row_margin', { amount: money(c.money.margin_at_risk) })}</>}
+                  {c.money.unit_price != null && c.money.price_source && (
+                    <span style={{ fontWeight: 400, color: C.dim }}> · {t('outlook.row_price', {
+                      price: money(c.money.unit_price), source: t(`outlook.price_source.${c.money.price_source}`) })}</span>
+                  )}
+                </div>
+              )}
+              {c.money && c.money.status === 'no_price' && (
+                <div style={{ fontSize: 11.5, color: C.amber }}>{t('outlook.row_no_price')}</div>
+              )}
+              {c.money && c.money.status === 'computed' && c.money.margin_status === 'no_cost' && (
+                <div style={{ fontSize: 11.5, color: C.amber }}>{t('outlook.row_no_cost')}</div>
+              )}
               {c.shortfall_is_minimum && c.undated_units > 0 && (
                 <div style={{ fontSize: 11.5, color: C.amber }}>{t('outlook.minimum_note', { units: num(c.undated_units) })}</div>
               )}

@@ -11,6 +11,10 @@
 #   GET /api/v1/committed-demand/outlook/summary
 #   GET /api/v1/committed-demand/{id}/outlook
 #
+# Money at risk (amount, margin, roll-ups) is ADDITIVE fields on these same three
+# routes, so this one file serves it: there is no separate group to enable. A
+# second matcher for the same paths would only conflict with the one below.
+#
 # Kill switch: move this file to routes.d/off/ and `caddy reload`; the routes
 # then 404 at Python (FastAPI's own 404) and the panel degrades the same way.
 @rs_commitment_outlook_lists {

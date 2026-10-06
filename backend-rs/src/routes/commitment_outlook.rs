@@ -35,10 +35,12 @@ use serde_json::{json, Map, Value};
 use crate::auth::{self, warehouse_scope as wscope, Exposure, RequestActors, RouteAuth};
 use crate::error::ApiError;
 use crate::fulfillment::core::{self, Outcome, SummaryRow, Verdict};
+use crate::fulfillment::money::{self, Money};
 use crate::fulfillment::data::{self, day_number, day_to_date, CommitmentRow, Loaded, SkuReport};
 use crate::pycompat::{isoformat_date, py_strip};
 use crate::query::{self, PyInt, Query};
 use crate::routes::ok;
+use crate::routes::r1::currency::currency_of;
 use crate::state::AppState;
 use crate::validation::Errors;
 
@@ -101,7 +103,66 @@ fn summary_row(l: &Loaded, row_index: usize) -> Option<SummaryRow> {
     })
 }
 
-fn summary_json(rows: &[SummaryRow]) -> Value {
+/// Money at risk of one commitment: the figures the verdict row needs.
+struct RowMoney {
+    money: Money,
+    price: Option<f64>,
+    price_source: Option<money::PriceSource>,
+    cost: Option<f64>,
+}
+
+fn row_money(l: &Loaded, row_index: usize) -> Option<RowMoney> {
+    let row = &l.rows[row_index];
+    let (report, pos) = l.outcome_of(row_index)?;
+    let o = &report.outcomes[pos];
+    let (price, price_source) = money::resolve_price(row.contract_price, report.sale_price);
+    let m = money::money(&money::Input {
+        eligible: matches!(o.verdict, Verdict::AtRisk | Verdict::WillMiss),
+        shortfall: o.shortfall_units,
+        shortfall_is_minimum: o.shortfall_is_minimum,
+        price,
+        cost: report.unit_cost,
+    });
+    Some(RowMoney { money: m, price, price_source, cost: report.unit_cost })
+}
+
+fn cents_json(c: Option<i128>) -> Value {
+    c.map(|c| Value::String(money::fmt_cents(c))).unwrap_or(Value::Null)
+}
+
+/// The money figures of one commitment. Amounts are exact decimal STRINGS, never
+/// floats; an amount that cannot be stated is null with the reason in `status`.
+fn money_item_json(r: &RowMoney) -> Value {
+    json!({
+        "status": r.money.status.as_str(),
+        "amount_at_risk": cents_json(r.money.amount_cents),
+        "margin_at_risk": cents_json(r.money.margin_cents),
+        "margin_status": r.money.margin_status.as_str(),
+        "is_minimum": r.money.is_minimum,
+        "unit_price": money::fmt_price(r.price).map(Value::String).unwrap_or(Value::Null),
+        "price_source": r.price_source.filter(|_| money::positive_price(r.price).is_some())
+            .map(|s| json!(s.as_str())).unwrap_or(Value::Null),
+        "unit_cost": money::fmt_price(r.cost).map(Value::String).unwrap_or(Value::Null),
+    })
+}
+
+fn money_totals_json(rows: &[Money]) -> Value {
+    let t = money::rollup(rows);
+    json!({
+        "eligible": t.eligible,
+        "computed": t.computed,
+        "excluded_no_price": t.excluded_no_price,
+        "excluded_no_shortfall": t.excluded_no_shortfall,
+        "amount_at_risk": money::fmt_cents(t.amount_cents),
+        // True when some counted shortfall is a lower bound: "at least".
+        "has_minimum": t.has_minimum,
+        "margin_rows": t.margin_rows,
+        "margin_at_risk": money::fmt_cents(t.margin_cents),
+        "margin_excluded": t.margin_excluded,
+    })
+}
+
+fn summary_json(rows: &[SummaryRow], monies: &[Money]) -> Value {
     let s = core::summarize(rows);
     json!({
         "total": s.total,
@@ -115,6 +176,7 @@ fn summary_json(rows: &[SummaryRow]) -> Value {
         // were counted as arriving), so the total is "at least".
         "shortfall_has_minimum": s.shortfall_has_minimum,
         "first_problem_date": day_json(s.first_problem_day),
+        "money": money_totals_json(monies),
     })
 }
 
@@ -192,6 +254,7 @@ fn item_json(l: &Loaded, row_index: usize) -> Option<Value> {
         "stock": or2(report.stock),
         "lead_time_days": report.lead.map(|(d, _)| json!(d)).unwrap_or(Value::Null),
         "lead_time_source": report.lead.map(|(_, s)| json!(s.as_str())).unwrap_or(Value::Null),
+        "money": row_money(l, row_index).map(|m| money_item_json(&m)).unwrap_or(Value::Null),
     }))
 }
 
@@ -266,6 +329,7 @@ pub async fn list(
             .then(l.rows[a].id.cmp(&l.rows[b].id))
     });
     let rows: Vec<SummaryRow> = picked.iter().filter_map(|&i| summary_row(&l, i)).collect();
+    let monies: Vec<Money> = picked.iter().filter_map(|&i| row_money(&l, i)).map(|m| m.money).collect();
     let total = picked.len();
     let items: Vec<Value> = picked.iter().take(limit as usize).filter_map(|&i| item_json(&l, i)).collect();
     Ok(ok(json!({
@@ -274,7 +338,8 @@ pub async fn list(
         "total": total,
         "limit": limit,
         "items": items,
-        "summary": summary_json(&rows),
+        "currency": currency_of(&state.pool, &user.tenant_id).await?,
+        "summary": summary_json(&rows, &monies),
     })))
 }
 
@@ -288,13 +353,16 @@ pub async fn summary(
     let user = auth::current_user(&state, &headers, ROUTE, &actors).await?;
     let l = load_for(&state, &user).await?;
 
-    let mut all: Vec<SummaryRow> = Vec::new();
-    let mut by_customer: BTreeMap<Option<String>, Vec<SummaryRow>> = BTreeMap::new();
-    let mut by_contract: BTreeMap<String, (Option<String>, Option<String>, Vec<SummaryRow>)> = BTreeMap::new();
+    type Pair = (SummaryRow, Money);
+    let mut all: Vec<Pair> = Vec::new();
+    let mut by_customer: BTreeMap<Option<String>, Vec<Pair>> = BTreeMap::new();
+    let mut by_contract: BTreeMap<String, (Option<String>, Option<String>, Vec<Pair>)> = BTreeMap::new();
     let mut gaps: BTreeMap<&'static str, (i64, f64)> = BTreeMap::new();
     let mut gap_skus: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
     for (i, row) in l.rows.iter().enumerate() {
-        let Some(sr) = summary_row(&l, i) else { continue };
+        let Some(sr0) = summary_row(&l, i) else { continue };
+        let Some(rm) = row_money(&l, i) else { continue };
+        let sr: Pair = (sr0, rm.money);
         let (report, pos) = l.outcome_of(i).expect("row has an outcome");
         let o = &report.outcomes[pos];
         if o.verdict == Verdict::InsufficientData {
@@ -316,18 +384,26 @@ pub async fn summary(
         all.push(sr);
     }
 
-    let problems = |rows: &[SummaryRow]| {
-        rows.iter().filter(|r| matches!(r.verdict, Verdict::AtRisk | Verdict::WillMiss)).count()
+    let split = |pairs: &[Pair]| -> (Vec<SummaryRow>, Vec<Money>) {
+        (pairs.iter().map(|p| p.0.clone()).collect(), pairs.iter().map(|p| p.1).collect())
     };
-    let mut customers: Vec<(&Option<String>, &Vec<SummaryRow>)> = by_customer.iter().collect();
+    let problems = |rows: &[Pair]| {
+        rows.iter().filter(|r| matches!(r.0.verdict, Verdict::AtRisk | Verdict::WillMiss)).count()
+    };
+    let shortfall_of = |rows: &[Pair]| core::summarize(&split(rows).0).shortfall_units;
+    let mut customers: Vec<(&Option<String>, &Vec<Pair>)> = by_customer.iter().collect();
     customers.sort_by(|a, b| {
         problems(b.1).cmp(&problems(a.1))
-            .then(core::summarize(b.1).shortfall_units.total_cmp(&core::summarize(a.1).shortfall_units))
+            .then(shortfall_of(b.1).total_cmp(&shortfall_of(a.1)))
             .then(a.0.cmp(b.0))
     });
+    let summary_of = |pairs: &[Pair]| {
+        let (rows, monies) = split(pairs);
+        summary_json(&rows, &monies)
+    };
     let by_customer_json: Vec<Value> = customers
         .iter()
-        .map(|(c, rows)| json!({"customer": opt_str_json(c), "summary": summary_json(rows)}))
+        .map(|(c, rows)| json!({"customer": opt_str_json(c), "summary": summary_of(rows)}))
         .collect();
     let by_contract_json: Vec<Value> = by_contract
         .iter()
@@ -336,7 +412,7 @@ pub async fn summary(
                 "contract_root_id": root,
                 "reference": opt_str_json(reference),
                 "customer": opt_str_json(customer),
-                "summary": summary_json(rows),
+                "summary": summary_of(rows),
             })
         })
         .collect();
@@ -347,7 +423,8 @@ pub async fn summary(
     Ok(ok(json!({
         "as_of": isoformat_date(&l.today),
         "scope": l.scope_label,
-        "summary": summary_json(&all),
+        "currency": currency_of(&state.pool, &user.tenant_id).await?,
+        "summary": summary_of(&all),
         "by_customer": by_customer_json,
         "by_contract": by_contract_json,
         // What to fill in so an "insufficient data" can become an answer.
@@ -445,6 +522,7 @@ pub async fn detail(
         "as_of": isoformat_date(&l.today),
         "scope": l.scope_label,
         "commitment": item,
+        "currency": currency_of(&state.pool, &user.tenant_id).await?,
         "competing": competing,
         "later_commitments": report.served.len() - pos - 1,
         "supply": {

@@ -2096,3 +2096,96 @@ phone width (create a center, a child, a default chain; the list renders with
 paths, the chain text and the es copy); the cart picker, the budget scope option
 and the "assign a cost center" control on an unresolved order were type-checked
 and compiled but not clicked.
+
+## 11. Money at risk on the outlook (additive fields, same Rust routes)
+
+Owner-approved (2026-10-06). For each commitment the outlook calls `will_miss`
+or `at_risk`: the money behind the shortfall, plus the margin when the unit cost
+is known, with a per-customer and a per-contract roll-up and a tenant total.
+**No new routes and no Python twin**: the figures are added to the three outlook
+routes of section 10 (`money` on every item and on every `summary`, `currency`
+at the top), so the same gateway file (`42-commitment-outlook.caddy.example`)
+serves it and the same kill switch applies. No schema change, no new events
+(nothing is written), so there is nothing for Python to honor: Python does not
+serve these routes.
+
+### What is computed
+
+* Per row: `amount_at_risk = shortfall units x unit selling price`,
+  `margin_at_risk = shortfall units x (price - unit cost)`. Amounts are exact
+  decimal STRINGS (`"1000.00"`), never floats, in the tenant base currency
+  (`currency` = `GET /tenant/currency`'s object).
+* The unit price is the commitment's own price when it has one, else the SKU's:
+  1. a commitment materialised from a contract takes the `unit_price` of its
+     SKU's line on THAT contract revision (`committed_demand.contract_id`);
+  2. a contract line with no price (or a manual commitment, which has no price
+     column) falls back to `inventory_stock.sale_price` of the representative
+     warehouse row (the same row the lead time reads: the tenant default
+     warehouse first, then alphabetical) among the caller's warehouses;
+  3. a contract price that exists but is unusable, or a SKU named twice on a
+     contract with different prices, is NOT replaced by the SKU price: the row is
+     "no price". `price_source` says `contract` or `sku`.
+* The unit cost is `inventory_stock.unit_cost` of the same row.
+* Totals are the exact sum of the rows' rounded cents (so the rows on screen add
+  up to the total on screen). `eligible` counts at-risk and will-miss rows,
+  `computed` those with an amount, `excluded_no_price` and
+  `excluded_no_shortfall` the ones left out and why, `margin_rows` /
+  `margin_excluded` the same for margin. A set with no at-risk rows totals a true
+  `"0.00"` with `eligible: 0`.
+* `is_minimum` / `has_minimum`: the shortfall is a lower bound (undated purchase
+  order units were counted as arriving), so the amount is "at least".
+
+### Arithmetic rules (defined rounding)
+
+Integers only: units in hundredths, prices in ten-thousandths, amounts in cents.
+
+* Units = the shortfall rounded to 2 decimals, half to even on the float's exact
+  binary value (the same as `Decimal(x).quantize(..., ROUND_HALF_EVEN)`).
+* Price and cost round to 4 decimals the same way. Missing, not finite, not
+  above zero, rounding to zero, or above 1e9 is NOT AVAILABLE; units above 1e12
+  are refused likewise.
+* Amount and margin to cents HALF UP (ties away from zero). Margin is signed: a
+  cost above the price shows a negative margin rather than hiding it.
+* Only `at_risk` / `will_miss` rows are eligible. `insufficient_data` rows that
+  carry a shortfall are NOT counted (their verdict is unknown), `on_track` rows
+  have none. An `at_risk` row covered only by a tight purchase order has a
+  shortfall of 0 and therefore `"0.00"` at risk: the money measures units short,
+  not exposure of the whole order.
+
+### Where the code is, and how it is tested
+
+* `backend-rs/src/fulfillment/money.rs`: the arithmetic only, with unit tests.
+  `tests/contract/money_reference.py` is the same rules in plain Python on
+  `decimal`; `tests/contract/gen_money_fixtures.py` writes 6,000 seeded row cases
+  (rounding edges, NaN, infinities, zero and absurd values) and 1,200 roll-ups
+  to `backend-rs/tests/fixtures/money_cases.json`, and the Rust test
+  `differential_against_python` demands exact equality. Python
+  `test_money_at_risk_reference_pure.py` fails when the fixture is stale.
+  Mutating the half-up rule turned the differential red (checked by hand).
+* `fulfillment/data.rs`: adds `sale_price` / `unit_cost` to the stock read and
+  the contract line price (`contract_line_price`, unit tested).
+* `tests/contract/cf_money_cases.py`, hooked into `contract_test.py` with two
+  lines: hand-computed scenarios in the database, the exclusion counts, roll-ups,
+  viewer/analyst/anonymous reads, "the reads wrote nothing" and warehouse scope.
+* Frontend: money line per row, totals tile, exclusion notices and the
+  by-customer / by-contract lists in `CommitmentOutlookPanel` (`outlook.*`, es/en).
+
+### Limitations and decision rules to confirm
+
+1. **Single currency.** This base has no currency column on commitments, contract
+   lines or SKU prices, so every amount is read as being in the tenant base
+   currency (`tenants.settings.currency`), exactly like every other money figure
+   in the product (changing it relabels, never converts). When multi-currency
+   lands, a row priced in another currency must be excluded or converted there;
+   until then, a tenant that mixes currencies in its price data would see wrong
+   totals. Not detectable from this data.
+2. A manual commitment has no price of its own (no column). Its price is the SKU
+   price. Adding a per-commitment price is a Python schema and write-path change,
+   deliberately not done here.
+3. A zero price or zero cost is treated as not available, never as a real zero
+   (a free sample would show as "no price"). Owner to confirm.
+4. With several warehouses the SKU price is the representative warehouse's, not
+   an average.
+5. CRC and other 0-decimal currencies: amounts keep cents in the API; the
+   frontend rounds for display only.
+
