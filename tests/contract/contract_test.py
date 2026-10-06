@@ -3900,6 +3900,8 @@ def run(args) -> int:
         results += run_outbox(args, fx, db)
         import w2b_cases  # noqa: PLC0415 - wave 2b section, its own file
         results += w2b_cases.run_w2b(args, secret, db)
+        import w3_cases  # wave 3 (inventory hub): its own file, its own tenants
+        results += w3_cases.run_w3(args, fx, db, sys.modules[__name__])
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
