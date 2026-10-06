@@ -1,0 +1,35 @@
+# DISABLED EXAMPLE. Rename to 50-customer-portal.caddy inside the gateway's
+# /etc/caddy/routes.d/ to turn the customer portal on.
+#
+# The customer portal (backend-rs/src/routes/customer_portal.rs) is NEW in Rust:
+# there is no Python implementation of any of these routes, so, unlike every
+# other group in this directory, there is NO failover to `api:8010`. With the
+# Rust container down these paths answer the gateway's 502, and the customer
+# sees the portal page's "try again later" state; nothing else in the product is
+# affected. Moving this file to `routes.d/off/` switches the feature off (Python
+# answers 404 {"detail":"Not Found"}, which the page shows as an invalid link).
+#
+# One matcher covers the whole group:
+#   /api/v1/customer-portal/links...   tenant management (a person's JWT; never
+#                                      an API key: the route is Internal)
+#   /api/v1/customer-portal/customers  customers that have commitments
+#   /api/v1/customer-portal/public/... the two token routes a customer calls
+#                                      with no login (read the page, answer)
+#
+# Public routes need nothing from the gateway for security: the link's token is
+# the credential, every bad link is one identical 404, rate limits run in the
+# service per address and per link, and the responses carry Cache-Control:
+# no-store, Referrer-Policy: no-referrer and X-Robots-Tag: noindex. The gateway
+# must forward X-Forwarded-For (Caddy's reverse_proxy does by default) because
+# the per-address limit reads the first hop.
+
+@rs_customer_portal {
+	path /api/v1/customer-portal/*
+}
+handle @rs_customer_portal {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}

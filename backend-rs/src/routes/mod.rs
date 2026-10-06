@@ -1,6 +1,7 @@
 pub mod api_keys;
 pub mod audit;
 pub mod committed_demand;
+pub mod customer_portal;
 pub mod entitlements;
 pub mod health;
 pub mod r1;
@@ -70,6 +71,8 @@ pub fn router() -> Router<AppState> {
                 .put(signal_thresholds::put_thresholds)
                 .delete(signal_thresholds::reset_thresholds),
         )
+        // Customer portal (new in Rust, no Python twin): tenant link management and the public token routes.
+        .merge(customer_portal::router())
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
 }
