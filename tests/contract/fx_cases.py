@@ -22,13 +22,25 @@ def _today():
     return datetime.now(timezone.utc).date()
 
 
-def run(args, fx, db, h) -> list:
-    """`h` is the contract_test module (http, Case, auth_for, make_fixture, ...)."""
-    py, rs = args.python, args.rust
-    out: list = []
+def run(args, outer_fx, db, h) -> list:
+    """`h` is the contract_test module (http, Case, auth_for, make_fixture, ...).
+
+    Uses a tenant of its own: the sections before this one change the shared
+    fixture's users and keys, and this one must not depend on what they left."""
     if db is None:
         return [(h.Case("fx (all)", "-", "-", route=ROUTE), "SKIP",
                  ["multi-currency needs --db: rows and events are checked in the database"])]
+    fx = h.make_fixture(args.python, outer_fx.secret)
+    print(f"multi-currency throwaway tenant {fx.tenant_id}")
+    try:
+        return _run(args, fx, db, h)
+    finally:
+        h.erase_fixture(args.python, fx)
+
+
+def _run(args, fx, db, h) -> list:
+    py, rs = args.python, args.rust
+    out: list = []
 
     def q1(sql, params=()):
         cur = db.cursor()

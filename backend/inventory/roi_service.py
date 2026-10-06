@@ -622,7 +622,8 @@ def get_po_history(tenant_id: str, limit: int = 20) -> list[dict]:
                   total_value, skus_order_now, skus_order_soon,
                   reception_status, received_at, po_number, sent_at,
                   paid_at, cancelled_at, cancel_reason,
-                  destination_warehouse, approval_status, approved_amount
+                  destination_warehouse, approval_status, approved_amount,
+                  fx_unconverted_lines
            FROM inventory_po_log
            WHERE tenant_id = %s
            ORDER BY generated_at DESC
@@ -679,7 +680,8 @@ def get_po_history_page(
                    total_value, skus_order_now, skus_order_soon,
                    reception_status, received_at, po_number, sent_at,
                    paid_at, cancelled_at, cancel_reason,
-                   destination_warehouse, approval_status, approved_amount
+                   destination_warehouse, approval_status, approved_amount,
+                   fx_unconverted_lines
               FROM inventory_po_log
              WHERE {where}
              ORDER BY generated_at DESC, id DESC

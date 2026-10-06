@@ -428,3 +428,20 @@ class TestOtherMoneyReaders:
                 (po["id"],))
         obs, _n = cost_alerts._cost_observations(tid, 30)
         assert [o["sku"] for o in obs] == ["B"]
+
+
+class TestHistoryShowsWhatIsMissing:
+
+    def test_both_history_lists_carry_the_unconverted_count(self, client, test_tenant, analyst_headers,
+                                                            viewer_headers):
+        tid = test_tenant["id"]
+        _rate(tid, "USD", "500")
+        sup = _supplier(client, analyst_headers)
+        full = _manual(client, analyst_headers, sup, [_line("A", 1, 1, "USD")]).json()["data"]
+        part = _manual(client, analyst_headers, sup, [_line("B", 1, 1, "EUR"), _line("C", 2, 2.0)]).json()["data"]
+        plain = client.get("/api/v1/inventory/po-history", headers=viewer_headers).json()["data"]
+        by_id = {r["id"]: r for r in plain}
+        assert by_id[full["id"]]["fx_unconverted_lines"] == 0 and by_id[full["id"]]["total_value"] == 500.0
+        assert by_id[part["id"]]["fx_unconverted_lines"] == 1 and by_id[part["id"]]["total_value"] == 4.0
+        paged = client.get("/api/v1/inventory/po-history/page", headers=viewer_headers).json()["data"]["items"]
+        assert {r["id"]: r["fx_unconverted_lines"] for r in paged} == {full["id"]: 0, part["id"]: 1}

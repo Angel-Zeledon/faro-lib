@@ -528,3 +528,121 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. Multi-currency (new Rust routes, no Python failover)
+
+Owner-approved feature, built the strangler-fig way but with one difference
+from every other group: these routes are NEW, so Python has no copy of them.
+**There is no Python failover.** With `api-rs` down the exchange-rate screen
+shows nothing (502 from the gateway); with the Caddy file removed it is a 404.
+Nothing else stops: Python purchase orders, budgets, the cash calendar and
+approvals read the `exchange_rates` table themselves, with the same rules.
+Gateway example: `deploy/rust-api/routes.d/50-multicurrency.caddy.example`
+(no `api:8010` upstream on purpose).
+
+### What it does
+
+* The tenant's **base (reporting) currency** is the existing currency setting
+  (`tenants.settings.currency`, default CRC). Its PATCH still only relabels.
+* A money amount that needs a currency carries an explicit ISO 4217 code from
+  `SUPPORTED` (13 codes). Supplier price (`sku_suppliers.currency`) and a
+  purchase-order **line** (`inventory_po_items.currency`) may differ from base.
+  `NULL` means "the tenant's own currency", which is what every row written
+  before this feature means. The currency is per LINE, not per order, because one
+  order already spans suppliers (it is split per supplier on send).
+* A **dated exchange-rate table** (`exchange_rates`): 1 unit of `currency` =
+  `rate` units of `base_currency`, effective from `effective_date`, an optional
+  source note, who entered it. Tenant-entered only; no external feed. The base
+  currency is stored on the row, so relabelling the base makes the old rates
+  stop applying (a missing rate, said out loud) instead of silently meaning
+  something else.
+* The **rate used is recorded on the document when it is written**:
+  `inventory_po_items.fx_rate / fx_rate_date / fx_rate_id / fx_base_currency /
+  value_base`. Later rates, edits and deletions never move an order. A costed
+  foreign line with no rate has `value_base` NULL ("unconverted"); the order's
+  `inventory_po_log.fx_unconverted_lines` counts them and its `total_value`
+  leaves them out, exactly like a line with no cost. **Never converted with a
+  made-up 1.0.**
+* `inventory_po_log.total_value` keeps its meaning (the order's value in the
+  tenant's currency) and so ROI, recaps and the assistant need no change. With no
+  foreign line anywhere the old float arithmetic runs byte for byte.
+
+### The rules (`backend/fx/reference.py` is the spec, `backend-rs/src/fx.rs` the twin)
+
+1. Exact decimals; a float is first turned into the decimal its shortest
+   round-trip text spells (Python `repr`, Rust `{}`), never its binary value.
+2. One rounding, at the end: `qty x unit_cost x rate` rounded ONCE to 2
+   decimals, **half up** (ties away from zero; all amounts are non-negative).
+   Two decimals are the storage precision in every currency; the display
+   precision of a currency (0 for CRC) is a rendering concern.
+3. As-of lookup: the latest `effective_date` not after the document's date (the
+   UTC date the order is written). A future-dated rate is not used until its day.
+4. No rate means no conversion (`None`, never 1.0).
+5. A line in the base currency is not converted; a total is the exact sum of the
+   2-decimal line values.
+6. A stored rate is positive, within [1e-10, 1e9] and has at most 10 decimals
+   (refused, never rounded). Inputs must be below 1e30 with at most 40 decimals.
+
+The number type in Rust is a digit string (schoolbook arithmetic), not `i128`:
+qty x cost x rate can have 70+ digits, and a wrapping overflow would be a silent
+wrong total.
+
+### Routes (`backend-rs/src/routes/fx_rates.rs`)
+
+| Route | Who | Notes |
+|---|---|---|
+| `GET /tenant/currency/rates` | every role, read key | current base only, `in_force` per row, `other_base_count` |
+| `POST /tenant/currency/rates` | admin | 201; 409 `fx_rate_exists` on the same currency + date |
+| `PATCH /tenant/currency/rates/{id}` | admin | rate and/or note; the currency and date are not editable |
+| `DELETE /tenant/currency/rates/{id}` | admin | written orders keep their recorded rate |
+| `GET /tenant/currency/rates/resolve?currency=&on=` | every role, read key | 404 `fx_rate_missing` when none |
+| `POST /tenant/currency/convert` | every role, read key | a read-only preview, says which rate it used |
+
+Writes are admin only (like the base currency itself: a rate moves every
+converted total) and internal (no API key can hold the role). Events
+`currency_rate.created / changed / deleted` are in `activity/events.py`, the
+audit catalogue (LEGACY, target type `currency_rate`) and their Rust mirrors.
+
+### Where Python honours it
+
+`backend/fx/` (`reference.py`, `service.py`, `migrations.py`, `vectors.py`):
+PO creation (`roi_service.log_po_generation`, `create_manual_po`; `currency` on
+`POLineItem` / `ManualPOLine`), purchase budgets (`check_order`, usage; the hard
+cap refuses an order it cannot fully value with `purchase_budget_fx_rate_missing`,
+an administrator can override with a reason), the cash calendar, PO approval
+amounts, reception fill value, the BI datasets (`currency` column, converted
+`line_value`), the supplier PDF (each line in its own currency; several
+currencies print as one amount per currency, never one summed figure), supplier
+price currency on the SKU-supplier link, and the price-history comparisons
+(`cost_alerts`) which skip foreign lines.
+
+### Tests
+
+* `cargo test`: `fx::tests` (rules, parsing grammar, rounding, overflow, rate
+  validation, as-of lookup), `fx_rates::tests`, and the golden vectors
+  (`backend-rs/tests/fx_vectors.json`, 3,011 cases generated by the Python
+  reference, replayed exactly by Rust). Audit and event mirrors updated (LEGACY 76,
+  target types 29, audit actions 111, stored actions 115).
+* Differential: `tests/contract/fx_differential.py` runs fresh seeds through the
+  Python reference and `stockai-api fx-eval` and demands identical answers
+  (40,088 cases over 8 seeds when written; the contract run does 20,000 fresh).
+* pytest: `test_fx_reference.py` (hand cases, an independent `Fraction` oracle
+  over 4,000 seeded cases, golden file is current), `test_multicurrency.py`
+  (orders, recorded rates, history, budgets, hard cap, cash, approvals, PDF,
+  supplier price currency, permission pairs, state asserted in the database).
+* Contract: `tests/contract/fx_cases.py` (hooked by `run_fx_section`): rate CRUD
+  with permission pairs and refusals asserting state, events in `activity_logs`,
+  another tenant's rate untouched, and the cross-service promise (a rate entered
+  through Rust is the one a Python order converts with and records; editing or
+  deleting it afterwards moves nothing already written).
+
+### Deferred (not in this release)
+
+Price-break tables in a foreign currency (they read in the supplier link's
+currency); a screen for the supplier price currency (API only); stock unit costs,
+the optimizer and the "does it fit the cash" check stay in the base currency;
+a "convert now" action for an order written before its rate existed (it stays
+unconverted until someone acts); inverse and cross rates (only foreign -> base);
+budgets in a currency other than the base (they only count lines converted INTO
+their currency); an external rate feed; a maximum age for a rate; the approval
+rule amount still leaves an unconverted line out (same as an uncosted line).
