@@ -256,6 +256,13 @@ _DELETE_ORDER: list[str] = [
     "po_approvals",
     "po_approval_rules",
     "forecast_adjustments",
+    # Customer portal (2026-10-06): all three cascade from tenants (the promised
+    # dates also from the commitment they belong to, so they go first here);
+    # listed because this list is the reviewable answer to "what belongs to a
+    # tenant". Answers before the links they hang from.
+    "customer_portal_events",
+    "customer_portal_promised_dates",
+    "customer_portal_links",
     "committed_demand",
     "supply_contracts",
     "purchase_budgets",
@@ -269,9 +276,6 @@ _DELETE_ORDER: list[str] = [
     # Supplier confirmation answers, newest dependency first. They cascade from
     # the tenant, listed because this is the reviewable answer to "what belongs
     # to a tenant".
-    "customer_portal_events",
-    "customer_portal_promised_dates",
-    "customer_portal_links",
     "po_confirmation_acceptances",
     "po_line_confirmations",
     "po_confirmation_requests",

@@ -172,7 +172,7 @@ EVENTS: dict[str, EventSpec] = {
     # recorded under the person who made the link, and never change a commitment.
     "customer_portal.link_created": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("customer", "share_dates"),
+        detail_keys=("customer",),
     ),
     "customer_portal.link_revoked": EventSpec(
         kind="purchase", severity=INFO,
@@ -184,7 +184,7 @@ EVENTS: dict[str, EventSpec] = {
     ),
     "customer_portal.link_updated": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("customer", "share_dates"),
+        detail_keys=("customer",),
     ),
     "customer_portal.promise_set": EventSpec(
         kind="purchase", severity=INFO,

@@ -528,3 +528,66 @@ note clamp), `query.rs` (Starlette query parsing, pydantic query errors).
 Build (8 logical CPUs, shared target dir): debug rebuild of the crate 30 s,
 release rebuild after a change to the crate 59 s, release build including
 dependencies for a fresh target triple 2 min 45 s. Release binary 5.2 MB.
+
+## 10. Customer portal: the first route group written in Rust first (2026-10-06)
+
+A read-only portal where a corporate customer opens a private link and sees
+ONLY their own commitments (the mirror of the supplier confirmation link).
+**It has no Python twin, so it has no failover**: the gateway file
+`deploy/rust-api/routes.d/50-customer-portal.caddy.example` sends
+`/api/v1/customer-portal/*` to `api-rs` only. With Rust down those paths answer
+502 at the gateway (the customer page shows "try again later"); with the file in
+`routes.d/off/` Python answers its own 404 (the page shows "invalid link").
+Nothing else in the product depends on it.
+
+Routes (`backend-rs/src/routes/customer_portal.rs`):
+
+| Route | Who |
+|---|---|
+| `GET /customer-portal/customers`, `GET /links`, `GET /links/{id}` | signed-in user (viewer ok), company-wide scope only |
+| `POST /links`, `PATCH /links/{id}`, `POST /links/{id}/revoke`, `/reopen`, `PUT /links/{id}/promised-dates` | analyst or admin; never an API key (Internal) |
+| `GET /customer-portal/public/{token}`, `POST /public/{token}/respond` | nobody logged in: the token is the credential |
+
+Security model, reused from the supplier link: 256-bit token, only its SHA-256
+stored, constant-time compare; every bad link (malformed, unknown, expired,
+revoked) is one identical 404 `customer_portal_unavailable`; rate limits per
+address (120 reads / 20 writes per 10 min) and per link (60 / 10), counted for
+every request valid or not, in `auth_rate_events` under a digest key; body capped
+at 16 KB before parsing, strict fields (unknown keys refused), comments at most
+500 characters with no control characters; `Cache-Control: no-store`,
+`Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`. The page is a whitelist
+(`PUBLIC_PAGE_KEYS`, `PUBLIC_COMMITMENT_KEYS`): SKU, display name, quantity,
+requested date, status, the customer's own last answer, and a promised date only
+when the link has `share_dates` AND the tenant set one. Never stock, cost,
+probability, notes, warehouses, supplier names, other customers or verdicts.
+The customer's answer ("received" / "the date does not work" + comment) is an
+append-only event, recorded under the link's creator (the bell, severity warning
+with reason `customer_date_objection` for an objection); it never edits a
+commitment.
+
+Schema (additive, `backend/inventory/customer_portal_migrations.py`):
+`customer_portal_links`, `customer_portal_promised_dates`,
+`customer_portal_events`; all cascade from `tenants`, listed in the erasure
+order and the export (without hashes). Events, audit vocabulary and the Rust
+mirrors: 7 `customer_portal.*` events; `LEGACY` 73 -> 80, target types 28 -> 29,
+audit actions 108 -> 115, stored actions 112 -> 119 (asserts updated).
+
+Not obvious: the stock table has one row per warehouse, so the display name is
+picked with a `LATERAL ... LIMIT 1`; a plain join repeated commitments (found by
+running against a real database). Python's route registries (`public_surface`,
+`UNAUTHENTICATED`, `PUBLIC`) iterate FastAPI routes and fail on a stale entry, so
+they are deliberately NOT edited; `backend/tests/test_customer_portal_registry.py`
+reads the Rust source instead (only the two token routes are unauthenticated,
+every other handler goes through `manager()`, Rust and Python vocabularies match,
+Caddy has no Python failover, copy exists in both languages).
+
+### Results (local, throwaway Postgres 16, TESTING_MODE=true)
+
+Contract harness, Python from this branch on `:8031`, Rust debug build on `:8041`:
+**490 cases, 486 PASS, 4 SKIP, 0 FAIL** (the 477 of the integrated run plus 13
+Rust-only portal cases: permission pairs, validation, whitelist shape, leak test,
+token probing with nine bad-token kinds, answers, revoke/reopen, cross-tenant
+scope, whole-tenant erasure). `cargo test`: 136 passed, 2 ignored. Registry
+pytest: 14 passed. A separate run of a Rust instance with `TESTING_MODE=false`
+confirmed the limiter: 60 reads of one link pass, the 61st is 429 from any
+address, and an unknown well-formed token is counted the same way.

@@ -200,9 +200,11 @@ async fn limit(state: &AppState, headers: &HeaderMap, token: &str, kind: Kind) -
 
 /// The only keys a commitment has on the public page. A test pins this list:
 /// adding a field to the page means editing it on purpose.
+#[cfg_attr(not(test), allow(dead_code))] // read by the tests that pin the page
 pub const PUBLIC_COMMITMENT_KEYS: [&str; 8] =
     ["id", "sku", "description", "quantity", "requested_date", "status", "promised_date", "my_response"];
 /// The only top-level keys of the public page.
+#[cfg_attr(not(test), allow(dead_code))]
 pub const PUBLIC_PAGE_KEYS: [&str; 6] = ["company", "customer", "language", "share_dates", "expires_at", "commitments"];
 
 /// One commitment row as the customer sees it. `promised_date` appears only
@@ -239,13 +241,18 @@ const MAX_COMMITMENTS: i64 = 500;
 
 /// A customer's commitments: matched on the lower-cased, trimmed name (the
 /// database folds both sides), withdrawn contract rows left out. The display
-/// name comes from the stock table; no other column of it is read.
+/// name comes from the stock table (one row per warehouse, so ONE name is
+/// picked, never a join that would repeat the commitment); no other column of
+/// it is read.
 async fn commitments_of(pool: &PgPool, tenant_id: &str, customer_key: &str) -> Result<Vec<Commitment>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT c.id, c.sku, COALESCE(NULLIF(btrim(s.display_name), ''), c.sku) AS description,
+        "SELECT c.id, c.sku, COALESCE(s.name, c.sku) AS description,
                 c.quantity, c.delivery_date, c.status, p.promised_date
            FROM committed_demand c
-           LEFT JOIN inventory_stock s ON s.tenant_id = c.tenant_id AND s.sku = c.sku
+           LEFT JOIN LATERAL (
+                SELECT btrim(s.display_name) AS name FROM inventory_stock s
+                 WHERE s.tenant_id = c.tenant_id AND s.sku = c.sku AND btrim(s.display_name) <> ''
+                 ORDER BY s.warehouse LIMIT 1) s ON TRUE
            LEFT JOIN customer_portal_promised_dates p ON p.commitment_id = c.id
           WHERE c.tenant_id = $1 AND lower(btrim(c.customer)) = $2 AND c.contract_withdrawn_at IS NULL
           ORDER BY c.delivery_date, c.sku, c.id
@@ -814,7 +821,7 @@ pub async fn create_link(
     .fetch_one(pool)
     .await?;
     record_event(pool, &user.tenant_id, &user.user_id, Event::CustomerPortalLinkCreated, Some(&id),
-        details(&[("customer", json!(customer)), ("share_dates", json!(share_dates))])).await;
+        details(&[("customer", json!(customer))])).await;
     let row = fetch_link(pool, &user.tenant_id, &id).await?;
     // The token is shown ONCE, here: only its hash is kept.
     let url = format!("{}/cliente/{}", state.settings.frontend_url.trim_end_matches('/'), token);
@@ -907,7 +914,7 @@ pub async fn update_link(
     .await?;
     if changed.is_some() {
         record_event(pool, &user.tenant_id, &user.user_id, Event::CustomerPortalLinkUpdated, Some(&link_id),
-            details(&[("customer", json!(customer)), ("share_dates", json!(share))])).await;
+            details(&[("customer", json!(customer))])).await;
     }
     let row = fetch_link(pool, &user.tenant_id, &link_id).await?;
     Ok(ok(json!({"link": present_link(&row)?, "changed": changed.is_some()})))

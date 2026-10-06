@@ -82,25 +82,33 @@ def test_the_warning_event_names_a_declared_reason():
 
 
 def _handlers() -> dict[str, str]:
-    parts = re.split(r"\npub async fn (\w+)", PORTAL)
-    # parts = [prefix, name1, body1, name2, body2, ...]
+    parts = re.split(r"\n(?:pub )?async fn (\w+)", PORTAL)
+    # parts = [prefix, name1, body1, name2, body2, ...]; a body ends at the next fn
     return {parts[i]: parts[i + 1] for i in range(1, len(parts), 2)}
 
 
+TENANT_HANDLERS = {"customers", "list_links", "create_link", "get_link", "update_link", "revoke_link",
+                   "reopen_link", "set_promised_date"}
+PUBLIC_HANDLERS = {"public_view", "public_respond"}
+
+
 def test_only_the_two_token_routes_are_unauthenticated():
-    routes = re.findall(r'\.route\("([^"]+)", ([^)]*)\)\n', PORTAL)
-    assert routes, "router() not found"
-    public = [path for path, _ in routes if "/public/" in path]
+    routes = re.findall(r'\.route\("([^"]+)"', PORTAL)
+    assert len(routes) == 8, "router() not found or a route was added without updating this test"
+    public = [path for path in routes if "/public/" in path]
     assert sorted(public) == [
         "/api/v1/customer-portal/public/{token}",
         "/api/v1/customer-portal/public/{token}/respond",
     ]
+    router = PORTAL[PORTAL.index("pub fn router()"):PORTAL.index("#[cfg(test)]")]
+    registered = set(re.findall(r"(?:get|post|put|patch)\((\w+)\)", router))
+    assert registered == TENANT_HANDLERS | PUBLIC_HANDLERS, registered
     handlers = _handlers()
-    for name, body in handlers.items():
-        if name in ("public_view", "public_respond"):
-            assert "manager(" not in body and "current_user" not in body
-        else:
-            assert "manager(" in body, f"{name} must authenticate through manager()"
+    for name in PUBLIC_HANDLERS | {"public_view_inner", "public_respond_inner"}:
+        body = handlers[name]
+        assert "manager(" not in body and "current_user" not in body, name
+    for name in TENANT_HANDLERS:
+        assert "manager(" in handlers[name], f"{name} must authenticate through manager()"
     # Management is never open to API keys: the single route declaration says so.
     assert "Exposure::Internal(" in PORTAL and "Exposure::Exposed" not in PORTAL
 
