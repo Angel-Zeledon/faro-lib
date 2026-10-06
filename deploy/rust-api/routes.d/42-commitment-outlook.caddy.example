@@ -1,0 +1,37 @@
+# DISABLED EXAMPLE. Rename to 42-commitment-outlook.caddy inside the gateway's
+# /etc/caddy/routes.d/ to serve the fulfillment outlook.
+#
+# Three NEW read routes (backend-rs/src/routes/commitment_outlook.rs). They have
+# no Python implementation, so unlike every other group in this directory there
+# is NO `api` upstream to fail over to: with the Rust container down they answer
+# 502 (the frontend panel then says the outlook is unavailable; the rest of the
+# committed-demand screen keeps working because it is served by Python).
+#
+#   GET /api/v1/committed-demand/outlook
+#   GET /api/v1/committed-demand/outlook/summary
+#   GET /api/v1/committed-demand/{id}/outlook
+#
+# Kill switch: move this file to routes.d/off/ and `caddy reload`; the routes
+# then 404 at Python (FastAPI's own 404) and the panel degrades the same way.
+@rs_commitment_outlook_lists {
+	method GET
+	path /api/v1/committed-demand/outlook /api/v1/committed-demand/outlook/summary
+}
+@rs_commitment_outlook_one {
+	method GET
+	path_regexp ^/api/v1/committed-demand/[^/]+/outlook$
+}
+handle @rs_commitment_outlook_lists {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
+handle @rs_commitment_outlook_one {
+	reverse_proxy api-rs:8021 {
+		health_uri /health
+		health_interval 5s
+		health_timeout 2s
+	}
+}
