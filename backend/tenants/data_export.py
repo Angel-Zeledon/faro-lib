@@ -136,6 +136,14 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("outbound_messages", "outbound_messages",
      "id, tenant_id, channel, kind, recipient, status, attempts, next_attempt_at, expires_at, "
      "last_error, created_by, created_at, last_attempt_at, sent_at"),
+    # The audit stream destination: where, whether it is on and how far it got.
+    # Never the signing secret.
+    ("audit_streams", "audit_streams",
+     "tenant_id, url, enabled, disabled_at, disabled_reason, cursor_xid, cursor_seq, "
+     "batch_size, consecutive_failures, failure_days, last_error, last_status_code, "
+     "last_attempt_at, last_success_at, delivered_records, created_by, created_at, "
+     "updated_at, secret_rotated_at"),
+    ("audit_stream_deliveries", "audit_stream_deliveries", "*"),
     ("user_permissions", "user_permissions", "*"),
     ("custom_roles", "custom_roles", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
@@ -338,6 +346,8 @@ _DELETE_ORDER: list[str] = [
     "webhook_deliveries",
     "outbound_messages",
     "webhook_transition_state",
+    "audit_stream_deliveries",
+    "audit_streams",
     "webhooks",
     "api_usage_daily",
     "api_keys",

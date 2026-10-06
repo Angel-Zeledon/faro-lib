@@ -1732,3 +1732,121 @@ differential harness first.
   Python and a real Rust server on one database: every refusal checks the rows
   with SQL, a certificate stored by Rust verifies a signature in Python, and
   "require SSO" set through Rust closes Python's password door.
+## 10. Audit stream: continuous audit export to a SIEM (new routes)
+
+Owner-approved feature, 2026-10-06. A tenant admin points the account at an
+HTTPS endpoint; every new `activity_logs` row (the audit trail AND the activity
+feed, one table) is delivered there at least once, in order per tenant, with a
+cursor, a delivery log, replay, and an automatic switch-off with an event after
+repeated failure. S3-compatible destinations are not built.
+
+**These are NEW routes with no Python twin: there is no Python failover.** The
+Caddy file is `deploy/rust-api/routes.d/38-audit-stream.caddy.example` and lists
+only `api-rs`. With the Rust container down (or the file in `off/`) the paths
+answer Python's `404 {"detail":"Not Found"}` and the Settings card says it could
+not load. Delivery is not affected by that, see below.
+
+| Piece | Where | Language |
+|---|---|---|
+| Schema (additive): `activity_logs.stream_xid/stream_seq` by column default, `audit_streams`, `audit_stream_deliveries` | `backend/audit_stream/migrations.py` | Python |
+| Config, cursor, replay, test, delivery-log routes (9) | `backend-rs/src/routes/audit_stream.rs`, `ssrf.rs` | Rust |
+| Delivery loop (worker component `audit-stream`) | `backend/audit_stream/service.py` | Python |
+| Pure rules (cursor text, NDJSON, backoff, disable) | `backend/audit_stream/policy.py` | Python |
+
+### Why the delivery loop is Python, not Rust
+
+Delivery has to POST through the webhook SSRF guard
+(`backend/datasources/network.py`: resolve, refuse private and metadata
+addresses, connect to the CHECKED address, never follow redirects) and reuses
+the webhook signing and failure-day code. Those exist once, in Python. Porting
+them would create a second guard to keep identical, for no gain: the loop is
+not on a request path. The no-duplicate / no-loss argument does not depend on
+the language (next section). The Rust routes only write `audit_streams`; the
+two meet through that table, so the loop keeps delivering when the Rust
+container is down. The Rust side re-implements only the SAVE-time half of the
+guard (`ssrf.rs`, same ranges, conservative: anything not clearly public is
+refused unless `SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true`); the authoritative check
+is Python's, on every delivery.
+
+### Position, ordering and why nothing is lost under concurrent writers
+
+`created_at` is the time of the INSERT, not of the COMMIT: a cursor on it would
+skip a row whose transaction commits after the reader moved past its timestamp.
+Instead every row gets two values from COLUMN DEFAULTS (so Python writers, Rust
+writers and any future writer are stamped without knowing): `stream_xid`, the
+writing transaction id (`pg_current_xact_id()`), and `stream_seq`, a global
+sequence. The stream position is `(stream_xid, stream_seq)`, and the reader
+takes only rows with `stream_xid < xmin` of its own snapshot
+(`pg_snapshot_xmin(pg_current_snapshot())`): every transaction below `xmin` has
+finished, so no row can later appear behind the cursor. The cursor moves by a
+compare-and-set in the same statement that checks the lease token, so a late
+success after a replay is discarded (logged `superseded`), never applied.
+
+* **At least once**: the cursor advances only after a 2xx, by the rows of that
+  request. A timeout after the receiver processed the batch resends the same
+  rows; the receiver dedupes on the record `id`.
+* **In order, per tenant**: `ORDER BY stream_xid, stream_seq`, one batch in
+  flight per tenant (lease, `FOR UPDATE SKIP LOCKED`, 120 s expiry for a dead
+  worker). The order is by writing transaction: two overlapping writers may
+  differ from wall-clock order; it is the same on every replay and each record
+  carries `at`.
+* **Cost**: one long-open transaction anywhere in the database holds every
+  stream back until it ends. That shows as `lag_seconds` / `pending_records`
+  in `GET /audit-stream`, never as a gap.
+* Rows written before the migration have NULL and are not streamed (history is
+  `GET /audit/export`). A new destination starts at "now"; `replay` goes back.
+* Proven by `backend/tests/test_audit_stream.py::TestOrderUnderConcurrentWriters`
+  (6 writers x 40 transactions with out-of-order commits against a draining
+  reader: every row exactly once, in order). Removing the `xmin` condition makes
+  the open-transaction cases fail.
+
+### Batch format (NDJSON, `application/x-ndjson`)
+
+One `POST` per batch (up to `batch_size`, default 500, max 1000 rows and
+1,000,000 bytes), UTF-8, one compact JSON object per line, `\n` after every
+line. Headers: `X-StockAI-Stream: audit`, `X-StockAI-Delivery` (per attempt),
+`X-StockAI-Batch-Records`, `X-StockAI-Batch-First`, `X-StockAI-Batch-Last`
+(cursors), `X-StockAI-Signature: t=<unix>,v1=<hex>` where
+`v1 = HMAC-SHA256(secret, "<t>." + raw body)`. Verify exactly like webhooks
+(`backend/webhooks/signing.py`: raw body, 300 s tolerance, constant-time
+compare). Answer any 2xx to acknowledge; anything else is retried from the same
+cursor (10 s, 30 s, 1 min, 5 min, 15 min, 40 min, then hourly).
+
+```json
+{"schema":"stockai.audit.v1","cursor":"3405:88121","id":"act_1f0c9a2b7e44",
+ "at":"2026-10-06T15:31:01.115860+00:00","tenant_id":"ten_...","actor":"usr_...",
+ "action":"audit.dataset.deleted","kind":"audit","event":"dataset.deleted",
+ "target_type":"dataset","resource":"ds_...","status":"success","context":{}}
+```
+
+`kind` is `audit` for what the audit trail covers (`event` and `target_type`
+are its normalised names) and `activity` for the rest of the feed (those two are
+null). `action` is the stored name. `cursor` is `"<xid>:<seq>"`, opaque to the
+receiver apart from being what `replay` accepts. A `kind:"test"` record
+(`cursor: null`) is sent by the test button and is not part of the stream.
+
+### Failure, switch-off and re-enable
+
+A failing destination is retried forever with the schedule above; a batch is
+never skipped. After 3 different days of failure with no success in between
+(the webhook rule) the stream is switched off (`enabled=false`,
+`disabled_reason=failing_for_days`) and the activity event
+`audit_stream.auto_disabled` (warning, reaches the bell) is recorded; an
+address that now resolves to a refused network is switched off at once
+(`host_refused`). The cursor is kept: re-enabling resumes exactly there, and
+the rows stay in `activity_logs` meanwhile. `replay` only goes BACK (a cursor
+ahead of the current one is `422 audit_stream_cursor_ahead`): a stream never
+skips. Deleting the destination also deletes its delivery log.
+
+### Verification (2026-10-06, throwaway Postgres 18, own ports)
+
+`cargo test` 131 passed; `backend/tests/test_audit_stream.py` 59 passed; the
+end-to-end run (Python API + Rust + a local HTTPS receiver with a self-signed
+certificate) covered connect, signed batches from Python- and Rust-written rows,
+an outage with recovery and no loss, replay, rotation, test, disable / enable,
+the 3-day auto-disable with its event, trail entries and delete. The contract
+section `run_audit_stream` in `tests/contract/contract_test.py` checks the
+Rust-only routes against the database (there is nothing to diff against).
+Not verified: a run against the production-sized `activity_logs` (the index is
+partial on `stream_xid IS NOT NULL`, empty on creation), the Caddy file against
+a real gateway, the screen in a browser.

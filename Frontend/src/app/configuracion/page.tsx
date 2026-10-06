@@ -32,6 +32,7 @@ import { SCREENS, canSee, type Screen } from '@/components/layout/navItems'
 import { useTenantFacts, type TenantFacts } from '@/hooks/useTenantFacts'
 import LegalLinks from '@/components/legal/LegalLinks'
 import InboundEmailCard from '@/components/inbound/InboundEmailCard'
+import AuditStreamCard from '@/components/audit/AuditStreamCard'
 
 interface Row { screen: Screen; descKey: string }
 interface Section { id: string; titleKey: string; rows: Row[] }
@@ -135,6 +136,12 @@ export default function SettingsHubPage() {
           {s.id === 'data' && user?.role === 'admin' && (
             <div style={{ borderTop: '1px solid var(--border)' }}>
               <InboundEmailCard />
+            </div>
+          )}
+          {/* Continuous audit export to the SIEM: admin only, like the trail itself. */}
+          {s.id === 'connect' && user?.role === 'admin' && (
+            <div style={{ borderTop: '1px solid var(--border)' }}>
+              <AuditStreamCard />
             </div>
           )}
         </HubSection>

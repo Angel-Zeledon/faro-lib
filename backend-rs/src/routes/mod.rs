@@ -1,6 +1,7 @@
 pub mod api_keys;
 pub mod audit;
 pub mod commitment_outlook;
+pub mod audit_stream;
 pub mod committed_demand;
 pub mod customer_portal;
 pub mod entitlements;
@@ -81,6 +82,14 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/audit", get(audit::list))
         .route("/api/v1/audit/filters", get(audit::filters_vocabulary))
         .route("/api/v1/audit/export", get(audit::export))
+        // Continuous audit export (new routes, no Python twin).
+        .route("/api/v1/audit-stream", get(audit_stream::get_config).put(audit_stream::put_config).delete(audit_stream::delete_config))
+        .route("/api/v1/audit-stream/enable", post(audit_stream::enable))
+        .route("/api/v1/audit-stream/disable", post(audit_stream::disable))
+        .route("/api/v1/audit-stream/rotate-secret", post(audit_stream::rotate_secret))
+        .route("/api/v1/audit-stream/replay", post(audit_stream::replay))
+        .route("/api/v1/audit-stream/test", post(audit_stream::test_delivery))
+        .route("/api/v1/audit-stream/deliveries", get(audit_stream::deliveries))
         // R4: purchase-order payments / cancellation, signal thresholds.
         .route("/api/v1/inventory/po/{po_log_id}/mark-paid", post(po_payments::mark_paid))
         .route("/api/v1/inventory/po/{po_log_id}/mark-unpaid", post(po_payments::mark_unpaid))

@@ -136,6 +136,14 @@ RUST_ONLY_ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("PATCH", "/roles/{role_id}"):                  _r("role.updated", "role", "role_id"),
     ("DELETE", "/roles/{role_id}"):                 _r("role.deleted", "role", "role_id"),
     ("PUT", "/users/{user_id}/custom-role"):        _r("user.role_assigned", "user", "user_id"),
+    # Continuous audit export (backend-rs/src/routes/audit_stream.rs).
+    ("PUT", "/audit-stream"):                       _r("audit_stream.configured", "audit_stream"),
+    ("DELETE", "/audit-stream"):                    _r("audit_stream.deleted", "audit_stream"),
+    ("POST", "/audit-stream/enable"):               _r("audit_stream.enabled", "audit_stream"),
+    ("POST", "/audit-stream/disable"):              _r("audit_stream.disabled", "audit_stream"),
+    ("POST", "/audit-stream/rotate-secret"):        _r("audit_stream.secret_rotated", "audit_stream"),
+    ("POST", "/audit-stream/replay"):               _r("audit_stream.replayed", "audit_stream"),
+    ("POST", "/audit-stream/test"):                 _r("audit_stream.tested", "audit_stream"),
 }
 ROUTES.update(RUST_ONLY_ROUTES)
 
@@ -239,6 +247,7 @@ LEGACY: dict[str, tuple[str, str]] = {
     "billing.plan_downgraded":         ("billing", "billing.plan_downgraded"),
     "billing.payment_failed":          ("billing", "billing.payment_failed"),
     "billing.subscription_changed":    ("billing", "billing.subscription_changed"),
+    "audit_stream.auto_disabled":      ("audit_stream", "audit_stream.auto_disabled"),
 }
 
 # The target types the trail can be filtered by.

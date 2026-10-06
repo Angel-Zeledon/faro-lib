@@ -2074,6 +2074,8 @@ from backend.inventory.demand_plan_migrations import MIGRATIONS as _DEMAND_PLANS
 _MIGRATIONS += _DEMAND_PLANS
 from backend.webhooks.migrations import MIGRATIONS as _WEBHOOK_DELIVERY  # noqa: E402
 _MIGRATIONS += _WEBHOOK_DELIVERY
+from backend.audit_stream.migrations import MIGRATIONS as _AUDIT_STREAM  # noqa: E402
+_MIGRATIONS += _AUDIT_STREAM
 from backend.inventory.purchase_budget_migrations import MIGRATIONS as _PURCHASE_BUDGETS  # noqa: E402
 _MIGRATIONS += _PURCHASE_BUDGETS
 from backend.inventory.po_confirmation_migrations import MIGRATIONS as _PO_CONFIRMATIONS  # noqa: E402
