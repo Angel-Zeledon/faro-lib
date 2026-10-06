@@ -2807,6 +2807,9 @@ def run(args) -> int:
         results += run_r3(args, fx, db)
         results += run_r4(args, fx, db)
         results += run_cd_resync(args, fx, db)
+        # Custom roles (Rust-only routes + enforcement on both): own file.
+        from custom_roles_cases import run_custom_roles
+        results += run_custom_roles(args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
