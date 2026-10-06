@@ -503,6 +503,35 @@ EVENTS: dict[str, EventSpec] = {
         kind="billing", severity=INFO,
         detail_keys=("provider", "status", "renews_at"),
     ),
+    # ── Scheduled management reports (backend/scheduled_reports/) ────────────
+    # "queued" is what is true: the report was built and handed to the outbox.
+    # Whether the mail then left is the outbox's row, shown in the run history.
+    "scheduled_report.queued": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("schedule_name", "recipients", "skipped"),
+    ),
+    # The report could not be built or could not be handed over at all.
+    "scheduled_report.failed": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("schedule_name",),
+    ),
+    # Stopped after repeated failures (or with nobody left to send to): the
+    # management team stops receiving it until somebody resumes it.
+    "scheduled_report.auto_paused": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("schedule_name", "failures"),
+    ),
+    # A due run that the worker could not make in time (it was down for longer
+    # than the catch-up window). Skipped, not sent late.
+    "scheduled_report.skipped": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("schedule_name",),
+    ),
+    # Somebody used the link in a report to stop receiving it.
+    "scheduled_report.unsubscribed": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("schedule_name", "email"),
+    ),
 }
 
 
@@ -573,6 +602,11 @@ REASONS: tuple[str, ...] = (
     "sql_source_refresh_failed",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
+    # scheduled management reports
+    "report_build_failed",
+    "report_failed_repeatedly",
+    "report_missed_window",
+    "report_no_recipients",
     # generic tail — an event whose cause the call site genuinely does not know
     "unknown",
 )

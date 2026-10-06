@@ -118,6 +118,17 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # webhook as a `billing.*` event (LEGACY below), with "system" as actor.
     ("POST", "/billing/checkout"):                  _r("billing.checkout_started", "billing"),
     ("POST", "/billing/portal"):                    _r("billing.portal_opened", "billing"),
+    # Scheduled management reports (served by the Rust API; the catalogue is
+    # shared data). Who defined, changed, paused or removed a recurring report,
+    # and which external address an admin allowed to receive them.
+    ("POST", "/scheduled-reports"):                 _r("report_schedule.created", "report_schedule"),
+    ("PATCH", "/scheduled-reports/{schedule_id}"):  _r("report_schedule.updated", "report_schedule", "schedule_id"),
+    ("DELETE", "/scheduled-reports/{schedule_id}"): _r("report_schedule.deleted", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/{schedule_id}/pause"):  _r("report_schedule.paused", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/{schedule_id}/resume"): _r("report_schedule.resumed", "report_schedule", "schedule_id"),
+    ("POST", "/scheduled-reports/allowed-recipients"):   _r("report_recipient.allowed", "report_recipient"),
+    ("DELETE", "/scheduled-reports/allowed-recipients/{email}"):
+        _r("report_recipient.removed", "report_recipient", "email"),
 }
 
 # Rows that already carry who/what, mapped onto the audit shape for reading.
@@ -199,6 +210,9 @@ LEGACY: dict[str, tuple[str, str]] = {
     "billing.plan_downgraded":         ("billing", "billing.plan_downgraded"),
     "billing.payment_failed":          ("billing", "billing.payment_failed"),
     "billing.subscription_changed":    ("billing", "billing.subscription_changed"),
+    # Written by the report worker and by the unsubscribe link (actor "system").
+    "scheduled_report.auto_paused":    ("report_schedule", "report_schedule.auto_paused"),
+    "scheduled_report.unsubscribed":   ("report_schedule", "report_schedule.unsubscribed"),
 }
 
 # The target types the trail can be filtered by.

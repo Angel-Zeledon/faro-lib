@@ -164,6 +164,22 @@ def _send_po_approval_decision(row: dict, p: dict) -> None:
         comment=p.get("comment"), url=_order_link(p["po_log_id"]), tenant_id=tenant), tenant)
 
 
+def _send_scheduled_report(row: dict, p: dict) -> None:
+    from backend.notifications import email as m
+    from backend.scheduled_reports import service as reports
+    tenant = row["tenant_id"]
+    _email_ready(tenant)
+    try:
+        subject, html = reports.render_for_delivery(tenant, p["run_id"], p["recipient_id"])
+    except reports.DeliveryRefused as exc:
+        raise OutboxRefused(exc.reason) from None
+    try:
+        m._send(row["recipient"], subject, html, tenant_id=tenant)
+    except Exception as exc:  # noqa: BLE001 - transient by default, like every sender
+        log.error("Failed to send scheduled report to %s: %s", row["recipient"], exc)
+        raise OutboxTransient(m.failure_reason(tenant)) from None
+
+
 def _send_whatsapp_verification_code(row: dict, p: dict) -> None:
     from backend.notifications import whatsapp as wa
     from backend.notifications.locale import render_es
@@ -189,6 +205,7 @@ KINDS: dict[tuple[str, str], Kind] = {(k.channel, k.name): k for k in [
           _send_po_approval_request),
     _kind("email", "po_approval_decision", ("po_log_id", "amount", "approved"),
           ("requester_id", "decider_id", "comment"), _send_po_approval_decision),
+    _kind("email", "scheduled_report", ("run_id", "recipient_id"), (), _send_scheduled_report),
     _kind("whatsapp", "verification_code", ("code",), (), _send_whatsapp_verification_code),
 ]}
 

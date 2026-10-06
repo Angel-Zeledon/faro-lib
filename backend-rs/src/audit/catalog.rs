@@ -78,6 +78,13 @@ pub const ROUTES: &[AuditRoute] = &[
     r("GET", "/audit/export", "export.audit_log", "audit_log", None),
     r("POST", "/billing/checkout", "billing.checkout_started", "billing", None),
     r("POST", "/billing/portal", "billing.portal_opened", "billing", None),
+    r("POST", "/scheduled-reports", "report_schedule.created", "report_schedule", None),
+    r("PATCH", "/scheduled-reports/{schedule_id}", "report_schedule.updated", "report_schedule", Some("schedule_id")),
+    r("DELETE", "/scheduled-reports/{schedule_id}", "report_schedule.deleted", "report_schedule", Some("schedule_id")),
+    r("POST", "/scheduled-reports/{schedule_id}/pause", "report_schedule.paused", "report_schedule", Some("schedule_id")),
+    r("POST", "/scheduled-reports/{schedule_id}/resume", "report_schedule.resumed", "report_schedule", Some("schedule_id")),
+    r("POST", "/scheduled-reports/allowed-recipients", "report_recipient.allowed", "report_recipient", None),
+    r("DELETE", "/scheduled-reports/allowed-recipients/{email}", "report_recipient.removed", "report_recipient", Some("email")),
 ];
 
 /// legacy stored action -> (target_type, audit action name).
@@ -155,6 +162,8 @@ pub const LEGACY: &[(&str, &str, &str)] = &[
     ("billing.plan_downgraded", "billing", "billing.plan_downgraded"),
     ("billing.payment_failed", "billing", "billing.payment_failed"),
     ("billing.subscription_changed", "billing", "billing.subscription_changed"),
+    ("scheduled_report.auto_paused", "report_schedule", "report_schedule.auto_paused"),
+    ("scheduled_report.unsubscribed", "report_schedule", "report_schedule.unsubscribed"),
 ];
 
 fn sorted_unique(mut v: Vec<String>) -> Vec<String> {
@@ -230,15 +239,28 @@ mod tests {
     fn vocabularies_have_the_python_sizes() {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
-        assert_eq!(ROUTES.len(), 56);
-        assert_eq!(LEGACY.len(), 73);
-        assert_eq!(target_types().len(), 28);
-        assert_eq!(audit_actions().len(), 108);
-        assert_eq!(all_stored_actions().len(), 112);
+        assert_eq!(ROUTES.len(), 63);
+        assert_eq!(LEGACY.len(), 75);
+        assert_eq!(target_types().len(), 30);
+        assert_eq!(audit_actions().len(), 117);
+        assert_eq!(all_stored_actions().len(), 121);
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),
             vec!["data.stock_imported".to_string(), "data.stock_import_partial".to_string()]);
         assert_eq!(route("DELETE", "/webhooks/{webhook_id}").unwrap().target_param, Some("webhook_id"));
+    }
+
+    /// ROUTES and LEGACY re-counted from the Python source, so an entry added
+    /// on one side only turns this red before any contract run.
+    #[test]
+    fn entry_counts_are_read_from_catalog_py() {
+        let src = include_str!("../../../backend/audit/catalog.py");
+        let routes = src.split("ROUTES: dict[tuple[str, str], AuditRoute] = {").nth(1).unwrap().split("\n}\n").next().unwrap();
+        let legacy = src.split("LEGACY: dict[str, tuple[str, str]] = {").nth(1).unwrap().split("\n}\n").next().unwrap();
+        let route_keys = regex::Regex::new(r#"(?m)^\s+\("(GET|POST|PUT|PATCH|DELETE)", "[^"]+"\):"#).unwrap();
+        let legacy_keys = regex::Regex::new(r#"(?m)^\s+"[a-z_.]+":\s+\("#).unwrap();
+        assert_eq!(route_keys.find_iter(routes).count(), ROUTES.len());
+        assert_eq!(legacy_keys.find_iter(legacy).count(), LEGACY.len());
     }
 }

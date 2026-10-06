@@ -126,6 +126,12 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("outbound_messages", "outbound_messages",
      "id, tenant_id, channel, kind, recipient, status, attempts, next_attempt_at, expires_at, "
      "last_error, created_by, created_at, last_attempt_at, sent_at"),
+    # Scheduled management reports: the definition, who gets it, the external
+    # addresses an admin allowed, and what each period sent.
+    ("report_schedules", "report_schedules", "*"),
+    ("report_schedule_recipients", "report_schedule_recipients", "*"),
+    ("report_external_allowlist", "report_external_allowlist", "*"),
+    ("report_runs", "report_runs", "*"),
     ("user_permissions", "user_permissions", "*"),
     # Which sign-in providers each person linked. Who they are at Google /
     # Microsoft / Apple is the person's data, so it travels with the export.
@@ -304,6 +310,10 @@ _DELETE_ORDER: list[str] = [
     "inbound_email_addresses",
     "webhook_deliveries",
     "outbound_messages",
+    "report_runs",
+    "report_schedule_recipients",
+    "report_schedules",
+    "report_external_allowlist",
     "webhook_transition_state",
     "webhooks",
     "api_usage_daily",

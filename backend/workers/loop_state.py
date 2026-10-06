@@ -40,8 +40,11 @@ log = logging.getLogger(__name__)
 INVENTORY_ALERTS = "inventory_alerts"
 MONTHLY_OVERSTOCK = "monthly_overstock"
 OPERATOR_DIGEST = "operator_digest"
+# Polled every minute (backend/scheduled_reports): `last_boundary` is the last
+# pass, so a stalled report scheduler shows up in /health as an old timestamp.
+SCHEDULED_REPORTS = "scheduled_reports"
 
-LOOPS = (INVENTORY_ALERTS, MONTHLY_OVERSTOCK, OPERATOR_DIGEST)
+LOOPS = (INVENTORY_ALERTS, MONTHLY_OVERSTOCK, OPERATOR_DIGEST, SCHEDULED_REPORTS)
 
 # How late a missed boundary may still be run.
 #
