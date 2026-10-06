@@ -165,6 +165,8 @@ LEGACY: dict[str, tuple[str, str]] = {
     "purchase.approval_requested":     ("purchase_order", "purchase_order.approval_requested"),
     "purchase.approval_approved":       ("purchase_order", "purchase_order.approval_approved"),
     "purchase.approval_rejected":       ("purchase_order", "purchase_order.approval_rejected"),
+    "purchase.approval_links_sent":    ("purchase_order", "purchase_order.approval_links_sent"),
+    "purchase.approval_links_revoked": ("purchase_order", "purchase_order.approval_links_revoked"),
     "forecast.adjusted":               ("forecast_adjustment", "forecast_adjustment.created"),
     "forecast.spike_excluded":         ("spike_edit", "spike_edit.created"),
     "forecast.spike_restored":         ("spike_edit", "spike_edit.reverted"),

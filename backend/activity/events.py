@@ -289,13 +289,26 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("reference", "value"),
     ),
+    # `channel` is how the decision was taken: absent for the app, `message`
+    # for a decision link in an email or WhatsApp message.
     "purchase.approval_approved": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("reference", "value", "decision_comment"),
+        detail_keys=("reference", "value", "decision_comment", "channel"),
     ),
     "purchase.approval_rejected": EventSpec(
         kind="purchase", severity=INFO,
-        detail_keys=("reference", "value", "decision_comment"),
+        detail_keys=("reference", "value", "decision_comment", "channel"),
+    ),
+    # Decision links (approve or reject from a message). Sent and revoked are
+    # acts of a person on an order, so the trail shows them; the decision itself
+    # is the approval_approved / approval_rejected event above.
+    "purchase.approval_links_sent": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "count"),
+    ),
+    "purchase.approval_links_revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("reference", "count"),
     ),
 
     # ── Sales received by e-mail (backend/inbound_email/) ────────────────────

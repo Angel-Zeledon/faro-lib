@@ -323,7 +323,7 @@ def _latest(po_log_id: str) -> Optional[dict]:
 def history(tenant_id: str, po_log_id: str) -> list[dict]:
     rows = query(
         """SELECT a.id, a.status, a.amount, a.requested_by, a.requested_at, a.request_note,
-                  a.decided_by, a.decided_at, a.comment,
+                  a.decided_by, a.decided_at, a.comment, a.decided_channel,
                   rq.full_name AS requested_by_name, rq.email AS requested_by_email,
                   dc.full_name AS decided_by_name, dc.email AS decided_by_email
              FROM po_approvals a
@@ -399,7 +399,7 @@ def request_approval(tenant_id: str, po_log_id: str, user_id: str,
     clean_note = (note or "").strip()[:MAX_COMMENT_LENGTH] or None
     try:
         with transaction() as conn:
-            query_one(
+            created = query_one(
                 """INSERT INTO po_approvals
                        (tenant_id, po_log_id, status, amount, rule_id, requested_by, request_note)
                    VALUES (%s, %s, 'requested', %s, %s, %s, %s) RETURNING id""",
@@ -419,16 +419,27 @@ def request_approval(tenant_id: str, po_log_id: str, user_id: str,
 
     log.info("[po-approval] REQUEST tenant=%s po=%s by=%s amount=%s",
              tenant_id, po_log_id, user_id, amount)
-    notified = _notify_approvers(tenant_id, po, amount, user_id, eligible)
+    notified = _notify_approvers(tenant_id, po, amount, user_id, eligible,
+                                 approval_id=created["id"])
     return {**describe(tenant_id, po_log_id, user_id), "changed": True, "notified": notified}
 
 
+DECISION_CHANNELS = (None, "message")
+
+
 def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
-           comment: Optional[str] = None) -> dict:
+           comment: Optional[str] = None, *, channel: Optional[str] = None) -> dict:
     """Approve or reject the open request. Idempotent: repeating the decision
-    that was already taken changes nothing; the opposite one is refused."""
+    that was already taken changes nothing; the opposite one is refused.
+
+    `channel` is how the decision reached us: None = the app, `message` = a
+    decision link in an email or WhatsApp message (`po_approval_link_service`).
+    The rules are the same for both: this one function is the only place an
+    approval is decided, so a link can never do what the app would refuse."""
     if decision not in ("approved", "rejected"):
         raise ValueError(decision)
+    if channel not in DECISION_CHANNELS:
+        raise ValueError(channel)
     po = _get_po(tenant_id, po_log_id)
     clean_comment = (comment or "").strip()[:MAX_COMMENT_LENGTH] or None
     if decision == "rejected" and (clean_comment is None
@@ -464,11 +475,17 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
     with transaction() as conn:
         won = query_one(
             """UPDATE po_approvals
-                  SET status = %s, decided_by = %s, decided_at = NOW(), comment = %s
+                  SET status = %s, decided_by = %s, decided_at = NOW(), comment = %s,
+                      decided_channel = %s
                 WHERE id = %s AND tenant_id = %s AND status = 'requested'
             RETURNING id""",
-            (decision, user_id, clean_comment, latest["id"], tenant_id), conn=conn)
+            (decision, user_id, clean_comment, channel, latest["id"], tenant_id), conn=conn)
         if won is not None:
+            # A decided request needs no more links: every open one, for every
+            # approver and channel, dies with the decision (in the same
+            # transaction, so no link outlives it).
+            from backend.inventory import po_approval_link_service as links
+            links.revoke_open(tenant_id, latest["id"], reason="decided", conn=conn)
             execute(
                 """UPDATE inventory_po_log
                       SET approval_status = %s, approved_amount = %s
@@ -495,7 +512,7 @@ def decide(tenant_id: str, po_log_id: str, user_id: str, decision: str,
                       float(latest["amount"]), user_id)
     return {**describe(tenant_id, po_log_id, user_id), "changed": True,
             "po_number": po.get("po_number"), "amount": float(latest["amount"]),
-            "comment": clean_comment}
+            "comment": clean_comment, "channel": channel}
 
 
 def list_pending(tenant_id: str, user_id: str) -> dict:
@@ -590,25 +607,43 @@ def _amount_text(tenant_id: str, amount: float) -> str:
 
 
 def _notify_approvers(tenant_id: str, po: dict, amount: float, requester_id: str,
-                      eligible: list[dict]) -> int:
+                      eligible: list[dict], approval_id: Optional[str] = None) -> int:
     """Email every approver who can decide this order, through the existing
     transport. The bell reaches them through the attention rows (the pending
     list is derived live), so this is the push for somebody not looking at the
     app. Returns how many mails left; a failure is logged, never raised: the
     request itself is already written."""
+    from backend.inventory import po_approval_link_service as links
     from backend.inventory.roi_service import format_po_number
     from backend.notifications import email as email_mod
     requester = query_one("SELECT full_name, email FROM users WHERE id = %s", (requester_id,))
     ref = format_po_number(po.get("po_number"), po["id"])
-    sent = 0
-    for a in eligible:
-        if a["id"] == requester_id:
-            continue
+    recipients = [a for a in eligible if a["id"] != requester_id]
+    # One decision link per approver (and WhatsApp number), only where the
+    # installation turned the feature on; a failure here never blocks the
+    # request mail: the approver still has the app link.
+    issued: list[dict] = []
+    if approval_id and links.enabled():
         try:
+            issued = links.issue_links(tenant_id, po["id"], approval_id, recipients,
+                                       created_by=requester_id)
+        except Exception:   # noqa: BLE001 - see the docstring
+            log.exception("[po-approval] decision links failed tenant=%s po=%s", tenant_id, po["id"])
+    if issued:
+        links.queue_whatsapp_links(tenant_id, po["id"], amount, issued, created_by=requester_id)
+        from backend.activity.events import record_event
+        record_event(tenant_id, requester_id, "purchase.approval_links_sent", resource=po["id"],
+                     details={"reference": ref, "count": len(issued)})
+    email_token = {i["approver_id"]: i["token"] for i in issued if i["channel"] == "email"}
+    sent = 0
+    for a in recipients:
+        try:
+            token = email_token.get(a["id"])
             if email_mod.send_po_approval_request_email(
                     to=a["email"], approver_name=_name_of(a) or "", requester_name=_name_of(requester) or "",
                     po_ref=ref, amount_text=_amount_text(tenant_id, amount),
-                    url=_order_link(po["id"]), tenant_id=tenant_id):
+                    url=_order_link(po["id"]), tenant_id=tenant_id,
+                    decision_url=links.decision_url(token) if token else None):
                 sent += 1
         except Exception:   # noqa: BLE001 — see the docstring
             log.exception("[po-approval] approver email failed tenant=%s po=%s", tenant_id, po["id"])

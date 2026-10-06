@@ -2058,6 +2058,9 @@ from backend.inventory.po_confirmation_migrations import MIGRATIONS as _PO_CONFI
 _MIGRATIONS += _PO_CONFIRMATIONS
 from backend.notifications.outbox_migrations import MIGRATIONS as _OUTBOX  # noqa: E402
 _MIGRATIONS += _OUTBOX
+# Decision links for purchase-order approvals (after approvals and the outbox).
+from backend.inventory.po_approval_link_migrations import MIGRATIONS as _PO_APPROVAL_LINKS  # noqa: E402
+_MIGRATIONS += _PO_APPROVAL_LINKS
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
