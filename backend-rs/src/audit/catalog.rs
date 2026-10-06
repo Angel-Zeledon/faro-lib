@@ -129,6 +129,13 @@ pub const LEGACY: &[(&str, &str, &str)] = &[
     ("committed_demand.created", "committed_demand", "committed_demand.created"),
     ("committed_demand.imported", "committed_demand", "committed_demand.imported"),
     ("committed_demand.changed", "committed_demand", "committed_demand.changed"),
+    ("customer_portal.link_created", "customer_portal_link", "customer_portal_link.created"),
+    ("customer_portal.link_revoked", "customer_portal_link", "customer_portal_link.revoked"),
+    ("customer_portal.link_reopened", "customer_portal_link", "customer_portal_link.reopened"),
+    ("customer_portal.link_updated", "customer_portal_link", "customer_portal_link.updated"),
+    ("customer_portal.promise_set", "customer_portal_link", "customer_portal_link.promise_set"),
+    ("customer_portal.received", "customer_portal_link", "customer_portal_link.acknowledged"),
+    ("customer_portal.date_objected", "customer_portal_link", "customer_portal_link.date_objected"),
     ("supply_contract.created", "supply_contract", "supply_contract.created"),
     ("supply_contract.revised", "supply_contract", "supply_contract.revised"),
     ("supply_contract.status_changed", "supply_contract", "supply_contract.status_changed"),
@@ -231,10 +238,10 @@ mod tests {
         // python -c "from backend.audit.catalog import *; from backend.audit.service import audit_actions;
         //   print(len(ROUTES), len(LEGACY), len(TARGET_TYPES), len(audit_actions()), len(all_stored_actions()))"
         assert_eq!(ROUTES.len(), 56);
-        assert_eq!(LEGACY.len(), 73);
-        assert_eq!(target_types().len(), 28);
-        assert_eq!(audit_actions().len(), 108);
-        assert_eq!(all_stored_actions().len(), 112);
+        assert_eq!(LEGACY.len(), 80);
+        assert_eq!(target_types().len(), 29);
+        assert_eq!(audit_actions().len(), 115);
+        assert_eq!(all_stored_actions().len(), 119);
         assert!(target_types().contains(&"audit_log".to_string()));
         assert!(all_stored_actions().contains(&"api_write".to_string()));
         assert_eq!(stored_for_action("bulk_import.stock"),

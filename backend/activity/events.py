@@ -166,6 +166,40 @@ EVENTS: dict[str, EventSpec] = {
         kind="purchase", severity=INFO,
         detail_keys=("sku", "status"),
     ),
+    # The customer portal (backend-rs/src/routes/customer_portal.rs): a private,
+    # read-only link where a corporate customer sees their own commitments. The
+    # tenant's acts carry the person's name; the customer's two answers are
+    # recorded under the person who made the link, and never change a commitment.
+    "customer_portal.link_created": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "share_dates"),
+    ),
+    "customer_portal.link_revoked": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer",),
+    ),
+    "customer_portal.link_reopened": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer",),
+    ),
+    "customer_portal.link_updated": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "share_dates"),
+    ),
+    "customer_portal.promise_set": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku", "promised_date"),
+    ),
+    "customer_portal.received": EventSpec(
+        kind="purchase", severity=INFO,
+        detail_keys=("customer", "sku"),
+    ),
+    # The customer says the date does not work: a person must read the comment
+    # and decide, so it reaches the bell.
+    "customer_portal.date_objected": EventSpec(
+        kind="purchase", severity=WARNING,
+        detail_keys=("customer", "sku", "delivery_date"),
+    ),
     # Blanket contracts: every save is a new revision, so the feed names who
     # created, revised, activated, closed or cancelled one.
     "supply_contract.created": EventSpec(
@@ -529,6 +563,9 @@ REASONS: tuple[str, ...] = (
     # a supplier answered the confirmation link with a different date/quantity
     # or declined a line; nothing applies until the buyer accepts it
     "supplier_proposed_changes",
+    # a customer said, on the customer portal, that a commitment's date does not
+    # work; the commitment itself is unchanged until a person edits it
+    "customer_date_objection",
     # ceilings
     "plan_limit_reached",
     # account and access — the WHY of a role change or a new machine credential

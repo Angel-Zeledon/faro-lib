@@ -57,6 +57,13 @@ pub enum Event {
     ApiKeyRevoked,
     SpikeExcluded,
     SpikeRestored,
+    CustomerPortalLinkCreated,
+    CustomerPortalLinkRevoked,
+    CustomerPortalLinkReopened,
+    CustomerPortalLinkUpdated,
+    CustomerPortalPromiseSet,
+    CustomerPortalReceived,
+    CustomerPortalDateObjected,
 }
 
 impl Event {
@@ -79,6 +86,21 @@ impl Event {
             Event::ApiKeyRevoked => ("account.api_key_revoked", "account", "warning", &["key_name"]),
             Event::SpikeExcluded => ("forecast.spike_excluded", "training", "info", &["sku", "period", "spike_reason"]),
             Event::SpikeRestored => ("forecast.spike_restored", "training", "info", &["sku", "period", "spike_reason"]),
+            Event::CustomerPortalLinkCreated => (
+                "customer_portal.link_created", "purchase", "info", &["customer", "share_dates"],
+            ),
+            Event::CustomerPortalLinkRevoked => ("customer_portal.link_revoked", "purchase", "info", &["customer"]),
+            Event::CustomerPortalLinkReopened => ("customer_portal.link_reopened", "purchase", "info", &["customer"]),
+            Event::CustomerPortalLinkUpdated => (
+                "customer_portal.link_updated", "purchase", "info", &["customer", "share_dates"],
+            ),
+            Event::CustomerPortalPromiseSet => (
+                "customer_portal.promise_set", "purchase", "info", &["customer", "sku", "promised_date"],
+            ),
+            Event::CustomerPortalReceived => ("customer_portal.received", "purchase", "info", &["customer", "sku"]),
+            Event::CustomerPortalDateObjected => (
+                "customer_portal.date_objected", "purchase", "warning", &["customer", "sku", "delivery_date"],
+            ),
         }
     }
 }
