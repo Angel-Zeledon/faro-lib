@@ -2790,6 +2790,9 @@ def run_delegation(args, fx: Fixture, db) -> list:
 
     # The workflow: the analyst may approve, a rule needs approval above 500,
     # three orders worth 1000 asked for by the admin.
+    # Invited people have no password yet, so their status is not 'active'.
+    cur.execute("UPDATE users SET status = 'active' WHERE id IN (%s, %s, %s)",
+                (fx.analyst_id, sub_id, fx.viewer_id))
     cur.execute("UPDATE users SET can_approve_po = TRUE WHERE id = %s", (fx.analyst_id,))
     cur.execute("""INSERT INTO po_approval_rules (tenant_id, threshold, created_by)
                    VALUES (%s, 500, %s)""", (fx.tenant_id, fx.admin_id))
