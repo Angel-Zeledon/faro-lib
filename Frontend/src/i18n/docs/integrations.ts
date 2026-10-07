@@ -28,7 +28,7 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
         'Conecta tu ERP, tu punto de venta o tu propio sistema a StockAI con una API key: el mismo trabajo que haces en la app, ' +
         'sin que nadie la abra.',
       blocks: [
-        { t: 'note', tone: 'info', text: 'La API viene con el plan completo y el corporativo. En el plan gratis y en las cuentas de prueba no hay llaves: la pantalla [API](app:/api) muestra una tarjeta «Disponible en el plan completo».' },
+        { t: 'note', tone: 'info', text: 'La API viene con el código fuente. Si tu cuenta no la tiene habilitada (por ejemplo, una cuenta de prueba), no hay llaves: la pantalla [API](app:/api) muestra una tarjeta de función no disponible.' },
         { t: 'p', text: 'La API sirve para que otro sistema haga lo que tú harías a mano: subir el export de ventas, pedir un recálculo, leer el semáforo y registrar la orden de compra. Esta página explica cómo funciona sin entrar en código; la referencia completa, endpoint por endpoint y con ejemplos, está en [la documentación para desarrolladores](/desarrolladores).' },
         { t: 'h2', id: 'keys', text: 'Las llaves de API' },
         { t: 'p', text: 'Una llave se crea en [Automatización](app:/automatizacion), pestaña «API Keys», con «Generar key». Le pones un nombre para reconocerla (por ejemplo «Integración ERP») y eliges qué puede hacer:' },
@@ -37,7 +37,7 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
           ['Leer y escribir', 'Actúa como un **analista**: además sube archivos, encola entrenamientos y registra órdenes de compra.'],
         ] },
         { t: 'p', text: 'La llave completa empieza por `sk_live_` y **se muestra una sola vez**, al crearla. StockAI no la guarda en ningún lado donde se pueda volver a leer: si la pierdes, crea otra y revoca la anterior. Revocar es inmediato; lo que estuviera usando esa llave deja de funcionar en la siguiente llamada.' },
-        { t: 'note', tone: 'info', text: 'En el plan completo caben **tres** llaves; en el plan corporativo no hay tope. Ver [Límites de los planes](/docs/administracion/limites-del-plan).' },
+        { t: 'note', tone: 'info', text: 'La cuenta puede tener un tope de llaves. Ver [Límites de uso](/docs/administracion/limites-del-plan).' },
         { t: 'h2', id: 'calling', text: 'Cómo se hace una llamada' },
         { t: 'p', text: 'Todas las rutas cuelgan de `/api/v1` en el dominio de tu instalación, y la llave va en la cabecera `Authorization`:' },
         { t: 'code', text: PLANNING_CURL },
@@ -45,8 +45,7 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
         { t: 'p', text: 'Las respuestas correctas traen tu contenido dentro de `data`. Los errores traen un `error_code` estable y un texto en inglés en `detail`. Si tu sistema necesita decidir qué hacer ante un error, que lo decida por `error_code`: el texto puede cambiar de redacción, el código no.' },
         { t: 'h2', id: 'limits', text: 'Límites y consumo' },
         { t: 'ul', items: [
-          '**120 llamadas por minuto por llave**, en cualquier plan que incluya la API.',
-          '**2.000 llamadas por día por llave** en el plan completo; sin tope diario en el plan corporativo.',
+          '**120 llamadas por minuto por llave**.',
           'Al pasarte recibes un `429` con la cabecera `Retry-After`, que dice cuántos segundos esperar antes de reintentar.',
           'Cada llamada que pasa todos los controles suma uno al consumo del día de esa llave. Las llamadas rechazadas no cuentan. Un administrador ve el consumo por clave y por día en la pantalla [API](app:/api).',
         ] },
@@ -84,13 +83,13 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
         'StockAI habla el Model Context Protocol: un asistente de IA como Claude puede leer tu semáforo y decirte qué comprar hoy. ' +
         'Solo lee; nunca cambia nada.',
       blocks: [
-        { t: 'note', tone: 'info', text: 'El acceso por MCP viene con el plan completo y el corporativo; usa una llave de API, que el plan gratis y las cuentas de prueba no tienen.' },
+        { t: 'note', tone: 'info', text: 'El acceso por MCP viene con el código fuente; usa una llave de API, que las cuentas de prueba no tienen.' },
         { t: 'p', text: 'MCP es el protocolo con el que los asistentes de IA se conectan a herramientas externas. StockAI ofrece un servidor MCP en tu propia instalación, para que le preguntes a tu asistente «¿qué compro hoy?» y la respuesta salga de tus datos, no de suposiciones.' },
         { t: 'h2', id: 'endpoint', text: 'Dónde está y cómo se entra' },
         { t: 'ul', items: [
           'La dirección es `/api/v1/mcp` en el dominio de tu instalación; la pantalla [API](app:/api) la muestra completa en «Conecta tu asistente (MCP)».',
           'Se entra con una llave de API normal, en la cabecera `Authorization: Bearer sk_live_...`. Una llave «Solo leer» alcanza para todo.',
-          'Comparte el mismo límite que la API: 120 llamadas por minuto por llave, y el tope diario de tu plan.',
+          'Comparte el mismo límite que la API: 120 llamadas por minuto por llave.',
           'Las preguntas se mandan con `POST`. Un `GET` a la misma dirección responde `405`: el servidor no abre un canal de eventos, porque todo cabe en la respuesta de cada pregunta.',
         ] },
         { t: 'h2', id: 'tools', text: 'Las cinco herramientas' },
@@ -162,9 +161,9 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
         { t: 'dl', items: [
           ['Órdenes a proveedores', '«Enviar pedido» en [Pedidos](/docs/uso-diario/pedidos) manda la orden a cada proveedor que tenga WhatsApp (o email) en su ficha. Los que no tienen ninguno de los dos se omiten, y la confirmación te los nombra antes de enviar.'],
           ['La orden a tu propio WhatsApp', '«Enviarme por WhatsApp» te manda el texto de la orden a ti, para que se lo reenvíes al proveedor. «Abrir en WhatsApp» y «Copiar mensaje» hacen lo mismo sin pasar por StockAI.'],
-          ['La alerta diaria', 'En el plan completo, cada mañana, si hay productos en Pedir YA o Pedir pronto, un resumen llega a quien tenga su número vinculado. Ver [Alertas diarias](/docs/uso-diario/alertas-diarias).'],
+          ['La alerta diaria', 'Cada mañana, si hay productos en Pedir YA o Pedir pronto, un resumen llega a quien tenga su número vinculado. Ver [Alertas diarias](/docs/uso-diario/alertas-diarias).'],
           ['Avisos de mensajes del equipo', 'Si alguien te escribe en [Mensajes](/docs/uso-diario/mensajes) mientras no estás en StockAI, te llega un aviso por WhatsApp, o por SMS si WhatsApp no está disponible. Viene apagado.'],
-          ['El asistente', 'En el plan completo, puedes preguntarle por tus compras por WhatsApp. Ver [El asistente por WhatsApp](/docs/asistente/asistente-por-whatsapp).'],
+          ['El asistente', 'Puedes preguntarle por tus compras por WhatsApp. Ver [El asistente por WhatsApp](/docs/asistente/asistente-por-whatsapp).'],
         ] },
         { t: 'h2', id: 'link-number', text: 'Vincular tu número' },
         { t: 'steps', items: [
@@ -173,7 +172,7 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
           'Escribe el código de 6 dígitos que te llega por WhatsApp. Vence en 15 minutos.',
           'Si quieres el aviso de mensajes del equipo, enciende «Recibir aviso cuando te escriban» en «Mensajes del equipo».',
         ] },
-        { t: 'p', text: 'Sin número vinculado no recibes alertas por WhatsApp ni puedes usar el asistente por WhatsApp. Esas dos cosas vienen con el plan completo: en el plan gratis la tarjeta «Vincular WhatsApp» se reemplaza por «Disponible en el plan completo» (las órdenes a proveedores salen en todos los planes). Dejar el campo vacío es la forma de no recibir alertas por ese canal.' },
+        { t: 'p', text: 'Sin número vinculado no recibes alertas por WhatsApp ni puedes usar el asistente por WhatsApp. Esas dos cosas vienen con el bot de WhatsApp: si tu cuenta no lo tiene habilitado, la tarjeta «Vincular WhatsApp» lo indica (las órdenes a proveedores salen igual). Dejar el campo vacío es la forma de no recibir alertas por ese canal.' },
         { t: 'h2', id: 'setup', text: 'Qué tiene que estar configurado' },
         { t: 'p', text: 'WhatsApp funciona solo si la instalación tiene una cuenta de Twilio configurada. Quien administra el servidor lo ve y lo configura en [Instalación](/docs/administracion/instalacion), pestaña «Esta instalación». Sin Twilio, StockAI no manda nada por WhatsApp y te lo dice en lugar de fingir que lo envió.' },
         { t: 'p', text: 'Si tu empresa quiere que sus proveedores y su equipo reciban los mensajes desde un número propio, un administrador lo configura en Instalación → «Mis canales». Lo que dejes vacío ahí usa el de la instalación.' },
@@ -225,7 +224,7 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
         'Connect your ERP, your point of sale or your own system to StockAI with an API key: the same work you do in the app, ' +
         'without anyone opening it.',
       blocks: [
-        { t: 'note', tone: 'info', text: 'The API comes with the Full and Corporate plans. On the free plan and on trial accounts there are no keys: the [API](app:/api) screen shows an "Available on the Full plan" card.' },
+        { t: 'note', tone: 'info', text: 'The API ships with the source code. If your account does not have it enabled (a trial account, for example), there are no keys: the [API](app:/api) screen shows a feature-unavailable card.' },
         { t: 'p', text: 'The API lets another system do what you would do by hand: upload the sales export, ask for a recalculation, read the stock signal and log the purchase order. This page explains how it works without code; the full reference, endpoint by endpoint with examples, is in [the developer documentation](/desarrolladores).' },
         { t: 'h2', id: 'keys', text: 'API keys' },
         { t: 'p', text: 'You create a key under [Automation](app:/automatizacion), on the "API Keys" tab, with "Generate key". Give it a name you will recognise (for example "ERP integration") and choose what it can do:' },
@@ -234,7 +233,7 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
           ['Read and write', 'Acts as an **analyst**: it can also upload files, queue trainings and log purchase orders.'],
         ] },
         { t: 'p', text: 'The full key starts with `sk_live_` and **is shown only once**, when you create it. StockAI keeps it nowhere it can be read back: if you lose it, create another and revoke the old one. Revoking is immediate; whatever was using that key stops working on its next call.' },
-        { t: 'note', tone: 'info', text: 'The Full plan holds **three** keys; the Corporate plan has no cap. See [Plan limits](/docs/administracion/limites-del-plan).' },
+        { t: 'note', tone: 'info', text: 'An account can have a ceiling on keys. See [Usage limits](/docs/administracion/limites-del-plan).' },
         { t: 'h2', id: 'calling', text: 'Making a call' },
         { t: 'p', text: 'Every route hangs off `/api/v1` on your installation\'s domain, and the key goes in the `Authorization` header:' },
         { t: 'code', text: PLANNING_CURL_EN },
@@ -243,7 +242,6 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
         { t: 'h2', id: 'limits', text: 'Limits and usage' },
         { t: 'ul', items: [
           '**120 calls per minute per key**, on every plan that includes the API.',
-          '**2,000 calls per day per key** on the Full plan; no daily cap on the Corporate plan.',
           'Past a limit you get a `429` with a `Retry-After` header saying how many seconds to wait before retrying.',
           'Every call that passes all checks adds one to that key\'s daily usage. Refused calls do not count. An administrator sees usage by key and by day on the [API](app:/api) screen.',
         ] },
@@ -281,7 +279,7 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
         'StockAI speaks the Model Context Protocol: an AI assistant such as Claude can read your stock signal and tell you what to buy today. ' +
         'It only reads; it never changes anything.',
       blocks: [
-        { t: 'note', tone: 'info', text: 'MCP access comes with the Full and Corporate plans; it uses an API key, which the free plan and trial accounts do not have.' },
+        { t: 'note', tone: 'info', text: 'MCP access ships with the source code; it uses an API key, which trial accounts do not have.' },
         { t: 'p', text: 'MCP is the protocol AI assistants use to connect to outside tools. StockAI runs an MCP server on your own installation, so you can ask your assistant "what should I buy today?" and get an answer from your data rather than from guesses.' },
         { t: 'h2', id: 'endpoint', text: 'Where it is and how to get in' },
         { t: 'ul', items: [
@@ -359,9 +357,9 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
         { t: 'dl', items: [
           ['Orders to suppliers', '"Send order" under [Orders](/docs/uso-diario/pedidos) sends the order to every supplier with WhatsApp (or email) on their card. Those with neither are skipped, and the confirmation names them before sending.'],
           ['The order to your own WhatsApp', '"Send to my WhatsApp" sends you the order text so you can forward it to the supplier. "Open in WhatsApp" and "Copy message" do the same without going through StockAI.'],
-          ['The daily alert', 'On the Full plan, every morning, if any products are in Order NOW or Order soon, a summary reaches whoever has a linked number. See [Daily alerts](/docs/uso-diario/alertas-diarias).'],
+          ['The daily alert', 'Every morning, if any products are in Order NOW or Order soon, a summary reaches whoever has a linked number. See [Daily alerts](/docs/uso-diario/alertas-diarias).'],
           ['Team message heads-ups', 'If someone writes to you under [Messages](/docs/uso-diario/mensajes) while you are not in StockAI, you get a WhatsApp heads-up, or an SMS if WhatsApp is not available. Off by default.'],
-          ['The assistant', 'On the Full plan, you can ask about your purchasing over WhatsApp. See [The assistant on WhatsApp](/docs/asistente/asistente-por-whatsapp).'],
+          ['The assistant', 'You can ask about your purchasing over WhatsApp. See [The assistant on WhatsApp](/docs/asistente/asistente-por-whatsapp).'],
         ] },
         { t: 'h2', id: 'link-number', text: 'Linking your number' },
         { t: 'steps', items: [
@@ -370,7 +368,7 @@ export const INTEGRATIONS: DocSectionContent<DocPageIdOf<'integraciones'>> = {
           'Enter the 6-digit code that arrives on WhatsApp. It expires in 15 minutes.',
           'If you want team-message heads-ups, switch on "Get a heads-up when someone writes to you" under "Team messages".',
         ] },
-        { t: 'p', text: 'Without a linked number you get no WhatsApp alerts and cannot use the assistant over WhatsApp. Those two come with the Full plan: on the free plan the "Link WhatsApp" card is replaced by "Available on the Full plan" (orders to suppliers go out on every plan). Leaving the field empty is how you opt out of alerts on that channel.' },
+        { t: 'p', text: 'Without a linked number you get no WhatsApp alerts and cannot use the assistant over WhatsApp. Those two come with the WhatsApp bot: if your account does not have it enabled, the "Link WhatsApp" card says so (orders to suppliers go out regardless). Leaving the field empty is how you opt out of alerts on that channel.' },
         { t: 'h2', id: 'setup', text: 'What has to be configured' },
         { t: 'p', text: 'WhatsApp only works if the installation has a Twilio account configured. Whoever administers the server sees and sets it under [Installation](/docs/administracion/instalacion), on the "This installation" tab. Without Twilio, StockAI sends nothing over WhatsApp and says so instead of pretending it sent.' },
         { t: 'p', text: 'If your company wants its suppliers and team to receive messages from its own number, an administrator sets it under Installation → "My channels". Anything left empty there uses the installation\'s.' },

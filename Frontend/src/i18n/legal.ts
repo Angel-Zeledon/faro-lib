@@ -102,10 +102,10 @@ const es: LegalCopy = {
     terms: {
       label: 'Términos del servicio',
       title: 'Términos y condiciones del servicio',
-      intro: 'Las reglas para usar StockAI: qué te damos, qué te pedimos, cómo funcionan los planes y hasta dónde llega nuestra responsabilidad.',
+      intro: 'Las reglas para usar StockAI: qué te damos, qué te pedimos, cómo se compra el código fuente y hasta dónde llega nuestra responsabilidad.',
       summary: [
         'StockAI te ayuda a decidir qué comprar. **La decisión de compra es tuya**, y también sus consecuencias.',
-        'El plan gratis es para siempre y trae el motor completo, con límites de tamaño y sin API, MCP ni bot de WhatsApp. El plan pagado se acuerda conversando con nosotros.',
+        'StockAI se vende únicamente como código fuente, por USD 14.999 en un pago único, para instalarlo en tu propia infraestructura. Los detalles de la entrega se acuerdan escribiéndonos.',
         'Tus datos son tuyos. Solo los usamos para darte el servicio.',
         'No hay un acuerdo de disponibilidad (SLA) salvo que lo firmemos por separado.',
       ],
@@ -143,27 +143,11 @@ const es: LegalCopy = {
         },
         {
           id: 'plans',
-          title: 'Planes y precio',
+          title: 'Compra del código fuente',
           blocks: [
-            'Hay dos planes, y los dos traen el motor completo; **la API, el servidor MCP y el bot de WhatsApp empiezan en el plan pagado**, que además tiene límites más amplios. Un plan corporativo, con los topes levantados, se cotiza aparte.',
-            {
-              table: {
-                head: ['Límite', 'Plan gratis', 'Plan pagado'],
-                rows: [
-                  ['Productos (SKUs)', '100', '1.000'],
-                  ['Usuarios', '2', '5'],
-                  ['Bodegas', '1', '3'],
-                  ['Pronósticos guardados', '3', '20'],
-                  ['Entrenamientos por día', '1', '10'],
-                  ['API, servidor MCP y bot de WhatsApp', 'No incluidos', 'Incluidos'],
-                  ['Claves de API', 'No incluida', '3'],
-                  ['Llamadas a la API por día, por clave', 'No incluida', '2.000'],
-                  ['Tamaño de cada archivo', '25 MB', '100 MB'],
-                ],
-              },
-            },
-            'El plan gratis no vence. Podemos cambiar sus límites; si los bajamos, te avisamos antes y no borramos datos que ya tengas por encima del nuevo límite.',
-            'El plan pagado se contrata conversando con nosotros: no hay checkout ni cobro con tarjeta dentro de la aplicación. El precio, la forma de pago y la duración se acuerdan por escrito con cada cliente. La calculadora de la página de precios es una estimación, no una oferta.',
+            'StockAI se vende únicamente como código fuente: el código fuente completo, para instalarlo en tu propia infraestructura y operarlo como tuyo. El precio es de **USD 14.999**, en un pago único.',
+            'Escríbenos y cerramos la compra y los detalles de la entrega contigo.',
+            '[LICENCIA, ENTREGA, SOPORTE Y REEMBOLSO DE LA COMPRA — confirmar con el propietario]',
           ],
         },
         {
@@ -197,8 +181,8 @@ const es: LegalCopy = {
             'Un administrador puede crear claves de API (empiezan por `sk_live_`) de lectura o de escritura. La clave completa se muestra una sola vez; nosotros guardamos solo una huella de ella. Guárdala como una contraseña: lo que se haga con tu clave cuenta como hecho por tu cuenta.',
             {
               list: [
-                'Cada clave puede hacer hasta 120 llamadas por minuto. En el plan pagado, además, hasta 2.000 llamadas por día por clave; el plan gratis no incluye la API.',
-                'En el plan pagado la API se cobra por llamada, según el precio que acordemos. Contamos las llamadas que llegan a un endpoint, por día y por clave; las rechazadas no cuentan.',
+                'Cada clave puede hacer hasta 120 llamadas por minuto.',
+                'Contamos las llamadas que llegan a un endpoint, por día y por clave; las rechazadas no cuentan.',
                 'El servidor MCP para asistentes de IA solo lee: no puede crear, cambiar ni borrar nada.',
                 'Podemos revocar una clave que se use contra estos términos o que ponga en riesgo el servicio.',
               ],
@@ -234,7 +218,7 @@ const es: LegalCopy = {
           title: 'Suspensión y terminación',
           blocks: [
             'Puedes dejar de usar StockAI cuando quieras y pedirnos que borremos tu cuenta.',
-            'Podemos suspender o cerrar una cuenta si incumple estos términos, pone en riesgo el servicio o a otros clientes, no paga lo acordado en un plan pagado, o si la ley nos lo exige. Salvo urgencia, te avisamos antes y te damos oportunidad de corregirlo.',
+            'Podemos suspender o cerrar una cuenta si incumple estos términos, pone en riesgo el servicio o a otros clientes, o si la ley nos lo exige. Salvo urgencia, te avisamos antes y te damos oportunidad de corregirlo.',
           ],
         },
         {
@@ -260,7 +244,7 @@ const es: LegalCopy = {
             {
               list: [
                 'no respondemos por daños indirectos, lucro cesante, pérdida de ventas o de datos, ni por decisiones comerciales tomadas con el servicio;',
-                'nuestra responsabilidad total frente a ti queda limitada a lo que nos pagaste en los 12 meses anteriores al hecho, o a [MONTO MÁXIMO PARA CUENTAS GRATIS — confirmar con el propietario] si usas el plan gratis.',
+                'nuestra responsabilidad total frente a ti queda limitada a [LÍMITE DE RESPONSABILIDAD — confirmar con el propietario].',
               ],
             },
             'Nada en estos términos limita derechos que la ley de tu país no permita limitar.',
@@ -634,10 +618,10 @@ const en: LegalCopy = {
     terms: {
       label: 'Terms of Service',
       title: 'Terms of Service',
-      intro: 'The rules for using StockAI: what we give you, what we ask of you, how the plans work and how far our liability goes.',
+      intro: 'The rules for using StockAI: what we give you, what we ask of you, how the source code is bought and how far our liability goes.',
       summary: [
         'StockAI helps you decide what to buy. **The purchasing decision is yours**, and so are its consequences.',
-        'The free plan is forever and includes the whole engine, with size limits and no API, MCP or WhatsApp bot. The paid plan is agreed by talking to us.',
+        'StockAI is sold only as source code, for USD 14,999 as a one-time payment, to install on your own infrastructure. The details of delivery are agreed by writing to us.',
         'Your data is yours. We only use it to provide the service.',
         'There is no service-level agreement (SLA) unless we sign one separately.',
       ],
@@ -675,27 +659,11 @@ const en: LegalCopy = {
         },
         {
           id: 'plans',
-          title: 'Plans and price',
+          title: 'Source code purchase',
           blocks: [
-            'There are two plans, and both include the whole engine; **the API, the MCP server and the WhatsApp bot start on the paid plan**, which also has wider limits. A corporate plan, with the ceilings lifted, is quoted separately.',
-            {
-              table: {
-                head: ['Limit', 'Free plan', 'Paid plan'],
-                rows: [
-                  ['Products (SKUs)', '100', '1,000'],
-                  ['Users', '2', '5'],
-                  ['Warehouses', '1', '3'],
-                  ['Saved forecasts', '3', '20'],
-                  ['Trainings per day', '1', '10'],
-                  ['API, MCP server and WhatsApp bot', 'Not included', 'Included'],
-                  ['API keys', 'Not included', '3'],
-                  ['API calls per day, per key', 'Not included', '2,000'],
-                  ['Size of each file', '25 MB', '100 MB'],
-                ],
-              },
-            },
-            'The free plan does not expire. We may change its limits; if we lower them, we tell you first and do not delete data you already have above the new limit.',
-            'The paid plan is arranged by talking to us: there is no checkout and no card payment inside the application. Price, payment terms and duration are agreed in writing with each customer. The calculator on the pricing page is an estimate, not an offer.',
+            'StockAI is sold only as source code: the complete source code, to install on your own infrastructure and operate as your own. The price is **USD 14,999**, as a one-time payment.',
+            'Write to us and we will close the purchase and the details of delivery with you.',
+            '[LICENCIA, ENTREGA, SOPORTE Y REEMBOLSO DE LA COMPRA — confirmar con el propietario]',
           ],
         },
         {
@@ -729,8 +697,8 @@ const en: LegalCopy = {
             'An administrator can create read or write API keys (they start with `sk_live_`). The full key is shown only once; we keep only a fingerprint of it. Store it like a password: whatever is done with your key counts as done by your account.',
             {
               list: [
-                'Each key can make up to 120 calls per minute. On the paid plan, also up to 2,000 calls per day per key; the free plan does not include the API.',
-                'On the paid plan the API is billed per call, at the price we agree. We count calls that reach an endpoint, by day and by key; refused calls do not count.',
+                'Each key can make up to 120 calls per minute.',
+                'We count calls that reach an endpoint, by day and by key; refused calls do not count.',
                 'The MCP server for AI assistants only reads: it cannot create, change or delete anything.',
                 'We may revoke a key used against these terms or that puts the service at risk.',
               ],
@@ -766,7 +734,7 @@ const en: LegalCopy = {
           title: 'Suspension and termination',
           blocks: [
             'You can stop using StockAI whenever you want and ask us to delete your account.',
-            'We may suspend or close an account if it breaches these terms, puts the service or other customers at risk, does not pay what was agreed on a paid plan, or if the law requires it. Except in an emergency, we warn you first and give you a chance to fix it.',
+            'We may suspend or close an account if it breaches these terms, puts the service or other customers at risk, or if the law requires it. Except in an emergency, we warn you first and give you a chance to fix it.',
           ],
         },
         {
@@ -792,7 +760,7 @@ const en: LegalCopy = {
             {
               list: [
                 'we are not liable for indirect damages, loss of profit, lost sales or lost data, or for business decisions made with the service;',
-                'our total liability to you is limited to what you paid us in the 12 months before the event, or to [MONTO MÁXIMO PARA CUENTAS GRATIS — confirmar con el propietario] if you are on the free plan.',
+                'our total liability to you is limited to [LÍMITE DE RESPONSABILIDAD — confirmar con el propietario].',
               ],
             },
             'Nothing in these terms limits rights that the law of your country does not allow to be limited.',

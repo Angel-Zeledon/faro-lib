@@ -16,8 +16,7 @@
  * Where each factual claim comes from (keep in step with the code):
  *   limits, trial 24 h, paid ceilings       backend/entitlements/plans.py
  *   over-limit keeps data, blocks additions backend/entitlements/service.py enforce_limit
- *   price estimate ($59 base, add-ons;      Frontend/src/components/landing/pricingModel.ts
- *   corporate band from $890, annual)       (FULL_PLAN, CORPORATE_PLAN; owner's decision 2026-10-05)
+ *   source-code offer (USD 14,999, one-time) Frontend/src/i18n/landing.ts `source` (owner's decision 2026-10-06)
  *   120 calls/min per key                   terms (legal.ts) / API rate limiter
  *   tenant isolation, roles, bcrypt, Fernet backend/auth/*, backend/service_config/crypto.py
  *   export ZIP / full erasure (admin)       backend/api/v1/tenant_data.py, backend/tenants/data_export.py
@@ -75,7 +74,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
           {
             list: [
               'La cuenta de prueba sirve para conocer StockAI. Dura 24 horas y tiene límites pequeños a propósito.',
-              'No crees cuentas de prueba una tras otra para trabajar con ellas de forma continua ni para saltarte los límites del plan gratis. Contamos las cuentas de prueba creadas desde cada dirección IP para frenar ese abuso.',
+              'No crees cuentas de prueba una tras otra para trabajar con ellas de forma continua ni para saltarte los límites de la cuenta de prueba. Contamos las cuentas de prueba creadas desde cada dirección IP para frenar ese abuso.',
               'No subas a una cuenta de prueba datos que no quieras perder ni datos personales sensibles: se borra entera al terminar.',
             ],
           },
@@ -87,7 +86,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         blocks: [
           {
             list: [
-              'Respeta los límites: hasta 120 llamadas por minuto por clave y, en el plan completo, 2.000 por día por clave. No repartas el trabajo entre varias cuentas o claves para saltártelos.',
+              'Respeta los límites: hasta 120 llamadas por minuto por clave. No repartas el trabajo entre varias cuentas o claves para saltártelos.',
               'Cada clave es una credencial. No la publiques, no la incluyas en código que otros puedan ver y no la compartas fuera de tu empresa.',
               'Usa la API para conectar tus propios sistemas. No la uses para ofrecer a terceros un servicio construido sobre StockAI sin un acuerdo escrito con nosotros.',
             ],
@@ -452,7 +451,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
               '**la API** y el servidor MCP que se sirven desde app.stockai.es.',
             ],
           },
-          'Usa tus propias cuentas: puedes registrarte gratis o usar una cuenta de prueba. Si necesitas dos cuentas para probar el aislamiento entre empresas, crea dos tuyas.',
+          'Usa tus propias cuentas: puedes registrarte o usar una cuenta de prueba. Si necesitas dos cuentas para probar el aislamiento entre empresas, crea dos tuyas.',
         ],
       },
       {
@@ -582,112 +581,37 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
 
   // ── Condiciones comerciales ───────────────────────────────────────────────
   commercial: {
-    label: 'Condiciones comerciales',
-    title: 'Condiciones comerciales',
-    intro: 'Cómo funcionan los planes de StockAI: qué incluye el plan gratis, cómo se contrata el plan completo, cómo se factura y qué pasa si lo dejas.',
+    label: 'Compra del código fuente',
+    title: 'Compra del código fuente',
+    intro: 'Cómo se compra StockAI: se vende únicamente como código fuente, en un pago único.',
     summary: [
-      'Los dos planes traen el motor completo; **la API, el servidor MCP y el bot de WhatsApp empiezan en el plan completo**. El plan corporativo lo incluye todo, con topes acordados.',
-      'El plan gratis no vence. El plan completo se contrata conversando con nosotros: **no hay checkout ni pago con tarjeta en la aplicación**.',
-      'El precio de la página de precios es una **estimación**. Lo que rige es lo que acordemos por escrito.',
-      'Si vuelves al plan gratis, no borramos nada de lo que tengas.',
+      'StockAI se vende **únicamente como código fuente**, para instalarlo en tu propia infraestructura y operarlo como tuyo.',
+      'El precio es de **USD 14.999**, en un **pago único**.',
+      'Los detalles de la entrega se acuerdan escribiéndonos.',
     ],
     sections: [
       {
         id: 'plans',
-        title: 'Los planes',
+        title: 'Qué se vende y a qué precio',
         blocks: [
-          'Hay un plan gratis y un plan completo (pagado), y un plan corporativo que se cotiza aparte. Los dos primeros tienen las mismas pantallas, los mismos pronósticos y el mismo asistente; el plan completo suma la API, el servidor MCP y el bot de WhatsApp, y tiene límites más amplios:',
-          {
-            table: {
-              head: ['Límite', 'Plan gratis', 'Plan completo'],
-              rows: [
-                ['Productos (SKUs)', '100', '1.000'],
-                ['Usuarios', '2', '5'],
-                ['Bodegas', '1', '3'],
-                ['Pronósticos guardados', '3', '20'],
-                ['Entrenamientos por día', '1', '10'],
-                ['API, servidor MCP y bot de WhatsApp', 'No incluidos', 'Incluidos'],
-                ['Claves de API', 'No incluida', '3'],
-                ['Llamadas a la API', 'No incluida', '2.000 por día por clave'],
-                ['Tamaño de cada archivo', '25 MB', '100 MB'],
-              ],
-            },
-          },
-          'En todos los planes hay límites técnicos que protegen el servidor y no se venden, como el número de entrenamientos simultáneos y las 120 llamadas por minuto por clave de API.',
+          'Se vende el código fuente completo de StockAI, con todas las funciones del producto, incluidas la API, el servidor MCP y el bot de WhatsApp. El precio es de **USD 14.999**, en un pago único.',
+          'Lo instalas en tu propia infraestructura y lo operas tú.',
         ],
       },
       {
-        id: 'free',
-        title: 'El plan gratis',
+        id: 'full',
+        title: 'Cómo se cierra la compra',
         blocks: [
-          'El plan gratis es para siempre: no es una prueba con cuenta regresiva y no te pedimos una tarjeta. Podemos cambiar sus límites; si los bajamos, te avisamos antes y no borramos los datos que ya tengas por encima del nuevo límite.',
+          `Escríbenos a ${MAIL} y cerramos la compra y los detalles de la entrega contigo.`,
+          'Licencia: las condiciones de uso del código están en la [licencia de código fuente](/licencia).',
+          '[ENTREGA, SOPORTE, FORMA DE PAGO, IMPUESTOS Y REEMBOLSO DE LA COMPRA — confirmar con el propietario]',
         ],
       },
       {
         id: 'trial',
         title: 'La cuenta de prueba',
         blocks: [
-          'Aparte de los planes, puedes entrar sin registrarte a una cuenta de prueba con datos de ejemplo. Tiene límites más pequeños (30 productos, 1 usuario, 2 bodegas), dura **24 horas** y luego se borra entera. No se convierte en una cuenta normal: para quedarte, crea tu cuenta gratis.',
-        ],
-      },
-      {
-        id: 'full',
-        title: 'Cómo se contrata el plan completo',
-        blocks: [
-          'Cuando necesitas más de lo que cabe en el plan gratis, la aplicación te muestra un botón para escribirnos. Hablamos contigo, acordamos el precio y las condiciones por escrito, y activamos el plan completo en tu cuenta. No hay que migrar nada: es la misma cuenta, con los límites levantados.',
-          'Si tu caso lo necesita, también podemos acordar límites a la medida de tu cuenta.',
-        ],
-      },
-      {
-        id: 'price',
-        title: 'Precio estimado',
-        blocks: [
-          'La calculadora de la [página de precios](/precios) estima el precio mensual con este modelo, en dólares estadounidenses:',
-          {
-            table: {
-              head: ['Concepto', 'Precio estimado'],
-              rows: [
-                ['Base mensual', 'USD 59, que incluye 1.000 productos, 5 usuarios, 3 bodegas, 10 entrenamientos por día, la API, el servidor MCP, el bot de WhatsApp y 2.000 llamadas a la API por día por clave'],
-                ['Productos adicionales', 'USD 12 por cada bloque de 500'],
-                ['Usuarios adicionales', 'USD 7 por usuario'],
-                ['Bodegas adicionales', 'USD 10 por bodega'],
-                ['Llamadas a la API adicionales', 'USD 2,50 por cada bloque de 1.000'],
-                ['Plan corporativo', 'Desde USD 890 al mes, con contrato anual; incluye todo lo del plan completo, con los topes levantados y acordados en la cotización'],
-              ],
-            },
-          },
-          '**Es una estimación, no una oferta.** El precio final, la duración y lo que incluye se fijan en el acuerdo escrito con cada cliente, y ese acuerdo prevalece sobre la calculadora.',
-        ],
-      },
-      {
-        id: 'billing',
-        title: 'Facturación y pago',
-        blocks: [
-          {
-            list: [
-              'Forma de facturación: [PERIODICIDAD Y EMISIÓN DE FACTURAS — confirmar con el propietario].',
-              'Medios de pago: [MEDIOS DE PAGO ACEPTADOS — confirmar con el propietario]. No cobramos con tarjeta dentro de la aplicación.',
-              'Plazo de pago: [PLAZO DE PAGO — confirmar con el propietario].',
-              'Impuestos: [IMPUESTOS APLICABLES Y SI LOS PRECIOS LOS INCLUYEN — confirmar con el propietario].',
-              'Retrasos en el pago: [CONSECUENCIAS DEL IMPAGO — confirmar con el propietario]. Si un pago acordado no llega, podemos suspender la cuenta como prevén los [términos](/terminos#termination).',
-            ],
-          },
-        ],
-      },
-      {
-        id: 'changes',
-        title: 'Cambios de precio',
-        blocks: [
-          'El precio acordado se mantiene durante el plazo que pactemos. Si queremos cambiarlo para el siguiente periodo, te avisamos con [PLAZO DE PREAVISO — confirmar] de antelación, y puedes no renovar.',
-        ],
-      },
-      {
-        id: 'ending',
-        title: 'Volver al plan gratis o terminar',
-        blocks: [
-          'Puedes dejar el plan completo al final del periodo acordado. [CONDICIONES DE CANCELACIÓN Y REEMBOLSO — confirmar con el propietario]',
-          'Si tu cuenta vuelve al plan gratis con más de lo que cabe —por ejemplo, 300 productos—, **no borramos nada**: todo sigue visible y usable, pero no puedes agregar más de lo que está por encima del límite hasta que bajes de él o vuelvas al plan completo. Si vuelves al plan gratis, la API, el servidor MCP y el bot de WhatsApp dejan de estar disponibles desde el cambio de plan.',
-          `Si prefieres cerrar la cuenta, puedes pedirnos una copia completa de tus datos y su borrado, como explican los [términos](/terminos#after). Escríbenos a ${MAIL}.`,
+          'Puedes entrar sin registrarte a una cuenta de prueba con datos de ejemplo. Dura **24 horas** y luego se borra entera.',
         ],
       },
     ],
@@ -861,7 +785,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
           {
             list: [
               'The trial account is for getting to know StockAI. It lasts 24 hours and its limits are small on purpose.',
-              'Do not create trial account after trial account to work in them continuously or to get around the free plan\'s limits. We count the trial accounts created from each IP address to stop that abuse.',
+              'Do not create trial account after trial account to work in them continuously or to get around the trial account\'s limits. We count the trial accounts created from each IP address to stop that abuse.',
               'Do not upload to a trial account data you do not want to lose or sensitive personal data: it is erased entirely when it ends.',
             ],
           },
@@ -873,7 +797,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         blocks: [
           {
             list: [
-              'Respect the limits: up to 120 calls per minute per key and, on the full plan, 2,000 per day per key. Do not spread the work across several accounts or keys to get around them.',
+              'Respect the limits: up to 120 calls per minute per key. Do not spread the work across several accounts or keys to get around them.',
               'Each key is a credential. Do not publish it, do not put it in code others can see and do not share it outside your company.',
               'Use the API to connect your own systems. Do not use it to offer third parties a service built on StockAI without a written agreement with us.',
             ],
@@ -1238,7 +1162,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
               '**the API** and the MCP server served from app.stockai.es.',
             ],
           },
-          'Use your own accounts: you can sign up for free or use a trial account. If you need two accounts to test the isolation between companies, create two of your own.',
+          'Use your own accounts: you can sign up or use a trial account. If you need two accounts to test the isolation between companies, create two of your own.',
         ],
       },
       {
@@ -1368,112 +1292,37 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
 
   // ── Commercial conditions ─────────────────────────────────────────────────
   commercial: {
-    label: 'Commercial conditions',
-    title: 'Commercial conditions',
-    intro: 'How StockAI\'s plans work: what the free plan includes, how the full plan is contracted, how it is invoiced and what happens if you leave it.',
+    label: 'Source code purchase',
+    title: 'Source code purchase',
+    intro: 'How StockAI is bought: it is sold only as source code, as a one-time payment.',
     summary: [
-      'Both plans include the whole engine; **the API, the MCP server and the WhatsApp bot start on the full plan**. The corporate plan includes everything, with agreed ceilings.',
-      'The free plan does not expire. The full plan is contracted by talking to us: **there is no checkout and no card payment in the app**.',
-      'The price on the pricing page is an **estimate**. What governs is what we agree in writing.',
-      'If you go back to the free plan, we delete nothing you have.',
+      'StockAI is sold **only as source code**, to install on your own infrastructure and operate as your own.',
+      'The price is **USD 14,999**, as a **one-time payment**.',
+      'The details of delivery are agreed by writing to us.',
     ],
     sections: [
       {
         id: 'plans',
-        title: 'The plans',
+        title: 'What is sold and at what price',
         blocks: [
-          'There is a free plan and a full (paid) plan, and a corporate plan quoted separately. The first two have the same screens, the same forecasts and the same assistant; the full plan adds the API, the MCP server and the WhatsApp bot, and has wider limits:',
-          {
-            table: {
-              head: ['Limit', 'Free plan', 'Full plan'],
-              rows: [
-                ['Products (SKUs)', '100', '1,000'],
-                ['Users', '2', '5'],
-                ['Warehouses', '1', '3'],
-                ['Saved forecasts', '3', '20'],
-                ['Trainings per day', '1', '10'],
-                ['API, MCP server and WhatsApp bot', 'Not included', 'Included'],
-                ['API keys', 'Not included', '3'],
-                ['API calls', 'Not included', '2,000 per day per key'],
-                ['Size of each file', '25 MB', '100 MB'],
-              ],
-            },
-          },
-          'Both plans have technical limits that protect the server and are not for sale, such as the number of simultaneous training runs and the 120 calls per minute per API key.',
+          'What is sold is the complete StockAI source code, with every feature of the product, including the API, the MCP server and the WhatsApp bot. The price is **USD 14,999**, as a one-time payment.',
+          'You install it on your own infrastructure and you operate it.',
         ],
       },
       {
-        id: 'free',
-        title: 'The free plan',
+        id: 'full',
+        title: 'How the purchase is closed',
         blocks: [
-          'The free plan is permanent: it is not a trial with a countdown and we do not ask for a card. We may change its limits; if we lower them, we tell you beforehand and we do not delete data you already have above the new limit.',
+          `Write to us at ${MAIL} and we will close the purchase and the details of delivery with you.`,
+          'Licence: the terms for using the code are in the [source-code licence](/licencia).',
+          '[ENTREGA, SOPORTE, FORMA DE PAGO, IMPUESTOS Y REEMBOLSO DE LA COMPRA — confirmar con el propietario]',
         ],
       },
       {
         id: 'trial',
         title: 'The trial account',
         blocks: [
-          'Apart from the plans, you can enter a trial account with sample data without signing up. It has smaller limits (30 products, 1 user, 2 warehouses), lasts **24 hours** and is then erased entirely. It does not become a regular account: to stay, create your free account.',
-        ],
-      },
-      {
-        id: 'full',
-        title: 'How the full plan is contracted',
-        blocks: [
-          'When you need more than fits in the free plan, the app shows you a button to write to us. We talk with you, agree the price and the conditions in writing, and turn on the full plan in your account. Nothing has to be migrated: it is the same account, with the limits lifted.',
-          'If your case needs it, we can also agree limits tailored to your account.',
-        ],
-      },
-      {
-        id: 'price',
-        title: 'Estimated price',
-        blocks: [
-          'The calculator on the [pricing page](/precios) estimates the monthly price with this model, in US dollars:',
-          {
-            table: {
-              head: ['Item', 'Estimated price'],
-              rows: [
-                ['Monthly base', 'USD 59, including 1,000 products, 5 users, 3 warehouses, 10 trainings per day, the API, the MCP server, the WhatsApp bot and 2,000 API calls per day per key'],
-                ['Additional products', 'USD 12 per block of 500'],
-                ['Additional users', 'USD 7 per user'],
-                ['Additional warehouses', 'USD 10 per warehouse'],
-                ['Additional API calls', 'USD 2.50 per block of 1,000'],
-                ['Corporate plan', 'From USD 890 a month, on an annual contract; it includes everything in the full plan, with the ceilings lifted and agreed in the quote'],
-              ],
-            },
-          },
-          '**It is an estimate, not an offer.** The final price, the term and what it includes are set in the written agreement with each customer, and that agreement prevails over the calculator.',
-        ],
-      },
-      {
-        id: 'billing',
-        title: 'Invoicing and payment',
-        blocks: [
-          {
-            list: [
-              'Invoicing: [PERIODICIDAD Y EMISIÓN DE FACTURAS — confirmar con el propietario].',
-              'Payment methods: [MEDIOS DE PAGO ACEPTADOS — confirmar con el propietario]. We do not take card payments inside the app.',
-              'Payment term: [PLAZO DE PAGO — confirmar con el propietario].',
-              'Taxes: [IMPUESTOS APLICABLES Y SI LOS PRECIOS LOS INCLUYEN — confirmar con el propietario].',
-              'Late payment: [CONSECUENCIAS DEL IMPAGO — confirmar con el propietario]. If an agreed payment does not arrive, we may suspend the account as the [terms](/terminos#termination) provide.',
-            ],
-          },
-        ],
-      },
-      {
-        id: 'changes',
-        title: 'Price changes',
-        blocks: [
-          'The agreed price holds for the term we agree. If we want to change it for the next period, we tell you [PLAZO DE PREAVISO — confirmar] in advance, and you may choose not to renew.',
-        ],
-      },
-      {
-        id: 'ending',
-        title: 'Going back to the free plan or ending',
-        blocks: [
-          'You can leave the full plan at the end of the agreed period. [CONDICIONES DE CANCELACIÓN Y REEMBOLSO — confirmar con el propietario]',
-          'If your account goes back to the free plan with more than fits — for example, 300 products — **we delete nothing**: everything stays visible and usable, but you cannot add more of whatever is over the limit until you are back under it or return to the full plan. If you go back to the free plan, the API, the MCP server and the WhatsApp bot stop being available from the moment the plan changes.',
-          `If you would rather close the account, you can ask us for a complete copy of your data and its deletion, as the [terms](/terminos#after) explain. Write to us at ${MAIL}.`,
+          'You can enter a trial account with sample data without signing up. It lasts **24 hours** and is then erased entirely.',
         ],
       },
     ],

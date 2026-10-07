@@ -35,8 +35,6 @@ export interface DevelopersCopy {
     title: string
     perMinute: (n: number) => string
     noApi: string
-    perDayPaid: (n: number) => string
-    perDayCorporate: string
     over: string
     noHeaders: string
   }
@@ -149,19 +147,17 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     },
     limits: {
       title: 'Límites',
-      perMinute: n => `${n} llamadas por minuto por clave, en los planes que incluyen la API.`,
-      noApi: 'Plan gratis y cuentas de prueba: la API no está incluida; empieza en el plan completo.',
-      perDayPaid: n => `Plan completo: ${n} llamadas por día por clave (ventana de 24 horas).`,
-      perDayCorporate: 'Plan corporativo: sin tope diario.',
+      perMinute: n => `${n} llamadas por minuto por clave.`,
+      noApi: 'La API, el servidor MCP y el bot de WhatsApp vienen incluidos con el código fuente.',
       over: 'Al pasarte recibes 429 con la cabecera Retry-After (segundos). El mismo 429 sirve para el límite por minuto y para el tope diario, y su cuerpo no trae error_code.',
       noHeaders: 'No hay cabeceras X-RateLimit-*: la única señal es el 429 con Retry-After. Cuenta tus llamadas o espera el 429.',
     },
     billing: {
-      title: 'Medición y precio',
+      title: 'Medición y compra',
       body:
-        'La API viene desde el plan completo, con un tope diario de llamadas por clave; el volumen mayor se acuerda con nosotros. Contamos cada llamada con una API key que llegó a un endpoint, por día (UTC) y por clave; las rechazadas (clave inválida, sin permiso o por encima del límite) no cuentan. Un administrador ve el consumo del mes en la app, en la pantalla API.',
-      pricingLink: 'Ver precios',
-      contact: email => `No hay checkout ni tarjeta: para hablar del precio, escríbenos a ${email}.`,
+        'La API viene incluida con el código fuente. Contamos cada llamada con una API key que llegó a un endpoint, por día (UTC) y por clave; las rechazadas (clave inválida, sin permiso o por encima del límite) no cuentan. Un administrador ve el consumo del mes en la app, en la pantalla API.',
+      pricingLink: 'Ver la oferta del código fuente',
+      contact: email => `Para hablar de la compra del código fuente, escríbenos a ${email}.`,
     },
     errors: {
       title: 'Errores',
@@ -172,7 +168,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
         ['api_key_scope_insufficient', '403 — la clave es de lectura y el endpoint escribe.'],
         ['api_key_tenant_unverified', '403 — enviar algo fuera de StockAI exige un administrador verificado.'],
         ['validation_error', '422 — el cuerpo o los parámetros no son válidos; detail es una lista con un objeto por campo.'],
-        ['PLAN_LIMIT_REACHED', '403 — llegaste a un tope del plan; detail es un objeto y error_params dice cuál.'],
+        ['PLAN_LIMIT_REACHED', '403 — llegaste a un tope de uso; detail es un objeto y error_params dice cuál.'],
         ['server_busy', '503 — el servidor está saturado; reintenta según Retry-After.'],
         ['(sin error_code)', '401 — falta la cabecera Authorization o no es “Bearer sk_live_…”: detail es “Not authenticated”.'],
         ['(sin error_code)', '429 — límite por minuto o tope diario: espera Retry-After segundos.'],
@@ -238,7 +234,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
         'data-sources': 'Fuentes de datos',
         datasets: 'Datasets',
         documents: 'Documentos',
-        entitlements: 'Plan y límites',
+        entitlements: 'Límites de uso',
         forecasts: 'Pronósticos',
         freshness: 'Frescura de datos',
         inventory: 'Inventario, compras y proveedores',
@@ -361,19 +357,17 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     },
     limits: {
       title: 'Limits',
-      perMinute: n => `${n} calls per minute per key, on the plans that include the API.`,
-      noApi: 'Free plan and trial accounts: the API is not included; it starts on the Full plan.',
-      perDayPaid: n => `Full plan: ${n} calls per day per key (a 24-hour window).`,
-      perDayCorporate: 'Corporate plan: no daily cap.',
+      perMinute: n => `${n} calls per minute per key.`,
+      noApi: 'The API, the MCP server and the WhatsApp bot ship with the source code.',
       over: 'Over the limit you get 429 with a Retry-After header (seconds). The same 429 serves the per-minute limit and the daily cap, and its body has no error_code.',
       noHeaders: 'There are no X-RateLimit-* headers: the only signal is the 429 with Retry-After. Count your own calls or wait for the 429.',
     },
     billing: {
-      title: 'Metering and pricing',
+      title: 'Metering and purchase',
       body:
-        'The API comes with the Full plan, with a daily cap of calls per key; larger volume is agreed with us. We count every API-key call that reached an endpoint, by day (UTC) and by key; refused calls (invalid key, no permission or over the limit) do not count. An administrator sees the month\'s usage in the app, on the API screen.',
-      pricingLink: 'See pricing',
-      contact: email => `There is no checkout and no card: to talk about pricing, write to us at ${email}.`,
+        'The API ships with the source code. We count every API-key call that reached an endpoint, by day (UTC) and by key; refused calls (invalid key, no permission or over the limit) do not count. An administrator sees the month\'s usage in the app, on the API screen.',
+      pricingLink: 'See the source code offer',
+      contact: email => `To talk about buying the source code, write to us at ${email}.`,
     },
     errors: {
       title: 'Errors',
@@ -384,7 +378,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
         ['api_key_scope_insufficient', '403 — the key is read-only and the endpoint writes.'],
         ['api_key_tenant_unverified', '403 — sending anything outside StockAI needs a verified administrator.'],
         ['validation_error', '422 — the body or parameters are invalid; detail is a list with one object per field.'],
-        ['PLAN_LIMIT_REACHED', '403 — a plan ceiling was reached; detail is an object and error_params says which.'],
+        ['PLAN_LIMIT_REACHED', '403 — a usage ceiling was reached; detail is an object and error_params says which.'],
         ['server_busy', '503 — the server is saturated; retry after Retry-After.'],
         ['(no error_code)', '401 — the Authorization header is missing or is not “Bearer sk_live_…”: detail is “Not authenticated”.'],
         ['(no error_code)', '429 — per-minute limit or daily cap: wait Retry-After seconds.'],
@@ -450,7 +444,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
         'data-sources': 'Data sources',
         datasets: 'Datasets',
         documents: 'Documents',
-        entitlements: 'Plan and limits',
+        entitlements: 'Usage limits',
         forecasts: 'Forecasts',
         freshness: 'Data freshness',
         inventory: 'Inventory, purchasing and suppliers',

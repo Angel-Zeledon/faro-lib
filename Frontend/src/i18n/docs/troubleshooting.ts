@@ -29,7 +29,7 @@ export const TROUBLESHOOTING: DocSectionContent<DocPageIdOf<'solucion-de-problem
 
         { t: 'h2', id: 'too-large', text: 'El archivo pesa demasiado' },
         { t: 'p', text: '**Lo que ves:** «El archivo pesa … MB y el máximo es … MB. Sube uno más liviano o divídelo en varios.»' },
-        { t: 'p', text: '**Por qué:** en el plan gratis cada archivo puede pesar hasta 25 MB; en el plan completo, hasta 100 MB; en el corporativo, hasta 2000 MB. Ver [Límites de los planes](/docs/administracion/limites-del-plan).' },
+        { t: 'p', text: '**Por qué:** cada cuenta tiene un tamaño máximo por archivo. Ver [Límites de uso](/docs/administracion/limites-del-plan).' },
         { t: 'p', text: '**Qué hacer:** quita columnas que StockAI no usa (descripciones largas, direcciones, notas), guárdalo como CSV en vez de Excel, que pesa menos, o súbelo en partes. Si tu historial de verdad no cabe, escríbenos desde el aviso.' },
 
         { t: 'h2', id: 'empty-file', text: 'El archivo está vacío' },
@@ -140,7 +140,7 @@ export const TROUBLESHOOTING: DocSectionContent<DocPageIdOf<'solucion-de-problem
         { t: 'h2', id: 'trial-expired', text: 'La cuenta de prueba venció' },
         { t: 'p', text: '**Lo que ves:** al iniciar sesión, «Esta cuenta de prueba ya venció. Puedes crear otra desde la página principal.»' },
         { t: 'p', text: '**Por qué:** una cuenta de prueba dura 24 horas. Al vencer se borra, con todo lo que subiste.' },
-        { t: 'p', text: '**Qué hacer:** crea otra desde la página principal, o [crea tu cuenta](/docs/primeros-pasos/crear-tu-cuenta) gratis para quedarte con tus datos. Si nos escribiste desde la cuenta de prueba y todavía no te respondimos, no la borramos hasta hacerlo.' },
+        { t: 'p', text: '**Qué hacer:** crea otra desde la página principal, o [crea tu cuenta](/docs/primeros-pasos/crear-tu-cuenta) para quedarte con tus datos. Si nos escribiste desde la cuenta de prueba y todavía no te respondimos, no la borramos hasta hacerlo.' },
         { t: 'p', text: 'Otros avisos al pedir una cuenta de prueba:' },
         { t: 'ul', items: [
           '«Ahora mismo no hay cuentas de prueba disponibles. Prueba de nuevo en un rato.» — hay demasiadas activas en este momento.',
@@ -148,9 +148,9 @@ export const TROUBLESHOOTING: DocSectionContent<DocPageIdOf<'solucion-de-problem
         ] },
 
         { t: 'h2', id: 'plan-limit', text: 'Llegaste al límite de tu plan' },
-        { t: 'p', text: '**Lo que ves:** el cuadro «Llegaste al límite de tu plan», o el mensaje «Llegaste al límite de tu plan gratis: … de …. Escríbenos para ampliarlo.» Si en cambio ves la tarjeta «Disponible en el plan completo» (o el mensaje «La API viene con el plan completo»), no es un tope de espacio: tu plan no incluye esa función.' },
-        { t: 'p', text: '**Por qué:** cada plan tiene topes de cuánto cabe. El gratis: 100 productos, 2 usuarios, 1 bodega, 3 pronósticos guardados y archivos de hasta 25 MB. El completo: 500 productos, 3 usuarios, 2 bodegas, 20 pronósticos guardados, 3 llaves de API y archivos de hasta 100 MB. La API, el MCP y el bot de WhatsApp vienen solo con el plan completo y el corporativo. Ver [Límites de los planes](/docs/administracion/limites-del-plan).' },
-        { t: 'p', text: '**Qué hacer:** libera espacio (por ejemplo, borra un pronóstico guardado que ya no uses en [Historial](/docs/analisis/historial)) o escríbenos desde el mismo cuadro, por WhatsApp, correo o el formulario. No hay nada que comprar en la pantalla: ampliar el plan es una conversación.' },
+        { t: 'p', text: '**Lo que ves:** el cuadro «Llegaste al límite de tu plan», o un mensaje que dice cuánto llevas de cuánto y te pide escribirnos para ampliarlo. Si en cambio ves una tarjeta de función no disponible (o un mensaje que dice que la API no está habilitada), no es un tope de espacio: tu cuenta no tiene esa función habilitada.' },
+        { t: 'p', text: '**Por qué:** cada cuenta tiene topes de cuánto cabe (productos, usuarios, bodegas, pronósticos guardados, llaves de API y tamaño de archivo). Ver [Límites de uso](/docs/administracion/limites-del-plan).' },
+        { t: 'p', text: '**Qué hacer:** libera espacio (por ejemplo, borra un pronóstico guardado que ya no uses en [Historial](/docs/analisis/historial)) o escríbenos desde el mismo cuadro, por WhatsApp, correo o el formulario. No hay nada que comprar en la pantalla: ampliar un tope es una conversación.' },
 
         { t: 'h2', id: 'role', text: 'Tu rol no puede hacer esto' },
         { t: 'p', text: '**Lo que ves:** «Tu rol no puede hacer esto. Pídele a un administrador de tu empresa que lo haga, o que te cambie el rol.»' },
@@ -191,7 +191,7 @@ export const TROUBLESHOOTING: DocSectionContent<DocPageIdOf<'solucion-de-problem
 
         { t: 'h2', id: 'too-large', text: 'The file is too large' },
         { t: 'p', text: '**What you see:** "The file is … MB and the limit is … MB. Upload a smaller one or split it up."' },
-        { t: 'p', text: '**Why:** on the free plan each file can be up to 25 MB; on the Full plan, up to 100 MB; on the Corporate plan, up to 2000 MB. See [Plan limits](/docs/administracion/limites-del-plan).' },
+        { t: 'p', text: '**Why:** each account has a maximum size per file. See [Usage limits](/docs/administracion/limites-del-plan).' },
         { t: 'p', text: '**What to do:** drop columns StockAI does not use (long descriptions, addresses, notes), save it as CSV instead of Excel, which is lighter, or upload it in parts. If your history genuinely does not fit, write to us from the notice.' },
 
         { t: 'h2', id: 'empty-file', text: 'The file is empty' },
@@ -302,7 +302,7 @@ export const TROUBLESHOOTING: DocSectionContent<DocPageIdOf<'solucion-de-problem
         { t: 'h2', id: 'trial-expired', text: 'The trial account expired' },
         { t: 'p', text: '**What you see:** when signing in, "This trial account has ended. You can start a new one from the home page."' },
         { t: 'p', text: '**Why:** a trial account lasts 24 hours. When it ends it is erased, along with everything you uploaded.' },
-        { t: 'p', text: '**What to do:** start another from the home page, or [create your account](/docs/primeros-pasos/crear-tu-cuenta) for free to keep your data. If you wrote to us from the trial account and we have not answered yet, we do not erase it until we do.' },
+        { t: 'p', text: '**What to do:** start another from the home page, or [create your account](/docs/primeros-pasos/crear-tu-cuenta) to keep your data. If you wrote to us from the trial account and we have not answered yet, we do not erase it until we do.' },
         { t: 'p', text: 'Other notices when asking for a trial account:' },
         { t: 'ul', items: [
           '"No trial accounts are available right now. Try again in a while." — too many are active at the moment.',
@@ -310,9 +310,9 @@ export const TROUBLESHOOTING: DocSectionContent<DocPageIdOf<'solucion-de-problem
         ] },
 
         { t: 'h2', id: 'plan-limit', text: 'You reached your plan limit' },
-        { t: 'p', text: '**What you see:** the dialog "You reached your plan limit", or the message "You reached your free plan limit: … of …. Write to us to raise it." If you see the "Available on the Full plan" card instead (or the message "The API comes with the Full plan"), it is not a room ceiling: your plan does not include that feature.' },
-        { t: 'p', text: '**Why:** each plan has ceilings on how much fits. Free: 100 products, 2 users, 1 warehouse, 3 saved forecasts and files up to 25 MB. Full: 500 products, 3 users, 2 warehouses, 20 saved forecasts, 3 API keys and files up to 100 MB. The API, MCP and the WhatsApp bot come only with the Full and Corporate plans. See [Plan limits](/docs/administracion/limites-del-plan).' },
-        { t: 'p', text: '**What to do:** free up room (for example, delete a saved forecast you no longer use under [History](/docs/analisis/historial)) or write to us from the same dialog, by WhatsApp, email or the form. There is nothing to buy on screen: raising the plan is a conversation.' },
+        { t: 'p', text: '**What you see:** the dialog "You reached your plan limit", or a message saying how much you have used of how much and asking you to write to us to raise it. If you see a feature-unavailable card instead (or a message saying the API is not enabled), it is not a room ceiling: your account does not have that feature enabled.' },
+        { t: 'p', text: '**Why:** each account has ceilings on how much fits (products, users, warehouses, saved forecasts, API keys and file size). See [Usage limits](/docs/administracion/limites-del-plan).' },
+        { t: 'p', text: '**What to do:** free up room (for example, delete a saved forecast you no longer use under [History](/docs/analisis/historial)) or write to us from the same dialog, by WhatsApp, email or the form. There is nothing to buy on screen: raising a ceiling is a conversation.' },
 
         { t: 'h2', id: 'role', text: 'Your role cannot do this' },
         { t: 'p', text: '**What you see:** "Your role cannot do this. Ask an administrator at your company to do it, or to change your role."' },

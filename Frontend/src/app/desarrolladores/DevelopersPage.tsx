@@ -576,7 +576,6 @@ export default function DevelopersPage() {
   const D = DEVELOPERS[lang]
   const W = D.workspace
   const base = useMemo(apiBase, [])
-  const perDay = API.limits.per_day_per_key
   const [codeLang, setCodeLangState] = useState<CodeLang>('curl')
   useEffect(() => { setCodeLangState(loadSampleLang()) }, [])
   const setCodeLang = (l: CodeLang) => {
@@ -683,8 +682,6 @@ export default function DevelopersPage() {
                   rows={[
                     [<code key="a">/ min</code>, D.limits.perMinute(API.limits.per_minute_per_key)],
                     [<code key="f">API</code>, D.limits.noApi],
-                    ...(typeof perDay.paid === 'number' ? [[<code key="p">/ 24 h</code>, D.limits.perDayPaid(perDay.paid)]] : []),
-                    [<code key="c">/ 24 h</code>, D.limits.perDayCorporate],
                   ]}
                 />
                 <p>{D.limits.over}</p>

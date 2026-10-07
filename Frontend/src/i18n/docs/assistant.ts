@@ -85,7 +85,7 @@ export const ASSISTANT: DocSectionContent<DocPageIdOf<'asistente'>> = {
 
         { t: 'h2', id: 'requirements', text: 'Qué necesitas' },
         { t: 'ul', items: [
-          'El plan completo o el corporativo: el bot de WhatsApp no viene con el plan gratis ni con las cuentas de prueba. Ahí, quien escribe recibe un aviso de que su plan no lo incluye.',
+          'El bot de WhatsApp habilitado en tu cuenta: las cuentas de prueba no lo tienen. Ahí, quien escribe recibe un aviso de que su cuenta no lo incluye.',
           'Que la instalación tenga WhatsApp conectado (Twilio). Si no, no se manda ni se recibe ningún WhatsApp. Lo configura quien administra el servidor en [Instalación](/docs/administracion/instalacion).',
           'Que la instalación tenga el modelo de lenguaje configurado. Sin él, el bot contesta con el resumen por reglas, igual que el chat web.',
           'Tu número vinculado y verificado en [Mi cuenta](app:/mi-cuenta). El número verificado es tu credencial: es lo único que le dice al bot quién eres y de qué empresa.',
@@ -155,7 +155,7 @@ export const ASSISTANT: DocSectionContent<DocPageIdOf<'asistente'>> = {
         { t: 'p', text: 'La activación la hace quien administra el servidor, en [Instalación](/docs/administracion/instalacion), tarjeta «Asistente (DeepSeek)».' },
 
         { t: 'h2', id: 'mcp', text: 'Tu propio cliente de IA (MCP)' },
-        { t: 'p', text: 'Es la dirección contraria (y viene con el plan completo): si conectas tu propio cliente de IA a StockAI por [MCP](/docs/integraciones/mcp), StockAI no abre ninguna conexión; tu cliente llama, lee con tu llave de API y se va. Ese cliente puede leer tu stock, tus costos y los nombres de tus proveedores, así que trata esa llave como cualquier otra credencial y revócala si deja de usarse.' },
+        { t: 'p', text: 'Es la dirección contraria (y viene con el código fuente): si conectas tu propio cliente de IA a StockAI por [MCP](/docs/integraciones/mcp), StockAI no abre ninguna conexión; tu cliente llama, lee con tu llave de API y se va. Ese cliente puede leer tu stock, tus costos y los nombres de tus proveedores, así que trata esa llave como cualquier otra credencial y revócala si deja de usarse.' },
 
         { t: 'p', text: 'El tratamiento de datos completo está en la [Política de privacidad](/privacidad).' },
       ],
@@ -241,7 +241,7 @@ export const ASSISTANT: DocSectionContent<DocPageIdOf<'asistente'>> = {
 
         { t: 'h2', id: 'requirements', text: 'What you need' },
         { t: 'ul', items: [
-          'The Full or Corporate plan: the WhatsApp bot does not come with the free plan or trial accounts. There, whoever writes gets a notice that their plan does not include it.',
+          'The WhatsApp bot enabled on your account: trial accounts do not have it. There, whoever writes gets a notice that their account does not include it.',
           'WhatsApp connected on the installation (Twilio). Without it no WhatsApp is sent or received. Whoever administers the server sets it up under [Installation](/docs/administracion/instalacion).',
           'A language model configured on the installation. Without it the bot answers with the rule-based summary, like the web chat.',
           'Your number linked and verified in [My account](app:/mi-cuenta). The verified number is your credential: it is the only thing that tells the bot who you are and which company you belong to.',
@@ -311,7 +311,7 @@ export const ASSISTANT: DocSectionContent<DocPageIdOf<'asistente'>> = {
         { t: 'p', text: 'Turning it on is done by whoever administers the server, under [Installation](/docs/administracion/instalacion), card "Assistant (DeepSeek)".' },
 
         { t: 'h2', id: 'mcp', text: 'Your own AI client (MCP)' },
-        { t: 'p', text: 'This is the opposite direction (and it comes with the Full plan): if you connect your own AI client to StockAI over [MCP](/docs/integraciones/mcp), StockAI opens no connection; your client calls in, reads with your API key and leaves. That client can read your stock, your costs and your supplier names, so treat the key like any other credential and revoke it once it is no longer used.' },
+        { t: 'p', text: 'This is the opposite direction (and it ships with the source code): if you connect your own AI client to StockAI over [MCP](/docs/integraciones/mcp), StockAI opens no connection; your client calls in, reads with your API key and leaves. That client can read your stock, your costs and your supplier names, so treat the key like any other credential and revoke it once it is no longer used.' },
 
         { t: 'p', text: 'The full data-processing terms are in the [Privacy policy](/privacidad).' },
       ],
