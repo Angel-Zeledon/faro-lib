@@ -85,16 +85,16 @@ pub fn plan(tier: &str) -> Option<PlanDef> {
         },
         DEMO => PlanDef {
             max_skus: Some(30),
-            max_users: Some(1),
+            max_users: Some(5),
             max_locations: Some(2),
             max_sessions: Some(2),
-            max_api_keys: Some(0),
-            max_api_calls_per_day: Some(0),
-            max_concurrent_jobs: Some(1),
-            max_dataset_size_mb: Some(5),
+            max_api_keys: Some(1),
+            max_api_calls_per_day: Some(200),
+            max_concurrent_jobs: Some(2),
+            max_dataset_size_mb: Some(100),
             max_trainings_per_day: Some(1),
-            api_access: false,
-            mcp_access: false,
+            api_access: true,
+            mcp_access: true,
             whatsapp_bot: false,
         },
         _ => return None,
@@ -278,9 +278,9 @@ mod tests {
             "max_dataset_size_mb": 2000, "max_trainings_per_day": null}));
         let demo = tenant_limits(&tenant("demo", json!({})));
         assert_eq!(Value::Object(demo), json!({
-            "max_skus": 30, "max_users": 1, "max_locations": 2, "max_sessions": 2,
-            "max_api_keys": 0, "max_api_calls_per_day": 0, "max_concurrent_jobs": 1,
-            "max_dataset_size_mb": 5, "max_trainings_per_day": 1}));
+            "max_skus": 30, "max_users": 5, "max_locations": 2, "max_sessions": 2,
+            "max_api_keys": 1, "max_api_calls_per_day": 200, "max_concurrent_jobs": 2,
+            "max_dataset_size_mb": 100, "max_trainings_per_day": 1}));
     }
 
     /// Every `PlanDef(...)` number in plans.py, re-read from the source.

@@ -92,11 +92,16 @@ def test_the_password_is_stored_hashed_only(trial):
     assert trial["password"] not in row["hashed_password"]
 
 
-def test_demo_tier_ceilings_are_below_free():
-    demo, free = PLANS[DEMO], PLANS["free"]
-    for key in ("max_skus", "max_users", "max_sessions", "max_dataset_size_mb"):
+def test_demo_tier_ceilings_stay_small():
+    demo, free, paid = PLANS[DEMO], PLANS["free"], PLANS["paid"]
+    # The catalogue and the saved runs stay under the free plan's.
+    for key in ("max_skus", "max_sessions"):
         assert getattr(demo, key) <= getattr(free, key), key
-    assert demo.max_concurrent_jobs < free.max_concurrent_jobs
+    # Seats, upload size and parallel trainings were opened up on purpose
+    # (owner, 2026-10-07) but never past the Full plan's.
+    for key in ("max_users", "max_dataset_size_mb", "max_concurrent_jobs"):
+        assert getattr(demo, key) <= getattr(paid, key), key
+    assert (demo.max_users, demo.max_concurrent_jobs, demo.max_dataset_size_mb) == (5, 2, 100)
 
 
 # ── 2. It reaches nobody ─────────────────────────────────────────────────────

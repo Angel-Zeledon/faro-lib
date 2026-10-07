@@ -158,8 +158,10 @@ PLANS: dict[str, PlanDef] = {
         # history is 5 SKUs; 30 leaves space to upload a small sample of
         # one's own catalogue and see it forecast.
         max_skus=30,
-        # The visitor alone. Inviting somebody is an email to a real address.
-        max_users=1,
+        # Room for a small team to try it together (owner, 2026-10-07). An
+        # invitation is an email, which a trial cannot send (the account is
+        # unverified, see backend/trial), so seats only fill by other means.
+        max_users=5,
         # Two, so transfers and the network view can actually be tried.
         max_locations=2,
         # The seeded run plus one upload of their own.
@@ -174,8 +176,8 @@ PLANS: dict[str, PlanDef] = {
         max_api_calls_per_day=200,
         # Lower than the infrastructure ceiling: a burst of visitors must not
         # take every worker thread from the tenants who run on this server.
-        max_concurrent_jobs=1,
-        max_dataset_size_mb=5,
+        max_concurrent_jobs=2,
+        max_dataset_size_mb=100,
         # The bundled demo run, once.
         max_trainings_per_day=1,
         api_access=True,
