@@ -109,7 +109,7 @@ export function MorningSection({ alt = false }: { alt?: boolean }) {
 }
 
 // ── Every feature, grouped ────────────────────────────────────────────────────
-export function FeaturesSection({ alt = false }: { alt?: boolean }) {
+export function FeaturesSection({ alt = false, plainChecks = false }: { alt?: boolean; plainChecks?: boolean }) {
  const { L } = useCopy()
  const F = L.features
  return (
@@ -123,7 +123,7 @@ export function FeaturesSection({ alt = false }: { alt?: boolean }) {
  <h3 className="feat-name">{name}</h3>
  <ul className="feat-items">
  {items.map(item => (
- <li key={item}><Check /><span>{item}</span></li>
+ <li key={item}><Check plain={plainChecks} /><span>{item}</span></li>
  ))}
  </ul>
  </section>
@@ -152,9 +152,9 @@ export function PricingSection({ part = 'all' }: { calcHref?: string; showCorpor
  <div className="price-amount">{S.price}</div>
  <div className="lp-card-body" style={{ marginBottom: 18 }}>{S.priceNote}</div>
  <h3 className="lp-h3" style={{ marginBottom: 12 }}>{S.itemsTitle}</h3>
- <ul className="no-strings" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+ <ul className="src-list">
  {S.items.map(t => (
- <li key={t}><Check />{t}</li>
+ <li key={t}><Check plain /><span>{t}</span></li>
  ))}
  </ul>
  <p className="lp-card-body" style={{ margin: '18px 0' }}>{S.closing}</p>

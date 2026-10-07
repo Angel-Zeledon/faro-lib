@@ -155,7 +155,7 @@ export function PricingPage() {
     <SubpageShell page="pricing" chrome={{ onHome: false, localAnchors: ['precio', 'funciones', 'contacto'] }}>
       <PricingSection />
       {/* What the source code includes: the whole feature list. */}
-      <FeaturesSection />
+      <FeaturesSection plainChecks />
     </SubpageShell>
   )
 }

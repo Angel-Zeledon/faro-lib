@@ -559,6 +559,9 @@ section[id], #demo { scroll-margin-top: 88px; }
 
 /* ── Pricing: promises and how it grows ── */
 .no-strings { list-style: none; margin: -24px 0 36px; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.src-list { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 12px; }
+.src-list li { display: flex; align-items: flex-start; gap: 12px; font-size: 14.5px; line-height: 1.55; color: var(--lp-text); }
+.src-list li svg { margin-top: 3px; }
 .no-strings li { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--lp-text); }
 .upg-card { max-width: 920px; padding: 30px 32px; border-radius: 14px; }
 .upg-steps { list-style: none; margin: 0 0 26px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; position: relative; }

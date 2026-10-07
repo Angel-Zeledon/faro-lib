@@ -36,7 +36,17 @@ export function Lead({ children, maxWidth = 600 }: { children: React.ReactNode; 
  return <p className="lp-lead" style={{ maxWidth }}>{children}</p>
 }
 
-export function Check() {
+// `plain`: a bare tick in the ink colour, no coloured disc. The pricing page
+// uses it (owner, 2026-10-07: the pastel-circle ticks read as a generic
+// template); the rest of the landing keeps the round one.
+export function Check({ plain = false }: { plain?: boolean }) {
+ if (plain) {
+  return (
+   <svg width={16} height={16} viewBox="0 0 16 16" style={{ flexShrink: 0 }} aria-hidden>
+    <path d="M3 8.5 L6.5 12 L13 4.5" style={{ stroke: T.text }} strokeWidth={1.75} fill="none" strokeLinecap="square" strokeLinejoin="miter" />
+   </svg>
+  )
+ }
  return (
  <svg width={16} height={16} viewBox="0 0 14 14" style={{ flexShrink: 0 }} aria-hidden>
  <circle cx={7} cy={7} r={7} style={{ fill: T.greenBg }} />
