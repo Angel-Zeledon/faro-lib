@@ -1,6 +1,10 @@
 # TLS is automatic (Let's Encrypt) for the domain in $DOMAIN.
 # Everything goes to the Next.js server, which proxies /api/* to the backend
 # in-network — the API container is never exposed publicly.
+# Extra sites from other projects on this VPS live in /etc/caddy/extra (a host directory
+# mounted read-only by docker-compose.prod.yml). Importing a glob that matches nothing is not an error.
+import /etc/caddy/extra/*.caddy
+
 {$DOMAIN} {
 	encode gzip
 	header Strict-Transport-Security "max-age=31536000"

@@ -8,6 +8,10 @@
 # real. On the app domain "/" is the landing, so it goes to /login instead —
 # which already forwards a signed-in user into the app.
 
+# Extra sites from other projects on this VPS live in /etc/caddy/extra (a host directory
+# mounted read-only by docker-compose.prod.yml). Importing a glob that matches nothing is not an error.
+import /etc/caddy/extra/*.caddy
+
 {$LANDING_DOMAIN}, www.{$LANDING_DOMAIN} {
 	encode gzip
 	header Strict-Transport-Security "max-age=31536000"

@@ -31,6 +31,8 @@ services:
       # CADDYFILE=Caddyfile.split serves the landing on LANDING_DOMAIN and the
       # app on DOMAIN; the default serves everything on DOMAIN.
       - ./${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
+      # Site blocks owned by OTHER projects on this VPS (e.g. /opt/workforceai/caddy/*.caddy).
+      - /opt/workforceai/caddy:/etc/caddy/extra:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
