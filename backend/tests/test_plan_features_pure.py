@@ -24,16 +24,22 @@ def test_every_tier_defines_every_field():
 
 
 def test_features_by_tier():
-    expected = {FREE: False, DEMO: False, PAID: True, CORPORATE: True}
+    expected = {
+        FREE: {"api": False, "mcp": False, "whatsapp_bot": False},
+        # The demo has the API and MCP (small ceilings) but never the bot.
+        DEMO: {"api": True, "mcp": True, "whatsapp_bot": False},
+        PAID: {"api": True, "mcp": True, "whatsapp_bot": True},
+        CORPORATE: {"api": True, "mcp": True, "whatsapp_bot": True},
+    }
     for tier, want in expected.items():
-        feats = tenant_features({"tier": tier})
-        assert feats == {"api": want, "mcp": want, "whatsapp_bot": want}, tier
+        assert tenant_features({"tier": tier}) == want, tier
 
 
-def test_free_and_demo_have_no_api_ceilings_to_spend():
-    for tier in (FREE, DEMO):
-        assert PLANS[tier].max_api_keys == 0
-        assert PLANS[tier].max_api_calls_per_day == 0
+def test_free_has_no_api_ceilings_to_spend_and_demo_has_small_ones():
+    assert PLANS[FREE].max_api_keys == 0
+    assert PLANS[FREE].max_api_calls_per_day == 0
+    assert PLANS[DEMO].max_api_keys == 1
+    assert PLANS[DEMO].max_api_calls_per_day == 200
 
 
 def test_corporate_lifts_every_commercial_ceiling_but_not_infrastructure():

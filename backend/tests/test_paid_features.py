@@ -1,6 +1,6 @@
 """API access, MCP access and the WhatsApp bot are paid-only (owner, 2026-10-05).
 
-`free` and `demo` have none of the three; `paid` and `corporate` have all.
+`free` has none of the three; `demo` has the API and MCP but not the bot; `paid` and `corporate` have all.
 Every refusal is the same structured 403 — error_code `plan_feature_locked`,
 error_params {feature, required_plan} — raised by one function,
 `entitlements.service.ensure_feature`. These tests turn testing_mode off
@@ -56,7 +56,7 @@ def real_limits(monkeypatch):
 
 # ── API keys: creation ───────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("tier", ["free", "demo"])
+@pytest.mark.parametrize("tier", ["free"])
 def test_key_creation_is_refused_without_the_api_and_nothing_is_written(
     tier, real_limits, make_tenant_user_headers, client,
 ):
@@ -179,7 +179,11 @@ def test_mcp_is_allowed_on_paid_and_corporate(tier, real_limits, test_tenant, cl
 # ── GET /entitlements ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("tier,want", [
-    ("free", False), ("demo", False), ("paid", True), ("corporate", True),
+    ("free", {"api": False, "mcp": False, "whatsapp_bot": False}),
+    # The demo has the API and MCP, never the WhatsApp bot.
+    ("demo", {"api": True, "mcp": True, "whatsapp_bot": False}),
+    ("paid", {"api": True, "mcp": True, "whatsapp_bot": True}),
+    ("corporate", {"api": True, "mcp": True, "whatsapp_bot": True}),
 ])
 def test_entitlements_endpoint_reports_tier_and_features(
     tier, want, make_tenant_user_headers, client,
@@ -190,7 +194,7 @@ def test_entitlements_endpoint_reports_tier_and_features(
     _set_tier(tenant_id, tier)
     data = client.get("/api/v1/entitlements", headers=headers).json()["data"]
     assert data["tier"] == tier
-    assert data["features"] == {"api": want, "mcp": want, "whatsapp_bot": want}
+    assert data["features"] == want
     # Existing fields keep their shape; the feature booleans are not in limits.
     assert {"limits", "usage", "contact", "trial", "read_only"} <= set(data)
     assert "api_access" not in data["limits"]

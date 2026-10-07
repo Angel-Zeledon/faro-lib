@@ -164,15 +164,22 @@ PLANS: dict[str, PlanDef] = {
         max_locations=2,
         # The seeded run plus one upload of their own.
         max_sessions=2,
-        # A throwaway account has no API, MCP or bot (all False by default).
-        max_api_keys=0,
-        max_api_calls_per_day=0,
+        # Everything the product does, small (owner, 2026-10-07: anyone can
+        # use the demo with all its features, limited). One key and a few calls
+        # a day are enough to try the API and the MCP server; the account is
+        # erased in 24 hours. The WhatsApp bot stays off: it sends messages to
+        # real phone numbers on our Twilio account, and a throwaway account
+        # must not be able to reach anybody.
+        max_api_keys=1,
+        max_api_calls_per_day=200,
         # Lower than the infrastructure ceiling: a burst of visitors must not
         # take every worker thread from the tenants who run on this server.
         max_concurrent_jobs=1,
         max_dataset_size_mb=5,
         # The bundled demo run, once.
         max_trainings_per_day=1,
+        api_access=True,
+        mcp_access=True,
     ),
 }
 
