@@ -5431,7 +5431,11 @@ def run_saml(args, fx: Fixture, db) -> list:
     py, rs = args.python, args.rust
     cfg_path = f"{API}/auth/saml/config"
     domain = "stockai.demo"
-    frontend = "http://localhost:5000"
+    # The audience and ACS both services derive from FRONTEND_URL: read it from
+    # the env file the servers were started with.
+    frontend = (read_env_file(args.env_file).get("FRONTEND_URL") if args.env_file else None) \
+        or "http://localhost:5000"
+    frontend = frontend.rstrip("/")
     sp_entity = f"{frontend}/api/v1/auth/saml/sp/{fx.tenant_id}"
     acs = f"{frontend}/api/v1/auth/saml/acs"
     idp = sf.FakeIdp()
@@ -7748,7 +7752,15 @@ def run(args) -> int:
         from consensus_cases import run_consensus  # noqa: PLC0415
         results += _guarded("run_consensus", run_consensus, args, fx, db, sys.modules[__name__])
         import scheduled_reports_contract  # own file, same directory (sys.path[0] is this script's)
-        results += _guarded("scheduled_reports_contract.run", scheduled_reports_contract.run, args, fx, db, sys.modules[__name__])
+        # Its own tenant: its cases assert sections with NO data (no running
+        # budget, no supplier history), which the shared tenant has by now.
+        fx_sr = make_fixture(args.python, secret)
+        try:
+            results += _guarded("scheduled_reports_contract.run", scheduled_reports_contract.run, args, fx_sr, db,
+                                sys.modules[__name__])
+        finally:
+            if not args.keep:
+                erase_fixture(args.python, fx_sr)
         # Approve or reject from a message: its own file, Rust-only routes.
         from approval_links_contract import run_approval_links  # noqa: PLC0415
         results += _guarded("run_approval_links", run_approval_links, args, fx, db, {"http": http, "Case": Case, "API": API, "auth_for": auth_for,
