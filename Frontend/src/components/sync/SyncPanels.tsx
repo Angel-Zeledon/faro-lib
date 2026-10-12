@@ -97,7 +97,7 @@ export function HealthPanel({ profile, egress, onDoctor }: { profile: SyncProfil
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <strong style={{ color, fontSize: 13 }}>{t('isync.health_title')}: {t(`isync.health.${health}`)}</strong>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button type="button" style={btn} onClick={onDoctor}>{t('isync.doctor_run')}</button>
+          <button type="button" data-tour="sync.doctor" style={btn} onClick={onDoctor}>{t('isync.doctor_run')}</button>
           <CopyButton value={diag} label={t('isync.copy_diagnostic')} />
         </div>
       </div>
@@ -238,7 +238,7 @@ export function DevPanel({ profile, sourceId }: { profile: SyncProfile | null; s
   if (!open) {
     return (
       <Card padding={16}>
-        <button type="button" style={{ ...btn, border: 'none', padding: 0, fontSize: 14, fontWeight: 700 }}
+        <button type="button" data-tour="sync.dev" style={{ ...btn, border: 'none', padding: 0, fontSize: 14, fontWeight: 700 }}
                 aria-expanded={false} onClick={() => setOpen(true)}>{t('isync.dev_title')} ▸</button>
         <p style={{ ...small, marginTop: 4 }}>{t('isync.dev_hint')}</p>
       </Card>
@@ -480,7 +480,7 @@ export function PresetPicker({ engine, onApply }: {
   if (list === null) return null
   return (
     <details style={{ marginBottom: 12 }}>
-      <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{t('isync.preset_title')}</summary>
+      <summary data-tour="sync.preset" style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{t('isync.preset_title')}</summary>
       <p style={{ ...small, marginTop: 6 }}>{t('isync.preset_hint')}</p>
       {usable.length === 0 ? <p style={{ ...small, marginTop: 6 }}>{t('isync.preset_none_for_engine')}</p> : (
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginTop: 8 }}>

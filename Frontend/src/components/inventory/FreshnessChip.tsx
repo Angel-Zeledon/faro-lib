@@ -105,7 +105,7 @@ export default function FreshnessChip({ canRefresh, visibleSkus, onRefreshed }: 
 
   return (
     <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+      <button type="button" data-tour="inv.freshness" onClick={() => setOpen(o => !o)} aria-expanded={open}
               title={t(`isync.fresh_state.${fresh.state}`)}
               style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
                        padding: '5px 10px', borderRadius: 999, fontSize: 12, border: `1px solid ${color}`, color }}>
@@ -114,7 +114,7 @@ export default function FreshnessChip({ canRefresh, visibleSkus, onRefreshed }: 
                  : t('isync.chip_as_of', { when: when(fresh.data_as_of) })}
       </button>
       {canRefresh && (
-        <button type="button" disabled={busy} onClick={() => void refresh(false)}
+        <button type="button" data-tour="inv.refresh_now" disabled={busy} onClick={() => void refresh(false)}
                 style={{ all: 'unset', cursor: busy ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center',
                          gap: 4, padding: '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                          border: '1px solid var(--border)', opacity: busy ? 0.6 : 1 }}>

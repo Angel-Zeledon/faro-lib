@@ -369,10 +369,10 @@ export default function InventorySyncPage() {
       {/* ── Profile list ─────────────────────────────────────────────────── */}
       {!draft && (
         <Card padding={16}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div data-tour="sync.list" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <h2 style={h2}>{t('isync.list_title')}</h2>
             {canEdit && (
-              <button type="button" style={{ ...primary, opacity: sources.length && !busy ? 1 : 0.5 }}
+              <button type="button" data-tour="sync.new" style={{ ...primary, opacity: sources.length && !busy ? 1 : 0.5 }}
                       disabled={!sources.length || busy || profiles.length >= catalog.limits.max_profiles}
                       onClick={startNew}>{t('isync.new')}</button>
             )}
@@ -471,7 +471,7 @@ export default function InventorySyncPage() {
           {current.needs_dry_run && (
             <p style={{ margin: '10px 0 0', fontSize: 12.5, color: C.amber }}>{t('isync.needs_dry_run')}</p>
           )}
-          <HealthPanel profile={current} egress={egress} onDoctor={() => setDoctorFor(current.id)} />
+          <div data-tour="sync.health"><HealthPanel profile={current} egress={egress} onDoctor={() => setDoctorFor(current.id)} /></div>
 
           {canEdit && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
@@ -501,7 +501,7 @@ export default function InventorySyncPage() {
 
       {!draft && current && (
         <Card padding={16}>
-          <h2 style={{ ...h2, marginBottom: 10 }}>{t('isync.history_title')}</h2>
+          <h2 data-tour="sync.history" style={{ ...h2, marginBottom: 10 }}>{t('isync.history_title')}</h2>
           {runs.length === 0 && <p style={small}>{t('isync.history_empty')}</p>}
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -564,7 +564,7 @@ export default function InventorySyncPage() {
       {draft && (
         <>
           <Card padding={16}>
-            <h2 style={{ ...h2, marginBottom: 10 }}>{t('isync.step1')}</h2>
+            <h2 data-tour="sync.source" style={{ ...h2, marginBottom: 10 }}>{t('isync.step1')}</h2>
             <div style={grid}>
               <Field label={t('isync.name')}>
                 <Input value={draft.name} maxLength={120} onChange={e => setDraft(d => d && { ...d, name: e.target.value })} />
@@ -587,7 +587,7 @@ export default function InventorySyncPage() {
           </Card>
 
           <Card padding={16}>
-            <h2 style={{ ...h2, marginBottom: 10 }}>{t('isync.step2')}</h2>
+            <h2 data-tour="sync.what" style={{ ...h2, marginBottom: 10 }}>{t('isync.step2')}</h2>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
               {(isMongo ? ['collection', 'pipeline', 'push'] : ['table', 'query', 'push']).map(k => (
                 <label key={k} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
@@ -663,7 +663,7 @@ export default function InventorySyncPage() {
           </Card>
 
           <Card padding={16}>
-            <h2 style={{ ...h2, marginBottom: 4 }}>{t('isync.step3')}</h2>
+            <h2 data-tour="sync.mapping" style={{ ...h2, marginBottom: 4 }}>{t('isync.step3')}</h2>
             <p style={{ ...small, marginBottom: 10 }}>{t('isync.mapping_hint')}</p>
             {columns.length === 0 && !isPush ? <p style={small}>{t('isync.mapping_needs_source')}</p> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -764,7 +764,7 @@ export default function InventorySyncPage() {
           <Card padding={16}>
             <h2 style={{ ...h2, marginBottom: 10 }}>{t('isync.step4')}</h2>
             <div style={{ ...grid, marginBottom: 12 }}>
-              <Field label={t('isync.model_label')} hint={t(`isync.model_hint.${draft.stock_model}`)}>
+              <div data-tour="sync.model"><Field label={t('isync.model_label')} hint={t(`isync.model_hint.${draft.stock_model}`)}>
                 <Select value={draft.stock_model} onChange={e => {
                   const v = e.target.value as Draft['stock_model']
                   setDraft(d => d && { ...d, stock_model: v,
@@ -773,12 +773,12 @@ export default function InventorySyncPage() {
                 }}>
                   {(catalog.stock_models ?? ['snapshot']).map(m => <option key={m} value={m}>{t(`isync.model.${m}`)}</option>)}
                 </Select>
-              </Field>
-              <Field label={t('isync.freshness_label')} hint={t(`isync.freshness_hint.${draft.freshness}`)}>
+              </Field></div>
+              <div data-tour="sync.freshness"><Field label={t('isync.freshness_label')} hint={t(`isync.freshness_hint.${draft.freshness}`)}>
                 <Select value={draft.freshness} onChange={e => setDraft(d => d && { ...d, freshness: e.target.value as Draft['freshness'] })}>
                   {(catalog.freshness_modes ?? ['scheduled']).map(m => <option key={m} value={m}>{t(`isync.freshness.${m}`)}</option>)}
                 </Select>
-              </Field>
+              </Field></div>
               {draft.freshness === 'continuous' && (
                 <Field label={t('isync.poll_seconds')} hint={t('isync.poll_seconds_hint', { n: catalog.limits.min_poll_seconds ?? 15 })}>
                   <Input type="number" min={catalog.limits.min_poll_seconds ?? 15} value={draft.poll_seconds}
@@ -864,7 +864,7 @@ export default function InventorySyncPage() {
               <input type="checkbox" checked={draft.allow_new_warehouses} onChange={e => setDraft(d => d && { ...d, allow_new_warehouses: e.target.checked })} />
               <span>{t('isync.allow_new_warehouses')}<span style={{ display: 'block', fontSize: 12, color: C.dim }}>{t('isync.allow_new_warehouses_hint')}</span></span>
             </label>
-            <h3 style={{ margin: '14px 0 6px', fontSize: 12.5, fontWeight: 700, color: C.muted }}>{t('isync.brake_title')}</h3>
+            <h3 data-tour="sync.brake" style={{ margin: '14px 0 6px', fontSize: 12.5, fontWeight: 700, color: C.muted }}>{t('isync.brake_title')}</h3>
             <p style={{ ...small, marginBottom: 8 }}>{t('isync.brake_hint')}</p>
             <div style={grid}>
               <Field label={t('isync.brake_vanished')}>
@@ -883,7 +883,7 @@ export default function InventorySyncPage() {
           </Card>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" style={btn} disabled={busy || (columns.length === 0 && !isPush)} onClick={() => void previewDraft()}>{t('isync.dry_run')}</button>
+            <button type="button" data-tour="sync.preview" style={btn} disabled={busy || (columns.length === 0 && !isPush)} onClick={() => void previewDraft()}>{t('isync.dry_run')}</button>
             <button type="button" style={{ ...primary, opacity: draft.name.trim() && !busy ? 1 : 0.5 }} disabled={!draft.name.trim() || busy}
                     onClick={() => void saveDraft()}>{draft.id ? t('isync.save_changes') : t('isync.save')}</button>
             <button type="button" style={btn} disabled={busy} onClick={() => { setDraft(null); setDry(null) }}>{t('isync.cancel')}</button>
@@ -913,7 +913,7 @@ function DryRunCard({ dry, fieldLabel }: {
   const { t } = useLanguage()
   return (
     <Card padding={16}>
-      <h2 style={{ ...h2, marginBottom: 4 }}>{t('isync.dry_title')}</h2>
+      <h2 data-tour="sync.dry" style={{ ...h2, marginBottom: 4 }}>{t('isync.dry_title')}</h2>
       <p style={{ ...small, marginBottom: 10 }}>
         {t('isync.dry_intro', { n: dry.rows_read })}{dry.sample_truncated ? ` ${t('isync.dry_truncated', { n: dry.sample_limit })}` : ''}
       </p>

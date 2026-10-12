@@ -14,6 +14,7 @@ import { sessionsTour } from './sessions'
 import { settingsTour } from './settings'
 import { skusTour } from './skus'
 import { suppliersTour } from './suppliers'
+import { syncTour } from './sync'
 import { usersTour } from './users'
 
 /**
@@ -43,6 +44,7 @@ export const TOURS: TourDefinition[] = [
   settingsTour,
   analystTour,
   sessionsTour,
+  syncTour,
 ]
 
 /** The tour whose route best matches `pathname`, or null. */

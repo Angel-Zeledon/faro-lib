@@ -2841,7 +2841,7 @@ export default function InventoryPage() {
  <FreshnessChip canRefresh={canEdit} visibleSkus={data?.items.map(i => i.sku)}
   onRefreshed={() => { if (sessionId) void load(sessionId) }} />
 
- <MenuButton
+ <div data-tour="inv.more_menu"><MenuButton
   icon={<MoreHorizontal size={14} />}
   title={t('inventory.menu_more')}
   items={[
@@ -2859,7 +2859,7 @@ export default function InventoryPage() {
    // that writes inventory, so a viewer is not offered it.
    ...(canEdit ? [{ label: t('nav.inventory_sync'), icon: <RefreshCw size={12} />, onSelect: () => router.push('/sincronizacion') }] : []),
   ]}
- />
+ /></div>
  </div>
  </div>
 

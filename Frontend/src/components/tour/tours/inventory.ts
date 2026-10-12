@@ -1,7 +1,7 @@
 import type { TourDefinition } from '../types'
 
 export const inventoryTour: TourDefinition = {
-  id: 'inventory-v4',
+  id: 'inventory-v5',
   route: '/inventario',
   name: 'name',
   steps: [
@@ -20,6 +20,9 @@ export const inventoryTour: TourDefinition = {
     { anchor: 'inv.update_lead', title: 'lead_field_title', body: 'lead_field_body' },
     { anchor: 'inv.save', title: 'save_title', body: 'save_body' },
     { anchor: 'inv.export', title: 'export_title', body: 'export_body' },
+    { anchor: 'inv.freshness', title: 'freshness_title', body: 'freshness_body' },
+    { anchor: 'inv.refresh_now', title: 'refresh_title', body: 'refresh_body' },
+    { anchor: 'inv.more_menu', title: 'sync_menu_title', body: 'sync_menu_body' },
     { title: 'config_title', body: 'config_body' },
   ],
   copy: {
@@ -55,6 +58,12 @@ export const inventoryTour: TourDefinition = {
       save_body: 'El punto ámbar marca las filas que tocaste y el botón te dice cuántas van. Nada se guarda solo: si sales de la pantalla con cambios pendientes, se pierden.\n\nGuardar reescribe el stock y los tiempos de entrega de esas filas y recalcula el semáforo con los valores nuevos. Es normal que varias filas cambien de color al terminar.\n\n«Descartar» devuelve la planilla a como estaba antes de que empezaras a escribir; no deshace lo que ya guardaste. Si vas a cargar cientos de filas, usa el CSV en vez de teclear.',
       export_title: 'Sacar y meter datos',
       export_body: 'CSV sube un archivo con sku, current_stock y lead_time_days: la forma rápida de cargar 500 productos de una vez. Plantilla te descarga ese mismo archivo con las columnas ya puestas, y es por donde conviene empezar.\n\n«Exportar OC» baja la compra sugerida tal como está; «Exportar OC (editada)» baja las cantidades que corregiste a mano; PDF arma el documento para mandárselo al proveedor.\n\nLa orden se genera agrupada por proveedor y queda registrada en Pedidos, para que después registres la llegada y cierres el ciclo.',
+      freshness_title: '¿Qué tan al día está tu stock?',
+      freshness_body: 'Aparece cuando tu inventario llega de tu propio sistema. Verde: al día. Ámbar: la última sincronización buena es vieja. Rojo: una sincronización necesita atención.\n\nÁbrelo para ver, por cada conexión, desde cuándo son los datos y qué hacer si algo falla.',
+      refresh_title: 'Actualizar ahora',
+      refresh_body: 'Trae los cambios de tu sistema en el momento, sin esperar la próxima ejecución. Si tarda, la tabla sigue mostrando los últimos datos buenos y se recarga sola al terminar.\n\nDesde el indicador puedes actualizar solo los productos de esta página.',
+      sync_menu_title: 'Sincronización con tu sistema',
+      sync_menu_body: 'En este menú está «Sincronización de inventario»: conecta la base de datos de tu ERP para que las existencias se actualicen solas. Ahí ves la salud de cada conexión y qué hacer si falla.',
       config_title: 'Mientras mejor configurado, mejor compra',
       config_body: 'Tiempo de entrega, costo, mínimo por pedido y nivel de servicio de cada producto o proveedor. Lo que no nos des, lo asumimos — y siempre te lo marcamos como supuesto.\n\nNo hace falta configurarlo todo de golpe. Empieza por los productos que más dinero mueven; el resto puede esperar, y la app te los ordena por ese criterio.',
     },
@@ -90,6 +99,12 @@ export const inventoryTour: TourDefinition = {
       save_body: 'The amber dot marks the rows you touched and the button says how many there are. Nothing saves by itself: leave the screen with pending changes and they are gone.\n\nSaving rewrites the stock and lead times of those rows and recomputes the signal with the new values. It is normal for several rows to change colour when it finishes.\n\n"Discard" returns the sheet to how it was before you started typing; it does not undo what you already saved. If you are loading hundreds of rows, use the CSV instead of typing.',
       export_title: 'Getting data in and out',
       export_body: 'CSV uploads a file with sku, current_stock and lead_time_days: the fast way to load 500 products at once. Template downloads that same file with the columns already in place, and it is where it is worth starting.\n\n"Export PO" downloads the suggested purchase as it stands; "Export PO (edited)" downloads the quantities you corrected by hand; PDF builds the document to send to the supplier.\n\nThe order is generated grouped by supplier and recorded under Orders, so you can register the arrival later and close the loop.',
+      freshness_title: 'How current is your stock?',
+      freshness_body: 'It appears when your inventory comes from your own system. Green: up to date. Amber: the last good sync is old. Red: a sync needs attention.\n\nOpen it to see, per connection, how old the data is and what to do if something fails.',
+      refresh_title: 'Refresh now',
+      refresh_body: 'Brings in your system\'s changes right now, without waiting for the next run. If it takes a while, the table keeps the last good data and reloads by itself when done.\n\nFrom the indicator you can refresh only the products on this page.',
+      sync_menu_title: 'Syncing with your system',
+      sync_menu_body: 'This menu has "Inventory sync": connect your ERP\'s database so stock updates itself. There you see each connection\'s health and what to do if it fails.',
       config_title: 'The better configured, the better it buys',
       config_body: 'Lead time, cost, minimum order and service level per product or supplier. Whatever you do not give us, we assume — and we always flag it as an assumption.\n\nYou do not have to configure everything at once. Start with the products that move the most money; the rest can wait, and the app ranks them by exactly that.',
     },
