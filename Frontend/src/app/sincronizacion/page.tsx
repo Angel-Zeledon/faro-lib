@@ -349,6 +349,8 @@ export default function InventorySyncPage() {
   const statusBadge = (p: SyncProfile) => {
     if (p.running) return <span style={{ color: C.muted }}>{t('isync.status_running')}</span>
     if (p.braked) return <span style={{ color: C.red, fontWeight: 700 }}>{t('isync.status_braked')}</span>
+    if (p.health === 'paused' || p.health === 'blocked')
+      return <span style={{ color: C.red, fontWeight: 700 }}>{t(`isync.health.${p.health}`)}</span>
     if (p.stale) return <span style={{ color: C.red, fontWeight: 700 }}>{t('isync.status_stale')}</span>
     if (p.last_status === 'failed') return <span style={{ color: C.amber, fontWeight: 700 }}>{t('isync.status_failed')}</span>
     if (!p.enabled) return <span style={{ color: C.dim }}>{t('isync.status_off')}</span>

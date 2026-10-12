@@ -149,8 +149,10 @@ export function DoctorPanel({ profileId, onClose }: { profileId: string; onClose
                 {t(`isync.stage.${s.stage}`)}
                 {s.duration_ms != null && <span style={{ color: C.dim }}> · {s.duration_ms} ms</span>}
                 {s.code && <div style={{ marginLeft: 16, color: C.muted }}>{text(s.code, s.params)}</div>}
-                {s.code && remedy(s.code, s.category) && s.status !== 'ok' && (
-                  <div style={{ marginLeft: 16 }}><strong>{t('isync.what_to_do')}</strong> {remedy(s.code, s.category)}</div>
+                {s.code && s.status !== 'ok' && remedy(s.code, s.status === 'failed' ? s.category : null) && (
+                  <div style={{ marginLeft: 16 }}>
+                    <strong>{t('isync.what_to_do')}</strong> {remedy(s.code, s.status === 'failed' ? s.category : null)}
+                  </div>
                 )}
                 {s.status === 'failed' && <div style={{ marginLeft: 16 }}><EgressNote ips={res.egress_ips} code={s.code} /></div>}
                 {typeof s.detail?.suggestion === 'string' && (
@@ -231,10 +233,21 @@ type DevTab = 'recipes' | 'tester' | 'code' | 'reference'
 export function DevPanel({ profile, sourceId }: { profile: SyncProfile | null; sourceId?: string }) {
   const { t } = useLanguage()
   const [tab, setTab] = useState<DevTab>('recipes')
+  const [open, setOpen] = useState(false)
   const tabs: DevTab[] = ['recipes', 'tester', 'code', 'reference']
+  if (!open) {
+    return (
+      <Card padding={16}>
+        <button type="button" style={{ ...btn, border: 'none', padding: 0, fontSize: 14, fontWeight: 700 }}
+                aria-expanded={false} onClick={() => setOpen(true)}>{t('isync.dev_title')} ▸</button>
+        <p style={{ ...small, marginTop: 4 }}>{t('isync.dev_hint')}</p>
+      </Card>
+    )
+  }
   return (
     <Card padding={16}>
-      <h2 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700 }}>{t('isync.dev_title')}</h2>
+      <button type="button" style={{ ...btn, border: 'none', padding: 0, fontSize: 14, fontWeight: 700, marginBottom: 8 }}
+              aria-expanded onClick={() => setOpen(false)}>{t('isync.dev_title')} ▾</button>
       <div role="tablist" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
         {tabs.map(k => (
           <button key={k} role="tab" aria-selected={tab === k} type="button" onClick={() => setTab(k)}

@@ -17,47 +17,23 @@ from backend.inventory_sync import mapper
 
 ENGINES = ("postgresql", "mysql", "mssql", "oracle", "mongodb")
 
-# Example read-only queries for common ERP schemas: a starting point the
-# developer adapts (company / plant filters), never run by us as-is.
-ERP_EXAMPLES: dict[str, dict[str, str]] = {
-    "sap_mard": {
-        "title": "SAP ECC / S/4HANA - MARD (stock per plant / storage location)",
-        "sql": "SELECT MATNR AS sku, WERKS || '-' || LGORT AS warehouse, LABST AS current_stock\n"
-               "FROM MARD\nWHERE LABST <> 0",
-    },
-    "oracle_ebs": {
-        "title": "Oracle E-Business Suite - MTL_ONHAND_QUANTITIES",
-        "sql": "SELECT msi.SEGMENT1 AS sku, moq.SUBINVENTORY_CODE AS warehouse,\n"
-               "       SUM(moq.TRANSACTION_QUANTITY) AS current_stock\n"
-               "FROM MTL_ONHAND_QUANTITIES moq\n"
-               "JOIN MTL_SYSTEM_ITEMS_B msi ON msi.INVENTORY_ITEM_ID = moq.INVENTORY_ITEM_ID\n"
-               "  AND msi.ORGANIZATION_ID = moq.ORGANIZATION_ID\n"
-               "GROUP BY msi.SEGMENT1, moq.SUBINVENTORY_CODE",
-    },
-    "odoo": {
-        "title": "Odoo - stock_quant (internal locations)",
-        "sql": "SELECT pp.default_code AS sku, sl.complete_name AS warehouse, SUM(sq.quantity) AS current_stock\n"
-               "FROM stock_quant sq\nJOIN product_product pp ON pp.id = sq.product_id\n"
-               "JOIN stock_location sl ON sl.id = sq.location_id AND sl.usage = 'internal'\n"
-               "GROUP BY pp.default_code, sl.complete_name",
-    },
-    "netsuite": {
-        "title": "NetSuite (SuiteAnalytics Connect) - InventoryBalance",
-        "sql": "SELECT i.itemid AS sku, l.name AS warehouse, b.quantityonhand AS current_stock\n"
-               "FROM inventorybalance b\nJOIN item i ON i.id = b.item\nJOIN location l ON l.id = b.location",
-    },
-    "dynamics": {
-        "title": "Dynamics 365 F&O / AX - InventSum",
-        "sql": "SELECT s.ITEMID AS sku, d.INVENTLOCATIONID AS warehouse, SUM(s.PHYSICALINVENT) AS current_stock\n"
-               "FROM INVENTSUM s\nJOIN INVENTDIM d ON d.INVENTDIMID = s.INVENTDIMID AND d.DATAAREAID = s.DATAAREAID\n"
-               "WHERE s.CLOSED = 0\nGROUP BY s.ITEMID, d.INVENTLOCATIONID",
-    },
-    "generic_ledger": {
-        "title": "Any ERP - movement ledger (use the 'ledger' stock model on it)",
-        "sql": "SELECT movement_id, item_code AS sku, warehouse_code AS warehouse, quantity,\n"
-               "       movement_type, status, posted_at\nFROM inventory_movements",
-    },
-}
+def erp_examples() -> dict[str, dict[str, str]]:
+    """Example read-only queries: the ERP presets rendered with sample
+    parameters (client 100, company USMF...). One source of truth with the
+    presets, so the client / company filters are never forgotten here."""
+    from backend.inventory_sync import presets
+    sample = {"sap_client": "100", "code": "USMF", "code_list": "1000", "int_list": "204", "int": "1",
+              "decimals": "2", "schema": None, "bc_company": "CRONUS", "guid": None, "prefix": None}
+    out: dict[str, dict[str, str]] = {}
+    for pid, pr in presets.PRESETS.items():
+        params = {sp["name"]: sample[sp["kind"]] for sp in pr["params"]
+                  if sp["required"] or sp["kind"] in ("int", "decimals")}
+        params = {k: v for k, v in params.items() if v}
+        engine = pr["engines"][0]
+        body = presets.render(pid, engine, params)["profile"]
+        verified = "" if pr.get("verified") else " (unverified against a live system)"
+        out[pid] = {"title": f"{pr['product']} - {engine}{verified}", "sql": body["source_query"]}
+    return out
 
 
 def _q(engine: str, name: str) -> str:
@@ -124,7 +100,7 @@ FORWARDERS: dict[str, str] = {
         "        return json.load(r)  # retry with the SAME batch_id: it is idempotent\n"),
     "curl_ndjson": (
         "curl -X POST 'https://<your-stockai>/api/v1/inventory-sync/profiles/<profile_id>/ingest?batch_id=2026-10-12T02' \\\n"
-        "  -H 'Authorization: Bearer $STOCKAI_API_KEY' -H 'Content-Type: application/x-ndjson' \\\n"
+        "  -H \"Authorization: Bearer $STOCKAI_API_KEY\" -H 'Content-Type: application/x-ndjson' \\\n"
         "  --data-binary @changes.ndjson"),
 }
 
@@ -136,7 +112,7 @@ def recipes(engine: Optional[str], database: Optional[str] = None, schema: Optio
     return {
         "grants": {e: grants(e, database or "<database>", schema) for e in engines},
         "egress_ips": egress,
-        "examples": ERP_EXAMPLES,
+        "examples": erp_examples(),
         "forwarders": FORWARDERS,
         "view_template": {e: (view_sql(e, "<your_stock_table>", {f: {"column": f"<{f}_column>"}
                                                                   for f in ("sku", "warehouse", "current_stock")})
