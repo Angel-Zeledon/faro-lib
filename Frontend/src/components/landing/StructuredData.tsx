@@ -100,7 +100,7 @@ export default function StructuredData() {
       url: `${SITE_URL}/`,
       // A square mark: search engines build the site icon and the knowledge
       // panel logo from this, and the 1200x630 social card crops badly.
-      logo: `${SITE_URL}/icon.png`,
+      logo: `${SITE_URL}/brand/favicon-192.png`,
       areaServed: 'Latin America',
       contactPoint: {
         '@type': 'ContactPoint',

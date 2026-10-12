@@ -22,6 +22,20 @@ export const metadata: Metadata = {
   title: 'StockAI — Predicción de ventas con IA',
   description: 'Predicción de ventas por producto con inteligencia artificial, para distribuidores, mayoristas y fabricantes',
   applicationName: 'StockAI',
+  // Declared by hand, at paths that did not exist before the rebrand. Search
+  // engines refetch an icon when its URL changes, not when the file behind the
+  // same URL does, so the old mark kept showing in results for weeks. Sizes are
+  // multiples of 48 (Google's rule for the result-page icon); the SVG scales to
+  // any density. /favicon.ico stays for browsers that ask for it by default.
+  icons: {
+    icon: [
+      { url: '/brand/favicon-48.png', sizes: '48x48', type: 'image/png' },
+      { url: '/brand/favicon-96.png', sizes: '96x96', type: 'image/png' },
+      { url: '/brand/favicon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/brand/icon-512.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: '48x48' },
+    ],
+  },
   // The link preview of EVERY route that does not set its own (the app and its
   // sign-in form included). Without these a chat or social app that unfurls
   // `app.stockai.es` has no image to show and falls back to whatever icon it
