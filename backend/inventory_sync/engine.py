@@ -70,6 +70,8 @@ class _Prep:
         self.unknown_warehouses: set[str] = set()
         self.watermark: Optional[dict] = None
         self.seen_columns: set[str] = set()
+        # What the reader reports back (ledger cursor, drift, movements).
+        self.extras: dict = {}
 
     def _reject(self, code: str, params: dict, sku: Any, row_number: int) -> None:
         self.rejected += 1
@@ -125,6 +127,10 @@ class _Prep:
         low = {c.lower() for c in self.seen_columns}
         wanted = [m.get("column") for m in self.mapping.values() if m.get("column")]
         wanted += [f["column"] for f in self.filters]
+        if (self.profile.get("stock_model") or "snapshot") == "ledger":
+            # Ledger rows are the source's per-key sums: only the mapped columns survive.
+            return sorted({c for c in wanted if c and c.lower() not in low}
+                          - {f["column"] for f in self.filters})
         if self.profile.get("watermark_column"):
             wanted.append(self.profile["watermark_column"])
         return sorted({c for c in wanted if c and c.lower() not in low})
@@ -229,6 +235,18 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
                                "after": _plain(v)} for f, v in changed.items() if f != "warehouse"},
             })
     preview = [{k: _plain(v) for k, v in r.items() if k != "_line"} for r in list(valid.values())[:20]]
+    examples: list = []
+    model = profile.get("stock_model") or "snapshot"
+    sample_skus = [k[0] for k in list(valid)[:3]]
+    try:
+        if model == "ledger" and profile.get("data_source_id"):
+            from backend.inventory_sync import ledger
+            examples = ledger.explain(tenant_id, profile, sample_skus)
+        elif model == "aggregate" and profile.get("data_source_id"):
+            from backend.inventory_sync import strategies as _st
+            examples = _st.aggregate_examples(tenant_id, profile, sample_skus)
+    except Exception:  # noqa: BLE001 - the worked example is a help, never a reason to fail the preview
+        log.exception("inventory sync: worked example failed")
     return {
         **prep.summary(),
         "valid": len(valid), "would_create": creates, "would_update": updates,
@@ -236,6 +254,7 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
         "preview_rows": preview, "sample_limit": sample,
         "sample_truncated": prep.rows_read >= sample,
         "owned_fields": F.owned_fields(profile.get("mapping") or {}),
+        "stock_model": model, "examples": examples,
         "elapsed_ms": int((time.monotonic() - started) * 1000),
     }
 
@@ -359,7 +378,8 @@ def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str
     if batches is None:
         from backend.inventory_sync import strategies
         batches = strategies.read_for_run(tenant_id, profile, run_id=run_id, scope=scope,
-                                          incremental=incremental, max_rows=max_rows_per_run())
+                                          incremental=incremental, max_rows=max_rows_per_run(),
+                                          report=prep.extras)
     is_sql = (profile.get("engine") or "") != "mongodb" and profile.get("source_kind") in ("table", "query")
     checked = False
     for batch in batches:
@@ -536,7 +556,7 @@ def _transition(tenant_id: str, profile: dict, run: dict, health: str, reason: O
     if not changed:
         return
     base = {"profile_id": profile["id"], "profile_name": profile.get("name"), "run_id": run["id"],
-            "health": health, "reason": reason}
+            "health": health, "reason_code": reason}
     if health == "healthy" and before not in ("new", "healthy"):
         _event(tenant_id, "inventory_sync.recovered", profile, details={}, user_id=user_id)
         _webhook(tenant_id, "inventory_sync.recovered", base)
@@ -595,6 +615,13 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
                     (prep.rows_read, valid, prep.rejected, _json(prep.rejected_sample), run_id))
             if not override_brake:
                 _check_brake(profile, prep, valid, run_id, kind=kind)
+            drift = int(prep.extras.get("drift") or 0)
+            if drift:
+                execute("UPDATE inventory_sync_runs SET drift_count = %s, drift_sample = %s WHERE id = %s",
+                        (drift, _json(prep.extras.get("drift_sample") or []), run_id))
+                cfg = profile.get("model_config") or {}
+                if cfg.get("drift_policy") == "brake" and not override_brake:
+                    raise _Brake("ledger_drift", count=drift)
             execute("UPDATE inventory_sync_runs SET brake_passed = TRUE WHERE id = %s", (run_id,))
         _guard_profile(tenant_id, profile, trigger)
         after = None
@@ -613,8 +640,14 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
             applier.apply_missing(tenant_id, profile, run_id, counters)
         if prep is not None and profile.get("mode") == "incremental":
             watermark_after = reader.max_watermark(profile.get("watermark_value"), prep.watermark)
-        if prep is not None and getattr(prep, "cursor_after", None) is not None:
-            cursor_after = prep.cursor_after
+        if prep is not None and prep.extras.get("cursor_after") is not None:
+            cursor_after = prep.extras["cursor_after"]
+        if (profile.get("stock_model") or "snapshot") == "ledger":
+            from backend.inventory_sync import ledger
+            ledger.commit(profile_id, run_id)
+            if prep is not None and prep.extras.get("floor"):
+                execute("UPDATE inventory_sync_profiles SET ledger_floor = %s WHERE id = %s",
+                        (_json(prep.extras["floor"]), profile_id))
     except _Brake as brake:
         status, error_code, error_params = "braked", f"brake_{brake.code}", failures.public_params(brake.params)
     except _Stop as stop:
@@ -627,6 +660,12 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
         else:
             log.warning("inventory sync run %s failed: %s", run_id, error_code)
 
+    if status != "success" and (profile.get("stock_model") or "snapshot") == "ledger":
+        try:
+            from backend.inventory_sync import ledger
+            ledger.rollback(profile_id, run_id)
+        except Exception:  # noqa: BLE001
+            log.exception("could not roll back ledger state of run %s", run_id)
     if not query_one("SELECT 1 FROM inventory_sync_profiles WHERE id = %s", (profile_id,)):
         # Deleted (or the tenant erased) while running: the cascade took the run
         # row with it; there is nothing left to report on.
@@ -672,6 +711,11 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
         _event(tenant_id, "inventory_sync.run_succeeded", profile, user_id=user_id,
                details={"created": counters["created"], "updated": counters["updated"],
                         "unchanged": counters["unchanged"], "rejected": summary["rejected"]})
+        drift = int(run_row.get("drift_count") or 0)
+        if drift:
+            _event(tenant_id, "inventory_sync.ledger_drift", profile, user_id=user_id,
+                   details={"count": drift}, reason="inventory_sync_ledger_drift_healed",
+                   reason_params={"count": drift})
         if counters["manual_overwritten"]:
             _event(tenant_id, "inventory_sync.manual_edits_overwritten", profile, user_id=user_id,
                    details={"count": counters["manual_overwritten"]},

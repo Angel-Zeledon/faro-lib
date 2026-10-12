@@ -106,8 +106,8 @@ PINNED = {
                              "delivery_date", "quantity", "fulfilled_at"),
     "inventory_sync.run_finished": ("profile_id", "profile_name", "run_id", "status", "created",
                                     "updated", "unchanged", "rejected"),
-    "inventory_sync.blocked": ("profile_id", "profile_name", "run_id", "health", "reason"),
-    "inventory_sync.recovered": ("profile_id", "profile_name", "run_id", "health", "reason"),
+    "inventory_sync.blocked": ("profile_id", "profile_name", "run_id", "health", "reason_code"),
+    "inventory_sync.recovered": ("profile_id", "profile_name", "run_id", "health", "reason_code"),
     "webhook.test": ("webhook_id",),
 }
 

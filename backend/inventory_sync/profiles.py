@@ -252,6 +252,13 @@ def normalize(tenant_id: str, body: dict, existing: Optional[dict] = None) -> di
         model_config = ledger.normalize_config(model_config, engine)
     else:
         model_config = {}
+    if stock_model != "snapshot" and filters:
+        # Row filters run after the source has grouped the rows, where their
+        # columns no longer exist. Filter in the saved query / view, or with
+        # the ledger's posted statuses.
+        raise _reject("inventory_sync_model_invalid",
+                      "Filters apply to snapshot profiles; filter in the query, or use posted statuses.",
+                      reason="filters_need_snapshot")
     strategy = base.get("strategy") or "auto"
     if strategy not in strategies.STRATEGIES:
         raise _reject("inventory_sync_strategy_invalid", "Unknown change-capture strategy.",

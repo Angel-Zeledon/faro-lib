@@ -260,6 +260,19 @@ MIGRATIONS += [
          received_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
          PRIMARY KEY (profile_id, batch_id)
      )"""),
+    # Pending ledger state: a run's computed balances and consumed movement ids
+    # become real only when the run succeeds (`ledger.commit`).
+    ("add_inventory_sync_ledger_balances_pending_balance",
+     "ALTER TABLE inventory_sync_ledger_balances ADD COLUMN IF NOT EXISTS pending_balance DOUBLE PRECISION"),
+    ("add_inventory_sync_ledger_balances_pending_run",
+     "ALTER TABLE inventory_sync_ledger_balances ADD COLUMN IF NOT EXISTS pending_run TEXT"),
+    ("add_inventory_sync_applied_movements_pending_run",
+     "ALTER TABLE inventory_sync_applied_movements ADD COLUMN IF NOT EXISTS pending_run TEXT"),
+    # The high-water cursor of the last successful full / reconcile ledger
+    # run: every movement at or below it is inside the running balance, so an
+    # incremental read never goes below it, whatever the cursor says.
+    ("add_inventory_sync_profiles_ledger_floor",
+     "ALTER TABLE inventory_sync_profiles ADD COLUMN IF NOT EXISTS ledger_floor JSONB"),
     # Idempotency-Key replay store for the mutating inventory-sync routes.
     ("create_inventory_sync_idempotency",
      """CREATE TABLE IF NOT EXISTS inventory_sync_idempotency (

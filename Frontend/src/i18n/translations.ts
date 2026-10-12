@@ -8593,6 +8593,10 @@ export const translations = {
     'isync.remedy.category.ours': 'Falla del lado de StockAI; se reintenta solo.',
     'isync.egress_ips': 'IP de StockAI que debes permitir: {ips}',
     'isync.egress_ips_unknown': 'Pide al operador de StockAI las IP de salida para tu firewall.',
+    // ── Inventory sync (app/sincronizacion, backend/inventory_sync).
+    'events.action.inventory_sync.ledger_drift': 'La conciliación corrigió saldos de un libro de movimientos',
+    'events.reason.inventory_sync_ledger_drift_healed': 'El saldo calculado de {count} productos no coincidía con la suma de movimientos de tu sistema (movimientos tardíos, con fecha atrasada o anulados); se aplicó la suma de tu sistema.',
+    'isync.reject.unknown_movement_type': 'Tipo de movimiento sin signo configurado ({value})',
   },
   en: {
     // ── Auth screens (pre-login) — see the `es` block.
@@ -17032,6 +17036,10 @@ export const translations = {
     'isync.remedy.category.ours': 'A failure on StockAI\'s side; it retries on its own.',
     'isync.egress_ips': 'StockAI IPs to allow: {ips}',
     'isync.egress_ips_unknown': 'Ask StockAI\'s operator for the egress IPs for your firewall.',
+    // ── Inventory sync (app/sincronizacion) — see the `es` block.
+    'events.action.inventory_sync.ledger_drift': 'A reconcile corrected balances of a movement ledger',
+    'events.reason.inventory_sync_ledger_drift_healed': 'The computed balance of {count} products did not match your system\'s sum of movements (late, back-dated or voided movements); your system\'s sum was applied.',
+    'isync.reject.unknown_movement_type': 'Movement type with no configured sign ({value})',
   },
 } as const
 

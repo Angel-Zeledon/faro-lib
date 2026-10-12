@@ -83,8 +83,8 @@ EVENT_TYPES: dict[str, EventType] = {e.name: e for e in (
     EventType("inventory_sync.run_finished",
               ("profile_id", "profile_name", "run_id", "status", "created", "updated",
                "unchanged", "rejected"), warehouse_aware=False),
-    EventType("inventory_sync.blocked", ("profile_id", "profile_name", "run_id", "health", "reason"), warehouse_aware=False),
-    EventType("inventory_sync.recovered", ("profile_id", "profile_name", "run_id", "health", "reason"), warehouse_aware=False),
+    EventType("inventory_sync.blocked", ("profile_id", "profile_name", "run_id", "health", "reason_code"), warehouse_aware=False),
+    EventType("inventory_sync.recovered", ("profile_id", "profile_name", "run_id", "health", "reason_code"), warehouse_aware=False),
     EventType("webhook.test", ("webhook_id",), warehouse_aware=False, subscribable=False),
 )}
 

@@ -255,3 +255,23 @@ def same_value(a: Any, b: Any) -> bool:
             and not isinstance(a, bool) and not isinstance(b, bool):
         return abs(float(a) - float(b)) <= 1e-9 * max(1.0, abs(float(a)), abs(float(b)))
     return str(a) == str(b)
+
+
+def map_key(row: dict, mapping: dict, *, default_warehouse: Optional[str] = None) -> tuple[str, str]:
+    """Only the (sku, warehouse) of a row, with the mapping's transforms —
+    what a ledger movement contributes to. Raises `Rejected` like map_row."""
+    if any(isinstance(v, str) and "\x00" in v for v in row.values()):
+        raise Rejected("row_has_nul")
+    sku = _field_value(row, "sku", mapping["sku"]) if mapping.get("sku") else None
+    if sku is None or not str(sku).strip():
+        raise Rejected("sku_blank")
+    if len(str(sku)) > F.MAX_SKU:
+        raise Rejected("text_too_long", field="sku", max=F.MAX_SKU)
+    wh = _field_value(row, "warehouse", mapping["warehouse"]) if mapping.get("warehouse") else None
+    wh = wh or (default_warehouse or "").strip() or DEFAULT_WAREHOUSE
+    return str(sku), str(wh).strip()
+
+
+def number(value: Any, decimal: str = "auto", field: str = "current_stock") -> float:
+    """A cell as a number with the importer's rules (raises `Rejected`)."""
+    return _to_number(value, decimal, field)

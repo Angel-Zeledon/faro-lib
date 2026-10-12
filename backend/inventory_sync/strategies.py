@@ -99,8 +99,12 @@ def aggregate_sql(profile: dict, engine: str, base: str) -> str:
     keys = [mapping[f]["column"] for f in ("sku", "warehouse") if mapping.get(f, {}).get("column")]
     keys += [c for c in (cfg.get("group_by") or []) if c not in keys]
     qty = mapping["current_stock"]["column"]
-    others = sorted({m["column"] for f, m in mapping.items()
-                     if m.get("column") and m["column"] not in keys and m["column"] != qty})
+    others = {m["column"] for f, m in mapping.items()
+              if m.get("column") and m["column"] not in keys and m["column"] != qty}
+    if profile.get("watermark_column"):
+        # Kept (as its MAX per key) so an incremental aggregate can advance its watermark.
+        others.add(profile["watermark_column"])
+    others = sorted(others)
     select = [f"src.{q(k)} AS {q(k)}" for k in keys]
     select.append(f"{fn.upper()}(src.{q(qty)}) AS {q(qty)}")
     select += [f"MAX(src.{q(c)}) AS {q(c)}" for c in others]
@@ -111,12 +115,13 @@ def aggregate_sql(profile: dict, engine: str, base: str) -> str:
 def read_for_run(tenant_id: str, profile: dict, *, run_id: Optional[str] = None,
                  scope: Optional[dict] = None, incremental: bool = False,
                  max_rows: Optional[int] = None, limit: Optional[int] = None,
-                 batch_size: int = reader.BATCH) -> Iterator[list[dict]]:
+                 batch_size: int = reader.BATCH, report: Optional[dict] = None) -> Iterator[list[dict]]:
     model = profile.get("stock_model") or "snapshot"
     if model == "ledger":
         from backend.inventory_sync import ledger
         yield from ledger.read_balances(tenant_id, profile, run_id=run_id, scope=scope,
-                                        incremental=incremental, max_rows=max_rows, limit=limit)
+                                        incremental=incremental, max_rows=max_rows, limit=limit,
+                                        report=report)
         return
     strategy = resolve_strategy(profile, profile.get("engine") or "", incremental)
     if strategy in ("change_tracking", "oracle_rowscn", "change_stream"):
@@ -126,3 +131,40 @@ def read_for_run(tenant_id: str, profile: dict, *, run_id: Optional[str] = None,
     watermark = profile.get("watermark_value") if strategy == "watermark" else None
     yield from reader.read_batches(tenant_id, profile, watermark=watermark, limit=limit,
                                    batch_size=batch_size, max_rows=max_rows, scope=scope)
+
+
+def aggregate_examples(tenant_id: str, profile: dict, skus: list[str]) -> list[dict]:
+    """For a few SKUs: the source rows (lots, bins) and their sum — the
+    arithmetic an aggregate profile does, shown before it is enabled."""
+    from backend.datasources.service import _read_only_rows
+    from backend.inventory_sync import mapper
+    cfg = reader._cfg(tenant_id, profile["data_source_id"])
+    engine = cfg.get("engine") or "postgresql"
+    if engine == "mongodb" or not skus or not sku_pushdown_ok(profile):
+        return []
+    pred = scope_predicate(profile, engine, {"skus": skus[:3]})
+    if not pred:
+        return []
+    sql = f"SELECT src.* FROM ({reader.raw_select(profile, engine)}) src WHERE src.{pred}"
+    mapping = profile["mapping"]
+    groups: dict[tuple[str, str], list] = {}
+    with _read_only_rows(cfg, sql, stream=True, tenant_id=tenant_id, bulk=True) as result:
+        cols = [str(c) for c in result.keys()]
+        for r in result.fetchmany(300):
+            row = dict(zip(cols, r))
+            try:
+                key = mapper.map_key(row, mapping, default_warehouse=profile.get("default_warehouse"))
+                qty = mapper.number(mapper._lookup(row, mapping["current_stock"]["column"]),
+                                    mapping["current_stock"].get("decimal") or "auto")
+            except mapper.Rejected as exc:
+                groups.setdefault(("?", "?"), []).append({"rejected": exc.code})
+                continue
+            groups.setdefault(key, []).append({"quantity": qty})
+    fn = (profile.get("model_config") or {}).get("aggregate") or "sum"
+    out = []
+    for (sku, wh), rows in list(groups.items())[:3]:
+        qs = [r["quantity"] for r in rows if "quantity" in r]
+        total = (sum(qs) if fn == "sum" else min(qs) if fn == "min" else max(qs)) if qs else None
+        out.append({"sku": sku, "warehouse": wh, "rows": rows[:20], "row_count": len(rows),
+                    "aggregate": fn, "total": total})
+    return out

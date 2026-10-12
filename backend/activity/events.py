@@ -533,6 +533,12 @@ EVENTS: dict[str, EventSpec] = {
         kind="data", severity=CRITICAL,
         detail_keys=("profile_name",),
     ),
+    # A ledger reconcile found our running balance and the source's SUM apart
+    # (late, back-dated, edited or deleted movements) and applied the source.
+    "inventory_sync.ledger_drift": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("profile_name", "count"),
+    ),
     # A profile that was failing or stopped works again.
     "inventory_sync.recovered": EventSpec(
         kind="data", severity=INFO,
@@ -942,6 +948,7 @@ REASONS: tuple[str, ...] = (
     "inventory_sync_not_succeeding",
     "inventory_sync_source_wins",
     "inventory_sync_needs_action",
+    "inventory_sync_ledger_drift_healed",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
     # the audit stream gave up on `days` different days, or its address is refused
