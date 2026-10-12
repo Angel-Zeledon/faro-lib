@@ -470,7 +470,7 @@ class TestScheduler:
         row = profiles.get(tid, p["id"])
         assert row["lease_owner"] is None
         wait = (row["next_run_at"] - datetime.now(timezone.utc)).total_seconds() / 60
-        assert 38 <= wait <= 41   # 10 * 2^(3-1)
+        assert 31 <= wait <= 49   # 10 * 2^(3-1), +/- 20% jitter
 
     def test_stale_alert_once_per_episode(self, test_tenant, src_db, src_table):
         tid = test_tenant["id"]

@@ -111,24 +111,47 @@ def _sql_literal(wm: dict, engine: str) -> str:
 
 # ── Statements ────────────────────────────────────────────────────────────────
 
-def build_sql(profile: dict, engine: str, watermark: Optional[dict]) -> str:
-    """The statement a run sends. Table sources quote the identifier; query
-    sources wrap the saved query; the incremental predicate is appended only
-    with a stored watermark."""
+def raw_select(profile: dict, engine: str) -> str:
+    """SELECT * over the profile's table, view or saved query."""
     from backend.datasources import catalog
     if profile["source_kind"] == "table":
-        base = f"SELECT * FROM {catalog.qualified(engine, profile.get('source_schema'), profile['source_object'])}"
-        alias = None
-    else:
-        base = f"SELECT * FROM ({profile['source_query'].strip().rstrip(';')}) stockai_src"
-        alias = "stockai_src"
+        return f"SELECT * FROM {catalog.qualified(engine, profile.get('source_schema'), profile['source_object'])}"
+    return f"SELECT * FROM ({profile['source_query'].strip().rstrip(';')}) stockai_q"
+
+
+def build_sql(profile: dict, engine: str, watermark: Optional[dict],
+              scope: Optional[dict] = None) -> str:
+    """The statement a run sends.
+
+    * snapshot: the rows, filtered by the watermark (incremental) and the scope;
+    * aggregate: GROUP BY the mapped keys (see `strategies.aggregate_sql`). An
+      incremental aggregate re-sums EVERY row of each key that has at least one
+      changed row (an EXISTS over the changed rows), never just the changed
+      rows: summing only the changed lots would write a partial total."""
+    from backend.datasources import catalog
+    from backend.inventory_sync import strategies
+    q = lambda c: catalog.quote_ident(engine, c)  # noqa: E731
+    base = raw_select(profile, engine)
+    preds: list[str] = []
+    scoped = strategies.scope_predicate(profile, engine, scope)
+    if scoped:
+        preds.append("src." + scoped)
+    model = profile.get("stock_model") or "snapshot"
     if profile.get("mode") == "incremental" and watermark and profile.get("watermark_column"):
-        col = catalog.quote_ident(engine, profile["watermark_column"])
-        if alias:
-            col = f"{alias}.{col}"
         start = _start_point(watermark, int(profile.get("overlap_minutes") or 0))
-        base += f" WHERE {col} >= {_sql_literal(start, engine)}"
-    return base
+        lit = _sql_literal(start, engine)
+        wm = q(profile["watermark_column"])
+        if model == "aggregate":
+            mapping = profile.get("mapping") or {}
+            keys = [mapping[f]["column"] for f in ("sku", "warehouse") if mapping.get(f, {}).get("column")]
+            join = " AND ".join(f"chg.{q(k)} = src.{q(k)}" for k in keys)
+            preds.append(f"EXISTS (SELECT 1 FROM ({base}) chg WHERE {join} AND chg.{wm} >= {lit})")
+        else:
+            preds.append(f"src.{wm} >= {lit}")
+    sql = f"SELECT src.* FROM ({base}) src" + (f" WHERE {' AND '.join(preds)}" if preds else "")
+    if model == "aggregate":
+        sql = strategies.aggregate_sql(profile, engine, sql)
+    return sql
 
 
 def _mongo_value(wm: dict) -> Any:
@@ -145,7 +168,7 @@ def _mongo_value(wm: dict) -> Any:
 
 def read_batches(tenant_id: str, profile: dict, *, watermark: Optional[dict] = None,
                  limit: Optional[int] = None, batch_size: int = BATCH,
-                 max_rows: Optional[int] = None) -> Iterator[list[dict]]:
+                 max_rows: Optional[int] = None, scope: Optional[dict] = None) -> Iterator[list[dict]]:
     """Yield lists of raw row dicts from the source. `limit` stops early (the
     dry run's sample); `max_rows` makes reading past it a failure — the run
     never silently truncates a source."""
@@ -197,7 +220,7 @@ def read_batches(tenant_id: str, profile: dict, *, watermark: Optional[dict] = N
         return
 
     from backend.datasources.service import _classified, _read_only_rows
-    sql = build_sql(profile, engine, watermark)
+    sql = build_sql(profile, engine, watermark, scope)
     try:
         with _read_only_rows(cfg, sql, stream=True, tenant_id=tenant_id, bulk=True) as result:
             columns = [str(c) for c in result.keys()]

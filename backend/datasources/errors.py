@@ -144,6 +144,16 @@ def classify(exc: BaseException, *, engine: str = "", secrets: Iterable[str] = (
 
     if isinstance(inner, (ImportError, ModuleNotFoundError)):
         return _c("data_source_driver_missing", STAGE_DRIVER, status=503, engine=engine)
+    # Account state, on every engine: a locked account or an expired password
+    # needs a different fix than a wrong password (the DBA, not the form).
+    errno_ = _mysql_errno(inner)
+    if errno_ == 3118 or re.search(r"ORA-28000|account is locked|Error: 18486", text, re.I):
+        return _c("data_source_account_locked", STAGE_AUTH)
+    if errno_ in (1862, 1820) or re.search(
+            r"ORA-28001|password has expired|Error: 1848[78]|password must be changed", text, re.I):
+        return _c("data_source_password_expired", STAGE_AUTH)
+    if re.search(r"certificate has expired|certificate expired|CERT_HAS_EXPIRED", text, re.I):
+        return _c("data_source_tls_cert_expired", STAGE_TLS, reason=reason)
     if engine == "mssql" and (_odbc_state(inner) in ("IM002", "01000") and
                               ("can't open lib" in low or "driver" in low)):
         return _c("data_source_driver_missing", STAGE_DRIVER, status=503, engine=engine)

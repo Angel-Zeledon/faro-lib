@@ -148,3 +148,128 @@ MIGRATIONS: list[tuple[str, str]] = [
          PRIMARY KEY (run_id, sku, warehouse)
      )"""),
 ]
+
+# ── v2: freshness modes, stock models, health, resume, push, idempotency ─────
+#
+# Additive only (ALTER ... ADD COLUMN IF NOT EXISTS, CHECKs dropped and
+# re-added under their default names), so an installation that ran v1 keeps
+# every profile and run exactly as it was: a v1 profile reads as a
+# `snapshot` model on a `scheduled` freshness, health `new`.
+
+def _recheck(table: str, column: str, values: tuple[str, ...]) -> list[tuple[str, str]]:
+    name = f"{table}_{column}_check"
+    allowed = ", ".join(f"'{v}'" for v in values)
+    return [
+        (f"drop_{name}_v2", f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {name}"),
+        (f"add_{name}_v2", f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({column} IN ({allowed}))"),
+    ]
+
+
+_PROFILE_COLUMNS = (
+    ("slug", "TEXT"),
+    ("priority", "INT NOT NULL DEFAULT 100"),
+    ("health", "TEXT NOT NULL DEFAULT 'new'"),
+    ("health_reason", "TEXT"),
+    ("health_params", "JSONB"),
+    ("health_changed_at", "TIMESTAMPTZ"),
+    ("brake_max_jump_pct", "DOUBLE PRECISION NOT NULL DEFAULT 20"),
+    ("stock_model", "TEXT NOT NULL DEFAULT 'snapshot'"),
+    ("model_config", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
+    ("freshness", "TEXT NOT NULL DEFAULT 'scheduled'"),
+    ("poll_seconds", "INT NOT NULL DEFAULT 60"),
+    ("reconcile_minutes", "INT NOT NULL DEFAULT 360"),
+    ("next_reconcile_at", "TIMESTAMPTZ"),
+    ("strategy", "TEXT NOT NULL DEFAULT 'auto'"),
+    ("cursor_value", "JSONB"),
+    ("data_as_of", "TIMESTAMPTZ"),
+    ("last_refresh_at", "TIMESTAMPTZ"),
+    ("source_fingerprint", "TEXT"),
+)
+_RUN_COLUMNS = (
+    ("stage_complete", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("brake_passed", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("config_hash", "TEXT"),
+    ("refused_ceiling", "INT NOT NULL DEFAULT 0"),
+    ("owned_elsewhere", "INT NOT NULL DEFAULT 0"),
+    ("drift_count", "INT NOT NULL DEFAULT 0"),
+    ("drift_sample", "JSONB"),
+    ("warnings", "JSONB"),
+    ("run_kind", "TEXT NOT NULL DEFAULT 'full'"),
+    ("scope", "JSONB"),
+    ("health_after", "TEXT"),
+    ("checkpoint", "JSONB"),
+)
+
+MIGRATIONS += [
+    *[(f"add_inventory_sync_profiles_{c}", f"ALTER TABLE inventory_sync_profiles ADD COLUMN IF NOT EXISTS {c} {t}")
+      for c, t in _PROFILE_COLUMNS],
+    *[(f"add_inventory_sync_runs_{c}", f"ALTER TABLE inventory_sync_runs ADD COLUMN IF NOT EXISTS {c} {t}")
+      for c, t in _RUN_COLUMNS],
+    ("inventory_sync_profiles_source_optional",
+     "ALTER TABLE inventory_sync_profiles ALTER COLUMN data_source_id DROP NOT NULL"),
+    *_recheck("inventory_sync_profiles", "source_kind", ("table", "query", "collection", "pipeline", "push")),
+    *_recheck("inventory_sync_profiles", "stock_model", ("snapshot", "aggregate", "ledger")),
+    *_recheck("inventory_sync_profiles", "freshness", ("scheduled", "continuous", "on_demand")),
+    *_recheck("inventory_sync_profiles", "health", ("new", "healthy", "degraded", "paused", "blocked")),
+    *_recheck("inventory_sync_profiles", "negative_policy", ("reject", "zero")),
+    *_recheck("inventory_sync_runs", "trigger_kind",
+              ("schedule", "manual", "refresh", "continuous", "reconcile", "push", "import")),
+    *_recheck("inventory_sync_runs", "status", ("running", "receiving", "success", "failed", "braked")),
+    ("create_inventory_sync_profiles_slug_uniq",
+     "CREATE UNIQUE INDEX IF NOT EXISTS inventory_sync_profiles_slug_uniq "
+     "ON inventory_sync_profiles (tenant_id, slug) WHERE slug IS NOT NULL"),
+    ("create_inventory_sync_staging_apply_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_sync_staging_apply_idx "
+     "ON inventory_sync_staging (run_id, applied, sku, warehouse)"),
+    ("create_inventory_sync_keys_owner_idx",
+     "CREATE INDEX IF NOT EXISTS inventory_sync_keys_owner_idx "
+     "ON inventory_sync_keys (tenant_id, sku, warehouse, profile_id)"),
+    # The running balance of a ledger profile: what StockAI has computed by
+    # applying movements, checked against the source's SUM on every reconcile.
+    ("create_inventory_sync_ledger_balances",
+     """CREATE TABLE IF NOT EXISTS inventory_sync_ledger_balances (
+         tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         profile_id  TEXT NOT NULL REFERENCES inventory_sync_profiles(id) ON DELETE CASCADE,
+         sku         TEXT NOT NULL,
+         warehouse   TEXT NOT NULL,
+         balance     DOUBLE PRECISION NOT NULL DEFAULT 0,
+         updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (profile_id, sku, warehouse)
+     )"""),
+    # Movement ids already applied inside the overlap window: an incremental
+    # read that sees a movement twice (overlap, replay, out-of-order commit)
+    # applies it once. Pruned past the window.
+    ("create_inventory_sync_applied_movements",
+     """CREATE TABLE IF NOT EXISTS inventory_sync_applied_movements (
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         profile_id   TEXT NOT NULL REFERENCES inventory_sync_profiles(id) ON DELETE CASCADE,
+         movement_id  TEXT NOT NULL,
+         applied_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (profile_id, movement_id)
+     )"""),
+    # Push ingest: one row per batch the customer POSTed, keyed by THEIR batch
+    # id, so a retried POST is answered from here instead of applied twice.
+    ("create_inventory_sync_ingest_batches",
+     """CREATE TABLE IF NOT EXISTS inventory_sync_ingest_batches (
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         profile_id   TEXT NOT NULL REFERENCES inventory_sync_profiles(id) ON DELETE CASCADE,
+         batch_id     TEXT NOT NULL,
+         run_id       TEXT,
+         rows         INT NOT NULL DEFAULT 0,
+         fingerprint  TEXT,
+         received_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (profile_id, batch_id)
+     )"""),
+    # Idempotency-Key replay store for the mutating inventory-sync routes.
+    ("create_inventory_sync_idempotency",
+     """CREATE TABLE IF NOT EXISTS inventory_sync_idempotency (
+         tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         idem_key     TEXT NOT NULL,
+         route        TEXT NOT NULL,
+         fingerprint  TEXT NOT NULL,
+         status_code  INT NOT NULL,
+         response     JSONB NOT NULL,
+         created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (tenant_id, idem_key)
+     )"""),
+]

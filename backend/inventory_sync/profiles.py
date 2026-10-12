@@ -28,15 +28,21 @@ from backend.errors import AppError
 from backend.inventory_sync import fields as F
 from backend.utils.ids import generate_id
 
-SOURCE_KINDS = ("table", "query", "collection", "pipeline")
+import re
+
+SOURCE_KINDS = ("table", "query", "collection", "pipeline", "push")
 SQL_KINDS = ("table", "query")
 MONGO_KINDS = ("collection", "pipeline")
 MODES = ("full", "incremental")
 MISSING_POLICIES = ("ignore", "mark_inactive", "zero")
 NEGATIVE_POLICIES = ("reject", "zero")
 DUPLICATE_POLICIES = ("reject", "sum")
+FRESHNESS = ("scheduled", "continuous", "on_demand")
 MAX_INTERVAL_MINUTES = 7 * 24 * 60
 MAX_NAME = 120
+_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
+# Strategies that only exist on one engine.
+_ENGINE_STRATEGY = {"change_tracking": "mssql", "oracle_rowscn": "oracle", "change_stream": "mongodb"}
 
 # Fields whose change alters what a run writes (and therefore needs a new
 # dry run before the profile runs on its own again).
@@ -44,11 +50,24 @@ _HASHED = (
     "data_source_id", "source_kind", "source_schema", "source_object", "source_query",
     "mapping", "filters", "default_warehouse", "mode", "watermark_column",
     "missing_policy", "negative_policy", "duplicate_policy", "allow_new_warehouses",
+    "stock_model", "model_config", "strategy", "priority",
 )
 _EDITABLE = _HASHED + (
     "name", "overlap_minutes", "interval_minutes", "brake_max_vanished_pct",
-    "brake_min_row_ratio", "brake_max_rejected_pct",
+    "brake_min_row_ratio", "brake_max_rejected_pct", "brake_max_jump_pct", "slug",
+    "freshness", "poll_seconds", "reconcile_minutes",
 )
+# The stored columns a create / update writes (everything normalize returns
+# except `engine`, which is derived).
+_COLUMNS = (
+    "data_source_id", "name", "source_kind", "source_schema", "source_object", "source_query",
+    "mapping", "filters", "default_warehouse", "mode", "watermark_column", "overlap_minutes",
+    "interval_minutes", "missing_policy", "negative_policy", "duplicate_policy",
+    "allow_new_warehouses", "brake_max_vanished_pct", "brake_min_row_ratio",
+    "brake_max_rejected_pct", "brake_max_jump_pct", "slug", "priority", "stock_model",
+    "model_config", "freshness", "poll_seconds", "reconcile_minutes", "strategy",
+)
+_JSON_COLUMNS = ("mapping", "filters", "model_config")
 
 
 def _reject(code: str, message: str, status: int = 422, **params: Any) -> AppError:
@@ -67,6 +86,10 @@ def config_hash(cfg: dict) -> str:
 
 def min_interval() -> int:
     return max(1, int(getattr(settings, "inventory_sync_min_interval_minutes", 5) or 5))
+
+
+def min_poll() -> int:
+    return max(5, int(getattr(settings, "inventory_sync_min_poll_seconds", 15) or 15))
 
 
 def max_profiles() -> int:
@@ -130,16 +153,22 @@ def normalize(tenant_id: str, body: dict, existing: Optional[dict] = None) -> di
     name = _text(base.get("name"), MAX_NAME)
     if not name:
         raise _reject("inventory_sync_name_required", "Give the sync a name.")
+    kind = base.get("source_kind")
     source_id = _text(base.get("data_source_id"), 64)
-    if not source_id:
-        raise _reject("inventory_sync_source_required", "Choose the database to read from.")
-    src = _source(tenant_id, source_id)
-    engine = (src.get("sql_config") or {}).get("engine") or "postgresql"
-
-    kind = base.get("source_kind") or ("collection" if engine == "mongodb" else "table")
+    if kind == "push":
+        # Rows arrive by POST (backend/inventory_sync/ingest.py): no database.
+        source_id, engine = None, "push"
+    else:
+        if not source_id:
+            raise _reject("inventory_sync_source_required", "Choose the database to read from.")
+        src = _source(tenant_id, source_id)
+        engine = (src.get("sql_config") or {}).get("engine") or "postgresql"
+        kind = kind or ("collection" if engine == "mongodb" else "table")
     if kind not in SOURCE_KINDS:
         raise _reject("inventory_sync_source_kind_invalid", "Unknown source kind.", kind=str(kind)[:20])
-    if engine == "mongodb" and kind not in MONGO_KINDS:
+    if engine == "push":
+        pass
+    elif engine == "mongodb" and kind not in MONGO_KINDS:
         raise _reject("inventory_sync_source_kind_invalid",
                       "A MongoDB source reads a collection or an aggregation pipeline.", kind=kind)
     if engine != "mongodb" and kind not in SQL_KINDS:
@@ -195,7 +224,67 @@ def normalize(tenant_id: str, body: dict, existing: Optional[dict] = None) -> di
                       "An incremental sync cannot tell a vanished SKU from an unchanged one.",
                       field="missing_policy", value=missing_policy)
 
+    from backend.inventory_sync import strategies
+    slug = base.get("slug")
+    slug = None if slug in (None, "") else str(slug).strip().lower()
+    if slug is not None and not _SLUG.match(slug):
+        raise _reject("inventory_sync_slug_invalid",
+                      "The key may use lowercase letters, digits, '-' and '_' (up to 63).", value=slug[:70])
+    stock_model = base.get("stock_model") or "snapshot"
+    if stock_model not in strategies.STOCK_MODELS:
+        raise _reject("inventory_sync_model_invalid", "Unknown stock model.", reason="stock_model",
+                      value=str(stock_model)[:20])
+    model_config = base.get("model_config") or {}
+    if not isinstance(model_config, dict):
+        raise _reject("inventory_sync_model_invalid", "model_config must be an object.", reason="not_object")
+    if stock_model == "aggregate":
+        fn = str(model_config.get("aggregate") or "sum").lower()
+        if fn not in strategies.AGGREGATES:
+            raise _reject("inventory_sync_model_invalid", "Unknown aggregate.", reason="aggregate", value=fn[:20])
+        if fn != "sum" and engine in ("mongodb", "push"):
+            raise _reject("inventory_sync_model_invalid",
+                          "MIN and MAX need a source that can group (SQL); this one is summed row by row.",
+                          reason="aggregate_needs_sql", value=fn)
+        model_config = {"aggregate": fn,
+                        "group_by": [str(c)[:256] for c in (model_config.get("group_by") or [])][:10]}
+    elif stock_model == "ledger":
+        from backend.inventory_sync import ledger
+        model_config = ledger.normalize_config(model_config, engine)
+    else:
+        model_config = {}
+    strategy = base.get("strategy") or "auto"
+    if strategy not in strategies.STRATEGIES:
+        raise _reject("inventory_sync_strategy_invalid", "Unknown change-capture strategy.",
+                      value=str(strategy)[:30])
+    if strategy in _ENGINE_STRATEGY and engine != _ENGINE_STRATEGY[strategy]:
+        raise _reject("inventory_sync_strategy_invalid",
+                      f"{strategy} exists only on {_ENGINE_STRATEGY[strategy]}.",
+                      value=strategy, engine=engine)
+    if strategy == "ledger_cursor" and stock_model != "ledger":
+        raise _reject("inventory_sync_strategy_invalid", "ledger_cursor applies to ledger profiles.",
+                      value=strategy)
+    if strategy == "watermark" and not watermark_column:
+        raise _reject("inventory_sync_watermark_required",
+                      "The watermark strategy needs the column that says when a row last changed.")
+    freshness = base.get("freshness") or "scheduled"
+    if freshness not in FRESHNESS:
+        raise _reject("inventory_sync_freshness_invalid", "Unknown freshness mode.", value=str(freshness)[:20])
+    incremental_capable = (mode == "incremental" or stock_model == "ledger" or kind == "push"
+                           or strategy in _ENGINE_STRATEGY)
+    if freshness == "continuous" and not incremental_capable:
+        # Re-reading a whole table every few seconds would load the customer's
+        # database for nothing: continuous needs something that reads changes.
+        raise _reject("inventory_sync_continuous_needs_incremental",
+                      "Continuous mode needs a way to read only what changed (an updated-at column, "
+                      "a movement ledger or a change-capture strategy).")
+
     return {
+        "slug": slug, "priority": _int_in(base.get("priority", 100), 1, 10_000, "priority"),
+        "stock_model": stock_model, "model_config": model_config, "strategy": strategy,
+        "freshness": freshness,
+        "poll_seconds": _int_in(base.get("poll_seconds", 60), min_poll(), 24 * 3600, "poll_seconds"),
+        "reconcile_minutes": _int_in(base.get("reconcile_minutes", 360), 5, 7 * 24 * 60, "reconcile_minutes"),
+        "brake_max_jump_pct": _float_in(base.get("brake_max_jump_pct", 20), 0, 100, "brake_max_jump_pct"),
         "name": name, "data_source_id": source_id, "source_kind": kind,
         "source_schema": source_schema, "source_object": source_object,
         "source_query": source_query, "mapping": mapping, "filters": filters,
@@ -215,6 +304,10 @@ def normalize(tenant_id: str, body: dict, existing: Optional[dict] = None) -> di
                                             "brake_max_rejected_pct"),
         "engine": engine,
     }
+
+
+def _values(cfg: dict) -> tuple:
+    return tuple(_json(cfg[c]) if c in _JSON_COLUMNS else cfg[c] for c in _COLUMNS)
 
 
 def _parse_json(text: Optional[str], kind: type) -> Any:
@@ -260,6 +353,10 @@ def is_stale(row: dict, now: Optional[datetime] = None) -> bool:
     since = row.get("last_success_at") or row.get("created_at")
     if since is None:
         return False
+    if row.get("freshness") == "on_demand":
+        return False
+    if row.get("freshness") == "continuous":
+        return now - since > timedelta(seconds=max(2 * int(row.get("poll_seconds") or 60), 600))
     return now - since > timedelta(minutes=2 * int(row.get("interval_minutes") or 60))
 
 
@@ -293,23 +390,18 @@ def create(tenant_id: str, user_id: str, body: dict) -> dict:
             raise _reject("inventory_sync_profile_limit",
                           f"This account already has {count} sync profiles, the most allowed.",
                           409, max=max_profiles())
-        execute(
-            """INSERT INTO inventory_sync_profiles
-               (id, tenant_id, data_source_id, name, source_kind, source_schema, source_object,
-                source_query, mapping, filters, default_warehouse, mode, watermark_column,
-                overlap_minutes, interval_minutes, missing_policy, negative_policy,
-                duplicate_policy, allow_new_warehouses, brake_max_vanished_pct,
-                brake_min_row_ratio, brake_max_rejected_pct, config_hash, created_by)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (pid, tenant_id, cfg["data_source_id"], cfg["name"], cfg["source_kind"],
-             cfg["source_schema"], cfg["source_object"], cfg["source_query"],
-             _json(cfg["mapping"]), _json(cfg["filters"]), cfg["default_warehouse"], cfg["mode"],
-             cfg["watermark_column"], cfg["overlap_minutes"], cfg["interval_minutes"],
-             cfg["missing_policy"], cfg["negative_policy"], cfg["duplicate_policy"],
-             cfg["allow_new_warehouses"], cfg["brake_max_vanished_pct"],
-             cfg["brake_min_row_ratio"], cfg["brake_max_rejected_pct"], config_hash(cfg), user_id),
-            conn=conn,
-        )
+        cols = ", ".join(_COLUMNS)
+        phs = ", ".join(["%s"] * len(_COLUMNS))
+        try:
+            execute(
+                f"INSERT INTO inventory_sync_profiles (id, tenant_id, {cols}, config_hash, created_by) "
+                f"VALUES (%s, %s, {phs}, %s, %s)",
+                (pid, tenant_id, *_values(cfg), config_hash(cfg), user_id), conn=conn)
+        except Exception as exc:  # noqa: BLE001
+            if getattr(exc, "pgcode", None) == "23505":
+                raise _reject("inventory_sync_slug_taken", "Another sync already uses this key.", 409,
+                              slug=cfg.get("slug")) from None
+            raise
     return require(tenant_id, pid)
 
 
@@ -325,26 +417,22 @@ def update(tenant_id: str, profile_id: str, body: dict) -> tuple[dict, bool]:
                        or cfg["data_source_id"] != existing.get("data_source_id")
                        or cfg["source_object"] != existing.get("source_object")
                        or cfg["source_query"] != existing.get("source_query"))
-    execute(
-        """UPDATE inventory_sync_profiles SET
-             data_source_id=%s, name=%s, source_kind=%s, source_schema=%s, source_object=%s,
-             source_query=%s, mapping=%s, filters=%s, default_warehouse=%s, mode=%s,
-             watermark_column=%s, overlap_minutes=%s, interval_minutes=%s, missing_policy=%s,
-             negative_policy=%s, duplicate_policy=%s, allow_new_warehouses=%s,
-             brake_max_vanished_pct=%s, brake_min_row_ratio=%s, brake_max_rejected_pct=%s,
-             config_hash=%s,
-             enabled = CASE WHEN %s THEN FALSE ELSE enabled END,
-             watermark_value = CASE WHEN %s THEN NULL ELSE watermark_value END,
-             updated_at=NOW()
-           WHERE id=%s AND tenant_id=%s""",
-        (cfg["data_source_id"], cfg["name"], cfg["source_kind"], cfg["source_schema"],
-         cfg["source_object"], cfg["source_query"], _json(cfg["mapping"]), _json(cfg["filters"]),
-         cfg["default_warehouse"], cfg["mode"], cfg["watermark_column"], cfg["overlap_minutes"],
-         cfg["interval_minutes"], cfg["missing_policy"], cfg["negative_policy"],
-         cfg["duplicate_policy"], cfg["allow_new_warehouses"], cfg["brake_max_vanished_pct"],
-         cfg["brake_min_row_ratio"], cfg["brake_max_rejected_pct"], new_hash, disable,
-         reset_watermark, profile_id, tenant_id),
-    )
+    sets = ", ".join(f"{c}=%s" for c in _COLUMNS)
+    try:
+        execute(
+            f"UPDATE inventory_sync_profiles SET {sets}, config_hash=%s, "
+            "enabled = CASE WHEN %s THEN FALSE ELSE enabled END, "
+            "watermark_value = CASE WHEN %s THEN NULL ELSE watermark_value END, "
+            "cursor_value = CASE WHEN %s THEN NULL ELSE cursor_value END, "
+            "health = CASE WHEN %s AND health = 'paused' THEN 'new' ELSE health END, "
+            "updated_at=NOW() WHERE id=%s AND tenant_id=%s",
+            (*_values(cfg), new_hash, disable, reset_watermark, reset_watermark,
+             new_hash != existing.get("config_hash"), profile_id, tenant_id))
+    except Exception as exc:  # noqa: BLE001
+        if getattr(exc, "pgcode", None) == "23505":
+            raise _reject("inventory_sync_slug_taken", "Another sync already uses this key.", 409,
+                          slug=cfg.get("slug")) from None
+        raise
     return require(tenant_id, profile_id), disable
 
 
@@ -363,10 +451,11 @@ def set_enabled(tenant_id: str, profile_id: str, enabled: bool) -> dict:
         if row.get("dry_run_hash") != row.get("config_hash"):
             raise _reject("inventory_sync_dry_run_required",
                           "Preview this sync (dry run) before turning it on.", 409)
-        src = _source(tenant_id, row["data_source_id"])
-        if src.get("connection_status") != "connected":
-            raise _reject("data_source_not_connected",
-                          "This data source is not connected. Test the connection first.", 400)
+        if row.get("data_source_id"):
+            src = _source(tenant_id, row["data_source_id"])
+            if src.get("connection_status") != "connected":
+                raise _reject("data_source_not_connected",
+                              "This data source is not connected. Test the connection first.", 400)
         execute(
             "UPDATE inventory_sync_profiles SET enabled = TRUE, consecutive_failures = 0, "
             "next_run_at = COALESCE(next_run_at, NOW()), stale_alerted_at = NULL, updated_at = NOW() "

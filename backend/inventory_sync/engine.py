@@ -38,6 +38,9 @@ DRY_RUN_SAMPLE = 500
 APPLY_BATCH = 500
 MAX_SAMPLE = 50
 LEASE_MINUTES = 30
+# A cell larger than this is not a stock value: it is a blob, a corrupt export
+# or an attack. The row is rejected by name; the cell is never stored.
+MAX_CELL_CHARS = 65_536
 
 
 def max_rows_per_run() -> int:
@@ -66,6 +69,7 @@ class _Prep:
         self.rejected_sample: list[dict] = []
         self.unknown_warehouses: set[str] = set()
         self.watermark: Optional[dict] = None
+        self.seen_columns: set[str] = set()
 
     def _reject(self, code: str, params: dict, sku: Any, row_number: int) -> None:
         self.rejected += 1
@@ -84,6 +88,13 @@ class _Prep:
         for raw in batch:
             self.rows_read += 1
             line = self.rows_read
+            self.seen_columns.update(raw.keys())
+            big = next((k for k, v in raw.items()
+                        if isinstance(v, (str, bytes)) and len(v) > MAX_CELL_CHARS), None)
+            if big is not None:
+                self._reject("cell_too_large", {"column": str(big)[:80], "max": MAX_CELL_CHARS},
+                             mapper.sku_hint({k: v for k, v in raw.items() if k != big}, self.mapping), line)
+                continue
             if wm_col:
                 self.watermark = reader.max_watermark(self.watermark,
                                                       reader.watermark_of(mapper._lookup(raw, wm_col)))
@@ -106,6 +117,17 @@ class _Prep:
             row["_line"] = line
             out.append(row)
         return out
+
+    def missing_columns(self) -> list[str]:
+        """Mapped / filter / watermark columns no row of the source had."""
+        if not self.seen_columns:
+            return []
+        low = {c.lower() for c in self.seen_columns}
+        wanted = [m.get("column") for m in self.mapping.values() if m.get("column")]
+        wanted += [f["column"] for f in self.filters]
+        if self.profile.get("watermark_column"):
+            wanted.append(self.profile["watermark_column"])
+        return sorted({c for c in wanted if c and c.lower() not in low})
 
     def summary(self) -> dict:
         return {
@@ -152,14 +174,25 @@ def _merge_duplicate(first: dict, second: dict, policy: str) -> Optional[dict]:
 
 # ── Dry run ───────────────────────────────────────────────────────────────────
 
-def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE) -> dict:
+def _policy(profile: dict) -> str:
+    """Duplicate keys: an aggregate profile SUMS them (client-side streaming
+    aggregation where the source could not group); otherwise the profile says."""
+    if (profile.get("stock_model") or "snapshot") == "aggregate":
+        return "sum"
+    return profile.get("duplicate_policy") or "reject"
+
+
+def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
+            scope: Optional[dict] = None) -> dict:
     """What a run would do with the first `sample` rows. Writes nothing."""
     started = time.monotonic()
     prep = _Prep(tenant_id, profile)
     valid: dict[tuple[str, str], dict] = {}
     conflicts: set[tuple[str, str]] = set()
-    policy = profile.get("duplicate_policy") or "reject"
-    for batch in reader.read_batches(tenant_id, profile, limit=sample, batch_size=min(sample, 1000)):
+    policy = _policy(profile)
+    from backend.inventory_sync import strategies
+    for batch in strategies.read_for_run(tenant_id, profile, limit=sample, batch_size=min(sample, 1000),
+                                         scope=scope):
         for row in prep.rows(batch):
             key = (row["sku"], row["warehouse"])
             if key in conflicts:
@@ -218,20 +251,39 @@ def _plain(v: Any) -> Any:
         return str(v)
 
 
+
+
 # ── The run ───────────────────────────────────────────────────────────────────
 
 def start_run(tenant_id: str, profile_id: str, trigger: str, *, user_id: Optional[str] = None,
-              worker: Optional[str] = None) -> str:
+              worker: Optional[str] = None, kind: Optional[str] = None,
+              scope: Optional[dict] = None) -> str:
+    """Create the run row. Without `kind`: incremental for an incremental
+    profile, else full (a ledger's first run is always full)."""
     run_id = generate_id("isr")
     execute(
         "INSERT INTO inventory_sync_runs (id, tenant_id, profile_id, trigger_kind, status, "
-        "triggered_by, worker_id) VALUES (%s,%s,%s,%s,'running',%s,%s)",
-        (run_id, tenant_id, profile_id, trigger, user_id, worker))
+        "triggered_by, worker_id, run_kind, scope, config_hash) "
+        "SELECT %s,%s,%s,%s,'running',%s,%s, COALESCE(%s, CASE "
+        "  WHEN stock_model = 'ledger' AND cursor_value IS NULL THEN 'full' "
+        "  WHEN mode = 'incremental' OR stock_model = 'ledger' THEN 'incremental' ELSE 'full' END), "
+        "%s, config_hash FROM inventory_sync_profiles WHERE id = %s",
+        (run_id, tenant_id, profile_id, trigger, user_id, worker, kind,
+         _json(scope) if scope else None, profile_id))
     execute("UPDATE inventory_sync_profiles SET last_run_id = %s WHERE id = %s", (run_id, profile_id))
     return run_id
 
 
 class _Brake(Exception):
+    def __init__(self, code: str, **params: Any):
+        super().__init__(code)
+        self.code = code
+        self.params = params
+
+
+class _Stop(Exception):
+    """The run cannot continue (profile changed, deleted or disabled under it)."""
+
     def __init__(self, code: str, **params: Any):
         super().__init__(code)
         self.code = code
@@ -259,8 +311,7 @@ def _stage_batch(tenant_id: str, run_id: str, prep: "_Prep", rows: list[dict], p
         data = {k: v for k, v in row.items() if k not in ("sku", "warehouse", "_line")}
         if key in unique:
             if policy == "sum":
-                merged = _merge_duplicate(unique[key], data, "sum")
-                unique[key] = merged
+                unique[key] = _merge_duplicate(unique[key], data, "sum")
             else:
                 dup_keys.add(key)
                 prep._reject("duplicate_key", {"warehouse": key[1]}, key[0], row["_line"])
@@ -288,7 +339,6 @@ def _stage_batch(tenant_id: str, run_id: str, prep: "_Prep", rows: list[dict], p
                 "RETURNING sku, warehouse, (xmax <> 0) AS was_duplicate",
                 values, page_size=1000, fetch=True)
             for hit in hits:
-                hit = dict(hit) if not isinstance(hit, dict) else hit
                 if hit["was_duplicate"]:
                     prep._reject("duplicate_key", {"warehouse": hit["warehouse"]}, hit["sku"], None)
             if dup_keys:
@@ -299,16 +349,38 @@ def _stage_batch(tenant_id: str, run_id: str, prep: "_Prep", rows: list[dict], p
                     ([k[0] for k in dup_keys], [k[1] for k in dup_keys], run_id))
 
 
-def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str]) -> tuple[_Prep, int]:
+def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str],
+           batches: Optional[Iterable[list[dict]]] = None, scope: Optional[dict] = None,
+           incremental: bool = False) -> tuple[_Prep, int]:
+    """Read (or take `batches`, e.g. a push) and stage. Schema drift is caught
+    here: a mapped column the source no longer has pauses the profile."""
     prep = _Prep(tenant_id, profile)
-    policy = profile.get("duplicate_policy") or "reject"
-    watermark = profile.get("watermark_value") if profile.get("mode") == "incremental" else None
-    for batch in reader.read_batches(tenant_id, profile, watermark=watermark,
-                                     max_rows=max_rows_per_run()):
-        _stage_batch(tenant_id, run_id, prep, prep.rows(batch), policy)
+    policy = _policy(profile)
+    if batches is None:
+        from backend.inventory_sync import strategies
+        batches = strategies.read_for_run(tenant_id, profile, run_id=run_id, scope=scope,
+                                          incremental=incremental, max_rows=max_rows_per_run())
+    is_sql = (profile.get("engine") or "") != "mongodb" and profile.get("source_kind") in ("table", "query")
+    checked = False
+    for batch in batches:
+        rows = prep.rows(batch)
+        if is_sql and not checked and prep.seen_columns:
+            # A SQL result has the same columns on every row: check the first batch.
+            checked = True
+            missing = prep.missing_columns()
+            if missing:
+                raise AppError("inventory_sync_column_missing",
+                               f"The source no longer has column {missing[0]}.",
+                               status_code=422, params={"column": missing[0], "columns": ", ".join(missing)})
+        _stage_batch(tenant_id, run_id, prep, rows, policy)
         _renew_lease(profile["id"], lease_owner)
-    # Under `reject`, the FIRST row of every duplicated key is rejected too:
-    # nothing about the source says which of the two is right.
+    if not is_sql and prep.rows_read:
+        # Documents are polymorphic: a field is "missing" only if no document had it.
+        missing = prep.missing_columns()
+        if missing:
+            raise AppError("inventory_sync_column_missing",
+                           f"No document of the source has field {missing[0]}.",
+                           status_code=422, params={"column": missing[0], "columns": ", ".join(missing)})
     first_rows = 0
     if policy != "sum":
         first_rows = query_one("SELECT COUNT(*) AS n FROM inventory_sync_staging "
@@ -333,20 +405,33 @@ def _vanished_count(profile_id: str, run_id: str) -> tuple[int, int]:
     return int(row["known"]), int(row["vanished"])
 
 
-def _check_brake(profile: dict, prep: _Prep, valid: int, run_id: str) -> dict:
-    """Raise `_Brake` when the staged set looks like a broken source. Returns
-    the vanished/known figures for the run log either way."""
+MIN_KEYS_FOR_FINGERPRINT = 50
+MIN_ROWS_FOR_JUMP = 20
+JUMP_FACTOR = 10.0
+
+
+def _check_brake(profile: dict, prep: _Prep, valid: int, run_id: str, *, kind: str) -> dict:
+    """Raise `_Brake` when the staged set looks like a broken or wrong source.
+
+    Full snapshots get every check. Incremental, scoped and push-partial runs
+    only see part of the catalogue, so "vanished" and "row count" do not apply
+    to them; the rejected share and the quantity-jump check still do."""
     considered = prep.rows_read - prep.filtered_out
-    full = profile.get("mode") != "incremental"
+    full = kind in ("full", "reconcile")
     known, vanished = _vanished_count(profile["id"], run_id) if full else (0, 0)
     stats = {"known": known, "vanished": vanished}
     if full and prep.rows_read == 0:
         raise _Brake("source_empty")
-    if considered > 0 and prep.rejected * 100.0 / considered > float(profile.get("brake_max_rejected_pct") or 50):
-        raise _Brake("too_many_rejected", rejected=prep.rejected, rows=considered,
-                     max_pct=float(profile.get("brake_max_rejected_pct") or 50))
+    max_rej = float(profile.get("brake_max_rejected_pct") or 50)
+    if considered > 0 and prep.rejected * 100.0 / considered > max_rej:
+        raise _Brake("too_many_rejected", rejected=prep.rejected, rows=considered, max_pct=max_rej)
     if full and valid == 0:
         raise _Brake("no_valid_rows", rows=considered)
+    if full and known >= MIN_KEYS_FOR_FINGERPRINT and (known - vanished) * 100.0 / known < 20:
+        # Fewer than a fifth of the SKUs this profile knows are in the source:
+        # this looks like a different database (a test copy, another company).
+        raise _Brake("source_looks_different", known=known, overlap=known - vanished,
+                     overlap_pct=round((known - vanished) * 100.0 / known, 1))
     if full and known > 0:
         pct = vanished * 100.0 / known
         if pct > float(profile.get("brake_max_vanished_pct") or 0):
@@ -355,191 +440,185 @@ def _check_brake(profile: dict, prep: _Prep, valid: int, run_id: str) -> dict:
     if full:
         prev = query_one(
             "SELECT rows_valid FROM inventory_sync_runs WHERE profile_id = %s AND status = 'success' "
-            "AND id <> %s ORDER BY started_at DESC LIMIT 1", (profile["id"], run_id))
+            "AND run_kind IN ('full', 'reconcile') AND id <> %s ORDER BY started_at DESC LIMIT 1",
+            (profile["id"], run_id))
         ratio = float(profile.get("brake_min_row_ratio") or 0)
         if prev and prev["rows_valid"] and valid < prev["rows_valid"] * ratio:
             raise _Brake("row_count_drop", rows=valid, previous=int(prev["rows_valid"]), min_ratio=ratio)
+    jump = query_one(
+        "SELECT COUNT(*) AS matched, COUNT(*) FILTER (WHERE greatest(s.current_stock, x.q) >= %s "
+        "  AND greatest(s.current_stock, x.q) > %s * least(s.current_stock, x.q)) AS jumped "
+        "FROM (SELECT sku, warehouse, (data->>'current_stock')::float8 AS q FROM inventory_sync_staging "
+        "      WHERE run_id = %s AND NOT duplicate) x "
+        "JOIN inventory_stock s ON s.tenant_id = %s AND s.sku = x.sku AND s.warehouse = x.warehouse "
+        "JOIN inventory_sync_keys k ON k.profile_id = %s AND k.sku = x.sku AND k.warehouse = x.warehouse",
+        (JUMP_FACTOR, JUMP_FACTOR, run_id, profile["tenant_id"], profile["id"]))
+    max_jump = float(profile.get("brake_max_jump_pct") or 20)
+    if jump and jump["matched"] >= MIN_ROWS_FOR_JUMP and jump["jumped"] * 100.0 / jump["matched"] > max_jump:
+        # Many quantities this profile wrote before changed by more than 10x
+        # at once: a unit change (boxes -> units), a decimal shift, a wrong column.
+        raise _Brake("mass_quantity_change", jumped=int(jump["jumped"]), matched=int(jump["matched"]),
+                     factor=JUMP_FACTOR, max_pct=max_jump)
     return stats
 
 
-def _precheck_limits(tenant_id: str, run_id: str) -> None:
-    """Refuse the whole run BEFORE the first write when it would cross the
-    plan's SKU or warehouse ceiling, instead of failing halfway."""
-    from backend.entitlements.service import enforce_limit, limit_guard
-    from backend.inventory import service as svc
-    from backend.inventory import warehouse_service as wh_svc
-    new_keys = query_one(
-        "SELECT COUNT(*) AS n FROM inventory_sync_staging s WHERE s.run_id = %s AND NOT s.duplicate "
-        "AND NOT EXISTS (SELECT 1 FROM inventory_stock i WHERE i.tenant_id = s.tenant_id "
-        "AND i.sku = s.sku AND i.warehouse = s.warehouse)", (run_id,))["n"]
-    new_wh = query_one(
-        "SELECT COUNT(DISTINCT s.warehouse) AS n FROM inventory_sync_staging s "
-        "WHERE s.run_id = %s AND NOT s.duplicate AND NOT EXISTS (SELECT 1 FROM warehouses w "
-        "WHERE w.tenant_id = s.tenant_id AND w.name = s.warehouse)", (run_id,))["n"]
-    with limit_guard(tenant_id) as conn:
-        if new_keys:
-            enforce_limit(tenant_id, "max_skus", svc.count_stock(tenant_id, conn=conn),
-                          adding=int(new_keys), conn=conn)
-        if new_wh:
-            enforce_limit(tenant_id, "max_locations", wh_svc.count_warehouses(tenant_id),
-                          adding=int(new_wh), conn=conn)
-
-
-def _apply(tenant_id: str, profile: dict, run_id: str, counters: dict,
-           lease_owner: Optional[str]) -> None:
-    from backend.entitlements.service import limit_guard
-    from backend.inventory import service as svc
-    from backend.inventory.defaults import SOURCE_FILE
-
-    owned = F.owned_fields(profile.get("mapping") or {})
-    while True:
-        batch = query(
-            "SELECT sku, warehouse, data FROM inventory_sync_staging "
-            "WHERE run_id = %s AND NOT duplicate AND NOT applied "
-            "ORDER BY sku, warehouse LIMIT %s", (run_id, APPLY_BATCH))
-        if not batch:
-            return
-        keys = [(r["sku"], r["warehouse"]) for r in batch]
-        with limit_guard(tenant_id) as conn:
-            existing = _existing(tenant_id, keys, conn=conn)
-            ledger = {(r["sku"], r["warehouse"]): r for r in query(
-                "SELECT k.sku, k.warehouse, k.synced_values FROM inventory_sync_keys k "
-                "JOIN unnest(%s::text[], %s::text[]) AS x(sku, warehouse) "
-                "  ON k.sku = x.sku AND k.warehouse = x.warehouse WHERE k.profile_id = %s",
-                ([k[0] for k in keys], [k[1] for k in keys], profile["id"]), conn=conn)}
-            for r in batch:
-                key = (r["sku"], r["warehouse"])
-                new = {"sku": r["sku"], "warehouse": r["warehouse"], **(r["data"] or {})}
-                current = existing.get(key)
-                changed = _changes(new, current)
-                if current is None:
-                    data = {k: v for k, v in changed.items()}
-                    svc.upsert_stock(tenant_id, r["sku"], data, conn=conn, source=SOURCE_FILE)
-                    counters["created"] += 1
-                elif changed:
-                    previous = (ledger.get(key) or {}).get("synced_values") or {}
-                    for field in changed:
-                        # The field was edited since the last sync wrote it:
-                        # the source wins, and the overwrite is reported.
-                        if field in previous and not mapper.same_value(previous[field], current.get(field)):
-                            counters["manual_overwritten"] += 1
-                            if len(counters["overwritten_sample"]) < MAX_SAMPLE:
-                                counters["overwritten_sample"].append({
-                                    "sku": r["sku"], "warehouse": r["warehouse"], "field": field,
-                                    "manual_value": _plain(current.get(field)),
-                                    "source_value": _plain(changed[field])})
-                    svc.upsert_stock(tenant_id, r["sku"], {**changed, "warehouse": r["warehouse"]},
-                                     conn=conn, source=SOURCE_FILE)
-                    counters["updated"] += 1
-                else:
-                    counters["unchanged"] += 1
-                synced = {f: _plain(new.get(f)) for f in owned if f in new}
-                execute(
-                    "INSERT INTO inventory_sync_keys (tenant_id, profile_id, sku, warehouse, "
-                    "synced_values, last_seen_run, last_seen_at, inactive) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,NOW(),FALSE) "
-                    "ON CONFLICT (profile_id, sku, warehouse) DO UPDATE SET "
-                    "synced_values = inventory_sync_keys.synced_values || EXCLUDED.synced_values, "
-                    "last_seen_run = EXCLUDED.last_seen_run, last_seen_at = NOW(), inactive = FALSE",
-                    (tenant_id, profile["id"], r["sku"], r["warehouse"], _json(synced), run_id),
-                    conn=conn)
-            execute(
-                "UPDATE inventory_sync_staging SET applied = TRUE FROM unnest(%s::text[], %s::text[]) "
-                "AS x(sku, warehouse) WHERE run_id = %s AND inventory_sync_staging.sku = x.sku "
-                "AND inventory_sync_staging.warehouse = x.warehouse",
-                ([k[0] for k in keys], [k[1] for k in keys], run_id), conn=conn)
-        _renew_lease(profile["id"], lease_owner)
-
-
-def _apply_missing(tenant_id: str, profile: dict, run_id: str, counters: dict) -> None:
-    """The missing-SKU policy (full snapshots only). Never deletes."""
-    from backend.entitlements.service import limit_guard
-    from backend.inventory import service as svc
-    from backend.inventory.defaults import SOURCE_FILE
-    missing = query(
-        "SELECT k.sku, k.warehouse FROM inventory_sync_keys k "
-        "WHERE k.profile_id = %s AND NOT k.inactive AND NOT EXISTS ("
-        "  SELECT 1 FROM inventory_sync_staging s WHERE s.run_id = %s AND s.sku = k.sku "
-        "  AND s.warehouse = k.warehouse AND NOT s.duplicate)",
-        (profile["id"], run_id))
-    counters["missing"] = len(missing)
-    policy = profile.get("missing_policy") or "ignore"
-    if not missing or policy == "ignore":
-        return
-    for start in range(0, len(missing), APPLY_BATCH):
-        chunk = missing[start:start + APPLY_BATCH]
-        with limit_guard(tenant_id) as conn:
-            if policy == "zero":
-                existing = _existing(tenant_id, [(m["sku"], m["warehouse"]) for m in chunk], conn=conn)
-                for m in chunk:
-                    cur = existing.get((m["sku"], m["warehouse"]))
-                    if cur is not None and not mapper.same_value(cur.get("current_stock"), 0):
-                        svc.upsert_stock(tenant_id, m["sku"], {"current_stock": 0.0,
-                                                               "warehouse": m["warehouse"]},
-                                         conn=conn, source=SOURCE_FILE)
-                        counters["missing_applied"] += 1
-            else:  # mark_inactive
-                counters["missing_applied"] += len(chunk)
-            execute(
-                "UPDATE inventory_sync_keys SET inactive = %s FROM unnest(%s::text[], %s::text[]) "
-                "AS x(sku, warehouse) WHERE profile_id = %s AND inventory_sync_keys.sku = x.sku "
-                "AND inventory_sync_keys.warehouse = x.warehouse",
-                (policy == "mark_inactive", [m["sku"] for m in chunk], [m["warehouse"] for m in chunk],
-                 profile["id"]), conn=conn)
+def _guard_profile(tenant_id: str, profile: dict, trigger: str) -> dict:
+    """The profile as it is NOW. Stops the run when it was deleted, edited
+    (its configuration hash moved) or, for a scheduled run, disabled."""
+    now = query_one("SELECT * FROM inventory_sync_profiles WHERE id = %s AND tenant_id = %s",
+                    (profile["id"], tenant_id))
+    if not now:
+        raise _Stop("inventory_sync_profile_changed", reason="deleted")
+    if now.get("config_hash") != profile.get("config_hash"):
+        raise _Stop("inventory_sync_profile_changed", reason="edited")
+    if trigger in ("schedule", "continuous") and not now.get("enabled"):
+        raise _Stop("inventory_sync_profile_changed", reason="disabled")
+    return now
 
 
 def _error_of(exc: BaseException) -> tuple[str, dict]:
+    from backend.inventory_sync import failures
     if isinstance(exc, AppError):
-        return exc.code, dict(exc.params or {})
-    try:
-        from fastapi import HTTPException
-        if isinstance(exc, HTTPException) and isinstance(exc.detail, dict):
-            detail = dict(exc.detail)
-            code = str(detail.pop("code", "") or "plan_limit_reached")
-            return code, {k: v for k, v in detail.items() if isinstance(v, (int, float, str))}
-    except Exception:  # noqa: BLE001
-        pass
-    return "inventory_sync_internal_error", {"type": type(exc).__name__}
+        code, params = exc.code, dict(exc.params or {})
+    else:
+        code, params = None, {}
+        try:
+            from fastapi import HTTPException
+            if isinstance(exc, HTTPException) and isinstance(exc.detail, dict):
+                detail = dict(exc.detail)
+                code = str(detail.pop("code", "") or "plan_limit_reached")
+                params = {k: v for k, v in detail.items() if isinstance(v, (int, float, str))}
+        except Exception:  # noqa: BLE001
+            pass
+        if code is None:
+            pgcode = getattr(exc, "pgcode", None)
+            if pgcode in ("53100", "53200"):
+                code = "inventory_sync_storage_full"
+            elif pgcode in ("55P03", "57014", "40P01"):
+                code = "inventory_sync_our_db_busy"
+            else:
+                code, params = "inventory_sync_internal_error", {"type": type(exc).__name__}
+    code, params = failures.refine(code, params)
+    return code, failures.public_params(params)
 
 
-def _event(tenant_id: str, action: str, profile: dict, run_id: str, *, details: dict,
+def _event(tenant_id: str, action: str, profile: dict, *, details: dict,
            reason: Optional[str] = None, reason_params: Optional[dict] = None,
            user_id: Optional[str] = None) -> None:
     from backend.activity.events import record_event
     record_event(tenant_id, user_id or "system", action, resource=profile["id"],
                  details={"profile_name": profile.get("name"), **details},
                  reason=reason, reason_params=reason_params,
-                 status="success" if action.endswith("succeeded") else "error")
+                 status="success" if action.endswith(("succeeded", "recovered")) else "error")
+
+
+def _webhook(tenant_id: str, event_type: str, data: dict) -> None:
+    try:
+        from backend.webhooks.service import emit
+        emit(tenant_id, event_type, data)
+    except Exception:  # noqa: BLE001 - a webhook never fails a sync; the run row is the record
+        log.exception("inventory sync: webhook %s not queued", event_type)
+
+
+def _transition(tenant_id: str, profile: dict, run: dict, health: str, reason: Optional[str],
+                params: dict, user_id: Optional[str]) -> None:
+    """Move the profile's health and say so ONCE per change: entering a bad
+    state raises one event (a down source does not alert every five minutes),
+    and leaving it for healthy raises a recovery notice."""
+    before = profile.get("health") or "new"
+    before_reason = profile.get("health_reason")
+    changed = (health != before) or (reason != before_reason)
+    execute(
+        "UPDATE inventory_sync_profiles SET health = %s, health_reason = %s, health_params = %s, "
+        "health_changed_at = CASE WHEN %s THEN NOW() ELSE health_changed_at END WHERE id = %s",
+        (health, reason, _json(params) if params else None, changed, profile["id"]))
+    execute("UPDATE inventory_sync_runs SET health_after = %s WHERE id = %s", (health, run["id"]))
+    if not changed:
+        return
+    base = {"profile_id": profile["id"], "profile_name": profile.get("name"), "run_id": run["id"],
+            "health": health, "reason": reason}
+    if health == "healthy" and before not in ("new", "healthy"):
+        _event(tenant_id, "inventory_sync.recovered", profile, details={}, user_id=user_id)
+        _webhook(tenant_id, "inventory_sync.recovered", base)
+    elif health in ("paused", "blocked"):
+        action = "inventory_sync.braked" if (reason or "").startswith("brake_") else "inventory_sync.blocked"
+        _event(tenant_id, action, profile, details={},
+               reason="inventory_sync_safety_brake" if action.endswith("braked") else "inventory_sync_needs_action",
+               reason_params={"code": reason, **(params or {})}, user_id=user_id)
+        _webhook(tenant_id, "inventory_sync.blocked", base)
+    elif health == "degraded" and before != "degraded":
+        _event(tenant_id, "inventory_sync.run_failed", profile, details={},
+               reason="inventory_sync_run_failed", reason_params={"error_code": reason, **(params or {})},
+               user_id=user_id)
 
 
 def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake: bool = False,
-                lease_owner: Optional[str] = None, user_id: Optional[str] = None) -> dict:
+                lease_owner: Optional[str] = None, user_id: Optional[str] = None,
+                batches: Optional[Iterable[list[dict]]] = None, resume: bool = False) -> dict:
     """Run one sync. Always finishes the run row (success / failed / braked)
-    and never raises for a source or data problem — the outcome is the row."""
+    and never raises for a source or data problem — the outcome is the row.
+
+    `resume`: the run's staging is complete and its brake passed (a worker died
+    while applying); continue applying from the first unapplied key instead of
+    reading the source again. `batches`: rows handed in (push ingest) instead
+    of read from the source."""
+    from backend.inventory_sync import apply as applier, failures
+
     started = time.monotonic()
-    profile = query_one("SELECT * FROM inventory_sync_profiles WHERE id = %s AND tenant_id = %s",
-                        (profile_id, tenant_id))
+    profile = query_one("SELECT p.*, d.sql_config->>'engine' AS engine FROM inventory_sync_profiles p "
+                        "LEFT JOIN datasets d ON d.id = p.data_source_id "
+                        "WHERE p.id = %s AND p.tenant_id = %s", (profile_id, tenant_id))
     if not profile:
         raise AppError("inventory_sync_profile_not_found", "Sync profile not found.", status_code=404)
-    counters: dict[str, Any] = {"created": 0, "updated": 0, "unchanged": 0, "missing": 0,
-                                "missing_applied": 0, "manual_overwritten": 0,
-                                "overwritten_sample": []}
+    run = query_one("SELECT * FROM inventory_sync_runs WHERE id = %s", (run_id,)) or {}
+    trigger = run.get("trigger_kind") or "manual"
+    kind = run.get("run_kind") or ("incremental" if profile.get("mode") == "incremental" else "full")
+    scope = run.get("scope")
+    counters: dict[str, Any] = {
+        "created": int(run.get("created") or 0), "updated": int(run.get("updated") or 0),
+        "unchanged": int(run.get("unchanged") or 0), "missing": 0, "missing_applied": 0,
+        "manual_overwritten": int(run.get("manual_overwritten") or 0), "overwritten_sample": [],
+        "refused_ceiling": int(run.get("refused_ceiling") or 0),
+        "owned_elsewhere": int(run.get("owned_elsewhere") or 0), "warnings_sample": [],
+        "warnings_codes": set()}
     prep: Optional[_Prep] = None
-    valid = 0
+    valid = int(run.get("rows_valid") or 0)
     status, error_code, error_params = "success", None, None
     watermark_after = profile.get("watermark_value")
+    cursor_after = profile.get("cursor_value")
     try:
-        prep, valid = _stage(tenant_id, profile, run_id, lease_owner)
-        if not override_brake:
-            _check_brake(profile, prep, valid, run_id)
-        _precheck_limits(tenant_id, run_id)
-        _apply(tenant_id, profile, run_id, counters, lease_owner)
-        if profile.get("mode") != "incremental":
-            _apply_missing(tenant_id, profile, run_id, counters)
-        if profile.get("mode") == "incremental":
+        if not (resume and run.get("stage_complete") and run.get("brake_passed")):
+            prep, valid = _stage(tenant_id, profile, run_id, lease_owner, batches=batches, scope=scope,
+                                 incremental=kind == "incremental")
+            execute("UPDATE inventory_sync_runs SET stage_complete = TRUE, rows_read = %s, rows_valid = %s, "
+                    "rejected = %s, rejected_sample = %s WHERE id = %s",
+                    (prep.rows_read, valid, prep.rejected, _json(prep.rejected_sample), run_id))
+            if not override_brake:
+                _check_brake(profile, prep, valid, run_id, kind=kind)
+            execute("UPDATE inventory_sync_runs SET brake_passed = TRUE WHERE id = %s", (run_id,))
+        _guard_profile(tenant_id, profile, trigger)
+        after = None
+        while True:
+            after = applier.apply_batch(tenant_id, profile, run_id, after, counters)
+            if after is None:
+                break
+            execute("UPDATE inventory_sync_runs SET created = %s, updated = %s, unchanged = %s, "
+                    "manual_overwritten = %s, refused_ceiling = %s, owned_elsewhere = %s, "
+                    "checkpoint = %s WHERE id = %s",
+                    (counters["created"], counters["updated"], counters["unchanged"],
+                     counters["manual_overwritten"], counters["refused_ceiling"],
+                     counters["owned_elsewhere"], _json({"after": list(after)}), run_id))
+            _renew_lease(profile_id, lease_owner)
+        if kind in ("full", "reconcile") and not scope:
+            applier.apply_missing(tenant_id, profile, run_id, counters)
+        if prep is not None and profile.get("mode") == "incremental":
             watermark_after = reader.max_watermark(profile.get("watermark_value"), prep.watermark)
+        if prep is not None and getattr(prep, "cursor_after", None) is not None:
+            cursor_after = prep.cursor_after
     except _Brake as brake:
-        status, error_code, error_params = "braked", f"brake_{brake.code}", brake.params
+        status, error_code, error_params = "braked", f"brake_{brake.code}", failures.public_params(brake.params)
+    except _Stop as stop:
+        status, error_code, error_params = "failed", stop.code, failures.public_params(stop.params)
     except Exception as exc:  # noqa: BLE001 - recorded on the run row, never swallowed silently
         status = "failed"
         error_code, error_params = _error_of(exc)
@@ -548,18 +627,29 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
         else:
             log.warning("inventory sync run %s failed: %s", run_id, error_code)
 
+    if not query_one("SELECT 1 FROM inventory_sync_profiles WHERE id = %s", (profile_id,)):
+        # Deleted (or the tenant erased) while running: the cascade took the run
+        # row with it; there is nothing left to report on.
+        return {"id": run_id, "status": "failed", "error_code": "inventory_sync_profile_changed"}
+
     duration = int((time.monotonic() - started) * 1000)
-    summary = prep.summary() if prep else {"rows_read": 0, "rejected": 0, "rejected_sample": []}
+    summary = prep.summary() if prep else {"rows_read": int(run.get("rows_read") or 0),
+                                           "rejected": int(run.get("rejected") or 0),
+                                           "rejected_sample": run.get("rejected_sample") or []}
     try:
         execute("DELETE FROM inventory_sync_staging WHERE run_id = %s", (run_id,))
     except Exception:  # noqa: BLE001
         log.exception("could not clear staging for run %s", run_id)
+    warnings = sorted(counters["warnings_codes"])
+    if counters["owned_elsewhere"]:
+        warnings.append("owned_by_other_profile")
     execute(
         """UPDATE inventory_sync_runs SET status=%s, finished_at=NOW(), duration_ms=%s,
              rows_read=%s, rows_valid=%s, created=%s, updated=%s, unchanged=%s, rejected=%s,
              missing=%s, missing_applied=%s, manual_overwritten=%s, error_code=%s,
              error_params=%s, watermark_before=%s, watermark_after=%s, rejected_sample=%s,
-             overwritten_sample=%s, brake_overridden=%s
+             overwritten_sample=%s, brake_overridden=%s, refused_ceiling=%s, owned_elsewhere=%s,
+             warnings=%s
            WHERE id=%s""",
         (status, duration, summary["rows_read"], valid, counters["created"], counters["updated"],
          counters["unchanged"], summary["rejected"], counters["missing"],
@@ -568,39 +658,42 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
          _json(profile.get("watermark_value")) if profile.get("watermark_value") else None,
          _json(watermark_after) if (status == "success" and watermark_after) else None,
          _json(summary.get("rejected_sample") or []), _json(counters["overwritten_sample"]),
-         bool(override_brake), run_id),
+         bool(override_brake), counters["refused_ceiling"], counters["owned_elsewhere"],
+         _json({"codes": warnings, "sample": counters["warnings_sample"]}) if warnings else None, run_id),
     )
-    previous_status = profile.get("last_status")
+    run_row = query_one("SELECT * FROM inventory_sync_runs WHERE id = %s", (run_id,))
     if status == "success":
         execute(
             "UPDATE inventory_sync_profiles SET last_status='success', last_error_code=NULL, "
-            "last_success_at=NOW(), consecutive_failures=0, stale_alerted_at=NULL, "
-            "watermark_value=%s, updated_at=NOW() WHERE id=%s",
-            (_json(watermark_after) if watermark_after else None, profile_id))
-        _event(tenant_id, "inventory_sync.run_succeeded", profile, run_id, user_id=user_id,
+            "last_success_at=NOW(), data_as_of=NOW(), consecutive_failures=0, stale_alerted_at=NULL, "
+            "watermark_value=%s, cursor_value=%s, updated_at=NOW() WHERE id=%s",
+            (_json(watermark_after) if watermark_after else None,
+             _json(cursor_after) if cursor_after else None, profile_id))
+        _event(tenant_id, "inventory_sync.run_succeeded", profile, user_id=user_id,
                details={"created": counters["created"], "updated": counters["updated"],
                         "unchanged": counters["unchanged"], "rejected": summary["rejected"]})
         if counters["manual_overwritten"]:
-            _event(tenant_id, "inventory_sync.manual_edits_overwritten", profile, run_id,
-                   user_id=user_id, details={"count": counters["manual_overwritten"]},
+            _event(tenant_id, "inventory_sync.manual_edits_overwritten", profile, user_id=user_id,
+                   details={"count": counters["manual_overwritten"]},
                    reason="inventory_sync_source_wins",
                    reason_params={"count": counters["manual_overwritten"]})
-    elif status == "braked":
-        execute("UPDATE inventory_sync_profiles SET last_status='braked', last_error_code=%s, "
-                "updated_at=NOW() WHERE id=%s", (error_code, profile_id))
-        # One alert per episode, not one per scheduled attempt.
-        if previous_status != "braked" or profile.get("last_error_code") != error_code:
-            _event(tenant_id, "inventory_sync.braked", profile, run_id, user_id=user_id,
-                   details={},
-                   reason="inventory_sync_safety_brake",
-                   reason_params={"brake": error_code, **(error_params or {})})
+        _webhook(tenant_id, "inventory_sync.run_finished", {
+            "profile_id": profile_id, "profile_name": profile.get("name"), "run_id": run_id,
+            "status": status, "created": counters["created"], "updated": counters["updated"],
+            "unchanged": counters["unchanged"], "rejected": summary["rejected"]})
+        if counters["refused_ceiling"]:
+            code = warnings[0] if warnings else "inventory_sync_sku_ceiling"
+            _transition(tenant_id, profile, run_row, "degraded", code,
+                        {"refused": counters["refused_ceiling"]}, user_id)
+        else:
+            _transition(tenant_id, profile, run_row, "healthy", None, {}, user_id)
     else:
-        execute("UPDATE inventory_sync_profiles SET last_status='failed', last_error_code=%s, "
-                "consecutive_failures = consecutive_failures + 1, updated_at=NOW() WHERE id=%s",
-                (error_code, profile_id))
-        if previous_status != "failed" or profile.get("last_error_code") != error_code:
-            _event(tenant_id, "inventory_sync.run_failed", profile, run_id, user_id=user_id,
-                   details={},
-                   reason="inventory_sync_run_failed",
-                   reason_params={"error_code": error_code, **(error_params or {})})
+        outcome = failures.outcome_of(error_code)
+        last_status = "braked" if status == "braked" else "failed"
+        execute(
+            "UPDATE inventory_sync_profiles SET last_status=%s, last_error_code=%s, "
+            "consecutive_failures = consecutive_failures + CASE WHEN %s THEN 1 ELSE 0 END, "
+            "updated_at=NOW() WHERE id=%s",
+            (last_status, error_code, status == "failed", profile_id))
+        _transition(tenant_id, profile, run_row, outcome.health, error_code, error_params or {}, user_id)
     return query_one("SELECT * FROM inventory_sync_runs WHERE id = %s", (run_id,))

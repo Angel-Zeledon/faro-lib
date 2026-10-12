@@ -8489,6 +8489,17 @@ export const translations = {
     'audit.action.inventory_sync.run_started': 'Ejecutó una sincronización de inventario',
     // ── Inventory sync (app/sincronizacion, backend/inventory_sync).
     'errors.data_source_read_only_by_client': 'MongoDB no tiene sesiones de solo lectura: StockAI solo ejecuta lecturas validadas (find y agregaciones sin $out ni $merge). Para más protección, usa un usuario con el rol «read».',
+    // ── Inventory sync (app/sincronizacion, backend/inventory_sync).
+    'hub.inventory_sync_desc': 'Mantén el inventario al día leyendo la base de datos de tu sistema (Oracle, SQL Server, PostgreSQL, MySQL, MongoDB).',
+    'enum.webhook_event_inventory_sync_run_finished': 'Sincronización de inventario terminada',
+    'settings.webhook_event_desc_inventory_sync_run_finished': 'Una sincronización de inventario terminó bien: cuántos productos creó, actualizó y rechazó.',
+    'enum.webhook_event_inventory_sync_blocked': 'Sincronización de inventario detenida',
+    'settings.webhook_event_desc_inventory_sync_blocked': 'Una sincronización se detuvo y necesita a alguien (freno de seguridad, credenciales, columna que ya no existe).',
+    'enum.webhook_event_inventory_sync_recovered': 'Sincronización de inventario recuperada',
+    'settings.webhook_event_desc_inventory_sync_recovered': 'Una sincronización que fallaba vuelve a funcionar.',
+    'events.action.inventory_sync.recovered': 'Una sincronización de inventario volvió a funcionar',
+    'events.action.inventory_sync.blocked': 'Una sincronización de inventario necesita atención',
+    'events.reason.inventory_sync_needs_action': 'Se detuvo y no reintentará sola hasta que se corrija (código: {code}). Abre Sincronización de inventario para ver qué hacer.',
   },
   en: {
     // ── Auth screens (pre-login) — see the `es` block.
@@ -16824,6 +16835,17 @@ export const translations = {
     'audit.action.inventory_sync.run_started': 'Ran an inventory sync',
     // ── Inventory sync (app/sincronizacion) — see the `es` block.
     'errors.data_source_read_only_by_client': 'MongoDB has no read-only sessions: StockAI only runs validated reads (find and aggregations without $out or $merge). For more protection, use a user with the "read" role.',
+    // ── Inventory sync (app/sincronizacion) — see the `es` block.
+    'hub.inventory_sync_desc': 'Keep inventory current by reading your own system\'s database (Oracle, SQL Server, PostgreSQL, MySQL, MongoDB).',
+    'enum.webhook_event_inventory_sync_run_finished': 'Inventory sync finished',
+    'settings.webhook_event_desc_inventory_sync_run_finished': 'An inventory sync finished successfully: how many products it created, updated and rejected.',
+    'enum.webhook_event_inventory_sync_blocked': 'Inventory sync stopped',
+    'settings.webhook_event_desc_inventory_sync_blocked': 'A sync stopped and needs someone (safety brake, credentials, a column that no longer exists).',
+    'enum.webhook_event_inventory_sync_recovered': 'Inventory sync recovered',
+    'settings.webhook_event_desc_inventory_sync_recovered': 'A sync that was failing works again.',
+    'events.action.inventory_sync.recovered': 'An inventory sync works again',
+    'events.action.inventory_sync.blocked': 'An inventory sync needs attention',
+    'events.reason.inventory_sync_needs_action': 'It stopped and will not retry on its own until this is fixed (code: {code}). Open Inventory sync to see what to do.',
   },
 } as const
 

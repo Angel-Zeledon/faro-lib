@@ -69,6 +69,10 @@ pub fn event_types() -> Vec<(&'static str, Vec<&'static str>, bool, bool)> {
             "delivery_date", "quantity", "shortfall", "latest_safe_order_date", "order_date_passed"], true, true),
         ("commitment.fulfilled", vec!["commitment_id", "sku", "warehouse", "warehouse_id", "customer",
             "delivery_date", "quantity", "fulfilled_at"], true, true),
+        ("inventory_sync.run_finished", vec!["profile_id", "profile_name", "run_id", "status", "created",
+            "updated", "unchanged", "rejected"], false, true),
+        ("inventory_sync.blocked", vec!["profile_id", "profile_name", "run_id", "health", "reason"], false, true),
+        ("inventory_sync.recovered", vec!["profile_id", "profile_name", "run_id", "health", "reason"], false, true),
         ("webhook.test", vec!["webhook_id"], false, false),
     ]
 }

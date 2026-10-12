@@ -32,6 +32,9 @@ EMITTERS = {
     "stockout.imminent": ("webhooks/service.py", '"stockout.imminent"'),
     "commitment.at_risk": ("webhooks/service.py", '"commitment.at_risk"'),
     "commitment.fulfilled": ("inventory/committed_demand_service.py", '"commitment.fulfilled"'),
+    "inventory_sync.run_finished": ("inventory_sync/engine.py", '"inventory_sync.run_finished"'),
+    "inventory_sync.blocked": ("inventory_sync/engine.py", '"inventory_sync.blocked"'),
+    "inventory_sync.recovered": ("inventory_sync/engine.py", '"inventory_sync.recovered"'),
 }
 
 

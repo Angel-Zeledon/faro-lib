@@ -361,6 +361,10 @@ _DELETE_ORDER: list[str] = [
     "sku_analogies",
     # Inventory sync, children first (all cascade from the tenant too).
     "inventory_sync_staging",
+    "inventory_sync_idempotency",
+    "inventory_sync_ingest_batches",
+    "inventory_sync_applied_movements",
+    "inventory_sync_ledger_balances",
     "inventory_sync_keys",
     "inventory_sync_runs",
     "inventory_sync_profiles",

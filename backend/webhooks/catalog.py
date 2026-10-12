@@ -77,6 +77,14 @@ EVENT_TYPES: dict[str, EventType] = {e.name: e for e in (
               ("commitment_id", "sku", "warehouse", "warehouse_id", "customer",
                "delivery_date", "quantity", "fulfilled_at"),
               warehouse_aware=True),
+    # Inventory sync (backend/inventory_sync/): a run finished; a profile
+    # stopped and needs someone (blocked / paused, with the reason code); a
+    # profile that was failing works again. Company-wide: a sync spans warehouses.
+    EventType("inventory_sync.run_finished",
+              ("profile_id", "profile_name", "run_id", "status", "created", "updated",
+               "unchanged", "rejected"), warehouse_aware=False),
+    EventType("inventory_sync.blocked", ("profile_id", "profile_name", "run_id", "health", "reason"), warehouse_aware=False),
+    EventType("inventory_sync.recovered", ("profile_id", "profile_name", "run_id", "health", "reason"), warehouse_aware=False),
     EventType("webhook.test", ("webhook_id",), warehouse_aware=False, subscribable=False),
 )}
 

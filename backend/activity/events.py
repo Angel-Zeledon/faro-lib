@@ -526,6 +526,18 @@ EVENTS: dict[str, EventSpec] = {
         kind="data", severity=CRITICAL,
         detail_keys=("profile_name", "hours"),
     ),
+    # A profile stopped and waits for a person (blocked: credentials, grants,
+    # firewall, a too-large source; paused for schema drift). Raised once per
+    # change of state, never per attempt.
+    "inventory_sync.blocked": EventSpec(
+        kind="data", severity=CRITICAL,
+        detail_keys=("profile_name",),
+    ),
+    # A profile that was failing or stopped works again.
+    "inventory_sync.recovered": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("profile_name",),
+    ),
     # Fields a person edited by hand that the source overwrote (the conflict
     # rule: the source wins for the fields a profile maps).
     "inventory_sync.manual_edits_overwritten": EventSpec(
@@ -929,6 +941,7 @@ REASONS: tuple[str, ...] = (
     "inventory_sync_safety_brake",
     "inventory_sync_not_succeeding",
     "inventory_sync_source_wins",
+    "inventory_sync_needs_action",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
     # the audit stream gave up on `days` different days, or its address is refused
