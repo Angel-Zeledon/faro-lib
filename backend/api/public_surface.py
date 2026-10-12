@@ -49,13 +49,16 @@ EXPOSED_TAGS: frozenset[str] = frozenset({
     "freshness", "alerts",
     # Inventory sync STATUS: profiles, their freshness and run history (reads).
     "inventory-sync-status",
+    # Inventory sync CONFIGURATION too (owner, 2026-10-12): the customer's
+    # developers wire it up from CI with a write key — the same dry-run gate,
+    # brake and audit as the screen; a read key only reads.
+    "inventory-sync",
     # One endpoint speaking MCP over five READ tools (backend/mcp/catalog.py).
     "mcp",
 })
 
 # ── Tags a key never reaches, and why ────────────────────────────────────────
 INTERNAL_TAGS: dict[str, str] = {
-    "inventory-sync": "configuring a sync opens connections to the customer's own database and decides what is written to inventory; a person maps the columns and confirms the dry run on the screen",
     "inventory-signal-thresholds": "the traffic-light cut-offs move every recommendation the tenant sees; a person changes them on the rules panel, with its preview",
     "inventory-service-level-classes": "applying a suggested service level rewrites planning values on many SKUs at once; a person reads the suggestion and accepts it class by class",
     "auth": "login, signup and session tokens: a machine holds a key, it never logs in",

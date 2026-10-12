@@ -168,6 +168,10 @@ def score_column(field: str, column: dict) -> tuple[float, list[str]]:
     reasons: list[str] = []
     score = 0.0
     c = compact(last)
+    if c == compact(field) or (field == "current_stock" and c in ("currentstock",)):
+        # A column named exactly like the field (a `stockai_inventory` view):
+        # certain, by construction.
+        return 1.0, ["canonical_name"]
     if names & set(_EXACT.get(field, ())):
         score = 0.9
         reasons.append("name_exact")

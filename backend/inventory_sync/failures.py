@@ -124,6 +124,9 @@ CATALOGUE: dict[str, Outcome] = {o.code: o for o in (
     # capacity (the run still succeeds for what fits)
     _C("inventory_sync_sku_ceiling", CAPACITY, "apply"),
     _C("inventory_sync_location_ceiling", CAPACITY, "apply"),
+    # advice the doctor gives (never a run outcome by itself)
+    _C("inventory_sync_filter_not_indexed", CONFIG, "read"),
+    _C("inventory_sync_capture_fallback", TRANSIENT, "read"),
     # our side
     _C("inventory_sync_our_db_busy", OURS, "apply"),
     _C("inventory_sync_internal_error", OURS, "ours"),

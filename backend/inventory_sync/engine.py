@@ -37,6 +37,9 @@ log = logging.getLogger(__name__)
 DRY_RUN_SAMPLE = 500
 APPLY_BATCH = 500
 MAX_SAMPLE = 50
+# Rejected rows kept per run: enough for the run-detail CSV a developer
+# downloads, bounded so a run log never grows with the source.
+MAX_REJECTED_SAMPLE = 500
 LEASE_MINUTES = 30
 # A cell larger than this is not a stock value: it is a blob, a corrupt export
 # or an attack. The row is rejected by name; the cell is never stored.
@@ -76,7 +79,7 @@ class _Prep:
     def _reject(self, code: str, params: dict, sku: Any, row_number: int) -> None:
         self.rejected += 1
         self.by_code[code] = self.by_code.get(code, 0) + 1
-        if len(self.rejected_sample) < MAX_SAMPLE:
+        if len(self.rejected_sample) < MAX_REJECTED_SAMPLE:
             self.rejected_sample.append(mapper.rejection(code, params, sku=sku, row_number=row_number))
 
     def warehouse(self, name: str) -> str:
@@ -652,6 +655,10 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
                     (prep.rows_read, valid, prep.rejected, _json(prep.rejected_sample), run_id))
             if not override_brake:
                 _check_brake(profile, prep, valid, run_id, kind=kind)
+            if prep.extras.get("capture_fallback"):
+                # The change cursor had expired (retention / oplog window): this
+                # run read everything instead, and says so.
+                counters["warnings_codes"].add("inventory_sync_capture_fallback")
             drift = int(prep.extras.get("drift") or 0)
             if drift:
                 execute("UPDATE inventory_sync_runs SET drift_count = %s, drift_sample = %s WHERE id = %s",
