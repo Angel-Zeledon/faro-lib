@@ -171,7 +171,7 @@ def normalize(tenant_id: str, body: dict, existing: Optional[dict] = None) -> di
     elif engine == "mongodb" and kind not in MONGO_KINDS:
         raise _reject("inventory_sync_source_kind_invalid",
                       "A MongoDB source reads a collection or an aggregation pipeline.", kind=kind)
-    if engine != "mongodb" and kind not in SQL_KINDS:
+    elif engine != "mongodb" and kind not in SQL_KINDS:
         raise _reject("inventory_sync_source_kind_invalid",
                       "A SQL database reads a table, a view or a read-only query.", kind=kind)
 

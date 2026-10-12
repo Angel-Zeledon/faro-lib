@@ -125,6 +125,14 @@ class _Prep:
         if not self.seen_columns:
             return []
         low = {c.lower() for c in self.seen_columns}
+        if self.profile.get("source_kind") == "push":
+            # A pushed batch may carry only what changed: only the columns of
+            # the required fields must be there.
+            wanted = [self.mapping[f]["column"] for f in F.REQUIRED_FIELDS
+                      if self.mapping.get(f, {}).get("column")]
+            if (self.profile.get("stock_model") or "snapshot") == "ledger":
+                return []
+            return sorted({c for c in wanted if c.lower() not in low})
         wanted = [m.get("column") for m in self.mapping.values() if m.get("column")]
         wanted += [f["column"] for f in self.filters]
         if (self.profile.get("stock_model") or "snapshot") == "ledger":
@@ -189,7 +197,7 @@ def _policy(profile: dict) -> str:
 
 
 def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
-            scope: Optional[dict] = None) -> dict:
+            scope: Optional[dict] = None, batches: Any = None) -> dict:
     """What a run would do with the first `sample` rows. Writes nothing."""
     started = time.monotonic()
     prep = _Prep(tenant_id, profile)
@@ -197,8 +205,11 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
     conflicts: set[tuple[str, str]] = set()
     policy = _policy(profile)
     from backend.inventory_sync import strategies
-    for batch in strategies.read_for_run(tenant_id, profile, limit=sample, batch_size=min(sample, 1000),
-                                         scope=scope):
+    if callable(batches):
+        batches = batches(prep.extras)
+    source = batches if batches is not None else strategies.read_for_run(
+        tenant_id, profile, limit=sample, batch_size=min(sample, 1000), scope=scope)
+    for batch in source:
         for row in prep.rows(batch):
             key = (row["sku"], row["warehouse"])
             if key in conflicts:
@@ -377,6 +388,9 @@ def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str
     here: a mapped column the source no longer has pauses the profile."""
     prep = _Prep(tenant_id, profile)
     policy = _policy(profile)
+    if callable(batches):
+        # A factory that needs the run's report (ledger push: cursor, movements).
+        batches = batches(prep.extras)
     if batches is None:
         from backend.inventory_sync import strategies
         batches = strategies.read_for_run(tenant_id, profile, run_id=run_id, scope=scope,
@@ -581,7 +595,7 @@ def _transition(tenant_id: str, profile: dict, run: dict, health: str, reason: O
 
 def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake: bool = False,
                 lease_owner: Optional[str] = None, user_id: Optional[str] = None,
-                batches: Optional[Iterable[list[dict]]] = None, resume: bool = False) -> dict:
+                batches: Any = None, resume: bool = False, staged: bool = False) -> dict:
     """Run one sync. Always finishes the run row (success / failed / braked)
     and never raises for a source or data problem — the outcome is the row.
 
@@ -614,7 +628,23 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
     watermark_after = profile.get("watermark_value")
     cursor_after = profile.get("cursor_value")
     try:
-        if not (resume and run.get("stage_complete") and run.get("brake_passed")):
+        if staged:
+            # A multi-part push snapshot: the parts were staged as they arrived.
+            prep = _Prep(tenant_id, profile)
+            prep.rows_read = int(run.get("rows_read") or 0)
+            prep.rejected = int(run.get("rejected") or 0)
+            prep.rejected_sample = list(run.get("rejected_sample") or [])
+            dups = query_one("SELECT COUNT(*) AS n FROM inventory_sync_staging WHERE run_id = %s AND duplicate",
+                             (run_id,))["n"]
+            prep.rejected += int(dups)
+            valid = int(query_one("SELECT COUNT(*) AS n FROM inventory_sync_staging WHERE run_id = %s "
+                                  "AND NOT duplicate", (run_id,))["n"])
+            execute("UPDATE inventory_sync_runs SET stage_complete = TRUE, rows_valid = %s, rejected = %s "
+                    "WHERE id = %s", (valid, prep.rejected, run_id))
+            if not override_brake:
+                _check_brake(profile, prep, valid, run_id, kind="full")
+            execute("UPDATE inventory_sync_runs SET brake_passed = TRUE WHERE id = %s", (run_id,))
+        elif not (resume and run.get("stage_complete") and run.get("brake_passed")):
             prep, valid = _stage(tenant_id, profile, run_id, lease_owner, batches=batches, scope=scope,
                                  incremental=kind == "incremental")
             execute("UPDATE inventory_sync_runs SET stage_complete = TRUE, rows_read = %s, rows_valid = %s, "
@@ -645,7 +675,7 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
                      counters["manual_overwritten"], counters["refused_ceiling"],
                      counters["owned_elsewhere"], _json({"after": list(after)}), run_id))
             _renew_lease(profile_id, lease_owner)
-        if kind in ("full", "reconcile") and not scope:
+        if kind in ("full", "reconcile") and not (scope or {}).get("skus"):
             applier.apply_missing(tenant_id, profile, run_id, counters)
         if prep is not None and profile.get("mode") == "incremental":
             watermark_after = reader.max_watermark(profile.get("watermark_value"), prep.watermark)
@@ -750,3 +780,20 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
             (last_status, error_code, status == "failed", profile_id))
         _transition(tenant_id, profile, run_row, outcome.health, error_code, error_params or {}, user_id)
     return query_one("SELECT * FROM inventory_sync_runs WHERE id = %s", (run_id,))
+
+
+def stage_part(tenant_id: str, profile: dict, run_id: str, rows: list[dict]) -> dict:
+    """Stage one part of a multi-part push snapshot; the counts accumulate
+    on the run row until the last part applies the whole snapshot."""
+    prep = _Prep(tenant_id, profile)
+    staged = prep.rows(rows)
+    missing = prep.missing_columns()
+    if missing:
+        raise AppError("inventory_sync_column_missing", f"The batch has no column {missing[0]}.",
+                       status_code=422, params={"column": missing[0], "columns": ", ".join(missing)})
+    _stage_batch(tenant_id, run_id, prep, staged, _policy(profile))
+    run = query_one("SELECT rejected_sample FROM inventory_sync_runs WHERE id = %s", (run_id,)) or {}
+    sample = (list(run.get("rejected_sample") or []) + prep.rejected_sample)[:MAX_SAMPLE]
+    execute("UPDATE inventory_sync_runs SET rows_read = rows_read + %s, rejected = rejected + %s, "
+            "rejected_sample = %s WHERE id = %s", (prep.rows_read, prep.rejected, _json(sample), run_id))
+    return prep.summary()

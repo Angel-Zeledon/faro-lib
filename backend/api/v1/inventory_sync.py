@@ -314,6 +314,60 @@ def refresh(body: RefreshBody, request: Request,
     return ok(result)
 
 
+@router.post("/inventory-sync/profiles/{profile_id}/ingest")
+async def ingest_rows(profile_id: str, request: Request,
+                      batch_id: Optional[str] = Query(default=None, max_length=128),
+                      snapshot_id: Optional[str] = Query(default=None, max_length=128),
+                      last: bool = Query(default=True),
+                      dry_run: bool = Query(default=False),
+                      user: CurrentUser = Depends(require_analyst_or_above)):
+    """Push rows (or, for a ledger profile, movements) into a `push` profile.
+
+    JSON body: `{"batch_id", "rows": [...], "snapshot_id"?, "last"?, "dry_run"?}`.
+    NDJSON body (`Content-Type: application/x-ndjson`, one row per line): the
+    same fields as query parameters. The rows go through the profile's mapping,
+    validation, safety brake and run log, exactly like a pulled source.
+
+    Idempotent per `batch_id`: a retry with the same rows answers the first
+    run (`replayed: true`); the same id with different rows is refused
+    (409 `inventory_sync_batch_id_reused`). Without `snapshot_id` a batch is
+    partial (absent SKUs are not "gone"); parts of one `snapshot_id` are staged
+    and the part with `last: true` applies the full snapshot with every brake."""
+    import asyncio
+    import json as _json_mod
+    from backend.inventory_sync import ingest
+    raw = await request.body()
+    ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if ctype in ("application/x-ndjson", "application/ndjson", "application/jsonl"):
+        rows = []
+        for n, line in enumerate(raw.decode("utf-8", "replace").splitlines(), start=1):
+            if line.strip():
+                try:
+                    rows.append(_json_mod.loads(line))
+                except ValueError:
+                    raise AppError("inventory_sync_ingest_invalid", f"Line {n} is not JSON.", status_code=422,
+                                   params={"reason": "not_json", "path": f"line {n}"})
+        body = {"batch_id": batch_id, "rows": rows, "snapshot_id": snapshot_id, "last": last, "dry_run": dry_run}
+    else:
+        try:
+            body = _json_mod.loads(raw or b"{}")
+        except ValueError:
+            raise AppError("inventory_sync_ingest_invalid", "The body is not JSON.", status_code=422,
+                           params={"reason": "not_json", "path": "$"})
+        if not isinstance(body, dict):
+            raise AppError("inventory_sync_ingest_invalid", "The body must be an object.", status_code=422,
+                           params={"reason": "not_object", "path": "$"})
+    result = await asyncio.to_thread(
+        ingest.ingest, user.tenant_id, user.user_id, profile_id,
+        batch_id=body.get("batch_id") or batch_id, rows=body.get("rows"),
+        snapshot_id=body.get("snapshot_id") or snapshot_id,
+        last=bool(body.get("last", last)), dry_run=bool(body.get("dry_run", dry_run)))
+    audit.note(request, target_id=profile_id,
+               after={"batch_id": str(body.get("batch_id") or batch_id)[:128],
+                      "rows": len(body.get("rows") or []), "dry_run": bool(body.get("dry_run", dry_run))})
+    return ok(result)
+
+
 @router.post("/inventory-sync/profiles/{profile_id}/run", status_code=202)
 def run_now(profile_id: str, request: Request, body: Optional[RunBody] = None,
             user: CurrentUser = Depends(require_analyst_or_above)):

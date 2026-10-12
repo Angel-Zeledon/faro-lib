@@ -475,7 +475,19 @@ def read_balances(tenant_id: str, profile: dict, *, run_id: Optional[str] = None
 
 def _incremental(tenant_id, profile, engine, keys, run_id, report):
     """Movements after the cursor -> deltas on the running balance."""
+    batches = _rows(tenant_id, profile, movements_sql(profile, engine, profile.get("cursor_value"),
+                                                      INCREMENTAL_PAGE))
+    yield from apply_movements(tenant_id, profile, batches, run_id, report, keys=keys)
+
+
+def apply_movements(tenant_id, profile, batches, run_id, report, keys=None):
+    """THE delta path, shared by incremental reads and push ingest: every
+    movement id once (applied-ids store + this call), counted movements only,
+    signed by the profile's rule, summed per key onto the running balance as
+    PENDING balances (committed only if the run succeeds). Order does not
+    matter: a sum is commutative; duplicates and replays are absorbed."""
     from backend.inventory_sync import reader
+    keys = keys or _Keys(tenant_id, profile)
     pid = profile["id"]
     cfg = profile["model_config"]
     mapping = profile["mapping"]
@@ -485,7 +497,7 @@ def _incremental(tenant_id, profile, engine, keys, run_id, report):
     rejected_rows: list[dict] = []
     new_ids: list[str] = []
     max_cur = after
-    for batch in _rows(tenant_id, profile, movements_sql(profile, engine, after, INCREMENTAL_PAGE)):
+    for batch in batches:
         ids = [str(mapper._lookup(r, cfg["id_column"])) for r in batch]
         done = {r["movement_id"] for r in query(
             "SELECT movement_id FROM inventory_sync_applied_movements WHERE profile_id = %s "
