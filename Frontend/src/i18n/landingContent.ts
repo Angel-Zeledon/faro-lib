@@ -704,7 +704,7 @@ const en: ContentCopy = {
       autoparts: {
         label: 'Auto parts',
         short: 'Many references, parts that sell sporadically and suppliers with long lead times.',
-        metaTitle: 'StockAI for spare parts and auto parts: forecasting and purchasing',
+        metaTitle: 'StockAI for spare parts and auto parts: forecasting and buying',
         metaDesc: 'Sales forecasting and purchasing for auto-parts houses: intermittent-demand references, import lead times learned from each reception, and overstock alerts.',
         title: 'Sales forecasting and purchasing for auto-parts businesses.',
         intro: 'Tens of thousands of references, parts that sell two or three times a year and suppliers who import with long lead times. Have the part when the workshop asks for it, without piling up the ones nobody looks for.',
