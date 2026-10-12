@@ -503,6 +503,34 @@ EVENTS: dict[str, EventSpec] = {
         detail_keys=("source_name",),
     ),
 
+    # ── Inventory sync from the customer's database (backend/inventory_sync/) ─
+    # A clean run is history. A failure is a warning (the stock shown is the
+    # last good sync, unchanged); the safety brake and a sync that has not
+    # succeeded in twice its interval are critical — the buyer is reading
+    # stock that may no longer be true.
+    "inventory_sync.run_succeeded": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("profile_name", "created", "updated", "unchanged", "rejected"),
+    ),
+    "inventory_sync.run_failed": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("profile_name", "error_code", "stage"),
+    ),
+    "inventory_sync.braked": EventSpec(
+        kind="data", severity=CRITICAL,
+        detail_keys=("profile_name", "brake"),
+    ),
+    "inventory_sync.stale": EventSpec(
+        kind="data", severity=CRITICAL,
+        detail_keys=("profile_name", "hours"),
+    ),
+    # Fields a person edited by hand that the source overwrote (the conflict
+    # rule: the source wins for the fields a profile maps).
+    "inventory_sync.manual_edits_overwritten": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("profile_name", "count"),
+    ),
+
     # ── Data the tenant put in ───────────────────────────────────────────────
     "data.stock_imported": EventSpec(
         kind="data", severity=INFO,
@@ -892,6 +920,13 @@ REASONS: tuple[str, ...] = (
     # connected databases: the scheduled refresh could not read the source;
     # `reason_params.error_code` names the failure for the screen to explain
     "sql_source_refresh_failed",
+    # inventory sync: a run failed (`error_code` names why), the safety brake
+    # stopped a run (`brake` names which check), no success within twice the
+    # interval, and the source overwrote fields edited by hand
+    "inventory_sync_run_failed",
+    "inventory_sync_safety_brake",
+    "inventory_sync_not_succeeding",
+    "inventory_sync_source_wins",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
     # the audit stream gave up on `days` different days, or its address is refused

@@ -672,6 +672,14 @@ def _report_scheduler_loop() -> None:
         time.sleep(catalog.POLL_SECONDS)
 
 
+# Inventory sync from customers' databases (backend/inventory_sync/). A claim
+# loop, not a cron loop: each due profile is leased (FOR UPDATE SKIP LOCKED),
+# so it runs with the job worker and a second instance is harmless.
+def _inventory_sync_loop() -> None:
+    from backend.inventory_sync.scheduler import loop
+    loop()
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -682,6 +690,7 @@ def enabled_components() -> list[str]:
     components: list[str] = []
     if settings.worker_enabled:
         components.append("job-worker")
+        components.append("inventory-sync")
     if settings.scheduler_enabled:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
@@ -702,6 +711,7 @@ _COMPONENT_TARGETS = {
     "outbox-drain":       _outbox_drain_loop,
     "audit-stream":       _audit_stream_loop,
     "report-scheduler":   _report_scheduler_loop,
+    "inventory-sync":     _inventory_sync_loop,
 }
 
 
