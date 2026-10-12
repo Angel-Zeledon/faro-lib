@@ -106,6 +106,9 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("supply_contracts", "supply_contracts", "*"),
     ("recurring_delivery_schedules", "recurring_delivery_schedules", "*"),
     ("purchase_budgets", "purchase_budgets", "*"),
+    # Multicurrency: the tenant's own exchange-rate table (what its orders
+    # were valued at); a PO line keeps the rate it used, this keeps the rest.
+    ("exchange_rates", "exchange_rates", "*"),
     ("demand_plan_versions", "demand_plan_versions", "*"),
     ("demand_plan_version_events", "demand_plan_version_events", "*"),
     ("consensus_settings", "consensus_settings", "*"),
@@ -341,6 +344,9 @@ _DELETE_ORDER: list[str] = [
     "supply_contracts",
     "recurring_delivery_schedules",
     "purchase_budgets",
+    # Nothing references a rate row by FK (a PO line copies the rate and keeps
+    # the id as plain text), so it can go at any point.
+    "exchange_rates",
     # Demand plan versions are permanent (immutable rows); only whole-tenant
     # erasure removes them. Events first: they reference their version.
     "demand_plan_version_events",
