@@ -79,6 +79,18 @@ class TestRender:
             presets.render(pid, eng, params)
         assert e.value.code == "inventory_sync_preset_invalid" and e.value.params["reason"] == reason
 
+    @pytest.mark.parametrize("pid", ["sap_ecc_mard", "sap_ecc_mchb", "dynamics_inventsum", "odoo_stock_quant"])
+    def test_erp_presets_bring_their_warehouse_master(self, pid):
+        from backend.inventory_sync import masters
+        pr = presets.PRESETS[pid]
+        for eng in pr["engines"]:
+            body = presets.render(pid, eng, _defaults(pr))["profile"]
+            wh = body["masters"]["warehouses"]
+            validate_read_only_sql(wh["source_query"], eng)
+            assert masters.normalize(body["masters"], has_source=True)["warehouses"]["code_column"] == "code"
+        sap = presets.render("sap_ecc_mard", "oracle", {"client": "200"})["profile"]["masters"]["warehouses"]
+        assert "T001L" in sap["source_query"] and "MANDT = '200'" in sap["source_query"]
+
     def test_wrong_engine_is_refused(self):
         with pytest.raises(AppError) as e:
             presets.render("odoo_stock_quant", "oracle", {})

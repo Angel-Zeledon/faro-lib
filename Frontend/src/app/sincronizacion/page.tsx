@@ -629,7 +629,8 @@ export default function InventorySyncPage() {
                            stock_model: (body.stock_model as Draft['stock_model']) || 'snapshot',
                            model_config_text: body.model_config && Object.keys(body.model_config).length
                              ? JSON.stringify(body.model_config, null, 2) : '',
-                           strategy: body.strategy || 'auto', mode: 'full' }
+                           strategy: body.strategy || 'auto', mode: 'full',
+                           wh_master: body.masters?.warehouses ?? d.wh_master }
                 })
                 setColumns([]); setSuggestion(null); setDry(null); setNotice(t('isync.preset_applied'))
               }} />

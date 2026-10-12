@@ -391,6 +391,31 @@ PRESETS: dict[str, dict[str, Any]] = {
     },
 }
 
+# Warehouse masters the ERP presets come with: the code the stock query
+# produces -> the name a buyer reads. SAP T001L (storage locations, LGOBE)
+# keyed like the stock query's WERKS-LGORT; Dynamics InventLocation per
+# DATAAREAID; Odoo stock_warehouse (code, name, active). Unverified against a
+# live system like the presets themselves.
+def _sap_t001l(engine: str, p: dict) -> str:
+    return (f"SELECT {_concat(engine, 'WERKS', chr(39) + '-' + chr(39), 'LGORT')} AS code, LGOBE AS name\n"
+            f"FROM {_sch(p)}T001L\nWHERE MANDT = '{p['client']}'")
+
+
+def _d365_inventlocation(engine: str, p: dict) -> str:
+    return (f"SELECT INVENTLOCATIONID AS code, NAME AS name\nFROM {_sch(p)}INVENTLOCATION\n"
+            f"WHERE DATAAREAID = '{p['company'].lower()}'")
+
+
+def _odoo_warehouses(engine: str, p: dict) -> str:
+    company = f"\nWHERE company_id = {int(p['company_id'])}" if p.get("company_id") else ""
+    return f"SELECT code, name, active FROM stock_warehouse{company}"
+
+
+_WAREHOUSE_MASTERS: dict[str, Callable[[str, dict], str]] = {
+    "sap_ecc_mard": _sap_t001l, "sap_ecc_mchb": _sap_t001l,
+    "dynamics_inventsum": _d365_inventlocation, "odoo_stock_quant": _odoo_warehouses,
+}
+
 # Systems StockAI does not read directly, and what to do instead.
 NOT_DIRECT: dict[str, dict[str, str]] = {
     "sap_s4hana": {"vendor": "SAP", "path": "push_or_replica"},
@@ -462,5 +487,10 @@ def render(preset_id: str, engine: str, params: Optional[dict] = None) -> dict:
         "strategy": pr["strategy"] if pr["strategy"] != "ledger_cursor" or pr["stock_model"] == "ledger" else "auto",
         "mode": "full",
     }
+    wh_master = _WAREHOUSE_MASTERS.get(preset_id)
+    if wh_master:
+        profile["masters"] = {"warehouses": {"source_kind": "query", "source_query": wh_master(engine, clean),
+                                             "code_column": "code", "name_column": "name",
+                                             "active_column": "active" if preset_id.startswith("odoo") else None}}
     return {"profile": profile,
             "preset": {"id": preset_id, "verified": bool(pr.get("verified", False)), "gotchas": pr["gotchas"]}}
