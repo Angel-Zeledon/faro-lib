@@ -148,7 +148,7 @@ def _rowscn(tenant_id, profile, incremental, max_rows, report):
     best = int(stored) if stored is not None else None
     for batch in ledger._rows(tenant_id, profile, sql, max_rows=max_rows):
         for r in batch:
-            scn = r.pop("STOCKAI_SCN", None)
+            scn = r.pop("STOCKAI_SCN", None) if "STOCKAI_SCN" in r else r.pop("stockai_scn", None)
             if scn is not None and (best is None or int(scn) > best):
                 best = int(scn)
         yield batch

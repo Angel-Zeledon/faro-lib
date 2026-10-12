@@ -214,3 +214,137 @@ class TestOracle:
         finally:
             cur.execute(f"DROP TABLE {table} PURGE")
             conn.close()
+
+
+
+# ── Change capture against the real engines ──────────────────────────────────
+
+def _capture_profile(tid, sid, strategy, obj, schema=None, mapping=None):
+    p = profiles.create(tid, "usr_test", {
+        "name": f"cap-{strategy}", "data_source_id": sid, "source_kind": "table",
+        "source_schema": schema, "source_object": obj, "strategy": strategy,
+        "mapping": mapping or {"sku": "item", "warehouse": "wh", "current_stock": "qty"},
+        "allow_new_warehouses": True, "brake_max_vanished_pct": 100, "brake_min_row_ratio": 0})
+    return p
+
+
+def _two_runs(tid, pid):
+    first = engine.execute_run(tid, pid, engine.start_run(tid, pid, "manual"))
+    assert first["status"] == "success" and first["run_kind"] == "full", first
+    assert profiles.get(tid, pid)["cursor_value"], "the full run must record the capture position"
+    return first
+
+
+def _stock_map(tid):
+    return {(r["sku"], r["warehouse"]): float(r["current_stock"]) for r in query(
+        "SELECT sku, warehouse, current_stock FROM inventory_stock WHERE tenant_id = %s", (tid,))}
+
+
+class TestCapture:
+
+    def test_sql_server_change_tracking(self, test_tenant):
+        host, port, user, password = _target("STOCKAI_SYNC_MSSQL", "127.0.0.1:14330:sa:StockAi_Pass123")
+        if not _reachable(host, port):
+            pytest.skip("SQL Server target not reachable")
+        import pyodbc
+        from backend.datasources.client import best_mssql_odbc_driver
+        try:
+            conn = pyodbc.connect(f"DRIVER={{{best_mssql_odbc_driver()}}};SERVER=tcp:{host},{port};UID={user};"
+                                  f"PWD={password};Encrypt=no", autocommit=True, timeout=5)
+        except pyodbc.Error:
+            pytest.skip("SQL Server not usable from this machine's ODBC driver")
+        cur = conn.cursor()
+        cur.execute("IF DB_ID('stockai_ct') IS NULL CREATE DATABASE stockai_ct")
+        cur.execute("IF NOT EXISTS (SELECT 1 FROM sys.change_tracking_databases WHERE database_id = DB_ID('stockai_ct')) "
+                    "ALTER DATABASE stockai_ct SET CHANGE_TRACKING = ON (CHANGE_RETENTION = 2 DAYS, AUTO_CLEANUP = ON)")
+        table = f"stock_{uuid4().hex[:6]}"
+        cur.execute(f"CREATE TABLE stockai_ct.dbo.{table} (item NVARCHAR(40) NOT NULL, wh NVARCHAR(10) NOT NULL, "
+                    "qty DECIMAL(12,3), CONSTRAINT pk_" + table + " PRIMARY KEY (item, wh))")
+        cur.execute(f"ALTER TABLE stockai_ct.dbo.{table} ENABLE CHANGE_TRACKING")
+        cur.execute(f"INSERT INTO stockai_ct.dbo.{table} VALUES ('A','01',10),('B','01',5),('C','02',7)")
+        try:
+            tid = test_tenant["id"]
+            sid = _connect(tid, "mssql", host, port, "stockai_ct", user, password)
+            p = _capture_profile(tid, sid, "change_tracking", table, schema="dbo")
+            _two_runs(tid, p["id"])
+            cur.execute(f"UPDATE stockai_ct.dbo.{table} SET qty = 3 WHERE item = 'A'")
+            cur.execute(f"INSERT INTO stockai_ct.dbo.{table} VALUES ('D','02',1)")
+            run = engine.execute_run(tid, p["id"], engine.start_run(tid, p["id"], "manual"))
+            assert run["status"] == "success" and run["run_kind"] == "incremental", run
+            assert run["rows_read"] == 2                     # only the two changed rows
+            assert _stock_map(tid) == {("A", "01"): 3, ("B", "01"): 5, ("C", "02"): 7, ("D", "02"): 1}
+        finally:
+            cur.execute(f"DROP TABLE stockai_ct.dbo.{table}")
+            conn.close()
+
+    def test_oracle_rowscn(self, test_tenant):
+        host, port, user, password = _target("STOCKAI_SYNC_ORACLE", "127.0.0.1:15210:stockai:OraPass123")
+        if not _reachable(host, port):
+            pytest.skip("Oracle target not reachable")
+        import oracledb
+        import time
+        try:
+            conn = oracledb.connect(user=user, password=password, host=host, port=port, service_name="FREEPDB1")
+        except oracledb.Error:
+            pytest.skip("Oracle not ready")
+        table = f"STK_{uuid4().hex[:6]}".upper()
+        cur = conn.cursor()
+        cur.execute(f"CREATE TABLE {table} (ITEM VARCHAR2(40), WH VARCHAR2(10), QTY NUMBER) ROWDEPENDENCIES")
+        cur.executemany(f"INSERT INTO {table} VALUES (:1, :2, :3)", [("A", "01", 10), ("B", "01", 5)])
+        conn.commit()
+        time.sleep(4)
+        try:
+            tid = test_tenant["id"]
+            sid = _connect(tid, "oracle", host, port, "FREEPDB1", user, password)
+            p = _capture_profile(tid, sid, "oracle_rowscn", table, schema=user.upper(),
+                                 mapping={"sku": "ITEM", "warehouse": "WH", "current_stock": "QTY"})
+            _two_runs(tid, p["id"])
+            cur.execute(f"UPDATE {table} SET QTY = 2 WHERE ITEM = 'A'")
+            conn.commit()
+            run = engine.execute_run(tid, p["id"], engine.start_run(tid, p["id"], "manual"))
+            assert run["status"] == "success" and run["run_kind"] == "incremental", run
+            assert run["rows_read"] == 1                     # ROWDEPENDENCIES: row-level SCN
+            assert _stock_map(tid) == {("A", "01"): 2, ("B", "01"): 5}
+        finally:
+            cur.execute(f"DROP TABLE {table} PURGE")
+            conn.close()
+
+    def test_mongo_change_stream_on_a_replica_set(self, test_tenant):
+        host, port = "127.0.0.1", int(os.environ.get("STOCKAI_SYNC_MONGO_RS_PORT", "27019"))
+        if not _reachable(host, port):
+            pytest.skip("MongoDB replica-set target not reachable")
+        from pymongo import MongoClient
+        coll_name = f"stk_{uuid4().hex[:6]}"
+        client = MongoClient(host=host, port=port, directConnection=True)
+        coll = client["stockai_cs"][coll_name]
+        coll.insert_many([{"item": "A", "wh": "01", "qty": 10}, {"item": "B", "wh": "01", "qty": 5}])
+        try:
+            tid = test_tenant["id"]
+            sid = _connect(tid, "mongodb", host, port, "stockai_cs", "", "")
+            p = profiles.create(tid, "usr_test", {
+                "name": "cs", "data_source_id": sid, "source_kind": "collection", "source_object": coll_name,
+                "strategy": "change_stream", "mapping": {"sku": "item", "warehouse": "wh", "current_stock": "qty"},
+                "allow_new_warehouses": True, "brake_max_vanished_pct": 100, "brake_min_row_ratio": 0})
+            _two_runs(tid, p["id"])
+            coll.update_one({"item": "A"}, {"$set": {"qty": 4}})
+            run = engine.execute_run(tid, p["id"], engine.start_run(tid, p["id"], "manual"))
+            assert run["status"] == "success" and run["run_kind"] == "incremental", run
+            assert run["rows_read"] == 1
+            assert _stock_map(tid) == {("A", "01"): 4, ("B", "01"): 5}
+        finally:
+            coll.drop()
+            client.close()
+
+    def test_change_stream_on_a_standalone_says_unavailable(self, test_tenant):
+        host, port, user, password = _target("STOCKAI_SYNC_MONGO", "127.0.0.1:27018:root:rootpass")
+        if not _reachable(host, port):
+            pytest.skip("MongoDB target not reachable")
+        tid = test_tenant["id"]
+        sid = _connect(tid, "mongodb", host, port, "stockai_sync_live", user, password)
+        p = profiles.create(tid, "usr_test", {
+            "name": "cs", "data_source_id": sid, "source_kind": "collection", "source_object": "nothing",
+            "strategy": "change_stream", "mapping": {"sku": "item", "current_stock": "qty"}})
+        run = engine.execute_run(tid, p["id"], engine.start_run(tid, p["id"], "manual"))
+        assert run["status"] == "failed" and run["error_code"] == "inventory_sync_strategy_unavailable"
+        assert run["error_params"]["reason"] == "needs_replica_set"
+        assert profiles.get(tid, p["id"])["health"] == "blocked"
