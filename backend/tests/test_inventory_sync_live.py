@@ -118,6 +118,11 @@ class TestMongo:
         db[coll].insert_many([{"codigo": s, "almacen": {"code": w}, "existencia": q} for s, w, q in ROWS])
         try:
             sid = _connect(test_tenant["id"], "mongodb", host, port, "stockai_sync_live", user, password)
+            # The staged test speaks MongoDB's truth, not SQL Server's copy.
+            from backend.datasources.service import test_sql_connection
+            stages = {s["stage"]: s for s in test_sql_connection(test_tenant["id"], sid)["stages"]}
+            assert stages["select"].get("code") == "data_source_read_only_by_client"
+            assert stages["tls"]["status"] == "warning" and stages["tls"]["code"] == "data_source_tls_disabled"
             from backend.datasources import mongo
             from backend.datasources.service import get_source
             cfg = get_source(test_tenant["id"], sid)["sql_config"]
@@ -192,6 +197,11 @@ class TestOracle:
                     "TRANSACTION_QUANTITY NUMBER)")
         cur.executemany(f"INSERT INTO {table} VALUES (:1, :2, :3)", [r if r[0] else (None, r[1], r[2]) for r in ROWS])
         conn.commit()
+        # A READ ONLY transaction on Oracle refuses a table whose definition is
+        # younger than its snapshot granularity (ORA-01466) — a real ERP that
+        # rebuilds a table mid-sync fails that run out loud. Here, just wait.
+        import time
+        time.sleep(4)
         try:
             sid = _connect(test_tenant["id"], "oracle", host, port, "FREEPDB1", user, password)
             # A query source (an ERP view or join), not a table.

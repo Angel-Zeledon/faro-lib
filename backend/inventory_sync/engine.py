@@ -528,10 +528,8 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
     valid = 0
     status, error_code, error_params = "success", None, None
     watermark_after = profile.get("watermark_value")
-    stage_done = False
     try:
         prep, valid = _stage(tenant_id, profile, run_id, lease_owner)
-        stage_done = True
         if not override_brake:
             _check_brake(profile, prep, valid, run_id)
         _precheck_limits(tenant_id, run_id)
@@ -593,7 +591,7 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
         # One alert per episode, not one per scheduled attempt.
         if previous_status != "braked" or profile.get("last_error_code") != error_code:
             _event(tenant_id, "inventory_sync.braked", profile, run_id, user_id=user_id,
-                   details={"brake": error_code},
+                   details={},
                    reason="inventory_sync_safety_brake",
                    reason_params={"brake": error_code, **(error_params or {})})
     else:
@@ -602,7 +600,7 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
                 (error_code, profile_id))
         if previous_status != "failed" or profile.get("last_error_code") != error_code:
             _event(tenant_id, "inventory_sync.run_failed", profile, run_id, user_id=user_id,
-                   details={"error_code": error_code, "stage": "apply" if stage_done else "read"},
+                   details={},
                    reason="inventory_sync_run_failed",
                    reason_params={"error_code": error_code, **(error_params or {})})
     return query_one("SELECT * FROM inventory_sync_runs WHERE id = %s", (run_id,))

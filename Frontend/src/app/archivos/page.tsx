@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react'
+import Link from 'next/link'
 import {
  listDataSources, createFileSource, createSqlSource, replaceFileSource,
  updateSqlConfig, testSqlConnection, executeSqlQuery, saveSqlQuery, materializeSqlSource,
@@ -1980,7 +1981,7 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  {t('data.update_connection_hint')}
  </p>
  <p style={{ fontSize: 13, margin: 0 }}>
- <a href="/sincronizacion" style={{ color: C.green, fontWeight: 600 }}>{t('isync.link_from_source')}</a>
+ <Link href="/sincronizacion" style={{ color: C.green, fontWeight: 600 }}>{t('isync.link_from_source')}</Link>
  </p>
  {!testResult && !testing && source.sql_config?.last_test && (
  <ConnectionTestResult probe={source.sql_config.last_test} />

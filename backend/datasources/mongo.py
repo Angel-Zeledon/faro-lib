@@ -467,8 +467,10 @@ def run_mongo_probe(cfg: dict, *, tenant_id: Optional[str]) -> dict:
                 if kind.stage == STAGE_TLS:
                     report.set("tls", FAILED, started, code=kind.code, params=kind.params)
                 else:
-                    report.set("tls", OK if spec.ssl_mode != "disable" else SKIPPED, None,
-                               code=None if spec.ssl_mode != "disable" else "data_source_tls_not_checked")
+                    if spec.ssl_mode != "disable":
+                        report.set("tls", OK, None)
+                    else:
+                        report.set("tls", WARNING, None, code="data_source_tls_disabled")
                     stage = kind.stage if kind.stage in ("dns", "tcp") else "auth"
                     report.set(stage, FAILED, started, code=kind.code, params=kind.params)
                 if client is not None:
@@ -478,7 +480,8 @@ def run_mongo_probe(cfg: dict, *, tenant_id: Optional[str]) -> dict:
                 if spec.ssl_mode != "disable":
                     report.set("tls", OK, None, detail={"mode": spec.ssl_mode})
                 else:
-                    report.set("tls", SKIPPED, None, code="data_source_tls_not_checked")
+                    report.set("tls", WARNING, None, code="data_source_tls_disabled",
+                               detail={"mode": spec.ssl_mode})
                 report.set("auth", OK, started)
 
                 started = time.monotonic()
@@ -508,7 +511,7 @@ def run_mongo_probe(cfg: dict, *, tenant_id: Optional[str]) -> dict:
                 started = time.monotonic()
                 # MongoDB has no read-only session: reads are guaranteed by
                 # this module only ever calling find/aggregate (validated).
-                report.set("select", OK, started, code="data_source_read_only_by_login",
+                report.set("select", OK, started, code="data_source_read_only_by_client",
                            detail={"read_only_session": None})
                 extra["table_count"] = len(names)
                 extra["tables_sample"] = names[:10]

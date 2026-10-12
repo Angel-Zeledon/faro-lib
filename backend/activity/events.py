@@ -514,11 +514,13 @@ EVENTS: dict[str, EventSpec] = {
     ),
     "inventory_sync.run_failed": EventSpec(
         kind="data", severity=WARNING,
-        detail_keys=("profile_name", "error_code", "stage"),
+        # The error code travels in reason_params; a raw code is not a detail
+        # a buyer can read.
+        detail_keys=("profile_name",),
     ),
     "inventory_sync.braked": EventSpec(
         kind="data", severity=CRITICAL,
-        detail_keys=("profile_name", "brake"),
+        detail_keys=("profile_name",),
     ),
     "inventory_sync.stale": EventSpec(
         kind="data", severity=CRITICAL,

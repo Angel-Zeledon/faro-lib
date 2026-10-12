@@ -8487,6 +8487,8 @@ export const translations = {
     'audit.action.inventory_sync.profile_enabled': 'Encendió una sincronización de inventario',
     'audit.action.inventory_sync.profile_disabled': 'Apagó una sincronización de inventario',
     'audit.action.inventory_sync.run_started': 'Ejecutó una sincronización de inventario',
+    // ── Inventory sync (app/sincronizacion, backend/inventory_sync).
+    'errors.data_source_read_only_by_client': 'MongoDB no tiene sesiones de solo lectura: StockAI solo ejecuta lecturas validadas (find y agregaciones sin $out ni $merge). Para más protección, usa un usuario con el rol «read».',
   },
   en: {
     // ── Auth screens (pre-login) — see the `es` block.
@@ -16820,6 +16822,8 @@ export const translations = {
     'audit.action.inventory_sync.profile_enabled': 'Turned on an inventory sync',
     'audit.action.inventory_sync.profile_disabled': 'Turned off an inventory sync',
     'audit.action.inventory_sync.run_started': 'Ran an inventory sync',
+    // ── Inventory sync (app/sincronizacion) — see the `es` block.
+    'errors.data_source_read_only_by_client': 'MongoDB has no read-only sessions: StockAI only runs validated reads (find and aggregations without $out or $merge). For more protection, use a user with the "read" role.',
   },
 } as const
 

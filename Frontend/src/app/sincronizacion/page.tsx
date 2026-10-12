@@ -10,7 +10,7 @@
  * when the last success was, whether the safety brake stopped a run, and why a
  * run failed. All copy is `isync.*` in translations.ts.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   createSyncProfile, deleteSyncProfile, disableSyncProfile, discoverSyncSource, dryRunSyncDraft,
@@ -133,7 +133,12 @@ function payload(d: Draft): SyncProfileInput {
 
 export default function InventorySyncPage() {
   const { t, lang } = useLanguage()
-  const errorDetail = useErrorDetail()
+  // useErrorDetail returns a new function on every render: kept in a ref so
+  // the loaders below are stable (as a dependency it re-ran them forever).
+  const errorDetailRaw = useErrorDetail()
+  const errorRef = useRef(errorDetailRaw)
+  errorRef.current = errorDetailRaw
+  const errorDetail = useCallback((e: unknown) => errorRef.current(e), [])
   const confirm = useConfirm()
   const role = getUser()?.role
   const canEdit = role === 'admin' || role === 'analyst'
@@ -178,7 +183,7 @@ export default function InventorySyncPage() {
   useEffect(() => {
     getSyncFields().then(setCatalog).catch(e => setError(errorDetail(e)))
     load()
-    if (canEdit) listSyncSources().then(setSources).catch(() => {})
+    if (canEdit) listSyncSources().then(setSources).catch(e => setError(errorDetail(e)))
   }, [load, canEdit, errorDetail])
 
   // While a run is going, refresh on its own so the outcome shows up.
@@ -203,7 +208,9 @@ export default function InventorySyncPage() {
   const isMongo = draftSource?.engine === 'mongodb'
 
   async function act(fn: () => Promise<unknown>, ok?: string) {
-    setBusy(true); setError(null); setNotice(null)
+    // A preview on screen describes the moment it was taken; once something
+    // runs or changes it is stale, so it goes (a new preview sets it again).
+    setBusy(true); setError(null); setNotice(null); setDry(null)
     try { await fn(); if (ok) setNotice(ok); load(); if (selected) setRuns(await listSyncRuns(selected)) }
     catch (e: unknown) { setError(errorDetail(e)) }
     finally { setBusy(false) }
