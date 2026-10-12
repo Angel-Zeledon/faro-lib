@@ -285,7 +285,9 @@ def start_run(tenant_id: str, profile_id: str, trigger: str, *, user_id: Optiona
         "triggered_by, worker_id, run_kind, scope, config_hash) "
         "SELECT %s,%s,%s,%s,'running',%s,%s, COALESCE(%s, CASE "
         "  WHEN stock_model = 'ledger' AND cursor_value IS NULL THEN 'full' "
-        "  WHEN mode = 'incremental' OR stock_model = 'ledger' THEN 'incremental' ELSE 'full' END), "
+        "  WHEN mode = 'incremental' OR stock_model = 'ledger' THEN 'incremental' "
+        "  WHEN strategy IN ('change_tracking', 'oracle_rowscn', 'change_stream') AND cursor_value IS NOT NULL "
+        "    THEN 'incremental' ELSE 'full' END), "
         "%s, config_hash FROM inventory_sync_profiles WHERE id = %s",
         (run_id, tenant_id, profile_id, trigger, user_id, worker, kind,
          _json(scope) if scope else None, profile_id))

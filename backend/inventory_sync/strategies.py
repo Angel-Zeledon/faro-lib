@@ -123,11 +123,17 @@ def read_for_run(tenant_id: str, profile: dict, *, run_id: Optional[str] = None,
                                         incremental=incremental, max_rows=max_rows, limit=limit,
                                         report=report)
         return
+    chosen = profile.get("strategy") or "auto"
+    if chosen in ("change_tracking", "oracle_rowscn", "change_stream") and not scope and not limit:
+        # Full runs go through the capture strategy too: they record the
+        # starting position (version / SCN / resume token) for the next read.
+        from backend.inventory_sync import capture
+        yield from capture.read(tenant_id, profile, chosen, run_id=run_id, max_rows=max_rows,
+                                incremental=incremental, report=report)
+        return
     strategy = resolve_strategy(profile, profile.get("engine") or "", incremental)
     if strategy in ("change_tracking", "oracle_rowscn", "change_stream"):
-        from backend.inventory_sync import capture
-        yield from capture.read(tenant_id, profile, strategy, run_id=run_id, max_rows=max_rows)
-        return
+        strategy = "full"
     watermark = profile.get("watermark_value") if strategy == "watermark" else None
     yield from reader.read_batches(tenant_id, profile, watermark=watermark, limit=limit,
                                    batch_size=batch_size, max_rows=max_rows, scope=scope)
