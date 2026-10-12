@@ -19,8 +19,8 @@ export const metadata: Metadata = {
   // Resolves every relative URL in page metadata (og:image, canonical) against
   // the landing's public origin — see lib/siteUrls.ts.
   metadataBase: new URL(SITE_URL),
-  title: 'StockAI — Inventario Inteligente',
-  description: 'Plataforma de inventario inteligente para distribuidores y mayoristas',
+  title: 'StockAI — Predicción de ventas con IA',
+  description: 'Predicción de ventas por producto con inteligencia artificial, para distribuidores, mayoristas y fabricantes',
   applicationName: 'StockAI',
   // The link preview of EVERY route that does not set its own (the app and its
   // sign-in form included). Without these a chat or social app that unfurls
@@ -30,13 +30,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     siteName: 'StockAI',
-    title: 'StockAI — Qué pedir hoy, cuánto y a qué proveedor',
-    description: 'Compras de inventario para distribuidores y mayoristas de Latinoamérica.',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StockAI' }],
+    title: 'StockAI — Predicción de ventas con IA, producto por producto',
+    description: 'Pronostica cuánto vas a vender de cada producto, con modelos que compiten sobre tu historial, y decide qué pedir con ese pronóstico.',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StockAI: predicción de ventas con IA, producto por producto' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'StockAI — Qué pedir hoy, cuánto y a qué proveedor',
+    title: 'StockAI — Predicción de ventas con IA, producto por producto',
+    description: 'Pronostica cuánto vas a vender de cada producto, con modelos que compiten sobre tu historial, y decide qué pedir con ese pronóstico.',
     images: ['/og-image.png'],
   },
   // Every route but the landing is the signed-in app or a sign-in form, so the

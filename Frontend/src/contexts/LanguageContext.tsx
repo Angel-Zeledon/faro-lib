@@ -38,12 +38,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // So that export stays Spanish (the app's default, and the right thing for
   // a crawler in the primary market) and an English user's tab is corrected
   // here, after hydration. Without this the browser tab said
-  // "StockAI — Inventario Inteligente" on an otherwise fully English app.
+  // the Spanish app title on an otherwise fully English app.
   //
   // Only the app's generic title is swapped. The landing and its subpages
   // (/precios, /como-funciona, …) export their own title and description, and
   // this used to overwrite them too — so a crawler that runs JavaScript read
-  // "StockAI — Inventario Inteligente" on every public page. A title that is
+  // the generic Spanish app title on every public page. A title that is
   // not one of the two app titles belongs to that page and is left alone.
   // The server renders <html lang="es">; an English visitor's document must say
   // so too (screen readers pick the voice from it, browsers offer translation).
