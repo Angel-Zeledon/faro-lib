@@ -23,10 +23,10 @@ credenciales comprometidas, hay pérdida de datos?
 | Señal | Dónde |
 |---|---|
 | Estado general en un lugar | Panel "Estado de la instalación" en `/instalacion` o `GET /service-config/ops` (`backend/api/v1/service_config.py:116 · @router.get("/ops")`): cola, jobs corriendo, latido del worker, fallos de 24 h por clase de error, pool de BD, consultas lentas, disco, último backup, latencia |
-| Servicios apagados o degradados | `GET /health` (`backend/main.py:404 · @app.get("/health"`) |
+| Servicios apagados o degradados | `GET /health` (`backend/main.py:460 · @app.get("/health"`) |
 | Loops cron que no corrieron | `/health` → `loops` (`backend/workers/loop_state.py`) |
 | Qué falló en las últimas 24 h en todos los tenants | Correo diario al operador (`backend/notifications/operator_digest.py`) |
-| Qué hizo un usuario o una API key | Auditoría del tenant: `GET /audit` y `/audit/export` (CSV), solo `admin` (`backend/api/v1/audit.py:25 · router = APIRouter(prefix="/audit"`) |
+| Qué hizo un usuario o una API key | Auditoría del tenant: `GET /audit` y `/audit/export` (CSV), solo `admin` (`backend/api/v1/audit.py:27 · router = APIRouter(prefix="/audit"`) |
 | Tráfico anómalo | Log de acceso, una línea por petición con ruta, estado, tenant y llave (`backend/middleware/request_logger.py:10 · log = logging.getLogger("access")`); uso por llave: `GET /api-keys/usage` |
 | Reporte externo | Buzón de `security.txt` y página `/divulgacion-responsable` (ver `vulnerability-disclosure.md`) |
 
@@ -38,13 +38,13 @@ pasar hasta ~24 h sin que el operador lo sepa si nadie mira el panel.
 | Situación | Acción | Efecto y límite |
 |---|---|---|
 | API key comprometida | `DELETE /api-keys/{id}` (analista o superior del tenant dueño) | Deja de autenticar al instante; la resolución consulta la base en cada llamada (`backend/auth/api_key_auth.py:32 · def hash_key` guarda solo el hash) |
-| Usuario comprometido o ex-empleado | `PATCH /users/{id}/status` a `suspended`/`inactive` (`backend/users/service.py:275 · def update_status`) | Borra sus refresh tokens y bloquea el login; un access token ya emitido vale hasta 15 min |
-| Forzar cierre de sesiones de un usuario | Restablecer su contraseña: marca `sessions_invalid_before` (`backend/auth/guards.py:159 · "SELECT sessions_invalid_before FROM users`) | Invalida tokens emitidos antes |
-| Sesión propia sospechosa | `POST /auth/logout` (`backend/api/v1/auth.py:495 · async def logout`) | Revoca el `jti` y los refresh tokens |
+| Usuario comprometido o ex-empleado | `PATCH /users/{id}/status` a `suspended`/`inactive` (`backend/users/service.py:281 · def update_status`) | Borra sus refresh tokens y bloquea el login; un access token ya emitido vale hasta 15 min |
+| Forzar cierre de sesiones de un usuario | Restablecer su contraseña: marca `sessions_invalid_before` (`backend/auth/guards.py:213 · "SELECT sessions_invalid_before FROM users`) | Invalida tokens emitidos antes |
+| Sesión propia sospechosa | `POST /auth/logout` (`backend/api/v1/auth.py:636 · async def logout`) | Revoca el `jti` y los refresh tokens |
 | Credencial de un proveedor expuesta (DeepSeek, Resend, Twilio) | Revocarla en el proveedor y reingresar la nueva en `/instalacion` (efecto inmediato, sin reinicio) | Vaciar el campo apaga esa función en vez de usar otra (`docs/data-that-leaves.md`) |
-| `SECRET_KEY` comprometida | Cambiar `SECRET_KEY` en `deploy/.env` y reiniciar | Cierra **todas** las sesiones de todos los tenants; además deja ilegibles las contraseñas SQL de las fuentes de datos (se derivan de esa llave, `backend/datasources/service.py:100 · def _fernet`): los clientes deben reingresarlas |
+| `SECRET_KEY` comprometida | Cambiar `SECRET_KEY` en `deploy/.env` y reiniciar | Cierra **todas** las sesiones de todos los tenants; además deja ilegibles las contraseñas SQL de las fuentes de datos (se derivan de esa llave, `backend/datasources/secrets.py:25 · def _fernet`): los clientes deben reingresarlas |
 | `INTEGRATIONS_SECRET_KEY` o `instance_secret.key` comprometida | Generar otra llave y reingresar todos los secretos del panel | Los almacenados quedan ilegibles por diseño (`deploy/RESTORE.md`) |
-| Abuso de una cuenta de prueba | Se borra sola a las 24 h (`backend/workers/worker.py:522 · def _trial_reaper_loop`) | |
+| Abuso de una cuenta de prueba | Se borra sola a las 24 h (`backend/workers/worker.py:572 · def _trial_reaper_loop`) | |
 | Parar el trabajo en segundo plano sin tumbar la app | `WORKER_ENABLED=false` y reiniciar la API | Avisar antes y con duración al cliente |
 | Bloqueo por IP | Solo en Caddy o el firewall del VPS | **No hay mecanismo en la app** |
 

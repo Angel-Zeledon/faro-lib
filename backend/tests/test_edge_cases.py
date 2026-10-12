@@ -42,6 +42,10 @@ UNAUTHENTICATED = {
     "GET /api/v1/auth/sso/callback": "the identity provider's redirect back; validated by the signed state",
     "GET /api/v1/auth/saml/start": "starts the SAML company sign-in redirect",
     "POST /api/v1/auth/saml/acs": "the identity provider's signed POST back; single-use RelayState + browser cookie + XML signature are the credential",
+    "POST /api/v1/auth/mfa/verify": "second step of a password login: the single-use challenge token (five guesses, "
+                                    "expiring) plus the code is the credential; there is no session yet",
+    "POST /internal/scheduled-reports/render": "service-to-service, outside /api/v1: an HMAC of SECRET_KEY over the "
+                                               "timestamp and body, 401 before the body is read without it",
     "GET /api/v1/billing/offer": "the public price shown on the pricing page",
     "POST /api/v1/billing/stripe/webhook": "authenticated by the provider's signature over the raw body",
     "POST /api/v1/billing/paypal/webhook": "authenticated by PayPal's verify-webhook-signature call",
