@@ -150,7 +150,7 @@ const es: GuidesCopy = {
       title: 'Pronóstico de ventas para distribuidores: qué debe resolver y cómo elegirlo.',
       intro: 'Un distribuidor no compra para consumir: compra para revender, con proveedores que tardan semanas y miles de códigos que vigilar. Un software de inventario te dice cuánto hay; lo que decide la compra es cuánto vas a vender. Estas son las preguntas que tu herramienta tiene que contestar cada mañana, y cómo las contesta StockAI.',
       metaTitle: 'Pronóstico de ventas para distribuidores | StockAI',
-      metaDesc: 'Lo que un distribuidor necesita además de un software de inventario: pronosticar la venta de cada producto y decidir con eso qué pedir, cuánto y a quién. Cómo elegir.',
+      metaDesc: 'Lo que decide la compra de un distribuidor es cuánto va a vender: pronóstico de venta por producto y, con él, qué pedir, cuánto y a quién. Qué exigir y cómo elegir.',
       sections: [
         {
           h: 'El problema real de un distribuidor',
@@ -491,7 +491,7 @@ const en: GuidesCopy = {
       title: 'Sales forecasting for distributors: what it must solve and how to choose it.',
       intro: 'A distributor does not buy to consume: it buys to resell, with suppliers that take weeks and thousands of codes to watch. Inventory software tells you how much there is; what decides the purchase is how much you will sell. These are the questions your tool has to answer every morning, and how StockAI answers them.',
       metaTitle: 'Sales forecasting for distributors: what it must solve',
-      metaDesc: 'What a distributor needs beyond inventory software: forecasting each product’s sales and deciding from that what to order, how much and from whom. How to choose.',
+      metaDesc: 'What decides a distributor’s purchase is how much it will sell: a sales forecast per product and, from it, what to order, how much and from whom. What to demand and how to choose.',
       sections: [
         {
           h: 'A distributor’s real problem',

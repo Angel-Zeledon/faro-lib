@@ -1165,7 +1165,7 @@ const en: LandingCopy = {
     rows: [
       { feature: 'How much of each product you will sell', excel: 'Averages by hand', gut: 'Last year’s amount', stockai: 'Tested forecast' },
       { feature: 'What to order today', excel: 'Row by row', gut: 'Whatever comes to mind', stockai: 'List by urgency' },
-      { feature: 'How much of each product', excel: 'Judgement call', gut: 'Last month’s amount', stockai: 'Suggested quantity' },
+      { feature: 'How much of each product to order', excel: 'Judgement call', gut: 'Last month’s amount', stockai: 'Suggested quantity' },
       { feature: 'Products you get to review', excel: 'Dozens', gut: 'The usual ones', stockai: 'The whole catalogue' },
       { feature: 'How long each supplier really takes', excel: 'From memory', gut: 'What they promised', stockai: 'Measured' },
       { feature: 'Warning of what is about to run out', excel: 'Not available', gut: 'When the customer calls', stockai: 'Daily' },
