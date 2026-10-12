@@ -5873,6 +5873,7 @@ export const translations = {
     'count.rv_new_count': 'Volver a los conteos',
     'count.col': 'Contado {counted} · Sistema {system}',
     'cmd.alias.stock_count': 'conteo, conteo fisico, inventario fisico, escanear, codigo de barras, toma de inventario',
+    'cmd.alias.inventory_sync': 'sincronizar inventario, base de datos, conectar erp, oracle, sql server, postgres, mysql, mongodb',
     'events.action.data.stock_count_applied': 'Conteo físico aplicado',
     'audit.target.stock_count': 'Conteo físico',
     'audit.action.stock_count.applied': 'Aplicó un conteo físico',
@@ -8216,7 +8217,6 @@ export const translations = {
     'audit.action.user.unlocked': 'Desbloqueó una cuenta',
     // ── Inventory sync (app/sincronizacion, backend/inventory_sync).
     'nav.inventory_sync': 'Sincronización de inventario',
-    'hub.inventory_sync_desc': 'Mantén el inventario al día leyendo la base de datos de tu sistema (Oracle, SQL Server, PostgreSQL, MySQL, MongoDB).',
     'data.conn.engine_mongodb': 'MongoDB',
     'data.conn.auth_source': 'Base de autenticación',
     'data.conn.auth_source_hint': 'Dónde está creado el usuario de MongoDB. Si lo dejas vacío usamos «admin».',
@@ -14208,6 +14208,7 @@ export const translations = {
     'count.rv_new_count': 'Back to counts',
     'count.col': 'Counted {counted} · System {system}',
     'cmd.alias.stock_count': 'count, stocktake, physical inventory, scan, barcode',
+    'cmd.alias.inventory_sync': 'sync inventory, database, connect erp, oracle, sql server, postgres, mysql, mongodb',
     'events.action.data.stock_count_applied': 'Stock count applied',
     'audit.target.stock_count': 'Stock count',
     'audit.action.stock_count.applied': 'Applied a stock count',
@@ -16551,7 +16552,6 @@ export const translations = {
     'audit.action.user.unlocked': 'Unlocked an account',
     // ── Inventory sync (app/sincronizacion) — see the `es` block.
     'nav.inventory_sync': 'Inventory sync',
-    'hub.inventory_sync_desc': 'Keep inventory current by reading your own system\'s database (Oracle, SQL Server, PostgreSQL, MySQL, MongoDB).',
     'data.conn.engine_mongodb': 'MongoDB',
     'data.conn.auth_source': 'Authentication database',
     'data.conn.auth_source_hint': 'Where the MongoDB user was created. Left empty, we use "admin".',

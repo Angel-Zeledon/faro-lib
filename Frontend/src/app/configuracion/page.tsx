@@ -51,7 +51,6 @@ const SECTIONS: Section[] = [
   { id: 'data', titleKey: 'hub.data_title', rows: [
     { screen: screen('/ventas'),                descKey: 'hub.sales_desc' },
     { screen: screen('/archivos'),              descKey: 'hub.files_desc' },
-    { screen: screen('/sincronizacion'),        descKey: 'hub.inventory_sync_desc' },
     { screen: screen('/configurar-inventario'), descKey: 'hub.inventory_setup_desc' },
   ] },
   { id: 'connect', titleKey: 'hub.connect_title', rows: [

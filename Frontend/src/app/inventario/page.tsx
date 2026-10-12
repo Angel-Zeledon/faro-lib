@@ -2851,6 +2851,9 @@ export default function InventoryPage() {
    { label: t('nav.inventory_setup'), icon: <Sliders size={12} />, onSelect: () => router.push('/configurar-inventario') },
    // Counting is writing (it ends in an adjustment), so a viewer is not offered it.
    ...(canEdit ? [{ label: t('count.page_title'), icon: <ScanLine size={12} />, onSelect: () => router.push('/conteo-fisico') }] : []),
+   // Keeping stock in step with the customer's own database is configuration
+   // that writes inventory, so a viewer is not offered it.
+   ...(canEdit ? [{ label: t('nav.inventory_sync'), icon: <RefreshCw size={12} />, onSelect: () => router.push('/sincronizacion') }] : []),
   ]}
  />
  </div>

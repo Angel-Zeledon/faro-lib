@@ -57,6 +57,9 @@ export const SCREENS: Screen[] = [
   // Counted with the phone, from Inventario's menu and the command palette. Not
   // a sidebar entry: it is a task done now and then, not a daily screen.
   { href: '/conteo-fisico',         labelKey: 'count.page_title',    Icon: ScanLine,     parent: '/inventario' },
+  // Inventory kept in step with the customer's own database (a connected
+  // SQL / MongoDB source). Reached from Inventario and from a database source.
+  { href: '/sincronizacion',        labelKey: 'nav.inventory_sync',  Icon: RefreshCw,    parent: '/inventario' },
 
   // ── Under Pronósticos: the analysis tabs (ANALYSIS_TABS below) ─────────────
   { href: '/escenarios',            labelKey: 'nav.scenarios',       Icon: FlaskConical, parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },
@@ -78,9 +81,6 @@ export const SCREENS: Screen[] = [
   // tabs of each other (components/layout/DataTabs.tsx).
   { href: '/ventas',                labelKey: 'nav.data',            Icon: Upload,       parent: SETTINGS_HREF },
   { href: '/archivos',              labelKey: 'data.page_title',     Icon: Database,     parent: SETTINGS_HREF },
-  // Inventory kept in step with the customer's own database (a connected
-  // SQL / MongoDB source). Reached from the hub and from a database source.
-  { href: '/sincronizacion',        labelKey: 'nav.inventory_sync',  Icon: RefreshCw,    parent: SETTINGS_HREF },
   // Who must approve which purchase orders. A row in the hub, never in the
   // sidebar; it only matters to a tenant that wants the workflow.
   { href: '/aprobaciones',          labelKey: 'nav.po_approval',     Icon: ClipboardCheck, parent: SETTINGS_HREF, adminOnly: true },
