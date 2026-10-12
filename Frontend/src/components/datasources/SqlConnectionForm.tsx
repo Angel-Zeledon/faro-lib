@@ -56,6 +56,7 @@ interface FormState {
   name: string; description: string
   engine: SqlEngine; host: string; port: string; database: string
   username: string; password: string
+  authSource: string
   sslMode: SqlSslMode
   connectTimeout: string; statementTimeout: string
 }
@@ -81,6 +82,7 @@ export default function SqlConnectionForm({ mode, source, saving, onSubmit, onCa
       database: cfg?.database ?? '',
       username: cfg?.username ?? '',
       password: '',
+      authSource: cfg?.auth_source ?? '',
       sslMode: (cfg?.ssl_mode ?? DEFAULT_SSL_MODE[engine]) as SqlSslMode,
       connectTimeout: String(cfg?.connect_timeout_s ?? TIMEOUTS.connect.def),
       statementTimeout: String(cfg?.statement_timeout_s ?? TIMEOUTS.statement.def),
@@ -178,7 +180,8 @@ export default function SqlConnectionForm({ mode, source, saving, onSubmit, onCa
     if (!isEdit && !form.name.trim()) missing.push(t('data.field_source_name'))
     if (!form.host.trim()) missing.push(t('data.field_host'))
     if (!form.database.trim()) missing.push(form.engine === 'oracle' ? t('data.conn.database_oracle') : t('data.field_database'))
-    if (!form.username.trim()) missing.push(t('data.field_username'))
+    // A MongoDB server may run without authentication; every SQL engine needs a login.
+    if (!form.username.trim() && form.engine !== 'mongodb') missing.push(t('data.field_username'))
     if (missing.length) { setLocalErr(t('data.conn.required_missing', { fields: missing.join(', ') })); return }
     const port = Number(form.port)
     if (!Number.isInteger(port) || port < 1 || port > 65535) { setLocalErr(t('data.conn.port_invalid')); return }
@@ -195,6 +198,7 @@ export default function SqlConnectionForm({ mode, source, saving, onSubmit, onCa
       connect_timeout_s: toInt(form.connectTimeout, TIMEOUTS.connect.def),
       statement_timeout_s: toInt(form.statementTimeout, TIMEOUTS.statement.def),
     }
+    if (form.engine === 'mongodb') body.auth_source = form.authSource.trim()
     if (form.password) body.password = form.password
     if (csWithPassword && !form.password) body.connection_string = csWithPassword
     if (caPem && caSupported) body.ssl_ca = caPem
@@ -304,7 +308,7 @@ export default function SqlConnectionForm({ mode, source, saving, onSubmit, onCa
           {form.engine === 'oracle' && <p style={hint}>{t('data.conn.database_hint_oracle')}</p>}
         </div>
         <div>
-          <FieldLabel htmlFor={fid('username')}>{t('data.field_username')} *</FieldLabel>
+          <FieldLabel htmlFor={fid('username')}>{t('data.field_username')}{form.engine === 'mongodb' ? '' : ' *'}</FieldLabel>
           <Input id={fid('username')} name="username" size="lg" tone="surface" border="strong" autoComplete="off"
             value={form.username} onChange={e => set('username', e.target.value)} placeholder={t('data.field_username_ph')} />
         </div>
@@ -322,6 +326,14 @@ export default function SqlConnectionForm({ mode, source, saving, onSubmit, onCa
           </p>
         </div>
       </div>
+      {form.engine === 'mongodb' && (
+        <div>
+          <FieldLabel htmlFor={fid('auth-source')}>{t('data.conn.auth_source')}</FieldLabel>
+          <Input id={fid('auth-source')} name="auth_source" size="lg" tone="surface" border="strong" autoComplete="off"
+            value={form.authSource} onChange={e => set('authSource', e.target.value)} placeholder="admin" />
+          <p style={hint}>{t('data.conn.auth_source_hint')}</p>
+        </div>
+      )}
       <p style={{ ...hint, margin: '-6px 0 0', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
         <ShieldCheck size={13} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, color: C.green }} />
         {t('data.conn.readonly_advice')}

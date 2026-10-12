@@ -933,6 +933,8 @@ export interface SqlConnectionBody {
   ssl_mode?: SqlSslMode; ssl_ca?: string
   connect_timeout_s?: number; statement_timeout_s?: number
   connection_string?: string
+  /** MongoDB only. */
+  auth_source?: string
 }
 
 export const createSqlSource = (body: SqlConnectionBody & { name: string; description?: string }) =>
@@ -3576,3 +3578,171 @@ export const addAllowedReportRecipient = (email: string) =>
   request<{ email: string; created: boolean }>('POST', '/scheduled-reports/allowed-recipients', { email })
 export const removeAllowedReportRecipient = (email: string) =>
   request<{ removed: boolean }>('DELETE', `/scheduled-reports/allowed-recipients/${encodeURIComponent(email)}`)
+
+// ── Inventory sync (backend/inventory_sync/) ─────────────────────────────────
+export interface SyncFieldMapping {
+  column?: string | null
+  cast?: 'auto' | 'number' | 'integer' | 'text'
+  trim?: boolean
+  case?: 'none' | 'upper' | 'lower'
+  decimal?: 'auto' | 'dot' | 'comma'
+  multiplier?: number | null
+  default?: string | null
+  value_map?: Record<string, string> | null
+}
+export interface SyncFilter { column: string; op: string; value?: string | string[] | null }
+export type SyncSourceKind = 'table' | 'query' | 'collection' | 'pipeline'
+
+export interface SyncProfileInput {
+  name?: string
+  data_source_id?: string
+  source_kind?: SyncSourceKind
+  source_schema?: string | null
+  source_object?: string | null
+  source_query?: string | null
+  mapping?: Record<string, SyncFieldMapping | null>
+  filters?: SyncFilter[]
+  default_warehouse?: string | null
+  mode?: 'full' | 'incremental'
+  watermark_column?: string | null
+  overlap_minutes?: number
+  interval_minutes?: number
+  missing_policy?: 'ignore' | 'mark_inactive' | 'zero'
+  negative_policy?: 'reject' | 'zero'
+  duplicate_policy?: 'reject' | 'sum'
+  allow_new_warehouses?: boolean
+  brake_max_vanished_pct?: number
+  brake_min_row_ratio?: number
+  brake_max_rejected_pct?: number
+}
+
+export interface SyncProfile extends Required<Pick<SyncProfileInput,
+  'name' | 'data_source_id' | 'source_kind' | 'mode' | 'interval_minutes' | 'overlap_minutes' |
+  'missing_policy' | 'negative_policy' | 'duplicate_policy' | 'allow_new_warehouses' |
+  'brake_max_vanished_pct' | 'brake_min_row_ratio' | 'brake_max_rejected_pct'>> {
+  id: string
+  source_schema: string | null
+  source_object: string | null
+  source_query: string | null
+  mapping: Record<string, SyncFieldMapping>
+  filters: SyncFilter[]
+  default_warehouse: string | null
+  watermark_column: string | null
+  watermark_value: { type: string; value: string } | null
+  enabled: boolean
+  next_run_at: string | null
+  last_status: 'success' | 'failed' | 'braked' | null
+  last_error_code: string | null
+  last_success_at: string | null
+  last_success_age_s: number | null
+  consecutive_failures: number
+  stale: boolean
+  running: boolean
+  braked: boolean
+  needs_dry_run: boolean
+  owned_fields: string[]
+  dry_run_at: string | null
+  created_at: string
+}
+
+export interface SyncRejection { code: string; params: Record<string, unknown>; sku: string | null; row: number | null }
+
+export interface SyncRun {
+  id: string
+  trigger_kind: 'schedule' | 'manual'
+  status: 'running' | 'success' | 'failed' | 'braked'
+  started_at: string
+  finished_at: string | null
+  duration_ms: number | null
+  rows_read: number
+  rows_valid: number
+  created: number
+  updated: number
+  unchanged: number
+  rejected: number
+  missing: number
+  missing_applied: number
+  manual_overwritten: number
+  error_code: string | null
+  error_params: Record<string, unknown> | null
+  rejected_sample: SyncRejection[] | null
+  overwritten_sample: { sku: string; warehouse: string; field: string; manual_value: unknown; source_value: unknown }[] | null
+  brake_overridden: boolean
+}
+
+export interface SyncDryRun {
+  rows_read: number
+  filtered_out: number
+  rejected: number
+  rejected_by_code: Record<string, number>
+  rejected_sample: SyncRejection[]
+  unknown_warehouses: string[]
+  valid: number
+  would_create: number
+  would_update: number
+  would_leave_unchanged: number
+  changes_sample: { sku: string; warehouse: string; action: 'create' | 'update';
+                    fields: Record<string, { before: unknown; after: unknown }> }[]
+  preview_rows: Record<string, unknown>[]
+  sample_limit: number
+  sample_truncated: boolean
+  owned_fields: string[]
+}
+
+export interface SyncColumn { name: string; type?: string; samples?: string[]; presence?: number }
+export interface SyncSuggestion {
+  mapping: Record<string, { column: string; confidence: number; label: 'high' | 'medium' | 'low'; reasons: string[] }>
+  unmapped: string[]
+  missing_required: string[]
+}
+export interface SyncTable {
+  schema: string | null; name: string; kind: string; row_estimate: number | null
+  score?: number; label?: string; reasons?: string[]
+}
+export interface SyncFieldsCatalog {
+  fields: string[]; required: string[]; number_fields: string[]
+  casts: string[]; cases: string[]; decimals: string[]; filter_ops: string[]
+  source_kinds: string[]; modes: string[]; missing_policies: string[]
+  negative_policies: string[]; duplicate_policies: string[]
+  limits: { min_interval_minutes: number; max_profiles: number; max_rows_per_run: number; dry_run_sample: number }
+}
+export interface SyncDatabaseSource {
+  id: string; name: string; connection_status: string; engine: SqlEngine; host: string; database: string
+}
+
+export const getSyncFields = () =>
+  request<SyncFieldsCatalog>('GET', '/inventory-sync/fields', undefined, { silent: true })
+export const listSyncProfiles = () =>
+  request<SyncProfile[]>('GET', '/inventory-sync/profiles', undefined, { silent: true })
+export const getSyncProfile = (id: string) =>
+  request<SyncProfile>('GET', `/inventory-sync/profiles/${id}`, undefined, { silent: true })
+export const listSyncRuns = (id: string) =>
+  request<SyncRun[]>('GET', `/inventory-sync/profiles/${id}/runs?limit=30`, undefined, { silent: true })
+export const listSyncSources = () =>
+  request<SyncDatabaseSource[]>('GET', '/inventory-sync/sources', undefined, { silent: true })
+export const discoverSyncSource = (id: string, refresh = false) =>
+  request<{ tables: SyncTable[]; candidates: SyncTable[]; truncated: boolean }>(
+    'GET', `/inventory-sync/sources/${id}/discover${refresh ? '?refresh=true' : ''}`, undefined, { silent: true })
+export const getSyncTableColumns = (id: string, schema: string | null, table: string) =>
+  request<{ columns: SyncColumn[]; suggestion: SyncSuggestion }>('GET',
+    `/inventory-sync/sources/${id}/columns?table=${encodeURIComponent(table)}&schema=${encodeURIComponent(schema ?? '')}`,
+    undefined, { silent: true })
+export const inspectSyncSource = (id: string, body: { source_kind: SyncSourceKind; source_object?: string | null; source_query?: string | null }) =>
+  request<{ columns: SyncColumn[]; sampled: number; suggestion: SyncSuggestion }>(
+    'POST', `/inventory-sync/sources/${id}/inspect`, body, { silent: true })
+export const dryRunSyncDraft = (body: SyncProfileInput) =>
+  request<SyncDryRun>('POST', '/inventory-sync/dry-run', body, { silent: true })
+export const createSyncProfile = (body: SyncProfileInput) =>
+  request<SyncProfile>('POST', '/inventory-sync/profiles', body, { silent: true })
+export const updateSyncProfile = (id: string, body: SyncProfileInput) =>
+  request<SyncProfile & { disabled_by_edit: boolean }>('PATCH', `/inventory-sync/profiles/${id}`, body, { silent: true })
+export const deleteSyncProfile = (id: string) =>
+  request<{ deleted: string }>('DELETE', `/inventory-sync/profiles/${id}`, undefined, { silent: true })
+export const dryRunSyncProfile = (id: string) =>
+  request<SyncDryRun>('POST', `/inventory-sync/profiles/${id}/dry-run`, undefined, { silent: true })
+export const enableSyncProfile = (id: string) =>
+  request<SyncProfile>('POST', `/inventory-sync/profiles/${id}/enable`, undefined, { silent: true })
+export const disableSyncProfile = (id: string) =>
+  request<SyncProfile>('POST', `/inventory-sync/profiles/${id}/disable`, undefined, { silent: true })
+export const runSyncProfile = (id: string, overrideBrake = false) =>
+  request<SyncRun>('POST', `/inventory-sync/profiles/${id}/run`, { override_brake: overrideBrake }, { silent: true })

@@ -1582,9 +1582,11 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  const [replaceErr, setReplaceErr] = useState<string | null>(null)
 
  const isSql = source.source_type === 'sql'
+ // A MongoDB source has no SQL editor: it is read by inventory sync only.
+ const isDocumentDb = isSql && source.sql_config?.engine === 'mongodb'
 
  useEffect(() => {
- setTab(isSql ? 'sql-editor' : 'preview')
+ setTab(isSql ? (source.sql_config?.engine === 'mongodb' ? 'connection' : 'sql-editor') : 'preview')
  setPreview(null)
  setTestResult(null)
  setTestErr(null)
@@ -1661,7 +1663,8 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  }
 
  const tabs = isSql
- ? [{ id: 'sql-editor', label: t('data.tab_query_editor') }, { id: 'connection', label: t('data.tab_connection') }]
+ ? (isDocumentDb ? [{ id: 'connection', label: t('data.tab_connection') }]
+ : [{ id: 'sql-editor', label: t('data.tab_query_editor') }, { id: 'connection', label: t('data.tab_connection') }])
  : [{ id: 'preview', label: t('data.tab_data_preview') }, { id: 'edit', label: t('data.tab_edit') }, { id: 'analysis', label: t('data.tab_analysis') }, { id: 'connection', label: t('data.tab_replace_file') }]
 
  return (
@@ -1975,6 +1978,9 @@ function SourceDetail({ source, onUpdated, onDeleted, onBack, onDatasetCreated }
  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 860 }}>
  <p style={{ color: C.muted, fontSize: 13, margin: 0 }}>
  {t('data.update_connection_hint')}
+ </p>
+ <p style={{ fontSize: 13, margin: 0 }}>
+ <a href="/sincronizacion" style={{ color: C.green, fontWeight: 600 }}>{t('isync.link_from_source')}</a>
  </p>
  {!testResult && !testing && source.sql_config?.last_test && (
  <ConnectionTestResult probe={source.sql_config.last_test} />

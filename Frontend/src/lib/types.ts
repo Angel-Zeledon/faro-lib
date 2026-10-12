@@ -652,7 +652,7 @@ export interface ChatSourceType {
 // ── Data Sources ──────────────────────────────────────────────────────────────
 export type DataSourceType = 'file' | 'sql'
 export type ConnectionStatus = 'connected' | 'pending' | 'error'
-export type SqlEngine = 'postgresql' | 'mysql' | 'mssql' | 'oracle'
+export type SqlEngine = 'postgresql' | 'mysql' | 'mssql' | 'oracle' | 'mongodb'
 
 export type SqlSslMode = 'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full'
 
@@ -718,6 +718,8 @@ export interface SqlConfig {
   ssl_ca?:             SqlCaInfo | null
   connect_timeout_s?:  number
   statement_timeout_s?: number
+  /** MongoDB only: the database the user authenticates against. */
+  auth_source?:        string | null
   last_test?:          StoredProbe | null
 }
 

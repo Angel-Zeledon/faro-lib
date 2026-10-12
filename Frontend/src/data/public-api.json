@@ -2,15 +2,15 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 256,
-  "read": 156,
+  "total": 260,
+  "read": 160,
   "write": 100
  },
  "limits": {
   "per_minute_per_key": 120,
   "window_seconds": 60,
   "per_day_per_key": {
-   "demo": 0,
+   "demo": 200,
    "free": 0,
    "paid": 2000,
    "corporate": null
@@ -3584,6 +3584,13 @@
          "nullable": true
         },
         {
+         "name": "auth_source",
+         "required": false,
+         "type": "string",
+         "max_length": 128,
+         "nullable": true
+        },
+        {
          "name": "name",
          "required": true,
          "type": "string",
@@ -4792,6 +4799,13 @@
          "required": false,
          "type": "string",
          "max_length": 4096,
+         "nullable": true
+        },
+        {
+         "name": "auth_source",
+         "required": false,
+         "type": "string",
+         "max_length": 128,
          "nullable": true
         },
         {
@@ -13122,6 +13136,167 @@
         "type": "string"
        },
        "example": "<po_log_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "inventory-sync-status",
+   "endpoints": [
+    {
+     "id": "get-inventory-sync-fields",
+     "method": "GET",
+     "path": "/inventory-sync/fields",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Get Fields",
+     "description": "The canonical fields, transforms, policies and limits the editor offers.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-profiles",
+     "method": "GET",
+     "path": "/inventory-sync/profiles",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "List Profiles",
+     "description": "",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-profiles-profile_id",
+     "method": "GET",
+     "path": "/inventory-sync/profiles/{profile_id}",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Get Profile",
+     "description": "",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-profiles-profile_id-runs",
+     "method": "GET",
+     "path": "/inventory-sync/profiles/{profile_id}/runs",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "List Runs",
+     "description": "",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200,
+        "default": 30
+       },
+       "example": 30
       }
      ],
      "request_body": null,
