@@ -129,6 +129,8 @@ def get_fields(user: CurrentUser = Depends(get_current_user)):
         "stock_models": list(strategies.STOCK_MODELS),
         "strategies": list(strategies.STRATEGIES),
         "aggregates": list(strategies.AGGREGATES),
+        "documented_limits": list(failures.LIMITS),
+        "ledger_sign_modes": ["signed", "type_map", "in_out"],
         "egress_ips": [ip.strip() for ip in (getattr(settings, "inventory_sync_egress_ips", "") or "").split(",")
                        if ip.strip()],
         "limits": {"min_interval_minutes": profiles.min_interval(),

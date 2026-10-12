@@ -3641,6 +3641,19 @@ export interface SyncProfile extends Required<Pick<SyncProfileInput,
   braked: boolean
   needs_dry_run: boolean
   owned_fields: string[]
+  health?: 'new' | 'healthy' | 'degraded' | 'paused' | 'blocked'
+  health_reason?: string | null
+  health_params?: Record<string, unknown> | null
+  slug?: string | null
+  priority?: number
+  stock_model?: 'snapshot' | 'aggregate' | 'ledger'
+  model_config?: Record<string, unknown>
+  freshness?: 'scheduled' | 'continuous' | 'on_demand'
+  poll_seconds?: number
+  reconcile_minutes?: number
+  strategy?: string
+  brake_max_jump_pct?: number
+  data_as_of?: string | null
   dry_run_at: string | null
   created_at: string
 }
@@ -3704,7 +3717,9 @@ export interface SyncFieldsCatalog {
   casts: string[]; cases: string[]; decimals: string[]; filter_ops: string[]
   source_kinds: string[]; modes: string[]; missing_policies: string[]
   negative_policies: string[]; duplicate_policies: string[]
-  limits: { min_interval_minutes: number; max_profiles: number; max_rows_per_run: number; dry_run_sample: number }
+  limits: { min_interval_minutes: number; min_poll_seconds?: number; max_profiles: number; max_rows_per_run: number; dry_run_sample: number }
+  freshness_modes?: string[]; stock_models?: string[]; strategies?: string[]; aggregates?: string[]
+  egress_ips?: string[]; documented_limits?: string[]; ledger_sign_modes?: string[]
 }
 export interface SyncDatabaseSource {
   id: string; name: string; connection_status: string; engine: SqlEngine; host: string; database: string
@@ -3766,3 +3781,58 @@ export const getSyncFreshness = () =>
   request<SyncFreshness>('GET', '/inventory-sync/freshness', undefined, { silent: true })
 export const refreshInventorySync = (body: { profile_id?: string; skus?: string[]; wait_seconds?: number }) =>
   request<SyncRefreshResult>('POST', '/inventory-sync/refresh', body, { silent: true })
+
+export interface SyncHealth {
+  profile_id: string; slug: string | null; name: string
+  status: 'ok' | 'stale' | 'degraded' | 'paused' | 'blocked' | 'new'; http_status: number
+  health: string; reason: string | null; reason_category: string | null; retries_on_its_own: boolean | null
+  remedy_key: string | null; last_success_at: string | null; last_success_age_s: number | null
+  data_as_of: string | null; next_run_at: string | null; consecutive_failures: number
+  last_run_id: string | null; last_error_code: string | null
+}
+export interface SyncDoctorStage {
+  stage: string; status: 'ok' | 'warning' | 'failed' | 'skipped'; code?: string
+  params?: Record<string, unknown>; detail?: Record<string, unknown>; duration_ms?: number
+  remedy_key?: string; category?: string
+}
+export interface SyncDoctorResult {
+  ok: boolean; first_failure: SyncDoctorStage | null; stages: SyncDoctorStage[]; elapsed_ms: number
+  egress_ips: string[]; diagnostic: Record<string, unknown>
+}
+export interface SyncOutcome { code: string; category: string; stage: string; health: string; retries: boolean; remedy_key: string; egress_hint: boolean }
+export interface SyncRunDetail extends SyncRun {
+  outcome: SyncOutcome | null; warnings: { codes: string[]; sample: Record<string, unknown>[] } | null
+  refused_ceiling: number; owned_elsewhere: number; drift_count: number; run_kind: string
+}
+export interface SyncRecipes {
+  grants: Record<string, string[]>; egress_ips: string[]
+  examples: Record<string, { title: string; sql: string }>
+  forwarders: Record<string, string>; view_template: Record<string, unknown>
+}
+
+export const getSyncProfileHealth = (id: string) =>
+  request<SyncHealth>('GET', `/inventory-sync/profiles/${id}/health`, undefined, { silent: true })
+export const runSyncDoctor = (id: string) =>
+  request<SyncDoctorResult>('POST', `/inventory-sync/profiles/${id}/doctor`, undefined, { silent: true })
+export const getSyncRunDetail = (id: string, runId: string) =>
+  request<SyncRunDetail>('GET', `/inventory-sync/profiles/${id}/runs/${runId}`, undefined, { silent: true })
+export const downloadSyncRejectedCsv = (id: string, runId: string) =>
+  downloadBlob(`/inventory-sync/profiles/${id}/runs/${runId}/rejected.csv`, `rejected-${runId}.csv`)
+export const getSyncRecipes = (sourceId?: string) =>
+  request<SyncRecipes>('GET', `/inventory-sync/recipes${sourceId ? `?source_id=${encodeURIComponent(sourceId)}` : ''}`,
+    undefined, { silent: true })
+export const testSyncTransform = (body: { field: string; spec: SyncFieldMapping; value: unknown }) =>
+  request<{ ok: boolean; output?: unknown; code?: string; params?: Record<string, unknown> }>(
+    'POST', '/inventory-sync/transform-test', body, { silent: true })
+export const exportSyncProfile = (id: string) =>
+  request<Record<string, unknown>>('GET', `/inventory-sync/profiles/${id}/export`, undefined, { silent: true })
+export const validateSyncDocument = (doc: unknown) =>
+  request<{ valid: boolean; errors: { path: string; code: string; message: string }[] }>(
+    'POST', '/inventory-sync/profiles/validate', doc, { silent: true })
+export const applySyncDocument = (doc: unknown, dryRun = false) =>
+  request<{ action: string; profile_id?: string; dry_run?: boolean; preview?: SyncDryRun | null }>(
+    'POST', `/inventory-sync/profiles/apply${dryRun ? '?dry_run=true' : ''}`, doc, { silent: true })
+export const suggestSyncView = (sourceId: string, body: { source_kind: string; source_schema?: string | null;
+  source_object?: string | null; source_query?: string | null; mapping: Record<string, unknown> }) =>
+  request<{ engine: string; sql?: string; pipeline?: unknown }>('POST', `/inventory-sync/sources/${sourceId}/suggest-view`,
+    body, { silent: true })
