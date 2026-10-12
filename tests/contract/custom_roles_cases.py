@@ -381,6 +381,34 @@ def run_custom_roles(args, fx, db) -> list:
          + ([] if q1("SELECT 1 FROM users WHERE email = %s", (f"roles-{tag}-x@stockai.demo",)) is None
             else ["user created"]))
 
+    # manage_users is not a back door to manage_roles: a restricted user
+    # manager cannot create or change anybody above their own set (a person
+    # with no custom role holds the whole catalogue), on either service.
+    post_role("admin", "User manager", ["view_users", "manage_users"])
+    user_mgr = (role_row("User manager") or [None])[0]
+    assign("admin", plain_id, user_mgr)
+    above = sorted(set(ALL_PERMS) - {"view_users", "manage_users"})
+    email = f"roles-{tag}-esc@stockai.demo"
+    r = http(py, "POST", f"{API}/users", token=fx.tokens["plainadmin"], body={
+        "email": email, "role": "admin", "full_name": "Esc"})
+    case("escalation: a restricted user manager cannot create an unrestricted admin (Python route)", R,
+         expect(r, 403, "custom_role_escalation", {"permissions": above})
+         + ([] if q1("SELECT 1 FROM users WHERE email = %s", (email,)) is None else ["user created"]))
+    r = http(py, "PATCH", f"{API}/users/{fx.viewer_id}", token=fx.tokens["plainadmin"], body={"role": "admin"})
+    case("escalation: nor promote a colleague who has no custom role (Python route)", R,
+         expect(r, 403, "custom_role_escalation", {"permissions": above})
+         + ([] if q1("SELECT role FROM users WHERE id = %s", (fx.viewer_id,))[0] == "viewer" else ["promoted"]))
+    cur = db.cursor()
+    cur.execute("""INSERT INTO user_mfa (user_id, tenant_id, secret_enc, status, created_at, confirmed_at)
+                   VALUES (%s, %s, 'not-a-real-secret', 'active', NOW(), NOW())
+                   ON CONFLICT (user_id) DO NOTHING""", (fx.admin_id, tid))
+    r = http(rs, "POST", f"{API}/mfa/users/{fx.admin_id}/reset", token=fx.tokens["plainadmin"], body={})
+    still = q1("SELECT status FROM user_mfa WHERE user_id = %s", (fx.admin_id,))
+    case("escalation: nor strip the second factor of the unrestricted admin (Rust route)", "mfa",
+         expect(r, 403, "custom_role_escalation", {"permissions": above})
+         + ([] if still and still[0] == "active" else ["the enrollment was removed"]))
+    cur.execute("DELETE FROM user_mfa WHERE user_id = %s AND secret_enc = 'not-a-real-secret'", (fx.admin_id,))
+
     # ── last-admin lockout ──────────────────────────────────────────────────
     # The only other unrestricted admin is suspended (its token still lives for
     # 15 minutes): assigning a role to the last ACTIVE unrestricted admin must
