@@ -207,7 +207,8 @@ class TestDoctorAndHelp:
         sid = _source(tid)
         rec = client.get(f"{URL}/recipes", headers=analyst_headers).json()["data"]
         assert set(rec["grants"]) == {"postgresql", "mysql", "mssql", "oracle", "mongodb"}
-        assert "sap_mard" in rec["examples"] and "python_push" in rec["forwarders"]
+        assert "sap_ecc_mard" in rec["examples"] and "MANDT" in rec["examples"]["sap_ecc_mard"]["sql"]
+        assert "python_push" in rec["forwarders"]
         t = client.post(f"{URL}/transform-test", json={"field": "current_stock",
                         "spec": {"multiplier": 12, "decimal": "comma"}, "value": "1,5"},
                         headers=analyst_headers).json()["data"]

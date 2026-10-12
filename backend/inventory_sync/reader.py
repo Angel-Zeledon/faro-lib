@@ -22,7 +22,7 @@ from typing import Any, Iterator, Optional
 
 from backend.errors import AppError
 
-BATCH = 1000
+BATCH = 5000          # rows per fetch from the source = rows per staging statement
 _TS = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$")
 _NUM = re.compile(r"^-?\d{1,30}(\.\d{1,12})?$")
 

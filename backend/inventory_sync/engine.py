@@ -37,6 +37,9 @@ log = logging.getLogger(__name__)
 
 DRY_RUN_SAMPLE = 500
 APPLY_BATCH = 500
+# Rows per staging INSERT statement: round trips, not rows, dominated a 1M-row
+# run (1 747 statements for 200k rows at 1 000 per page).
+STAGE_PAGE = 5000
 MAX_SAMPLE = 50
 # Rejected rows kept per run: enough for the run-detail CSV a developer
 # downloads, bounded so a run log never grows with the source.
@@ -371,17 +374,19 @@ def _stage_batch(tenant_id: str, run_id: str, prep: "_Prep", rows: list[dict], p
                     "data = inventory_sync_staging.data || EXCLUDED.data || jsonb_build_object("
                     "'current_stock', COALESCE((inventory_sync_staging.data->>'current_stock')::float8, 0) "
                     "+ COALESCE((EXCLUDED.data->>'current_stock')::float8, 0))",
-                    values, page_size=1000)
+                    values, page_size=STAGE_PAGE)
                 return
+            # Only the rows that hit an earlier batch's key come back (not every
+            # staged row: 200k rows returned per 200k staged cost seconds).
             hits = execute_values(
                 cur,
-                "INSERT INTO inventory_sync_staging (run_id, tenant_id, sku, warehouse, data) "
+                "WITH ins AS (INSERT INTO inventory_sync_staging (run_id, tenant_id, sku, warehouse, data) "
                 "VALUES %s ON CONFLICT (run_id, sku, warehouse) DO UPDATE SET duplicate = TRUE "
-                "RETURNING sku, warehouse, (xmax <> 0) AS was_duplicate",
-                values, page_size=1000, fetch=True)
+                "RETURNING sku, warehouse, (xmax <> 0) AS was_duplicate) "
+                "SELECT sku, warehouse FROM ins WHERE was_duplicate",
+                values, page_size=STAGE_PAGE, fetch=True)
             for hit in hits:
-                if hit["was_duplicate"]:
-                    prep._reject("duplicate_key", {"warehouse": hit["warehouse"]}, hit["sku"], None)
+                prep._reject("duplicate_key", {"warehouse": hit["warehouse"]}, hit["sku"], None)
             if dup_keys:
                 cur.execute(
                     "UPDATE inventory_sync_staging s SET duplicate = TRUE "
@@ -717,7 +722,13 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
             _renew_lease(profile_id, lease_owner)
         if kind in ("full", "reconcile") and not (scope or {}).get("skus"):
             applier.apply_missing(tenant_id, profile, run_id, counters)
-        if prep is not None and profile.get("mode") == "incremental":
+        scoped = bool((scope or {}).get("skus") or (scope or {}).get("warehouses"))
+        if prep is not None and profile.get("watermark_column") and not scoped:
+            # Every unscoped read records how far it saw, full runs included, so
+            # switching a profile to incremental (or a continuous poll after a
+            # reconcile) starts there instead of re-reading everything.
+            # A SCOPED read never moves it: it saw only some SKUs, and their
+            # newest change can be later than another SKU's unread change.
             watermark_after = reader.max_watermark(profile.get("watermark_value"), prep.watermark)
             capped = reader.cap_future(watermark_after)
             if capped is not watermark_after:
@@ -725,7 +736,7 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
                 # park the watermark ahead of every real change from then on.
                 counters["warnings_codes"].add("inventory_sync_future_timestamps")
                 watermark_after = capped
-        if prep is not None and prep.extras.get("cursor_after") is not None:
+        if prep is not None and prep.extras.get("cursor_after") is not None and not scoped:
             cursor_after = prep.extras["cursor_after"]
         if (profile.get("stock_model") or "snapshot") == "ledger":
             from backend.inventory_sync import ledger

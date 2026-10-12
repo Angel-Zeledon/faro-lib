@@ -83,6 +83,38 @@ class TestRefresh:
                         (out["run_id"],))
         assert run["run_kind"] == "scoped" and run["rows_read"] == 1 and run["scope"]["skus"] == ["A1"]
 
+    def test_a_scoped_refresh_never_moves_the_watermark_past_unread_changes(self, test_tenant, src_db,
+                                                                           src_table):
+        """B2 changed at 10:00, A1 at 10:05. A refresh of A1 alone sees 10:05;
+        had it stored that as the watermark, the next incremental read
+        (>= 10:05 - overlap) would never see B2's change."""
+        from datetime import datetime
+        tid = test_tenant["id"]
+        p = _ready(tid, src_db, src_table, [("A1", "Norte", 10, None, 1, datetime(2026, 1, 1)),
+                                            ("B2", "Norte", 5, None, 1, datetime(2026, 1, 1))],
+                   mode="incremental", watermark_column="updated_at", overlap_minutes=0)
+        scheduler.refresh(tid, "usr_test", wait_s=20)
+        before = profiles.get(tid, p["id"])["watermark_value"]
+        _put(src_db, src_table, [("A1", "Norte", 11, None, 1, datetime(2026, 3, 1, 10, 5)),
+                                 ("B2", "Norte", 6, None, 1, datetime(2026, 3, 1, 10, 0))])
+        execute("UPDATE inventory_sync_profiles SET last_refresh_at = NULL WHERE id = %s", (p["id"],))
+        scheduler.refresh(tid, "usr_test", skus=["A1"], wait_s=20)
+        assert profiles.get(tid, p["id"])["watermark_value"] == before
+        execute("UPDATE inventory_sync_profiles SET last_refresh_at = NULL WHERE id = %s", (p["id"],))
+        scheduler.refresh(tid, "usr_test", wait_s=20)
+        assert float(_stock(tid)[("B2", "Norte")]["current_stock"]) == 6
+
+    def test_a_full_run_records_the_watermark(self, test_tenant, src_db, src_table):
+        """Switching a profile to incremental (or the first continuous poll)
+        starts where the last full read stopped instead of re-reading all."""
+        from datetime import datetime
+        tid = test_tenant["id"]
+        p = _ready(tid, src_db, src_table, [("A1", "Norte", 10, None, 1, datetime(2026, 2, 1))],
+                   watermark_column="updated_at")
+        scheduler.refresh(tid, "usr_test", wait_s=20)
+        wm = profiles.get(tid, p["id"])["watermark_value"]
+        assert wm and wm["value"].startswith("2026-02-01")
+
     def test_scoped_refresh_never_applies_missing_policy(self, test_tenant, src_db, src_table):
         tid = test_tenant["id"]
         _ready(tid, src_db, src_table, [("A1", "Norte", 10), ("B2", "Norte", 5)], missing_policy="zero")

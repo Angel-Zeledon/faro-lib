@@ -35,7 +35,7 @@ from backend.inventory_sync import fields as F
 
 log = logging.getLogger(__name__)
 
-BATCH = 5000
+BATCH = 20000         # rows per set-based apply transaction (temp table, ~12 statements)
 MAX_SAMPLE = 50
 LOCK_RETRIES = 3
 
@@ -242,7 +242,13 @@ def _apply_batch_once(tenant_id: str, profile: dict, run_id: str,
             "SELECT %s, %s, b.sku, b.warehouse, b.data, %s, NOW(), FALSE FROM isb b "
             "ON CONFLICT (profile_id, sku, warehouse) DO UPDATE SET "
             "synced_values = inventory_sync_keys.synced_values || EXCLUDED.synced_values, "
-            "last_seen_run = EXCLUDED.last_seen_run, last_seen_at = NOW(), inactive = FALSE",
+            "last_seen_run = EXCLUDED.last_seen_run, last_seen_at = NOW(), inactive = FALSE "
+            # An unchanged key is not rewritten: a no-change run over 1M keys
+            # otherwise rewrote 1M rows (WAL, bloat, minutes). last_seen_* thus
+            # mean "last run that changed this key's synced values".
+            "WHERE inventory_sync_keys.inactive "
+            "OR inventory_sync_keys.synced_values IS DISTINCT FROM "
+            "   (inventory_sync_keys.synced_values || EXCLUDED.synced_values)",
             (tenant_id, pid, run_id), conn=conn)
         # No per-row "applied" flag: the run row's checkpoint (the last key
         # applied, written after each batch) is what a resume continues from.

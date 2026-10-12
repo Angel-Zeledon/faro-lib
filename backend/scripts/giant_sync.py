@@ -401,10 +401,16 @@ def load_wide(engine: str, conn, rows: int) -> None:
     d = D(engine)
     cur = conn.cursor()
     cur.execute(d.drop("g_wide"))
-    extra = ", ".join(f"c{i:03d} {d.text(30)}" for i in range(196))
+    # MySQL/InnoDB caps an inline row at ~8 KB: 196 VARCHARs do not fit, so
+    # there (as in real wide MySQL ERPs) they are TEXT columns stored off-page.
+    ctype = "TEXT" if engine == "mysql" else d.text(30)
+    extra = ", ".join(f"c{i:03d} {ctype}" for i in range(196))
+    if engine == "mysql":
+        cur.execute("SET SESSION innodb_strict_mode = 0")   # judge real rows, not the worst case
     cur.execute(f"CREATE TABLE g_wide (row_id {d.big()} PRIMARY KEY, item_code {d.text()}, warehouse {d.text(10)}, "
                 f"on_hand {d.num()}, {extra}, notes {d.clob()})")
-    fill = ", ".join("'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'" for _ in range(196))
+    width = 10 if engine == "mysql" else 29          # InnoDB's ~8 KB inline row limit
+    fill = ", ".join("'" + "x" * width + "'" for _ in range(196))
     cols = ", ".join(f"c{i:03d}" for i in range(196))
     _series(engine, conn, rows, f"INSERT INTO g_wide (row_id, item_code, warehouse, on_hand, {cols}, notes) SELECT",
             f"{{g}}, {d.cat(chr(39) + 'S' + chr(39), d.idiv('{g}', WAREHOUSES))}, "
