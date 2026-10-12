@@ -369,7 +369,7 @@ export default function InventorySyncPage() {
       {/* ── Profile list ─────────────────────────────────────────────────── */}
       {!draft && (
         <Card padding={16}>
-          <div data-tour="sync.list" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <h2 style={h2}>{t('isync.list_title')}</h2>
             {canEdit && (
               <button type="button" data-tour="sync.new" style={{ ...primary, opacity: sources.length && !busy ? 1 : 0.5 }}
@@ -383,7 +383,7 @@ export default function InventorySyncPage() {
             </p>
           )}
           {profiles.length === 0 && <p style={{ ...small, marginTop: 10 }}>{t('isync.empty')}</p>}
-          <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <ul data-tour="sync.list" style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {profiles.map(p => (
               <li key={p.id}>
                 <button type="button" onClick={() => { setSelected(p.id); setDry(null) }}
