@@ -120,7 +120,7 @@ export default function StructuredData() {
       '@type': 'SoftwareApplication',
       name: 'StockAI',
       applicationCategory: 'BusinessApplication',
-      applicationSubCategory: 'Inventory management',
+      applicationSubCategory: 'Sales forecasting',
       operatingSystem: 'Web',
       url: `${SITE_URL}/`,
       description: L.hero.lead,

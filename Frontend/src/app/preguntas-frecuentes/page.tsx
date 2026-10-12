@@ -8,8 +8,8 @@ import { subpageMetadata } from '@/components/landing/subpageMetadata'
 // is visible.
 export const metadata = subpageMetadata(
   '/preguntas-frecuentes',
-  'StockAI preguntas frecuentes: datos, compra y bodegas',
-  'Qué datos necesitas, cómo se compra StockAI, si sirve con varias bodegas, ' +
+  'StockAI preguntas frecuentes: datos, pronóstico y compra',
+  'Qué datos necesitas, cómo se mide el pronóstico, cómo se compra StockAI, si sirve con varias bodegas, ' +
   'cómo aprende el plazo de cada proveedor y quién ve tus datos en StockAI.',
 )
 
