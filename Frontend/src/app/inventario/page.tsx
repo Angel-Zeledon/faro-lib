@@ -1,4 +1,5 @@
 'use client'
+import FreshnessChip from '@/components/inventory/FreshnessChip'
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -2836,6 +2837,9 @@ export default function InventoryPage() {
    ]}
   />
  </div>
+
+ <FreshnessChip canRefresh={canEdit} visibleSkus={data?.items.map(i => i.sku)}
+  onRefreshed={() => { if (sessionId) void load(sessionId) }} />
 
  <MenuButton
   icon={<MoreHorizontal size={14} />}

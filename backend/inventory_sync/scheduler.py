@@ -280,6 +280,19 @@ def refresh(tenant_id: str, user_id: str, *, profile_id: Optional[str] = None,
             "(last_refresh_at IS NULL OR last_refresh_at < NOW() - %s * INTERVAL '1 second' OR %s) "
             "RETURNING id", (p["id"], cooldown, scope is not None))
         if not claimed:
+            # Someone pressed it a moment ago: join their run if it is (about
+            # to be) in flight — fifty presses make one source query.
+            joined = None
+            for _ in range(8):
+                joined = query_one("SELECT id FROM inventory_sync_runs WHERE profile_id = %s AND "
+                                   "status = 'running' ORDER BY started_at DESC LIMIT 1", (p["id"],))
+                if joined:
+                    break
+                time.sleep(0.25)
+            if joined:
+                results.append({**entry, **_wait(joined["id"], wait_s), "joined": True})
+                continue
+            p = query_one("SELECT * FROM inventory_sync_profiles WHERE id = %s", (p["id"],)) or p
             left = cooldown - (datetime.now(timezone.utc) - p["last_refresh_at"]).total_seconds()
             results.append({**entry, "status": "cooldown", "retry_after_s": max(1, int(left))})
             continue

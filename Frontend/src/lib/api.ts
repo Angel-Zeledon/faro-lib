@@ -3746,3 +3746,23 @@ export const disableSyncProfile = (id: string) =>
   request<SyncProfile>('POST', `/inventory-sync/profiles/${id}/disable`, undefined, { silent: true })
 export const runSyncProfile = (id: string, overrideBrake = false) =>
   request<SyncRun>('POST', `/inventory-sync/profiles/${id}/run`, { override_brake: overrideBrake }, { silent: true })
+
+export interface SyncFreshnessProfile {
+  profile_id: string; name: string; state: 'fresh' | 'stale' | 'blocked'; health: string
+  reason: string | null; data_as_of: string | null; running: boolean
+}
+export interface SyncFreshness {
+  state: 'fresh' | 'stale' | 'blocked' | 'none'; data_as_of: string | null; profiles: SyncFreshnessProfile[]
+}
+export interface SyncRefreshEntry {
+  profile_id: string; profile_name: string; data_as_of: string | null
+  status: 'done' | 'running' | 'cooldown' | 'paused' | 'blocked' | 'failed' | 'braked'
+  run_id?: string; joined?: boolean; retry_after_s?: number; reason?: string | null; error_code?: string | null
+  created?: number; updated?: number; unchanged?: number; rejected?: number
+}
+export interface SyncRefreshResult { profiles: SyncRefreshEntry[]; freshness: SyncFreshness }
+
+export const getSyncFreshness = () =>
+  request<SyncFreshness>('GET', '/inventory-sync/freshness', undefined, { silent: true })
+export const refreshInventorySync = (body: { profile_id?: string; skus?: string[]; wait_seconds?: number }) =>
+  request<SyncRefreshResult>('POST', '/inventory-sync/refresh', body, { silent: true })

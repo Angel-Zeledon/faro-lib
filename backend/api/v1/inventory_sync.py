@@ -24,7 +24,8 @@ from pydantic import BaseModel, Field
 from backend import audit
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.errors import AppError
-from backend.inventory_sync import engine, profiles, reader, scheduler, suggest
+from backend.config import settings
+from backend.inventory_sync import engine, profiles, reader, scheduler, strategies, suggest
 from backend.inventory_sync import fields as F
 from backend.schemas.common import ok
 
@@ -53,6 +54,26 @@ class ProfileBody(BaseModel):
     brake_max_vanished_pct: Optional[float] = None
     brake_min_row_ratio:    Optional[float] = None
     brake_max_rejected_pct: Optional[float] = None
+    brake_max_jump_pct:     Optional[float] = None
+    slug:                   Optional[str] = Field(default=None, max_length=63)
+    priority:               Optional[int] = None
+    stock_model:            Optional[str] = Field(default=None, max_length=20)
+    model_config_:          Optional[dict[str, Any]] = Field(default=None, alias="model_config")
+    freshness:              Optional[str] = Field(default=None, max_length=20)
+    poll_seconds:           Optional[int] = None
+    reconcile_minutes:      Optional[int] = None
+    strategy:               Optional[str] = Field(default=None, max_length=30)
+
+    model_config = {"populate_by_name": True, "protected_namespaces": ()}
+
+
+class RefreshBody(BaseModel):
+    # One profile, or every live profile of the account when omitted.
+    profile_id:   Optional[str] = Field(default=None, max_length=64)
+    # Refresh only these SKUs (a page, a product card): fast, skips the cooldown.
+    skus:         Optional[list[str]] = Field(default=None, max_length=1000)
+    # How long to wait for the result before answering "still running".
+    wait_seconds: Optional[float] = Field(default=None, ge=0, le=60)
 
 
 class InspectBody(BaseModel):
@@ -69,7 +90,9 @@ class RunBody(BaseModel):
 
 
 def _body(body: ProfileBody) -> dict:
-    return body.model_dump(exclude_unset=True)
+    out = body.model_dump(exclude_unset=True, by_alias=True)
+    out.pop("model_config_", None)
+    return out
 
 
 def _source_or_404(user: CurrentUser, source_id: str) -> dict:
@@ -98,11 +121,28 @@ def get_fields(user: CurrentUser = Depends(get_current_user)):
         "modes": list(profiles.MODES), "missing_policies": list(profiles.MISSING_POLICIES),
         "negative_policies": list(profiles.NEGATIVE_POLICIES),
         "duplicate_policies": list(profiles.DUPLICATE_POLICIES),
+        "freshness_modes": list(profiles.FRESHNESS),
+        "stock_models": list(strategies.STOCK_MODELS),
+        "strategies": list(strategies.STRATEGIES),
+        "aggregates": list(strategies.AGGREGATES),
+        "egress_ips": [ip.strip() for ip in (getattr(settings, "inventory_sync_egress_ips", "") or "").split(",")
+                       if ip.strip()],
         "limits": {"min_interval_minutes": profiles.min_interval(),
+                   "min_poll_seconds": profiles.min_poll(),
                    "max_profiles": profiles.max_profiles(),
                    "max_rows_per_run": engine.max_rows_per_run(),
                    "dry_run_sample": engine.DRY_RUN_SAMPLE},
     })
+
+
+@status_router.get("/inventory-sync/freshness")
+def get_freshness(user: CurrentUser = Depends(get_current_user)):
+    """How current the stock is: `state` is `fresh`, `stale` (a profile has
+    not succeeded within its expected window), `blocked` (a profile is paused
+    or blocked and needs someone) or `none` (no sync). `data_as_of` is the
+    oldest last success among live profiles: the stock is at least that fresh.
+    Each profile lists its own state and the reason code when not fresh."""
+    return ok(scheduler.freshness(user.tenant_id))
 
 
 @status_router.get("/inventory-sync/profiles")
@@ -256,6 +296,22 @@ def disable_profile(profile_id: str, request: Request,
     row = profiles.set_enabled(user.tenant_id, profile_id, False)
     audit.note(request, label=row["name"])
     return ok(profiles.public(row))
+
+
+@router.post("/inventory-sync/refresh")
+def refresh(body: RefreshBody, request: Request,
+            user: CurrentUser = Depends(require_analyst_or_above)):
+    """'Refresh now': make the displayed stock current. Coalesces (a refresh
+    that finds a run in flight joins it), honours a per-profile cooldown
+    (`status: cooldown`, `retry_after_s`), refreshes only `skus` when given,
+    and waits at most `wait_seconds` before answering `status: running` with
+    the `data_as_of` of the last success — the stock shown is never blanked.
+    Paused or blocked profiles answer with their reason instead of running."""
+    result = scheduler.refresh(user.tenant_id, user.user_id, profile_id=body.profile_id,
+                               skus=body.skus, wait_s=body.wait_seconds)
+    audit.note(request, target_id=body.profile_id,
+               after={"profiles": len(result["profiles"]), "scoped": bool(body.skus)})
+    return ok(result)
 
 
 @router.post("/inventory-sync/profiles/{profile_id}/run", status_code=202)

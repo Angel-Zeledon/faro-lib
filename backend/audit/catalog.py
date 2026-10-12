@@ -76,6 +76,7 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("POST", "/inventory-sync/profiles/{profile_id}/enable"): _r("inventory_sync.profile_enabled", "inventory_sync", "profile_id"),
     ("POST", "/inventory-sync/profiles/{profile_id}/disable"): _r("inventory_sync.profile_disabled", "inventory_sync", "profile_id"),
     ("POST", "/inventory-sync/profiles/{profile_id}/run"): _r("inventory_sync.run_started", "inventory_sync", "profile_id"),
+    ("POST", "/inventory-sync/refresh"):                _r("inventory_sync.refresh_requested", "inventory_sync"),
     # users (invites, role changes and deactivation are recorded by their own events)
     ("PATCH", "/users/{user_id}/permissions"):      _r("user.permissions_changed", "user", "user_id"),
     # warehouses
