@@ -1091,6 +1091,11 @@ def build_r1_cases(fx: Fixture) -> list[Case]:
              setup=r1_settings_reset("currency", "XXX")),
         Case("r1 currency get list stored", "GET", cur, route=R["cur_get"],
              setup=r1_settings_reset("currency", ["USD"])),
+        # Puts the setting back: the list above makes every route that reads
+        # the currency 500 (on both sides), so leaving it would break the
+        # outlook, money and allocation sections that run later on this tenant.
+        Case("r1 currency get after the setting is removed again", "GET", cur, route=R["cur_get"],
+             setup=r1_settings_reset("currency", remove=True)),
         # ── timezone ───────────────────────────────────────────────────────
         Case("r1 timezone patch admin madrid", "PATCH", tz, body={"timezone": " Europe/Madrid "},
              route="PATCH /tenant/timezone", setup=r1_tz_setup("America/Costa_Rica"),
