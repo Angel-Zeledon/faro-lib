@@ -101,6 +101,9 @@ def run_consensus(args, fx, db, h) -> list:
     # The harness invites its analyst and viewer with a temporary password nobody
     # knows, so they stay 'invited'; the consensus only counts active people.
     cur.execute("UPDATE users SET status = 'active' WHERE tenant_id = %s", (fx.tenant_id,))
+    # This section's premise: nobody is an approver until it says so (earlier
+    # sections flag people as PO approvers on the shared tenant).
+    cur.execute("UPDATE users SET can_approve_po = FALSE WHERE tenant_id = %s", (fx.tenant_id,))
 
     # -- a completed forecast with two products (one of them per store) ------------
     r = h.http(py, "POST", f"{API}/sessions", token=h.auth_for(fx, "admin"),

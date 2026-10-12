@@ -4039,6 +4039,9 @@ def run_delegation(args, fx: Fixture, db) -> list:
     r3 = http(args.python, "POST", f"{API}/inventory/po/{pos[2]}/approval/approve", token=sub, body={})
     expect("python: an expired delegation is refused with no cleanup job", r3, 403,
            "po_approval_not_approver", extra=lambda: untouched(pos[2]))
+    # Leave no rule and no approver behind: later sections decide their own.
+    cur.execute("DELETE FROM po_approval_rules WHERE tenant_id = %s", (fx.tenant_id,))
+    cur.execute("UPDATE users SET can_approve_po = FALSE WHERE tenant_id = %s", (fx.tenant_id,))
     return results
 
 
@@ -4105,6 +4108,9 @@ def run_cost_centers(args, fx: Fixture, db) -> list:
     sub = mint_access_token(fx.secret, sub_id, fx.tenant_id, "analyst")
     cur.execute("UPDATE users SET status = 'active' WHERE id IN (%s, %s, %s)",
                 (fx.analyst_id, sub_id, fx.viewer_id))
+    # This section's premise: approval is decided by chains alone, so no
+    # threshold rule an earlier section left behind may apply.
+    cur.execute("DELETE FROM po_approval_rules WHERE tenant_id = %s", (fx.tenant_id,))
 
     # ── centers ──
     body = {"code": f"OPS{tag}", "name": "Operations"}
@@ -5771,7 +5777,8 @@ def run_saml(args, fx: Fixture, db) -> list:
     record("saml admin signs in", problems)
     r = http(rs, "GET", cfg_path, token=tok())
     record("saml get reports the admin signed in",
-           [] if r.body["data"]["config"]["admin_signed_in"] is True else [str(r.body)])
+           [] if (((r.body or {}).get("data") or {}).get("config") or {}).get("admin_signed_in") is True
+           else [f"{r.status} {r.body}"])
 
     # ── enforcement ────────────────────────────────────────────────────────
     r = put(good(enforce_sso=True, default_role="viewer", groups_attribute="groups",
@@ -5873,6 +5880,9 @@ def run_saml(args, fx: Fixture, db) -> list:
     for t in created_tenants:
         erase_fixture(py, t)
     cur.execute("DELETE FROM sso_domains WHERE tenant_id = %s", (fx.tenant_id,))
+    return out
+
+
 # ── Audit stream: configuration, cursor and delivery-log routes ─────────────
 #
 # NEW routes with no Python twin (docs/rust-migration.md: no Python failover),
@@ -6159,6 +6169,9 @@ def run_audit_stream(args, fx: Fixture, db) -> list:
                status=404, code="audit_stream_not_configured")
     expect("audit-stream replay since without a destination is 404", "POST", f"{S}/replay", body={"since": "2999-01-01"},
            status=404, code="audit_stream_not_configured")
+    # The zone change above was only a way to make Python write an audit row;
+    # put the tenant back on the default zone for the sections after this one.
+    execute("UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb) - 'timezone' WHERE id = %s", (tid,))
     return out
 
 # ── ORG: organization hierarchy (Rust only, no Python route) ────────────────
@@ -7181,6 +7194,9 @@ def run_rd(args, fx: Fixture, db) -> list:
             check("rd rows carry the schedule's warehouse", [] if wh_rows == [wid] else [f"warehouses {wh_rows}"])
     else:
         check("rd scope setup", [f"creating the scoped analyst failed: {r.status} {r.body}"])
+    return out
+
+
 # ── Contract renewals: Rust-only routes ─────────────────────────────────────
 #
 # `GET /supply-contracts/renewals`, `GET /supply-contracts/{id}/comparison` and
