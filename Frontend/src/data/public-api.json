@@ -13203,7 +13203,7 @@
      "tag": "inventory-sync-status",
      "scope": "read",
      "summary": "List Profiles",
-     "description": "",
+     "description": "Every inventory sync profile with its status: enabled, last success and its age, `stale` (no success within twice the interval), `braked` (the safety brake stopped the last run), the last error code and the fields the source owns.",
      "parameters": [],
      "request_body": null,
      "success_status": 200,
@@ -13232,7 +13232,7 @@
      "tag": "inventory-sync-status",
      "scope": "read",
      "summary": "Get Profile",
-     "description": "",
+     "description": "One inventory sync profile with the same status fields as the list.",
      "parameters": [
       {
        "name": "profile_id",
@@ -13275,7 +13275,7 @@
      "tag": "inventory-sync-status",
      "scope": "read",
      "summary": "List Runs",
-     "description": "",
+     "description": "The run log of a profile, newest first: rows read, created, updated, unchanged and rejected, the outcome (success / failed / braked), the error code and the watermark each run started from and reached.",
      "parameters": [
       {
        "name": "profile_id",

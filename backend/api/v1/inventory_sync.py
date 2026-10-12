@@ -107,17 +107,25 @@ def get_fields(user: CurrentUser = Depends(get_current_user)):
 
 @status_router.get("/inventory-sync/profiles")
 def list_profiles(user: CurrentUser = Depends(get_current_user)):
+    """Every inventory sync profile with its status: enabled, last success and
+    its age, `stale` (no success within twice the interval), `braked` (the
+    safety brake stopped the last run), the last error code and the fields the
+    source owns."""
     return ok([profiles.public(r) for r in profiles.list_for_tenant(user.tenant_id)])
 
 
 @status_router.get("/inventory-sync/profiles/{profile_id}")
 def get_profile(profile_id: str, user: CurrentUser = Depends(get_current_user)):
+    """One inventory sync profile with the same status fields as the list."""
     return ok(profiles.public(profiles.require(user.tenant_id, profile_id)))
 
 
 @status_router.get("/inventory-sync/profiles/{profile_id}/runs")
 def list_runs(profile_id: str, limit: int = Query(default=30, ge=1, le=200),
               user: CurrentUser = Depends(get_current_user)):
+    """The run log of a profile, newest first: rows read, created, updated,
+    unchanged and rejected, the outcome (success / failed / braked), the error
+    code and the watermark each run started from and reached."""
     return ok(profiles.list_runs(user.tenant_id, profile_id, limit))
 
 

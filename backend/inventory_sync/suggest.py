@@ -29,9 +29,9 @@ _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 def tokens(name: str) -> list[str]:
     """``InventLocationId`` -> [invent, location, id]; ``cod_articulo`` ->
-    [cod, articulo]; accents stripped, lower-cased."""
+    [cod, articulo]; accents stripped, lower-cased. A dotted MongoDB path keeps
+    every segment (``almacen.code`` -> [almacen, code])."""
     text = str(name or "")
-    text = text.rsplit(".", 1)[-1] if "." in text else text   # last segment of a dotted path
     text = _CAMEL.sub(" ", text)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -126,6 +126,8 @@ _TOKENS: dict[str, tuple[str, ...]] = {
     "display_name": ("name", "nombre", "descripcion", "description"),
 }
 
+_GENERIC_LEAF = frozenset({"code", "codigo", "cod", "id", "name", "nombre", "value", "valor", "key"})
+
 _NUMERIC_TYPES = re.compile(r"(?i)int|num|dec|float|double|real|money|number")
 _TEXTY_SKU_FIELDS = ("sku", "warehouse", "barcode")
 
@@ -154,11 +156,19 @@ def _samples_numeric(samples: list[Any]) -> Optional[bool]:
 def score_column(field: str, column: dict) -> tuple[float, list[str]]:
     """How likely `column` is `field`, 0..1, with the reasons."""
     name = column.get("name") or ""
-    c = compact(name)
+    segments = [seg for seg in str(name).split(".") if seg]
+    last = segments[-1] if segments else ""
+    # A nested field is named by its path: `almacen.code` is the warehouse
+    # code, `stock.on_hand` the quantity. Compare the last segment, the whole
+    # path glued, and the parent when the last segment is a generic word.
+    names = {compact(last), compact(name)}
+    if len(segments) > 1 and compact(last) in _GENERIC_LEAF:
+        names.add(compact(segments[-2]))
     toks = tokens(name)
     reasons: list[str] = []
     score = 0.0
-    if c in _EXACT.get(field, ()):
+    c = compact(last)
+    if names & set(_EXACT.get(field, ())):
         score = 0.9
         reasons.append("name_exact")
     elif any(t in _TOKENS.get(field, ()) for t in toks):
