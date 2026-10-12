@@ -128,6 +128,14 @@ CATALOGUE: dict[str, Outcome] = {o.code: o for o in (
     _C("inventory_sync_filter_not_indexed", CONFIG, "read"),
     _C("inventory_sync_capture_fallback", TRANSIENT, "read"),
     _C("inventory_sync_future_timestamps", CONFIG, "read"),
+    # Warehouse / supplier masters (masters.py): warnings on a run that
+    # succeeded, each naming something a person should look at.
+    _C("inventory_sync_warehouse_renamed_in_source", CONFIG, "apply"),
+    _C("inventory_sync_warehouse_inactive", CONFIG, "apply"),
+    _C("inventory_sync_warehouse_defaulted", CONFIG, "apply"),
+    _C("inventory_sync_supplier_lead_time_kept", CONFIG, "apply"),
+    _C("inventory_sync_supplier_renamed_in_source", CONFIG, "apply"),
+    _C("inventory_sync_master_code_collision", CONFIG, "read"),
     # our side
     _C("inventory_sync_our_db_busy", OURS, "apply"),
     _C("inventory_sync_internal_error", OURS, "ours"),

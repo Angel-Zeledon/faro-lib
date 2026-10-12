@@ -68,6 +68,10 @@ class ProfileBody(BaseModel):
     poll_seconds:           Optional[int] = None
     reconcile_minutes:      Optional[int] = None
     strategy:               Optional[str] = Field(default=None, max_length=30)
+    # Optional warehouse / supplier master sources and the unknown-warehouse
+    # policy (create / reject / default); see backend/inventory_sync/masters.py.
+    masters:                Optional[dict[str, Any]] = None
+    unknown_warehouse:      Optional[str] = Field(default=None, max_length=20)
 
     model_config = {"populate_by_name": True, "protected_namespaces": ()}
 

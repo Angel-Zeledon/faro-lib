@@ -79,6 +79,29 @@ class _Prep:
         self.seen_columns: set[str] = set()
         # What the reader reports back (ledger cursor, drift, movements).
         self.extras: dict = {}
+        # Warehouse / supplier masters (masters.py): code -> name, remembered links.
+        from backend.inventory_sync import masters as _masters
+        self._masters = _masters
+        self.unknown_policy = _masters.effective_unknown_policy(profile)
+        self.wh_master: dict = {}
+        self.wh_collisions: list = []
+        self.sup_master: dict = {}
+        self.sup_collisions: list = []
+        self.wh_links: dict = {}
+        self.sup_links: dict = {}
+        if (profile.get("masters") or {}).get("warehouses"):
+            self.wh_master, self.wh_collisions = _masters.load(tenant_id, profile, "warehouses")
+        if (profile.get("masters") or {}).get("suppliers"):
+            self.sup_master, self.sup_collisions = _masters.load(tenant_id, profile, "suppliers")
+        if profile.get("id"):
+            self.wh_links = _masters.aliases(profile["id"], "warehouses") if self.wh_master else {}
+            self.sup_links = _masters.aliases(profile["id"], "suppliers") if self.sup_master else {}
+        self.wh_seen: dict[str, dict] = {}
+        self.wh_new: set[str] = set()
+        self.wh_renamed: dict[str, dict] = {}
+        self.wh_inactive: set[str] = set()
+        self.wh_defaulted = 0
+        self.wh_totals: dict[str, list] = {}
 
     def _reject(self, code: str, params: dict, sku: Any, row_number: int) -> None:
         self.rejected += 1
@@ -117,15 +140,79 @@ class _Prep:
             except mapper.Rejected as exc:
                 self._reject(exc.code, exc.params, mapper.sku_hint(raw, self.mapping), line)
                 continue
+            listed = False
+            if self.wh_master:
+                code_key = self._masters.norm_code(row["warehouse"])
+                listed = code_key in self.wh_master or code_key in self.wh_links
+                row["warehouse"] = self._master_warehouse(row["warehouse"])
+            if self.sup_master and row.get("supplier") is not None:
+                name = self._masters.supplier_name_for(self.sup_master, self.sup_links, row["supplier"])
+                if name is None and (self.profile.get("masters") or {}).get("suppliers", {}).get("unknown") == "reject":
+                    self._reject("unknown_supplier", {"supplier": str(row["supplier"])[:80]}, row["sku"], line)
+                    continue
+                row["supplier"] = name or row["supplier"]
             row["warehouse"] = self.warehouse(row["warehouse"])
-            if (not self.profile.get("allow_new_warehouses")
-                    and row["warehouse"].lower() not in self.known_warehouses):
-                self.unknown_warehouses.add(row["warehouse"])
-                self._reject("unknown_warehouse", {"warehouse": row["warehouse"]}, row["sku"], line)
-                continue
+            if row["warehouse"].lower() not in self.known_warehouses:
+                # A code the warehouse master lists is a real warehouse of the
+                # customer: it is created whatever the policy (the policy is for
+                # codes nobody vouches for), within the plan's ceiling.
+                if listed:
+                    self.wh_new.add(row["warehouse"])
+                elif self.unknown_policy == "default":
+                    from backend.inventory import warehouse_service as wh_svc
+                    fallback = (self.profile.get("default_warehouse") or "").strip() \
+                        or wh_svc.get_default_warehouse_name(self.tenant_id) or mapper.DEFAULT_WAREHOUSE
+                    row["warehouse"] = self.warehouse(fallback)
+                    self.wh_defaulted += 1
+                elif self.unknown_policy == "create":
+                    self.wh_new.add(row["warehouse"])
+                else:
+                    self.unknown_warehouses.add(row["warehouse"])
+                    self._reject("unknown_warehouse", {"warehouse": row["warehouse"]}, row["sku"], line)
+                    continue
+            tot = self.wh_totals.setdefault(row["warehouse"], [0, 0.0])
+            tot[0] += 1
+            tot[1] += float(row.get("current_stock") or 0)
             row["_line"] = line
             out.append(row)
         return out
+
+    def _master_warehouse(self, value: Any) -> str:
+        """A row's warehouse code -> the StockAI warehouse name, through the
+        remembered link first (a source rename keeps StockAI's name), then the
+        master; an unlisted code stays as it came (the unknown policy decides)."""
+        key = self._masters.norm_code(value)
+        m = self.wh_master.get(key)
+        link = self.wh_links.get(key)
+        if link:
+            name = link["name"]
+            if m and self._masters.norm_code(m["name"]) != self._masters.norm_code(link.get("source_name") or name):
+                self.wh_renamed[key] = {"code": m["code"], "stockai": name, "source": m["name"]}
+        elif m:
+            name = m["name"]
+        else:
+            return str(value)
+        if m and not m["active"]:
+            self.wh_inactive.add(name)
+        if key not in self.wh_seen:
+            self.wh_seen[key] = {"name": name, "source_name": m["name"] if m else None,
+                                 "kind": (m or {}).get("kind"), "city": (m or {}).get("city"),
+                                 "active": (m or {}).get("active", True)}
+        return name
+
+    def masters_summary(self) -> dict:
+        return {
+            "unknown_policy": self.unknown_policy,
+            "warehouses": {
+                "master_rows": len(self.wh_master), "new": sorted(self.wh_new)[:50],
+                "renamed_in_source": list(self.wh_renamed.values())[:50],
+                "inactive": sorted(self.wh_inactive)[:50], "defaulted": self.wh_defaulted,
+                "collisions": self.wh_collisions[:20],
+                "totals": [{"warehouse": w, "rows": t[0], "quantity": round(t[1], 3)}
+                           for w, t in sorted(self.wh_totals.items())[:200]],
+            },
+            "suppliers": {"master_rows": len(self.sup_master), "collisions": self.sup_collisions[:20]},
+        }
 
     def missing_columns(self) -> list[str]:
         """Mapped / filter / watermark columns no row of the source had."""
@@ -269,7 +356,11 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
         log.exception("inventory sync: worked example failed")
     from backend.inventory_sync import advice as _advice
     hints = _advice.lint(profile, set(prep.seen_columns) | set(profile.get("_source_columns") or []))
+    masters_out = prep.masters_summary()
+    if prep.sup_master:
+        masters_out["suppliers"].update(prep._masters.preview_suppliers(tenant_id, profile, prep.sup_master))
     return {
+        "masters": masters_out,
         "advice": hints,
         **prep.summary(),
         "valid": len(valid), "would_create": creates, "would_update": updates,
@@ -393,6 +484,32 @@ def _stage_batch(tenant_id: str, run_id: str, prep: "_Prep", rows: list[dict], p
                     "FROM unnest(%s::text[], %s::text[]) AS x(sku, warehouse) "
                     "WHERE s.run_id = %s AND s.sku = x.sku AND s.warehouse = x.warehouse",
                     ([k[0] for k in dup_keys], [k[1] for k in dup_keys], run_id))
+
+
+def _apply_masters(tenant_id: str, profile: dict, prep: "_Prep", counters: dict, scoped: bool) -> None:
+    """After the stock is applied: remember which source code became which
+    warehouse, mark codes the master stopped listing inactive (never delete),
+    and create / update suppliers from the supplier master. Each outcome that
+    needs a person's eye becomes a named warning on the run."""
+    m = prep._masters
+    if prep.wh_master:
+        m.record_warehouses(tenant_id, profile["id"], prep.wh_seen)
+        if not scoped:
+            m.mark_unlisted_inactive(profile["id"], "warehouses", set(prep.wh_master))
+        if prep.wh_renamed:
+            counters["warnings_codes"].add("inventory_sync_warehouse_renamed_in_source")
+        if prep.wh_inactive:
+            counters["warnings_codes"].add("inventory_sync_warehouse_inactive")
+    if prep.wh_defaulted:
+        counters["warnings_codes"].add("inventory_sync_warehouse_defaulted")
+    if prep.sup_master and not scoped:
+        out = m.apply_suppliers(tenant_id, profile, prep.sup_master)
+        if out["lead_time_kept"]:
+            counters["warnings_codes"].add("inventory_sync_supplier_lead_time_kept")
+        if out["renamed_in_source"]:
+            counters["warnings_codes"].add("inventory_sync_supplier_renamed_in_source")
+    if prep.wh_collisions or prep.sup_collisions:
+        counters["warnings_codes"].add("inventory_sync_master_code_collision")
 
 
 @contextmanager
@@ -747,6 +864,8 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
                 watermark_after = capped
         if prep is not None and prep.extras.get("cursor_after") is not None and not scoped:
             cursor_after = prep.extras["cursor_after"]
+        if prep is not None and (prep.wh_master or prep.sup_master or prep.wh_defaulted):
+            _apply_masters(tenant_id, profile, prep, counters, scoped)
         if (profile.get("stock_model") or "snapshot") == "ledger":
             from backend.inventory_sync import ledger
             ledger.commit(profile_id, run_id)

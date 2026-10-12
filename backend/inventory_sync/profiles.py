@@ -50,7 +50,7 @@ _HASHED = (
     "data_source_id", "source_kind", "source_schema", "source_object", "source_query",
     "mapping", "filters", "default_warehouse", "mode", "watermark_column",
     "missing_policy", "negative_policy", "duplicate_policy", "allow_new_warehouses",
-    "stock_model", "model_config", "strategy", "priority",
+    "stock_model", "model_config", "strategy", "priority", "masters", "unknown_warehouse",
 )
 _EDITABLE = _HASHED + (
     "name", "overlap_minutes", "interval_minutes", "brake_max_vanished_pct",
@@ -66,8 +66,9 @@ _COLUMNS = (
     "allow_new_warehouses", "brake_max_vanished_pct", "brake_min_row_ratio",
     "brake_max_rejected_pct", "brake_max_jump_pct", "slug", "priority", "stock_model",
     "model_config", "freshness", "poll_seconds", "reconcile_minutes", "strategy",
+    "masters", "unknown_warehouse",
 )
-_JSON_COLUMNS = ("mapping", "filters", "model_config")
+_JSON_COLUMNS = ("mapping", "filters", "model_config", "masters")
 
 
 def _reject(code: str, message: str, status: int = 422, **params: Any) -> AppError:
@@ -285,7 +286,14 @@ def normalize(tenant_id: str, body: dict, existing: Optional[dict] = None) -> di
                       "Continuous mode needs a way to read only what changed (an updated-at column, "
                       "a movement ledger or a change-capture strategy).")
 
+    from backend.inventory_sync import masters as _masters
+    masters = _masters.normalize(base.get("masters"), has_source=bool(source_id))
+    unknown_warehouse = base.get("unknown_warehouse") or None
+    if unknown_warehouse is not None and unknown_warehouse not in _masters.UNKNOWN_POLICIES:
+        raise _reject("inventory_sync_master_invalid", "Unknown warehouse policy.",
+                      reason="unknown_warehouse", value=str(unknown_warehouse)[:20])
     return {
+        "masters": masters, "unknown_warehouse": unknown_warehouse,
         "slug": slug, "priority": _int_in(base.get("priority", 100), 1, 10_000, "priority"),
         "stock_model": stock_model, "model_config": model_config, "strategy": strategy,
         "freshness": freshness,

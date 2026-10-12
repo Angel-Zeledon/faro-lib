@@ -286,3 +286,47 @@ MIGRATIONS += [
          PRIMARY KEY (tenant_id, idem_key)
      )"""),
 ]
+
+# ── v3: warehouse and supplier masters ────────────────────────────────────────
+#
+# `masters` holds the optional master sources a profile reads besides its stock
+# rows ({"warehouses": {...}, "suppliers": {...}}, see masters.py);
+# `unknown_warehouse` is the policy for a warehouse StockAI does not have
+# (create / reject / default; NULL = the v1 behaviour from allow_new_warehouses).
+# The two link tables remember, per profile, which SOURCE code became which
+# StockAI warehouse / supplier: a rename in the source then updates the
+# recorded source name instead of creating a second warehouse, and nothing a
+# source stops listing is ever deleted (it is marked inactive).
+MIGRATIONS += [
+    ("add_inventory_sync_profiles_masters",
+     "ALTER TABLE inventory_sync_profiles ADD COLUMN IF NOT EXISTS masters JSONB NOT NULL DEFAULT '{}'::jsonb"),
+    ("add_inventory_sync_profiles_unknown_warehouse",
+     "ALTER TABLE inventory_sync_profiles ADD COLUMN IF NOT EXISTS unknown_warehouse TEXT"),
+    *_recheck("inventory_sync_profiles", "unknown_warehouse", ("create", "reject", "default")),
+    ("create_inventory_sync_warehouses",
+     """CREATE TABLE IF NOT EXISTS inventory_sync_warehouses (
+         tenant_id      TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         profile_id     TEXT NOT NULL REFERENCES inventory_sync_profiles(id) ON DELETE CASCADE,
+         source_code    TEXT NOT NULL,
+         warehouse_name TEXT NOT NULL,
+         source_name    TEXT,
+         kind           TEXT,
+         city           TEXT,
+         active         BOOLEAN NOT NULL DEFAULT TRUE,
+         first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (profile_id, source_code)
+     )"""),
+    ("create_inventory_sync_suppliers",
+     """CREATE TABLE IF NOT EXISTS inventory_sync_suppliers (
+         tenant_id      TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         profile_id     TEXT NOT NULL REFERENCES inventory_sync_profiles(id) ON DELETE CASCADE,
+         source_code    TEXT NOT NULL,
+         supplier_name  TEXT NOT NULL,
+         source_name    TEXT,
+         active         BOOLEAN NOT NULL DEFAULT TRUE,
+         first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (profile_id, source_code)
+     )"""),
+]
