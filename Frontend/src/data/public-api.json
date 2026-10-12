@@ -13377,6 +13377,20 @@
          "type": "string",
          "max_length": 30,
          "nullable": true
+        },
+        {
+         "name": "masters",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "unknown_warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
         }
        ]
       },
@@ -13614,6 +13628,20 @@
          "required": false,
          "type": "string",
          "max_length": 30,
+         "nullable": true
+        },
+        {
+         "name": "masters",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "unknown_warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
          "nullable": true
         }
        ]
@@ -13964,6 +13992,20 @@
          "required": false,
          "type": "string",
          "max_length": 30,
+         "nullable": true
+        },
+        {
+         "name": "masters",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "unknown_warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
          "nullable": true
         }
        ]
@@ -14338,6 +14380,20 @@
          "required": false,
          "type": "string",
          "max_length": 30,
+         "nullable": true
+        },
+        {
+         "name": "masters",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "unknown_warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
          "nullable": true
         }
        ]
