@@ -10,7 +10,7 @@
  * product team on 2026-10-02 from what the code does today. It is not legal
  * advice and has not been checked against Costa Rica's Ley 8968, the GDPR /
  * LOPDGDD or the LSSI-CE by anyone qualified to do so. Every value in square
- * brackets — `[RAZÓN SOCIAL]`, `[UBICACIÓN DEL SERVIDOR — …]` and the rest — is
+ * brackets — `[RAZÓN SOCIAL]`, `[DIRECCIÓN]` and the rest — is
  * a placeholder the owner has to fill in; they are deliberately visible on the
  * page so an unfinished document cannot pass for a finished one.
  *
@@ -349,7 +349,7 @@ const es: LegalCopy = {
               table: {
                 head: ['Proveedor', 'Para qué', 'Qué datos', 'Dónde'],
                 rows: [
-                  ['Hostinger', 'Servidor (VPS) donde corren la aplicación y la base de datos, y correo de stockai.es', 'Todos los datos del servicio', '[UBICACIÓN DEL SERVIDOR — confirmar con el propietario]'],
+                  ['Hostinger', 'Servidor (VPS) donde corren la aplicación y la base de datos, y correo de stockai.es', 'Todos los datos del servicio', 'Boston, Estados Unidos'],
                   ['DeepSeek', 'Funciones de inteligencia artificial', 'La pregunta y los datos necesarios para responderla', 'China'],
                   ['Proveedor de correo: Hostinger (SMTP) o Resend, según la configuración', 'Enviar correos del servicio y alertas', 'Tu dirección de correo y el contenido del mensaje', '[UBICACIÓN — confirmar con el propietario]'],
                   ['Twilio (solo si WhatsApp o SMS están activados)', 'Enviar y recibir mensajes de WhatsApp y SMS', 'Tu número y el contenido del mensaje', 'Estados Unidos'],
@@ -364,7 +364,7 @@ const es: LegalCopy = {
           id: 'transfers',
           title: 'Transferencias internacionales',
           blocks: [
-            'Por los proveedores de arriba, tus datos pueden tratarse fuera de tu país: en [UBICACIÓN DEL SERVIDOR — confirmar con el propietario] (servidor), en China (DeepSeek, si usas las funciones de IA) y en Estados Unidos (Twilio, si activas WhatsApp o SMS).',
+            'Por los proveedores de arriba, tus datos pueden tratarse fuera de tu país: en Boston, Estados Unidos (servidor), en China (DeepSeek, si usas las funciones de IA) y en Estados Unidos (Twilio, si activas WhatsApp o SMS).',
             'Si estás en la Unión Europea o en España, ten en cuenta que China no cuenta con una decisión de adecuación de la Comisión Europea. Por eso te contamos qué funciones envían datos a DeepSeek y cómo evitarlo.',
           ],
         },
@@ -864,7 +864,7 @@ const en: LegalCopy = {
               table: {
                 head: ['Provider', 'What for', 'What data', 'Where'],
                 rows: [
-                  ['Hostinger', 'Server (VPS) running the application and the database, and stockai.es email', 'All service data', '[SERVER LOCATION — confirm with the owner]'],
+                  ['Hostinger', 'Server (VPS) running the application and the database, and stockai.es email', 'All service data', 'Boston, United States'],
                   ['DeepSeek', 'Artificial-intelligence features', 'The question and the data needed to answer it', 'China'],
                   ['Email provider: Hostinger (SMTP) or Resend, depending on configuration', 'Sending service emails and alerts', 'Your email address and the message content', '[LOCATION — confirm with the owner]'],
                   ['Twilio (only if WhatsApp or SMS are switched on)', 'Sending and receiving WhatsApp and SMS messages', 'Your number and the message content', 'United States'],
@@ -879,7 +879,7 @@ const en: LegalCopy = {
           id: 'transfers',
           title: 'International transfers',
           blocks: [
-            'Because of the providers above, your data may be processed outside your country: in [SERVER LOCATION — confirm with the owner] (server), in China (DeepSeek, if you use the AI features) and in the United States (Twilio, if you switch on WhatsApp or SMS).',
+            'Because of the providers above, your data may be processed outside your country: in Boston, United States (server), in China (DeepSeek, if you use the AI features) and in the United States (Twilio, if you switch on WhatsApp or SMS).',
             'If you are in the European Union or Spain, note that China has no adequacy decision from the European Commission. That is why we tell you which features send data to DeepSeek and how to avoid it.',
           ],
         },

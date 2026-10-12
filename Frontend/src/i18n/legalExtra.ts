@@ -248,7 +248,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Subencargado', 'Para qué', 'Cuándo', 'Dónde'],
               rows: [
-                ['Hostinger', 'Servidor (VPS) donde corren la aplicación y la base de datos; correo de stockai.es', 'Siempre', '[UBICACIÓN DEL SERVIDOR — confirmar con el propietario]'],
+                ['Hostinger', 'Servidor (VPS) donde corren la aplicación y la base de datos; correo de stockai.es', 'Siempre', 'Boston, Estados Unidos'],
                 ['DeepSeek', 'Modelo de lenguaje del asistente, los resúmenes, las explicaciones y el diagnóstico de archivos (ver [cómo usamos la IA](/ia))', 'Solo cuando se usan esas funciones', 'China'],
                 ['Proveedor de correo: Hostinger (SMTP) o Resend, según la configuración', 'Enviar correos del servicio, avisos y órdenes de compra', 'Cuando se envía un correo', '[UBICACIÓN — confirmar con el propietario]'],
                 ['Twilio', 'Enviar y recibir mensajes de WhatsApp y SMS', 'Solo si WhatsApp o SMS están activados', 'Estados Unidos'],
@@ -263,7 +263,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         id: 'transfers',
         title: 'Transferencias internacionales',
         blocks: [
-          'Por los subencargados de arriba, los datos pueden tratarse fuera del país del cliente: en [UBICACIÓN DEL SERVIDOR — confirmar con el propietario], en China (DeepSeek, solo si se usan las funciones de IA) y en Estados Unidos (Twilio, solo si se activan WhatsApp o SMS).',
+          'Por los subencargados de arriba, los datos pueden tratarse fuera del país del cliente: en Boston, Estados Unidos, en China (DeepSeek, solo si se usan las funciones de IA) y en Estados Unidos (Twilio, solo si se activan WhatsApp o SMS).',
           'Para clientes en la Unión Europea o en España: China no tiene una decisión de adecuación de la Comisión Europea. [MECANISMO DE TRANSFERENCIA — cláusulas contractuales tipo u otro, confirmar con un abogado para DeepSeek y Twilio]. Si el cliente no puede aceptar la transferencia a China, puede pedirnos que su cuenta no use las funciones de IA escribiendo a ' + MAIL + '.',
         ],
       },
@@ -959,7 +959,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Sub-processor', 'What for', 'When', 'Where'],
               rows: [
-                ['Hostinger', 'Server (VPS) running the app and the database; stockai.es email', 'Always', '[SERVER LOCATION — confirm with the owner]'],
+                ['Hostinger', 'Server (VPS) running the app and the database; stockai.es email', 'Always', 'Boston, United States'],
                 ['DeepSeek', 'Language model behind the assistant, summaries, explanations and file diagnosis (see [how we use AI](/ia))', 'Only when those features are used', 'China'],
                 ['Email provider: Hostinger (SMTP) or Resend, depending on the configuration', 'Sending service emails, alerts and purchase orders', 'When an email is sent', '[LOCATION — confirm with the owner]'],
                 ['Twilio', 'Sending and receiving WhatsApp and SMS messages', 'Only if WhatsApp or SMS is turned on', 'United States'],
@@ -974,7 +974,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'transfers',
         title: 'International transfers',
         blocks: [
-          'Because of the sub-processors above, data may be processed outside the customer\'s country: in [SERVER LOCATION — confirm with the owner], in China (DeepSeek, only if the AI features are used) and in the United States (Twilio, only if WhatsApp or SMS is turned on).',
+          'Because of the sub-processors above, data may be processed outside the customer\'s country: in Boston, United States, in China (DeepSeek, only if the AI features are used) and in the United States (Twilio, only if WhatsApp or SMS is turned on).',
           'For customers in the European Union or Spain: China has no adequacy decision from the European Commission. [TRANSFER MECHANISM — standard contractual clauses or other, confirm with a lawyer for DeepSeek and Twilio]. If the customer cannot accept the transfer to China, it can ask us for its account not to use the AI features by writing to ' + MAIL + '.',
         ],
       },
