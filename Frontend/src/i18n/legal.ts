@@ -630,7 +630,7 @@ const en: LegalCopy = {
           id: 'acceptance',
           title: 'Who we are and how you accept these terms',
           blocks: [
-            'StockAI is a service of [RAZÓN SOCIAL] ("StockAI", "we"). The details that identify us are in the [legal notice](/aviso-legal).',
+            'StockAI is a service of [LEGAL COMPANY NAME] ("StockAI", "we"). The details that identify us are in the [legal notice](/aviso-legal).',
             'You accept these terms when you create an account (by ticking the box on the form) or enter a trial account. We record the date and the version of the terms you accepted.',
             'If you create the account on behalf of a company, you confirm you can bind it, and these terms apply between that company and us.',
           ],
@@ -663,7 +663,7 @@ const en: LegalCopy = {
           blocks: [
             'StockAI is sold only as source code: the complete source code, to install on your own infrastructure and operate as your own. The price is **USD 14,999**, as a one-time payment.',
             'Write to us and we will close the purchase and the details of delivery with you.',
-            '[LICENCIA, ENTREGA, SOPORTE Y REEMBOLSO DE LA COMPRA — confirmar con el propietario]',
+            '[LICENCE, DELIVERY, SUPPORT AND REFUND OF THE PURCHASE — confirm with the owner]',
           ],
         },
         {
@@ -760,7 +760,7 @@ const en: LegalCopy = {
             {
               list: [
                 'we are not liable for indirect damages, loss of profit, lost sales or lost data, or for business decisions made with the service;',
-                'our total liability to you is limited to [LÍMITE DE RESPONSABILIDAD — confirmar con el propietario].',
+                'our total liability to you is limited to [LIABILITY CAP — confirm with the owner].',
               ],
             },
             'Nothing in these terms limits rights that the law of your country does not allow to be limited.',
@@ -777,7 +777,7 @@ const en: LegalCopy = {
           id: 'law',
           title: 'Governing law',
           blocks: [
-            'These terms are governed by the laws of [PAÍS — Costa Rica, confirmar con el propietario], and any dispute will be settled before the courts of [CIUDAD — confirmar con el propietario], unless the consumer-protection law of your country entitles you to another forum.',
+            'These terms are governed by the laws of [COUNTRY — Costa Rica, confirm with the owner], and any dispute will be settled before the courts of [CITY — confirm with the owner], unless the consumer-protection law of your country entitles you to another forum.',
           ],
         },
         {
@@ -803,7 +803,7 @@ const en: LegalCopy = {
           id: 'controller',
           title: 'Who is responsible for your data',
           blocks: [
-            'The controller is [RAZÓN SOCIAL], [CÉDULA JURÍDICA / NIF], with registered address at [DIRECCIÓN]. You can write to us at ' + MAIL + '. Full details are in the [legal notice](/aviso-legal).',
+            'The controller is [LEGAL COMPANY NAME], [COMPANY ID / TAX ID], with registered address at [ADDRESS]. You can write to us at ' + MAIL + '. Full details are in the [legal notice](/aviso-legal).',
             'For your **account** data (your name, your email), we are the controller. For the **business data** you upload that mentions people — for example, a supplier\'s contact or a customer\'s name in your sales history — the controller is your company, and we process it on its behalf, only to provide it the service.',
           ],
         },
@@ -864,9 +864,9 @@ const en: LegalCopy = {
               table: {
                 head: ['Provider', 'What for', 'What data', 'Where'],
                 rows: [
-                  ['Hostinger', 'Server (VPS) running the application and the database, and stockai.es email', 'All service data', '[UBICACIÓN DEL SERVIDOR — confirmar con el propietario]'],
+                  ['Hostinger', 'Server (VPS) running the application and the database, and stockai.es email', 'All service data', '[SERVER LOCATION — confirm with the owner]'],
                   ['DeepSeek', 'Artificial-intelligence features', 'The question and the data needed to answer it', 'China'],
-                  ['Email provider: Hostinger (SMTP) or Resend, depending on configuration', 'Sending service emails and alerts', 'Your email address and the message content', '[UBICACIÓN — confirmar con el propietario]'],
+                  ['Email provider: Hostinger (SMTP) or Resend, depending on configuration', 'Sending service emails and alerts', 'Your email address and the message content', '[LOCATION — confirm with the owner]'],
                   ['Twilio (only if WhatsApp or SMS are switched on)', 'Sending and receiving WhatsApp and SMS messages', 'Your number and the message content', 'United States'],
                 ],
               },
@@ -879,7 +879,7 @@ const en: LegalCopy = {
           id: 'transfers',
           title: 'International transfers',
           blocks: [
-            'Because of the providers above, your data may be processed outside your country: in [UBICACIÓN DEL SERVIDOR — confirmar con el propietario] (server), in China (DeepSeek, if you use the AI features) and in the United States (Twilio, if you switch on WhatsApp or SMS).',
+            'Because of the providers above, your data may be processed outside your country: in [SERVER LOCATION — confirm with the owner] (server), in China (DeepSeek, if you use the AI features) and in the United States (Twilio, if you switch on WhatsApp or SMS).',
             'If you are in the European Union or Spain, note that China has no adequacy decision from the European Commission. That is why we tell you which features send data to DeepSeek and how to avoid it.',
           ],
         },
@@ -896,7 +896,7 @@ const en: LegalCopy = {
                   ['When an account is deleted', 'All its tables and files are erased at once.'],
                   ['Backups', 'Made every night and kept 14 days. What you delete also disappears from the backups within that period.'],
                   ['Attempt counts (sign-in, trial accounts)', 'Only used within their window: minutes to 24 hours.'],
-                  ['Server technical logs', '[PLAZO DE LOS REGISTROS DEL SERVIDOR — confirmar con el propietario]'],
+                  ['Server technical logs', '[SERVER LOG RETENTION PERIOD — confirm with the owner]'],
                 ],
               },
             },
@@ -1039,7 +1039,7 @@ const en: LegalCopy = {
       title: 'Legal notice',
       intro: 'Who is behind StockAI and stockai.es, and the conditions for using this website.',
       summary: [
-        'stockai.es is the website of StockAI, a service of [RAZÓN SOCIAL].',
+        'stockai.es is the website of StockAI, a service of [LEGAL COMPANY NAME].',
         `For any legal matter, write to us at ${MAIL}.`,
       ],
       sections: [
@@ -1051,10 +1051,10 @@ const en: LegalCopy = {
               table: {
                 head: ['Detail', 'Value'],
                 rows: [
-                  ['Owner', '[RAZÓN SOCIAL]'],
-                  ['Tax ID', '[CÉDULA JURÍDICA / NIF]'],
-                  ['Registered address', '[DIRECCIÓN]'],
-                  ['Registry details', '[DATOS DE INSCRIPCIÓN EN EL REGISTRO, si aplica]'],
+                  ['Owner', '[LEGAL COMPANY NAME]'],
+                  ['Tax ID', '[COMPANY ID / TAX ID]'],
+                  ['Registered address', '[ADDRESS]'],
+                  ['Registry details', '[COMPANY REGISTRATION DETAILS, if applicable]'],
                   ['Email', MAIL],
                   ['Domain', 'stockai.es'],
                 ],
@@ -1094,7 +1094,7 @@ const en: LegalCopy = {
           id: 'law',
           title: 'Governing law',
           blocks: [
-            'This notice is governed by the laws of [PAÍS — Costa Rica, confirmar con el propietario]. For users in Spain, Law 34/2002 on information-society services and electronic commerce (LSSI-CE) also applies.',
+            'This notice is governed by the laws of [COUNTRY — Costa Rica, confirm with the owner]. For users in Spain, Law 34/2002 on information-society services and electronic commerce (LSSI-CE) also applies.',
           ],
         },
       ],

@@ -1,5 +1,6 @@
 'use client'
-import Link from 'next/link'
+// SiteLink: on an English page (or for an English user) /cookies is /en/cookies.
+import Link from '@/components/landing/SiteLink'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useLanguage } from '@/contexts/LanguageContext'

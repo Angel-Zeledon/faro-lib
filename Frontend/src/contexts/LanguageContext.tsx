@@ -40,6 +40,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     // `?lang=en` is how an English page of the public site sends a visitor
     // into the sign-in forms: on a split deployment the app is another origin
     // and cannot read the landing's storage. It becomes the stored default.
+    // Re-read on every navigation, not only on mount: on a single domain the
+    // click from /en to /login is a client-side navigation, and the provider
+    // (in the root layout) does not mount again.
     let fromUrl: Lang | null = null
     try {
       const q = new URLSearchParams(window.location.search).get('lang')
@@ -51,7 +54,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       saved = (localStorage.getItem('lang') as Lang | null) ?? 'es'
     } catch { /* storage blocked: keep the default */ }
     setLangState(fromUrl ?? saved)
-  }, [])
+  }, [pathname])
 
   // The tab title and meta description are a `metadata` export in
   // `app/layout.tsx`, which Next renders on the server — where the chosen
@@ -66,7 +69,8 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // this used to overwrite them too — so a crawler that runs JavaScript read
   // the generic Spanish app title on every public page. A title that is
   // not one of the two app titles belongs to that page and is left alone.
-  // The server renders <html lang="es">; an English visitor's document must say
+  // The server renders <html lang="es"> (lang="en" under /en, see
+  // middleware.ts); an English visitor's document must say
   // so too (screen readers pick the voice from it, browsers offer translation).
   useEffect(() => { document.documentElement.lang = lang }, [lang])
 
