@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from backend.api.v1.auth import _reject_weak_password
 from backend.auth import warehouse_scope as wscope
+from backend.auth.permissions import ensure_may_manage_user
 from backend.auth.guards import (
     CurrentUser, get_current_user, require_admin, require_verified_admin,
 )
@@ -212,6 +213,8 @@ def create_user_admin(
 ):
     if body.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Options: {sorted(VALID_ROLES)}")
+    # A new person has no custom role, so holds every permission.
+    ensure_may_manage_user(user.tenant_id, user.user_id, None)
 
     from backend.api.v1.auth import _lookup_email
     if _lookup_email(body.email):
@@ -311,6 +314,7 @@ def update_user_admin(
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
         raise AppError("user_not_found", "User not found", status_code=404)
+    ensure_may_manage_user(user.tenant_id, user.user_id, user_id)
 
     if body.role is not None and body.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Options: {sorted(VALID_ROLES)}")
@@ -381,6 +385,7 @@ def set_user_warehouse_scope(
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
         raise AppError("user_not_found", "User not found", status_code=404)
+    ensure_may_manage_user(user.tenant_id, user.user_id, user_id)
     ids = wscope.validate_scope_ids(user.tenant_id, body.warehouse_ids)
     if ids is not None and target["role"] == "admin":
         # The company must keep somebody who can see every warehouse and change
@@ -427,6 +432,7 @@ def delete_user_admin(
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
         raise AppError("user_not_found", "User not found", status_code=404)
+    ensure_may_manage_user(user.tenant_id, user.user_id, user_id)
     user_svc.delete_user(user.tenant_id, user_id)
     log.info("[delete-user] admin=%s deleted user=%s", user.user_id, user_id)
     record_event(
@@ -452,6 +458,7 @@ def set_user_status(
     target = user_svc.get_user(user.tenant_id, user_id)
     if not target:
         raise AppError("user_not_found", "User not found", status_code=404)
+    ensure_may_manage_user(user.tenant_id, user.user_id, user_id)
     user_svc.update_status(user.tenant_id, user_id, body.status)
     updated = user_svc.get_user(user.tenant_id, user_id)
     # Suspending an account is the same event as deleting one as far as the
@@ -585,6 +592,8 @@ def invite_user(
 ):
     if body.role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Options: {sorted(VALID_ROLES)}")
+    # A new person has no custom role, so holds every permission.
+    ensure_may_manage_user(user.tenant_id, user.user_id, None)
 
     from backend.api.v1.auth import _lookup_email
     if _lookup_email(body.email):

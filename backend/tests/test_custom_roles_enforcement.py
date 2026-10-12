@@ -135,6 +135,101 @@ class TestACustomRoleNarrows:
         assert client.get("/api/v1/inventory/warehouses", headers=analyst_headers).status_code == 403
 
 
+USER_MANAGER = ["view_users", "manage_users"]
+
+
+def _user_row(user_id: str) -> dict:
+    return query_one("SELECT role, status, custom_role_id FROM users WHERE id = %s", (user_id,))
+
+
+class TestUserManagementCannotEscalate:
+    """A restricted admin who may manage users must not reach, through the
+    user routes, what the role routes refuse: creating or changing a person
+    whose powers exceed their own. A user with no custom role holds the whole
+    catalogue, so a fresh invite (which has no role) is above any restricted
+    editor, and so is every role-less colleague."""
+
+    def _restrict(self, registered_user, permissions=USER_MANAGER):
+        tid, uid = registered_user["tenant"]["id"], registered_user["user"]["id"]
+        assign(tid, uid, make_role(tid, permissions))
+        return tid
+
+    def test_restricted_admin_cannot_invite_an_unrestricted_admin(self, client, auth_headers, registered_user):
+        tid = self._restrict(registered_user)
+        email = f"esc-{uuid4().hex[:6]}@example.com"
+        r = client.post("/api/v1/users/invite", json={"email": email, "role": "admin", "full_name": "E"},
+                        headers=auth_headers)
+        assert r.status_code == 403, r.text
+        assert r.json()["error_code"] == "custom_role_escalation"
+        assert query_one("SELECT 1 AS x FROM users WHERE tenant_id = %s AND email = %s", (tid, email)) is None
+
+    def test_restricted_admin_cannot_create_a_role_less_user(self, client, auth_headers, registered_user):
+        tid = self._restrict(registered_user)
+        email = f"esc-{uuid4().hex[:6]}@example.com"
+        r = client.post("/api/v1/users", json={"email": email, "role": "viewer", "full_name": "E"},
+                        headers=auth_headers)
+        assert r.status_code == 403, r.text
+        assert r.json()["error_code"] == "custom_role_escalation"
+        assert query_one("SELECT 1 AS x FROM users WHERE tenant_id = %s AND email = %s", (tid, email)) is None
+
+    def test_restricted_admin_cannot_promote_a_role_less_colleague(
+        self, client, auth_headers, registered_user, analyst_user,
+    ):
+        self._restrict(registered_user)
+        target = analyst_user["user"]["id"]
+        r = client.patch(f"/api/v1/users/{target}", json={"role": "admin"}, headers=auth_headers)
+        assert r.status_code == 403, r.text
+        assert r.json()["error_code"] == "custom_role_escalation"
+        assert sorted(r.json()["error_params"]["permissions"]) == sorted(
+            set(perms.PERMISSIONS) - set(USER_MANAGER))
+        assert _user_row(target)["role"] == "analyst"
+
+    def test_restricted_admin_cannot_suspend_or_delete_a_role_less_colleague(
+        self, client, auth_headers, registered_user, analyst_user,
+    ):
+        self._restrict(registered_user)
+        target = analyst_user["user"]["id"]
+        r = client.patch(f"/api/v1/users/{target}/status", json={"status": "suspended"}, headers=auth_headers)
+        assert r.status_code == 403, r.text
+        assert r.json()["error_code"] == "custom_role_escalation"
+        d = client.delete(f"/api/v1/users/{target}", headers=auth_headers)
+        assert d.status_code == 403, d.text
+        assert d.json()["error_code"] == "custom_role_escalation"
+        row = _user_row(target)
+        assert row is not None and row["status"] == "active"
+
+    def test_restricted_admin_cannot_rescope_a_role_less_colleague(
+        self, client, auth_headers, registered_user, analyst_user,
+    ):
+        self._restrict(registered_user)
+        target = analyst_user["user"]["id"]
+        r = client.put(f"/api/v1/users/{target}/warehouse-scope", json={"warehouse_ids": []}, headers=auth_headers)
+        assert r.status_code == 403, r.text
+        assert r.json()["error_code"] == "custom_role_escalation"
+        assert query_one("SELECT warehouse_scope FROM users WHERE id = %s", (target,))["warehouse_scope"] is None
+
+    def test_restricted_admin_may_manage_someone_within_their_own_set(
+        self, client, auth_headers, registered_user, analyst_user,
+    ):
+        tid = self._restrict(registered_user)
+        target = analyst_user["user"]["id"]
+        assign(tid, target, make_role(tid, ["view_users"]))
+        r = client.patch(f"/api/v1/users/{target}", json={"role": "viewer"}, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert _user_row(target)["role"] == "viewer"
+
+    def test_an_unknown_user_is_still_not_found_for_a_restricted_admin(self, client, auth_headers, registered_user):
+        self._restrict(registered_user)
+        r = client.patch("/api/v1/users/does-not-exist", json={"role": "viewer"}, headers=auth_headers)
+        assert r.status_code == 404, r.text
+
+    def test_an_unrestricted_admin_is_not_affected(self, client, auth_headers, registered_user, analyst_user):
+        target = analyst_user["user"]["id"]
+        r = client.patch(f"/api/v1/users/{target}", json={"role": "viewer"}, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert _user_row(target)["role"] == "viewer"
+
+
 class TestChangesApplyOnTheNextRequest:
     def test_a_permission_removed_takes_effect_immediately_with_the_same_token(
         self, client, analyst_headers, analyst_user,
