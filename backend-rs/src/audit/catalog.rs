@@ -342,11 +342,19 @@ mod tests {
     #[test]
     fn entry_counts_are_read_from_catalog_py() {
         let src = include_str!("../../../backend/audit/catalog.py").replace("\r\n", "\n");
-        let routes = src.split("ROUTES: dict[tuple[str, str], AuditRoute] = {").nth(1).unwrap().split("\n}\n").next().unwrap();
-        let legacy = src.split("LEGACY: dict[str, tuple[str, str]] = {").nth(1).unwrap().split("\n}\n").next().unwrap();
+        let block = |head: &str| src.split(head).nth(1).unwrap().split("\n}\n").next().unwrap().to_string();
+        // `RUST_ONLY_ROUTES` is merged into ROUTES at import (`ROUTES.update(...)`),
+        // so the catalogue is both blocks.
+        let routes = format!(
+            "{}\n{}",
+            block("\nROUTES: dict[tuple[str, str], AuditRoute] = {"),
+            block("RUST_ONLY_ROUTES: dict[tuple[str, str], AuditRoute] = {"),
+        );
+        let legacy = block("LEGACY: dict[str, tuple[str, str]] = {");
         let route_keys = regex::Regex::new(r#"(?m)^\s+\("(GET|POST|PUT|PATCH|DELETE)", "[^"]+"\):"#).unwrap();
         let legacy_keys = regex::Regex::new(r#"(?m)^\s+"[a-z_.]+":\s+\("#).unwrap();
-        assert_eq!(route_keys.find_iter(routes).count(), ROUTES.len());
-        assert_eq!(legacy_keys.find_iter(legacy).count(), LEGACY.len());
+        assert!(src.contains("ROUTES.update(RUST_ONLY_ROUTES)"), "catalog.py no longer merges RUST_ONLY_ROUTES");
+        assert_eq!(route_keys.find_iter(&routes).count(), ROUTES.len());
+        assert_eq!(legacy_keys.find_iter(&legacy).count(), LEGACY.len());
     }
 }

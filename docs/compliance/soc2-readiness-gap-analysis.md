@@ -24,10 +24,10 @@ confirme si existe fuera del código.
 | CC2 Información y comunicación | Páginas públicas de seguridad, privacidad, DPA y divulgación responsable (`Frontend/public/.well-known/security.txt`) | Plazos de notificación de brechas y de aviso de subencargados siguen como marcador `[confirmar]` en los textos publicados | S |
 | CC3 Evaluación de riesgos | Este pack lista brechas técnicas conocidas | Sin registro de riesgos formal ni revisión periódica | M |
 | CC4 Monitoreo de controles | `/health`, panel "Estado de la instalación" (`backend/service_config/ops.py:226 · def snapshot`), correo diario de fallos al operador, simulacro de restauración (`scripts/restore_drill.py`) | Sin monitoreo externo de disponibilidad ni alertas en tiempo real; el simulacro es manual | M |
-| CC5 Actividades de control | Umbrales declarados en el registro (`backend/service_config/registry.py:821 · OPERATIONS = Service(`); suite de tests (`scripts/run_tests.py`) | **Sin CI/CD** (fuera de alcance por instrucción del propietario): los tests no son una compuerta automática antes de desplegar | Decisión del propietario |
-| CC6.1 Acceso lógico | Roles `admin/analyst/viewer` (`backend/auth/guards.py:255 · def require_analyst_or_above`); operador de instalación separado (`backend/service_config/access.py:137 · def require_instance_operator`); API keys con alcance y vencimiento | **Sin MFA ni SSO**; sin RLS en Postgres | L (MFA), XL (SSO/SAML) |
-| CC6.2 Alta/baja de usuarios | Invitaciones; suspender borra refresh tokens (`backend/users/service.py:275 · def update_status`) | Sin revisión periódica de accesos documentada; token ya emitido vale hasta 15 min | S-M |
-| CC6.3 Mínimo privilegio | RBAC por rol; llaves `read`/`write`; el MCP solo lee (`backend/tests/test_mcp_server.py:150 · def test_every_tool_actually_only_calls_GET_endpoints`) | Acceso del operador a todos los tenants sin registro de accesos | M |
+| CC5 Actividades de control | Umbrales declarados en el registro (`backend/service_config/registry.py:1064 · OPERATIONS = Service(`); suite de tests (`scripts/run_tests.py`) | **Sin CI/CD** (fuera de alcance por instrucción del propietario): los tests no son una compuerta automática antes de desplegar | Decisión del propietario |
+| CC6.1 Acceso lógico | Roles `admin/analyst/viewer` (`backend/auth/guards.py:326 · def require_analyst_or_above`); operador de instalación separado (`backend/service_config/access.py:137 · def require_instance_operator`); API keys con alcance y vencimiento | **Sin MFA ni SSO**; sin RLS en Postgres | L (MFA), XL (SSO/SAML) |
+| CC6.2 Alta/baja de usuarios | Invitaciones; suspender borra refresh tokens (`backend/users/service.py:281 · def update_status`) | Sin revisión periódica de accesos documentada; token ya emitido vale hasta 15 min | S-M |
+| CC6.3 Mínimo privilegio | RBAC por rol; llaves `read`/`write`; el MCP solo lee (`backend/tests/test_mcp_server.py:156 · def test_every_tool_actually_only_calls_GET_endpoints`) | Acceso del operador a todos los tenants sin registro de accesos | M |
 | CC6.1/6.7 Cifrado y protección de datos | bcrypt, hashes SHA-256 de tokens y llaves, Fernet para credenciales; TLS en el borde (Caddy) | HSTS ausente; datos de negocio y backups sin cifrado a nivel app; tráfico interno en claro | S (HSTS), M (backups), L (datos) |
 | CC6.6 Perímetro | Solo Caddy expone 80/443 (`deploy/docker-compose.prod.yml:25 · "443:443"`); contenedores no root; CORS acotado; OpenAPI apagada en producción | Sin WAF ni límite por IP; firewall del proveedor NO VERIFICADO | M |
 | CC6.8 Software malicioso / cadena de suministro | `THIRD_PARTY_NOTICES.md` (licencias) | Sin escaneo de dependencias (CVE), sin SBOM, sin firma de imágenes | M-L |
@@ -42,7 +42,7 @@ confirme si existe fuera del código.
 | Criterio | Controles | Brechas | Esfuerzo |
 |---|---|---|---|
 | A1.1 Capacidad | Límites de recursos por contenedor (worker `cpus: 3.0`); techos por plan; panel con cola, pool de conexiones y disco con umbrales | Un solo VPS: sin balanceo ni réplica | XL |
-| A1.2 Recuperación y respaldo | Backup nocturno de BD y `storage/`, retención 14 días (`deploy/README.md`); script con marcador de éxito (`deploy/ops/backup.sh`); recuperación de jobs huérfanos (`backend/workers/worker.py:41 · def recover_orphaned_jobs`); loops con ventana de recuperación (`backend/workers/loop_state.py:53 · DAILY_CATCHUP`) | **Backups en el mismo host (sin copia externa documentada)**; sin cifrado; RTO/RPO sin medir en producción | M |
+| A1.2 Recuperación y respaldo | Backup nocturno de BD y `storage/`, retención 14 días (`deploy/README.md`); script con marcador de éxito (`deploy/ops/backup.sh`); recuperación de jobs huérfanos (`backend/workers/worker.py:41 · def recover_orphaned_jobs`); loops con ventana de recuperación (`backend/workers/loop_state.py:60 · DAILY_CATCHUP`) | **Backups en el mismo host (sin copia externa documentada)**; sin cifrado; RTO/RPO sin medir en producción | M |
 | A1.3 Pruebas de recuperación | `scripts/restore_drill.py` mide tiempos y verifica integridad | Nadie lo ha corrido contra el backup de producción (pendiente del propietario); sin calendario | S |
 | SLA con clientes | Texto de disponibilidad en los términos | Sin SLA medible respaldado por monitoreo externo | M |
 
@@ -60,7 +60,7 @@ confirme si existe fuera del código.
 | Criterio | Controles | Brechas | Esfuerzo |
 |---|---|---|---|
 | C1.1 Identificar y proteger información confidencial | Aislamiento por tenant con tests cruzados (`backend/tests/test_permission_audit.py:2 · Permission-pair + cross-tenant audit`); secretos nunca devueltos por la API | Sin clasificación formal de datos; sin RLS | M-L |
-| C1.2 Eliminación | `DELETE /tenant` (`backend/tenants/data_export.py:233 · def delete_tenant`); cuentas de prueba borradas a las 24 h | No propaga a backups (14 días) ni a subencargados; sin certificado de borrado | M |
+| C1.2 Eliminación | `DELETE /tenant` (`backend/tenants/data_export.py:466 · def delete_tenant`); cuentas de prueba borradas a las 24 h | No propaga a backups (14 días) ni a subencargados; sin certificado de borrado | M |
 
 ## Privacidad (P1 a P8)
 

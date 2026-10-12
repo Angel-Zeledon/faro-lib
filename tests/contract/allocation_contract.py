@@ -227,6 +227,10 @@ def run_allocation(args, fx, db, deps: dict) -> list:
     record("apply with no stock row refused", expect(r, 409, "allocation_stock_unknown") + (
         [] if count("stock_reservations") == 0 else ["wrote reservations"]))
 
+    # The shared tenant may hold stock rows other sections wrote: compare the
+    # whole table before and after, not against a fixed count.
+    stock_rows_before = qa("SELECT sku, warehouse, current_stock FROM inventory_stock WHERE tenant_id = %s "
+                           "ORDER BY sku, warehouse", (fx.tenant_id,))
     r = call("POST", "/allocation/apply", "analyst", {"sku": sku, "result_hash": good_hash})
     problems = expect(r, 200)
     res = {cid: (res_, short, units, status) for cid, res_, short, units, status in qa(
@@ -243,8 +247,9 @@ def run_allocation(args, fx, db, deps: dict) -> list:
         problems.append(f"applied event: {ev}")
     if stock_value() != 10.0:
         problems.append(f"APPLY CHANGED THE STOCK: {stock_value()}")
-    if q1("SELECT COUNT(*) FROM inventory_stock WHERE tenant_id = %s", (fx.tenant_id,))[0] != 1:
-        problems.append("apply wrote or removed a stock row")
+    if qa("SELECT sku, warehouse, current_stock FROM inventory_stock WHERE tenant_id = %s "
+          "ORDER BY sku, warehouse", (fx.tenant_id,)) != stock_rows_before:
+        problems.append("apply wrote, changed or removed a stock row")
     record("apply (analyst): reservations, run, event; stock untouched", problems)
 
     r = call("GET", "/allocation/reservations", "viewer", headers=None)

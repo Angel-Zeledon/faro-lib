@@ -25,20 +25,20 @@ Detalle y brechas en `security-overview.md`, `data-processing-and-subprocessors.
 | # | Pregunta | Resp. | Evidencia / nota |
 |---|---|---|---|
 | 8 | ¿Identificadores únicos por usuario? | Sí | Tabla `users`, un id y un correo por usuario; llaves de API con id propio |
-| 9 | ¿Control de acceso basado en roles? | Sí | `admin/analyst/viewer` (`backend/auth/guards.py:255 · def require_analyst_or_above`) |
+| 9 | ¿Control de acceso basado en roles? | Sí | `admin/analyst/viewer` (`backend/auth/guards.py:326 · def require_analyst_or_above`) |
 | 10 | ¿Mínimo privilegio y separación de funciones? | Parcial | RBAC y llaves `read/write`; el operador ve todos los tenants sin registro de accesos |
 | 11 | ¿Autenticación multifactor? | No | No hay MFA en el código |
 | 12 | ¿SSO (SAML/OIDC)? | No | Solo login social opcional, apagado por defecto (`backend/auth/social/`) |
 | 13 | ¿Política de contraseñas? | Parcial | 8+ caracteres, letra y dígito, máx. 72 bytes (`backend/auth/password.py:16 · def validate_strength`); sin lista de contraseñas filtradas ni expiración |
 | 14 | ¿Cómo se almacenan las contraseñas? | Sí | bcrypt con sal (`backend/auth/password.py:6 · bcrypt.hashpw`) |
-| 15 | ¿Bloqueo o limitación por intentos fallidos? | Parcial | 5 intentos por correo cada 5 min (`backend/api/v1/auth.py:296 · _check_rate(f"login:`); es limitación, no bloqueo, y es por correo, no por IP |
+| 15 | ¿Bloqueo o limitación por intentos fallidos? | Parcial | 5 intentos por correo cada 5 min (`backend/api/v1/auth.py:302 · _check_rate(f"login:`); es limitación, no bloqueo, y es por correo, no por IP |
 | 16 | ¿Caducidad de sesión? | Sí | Access token 15 min (`backend/auth/jwt_handler.py:17 · _ACCESS_EXPIRE_MIN = 15`); refresh 7 días |
-| 17 | ¿Se pueden revocar sesiones? | Sí | Logout con lista de revocados (`backend/auth/blocklist.py:13 · CREATE TABLE IF NOT EXISTS revoked_tokens`); cambio de contraseña invalida tokens previos (`backend/auth/guards.py:159 · "SELECT sessions_invalid_before FROM users`); suspender usuario borra refresh tokens |
-| 18 | ¿Rotación del refresh token? | No | `POST /auth/refresh` no lo rota (`backend/api/v1/auth.py:367 · async def refresh`) |
+| 17 | ¿Se pueden revocar sesiones? | Sí | Logout con lista de revocados (`backend/auth/blocklist.py:13 · CREATE TABLE IF NOT EXISTS revoked_tokens`); cambio de contraseña invalida tokens previos (`backend/auth/guards.py:213 · "SELECT sessions_invalid_before FROM users`); suspender usuario borra refresh tokens |
+| 18 | ¿Rotación del refresh token? | No | `POST /auth/refresh` no lo rota (`backend/api/v1/auth.py:496 · async def refresh`) |
 | 19 | ¿Acceso privilegiado separado de usuarios normales? | Sí | `INSTANCE_ADMIN_EMAILS`, no el rol `admin` (`backend/service_config/access.py:137 · def require_instance_operator`) |
 | 20 | ¿Revisión periódica de accesos? | NO VERIFICADO | Proceso organizativo; no hay evidencia en el repositorio |
 | 21 | ¿Autenticación de API y alcance de credenciales? | Sí | Llaves `sk_live_*` con hash, alcance `read/write`, vencimiento opcional (`backend/auth/api_key_auth.py:32 · def hash_key`); solo tags expuestos (`backend/tests/test_public_api_surface.py:13 · EXPOSED_TAGS`) |
-| 22 | ¿Pueden las integraciones modificar datos vía IA/MCP? | No | El MCP es de solo lectura y un test lo exige (`backend/tests/test_mcp_server.py:150 · def test_every_tool_actually_only_calls_GET_endpoints`) |
+| 22 | ¿Pueden las integraciones modificar datos vía IA/MCP? | No | El MCP es de solo lectura y un test lo exige (`backend/tests/test_mcp_server.py:156 · def test_every_tool_actually_only_calls_GET_endpoints`) |
 
 ## C. Protección de datos
 
@@ -51,9 +51,9 @@ Detalle y brechas en `security-overview.md`, `data-processing-and-subprocessors.
 | 27 | ¿Gestión de llaves y rotación? | Parcial | Llave en variable de entorno o archivo; rotar obliga a reingresar secretos; sin rotación automática |
 | 28 | ¿Segregación de datos entre clientes? | Sí | Lógica por `tenant_id` del token; tests cruzados (`backend/tests/test_permission_audit.py:2 · Permission-pair + cross-tenant audit`); sin RLS |
 | 29 | ¿Clasificación de datos y DLP? | No | No hay clasificación ni prevención de fuga de datos |
-| 30 | ¿Política de retención? | Parcial | Reglas en `data-processing-and-subprocessors.md`; auditoría y logs sin plazo; las sesiones son permanentes (`backend/db/migrations.py:1426 · Sessions are permanent (2026-10-04)`) |
-| 31 | ¿Puede el cliente exportar sus datos? | Sí | `GET /tenant/export` (`backend/api/v1/tenant_data.py:29 · @router.get("/export")`) |
-| 32 | ¿Puede el cliente borrar todos sus datos? | Sí | `DELETE /tenant` (`backend/api/v1/tenant_data.py:45 · @router.delete("")`); no alcanza backups (14 días) ni subencargados |
+| 30 | ¿Política de retención? | Parcial | Reglas en `data-processing-and-subprocessors.md`; auditoría y logs sin plazo; las sesiones son permanentes (`backend/db/migrations.py:1458 · Sessions are permanent (2026-10-04)`) |
+| 31 | ¿Puede el cliente exportar sus datos? | Sí | `GET /tenant/export` (`backend/api/v1/tenant_data.py:30 · @router.get("/export")`) |
+| 32 | ¿Puede el cliente borrar todos sus datos? | Sí | `DELETE /tenant` (`backend/api/v1/tenant_data.py:47 · @router.delete("")`); no alcanza backups (14 días) ni subencargados |
 | 33 | ¿Hay copias de seguridad? | Sí | Nocturnas, retención 14 días (`deploy/README.md`); script real en el servidor: NO VERIFICADO |
 | 34 | ¿Los backups están cifrados? | No | `deploy/ops/backup.sh` no cifra |
 | 35 | ¿Hay copia fuera del sitio principal? | No | Sin copia externa documentada |
@@ -75,11 +75,11 @@ Detalle y brechas en `security-overview.md`, `data-processing-and-subprocessors.
 | 46 | ¿Protección contra inyección SQL? | Parcial | Consultas con parámetros separados; no se hizo auditoría exhaustiva de cada consulta |
 | 47 | ¿Cabeceras de seguridad y CSP? | Parcial | CSP, XFO, nosniff, Referrer-Policy (`Frontend/next.config.mjs:40 · X-Frame-Options`); CSP con `unsafe-inline`/`unsafe-eval` (`Frontend/next.config.mjs:28 · script-src 'self' 'unsafe-inline' 'unsafe-eval'`); sin HSTS |
 | 48 | ¿Dónde se guardan los tokens en el navegador? | Parcial | `localStorage` y `sessionStorage` (`Frontend/src/lib/auth.ts:13 · export function getToken()`), expuestos si hay XSS; no son cookies, por lo que CSRF clásico no aplica |
-| 49 | ¿Validación de archivos subidos? | Parcial | Lista de extensiones y tamaño por plan (`backend/datasets/service.py:40 · if suffix not in ALLOWED_EXTENSIONS`); sin antivirus |
+| 49 | ¿Validación de archivos subidos? | Parcial | Lista de extensiones y tamaño por plan (`backend/datasets/service.py:42 · if suffix not in ALLOWED_EXTENSIONS`); sin antivirus |
 | 50 | ¿Protección contra path traversal? | Sí | Guarda en la descarga de artefactos (`backend/api/v1/artifacts.py:54 · full = (base / artifact_path).resolve()`) |
 | 51 | ¿Límites de tasa? | Parcial | Login, verificación, OTP, trial y API keys; sin límite global por IP (`backend/auth/api_key_auth.py:102 · def check_rate` falla abierto ante fallo de BD) |
 | 52 | ¿Documentación de API expuesta en producción? | No | OpenAPI/Docs apagados en producción (`backend/main.py:151 · openapi_url=None if settings.environment == "production"`) |
-| 53 | ¿Separación de entornos y configuración de producción forzada? | Parcial | `ENVIRONMENT`; producción se niega a arrancar con `TESTING_MODE` (`backend/config.py:242 · def _refuse_testing_mode_in_production`) |
+| 53 | ¿Separación de entornos y configuración de producción forzada? | Parcial | `ENVIRONMENT`; producción se niega a arrancar con `TESTING_MODE` (`backend/config.py:293 · def _refuse_testing_mode_in_production`) |
 | 54 | ¿Hay secretos en el repositorio? | No | `.env*` ignorados, solo `.env.example` versionado (`.gitignore`) |
 
 ## E. Infraestructura y operación
@@ -105,7 +105,7 @@ Detalle y brechas en `security-overview.md`, `data-processing-and-subprocessors.
 | 66 | ¿Alta disponibilidad / sin punto único de falla? | No | Un solo VPS |
 | 67 | ¿Plan de respuesta a incidentes? | Parcial | `incident-response.md`; sin ensayo ni guardia |
 | 68 | ¿Plazo de notificación de brechas a clientes? | No | Marcador `[PLAZO DE NOTIFICACIÓN — confirmar]` en el DPA publicado |
-| 69 | ¿Monitoreo de capacidad? | Sí | Panel: cola, pool de conexiones, disco con umbrales del registro (`backend/service_config/registry.py:821 · OPERATIONS = Service(`) |
+| 69 | ¿Monitoreo de capacidad? | Sí | Panel: cola, pool de conexiones, disco con umbrales del registro (`backend/service_config/registry.py:1064 · OPERATIONS = Service(`) |
 
 ## G. Privacidad
 

@@ -260,6 +260,12 @@ fn item_json(l: &Loaded, row_index: usize) -> Option<Value> {
 
 // ── Loading ──────────────────────────────────────────────────────────────────
 
+/// A 500 that says why in the log: an invariant of the outlook did not hold.
+fn unexplained(what: &str) -> ApiError {
+    tracing::error!(what, "commitment outlook: internal invariant broken");
+    ApiError::internal()
+}
+
 async fn load_for(state: &AppState, user: &auth::CurrentUser) -> Result<Loaded, ApiError> {
     let ids = wscope::scope_warehouse_ids(&state.pool, user).await?;
     let names = wscope::scope_names(&state.pool, user).await?;
@@ -292,7 +298,7 @@ pub async fn list(
     let limit = query::int_param(&mut errs, &q, "limit", DEFAULT_LIMIT, Some(1), Some(MAX_LIMIT));
     let user = auth::current_user(&state, &headers, ROUTE, &actors).await?;
     errs.into_result()?;
-    let Some(PyInt::Small(limit)) = limit else { return Err(ApiError::internal()) };
+    let Some(PyInt::Small(limit)) = limit else { return Err(unexplained("limit was validated but is not a small integer")) };
 
     let l = load_for(&state, &user).await?;
     let want_customer = customer.as_deref().map(|c| wscope::py_casefold(py_strip(c)));
@@ -469,7 +475,7 @@ pub async fn detail(
 
     let l = load_for(&state, &user).await?;
     let Some(row_index) = l.rows.iter().position(|r| r.id == commitment_id) else { return Err(not_found()) };
-    let (report, pos) = l.outcome_of(row_index).ok_or_else(ApiError::internal)?;
+    let (report, pos) = l.outcome_of(row_index).ok_or_else(|| unexplained("no outcome for the commitment"))?;
     let this = &report.outcomes[pos];
     let delivery = day_number(l.rows[row_index].delivery_date);
     let as_of = delivery.max(day_number(l.today));
@@ -517,7 +523,7 @@ pub async fn detail(
         .iter()
         .map(|s| json!({"warehouse": s.warehouse, "current_stock": r2(s.current_stock)}))
         .collect();
-    let item = item_json(&l, row_index).ok_or_else(ApiError::internal)?;
+    let item = item_json(&l, row_index).ok_or_else(|| unexplained("the commitment could not be rendered"))?;
     Ok(ok(json!({
         "as_of": isoformat_date(&l.today),
         "scope": l.scope_label,

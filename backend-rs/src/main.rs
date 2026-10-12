@@ -127,6 +127,7 @@ async fn main() {
     recurring::materialiser::spawn(pool.clone());
     let state = AppState { settings: Arc::new(settings), pool };
     let app = routes::router()
+        .layer(axum::middleware::from_fn(middleware::reject_encoded_slash))
         .layer(cors)
         .layer(axum::middleware::from_fn_with_state(state.clone(), middleware::request_context))
         .layer(axum::middleware::from_fn(middleware::reject_nul_in_path))

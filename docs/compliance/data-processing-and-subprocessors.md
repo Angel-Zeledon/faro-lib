@@ -34,9 +34,9 @@ cookies de publicidad.
 | Dato | Regla | Evidencia |
 |---|---|---|
 | Cuenta y datos del negocio | mientras exista la cuenta | política de privacidad (`legal.ts`, sección "retention") |
-| **Sesiones de pronóstico** | **son permanentes**: "Eliminar" se volvió "archivar"; la fila, sus resultados y sus artefactos quedan y solo salen de la lista de trabajo hasta que alguien las restaure | `backend/db/migrations.py:1426 · Sessions are permanent (2026-10-04)` |
-| Cuenta de prueba (`/prueba`) | 24 h y se borra entera, salvo que haya pedido contacto (solicitud `new`) | `backend/workers/worker.py:522 · def _trial_reaper_loop` |
-| Tenant borrado | todas sus tablas y archivos se borran a la vez | `backend/tenants/data_export.py:233 · def delete_tenant` |
+| **Sesiones de pronóstico** | **son permanentes**: "Eliminar" se volvió "archivar"; la fila, sus resultados y sus artefactos quedan y solo salen de la lista de trabajo hasta que alguien las restaure | `backend/db/migrations.py:1458 · Sessions are permanent (2026-10-04)` |
+| Cuenta de prueba (`/prueba`) | 24 h y se borra entera, salvo que haya pedido contacto (solicitud `new`) | `backend/workers/worker.py:572 · def _trial_reaper_loop` |
+| Tenant borrado | todas sus tablas y archivos se borran a la vez | `backend/tenants/data_export.py:466 · def delete_tenant` |
 | Copias de seguridad | nocturnas, 14 días (cifra de la política de privacidad y del DPA) | `deploy/README.md` (sección "Backups"); el script real vive en el servidor: **NO VERIFICADO** |
 | Eventos de intentos (login, trial) | solo dentro de su ventana (minutos a 24 h) | `backend/api/v1/auth.py::_check_rate` |
 | `activity_logs` (auditoría) | **sin política de retención**: crece sin límite | `docs/stability.md`, "What is deliberately NOT here" (**BRECHA**) |
@@ -50,14 +50,14 @@ tenant las elimina. Hay que decirlo a quien pregunte por "derecho de supresión 
 ## 3. Exportación y borrado (portabilidad y supresión)
 
 - **Exportar:** `GET /tenant/export` (solo `admin`) devuelve un ZIP con una tabla por archivo,
-  limitado al `tenant_id` del token (`backend/api/v1/tenant_data.py:29 · @router.get("/export")`,
-  `backend/tenants/data_export.py:110 · def build_export_zip`). Los secretos (hashes de contraseña y de
+  limitado al `tenant_id` del token (`backend/api/v1/tenant_data.py:30 · @router.get("/export")`,
+  `backend/tenants/data_export.py:222 · def build_export_zip`). Los secretos (hashes de contraseña y de
   tokens/llaves, secretos de webhooks) se excluyen con una lista explícita de columnas. La propia
   exportación queda en la auditoría.
 - **Borrar:** `DELETE /tenant` (solo `admin`, exige escribir el slug del tenant o `DELETE`;
-  irreversible) (`backend/api/v1/tenant_data.py:45 · @router.delete("")`). Borra tabla por tabla
+  irreversible) (`backend/api/v1/tenant_data.py:47 · @router.delete("")`). Borra tabla por tabla
   dentro de una transacción y luego los directorios de `storage/`
-  (`backend/tenants/data_export.py:212 · _STORAGE_CATEGORIES`). Un test falla si aparece una tabla con
+  (`backend/tenants/data_export.py:445 · _STORAGE_CATEGORIES = (`). Un test falla si aparece una tabla con
   `tenant_id` que el borrado no cubre
   (`backend/tests/test_tenant_data.py:211 · def test_delete_order_covers_every_tenant_scoped_table`).
 - **Lo que el borrado NO hace (BRECHAS):**
@@ -81,7 +81,7 @@ funciona (`docs/data-that-leaves.md`; cada servicio reporta su estado en `/healt
 |---|---|---|---|---|
 | **Hostinger** | VPS donde corren app, base de datos y `storage/`; SMTP/correo de `stockai.es` | todos los datos del servicio | siempre en el servicio alojado | `deploy/README.md`; ubicación del servidor: **NO DEFINIDA** (placeholder en la política) |
 | **DeepSeek** (China) | asistente, RAG, resúmenes, explicación de pronósticos, diagnóstico de calidad | la pregunta del usuario y el contexto necesario: códigos y nombres de producto, cantidades, costos, estado del semáforo, proveedores, montos. No contraseñas ni credenciales | solo si `DEEPSEEK_API_KEY` está configurada; un único proveedor y sin cadena de respaldo (`backend/ai/local_llm.py:199 · class LLMNotConfigured`) | `docs/data-that-leaves.md` |
-| **Resend** (o SMTP propio/Hostinger) | alertas, órdenes de compra a proveedores, invitaciones, cambios de contraseña | dirección del destinatario, asunto, cuerpo y PDF de la orden | solo si `RESEND_API_KEY` o SMTP están configurados (`backend/notifications/email.py:127 · def _send_resend`) | `docs/data-that-leaves.md` |
+| **Resend** (o SMTP propio/Hostinger) | alertas, órdenes de compra a proveedores, invitaciones, cambios de contraseña | dirección del destinatario, asunto, cuerpo y PDF de la orden | solo si `RESEND_API_KEY` o SMTP están configurados (`backend/notifications/email.py:128 · def _send_resend`) | `docs/data-that-leaves.md` |
 | **Twilio** (EE. UU.) | WhatsApp y SMS | número y texto del mensaje | solo si `TWILIO_*` están configurados | `docs/data-that-leaves.md` |
 | **Voyage AI + Pinecone** | búsqueda semántica sobre documentos que el cliente sube al asistente (RAG) | el **texto de los fragmentos de los documentos** (embeddings en Voyage; vectores y texto en un índice Pinecone, un namespace por tenant) | solo si `VOYAGEAI_API_KEY`, `PINECONE_API_KEY` e índice están configurados | `backend/ai/document_indexer.py`, `backend/service_config/registry.py` (servicio `rag`) |
 

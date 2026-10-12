@@ -10,7 +10,7 @@
   "per_minute_per_key": 120,
   "window_seconds": 60,
   "per_day_per_key": {
-   "demo": 0,
+   "demo": 200,
    "free": 0,
    "paid": 2000,
    "corporate": null

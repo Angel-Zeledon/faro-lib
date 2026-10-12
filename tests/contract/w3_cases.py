@@ -728,10 +728,11 @@ def run_w3(args, fx_a, db, h) -> list:
                       f"\nSTATE RS {json.dumps(dr)[:800]}")
             results.append((h.Case(case.name, case.method, case.path, route=case.route),
                             "FAIL" if problems else "PASS", problems))
-        untouched = capture(db, foreign) == foreign_before
+        foreign_delta = delta(foreign_before, capture(db, foreign))
         results.append((h.Case("foreign tenant untouched", "-", "-", route="(tenant scope)"),
-                        "PASS" if untouched else "FAIL",
-                        [] if untouched else ["another tenant's rows were written"]))
+                        "FAIL" if foreign_delta else "PASS",
+                        [f"another tenant's rows were written: {table}: {json.dumps(d)[:800]}"
+                         for table, d in sorted(foreign_delta.items())]))
     finally:
         if not args.keep:
             for fx in (fx_a, fx_b, fx_c):

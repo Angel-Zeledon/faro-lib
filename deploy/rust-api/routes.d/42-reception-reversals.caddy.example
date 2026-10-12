@@ -2,11 +2,12 @@
 # /etc/caddy/routes.d/ to send this group to Rust; move it to off/ and
 # `caddy reload` to send it back to Python.
 #
-# backend-rs/src/routes/reception_reversals.rs, exact paths, POST only:
+# backend-rs/src/routes/w3/reversals.rs, exact paths, POST only:
 #   POST /api/v1/inventory/po/{id}/unreceive
 #   POST /api/v1/inventory/po/{id}/unsend
-# The forward actions (receive, send) stay on Python: they teach the supplier
-# lead time and call the notification senders.
+# Receiving (`POST /po/{id}/receive`, routes/w3/receive.rs) is ported and
+# contract-green too (docs/rust-migration.md, wave 3b) but has no gateway file
+# yet; sending stays on Python (it calls the notification senders).
 
 @rs_reception_reversals {
 	method POST

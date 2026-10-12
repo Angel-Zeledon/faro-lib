@@ -149,6 +149,45 @@ def effective_for(tenant_id: str, user_id: str) -> Effective:
     return Effective(True, frozenset(p for p in perms if p in PERMISSION_SET), row["role_id"])
 
 
+def escalation(excess) -> AppError:
+    """The Rust role routes' `custom_role_escalation`, same text and params."""
+    return AppError(
+        "custom_role_escalation",
+        "You cannot grant, change or remove permissions you do not hold yourself.",
+        status_code=403,
+        params={"permissions": sorted(excess)},
+    )
+
+
+def ensure_may_manage_user(tenant_id: str, caller_id: str, target_user_id: Optional[str]) -> None:
+    """A restricted caller (one holding a custom role) may only create, change
+    or remove a person whose powers lie inside the caller's own set: the rule
+    the Rust role routes apply, applied to the user routes too, so `manage_users`
+    is not a back door to `manage_roles`.
+
+    `target_user_id=None` is a NEW user, who starts with no custom role and so
+    holds the whole catalogue. An unknown target is left alone (the route
+    answers its own 404). An unrestricted caller is never affected.
+    """
+    caller = effective_for(tenant_id, caller_id)
+    if not caller.restricted:
+        return
+    if target_user_id is None:
+        target_set = PERMISSION_SET
+    else:
+        from backend.db.connection import query_one
+
+        exists = query_one("SELECT 1 AS x FROM users WHERE id = %s AND tenant_id = %s",
+                           (target_user_id, tenant_id))
+        if not exists:
+            return
+        target = effective_for(tenant_id, target_user_id)
+        target_set = target.permissions if target.restricted else PERMISSION_SET
+    excess = set(target_set) - set(caller.permissions)
+    if excess:
+        raise escalation(excess)
+
+
 def denied(permission: str) -> AppError:
     return AppError(
         "permission_denied",

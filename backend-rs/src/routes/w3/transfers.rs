@@ -30,7 +30,6 @@ use crate::inventory::events::{self, TRANSFER_CREATED};
 use crate::inventory::pydt::fmt_g;
 use crate::inventory::scope::{self, reject_slash, require_in_scope};
 use crate::inventory::stock::{self, record_snapshot, StockData, Val};
-use crate::inventory::validate::float_ge;
 use crate::inventory::warehouses;
 use crate::limits::{enforce_limit, take_tenant_lock};
 use crate::pycompat::py_strip;

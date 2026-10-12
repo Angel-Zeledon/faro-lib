@@ -550,6 +550,33 @@ async fn load_export(state: &AppState, tenant_id: &str) -> Result<Option<Export>
         tables.push((*stem, rows_to_cells(&rows, &kinds)?));
     }
 
+    // The tenant's side of the organization hierarchy, as
+    // `backend/organizations/service.py::export_rows` builds it: the parent
+    // gets its links (never the code hash) and its grants; the child only that
+    // a link exists and how it ended, never the parent's id or label.
+    const ORG_PARTS: [(&str, &str, &str, &str); 3] = [
+        ("org_links_as_parent", "org_links",
+         "id, parent_tenant_id, child_tenant_id, label, status, code_expires_at, created_by, created_at, \
+          accepted_by, accepted_at, revoked_by, revoked_at, revoked_side",
+         "FROM org_links WHERE parent_tenant_id = $1 ORDER BY created_at"),
+        ("org_link_grants", "org_link_grants", "link_id, user_id, granted_by, granted_at",
+         "FROM org_link_grants g JOIN org_links l ON l.id = g.link_id WHERE l.parent_tenant_id = $1 \
+          ORDER BY g.granted_at"),
+        ("org_links_as_child", "org_links", "id, status, accepted_by, accepted_at, revoked_at, revoked_side",
+         "FROM org_links WHERE child_tenant_id = $1 ORDER BY created_at"),
+    ];
+    for (stem, table, cols, from_where) in ORG_PARTS {
+        let (list, kinds) = select_list(pool, table, cols).await?;
+        let list = if table == "org_link_grants" {
+            // Qualified: the join also has an `id` and timestamps of its own.
+            list.split(", ").map(|c| format!("g.{c}")).collect::<Vec<_>>().join(", ")
+        } else {
+            list
+        };
+        let rows = sqlx::query(&format!("SELECT {list} {from_where}")).bind(tenant_id).fetch_all(pool).await?;
+        tables.push((stem, rows_to_cells(&rows, &kinds)?));
+    }
+
     let shots: Vec<(String,)> = sqlx::query_as(
         "SELECT screenshot_path FROM feedback_reports WHERE tenant_id = $1 AND screenshot_path IS NOT NULL",
     )
