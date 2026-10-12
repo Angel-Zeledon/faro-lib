@@ -98,7 +98,9 @@ export default function StructuredData() {
       // to this entity instead of to a generic phrase.
       alternateName: ['Stock AI', 'StockAI.es'],
       url: `${SITE_URL}/`,
-      logo: `${SITE_URL}/og-image.png`,
+      // A square mark: search engines build the site icon and the knowledge
+      // panel logo from this, and the 1200x630 social card crops badly.
+      logo: `${SITE_URL}/icon.png`,
       areaServed: 'Latin America',
       contactPoint: {
         '@type': 'ContactPoint',
