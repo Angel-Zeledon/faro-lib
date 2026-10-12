@@ -1,4 +1,5 @@
 'use client'
+import FreshnessChip from '@/components/inventory/FreshnessChip'
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -2837,6 +2838,9 @@ export default function InventoryPage() {
   />
  </div>
 
+ <FreshnessChip canRefresh={canEdit} visibleSkus={data?.items.map(i => i.sku)}
+  onRefreshed={() => { if (sessionId) void load(sessionId) }} />
+
  <MenuButton
   icon={<MoreHorizontal size={14} />}
   title={t('inventory.menu_more')}
@@ -2851,6 +2855,9 @@ export default function InventoryPage() {
    { label: t('nav.inventory_setup'), icon: <Sliders size={12} />, onSelect: () => router.push('/configurar-inventario') },
    // Counting is writing (it ends in an adjustment), so a viewer is not offered it.
    ...(canEdit ? [{ label: t('count.page_title'), icon: <ScanLine size={12} />, onSelect: () => router.push('/conteo-fisico') }] : []),
+   // Keeping stock in step with the customer's own database is configuration
+   // that writes inventory, so a viewer is not offered it.
+   ...(canEdit ? [{ label: t('nav.inventory_sync'), icon: <RefreshCw size={12} />, onSelect: () => router.push('/sincronizacion') }] : []),
   ]}
  />
  </div>

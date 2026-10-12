@@ -5,6 +5,7 @@ import {
   ShoppingCart, Truck, Upload, ClipboardList, History, Database,
   FlaskConical, ListChecks, MessageSquare, Target, Clock, Code2, ServerCog,
   ScrollText, Settings, ScanLine, ClipboardCheck, FileCheck2, CreditCard, Network, Scale, Mail,
+  RefreshCw,
 } from 'lucide-react'
 import { has, UNKNOWN_FACTS, type TenantFacts } from '@/hooks/useTenantFacts'
 
@@ -56,6 +57,9 @@ export const SCREENS: Screen[] = [
   // Counted with the phone, from Inventario's menu and the command palette. Not
   // a sidebar entry: it is a task done now and then, not a daily screen.
   { href: '/conteo-fisico',         labelKey: 'count.page_title',    Icon: ScanLine,     parent: '/inventario' },
+  // Inventory kept in step with the customer's own database (a connected
+  // SQL / MongoDB source). Reached from Inventario and from a database source.
+  { href: '/sincronizacion',        labelKey: 'nav.inventory_sync',  Icon: RefreshCw,    parent: '/inventario' },
 
   // ── Under Pronósticos: the analysis tabs (ANALYSIS_TABS below) ─────────────
   { href: '/escenarios',            labelKey: 'nav.scenarios',       Icon: FlaskConical, parent: '/pronosticos', visibleWhen: f => has(f.completedSessions) },

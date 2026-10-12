@@ -105,6 +105,9 @@ def run_probe(cfg: dict, *, tenant_id: Optional[str]) -> dict:
                              "server_version": None, "read_only_session": None}
 
     started = time.monotonic()
+    if (cfg.get("engine") or "") == "mongodb":
+        from backend.datasources.mongo import run_mongo_probe
+        return run_mongo_probe(cfg, tenant_id=tenant_id)
     try:
         spec = spec_from_stored(cfg)
     except AppError as exc:

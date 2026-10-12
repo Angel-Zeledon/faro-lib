@@ -2106,6 +2106,9 @@ _MIGRATIONS += _SCHEDULED_REPORTS
 # Decision links for purchase-order approvals (after approvals and the outbox).
 from backend.inventory.po_approval_link_migrations import MIGRATIONS as _PO_APPROVAL_LINKS  # noqa: E402
 _MIGRATIONS += _PO_APPROVAL_LINKS
+# Inventory sync from a customer's own database (backend/inventory_sync/).
+from backend.inventory_sync.migrations import MIGRATIONS as _INVENTORY_SYNC  # noqa: E402
+_MIGRATIONS += _INVENTORY_SYNC
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

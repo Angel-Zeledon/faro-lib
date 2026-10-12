@@ -104,6 +104,10 @@ PINNED = {
                            "latest_safe_order_date", "order_date_passed"),
     "commitment.fulfilled": ("commitment_id", "sku", "warehouse", "warehouse_id", "customer",
                              "delivery_date", "quantity", "fulfilled_at"),
+    "inventory_sync.run_finished": ("profile_id", "profile_name", "run_id", "status", "created",
+                                    "updated", "unchanged", "rejected"),
+    "inventory_sync.blocked": ("profile_id", "profile_name", "run_id", "health", "reason_code"),
+    "inventory_sync.recovered": ("profile_id", "profile_name", "run_id", "health", "reason_code"),
     "webhook.test": ("webhook_id",),
 }
 

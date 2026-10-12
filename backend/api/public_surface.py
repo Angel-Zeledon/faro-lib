@@ -47,6 +47,12 @@ EXPOSED_TAGS: frozenset[str] = frozenset({
     "inventory", "inventory-recommendation-log", "inventory-reversals",
     "scenarios", "ai-insights", "entitlements", "currency", "timezone",
     "freshness", "alerts",
+    # Inventory sync STATUS: profiles, their freshness and run history (reads).
+    "inventory-sync-status",
+    # Inventory sync CONFIGURATION too (owner, 2026-10-12): the customer's
+    # developers wire it up from CI with a write key — the same dry-run gate,
+    # brake and audit as the screen; a read key only reads.
+    "inventory-sync",
     # One endpoint speaking MCP over five READ tools (backend/mcp/catalog.py).
     "mcp",
 })

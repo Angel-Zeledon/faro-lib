@@ -69,6 +69,16 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # and it makes this server connect to the customer's database.
     ("POST", "/data-sources/{source_id}/test-connection"): _r("dataset.connection_tested", "dataset", "source_id"),
     ("DELETE", "/data-sources/{source_id}"):        _r("dataset.deleted", "dataset", "source_id"),
+    # inventory sync: what is read from the customer's database and written to stock
+    ("POST", "/inventory-sync/profiles"):               _r("inventory_sync.profile_created", "inventory_sync"),
+    ("PATCH", "/inventory-sync/profiles/{profile_id}"): _r("inventory_sync.profile_updated", "inventory_sync", "profile_id"),
+    ("DELETE", "/inventory-sync/profiles/{profile_id}"): _r("inventory_sync.profile_deleted", "inventory_sync", "profile_id"),
+    ("POST", "/inventory-sync/profiles/{profile_id}/enable"): _r("inventory_sync.profile_enabled", "inventory_sync", "profile_id"),
+    ("POST", "/inventory-sync/profiles/{profile_id}/disable"): _r("inventory_sync.profile_disabled", "inventory_sync", "profile_id"),
+    ("POST", "/inventory-sync/profiles/{profile_id}/run"): _r("inventory_sync.run_started", "inventory_sync", "profile_id"),
+    ("POST", "/inventory-sync/refresh"):                _r("inventory_sync.refresh_requested", "inventory_sync"),
+    ("POST", "/inventory-sync/profiles/apply"):         _r("inventory_sync.profile_applied", "inventory_sync"),
+    ("POST", "/inventory-sync/profiles/{profile_id}/ingest"): _r("inventory_sync.rows_pushed", "inventory_sync", "profile_id"),
     # users (invites, role changes and deactivation are recorded by their own events)
     ("PATCH", "/users/{user_id}/permissions"):      _r("user.permissions_changed", "user", "user_id"),
     # warehouses

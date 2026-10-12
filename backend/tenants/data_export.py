@@ -120,6 +120,10 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("spike_edits", "spike_edits", "*"),
     ("spike_edit_applications", "spike_edit_applications", "*"),
     ("sku_analogies", "sku_analogies", "*"),
+    # Inventory sync: the profiles (no secrets live here; the connection's
+    # password stays on the data source) and the run log.
+    ("inventory_sync_profiles", "inventory_sync_profiles", "*"),
+    ("inventory_sync_runs", "inventory_sync_runs", "*"),
     ("po_approval_rules", "po_approval_rules", "*"),
     ("po_approvals", "po_approvals", "*"),
     ("po_approval_delegations", "po_approval_delegations", "*"),
@@ -361,6 +365,15 @@ _DELETE_ORDER: list[str] = [
     "spike_edit_applications",
     "spike_edits",
     "sku_analogies",
+    # Inventory sync, children first (all cascade from the tenant too).
+    "inventory_sync_staging",
+    "inventory_sync_idempotency",
+    "inventory_sync_ingest_batches",
+    "inventory_sync_applied_movements",
+    "inventory_sync_ledger_balances",
+    "inventory_sync_keys",
+    "inventory_sync_runs",
+    "inventory_sync_profiles",
     # Supplier confirmation answers, newest dependency first. They cascade from
     # the tenant, listed because this is the reviewable answer to "what belongs
     # to a tenant".
