@@ -36,7 +36,7 @@ cookies de publicidad.
 | Cuenta y datos del negocio | mientras exista la cuenta | política de privacidad (`legal.ts`, sección "retention") |
 | **Sesiones de pronóstico** | **son permanentes**: "Eliminar" se volvió "archivar"; la fila, sus resultados y sus artefactos quedan y solo salen de la lista de trabajo hasta que alguien las restaure | `backend/db/migrations.py:1458 · Sessions are permanent (2026-10-04)` |
 | Cuenta de prueba (`/prueba`) | 24 h y se borra entera, salvo que haya pedido contacto (solicitud `new`) | `backend/workers/worker.py:572 · def _trial_reaper_loop` |
-| Tenant borrado | todas sus tablas y archivos se borran a la vez | `backend/tenants/data_export.py:479 · def delete_tenant` |
+| Tenant borrado | todas sus tablas y archivos se borran a la vez | `backend/tenants/data_export.py:481 · def delete_tenant` |
 | Copias de seguridad | nocturnas, 14 días (cifra de la política de privacidad y del DPA) | `deploy/README.md` (sección "Backups"); el script real vive en el servidor: **NO VERIFICADO** |
 | Eventos de intentos (login, trial) | solo dentro de su ventana (minutos a 24 h) | `backend/api/v1/auth.py::_check_rate` |
 | `activity_logs` (auditoría) | **sin política de retención**: crece sin límite | `docs/stability.md`, "What is deliberately NOT here" (**BRECHA**) |
@@ -57,7 +57,7 @@ tenant las elimina. Hay que decirlo a quien pregunte por "derecho de supresión 
 - **Borrar:** `DELETE /tenant` (solo `admin`, exige escribir el slug del tenant o `DELETE`;
   irreversible) (`backend/api/v1/tenant_data.py:47 · @router.delete("")`). Borra tabla por tabla
   dentro de una transacción y luego los directorios de `storage/`
-  (`backend/tenants/data_export.py:458 · _STORAGE_CATEGORIES = (`). Un test falla si aparece una tabla con
+  (`backend/tenants/data_export.py:460 · _STORAGE_CATEGORIES = (`). Un test falla si aparece una tabla con
   `tenant_id` que el borrado no cubre
   (`backend/tests/test_tenant_data.py:211 · def test_delete_order_covers_every_tenant_scoped_table`).
 - **Lo que el borrado NO hace (BRECHAS):**
