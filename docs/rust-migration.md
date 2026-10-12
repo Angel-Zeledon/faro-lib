@@ -2739,3 +2739,127 @@ offsetting it 30 minutes.
 **Divergences**: none against Python (nothing to diverge from). Decision rule for
 the owner: external recipients can only be addresses an admin put on the
 allow-list; removing an address from the list stops mail to it at the next run.
+
+## Batch 8: verification, security review, wave 3b (2026-10-11, `integration/batch8`)
+
+Branch `integration/batch8` from `main` 5979dd7. Not merged, not pushed, not
+deployed. Everything below ran on this machine against a DISPOSABLE Postgres 18
+cluster (own data directory in a temp folder, port 5561, `timezone = UTC`, trust
+auth), never the dev or production data. Docker was not running, so no image was
+built.
+
+### What the full contract harness had become, and what was fixed in it
+
+The "474/477" baseline predates the batch-6/7 merges. On `main` the full harness
+**could not finish**: four merge splices had broken it.
+* `run_delegation` was a 10-line header (it returned `None`, so the run died at
+  the end and printed no verdict at all); its cases sat inside `run_cost_centers`,
+  and the real cost-center cases were dead code after `run_org`'s `return`.
+* `run_audit_stream` was its 9-line header; its 268-line body sat inside
+  `run_org`, where it crashed.
+* `run_saml` and `run_rd` had lost their final `return out` (the next section's
+  header took its place), so their verdicts were discarded.
+All four were rebuilt from the feature branches and asserted line for line
+against them; an AST scan finds no other function that can fall off its end, and
+no other function shorter than its branch version.
+
+Then the sections were made independent of their order on the shared tenant
+(each sets its own premise instead of inheriting one): `run_org` runs last (its
+final step erases the shared tenant, so every later section ran against a deleted
+tenant); custom roles clear the roles they assign; delegation and cost centers set
+their own approvers and rules; consensus starts with no approver; scheduled
+reports get their own tenant; audit stream puts the time zone back; the R1 case
+that stores `settings.currency` as a list puts it back (that value makes every
+route reading the currency 500, on both services). A crashing section, or one
+that returns nothing, is now a recorded FAIL with its traceback instead of the end
+of the run. `tests/contract/run_section.py` re-runs one or several sections on
+one tenant in minutes. The env the harness needs is listed in its docstring.
+
+**Final full run: 2469 of 2475 pass, 6 fail, 7 skip** (Python and Rust from this
+branch, debug build). The 6 failures are clock-dependent, not service defects;
+the run ended at about 21:00 in UTC-6, when the local date is one day behind UTC:
+* 2 outlook cover dates and 3 future/expired delegation cases: the harness builds
+  "tomorrow" from the machine's local date; both services read the DATABASE date
+  (UTC) or compare it with UTC timestamps, and agree with each other (Python
+  approves through the delegation Rust stored as active). In production every
+  clock is UTC.
+* 1 scheduled-report worker case expects the next weekly slot more than 24 h away;
+  the run happened 9.5 h before Monday 06:00 Costa Rica.
+The 7 skips are the documented ones (plan gates and ceilings under
+`TESTING_MODE=true`, portal rate limits, the MFA throttle without
+`--rust-strict`, one renewal comparison, one approval-link group).
+
+Wave 3 alone (`run_w3.py`): **382/382**. SAML alone: 78/78. Scheduled reports
+alone: 72/73 (the time-of-week case).
+
+### Defects found and fixed (real ones, in the services)
+
+Security (each with a test that failed before the fix):
+1. **Custom-role escalation through the user routes** (Python). A restricted
+   admin holding only `view_users` + `manage_users` could invite a new admin
+   (a new person has no custom role, i.e. the whole catalogue), promote a
+   role-less colleague to admin, or suspend, delete or re-scope one. The Rust
+   role routes refused exactly this; the Python user routes never asked.
+   `permissions.ensure_may_manage_user` now applies the same rule
+   (`custom_role_escalation`) to create, invite, patch, warehouse scope, delete
+   and status. 5 new pytest cases failed before the fix; 3 positive cases pin
+   that unrestricted admins and in-set edits are untouched.
+2. **58 mutating routes had no permission rule**, so ANY user with a custom role
+   got 403 `unclassified_route` on them: enrolling in two-step sign-in (a
+   restricted user could not enrol, so a tenant requiring MFA locked them out),
+   IP allowlist, session policy, audit stream, org links, cost centers, approval
+   chains, consensus, customer portal, allocation, recurring deliveries,
+   scheduled reports, approval links, the internal render. All classified (both
+   copies of `permissions.json`), plus read rules for the audit stream, IP
+   allowlist, session policy and MFA policy. `test_permission_catalogue_parity.py`
+   was red on `main` because of it.
+3. **MFA reset of a superior** (Rust, live route). `POST /mfa/users/{id}/reset`
+   let a restricted admin with `manage_users` wipe an unrestricted admin's
+   enrollment and sessions. Same escalation rule now; contract case added.
+
+Correctness:
+4. `exchange_rates` was in neither tenant list (`data_export.py`): the data export
+   left out every rate, erasure relied on the FK cascade.
+   `test_delete_order_covers_every_tenant_scoped_table` was red on `main`.
+5. Rust tenant export (not enabled) missed 24 tables (stale generated list) and the
+   three org-link members Python adds by hand; both fixed.
+6. Rust PO-approval valuation (not enabled) valued a foreign-currency line at
+   qty x cost instead of its recorded `value_base`, and summed without CPython
+   3.12's compensation: ported `line_base_value` and `py_sum`.
+7. Wave-3 PO item rows (reception and the registered `unreceive`) lacked the five
+   multicurrency fields Python added after the port.
+8. `%2F` in a path: Python 404 before authentication, Rust 401 (waves 1-2): one
+   global middleware now (divergence 15).
+9. The live commitment outlook could answer 500 with nothing in the log (a
+   currency setting stored as a list, three invariant paths): they log now.
+10. `GET /alerts/kinds` order differed from `events.py`; `public-api.json` was
+    stale (demo tier API calls).
+
+### Security review: what was looked at and found sound
+
+SAML: Rust only stores configuration (https sign-on URL without credentials,
+RSA >= 2048 certificates, domain ownership by the admin's verified address, one
+protocol per tenant, enforcement only after an admin signed in through the same
+provider, no enforcement while the provider changes). Python's ACS consumes the
+single-use flow before validating, binds the response to the request id and the
+browser cookie, requires the reference URI to be the signature's own parent,
+verifies every signature against stored certificates only (KeyInfo ignored),
+refuses DTDs, encrypted content, unknown conditions, a second assertion and
+misplaced signatures, and redirects only to the frontend. MFA: secrets
+Fernet-encrypted, recovery codes HMAC'd, time steps and codes burned by
+compare-and-set, constant-time comparison, rate shared with the sign-in
+challenge, reset tenant-scoped. Org hierarchy: tenant ids derived only from the
+verified identity and live grants; a foreign id is a flat 404. Session policy and
+IP allowlist: as documented in their sections (client address counted from the
+right, lockout guard). Not covered by this review: the OIDC and social sign-in
+paths, and the production `TRUSTED_PROXY_HOPS` value (not readable from here).
+
+### Owed
+
+* A browser walk of the screens touched by fixes 1-3 (user management with a
+  restricted admin, MFA enrollment with a custom role).
+* A contract run at a time when local and UTC dates agree (or on a UTC machine),
+  to see the 6 clock cases pass, and the harness's "today" made the database's.
+* Gateway files for wave 3 (none exist besides the disabled reversal example),
+  and a production run of any migrated (non Rust-only) group.
+* The Docker image (Docker was off).
