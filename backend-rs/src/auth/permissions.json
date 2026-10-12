@@ -66,6 +66,7 @@
     {"class": "write", "prefix": "/data-sources/{}/export-query", "permission": "export_data"},
 
     {"class": "write", "prefix": "/inventory", "permission": "manage_inventory"},
+    {"class": "write", "prefix": "/inventory-sync", "permission": "manage_inventory"},
     {"class": "write", "prefix": "/committed-demand", "permission": "manage_inventory"},
     {"class": "write", "prefix": "/supply-contracts", "permission": "manage_inventory"},
     {"class": "write", "prefix": "/demand-plans", "permission": "manage_inventory"},
@@ -128,6 +129,7 @@
     {"class": "read", "prefix": "/datasets", "permission": "view_data_sources"},
     {"class": "read", "prefix": "/data-sources", "permission": "view_data_sources"},
     {"class": "read", "prefix": "/inventory", "permission": "view_inventory"},
+    {"class": "read", "prefix": "/inventory-sync", "permission": "view_inventory"},
     {"class": "read", "prefix": "/inventory/report", "permission": "export_data"},
     {"class": "read", "prefix": "/inventory/status/export-po", "permission": "export_data"},
     {"class": "read", "prefix": "/committed-demand", "permission": "view_inventory"},
