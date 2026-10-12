@@ -3902,6 +3902,11 @@ def run_delegation(args, fx: Fixture, db) -> list:
     # Invited people have no password yet, so their status is not 'active'.
     cur.execute("UPDATE users SET status = 'active' WHERE id IN (%s, %s, %s)",
                 (fx.analyst_id, sub_id, fx.viewer_id))
+    # This section's premise, set here rather than inherited: the analyst is
+    # the ONLY approver and there is one rule (earlier sections flag the admin
+    # as an approver and leave rules behind).
+    cur.execute("UPDATE users SET can_approve_po = FALSE WHERE tenant_id = %s", (fx.tenant_id,))
+    cur.execute("DELETE FROM po_approval_rules WHERE tenant_id = %s", (fx.tenant_id,))
     cur.execute("UPDATE users SET can_approve_po = TRUE WHERE id = %s", (fx.analyst_id,))
     cur.execute("""INSERT INTO po_approval_rules (tenant_id, threshold, created_by)
                    VALUES (%s, 500, %s)""", (fx.tenant_id, fx.admin_id))
@@ -5880,114 +5885,6 @@ def run_audit_stream(args, fx: Fixture, db) -> list:
     route = "audit-stream"
     tid = fx.tenant_id
     S = f"{API}/audit-stream"
-# ── ORG: organization hierarchy (Rust only, no Python route) ────────────────
-#
-# There is no Python twin to diff against: `/org/*` exists only in Rust, so
-# these cases assert the Rust answers and the database state they leave. The
-# cases are adversarial on purpose: this is the one feature where a bug shows
-# one tenant another tenant's purchasing data.
-#
-# Five throwaway tenants: HOLDING (the main fixture: admin, analyst, viewer),
-# SUB1 and SUB2 (subsidiaries), OUT (linked to nothing) and, when a case needs a
-# second holding, OUT creates the codes. Each tenant's data is seeded with
-# numbers that cannot be confused (OUT's are enormous), so a leak shows up as a
-# number or an id in a response that must not contain it.
-
-ORG_ROUTES = [
-    ("GET", "/org/overview", None),
-    ("GET", "/org/links", None),
-    ("POST", "/org/links", {"label": "x"}),
-    ("POST", "/org/links/accept", {"code": "orgl_" + "a" * 48}),
-    ("DELETE", "/org/links/x", None),
-    ("GET", "/org/links/x/members", None),
-    ("PUT", "/org/links/x/members/y", None),
-    ("DELETE", "/org/links/x/members/y", None),
-    ("GET", "/org/consolidated/committed-demand", None),
-    ("GET", "/org/consolidated/stock-signals", None),
-    ("GET", "/org/consolidated/purchase-orders", None),
-    ("GET", "/org/consolidated/budgets", None),
-]
-ORG_VIEWS = ["committed-demand", "stock-signals", "purchase-orders", "budgets"]
-
-
-def org_seed(db, fx: Fixture, spec: dict) -> None:
-    """Business data for one tenant, straight into the database. `spec` keys:
-    commit (list of (qty, prob, on_top, status, withdrawn, days)), pos (list of
-    dicts), budget (dict), snapshot ('fresh'|'stale'|None, {signal: n})."""
-    cur = db.cursor()
-    t = fx.tenant_id
-    for qty, prob, on_top, status, withdrawn, days in spec.get("commit", []):
-        cur.execute(
-            """INSERT INTO committed_demand (tenant_id, sku, delivery_date, quantity, customer, probability,
-                                             on_top_of_base, status, created_by, contract_withdrawn_at)
-               VALUES (%s, %s, CURRENT_DATE + %s, %s, 'seed', %s, %s, %s, %s, CASE WHEN %s THEN NOW() END)""",
-            (t, f"ORG-{secrets.token_hex(3)}", days, qty, prob, on_top, status, fx.admin_id, withdrawn))
-    for po in spec.get("pos", []):
-        cur.execute(
-            """INSERT INTO inventory_po_log (tenant_id, generated_at, sku_count, total_units, total_value,
-                                             sent_at, paid_at, cancelled_at, reception_status)
-               VALUES (%s, NOW() - %s * INTERVAL '1 day', 1, 1, %s,
-                       CASE WHEN %s THEN NOW() END, CASE WHEN %s THEN NOW() END,
-                       CASE WHEN %s THEN NOW() END, %s)
-               RETURNING id""",
-            (t, po.get("age", 1), po.get("value"), po.get("sent", True), po.get("paid", False),
-             po.get("cancelled", False), po.get("reception", "pending")))
-        po_id = cur.fetchone()[0]
-        for qty, cost, status in po.get("lines", []):
-            cur.execute(
-                """INSERT INTO inventory_po_items (po_log_id, tenant_id, sku, recommended_qty, final_qty, unit_cost, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (po_id, t, f"ORGL-{secrets.token_hex(3)}", qty, qty, cost, status))
-    b = spec.get("budget")
-    if b:
-        rid = f"orgb_{secrets.token_hex(6)}"
-        cur.execute(
-            """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
-                                             amount, currency, scope_type, created_by)
-               VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, %s, %s, 'company', %s)""",
-            (rid, t, rid, b["amount"], b["currency"], fx.admin_id))
-        if b.get("other_scope"):
-            rid2 = f"orgb_{secrets.token_hex(6)}"
-            cur.execute(
-                """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
-                                                 amount, currency, scope_type, scope_value, created_by)
-                   VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, 5, %s, 'category', 'x', %s)""",
-                (rid2, t, rid2, b["currency"], fx.admin_id))
-    snap = spec.get("snapshot")
-    if snap:
-        kind, counts = snap
-        cur.execute("SELECT COALESCE(MAX(id), 0) FROM status_input_bumps WHERE tenant_id = %s", (t,))
-        version = cur.fetchone()[0]
-        n = sum(counts.values())
-        cur.execute(
-            """INSERT INTO inventory_status_snapshot_meta
-                   (tenant_id, session_id, period, service_level, generation, inputs_version, code_hash,
-                    computed_on, computed_at, n_rows)
-               VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 'x', CURRENT_DATE,
-                       CASE WHEN %s THEN NOW() - INTERVAL '3 hours' ELSE NOW() END, %s)""",
-            (t, version, kind == "stale", n))
-        for signal, c in counts.items():
-            for i in range(c):
-                cur.execute(
-                    """INSERT INTO inventory_status_snapshot
-                           (tenant_id, session_id, period, service_level, generation, sku, urgency_pos, signal,
-                            supplier_lc, search_text, has_stock, has_forecast, inventory_value, sort_keys, item,
-                            computed_at)
-                       VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 0, %s, '', '', true, true, %s, '{}', '{}', NOW())""",
-                    (t, f"{signal}-{i}", signal, 10.0))
-
-
-def run_org(args, fx: Fixture, db) -> list:
-    rs = args.rust
-    py = args.python
-    out: list = []
-    if db is None:
-        return [(Case("org (all)", "-", "-", route="ORG"), "SKIP", ["ORG needs --db: grants are checked in the database"])]
-
-    def q1(sql, params=()):
-        cur = db.cursor()
-        cur.execute(sql, params)
-        return cur.fetchone()
 
     def qa(sql, params=()):
         cur = db.cursor()
@@ -6256,6 +6153,122 @@ def run_org(args, fx: Fixture, db) -> list:
                status=404, code="audit_stream_not_configured")
     expect("audit-stream replay since without a destination is 404", "POST", f"{S}/replay", body={"since": "2999-01-01"},
            status=404, code="audit_stream_not_configured")
+    return out
+
+# ── ORG: organization hierarchy (Rust only, no Python route) ────────────────
+#
+# There is no Python twin to diff against: `/org/*` exists only in Rust, so
+# these cases assert the Rust answers and the database state they leave. The
+# cases are adversarial on purpose: this is the one feature where a bug shows
+# one tenant another tenant's purchasing data.
+#
+# Five throwaway tenants: HOLDING (the main fixture: admin, analyst, viewer),
+# SUB1 and SUB2 (subsidiaries), OUT (linked to nothing) and, when a case needs a
+# second holding, OUT creates the codes. Each tenant's data is seeded with
+# numbers that cannot be confused (OUT's are enormous), so a leak shows up as a
+# number or an id in a response that must not contain it.
+
+ORG_ROUTES = [
+    ("GET", "/org/overview", None),
+    ("GET", "/org/links", None),
+    ("POST", "/org/links", {"label": "x"}),
+    ("POST", "/org/links/accept", {"code": "orgl_" + "a" * 48}),
+    ("DELETE", "/org/links/x", None),
+    ("GET", "/org/links/x/members", None),
+    ("PUT", "/org/links/x/members/y", None),
+    ("DELETE", "/org/links/x/members/y", None),
+    ("GET", "/org/consolidated/committed-demand", None),
+    ("GET", "/org/consolidated/stock-signals", None),
+    ("GET", "/org/consolidated/purchase-orders", None),
+    ("GET", "/org/consolidated/budgets", None),
+]
+ORG_VIEWS = ["committed-demand", "stock-signals", "purchase-orders", "budgets"]
+
+
+def org_seed(db, fx: Fixture, spec: dict) -> None:
+    """Business data for one tenant, straight into the database. `spec` keys:
+    commit (list of (qty, prob, on_top, status, withdrawn, days)), pos (list of
+    dicts), budget (dict), snapshot ('fresh'|'stale'|None, {signal: n})."""
+    cur = db.cursor()
+    t = fx.tenant_id
+    for qty, prob, on_top, status, withdrawn, days in spec.get("commit", []):
+        cur.execute(
+            """INSERT INTO committed_demand (tenant_id, sku, delivery_date, quantity, customer, probability,
+                                             on_top_of_base, status, created_by, contract_withdrawn_at)
+               VALUES (%s, %s, CURRENT_DATE + %s, %s, 'seed', %s, %s, %s, %s, CASE WHEN %s THEN NOW() END)""",
+            (t, f"ORG-{secrets.token_hex(3)}", days, qty, prob, on_top, status, fx.admin_id, withdrawn))
+    for po in spec.get("pos", []):
+        cur.execute(
+            """INSERT INTO inventory_po_log (tenant_id, generated_at, sku_count, total_units, total_value,
+                                             sent_at, paid_at, cancelled_at, reception_status)
+               VALUES (%s, NOW() - %s * INTERVAL '1 day', 1, 1, %s,
+                       CASE WHEN %s THEN NOW() END, CASE WHEN %s THEN NOW() END,
+                       CASE WHEN %s THEN NOW() END, %s)
+               RETURNING id""",
+            (t, po.get("age", 1), po.get("value"), po.get("sent", True), po.get("paid", False),
+             po.get("cancelled", False), po.get("reception", "pending")))
+        po_id = cur.fetchone()[0]
+        for qty, cost, status in po.get("lines", []):
+            cur.execute(
+                """INSERT INTO inventory_po_items (po_log_id, tenant_id, sku, recommended_qty, final_qty, unit_cost, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (po_id, t, f"ORGL-{secrets.token_hex(3)}", qty, qty, cost, status))
+    b = spec.get("budget")
+    if b:
+        rid = f"orgb_{secrets.token_hex(6)}"
+        cur.execute(
+            """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
+                                             amount, currency, scope_type, created_by)
+               VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, %s, %s, 'company', %s)""",
+            (rid, t, rid, b["amount"], b["currency"], fx.admin_id))
+        if b.get("other_scope"):
+            rid2 = f"orgb_{secrets.token_hex(6)}"
+            cur.execute(
+                """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
+                                                 amount, currency, scope_type, scope_value, created_by)
+                   VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, 5, %s, 'category', 'x', %s)""",
+                (rid2, t, rid2, b["currency"], fx.admin_id))
+    snap = spec.get("snapshot")
+    if snap:
+        kind, counts = snap
+        cur.execute("SELECT COALESCE(MAX(id), 0) FROM status_input_bumps WHERE tenant_id = %s", (t,))
+        version = cur.fetchone()[0]
+        n = sum(counts.values())
+        cur.execute(
+            """INSERT INTO inventory_status_snapshot_meta
+                   (tenant_id, session_id, period, service_level, generation, inputs_version, code_hash,
+                    computed_on, computed_at, n_rows)
+               VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 'x', CURRENT_DATE,
+                       CASE WHEN %s THEN NOW() - INTERVAL '3 hours' ELSE NOW() END, %s)""",
+            (t, version, kind == "stale", n))
+        for signal, c in counts.items():
+            for i in range(c):
+                cur.execute(
+                    """INSERT INTO inventory_status_snapshot
+                           (tenant_id, session_id, period, service_level, generation, sku, urgency_pos, signal,
+                            supplier_lc, search_text, has_stock, has_forecast, inventory_value, sort_keys, item,
+                            computed_at)
+                       VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 0, %s, '', '', true, true, %s, '{}', '{}', NOW())""",
+                    (t, f"{signal}-{i}", signal, 10.0))
+
+
+def run_org(args, fx: Fixture, db) -> list:
+    rs = args.rust
+    py = args.python
+    out: list = []
+    if db is None:
+        return [(Case("org (all)", "-", "-", route="ORG"), "SKIP", ["ORG needs --db: grants are checked in the database"])]
+
+    def q1(sql, params=()):
+        cur = db.cursor()
+        cur.execute(sql, params)
+        return cur.fetchone()
+
+    def qa(sql, params=()):
+        cur = db.cursor()
+        cur.execute(sql, params)
+        return cur.fetchall()
+
     def ex(sql, params=()):
         db.cursor().execute(sql, params)
 
@@ -7680,49 +7693,64 @@ def run(args) -> int:
             hard = [p for p in problems if not p.startswith("(")]
             results.append((case, "FAIL" if hard else "PASS", problems))
         if not only_saml:
-            results += run_r3(args, fx, db)
-            results += run_r4(args, fx, db)
-            results += run_ip_allowlist(args, fx, db)
-            results += run_cd_resync(args, fx, db)
-            results += run_outbox(args, fx, db)
+            results += _guarded("run_r3", run_r3, args, fx, db)
+            results += _guarded("run_r4", run_r4, args, fx, db)
+            results += _guarded("run_ip_allowlist", run_ip_allowlist, args, fx, db)
+            results += _guarded("run_cd_resync", run_cd_resync, args, fx, db)
+            results += _guarded("run_outbox", run_outbox, args, fx, db)
             import w2b_cases  # noqa: PLC0415 - wave 2b section, its own file
-            results += w2b_cases.run_w2b(args, secret, db)
+            results += _guarded("w2b_cases.run_w2b", w2b_cases.run_w2b, args, secret, db)
             import w3_cases  # wave 3 (inventory hub): its own file, its own tenants
-            results += w3_cases.run_w3(args, fx, db, sys.modules[__name__])
-            results += run_delegation(args, fx, db)
-            results += cf_outlook_cases.run_cf(args, fx, db, sys.modules[__name__])
-            results += run_portal(args, fx, db)
+            results += _guarded("w3_cases.run_w3", w3_cases.run_w3, args, fx, db, sys.modules[__name__])
+            results += _guarded("run_delegation", run_delegation, args, fx, db)
+            results += _guarded("cf_outlook_cases.run_cf", cf_outlook_cases.run_cf, args, fx, db, sys.modules[__name__])
+            results += _guarded("run_portal", run_portal, args, fx, db)
             # MFA (tests/contract/mfa_cases.py): Rust-only routes + the Python login challenge.
             from mfa_cases import run_mfa  # noqa: PLC0415
-            results += run_mfa(sys.modules[__name__], args, fx, db)
-            results += run_fx_section(args, fx, db)
+            results += _guarded("run_mfa", run_mfa, sys.modules[__name__], args, fx, db)
+            results += _guarded("run_fx_section", run_fx_section, args, fx, db)
             # Custom roles (Rust-only routes + enforcement on both): own file.
             from custom_roles_cases import run_custom_roles
-            results += run_custom_roles(args, fx, db)
-            results += run_session_policy(args, fx, db)
-        results += run_saml(args, fx, db)
-        results += run_audit_stream(args, fx, db)
-        results += run_org(args, fx, db)
-        results += run_cost_centers(args, fx, db)
-        results += cf_money_cases.run_money(args, fx, db, sys.modules[__name__])
-        results += run_allocation(args, fx, db, dict(http=http, API=API, auth_for=auth_for, today_plus=today_plus, Case=Case,
+            results += _guarded("run_custom_roles", run_custom_roles, args, fx, db)
+            results += _guarded("run_session_policy", run_session_policy, args, fx, db)
+        results += _guarded("run_saml", run_saml, args, fx, db)
+        results += _guarded("run_audit_stream", run_audit_stream, args, fx, db)
+        results += _guarded("run_org", run_org, args, fx, db)
+        results += _guarded("run_cost_centers", run_cost_centers, args, fx, db)
+        results += _guarded("cf_money_cases.run_money", cf_money_cases.run_money, args, fx, db, sys.modules[__name__])
+        results += _guarded("run_allocation", run_allocation, args, fx, db, dict(http=http, API=API, auth_for=auth_for, today_plus=today_plus, Case=Case,
                                                      mint_access_token=mint_access_token, make_fixture=make_fixture,
                                                      erase_fixture=erase_fixture))
-        results += run_rd(args, fx, db)
-        results += run_cr(args, fx, db)
+        results += _guarded("run_rd", run_rd, args, fx, db)
+        results += _guarded("run_cr", run_cr, args, fx, db)
         # S&OP consensus: Rust-only routes, asserted against the database (consensus_cases.py).
         from consensus_cases import run_consensus  # noqa: PLC0415
-        results += run_consensus(args, fx, db, sys.modules[__name__])
+        results += _guarded("run_consensus", run_consensus, args, fx, db, sys.modules[__name__])
         import scheduled_reports_contract  # own file, same directory (sys.path[0] is this script's)
-        results += scheduled_reports_contract.run(args, fx, db, sys.modules[__name__])
+        results += _guarded("scheduled_reports_contract.run", scheduled_reports_contract.run, args, fx, db, sys.modules[__name__])
         # Approve or reject from a message: its own file, Rust-only routes.
         from approval_links_contract import run_approval_links  # noqa: PLC0415
-        results += run_approval_links(args, fx, db, {"http": http, "Case": Case, "API": API, "auth_for": auth_for,
+        results += _guarded("run_approval_links", run_approval_links, args, fx, db, {"http": http, "Case": Case, "API": API, "auth_for": auth_for,
                                                      "signup": _r4_signup, "mint": mint_access_token})
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
     return _report(args, fx, results)
+
+
+def _guarded(name: str, fn, *args, **kwargs) -> list:
+    """Run one section; a crash or a missing result list is a FAIL with the
+    traceback, and the run goes on (one crash used to discard every verdict)."""
+    import traceback  # noqa: PLC0415
+    try:
+        out = fn(*args, **kwargs)
+    except Exception:  # noqa: BLE001 - reported as a failure, never swallowed
+        return [(Case(f"{name}: section crashed", "-", "-", route=name), "FAIL",
+                 [traceback.format_exc()[-2000:]])]
+    if out is None:
+        return [(Case(f"{name}: section returned no results", "-", "-", route=name), "FAIL",
+                 ["the section function returned None"])]
+    return out
 
 
 def _report(args, fx, results) -> int:

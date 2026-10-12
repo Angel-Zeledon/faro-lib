@@ -256,6 +256,11 @@ def run_cf(args, fx, db, ns) -> list:
     else:
         pyi = {i["id"]: i for i in py.body["data"]["items"]}
         for key in ("short", "miss", "comp_a", "comp_b", "prob", "learned", "ontrack"):
+            if ids[key] not in pyi or ids[key] not in items:
+                problems.append(f"{key}: missing from the "
+                                f"{'python list' if ids[key] not in pyi else 'outlook'} "
+                                f"(python returned {len(pyi)} items)")
+                continue
             a, b = pyi[ids[key]], items[ids[key]]
             if a["at_risk"] != (b["shortfall_units"] > 0):
                 problems.append(f"{key}: python at_risk={a['at_risk']} outlook shortfall={b['shortfall_units']}")

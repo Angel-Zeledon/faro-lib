@@ -452,6 +452,9 @@ def run_custom_roles(args, fx, db) -> list:
          diff(normalize(a.body, set()), normalize(b.body, set())))
 
     # ── clean up what this section made, so the tenant erasure is the real test
+    # and the sections after this one see the fixture's people as they were:
+    # a custom role left on the analyst or admin narrows every later call.
+    db.cursor().execute("UPDATE users SET custom_role_id = NULL WHERE tenant_id = %s", (tid,))
     return out
 
 

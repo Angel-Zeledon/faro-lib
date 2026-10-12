@@ -1005,8 +1005,16 @@ def _tables_case(ct, db):
     cur.execute("""SELECT c.relname FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
                     JOIN pg_class p ON p.oid = k.confrelid WHERE k.contype = 'f' AND p.relname = 'tenants'""")
     fk = {r[0] for r in cur.fetchall()}
-    if fk - order - {"tenants"}:
-        problems.append(f"tables with an FK to tenants missing from the erasure list: {sorted(fk - order)}")
+    # org_links names tenants in parent_tenant_id / child_tenant_id, so
+    # delete_tenant ends those links itself (organizations.service
+    # .end_links_for_erasure, which also tells the surviving side) before the
+    # ordered deletes. Exempt only while that call is still there.
+    handled = set()
+    if "end_links_for_erasure" in (ROOT / "backend" / "tenants" / "data_export.py").read_text(encoding="utf-8"):
+        handled = {"org_links", "org_link_grants"}
+    if fk - order - {"tenants"} - handled:
+        problems.append(f"tables with an FK to tenants missing from the erasure list: "
+                        f"{sorted(fk - order - {'tenants'} - handled)}")
     rs_src = (ROOT / "backend-rs" / "src" / "routes" / "w2b" / "tenant_data.rs").read_text(encoding="utf-8")
     if "DELETE_ORDER" not in rs_src or "tenant_tables" not in rs_src:
         problems.append("tenant_data.rs does not use the generated lists")
