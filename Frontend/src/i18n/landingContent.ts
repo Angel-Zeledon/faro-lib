@@ -145,7 +145,7 @@ const es: ContentCopy = {
       label: 'Industrias',
       title: 'Predicción de ventas con StockAI, según tu tipo de negocio.',
       intro: 'Cada rubro compra distinto: plazos largos o cortos, miles de códigos o cientos, ventas parejas o a saltos. Estas páginas cuentan el problema de cada uno y qué parte de StockAI lo resuelve, sin promesas de resultados.',
-      metaTitle: 'StockAI por industria: predicción de ventas y compras para tu negocio',
+      metaTitle: 'StockAI por industria: predicción de ventas para tu negocio',
       metaDesc: 'Cómo aplica StockAI a consumo masivo, ferretería, farmacia, autopartes y retail: pronóstico de venta por producto, señales de compra, plazos reales de proveedor, mínimos de compra y temporadas.',
       lead: 'Elige el rubro más parecido al tuyo. Si el tuyo no está, la lógica es la misma: ventas históricas, existencias y el plazo de cada proveedor.',
       commonTitle: 'Lo que es igual en todos',
@@ -234,7 +234,7 @@ const es: ContentCopy = {
       pharmacy: {
         label: 'Farmacia y salud',
         short: 'Faltante que se nota de inmediato y producto que no conviene dejar envejecer.',
-        metaTitle: 'StockAI para farmacias y distribuidores de salud: pronóstico y compras',
+        metaTitle: 'StockAI para farmacias y distribuidores de salud: pronóstico',
         metaDesc: 'Pronóstico de ventas y compras para farmacias y distribuidoras de salud: pedir antes del quiebre, vigilar sobrestock y registrar la merma por vencimiento según cada droguería.',
         title: 'Pronóstico de ventas y compras para farmacias y distribuidores de productos de salud.',
         intro: 'Quedarse sin el producto que el cliente vino a buscar se nota de inmediato, y llenar la bodega de lo que se vence es dinero perdido. StockAI no reemplaza tu sistema regulatorio: te dice cuándo y cuánto pedir.',
@@ -347,7 +347,7 @@ const es: ContentCopy = {
     label: 'StockAI vs. Excel',
     title: 'StockAI contra una planilla de Excel, sin adornos.',
     intro: 'Excel es la herramienta con la que casi todos empezamos a comprar, y para un catálogo chico sigue siendo una gran opción. Esta página dice qué hace bien, dónde deja de alcanzar y qué cambia si pasas a StockAI.',
-    metaTitle: 'StockAI vs. Excel: pronóstico de ventas y compras, comparación honesta',
+    metaTitle: 'StockAI vs. Excel: pronóstico de ventas, comparación honesta',
     metaDesc: 'Qué hace bien Excel para estimar la venta y comprar, dónde se rompe (plazos de proveedor, muchos productos, promociones, varias bodegas) y qué cambia con StockAI.',
     fairTitle: 'Lo que Excel hace bien',
     fair: [

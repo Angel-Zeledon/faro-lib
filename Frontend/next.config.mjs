@@ -107,6 +107,12 @@ const nextConfig = {
       { source: '/(.*)', headers: SECURITY_HEADERS },
       // The worker must be re-fetched on every check, or a new deploy's worker
       // is never seen by a browser that cached the old one.
+      // Downloads, not pages: a PDF has no <head> to carry a canonical, so Search
+      // Console files each one under "duplicate, no canonical chosen". They stay
+      // downloadable from the landing and out of the search index.
+      { source: '/stockai-manual-es.pdf', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] },
+      { source: '/stockai-manual-en.pdf', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] },
+      { source: '/plantilla_stockai.csv', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] },
       { source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache, max-age=0' }] },
     ]
   },
