@@ -39,21 +39,9 @@ async fn get_po(pool: &PgPool, tenant_id: &str, po_log_id: &str) -> Result<Optio
     Ok(row.map(|r| row_json(&r)).transpose()?)
 }
 
-/// `get_po_items`.
-async fn get_po_items(conn: &mut sqlx::PgConnection, tenant_id: &str, po_log_id: &str) -> Result<Vec<Map<String, Value>>, ApiError> {
-    let rows = sqlx::query(
-        "SELECT id, sku, display_name, supplier, supplier_id, signal, status,
-                recommended_qty, final_qty, received_qty, unit_cost, warehouse
-           FROM inventory_po_items
-          WHERE po_log_id = $1 AND tenant_id = $2
-          ORDER BY supplier NULLS LAST, sku",
-    )
-    .bind(po_log_id)
-    .bind(tenant_id)
-    .fetch_all(&mut *conn)
-    .await?;
-    Ok(rows.iter().map(row_json).collect::<Result<_, _>>()?)
-}
+/// `get_po_items`: one implementation, shared with the reception routes, so a
+/// column added to Python's select (the multicurrency fields were) is added once.
+use super::receive::get_po_items;
 
 fn str_or_none(row: &Map<String, Value>, key: &str) -> Option<String> {
     row.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string)

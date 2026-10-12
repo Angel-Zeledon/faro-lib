@@ -303,7 +303,8 @@ fn lower_stripped(s: &str) -> String {
 /// `_order_facts`: value, warehouses and suppliers of the ordered lines.
 async fn order_facts(pool: &PgPool, tenant_id: &str, po: &Po) -> Result<Facts, ApiError> {
     let lines = sqlx::query(
-        "SELECT i.supplier, i.supplier_id, i.warehouse, i.final_qty, i.unit_cost \
+        "SELECT i.supplier, i.supplier_id, i.warehouse, i.final_qty, i.unit_cost, \
+                i.currency, i.value_base::float8 AS value_base \
            FROM inventory_po_items i \
           WHERE i.po_log_id = $1 AND i.tenant_id = $2 AND i.status IN ('approved', 'modified')",
     )
@@ -321,8 +322,10 @@ async fn order_facts(pool: &PgPool, tenant_id: &str, po: &Po) -> Result<Facts, A
         let warehouse: Option<String> = l.try_get("warehouse")?;
         let final_qty: Option<f64> = l.try_get("final_qty")?;
         let unit_cost: Option<f64> = l.try_get("unit_cost")?;
-        if let Some(c) = unit_cost {
-            priced.push(final_qty.unwrap_or(0.0) * c);
+        let currency: Option<String> = l.try_get("currency")?;
+        let value_base: Option<f64> = l.try_get("value_base")?;
+        if let Some(v) = line_base_value(final_qty, unit_cost, currency.as_deref(), value_base) {
+            priced.push(v);
         }
         warehouses.insert(lower_stripped(warehouse.as_deref().unwrap_or("")));
         if let Some(s) = supplier_id.filter(|s| !s.is_empty()) {
@@ -336,9 +339,23 @@ async fn order_facts(pool: &PgPool, tenant_id: &str, po: &Po) -> Result<Facts, A
         warehouses.insert(lower_stripped(d));
     }
     warehouses.retain(|w| !w.is_empty());
-    // `sum(priced)` starts from the int 0: adding the first float is exact.
-    let amount = if priced.is_empty() { None } else { Some(priced.iter().fold(0.0, |a, b| a + b)) };
+    // `sum(priced)`: CPython 3.12 compensates a float sum, so a plain fold can
+    // differ from Python in the last bits (and so right at a threshold).
+    let amount = if priced.is_empty() { None } else { Some(crate::inventory::calc::py_sum(&priced)) };
     Ok(Facts { amount, warehouses, supplier_ids, supplier_names })
+}
+
+/// `backend/fx/service.py::line_base_value`: a line's value in the tenant's
+/// own currency. A foreign line counts for the value recorded when the order
+/// was written (`value_base`), and not at all when it had no rate; a line with
+/// no cost is not valued.
+fn line_base_value(final_qty: Option<f64>, unit_cost: Option<f64>, currency: Option<&str>,
+                   value_base: Option<f64>) -> Option<f64> {
+    let cost = unit_cost?;
+    if currency.is_some_and(|c| !c.is_empty()) {
+        return value_base;
+    }
+    Some(final_qty.unwrap_or(0.0) * cost)
 }
 
 fn rule_matches(rule: &Rule, amount: f64, facts: &Facts) -> bool {
@@ -1337,4 +1354,22 @@ async fn notify_requester(pool: &PgPool, tenant_id: &str, po: &Po, last: &Latest
     m.created_by = Some(decider_id);
     m.dedupe_key = Some(&key);
     outbox::enqueue(pool, m).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::line_base_value;
+
+    #[test]
+    fn a_line_is_valued_as_backend_fx_values_it() {
+        // Own currency: quantity x cost; a missing quantity is zero.
+        assert_eq!(line_base_value(Some(10.0), Some(2.5), None, None), Some(25.0));
+        assert_eq!(line_base_value(None, Some(2.5), Some(""), Some(99.0)), Some(0.0));
+        // No cost: not valued, whatever else is there.
+        assert_eq!(line_base_value(Some(10.0), None, Some("USD"), Some(99.0)), None);
+        // Foreign: the value recorded at order time, never quantity x cost.
+        assert_eq!(line_base_value(Some(10.0), Some(2.5), Some("USD"), Some(13_000.0)), Some(13_000.0));
+        // Foreign with no rate: left out, never valued at 1.0.
+        assert_eq!(line_base_value(Some(10.0), Some(2.5), Some("USD"), None), None);
+    }
 }
