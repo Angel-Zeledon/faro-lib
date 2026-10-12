@@ -455,12 +455,18 @@ def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str
             prep.by_code["duplicate_key"] = prep.by_code.get("duplicate_key", 0) + first_rows
     valid = query_one("SELECT COUNT(*) AS n FROM inventory_sync_staging "
                       "WHERE run_id = %s AND NOT duplicate", (run_id,))["n"]
-    if valid > 10_000:
-        # Fresh statistics before the brake and apply joins over what was just
-        # staged: with the empty-table estimate the planner picks nested loops.
+    _fresh_stats(int(valid))
+    return prep, int(valid)
+
+
+def _fresh_stats(valid: int) -> None:
+    """Fresh statistics before the brake and apply joins over what was just
+    staged: with the empty-table estimate the planner picks nested loops with
+    sequential scans (a 20 000-row push snapshot measured 59 s in the missing
+    count alone; ~0.3 s after ANALYZE). ANALYZE samples, so it stays cheap."""
+    if valid > 1_000:
         execute("ANALYZE inventory_sync_staging")
         execute("ANALYZE inventory_sync_keys")
-    return prep, int(valid)
 
 
 def _vanished_count(profile_id: str, run_id: str) -> tuple[int, int]:
@@ -670,6 +676,7 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
                                   "AND NOT duplicate", (run_id,))["n"])
             execute("UPDATE inventory_sync_runs SET stage_complete = TRUE, rows_valid = %s, rejected = %s "
                     "WHERE id = %s", (valid, prep.rejected, run_id))
+            _fresh_stats(valid)
             if not override_brake:
                 _check_brake(profile, prep, valid, run_id, kind="full")
             execute("UPDATE inventory_sync_runs SET brake_passed = TRUE WHERE id = %s", (run_id,))
