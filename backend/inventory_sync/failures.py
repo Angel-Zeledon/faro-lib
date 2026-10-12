@@ -222,4 +222,5 @@ LIMITS: dict[str, str] = {
     "negative_stock_kept": "inventory_stock cannot hold a negative quantity; a negative balance is rejected (default) or clamped to 0 and counted.",
     "resumable_read": "A crash while READING restarts the read (nothing was applied); a crash while APPLYING resumes from the checkpoint.",
     "deletes_between_reconciles": "Incremental strategies see changes, not deletions of the whole row; deletions settle at the next full reconcile.",
+    "full_read_holds_snapshot": "A full read is one consistent statement: it takes no locks but keeps one read snapshot open while it streams (measured: about a minute for 1M rows on MySQL). Splitting it into pages would release the snapshot but read a moving table; schedule full reads off-peak and use incremental or continuous in between.",
 }
