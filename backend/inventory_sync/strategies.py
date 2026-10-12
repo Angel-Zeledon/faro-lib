@@ -117,6 +117,8 @@ def read_for_run(tenant_id: str, profile: dict, *, run_id: Optional[str] = None,
                  max_rows: Optional[int] = None, limit: Optional[int] = None,
                  batch_size: int = reader.BATCH, report: Optional[dict] = None) -> Iterator[list[dict]]:
     model = profile.get("stock_model") or "snapshot"
+    if "_projection" not in profile:
+        reader.prepare_projection(tenant_id, profile)
     if model == "ledger":
         from backend.inventory_sync import ledger
         yield from ledger.read_balances(tenant_id, profile, run_id=run_id, scope=scope,

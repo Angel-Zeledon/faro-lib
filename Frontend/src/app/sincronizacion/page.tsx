@@ -27,7 +27,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { translateErrorParts } from '@/lib/errorMessage'
-import { DevPanel, DoctorPanel, HealthPanel, RunDetailPanel } from '@/components/sync/SyncPanels'
+import { DevPanel, DoctorPanel, HealthPanel, PresetPicker, RunDetailPanel } from '@/components/sync/SyncPanels'
 
 const C = {
   border: 'var(--border)', text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
@@ -596,6 +596,22 @@ export default function InventorySyncPage() {
               ))}
             </div>
             {isPush && <p style={small}>{t('isync.push_hint')}</p>}
+            {!isPush && draftSource && (
+              <PresetPicker engine={draftSource.engine} onApply={body => {
+                setDraft(d => {
+                  if (!d) return d
+                  const mapping: Record<string, MappingRow> = {}
+                  for (const [f, m] of Object.entries(body.mapping || {})) if (m) mapping[f] = { ...m }
+                  return { ...d, name: d.name || body.name || '', source_kind: 'query', source_object: null,
+                           source_schema: null, source_query: body.source_query || '', mapping,
+                           stock_model: (body.stock_model as Draft['stock_model']) || 'snapshot',
+                           model_config_text: body.model_config && Object.keys(body.model_config).length
+                             ? JSON.stringify(body.model_config, null, 2) : '',
+                           strategy: body.strategy || 'auto', mode: 'full' }
+                })
+                setColumns([]); setSuggestion(null); setDry(null); setNotice(t('isync.preset_applied'))
+              }} />
+            )}
             {(draft.source_kind === 'table' || draft.source_kind === 'collection' || draft.source_kind === 'pipeline') && (
               <>
                 {!tables && <LoadingState label={t('isync.discovering')} />}
@@ -906,6 +922,14 @@ function DryRunCard({ dry, fieldLabel }: {
             <strong style={{ fontSize: 18, color }}>{dry[k]}</strong></div>
         ))}
       </div>
+      {(dry.advice?.length ?? 0) > 0 && (
+        <div role="alert" style={{ marginTop: 10, padding: 10, borderRadius: 8, border: `1px solid ${C.amber}` }}>
+          <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: C.amber }}>{t('isync.advice_title')}</p>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12.5 }}>
+            {dry.advice!.map((a, i) => <li key={i}>{t(`isync.advice.${a.code}`, a.params)}</li>)}
+          </ul>
+        </div>
+      )}
       {dry.unknown_warehouses.length > 0 && (
         <p role="alert" style={{ margin: '10px 0 0', fontSize: 12.5, color: C.red }}>
           {t('isync.unknown_warehouses', { list: dry.unknown_warehouses.join(', ') })}

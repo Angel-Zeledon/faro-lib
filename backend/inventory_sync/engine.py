@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from backend.config import settings
 from backend.db.connection import _json, execute, query, query_one
@@ -212,7 +213,9 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
         batches = batches(prep.extras)
     source = batches if batches is not None else strategies.read_for_run(
         tenant_id, profile, limit=sample, batch_size=min(sample, 1000), scope=scope)
-    for batch in source:
+    with _closing(source) as it:
+        all_batches = list(it)
+    for batch in all_batches:
         for row in prep.rows(batch):
             key = (row["sku"], row["warehouse"])
             if key in conflicts:
@@ -261,7 +264,10 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
             examples = _st.aggregate_examples(tenant_id, profile, sample_skus)
     except Exception:  # noqa: BLE001 - the worked example is a help, never a reason to fail the preview
         log.exception("inventory sync: worked example failed")
+    from backend.inventory_sync import advice as _advice
+    hints = _advice.lint(profile, set(prep.seen_columns) | set(profile.get("_source_columns") or []))
     return {
+        "advice": hints,
         **prep.summary(),
         "valid": len(valid), "would_create": creates, "would_update": updates,
         "would_leave_unchanged": unchanged, "changes_sample": changes_sample,
@@ -384,6 +390,25 @@ def _stage_batch(tenant_id: str, run_id: str, prep: "_Prep", rows: list[dict], p
                     ([k[0] for k in dup_keys], [k[1] for k in dup_keys], run_id))
 
 
+@contextmanager
+def _closing(batches: Any) -> Iterator[Any]:
+    """Iterate a source and ALWAYS close it, also when the run stops halfway
+    (brake, schema drift, profile deleted, an error). A read generator holds
+    an open cursor inside a read transaction on the CUSTOMER's database; left
+    to the garbage collector — which a traceback can postpone for minutes — it
+    keeps a snapshot open and a share lock that blocks their DDL."""
+    it = iter(batches)
+    try:
+        yield it
+    finally:
+        close = getattr(it, "close", None)
+        if close is not None:
+            try:
+                close()
+            except Exception:  # noqa: BLE001 - closing a broken connection may raise; nothing to keep
+                log.debug("inventory sync: closing the source read failed", exc_info=True)
+
+
 def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str],
            batches: Optional[Iterable[list[dict]]] = None, scope: Optional[dict] = None,
            incremental: bool = False) -> tuple[_Prep, int]:
@@ -401,18 +426,19 @@ def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str
                                           report=prep.extras)
     is_sql = (profile.get("engine") or "") != "mongodb" and profile.get("source_kind") in ("table", "query")
     checked = False
-    for batch in batches:
-        rows = prep.rows(batch)
-        if is_sql and not checked and prep.seen_columns:
-            # A SQL result has the same columns on every row: check the first batch.
-            checked = True
-            missing = prep.missing_columns()
-            if missing:
-                raise AppError("inventory_sync_column_missing",
-                               f"The source no longer has column {missing[0]}.",
-                               status_code=422, params={"column": missing[0], "columns": ", ".join(missing)})
-        _stage_batch(tenant_id, run_id, prep, rows, policy)
-        _renew_lease(profile["id"], lease_owner)
+    with _closing(batches) as source:
+        for batch in source:
+            rows = prep.rows(batch)
+            if is_sql and not checked and prep.seen_columns:
+                # A SQL result has the same columns on every row: check the first batch.
+                checked = True
+                missing = prep.missing_columns()
+                if missing:
+                    raise AppError("inventory_sync_column_missing",
+                                   f"The source no longer has column {missing[0]}.",
+                                   status_code=422, params={"column": missing[0], "columns": ", ".join(missing)})
+            _stage_batch(tenant_id, run_id, prep, rows, policy)
+            _renew_lease(profile["id"], lease_owner)
     if not is_sql and prep.rows_read:
         # Documents are polymorphic: a field is "missing" only if no document had it.
         missing = prep.missing_columns()

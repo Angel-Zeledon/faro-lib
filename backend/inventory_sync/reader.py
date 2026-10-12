@@ -126,12 +126,88 @@ def _sql_literal(wm: dict, engine: str) -> str:
 
 # ── Statements ────────────────────────────────────────────────────────────────
 
-def raw_select(profile: dict, engine: str) -> str:
-    """SELECT * over the profile's table, view or saved query."""
+def _from(profile: dict, engine: str) -> str:
     from backend.datasources import catalog
     if profile["source_kind"] == "table":
-        return f"SELECT * FROM {catalog.qualified(engine, profile.get('source_schema'), profile['source_object'])}"
-    return f"SELECT * FROM ({profile['source_query'].strip().rstrip(';')}) stockai_q"
+        return catalog.qualified(engine, profile.get("source_schema"), profile["source_object"])
+    # Newlines around the query: a saved query that ends in a `-- comment`
+    # would otherwise comment out the closing parenthesis.
+    return f"(\n{profile['source_query'].strip().rstrip(';')}\n) stockai_q"
+
+
+def raw_select(profile: dict, engine: str) -> str:
+    """The profile's table, view or saved query, as a SELECT.
+
+    Projected to the columns the profile uses once `prepare_projection` has
+    run (a run / a dry run): a 200-column ERP table with a BLOB or a 1 MB
+    notes column never has those columns pulled over the wire. Without it
+    (inspection, the mapping assistant) it is SELECT * — those screens need
+    every column."""
+    from backend.datasources import catalog
+    cols = profile.get("_projection")
+    select = ", ".join(catalog.quote_ident(engine, c) for c in cols) if cols else "*"
+    return f"SELECT {select} FROM {_from(profile, engine)}"
+
+
+def needed_columns(profile: dict) -> list[str]:
+    """Every source column the profile reads: mapped fields, filters, the
+    watermark, and the stock model's own columns (ledger id / cursor / sign /
+    status / as-of / factor, aggregate group-by)."""
+    out: list[str] = []
+
+    def add(c: Any) -> None:
+        if isinstance(c, str) and c and c not in out:
+            out.append(c)
+    for m in (profile.get("mapping") or {}).values():
+        if isinstance(m, dict):
+            add(m.get("column"))
+    for f in profile.get("filters") or []:
+        if isinstance(f, dict):
+            add(f.get("column"))
+    add(profile.get("watermark_column"))
+    cfg = profile.get("model_config") or {}
+    for k in ("id_column", "cursor_column", "status_column", "as_of_column", "factor_column"):
+        add(cfg.get(k))
+    sign = cfg.get("sign") or {}
+    if isinstance(sign, dict):
+        for k in ("type_column", "in_column", "out_column"):
+            add(sign.get(k))
+    for c in cfg.get("group_by") or []:
+        add(c)
+    return out
+
+
+def prepare_projection(tenant_id: str, profile: dict) -> None:
+    """Resolve `needed_columns` against the source's real column names (a
+    zero-row SELECT: no data read) and store them on the profile dict for
+    `raw_select`. Matching is case-insensitive, as the row mapper is; a
+    needed column the source lacks is simply not projected, so the run
+    reports it exactly as before (schema drift -> paused, column named).
+    Any failure here leaves SELECT * in place: the real read then reports
+    the real error."""
+    profile.pop("_projection", None)
+    if profile.get("source_kind") not in ("table", "query") or not profile.get("data_source_id"):
+        return
+    wanted = needed_columns(profile)
+    mapping = profile.get("mapping") or {}
+    if not wanted or not (mapping.get("sku") or {}).get("column"):
+        return
+    try:
+        cfg = _cfg(tenant_id, profile["data_source_id"])
+        engine = cfg.get("engine") or "postgresql"
+        if engine == "mongodb":
+            return
+        from backend.datasources.service import _read_only_rows
+        with _read_only_rows(cfg, f"SELECT * FROM {_from(profile, engine)} WHERE 1 = 0",
+                             tenant_id=tenant_id) as result:
+            names = [str(c) for c in result.keys()]
+    except Exception:  # noqa: BLE001 - see docstring: never a new failure mode
+        return
+    profile["_source_columns"] = names       # what the dry run's advice inspects
+    low = {w.lower() for w in wanted}
+    cols = [n for n in names if n.lower() in low]
+    if cols and len(cols) < len(names):
+        profile["_projection"] = cols
 
 
 def build_sql(profile: dict, engine: str, watermark: Optional[dict],

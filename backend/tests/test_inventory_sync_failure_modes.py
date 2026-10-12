@@ -70,6 +70,13 @@ def _broken_source(tid, **fields):
     return src["id"]
 
 
+def _open_source_transactions(src_db) -> int:
+    with src_db.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database() "
+                    "AND state LIKE 'idle in transaction%%' AND pid <> pg_backend_pid()")
+        return cur.fetchone()[0]
+
+
 def _repoint(tid, p, source_id):
     """Point an existing profile at another data source (keeps its keys and stock)."""
     execute("UPDATE inventory_sync_profiles SET data_source_id = %s WHERE id = %s", (source_id, p["id"]))
@@ -394,6 +401,10 @@ class TestOurSide:
         out = engine.execute_run(tid, p["id"], run_id)
         assert out["status"] == "failed"
         assert query("SELECT 1 FROM inventory_sync_staging WHERE run_id = %s", (run_id,)) == []
+        # The half-read source was CLOSED: no transaction left open on the
+        # customer's database (it held a share lock that blocked their DDL for
+        # minutes, until garbage collection).
+        assert _open_source_transactions(src_db) == 0
 
     def test_plan_ceiling_refuses_new_skus_and_updates_existing(self, test_tenant, src_db, src_table,
                                                                 monkeypatch):
@@ -428,6 +439,7 @@ class TestOurSide:
             out = engine.execute_run(tid, p["id"], engine.start_run(tid, p["id"], "manual"))
             assert out["status"] == "failed"
             assert query("SELECT 1 FROM inventory_sync_profiles WHERE tenant_id = %s", (tid,)) == []
+            assert _open_source_transactions(src_db) == 0
         finally:
             execute("DELETE FROM tenants WHERE id = %s", (other["id"],))
 

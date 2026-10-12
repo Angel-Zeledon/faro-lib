@@ -629,6 +629,34 @@ def recipes(engine_name: Optional[str] = Query(default=None, alias="engine", max
     return ok(devtools.recipes(engine_name, database, schema))
 
 
+@router.get("/inventory-sync/presets")
+def list_presets(user: CurrentUser = Depends(require_analyst_or_above)):
+    """ERP recipe presets (SAP, Oracle EBS, Dynamics, Business Central, JD
+    Edwards, Infor M3, Odoo, Magento, WooCommerce, generic SCD2 / UNION
+    ledgers): parameters, stock model, the gotchas each one guards against,
+    and whether it was verified against a live system. Also the systems read
+    another way (push, or a warehouse through an existing engine)."""
+    from backend.inventory_sync import presets
+    return ok(presets.catalogue())
+
+
+class PresetBody(BaseModel):
+    engine: str = Field(max_length=20)
+    params: dict[str, Optional[str]] = Field(default_factory=dict)
+
+
+@router.post("/inventory-sync/presets/{preset_id}/render")
+def render_preset(preset_id: str, body: PresetBody, user: CurrentUser = Depends(require_analyst_or_above)):
+    """The profile body a preset produces for one engine and its parameters
+    (client, company, organisations...). Nothing is saved: the body goes
+    through the wizard's dry run like any other."""
+    from backend.inventory_sync import presets
+    if len(body.params) > 20:
+        raise AppError("inventory_sync_preset_invalid", "Too many parameters.", status_code=422,
+                       params={"reason": "param_unknown", "param": "…"})
+    return ok(presets.render(preset_id[:60], body.engine, body.params))
+
+
 class ViewBody(BaseModel):
     source_kind:   str = Field(max_length=20)
     source_schema: Optional[str] = Field(default=None, max_length=256)

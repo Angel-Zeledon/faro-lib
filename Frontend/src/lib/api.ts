@@ -3711,6 +3711,7 @@ export interface SyncDryRun {
   owned_fields: string[]
   stock_model?: 'snapshot' | 'aggregate' | 'ledger'
   examples?: SyncDryRunExample[]
+  advice?: { code: string; params: Record<string, unknown> }[]
 }
 
 export interface SyncDryRunExample {
@@ -3856,3 +3857,15 @@ export const suggestSyncView = (sourceId: string, body: { source_kind: string; s
   source_object?: string | null; source_query?: string | null; mapping: Record<string, unknown> }) =>
   request<{ engine: string; sql?: string; pipeline?: unknown }>('POST', `/inventory-sync/sources/${sourceId}/suggest-view`,
     body, { silent: true })
+
+export interface SyncPreset {
+  id: string; vendor: string; product: string; engines: string[]; stock_model: string; strategy: string
+  params: { name: string; kind: string; required: boolean; default: string | null; pattern: string }[]
+  gotchas: string[]; verified: boolean
+}
+export const getSyncPresets = () =>
+  request<{ presets: SyncPreset[]; not_direct: Record<string, { vendor: string; path: string }> }>(
+    'GET', '/inventory-sync/presets', undefined, { silent: true })
+export const renderSyncPreset = (id: string, engine: string, params: Record<string, string>) =>
+  request<{ profile: SyncProfileInput & { strategy?: string }; preset: { id: string; verified: boolean; gotchas: string[] } }>(
+    'POST', `/inventory-sync/presets/${encodeURIComponent(id)}/render`, { engine, params }, { silent: true })

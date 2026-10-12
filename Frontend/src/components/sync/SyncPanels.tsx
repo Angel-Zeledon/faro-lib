@@ -13,9 +13,10 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import {
-  applySyncDocument, downloadSyncRejectedCsv, exportSyncProfile, getSyncRecipes, getSyncRunDetail,
-  runSyncDoctor, testSyncTransform, validateSyncDocument,
-  type SyncDoctorResult, type SyncProfile, type SyncRecipes, type SyncRunDetail,
+  applySyncDocument, downloadSyncRejectedCsv, exportSyncProfile, getSyncPresets, getSyncRecipes, getSyncRunDetail,
+  renderSyncPreset, runSyncDoctor, testSyncTransform, validateSyncDocument,
+  type SyncDoctorResult, type SyncPreset, type SyncProfile, type SyncProfileInput, type SyncRecipes,
+  type SyncRunDetail,
 } from '@/lib/api'
 import Card from '@/components/ui/Card'
 import Input, { Field, Select, Textarea } from '@/components/ui/Input'
@@ -423,5 +424,86 @@ function Reference() {
         </details>
       ))}
     </div>
+  )
+}
+
+// ── ERP recipe presets (wizard step 2) ───────────────────────────────────────
+
+export function PresetPicker({ engine, onApply }: {
+  engine: string
+  onApply: (body: SyncProfileInput & { strategy?: string }) => void
+}) {
+  const { t } = useLanguage()
+  const { text } = useCodeText()
+  const [list, setList] = useState<SyncPreset[] | null>(null)
+  const [others, setOthers] = useState<Record<string, { vendor: string; path: string }>>({})
+  const [pick, setPick] = useState('')
+  const [params, setParams] = useState<Record<string, string>>({})
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    getSyncPresets().then(r => { setList(r.presets); setOthers(r.not_direct) }).catch(() => setList([]))
+  }, [])
+  const usable = (list ?? []).filter(p => p.engines.includes(engine))
+  const chosen = usable.find(p => p.id === pick)
+  useEffect(() => {
+    if (!chosen) return
+    const next: Record<string, string> = {}
+    for (const p of chosen.params) next[p.name] = p.default ?? ''
+    setParams(next); setErr(null)
+  }, [chosen])
+  async function apply() {
+    if (!chosen) return
+    setErr(null)
+    try {
+      const clean: Record<string, string> = {}
+      for (const [k, v] of Object.entries(params)) if (v.trim()) clean[k] = v.trim()
+      const r = await renderSyncPreset(chosen.id, engine, clean)
+      onApply(r.profile)
+    } catch (e: unknown) {
+      const ae = e as { code?: string; params?: Record<string, unknown> }
+      setErr(ae?.code ? text(ae.code, ae.params) : (e instanceof Error ? e.message : String(e)))
+    }
+  }
+  if (list === null) return null
+  return (
+    <details style={{ marginBottom: 12 }}>
+      <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{t('isync.preset_title')}</summary>
+      <p style={{ ...small, marginTop: 6 }}>{t('isync.preset_hint')}</p>
+      {usable.length === 0 ? <p style={{ ...small, marginTop: 6 }}>{t('isync.preset_none_for_engine')}</p> : (
+        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginTop: 8 }}>
+          <Field label={t('isync.preset_pick')}>
+            <Select value={pick} onChange={e => setPick(e.target.value)}>
+              <option value="">{t('isync.choose')}</option>
+              {usable.map(p => <option key={p.id} value={p.id}>{p.product}</option>)}
+            </Select>
+          </Field>
+          {chosen?.params.map(p => (
+            <Field key={p.name} label={`${t(`isync.preset_param.${p.name}`)}${p.required ? ' *' : ''}`}>
+              <Input value={params[p.name] ?? ''} onChange={e => setParams(s => ({ ...s, [p.name]: e.target.value }))} />
+            </Field>
+          ))}
+        </div>
+      )}
+      {chosen && (
+        <>
+          <p style={{ margin: '8px 0 0', fontSize: 12, color: chosen.verified ? C.green : C.amber }}>
+            {chosen.verified ? t('isync.preset_verified') : t('isync.preset_unverified', { vendor: chosen.vendor })}
+          </p>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: C.muted }}>
+            {chosen.gotchas.map(g => <li key={g}>{t(`isync.gotcha.${g}`)}</li>)}
+          </ul>
+          <button type="button" style={{ ...btn, marginTop: 8 }} onClick={() => void apply()}>{t('isync.preset_apply')}</button>
+        </>
+      )}
+      {err && <p role="alert" style={{ ...small, color: C.red, marginTop: 6 }}>{err}</p>}
+      {Object.keys(others).length > 0 && (
+        <>
+          <p style={{ margin: '10px 0 4px', fontSize: 12, fontWeight: 600 }}>{t('isync.preset_other_systems')}</p>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: C.muted }}>
+            {Object.keys(others).map(k => <li key={k}>{t(`isync.not_direct.${k}`)}</li>)}
+          </ul>
+        </>
+      )}
+    </details>
   )
 }
