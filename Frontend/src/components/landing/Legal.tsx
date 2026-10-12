@@ -12,7 +12,7 @@
 // these are clauses, and "see section 7" has to mean something.
 //
 // Copy lives in i18n/legal.ts; this file only renders it.
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { Fragment, useEffect, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LEGAL, type LegalBlock, type LegalDoc } from '@/i18n/legal'

@@ -175,12 +175,13 @@ section[id], #demo { scroll-margin-top: 88px; }
 }
 .nav-signup:hover { background: var(--lp-cta-hover); transform: translateY(-1px); }
 .lp-lang { display: flex; align-items: center; gap: 2px; border: 1px solid var(--lp-border); border-radius: 9px; padding: 2px; background: var(--lp-glass); }
-.lp-lang button {
+.lp-lang button, .lp-lang a {
  border: none; cursor: pointer; border-radius: 6px; padding: 4px 9px;
- font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em;
+ font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em; line-height: normal; text-decoration: none;
+ display: inline-flex; align-items: center; justify-content: center;
  background: transparent; color: var(--lp-muted); transition: background-color 160ms ease, color 160ms ease;
 }
-.lp-lang button.is-on { background: var(--lp-text); color: var(--lp-bg); }
+.lp-lang button.is-on, .lp-lang a.is-on { background: var(--lp-text); color: var(--lp-bg); }
 
 /* The mobile menu button. Hidden above 900px, where the inline link row is
    the navigation; below it, it is the only navigation there is. */
@@ -504,6 +505,12 @@ section[id], #demo { scroll-margin-top: 88px; }
  .nav-sheet-sep { height: 12px; }
  .nav-sheet-lang { display: flex; align-items: center; min-height: 48px; border-bottom: 1px solid var(--lp-border); }
  .nav-sheet-lang .lp-lang button { min-height: 44px; min-width: 52px; }
+ /* The switch's letters are links: undo the sheet's menu-row link style. */
+ .nav-sheet-lang .lp-lang a {
+ min-height: 44px; min-width: 52px; border-bottom: none; justify-content: center;
+ font-size: 11.5px; font-weight: 700; color: var(--lp-muted);
+ }
+ .nav-sheet-lang .lp-lang a.is-on { color: var(--lp-bg); }
  .nav-sheet-inner a.nav-sheet-cta {
  justify-content: center; margin-top: 12px; border-bottom: none;
  background: var(--lp-cta-bg); color: var(--lp-cta-fg); font-weight: 700; border-radius: 12px;
@@ -545,7 +552,7 @@ section[id], #demo { scroll-margin-top: 88px; }
  .hero-ctas { flex-direction: column; align-items: stretch; }
  .case-tabs { display: flex; }
  .case-tab { min-height: 44px; box-sizing: border-box; }
- .lp-lang button { min-height: 40px; min-width: 42px; }
+ .lp-lang button, .lp-lang a { min-height: 40px; min-width: 42px; }
  .nav-signup { min-height: 44px; padding: 0 14px; }
  .foot-link { display: flex; align-items: center; min-height: 44px; margin-bottom: 0; }
  .cta-link { min-height: 44px; display: inline-flex; align-items: center; }

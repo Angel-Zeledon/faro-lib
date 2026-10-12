@@ -9,7 +9,7 @@
 // the landing has no endpoint to post a lead to, and adding one is a new
 // capability, so the form hands the message to the visitor's own mail app and
 // says so.
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { useId, useMemo, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'

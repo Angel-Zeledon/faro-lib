@@ -7,7 +7,7 @@
 // Spanish, the default) and switching language is instant. The rest of the
 // catalogue never reaches the browser: the sidebar gets titles only, and the
 // search index is fetched the first time somebody opens search.
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, ChevronLeft, PanelLeft, Search, X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'

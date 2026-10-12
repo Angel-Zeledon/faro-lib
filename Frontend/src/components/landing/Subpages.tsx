@@ -12,7 +12,7 @@
 //
 // Every app link (sign-up, sign-in, /prueba) still goes through appHref(): the
 // app may live on its own origin.
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING, type LandingCopy } from '@/i18n/landing'
 import { T } from '@/components/landing/theme'
