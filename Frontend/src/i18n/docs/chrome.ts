@@ -47,7 +47,7 @@ export const DOCS_CHROME: Record<Lang, DocsChromeCopy> = {
     label: 'Centro de ayuda',
     title: 'Centro de ayuda de StockAI',
     intro:
-      'Cómo usar StockAI de punta a punta: subir tus ventas, leer el semáforo, generar y recibir órdenes de compra, ' +
+      'Cómo usar StockAI de punta a punta: subir tus ventas, leer el pronóstico y el semáforo, generar y recibir órdenes de compra, ' +
       'y entender de dónde sale cada número que te mostramos.',
     metaTitle: 'StockAI centro de ayuda: guías de uso paso a paso',
     sections: {
@@ -101,7 +101,7 @@ export const DOCS_CHROME: Record<Lang, DocsChromeCopy> = {
     label: 'Help center',
     title: 'StockAI help center',
     intro:
-      'How to use StockAI end to end: upload your sales, read the stock signal, create and receive purchase orders, ' +
+      'How to use StockAI end to end: upload your sales, read the forecast and the stock signal, create and receive purchase orders, ' +
       'and understand where every number we show you comes from.',
     metaTitle: 'Help center — StockAI',
     sections: {

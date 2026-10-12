@@ -4,6 +4,11 @@
  * distribuidores", "cómo calcular el punto de reorden", "stock de seguridad",
  * "pronóstico de demanda para compras", "qué es StockAI").
  *
+ * Since 2026-10-11 (owner) StockAI is positioned as SALES FORECASTING, not
+ * inventory software: the brand page and the distributors guide (whose URL
+ * keeps the old search phrase, because routes are not renamed) say so; the
+ * reorder-point and safety-stock guides are about those topics and stay.
+ *
  * Same rules as `landing.ts` and `landingContent.ts`: typed per language, so a
  * missing translation is a compile error; NOTHING here may promise what the
  * product does not do; no customer, quote, logo, rating or result percentage;
@@ -78,15 +83,15 @@ const es: GuidesCopy = {
     // ── (e) Brand page ───────────────────────────────────────────────────────
     about: {
       label: 'Qué es StockAI',
-      title: 'Qué es StockAI (Stock AI): el software que te dice qué pedir cada mañana.',
-      intro: 'StockAI, a veces escrito «Stock AI», es una aplicación web de compras de inventario para distribuidores, mayoristas y comercios. Lee tu historial de ventas y tus existencias y te dice qué productos se van a quebrar, cuánto pedir y a qué proveedor. Aquí está, en palabras simples, qué es, para quién y qué no es.',
-      metaTitle: 'Qué es StockAI (Stock AI): software de compras e inventario',
-      metaDesc: 'StockAI, o Stock AI, es un software que lee tus ventas y existencias y te dice qué pedir, cuánto y a qué proveedor. Qué es, para quién es y qué no hace.',
+      title: 'Qué es StockAI (Stock AI): predicción de ventas con IA, producto por producto.',
+      intro: 'StockAI, a veces escrito «Stock AI», es una aplicación web de predicción de ventas para distribuidores, mayoristas, comercios y fabricantes. Pronostica cuánto vas a vender de cada producto con tu propio historial y, con ese pronóstico, te dice qué productos se van a quebrar, cuánto pedir y a qué proveedor. Aquí está, en palabras simples, qué es, para quién y qué no es.',
+      metaTitle: 'Qué es StockAI (Stock AI): predicción de ventas con IA',
+      metaDesc: 'StockAI, o Stock AI, pronostica la venta de cada producto con modelos de IA que compiten sobre tu historial, y con eso te dice qué pedir. Qué es, para quién y qué no hace.',
       sections: [
         {
           h: 'StockAI en una frase',
           p: [
-            'StockAI es un software de planeación de compras: toma tus ventas históricas, tus existencias y el plazo de entrega de cada proveedor, y te entrega cada mañana una lista de decisiones: qué producto pedir ya, cuál pedir pronto, cuál está bien y cuál tienes de sobra.',
+            'StockAI es un software de predicción de ventas: pronostica la venta de cada producto con tu historial y, con ese pronóstico, tus existencias y el plazo de entrega de cada proveedor, te entrega cada mañana una lista de decisiones: qué producto pedir ya, cuál pedir pronto, cuál está bien y cuál tienes de sobra.',
             'Se escribe StockAI, todo junto, y mucha gente lo busca como «stock ai» o «stockai». Es el mismo producto. El nombre junta dos ideas: stock, tu inventario, e IA, la inteligencia artificial que pronostica la demanda de cada producto.',
           ],
         },
@@ -126,11 +131,11 @@ const es: GuidesCopy = {
         },
       ],
       callouts: [
-        { kind: 'takeaway', section: 0, after: 2, label: 'En resumen', lines: ['Entran tus ventas y tus existencias; sale una lista de qué pedir, cuánto y a qué proveedor. La orden la revisas y la envías tú.'] },
+        { kind: 'takeaway', section: 0, after: 2, label: 'En resumen', lines: ['Entran tus ventas; sale un pronóstico por producto y, con tus existencias, una lista de qué pedir, cuánto y a qué proveedor. La orden la revisas y la envías tú.'] },
       ],
       faqTitle: 'Preguntas sobre StockAI',
       faq: [
-        { q: '¿Qué es StockAI?', a: 'Es un software web de compras de inventario para distribuidores, mayoristas y comercios. Lee tus ventas y tus existencias y te dice qué pedir, cuánto y a qué proveedor.' },
+        { q: '¿Qué es StockAI?', a: 'Es un software web de predicción de ventas para distribuidores, mayoristas, comercios y fabricantes. Pronostica cuánto vas a vender de cada producto y, con eso y tus existencias, te dice qué pedir, cuánto y a qué proveedor.' },
         { q: '¿«Stock AI» y «StockAI» son lo mismo?', a: 'Sí. El nombre correcto es StockAI, todo junto; «stock ai» con espacio es como mucha gente lo escribe al buscarlo.' },
         { q: '¿StockAI reemplaza a mi ERP?', a: 'No, lo complementa. Tu ERP registra lo que pasó (ventas, existencias, compras); StockAI lee esa historia y te dice qué comprar. Sigues facturando y contabilizando donde siempre.' },
         { q: '¿Cuánto cuesta?', a: 'StockAI se vende solo como código fuente: $14.999 USD, en un pago único, para instalarlo en tu propia infraestructura. Escríbenos para comprarlo.' },
@@ -139,13 +144,13 @@ const es: GuidesCopy = {
       next: ['distributors', 'reorderPoint', 'forecast'],
     },
 
-    // ── (a) Inventory software for distributors ──────────────────────────────
+    // ── (a) Sales forecasting for distributors (URL keeps the old query) ────
     distributors: {
-      label: 'Software de inventario para distribuidores',
-      title: 'Software de inventario para distribuidores: qué debe resolver y cómo elegirlo.',
-      intro: 'Un distribuidor no compra para consumir: compra para revender, con proveedores que tardan semanas y miles de códigos que vigilar. Estas son las preguntas que un buen software de inventario tiene que contestar cada mañana, y cómo las contesta StockAI.',
-      metaTitle: 'Software de inventario para distribuidores | StockAI',
-      metaDesc: 'Qué debe resolver un software de inventario para distribuidores: qué pedir, cuánto, a quién y qué sobra. Criterios para elegir y cómo lo hace StockAI.',
+      label: 'Pronóstico de ventas para distribuidores',
+      title: 'Pronóstico de ventas para distribuidores: qué debe resolver y cómo elegirlo.',
+      intro: 'Un distribuidor no compra para consumir: compra para revender, con proveedores que tardan semanas y miles de códigos que vigilar. Un software de inventario te dice cuánto hay; lo que decide la compra es cuánto vas a vender. Estas son las preguntas que tu herramienta tiene que contestar cada mañana, y cómo las contesta StockAI.',
+      metaTitle: 'Pronóstico de ventas para distribuidores | StockAI',
+      metaDesc: 'Lo que un distribuidor necesita además de un software de inventario: pronosticar la venta de cada producto y decidir con eso qué pedir, cuánto y a quién. Cómo elegir.',
       sections: [
         {
           h: 'El problema real de un distribuidor',
@@ -155,7 +160,7 @@ const es: GuidesCopy = {
           ],
         },
         {
-          h: 'Lo que debería hacer un software de inventario para distribuidores',
+          h: 'Lo que debería hacer una herramienta de pronóstico y compras para distribuidores',
           p: [],
           list: [
             'Pronosticar la demanda de cada producto con su propio historial, no con un promedio general. Un producto estable y otro que se vende a saltos necesitan modelos distintos; ver [pronóstico de demanda para compras](/pronostico-de-demanda-para-compras).',
@@ -195,7 +200,7 @@ const es: GuidesCopy = {
       callouts: [
         { kind: 'takeaway', section: 0, after: 2, label: 'En resumen', lines: ['El inventario de un distribuidor se juega en la compra, no en el conteo: cuánto pedir de cada producto, cuándo y a qué proveedor.'] },
       ],
-      faqTitle: 'Preguntas frecuentes sobre software de inventario para distribuidores',
+      faqTitle: 'Preguntas frecuentes sobre pronóstico de ventas para distribuidores',
       faq: [
         { q: '¿Qué diferencia hay entre controlar el inventario y planear las compras?', a: 'Controlar es saber cuánto hay; planear es decidir cuánto, cuándo y a quién pedir. StockAI se concentra en lo segundo: toma las existencias que ya registras en tu sistema y las cruza con el pronóstico y el plazo del proveedor.' },
         { q: '¿Necesito un analista de datos para usarlo?', a: 'No. Subes tus ventas y ves la lista de qué pedir; no hay modelos que configurar ni código.' },
@@ -420,15 +425,15 @@ const en: GuidesCopy = {
   items: {
     about: {
       label: 'What is StockAI',
-      title: 'What is StockAI (Stock AI): the software that tells you what to order every morning.',
-      intro: 'StockAI, sometimes written “Stock AI”, is a web application for inventory purchasing, for distributors, wholesalers and shops. It reads your sales history and your stock and tells you which products are about to run out, how much to order and from which supplier. Here is what it is, who it is for and what it is not, in plain words.',
-      metaTitle: 'What is StockAI (Stock AI): purchasing and inventory software',
-      metaDesc: 'StockAI, or Stock AI, reads your sales and stock and tells you what to order, how much and from which supplier. What it is, who it is for and what it does not do.',
+      title: 'What is StockAI (Stock AI): AI sales forecasting, product by product.',
+      intro: 'StockAI, sometimes written “Stock AI”, is a web application for sales forecasting, for distributors, wholesalers, shops and manufacturers. It forecasts how much of each product you will sell from your own history and, with that forecast, tells you which products are about to run out, how much to order and from which supplier. Here is what it is, who it is for and what it is not, in plain words.',
+      metaTitle: 'What is StockAI (Stock AI): AI sales forecasting',
+      metaDesc: 'StockAI, or Stock AI, forecasts each product’s sales with AI models that compete on your history, and from that tells you what to order. What it is, who it is for and what it does not do.',
       sections: [
         {
           h: 'StockAI in one sentence',
           p: [
-            'StockAI is purchase-planning software: it takes your sales history, your stock and each supplier’s lead time, and hands you every morning a list of decisions: which product to order now, which to order soon, which is fine and which you have too much of.',
+            'StockAI is sales forecasting software: it forecasts each product’s sales from your history and, with that forecast, your stock and each supplier’s lead time, hands you every morning a list of decisions: which product to order now, which to order soon, which is fine and which you have too much of.',
             'It is written StockAI, as one word, and many people search for it as “stock ai” or “stockai”. It is the same product. The name joins two ideas: stock, your inventory, and AI, the artificial intelligence that forecasts each product’s demand.',
           ],
         },
@@ -468,11 +473,11 @@ const en: GuidesCopy = {
         },
       ],
       callouts: [
-        { kind: 'takeaway', section: 0, after: 2, label: 'The short version', lines: ['Your sales and stock go in; a list of what to order, how much and from which supplier comes out. You review and send the order.'] },
+        { kind: 'takeaway', section: 0, after: 2, label: 'The short version', lines: ['Your sales go in; a forecast per product comes out and, with your stock, a list of what to order, how much and from which supplier. You review and send the order.'] },
       ],
       faqTitle: 'Questions about StockAI',
       faq: [
-        { q: 'What is StockAI?', a: 'It is web software for inventory purchasing, for distributors, wholesalers and shops. It reads your sales and stock and tells you what to order, how much and from which supplier.' },
+        { q: 'What is StockAI?', a: 'It is web software for sales forecasting, for distributors, wholesalers, shops and manufacturers. It forecasts how much of each product you will sell and, with that and your stock, tells you what to order, how much and from which supplier.' },
         { q: 'Are “Stock AI” and “StockAI” the same?', a: 'Yes. The right name is StockAI, as one word; “stock ai” with a space is how many people type it when searching.' },
         { q: 'Does StockAI replace my ERP?', a: 'No, it complements it. Your ERP records what happened (sales, stock, purchases); StockAI reads that history and tells you what to buy. You keep invoicing and accounting where you always did.' },
         { q: 'How much does it cost?', a: 'StockAI is sold only as source code: $14,999 USD, in a one-time payment, to install on your own infrastructure. Write to us to buy it.' },
@@ -482,11 +487,11 @@ const en: GuidesCopy = {
     },
 
     distributors: {
-      label: 'Inventory software for distributors',
-      title: 'Inventory software for distributors: what it must solve and how to choose it.',
-      intro: 'A distributor does not buy to consume: it buys to resell, with suppliers that take weeks and thousands of codes to watch. These are the questions good inventory software has to answer every morning, and how StockAI answers them.',
-      metaTitle: 'Inventory software for distributors: what it must solve',
-      metaDesc: 'What inventory software for distributors must solve: what to order, how much, from whom and what is in excess. How to choose, and how StockAI does it.',
+      label: 'Sales forecasting for distributors',
+      title: 'Sales forecasting for distributors: what it must solve and how to choose it.',
+      intro: 'A distributor does not buy to consume: it buys to resell, with suppliers that take weeks and thousands of codes to watch. Inventory software tells you how much there is; what decides the purchase is how much you will sell. These are the questions your tool has to answer every morning, and how StockAI answers them.',
+      metaTitle: 'Sales forecasting for distributors: what it must solve',
+      metaDesc: 'What a distributor needs beyond inventory software: forecasting each product’s sales and deciding from that what to order, how much and from whom. How to choose.',
       sections: [
         {
           h: 'A distributor’s real problem',
@@ -496,7 +501,7 @@ const en: GuidesCopy = {
           ],
         },
         {
-          h: 'What inventory software for distributors should do',
+          h: 'What a forecasting and purchasing tool for distributors should do',
           p: [],
           list: [
             'Forecast each product’s demand from its own history, not from a general average. A stable product and one that sells in bursts need different models; see [demand forecasting for purchasing](/pronostico-de-demanda-para-compras).',
@@ -536,7 +541,7 @@ const en: GuidesCopy = {
       callouts: [
         { kind: 'takeaway', section: 0, after: 2, label: 'The short version', lines: ['A distributor’s inventory is won or lost in the purchase, not the count: how much of each product to order, when and from which supplier.'] },
       ],
-      faqTitle: 'Frequently asked questions about inventory software for distributors',
+      faqTitle: 'Frequently asked questions about sales forecasting for distributors',
       faq: [
         { q: 'What is the difference between controlling inventory and planning purchases?', a: 'Controlling is knowing how much there is; planning is deciding how much, when and from whom to order. StockAI focuses on the second: it takes the stock you already record in your system and crosses it with the forecast and the supplier’s lead time.' },
         { q: 'Do I need a data analyst to use it?', a: 'No. You upload your sales and see the what-to-order list; there are no models to configure and no code.' },
