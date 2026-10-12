@@ -1796,7 +1796,8 @@ def run_outbox(args, fx: Fixture, db) -> list:
     problems = []
     statuses = sorted((r[1], r[2], r[4], r[6]) for r in after_r)
     if not all(r[3] == {} for r in after_r):
-        problems.append("a final row kept its params")
+        kept = [(r[0], r[1], r[4], r[6]) for r in after_r if r[3] != {}]
+        problems.append(f"a final row kept its params: (channel, kind, status, last_error) {kept}")
     if ("verification_code", "+50688887777", "sent", None) not in statuses:
         problems.append(f"the WhatsApp row did not send: {statuses}")
     if ("password_reset_otp", "demo-abc123@stockai.demo", "abandoned", "trial_address") not in statuses:
@@ -7720,7 +7721,6 @@ def run(args) -> int:
             results += _guarded("run_session_policy", run_session_policy, args, fx, db)
         results += _guarded("run_saml", run_saml, args, fx, db)
         results += _guarded("run_audit_stream", run_audit_stream, args, fx, db)
-        results += _guarded("run_org", run_org, args, fx, db)
         results += _guarded("run_cost_centers", run_cost_centers, args, fx, db)
         results += _guarded("cf_money_cases.run_money", cf_money_cases.run_money, args, fx, db, sys.modules[__name__])
         results += _guarded("run_allocation", run_allocation, args, fx, db, dict(http=http, API=API, auth_for=auth_for, today_plus=today_plus, Case=Case,
@@ -7737,6 +7737,11 @@ def run(args) -> int:
         from approval_links_contract import run_approval_links  # noqa: PLC0415
         results += _guarded("run_approval_links", run_approval_links, args, fx, db, {"http": http, "Case": Case, "API": API, "auth_for": auth_for,
                                                      "signup": _r4_signup, "mint": mint_access_token})
+        # LAST, always: its final step erases the holding, which IS this run's
+        # shared tenant (fx.erased). Every section after it would run against
+        # a deleted tenant (a user row that cannot be read is treated as
+        # limited to no warehouse, so the failures look like scope errors).
+        results += _guarded("run_org", run_org, args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
@@ -7749,7 +7754,9 @@ def _guarded(name: str, fn, *args, **kwargs) -> list:
     import traceback  # noqa: PLC0415
     try:
         out = fn(*args, **kwargs)
-    except Exception:  # noqa: BLE001 - reported as a failure, never swallowed
+    except (Exception, SystemExit):  # noqa: BLE001 - reported as a failure, never swallowed
+        # Sections abort with SystemExit when their setup fails; that is this
+        # section's failure, not a reason to throw away every other verdict.
         return [(Case(f"{name}: section crashed", "-", "-", route=name), "FAIL",
                  [traceback.format_exc()[-2000:]])]
     if out is None:
