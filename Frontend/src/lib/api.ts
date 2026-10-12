@@ -3623,7 +3623,18 @@ export interface SyncProfileInput {
   priority?: number
   brake_max_jump_pct?: number
   slug?: string | null
+  masters?: SyncMasters
+  unknown_warehouse?: 'create' | 'reject' | 'default' | null
 }
+
+export interface SyncMasterSource {
+  source_kind?: string; source_schema?: string | null; source_object?: string | null; source_query?: string | null
+  code_column: string; name_column: string; active_column?: string | null
+  kind_column?: string | null; city_column?: string | null
+  lead_time_column?: string | null; payment_terms_column?: string | null; email_column?: string | null
+  phone_column?: string | null; source_wins?: boolean; unknown?: 'create' | 'reject'
+}
+export interface SyncMasters { warehouses?: SyncMasterSource; suppliers?: SyncMasterSource }
 
 export interface SyncProfile extends Required<Pick<SyncProfileInput,
   'name' | 'data_source_id' | 'source_kind' | 'mode' | 'interval_minutes' | 'overlap_minutes' |
@@ -3663,6 +3674,8 @@ export interface SyncProfile extends Required<Pick<SyncProfileInput,
   strategy?: string
   brake_max_jump_pct?: number
   data_as_of?: string | null
+  masters?: SyncMasters
+  unknown_warehouse?: 'create' | 'reject' | 'default' | null
   dry_run_at: string | null
   created_at: string
 }
@@ -3712,6 +3725,14 @@ export interface SyncDryRun {
   stock_model?: 'snapshot' | 'aggregate' | 'ledger'
   examples?: SyncDryRunExample[]
   advice?: { code: string; params: Record<string, unknown> }[]
+  masters?: {
+    unknown_policy: string
+    warehouses: { master_rows: number; new: string[]; renamed_in_source: { code: string; stockai: string; source: string }[]
+                  inactive: string[]; defaulted: number; collisions: { code: string; kept: string; dropped: string }[]
+                  totals: { warehouse: string; rows: number; quantity: number }[] }
+    suppliers: { master_rows: number; collisions: { code: string; kept: string; dropped: string }[]
+                 create?: string[]; lead_time_kept?: number }
+  }
 }
 
 export interface SyncDryRunExample {

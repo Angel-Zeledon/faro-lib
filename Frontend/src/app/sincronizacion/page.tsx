@@ -18,7 +18,7 @@ import {
   listSyncProfiles, listSyncRuns, listSyncSources, runSyncProfile, updateSyncProfile,
   type SyncColumn, type SyncDatabaseSource, type SyncDryRun, type SyncFieldMapping,
   type SyncFieldsCatalog, type SyncFilter, type SyncProfile, type SyncProfileInput, type SyncRun,
-  type SyncSourceKind, type SyncSuggestion, type SyncTable,
+  type SyncSourceKind, type SyncSuggestion, type SyncTable, type SyncMasterSource,
 } from '@/lib/api'
 import Card from '@/components/ui/Card'
 import Input, { Field, Select, Textarea } from '@/components/ui/Input'
@@ -77,6 +77,9 @@ interface Draft {
   model_config_text: string
   priority: number
   slug: string
+  unknown_warehouse: '' | 'create' | 'reject' | 'default'
+  wh_master: SyncMasterSource | null
+  sup_master: SyncMasterSource | null
 }
 
 const LEDGER_TEMPLATE = JSON.stringify({
@@ -93,6 +96,7 @@ const emptyDraft = (sourceId: string, mongo: boolean, minInterval: number): Draf
   brake_min_row_ratio: 0.5, brake_max_rejected_pct: 50, brake_max_jump_pct: 0,
   freshness: 'scheduled', poll_seconds: 60, reconcile_minutes: 360, strategy: 'auto',
   stock_model: 'snapshot', model_config_text: '', priority: 100, slug: '',
+  unknown_warehouse: '', wh_master: null, sup_master: null,
 })
 
 function draftFrom(p: SyncProfile): Draft {
@@ -116,6 +120,8 @@ function draftFrom(p: SyncProfile): Draft {
     strategy: p.strategy ?? 'auto', stock_model: p.stock_model ?? 'snapshot',
     model_config_text: p.model_config && Object.keys(p.model_config).length ? JSON.stringify(p.model_config, null, 2) : '',
     priority: p.priority ?? 100, slug: p.slug ?? '',
+    unknown_warehouse: p.unknown_warehouse ?? '',
+    wh_master: p.masters?.warehouses ?? null, sup_master: p.masters?.suppliers ?? null,
   }
 }
 
@@ -160,7 +166,21 @@ function payload(d: Draft): SyncProfileInput {
     reconcile_minutes: d.reconcile_minutes, strategy: d.strategy, stock_model: d.stock_model,
     model_config: d.stock_model === 'snapshot' ? {} : parseModelConfig(d.model_config_text),
     priority: d.priority, slug: d.slug.trim() || null,
+    unknown_warehouse: d.unknown_warehouse || null,
+    masters: {
+      ...(d.wh_master?.source_object?.trim() ? { warehouses: d.wh_master } : {}),
+      ...(d.sup_master?.source_object?.trim() ? { suppliers: d.sup_master } : {}),
+    },
   }
+}
+
+const MASTER_WH_COLS: (keyof SyncMasterSource)[] = ['code_column', 'name_column', 'active_column', 'kind_column', 'city_column']
+const MASTER_SUP_COLS: (keyof SyncMasterSource)[] = ['code_column', 'name_column', 'active_column', 'lead_time_column',
+  'payment_terms_column', 'email_column']
+const MASTER_LABEL: Record<string, string> = {
+  code_column: 'isync.master_code', name_column: 'isync.master_name', active_column: 'isync.master_active',
+  kind_column: 'isync.master_kind', city_column: 'isync.master_city', lead_time_column: 'isync.master_lead',
+  payment_terms_column: 'isync.master_terms', email_column: 'isync.master_email',
 }
 
 export default function InventorySyncPage() {
@@ -761,6 +781,59 @@ export default function InventorySyncPage() {
             )}
           </Card>
 
+          {!isPush && (
+            <Card padding={16}>
+              <h2 data-tour="sync.masters" style={{ ...h2, marginBottom: 4 }}>{t('isync.masters_title')}</h2>
+              <p style={{ ...small, marginBottom: 10 }}>{t('isync.masters_hint')}</p>
+              <Field label={t('isync.unknown_warehouse_label')} hint={t('isync.unknown_warehouse_hint')}>
+                <Select value={draft.unknown_warehouse}
+                        onChange={e => setDraft(d => d && { ...d, unknown_warehouse: e.target.value as Draft['unknown_warehouse'] })}>
+                  {(['', 'create', 'reject', 'default'] as const).map(v =>
+                    <option key={v} value={v}>{t(`isync.unknown_warehouse.${v || 'auto'}`)}</option>)}
+                </Select>
+              </Field>
+              {([['wh_master', 'isync.master_wh_title', MASTER_WH_COLS], ['sup_master', 'isync.master_sup_title', MASTER_SUP_COLS]] as const).map(([key, title, cols]) => {
+                const m = draft[key]
+                const set = (patch: Partial<SyncMasterSource>) => setDraft(d => d && {
+                  ...d, [key]: { source_kind: 'table', code_column: '', name_column: '', ...(d[key] || {}), ...patch } })
+                return (
+                  <details key={key} open={!!m?.source_object} style={{ marginTop: 10 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{t(title)}</summary>
+                    <div style={{ ...grid, marginTop: 8 }}>
+                      <Field label={t('isync.master_object')}>
+                        <Select value={m?.source_object ? `${m.source_schema ?? ''}|${m.source_object}` : ''}
+                                onChange={e => {
+                                  const tb = tables?.tables.find(x => `${x.schema ?? ''}|${x.name}` === e.target.value)
+                                  if (!tb) { setDraft(d => d && { ...d, [key]: null }); return }
+                                  set({ source_kind: isMongo ? 'collection' : 'table', source_schema: tb.schema, source_object: tb.name })
+                                }}>
+                          <option value="">{t('isync.choose')}</option>
+                          {(tables?.tables ?? []).map(tb => (
+                            <option key={`${tb.schema}|${tb.name}`} value={`${tb.schema ?? ''}|${tb.name}`}>
+                              {tb.schema && !isMongo ? `${tb.schema}.` : ''}{tb.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      {m?.source_object && cols.map(c => (
+                        <Field key={c} label={t(MASTER_LABEL[c])}>
+                          <Input value={String(m[c] ?? '')} onChange={e => set({ [c]: e.target.value || null } as Partial<SyncMasterSource>)} />
+                        </Field>
+                      ))}
+                    </div>
+                    {key === 'sup_master' && m?.source_object && (
+                      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, marginTop: 8, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!!m.source_wins} onChange={e => set({ source_wins: e.target.checked })} />
+                        <span>{t('isync.master_source_wins')}
+                          <span style={{ display: 'block', fontSize: 12, color: C.dim }}>{t('isync.master_source_wins_hint')}</span></span>
+                      </label>
+                    )}
+                  </details>
+                )
+              })}
+            </Card>
+          )}
+
           <Card padding={16}>
             <h2 style={{ ...h2, marginBottom: 10 }}>{t('isync.step4')}</h2>
             <div style={{ ...grid, marginBottom: 12 }}>
@@ -924,6 +997,31 @@ function DryRunCard({ dry, fieldLabel }: {
             <strong style={{ fontSize: 18, color }}>{dry[k]}</strong></div>
         ))}
       </div>
+      {dry.masters && (dry.masters.warehouses.master_rows > 0 || dry.masters.suppliers.master_rows > 0
+        || dry.masters.warehouses.new.length > 0 || dry.masters.warehouses.defaulted > 0) && (
+        <div style={{ marginTop: 10 }}>
+          <h3 style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700 }}>{t('isync.dry_masters_title')}</h3>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5 }}>
+            {dry.masters.warehouses.new.length > 0 && <li>{t('isync.dry_wh_new', { list: dry.masters.warehouses.new.join(', ') })}</li>}
+            {dry.masters.warehouses.renamed_in_source.length > 0 && <li>{t('isync.dry_wh_renamed', {
+              list: dry.masters.warehouses.renamed_in_source.map(r => `${r.stockai} ← ${r.source}`).join(', ') })}</li>}
+            {dry.masters.warehouses.inactive.length > 0 && <li>{t('isync.dry_wh_inactive', { list: dry.masters.warehouses.inactive.join(', ') })}</li>}
+            {dry.masters.warehouses.defaulted > 0 && <li>{t('isync.dry_wh_defaulted', { n: dry.masters.warehouses.defaulted })}</li>}
+            {[...dry.masters.warehouses.collisions, ...dry.masters.suppliers.collisions].length > 0 && <li>{t('isync.dry_collisions', {
+              list: [...dry.masters.warehouses.collisions, ...dry.masters.suppliers.collisions].map(c => `${c.code}: ${c.kept} / ${c.dropped}`).join('; ') })}</li>}
+            {(dry.masters.suppliers.create?.length ?? 0) > 0 && <li>{t('isync.dry_sup_create', { list: dry.masters.suppliers.create!.join(', ') })}</li>}
+            {(dry.masters.suppliers.lead_time_kept ?? 0) > 0 && <li>{t('isync.dry_sup_kept', { n: dry.masters.suppliers.lead_time_kept! })}</li>}
+          </ul>
+          {dry.masters.warehouses.totals.length > 0 && (
+            <details style={{ marginTop: 6 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 12.5 }}>{t('isync.dry_wh_totals')}</summary>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, color: C.muted }}>
+                {dry.masters.warehouses.totals.map(w => <li key={w.warehouse}>{w.warehouse}: {w.rows} · {w.quantity}</li>)}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
       {(dry.advice?.length ?? 0) > 0 && (
         <div role="alert" style={{ marginTop: 10, padding: 10, borderRadius: 8, border: `1px solid ${C.amber}` }}>
           <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: C.amber }}>{t('isync.advice_title')}</p>
