@@ -12,6 +12,17 @@ export interface SiteMetaCopy {
   home: PageMeta & { keywords: string[]; imageAlt: string }
   subpages: Record<SubpageKey, PageMeta>
   developers: PageMeta
+  /** The words on the link-preview card (/og-image.png, /og-image-en.png). */
+  ogCard: {
+    headline: [string, string, string]
+    lead: string
+    pill: string
+    chartTitle: string
+    chartRange: string
+    history: string
+    today: string
+    forecast: string
+  }
 }
 
 const es: SiteMetaCopy = {
@@ -59,6 +70,16 @@ const es: SiteMetaCopy = {
       'Conecta tu ERP, POS o sistema propio a StockAI: API key de lectura o escritura, límites de uso ' +
       'y la referencia completa de endpoints con ejemplos curl.',
   },
+  ogCard: {
+    headline: ['Predicción de ventas', 'con IA, producto', 'por producto.'],
+    lead: 'Modelos que compiten sobre tu historial. Con ese pronóstico, sabes qué pedir.',
+    pill: '9 modelos compiten por cada producto',
+    chartTitle: 'Pronóstico por producto',
+    chartRange: 'Rango probable',
+    history: 'Historial',
+    today: 'Hoy',
+    forecast: 'Pronóstico',
+  },
 }
 
 const en: SiteMetaCopy = {
@@ -105,6 +126,16 @@ const en: SiteMetaCopy = {
     description:
       'Connect your ERP, POS or in-house system to StockAI: read or write API keys, usage limits ' +
       'and the full endpoint reference with curl examples.',
+  },
+  ogCard: {
+    headline: ['AI sales', 'forecasting, product', 'by product.'],
+    lead: 'Models that compete on your history. With that forecast, you know what to order.',
+    pill: '9 models compete for every product',
+    chartTitle: 'Forecast per product',
+    chartRange: 'Likely range',
+    history: 'History',
+    today: 'Today',
+    forecast: 'Forecast',
   },
 }
 

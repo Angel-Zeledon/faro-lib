@@ -578,7 +578,7 @@ const en: ContentCopy = {
       label: 'Industries',
       title: 'Sales forecasting with StockAI, by the kind of business you run.',
       intro: 'Every trade buys differently: long or short lead times, thousands of codes or hundreds, steady sales or bursts. These pages describe each one’s problem and which part of StockAI addresses it, with no promised results.',
-      metaTitle: 'StockAI by industry: consumer goods, hardware, pharmacy, auto parts and retail',
+      metaTitle: 'StockAI by industry: sales forecasting for your business',
       metaDesc: 'How StockAI applies to a consumer-goods distributor, a hardware store, a pharmacy, an auto-parts business and a multi-store retailer: per-product sales forecasts, purchase signals, real lead times, minimums and seasons.',
       lead: 'Pick the trade closest to yours. If yours is not here the logic is the same: sales history, stock on hand and each supplier’s lead time.',
       commonTitle: 'What is the same in all of them',
@@ -593,7 +593,7 @@ const en: ContentCopy = {
       consumer: {
         label: 'Consumer goods',
         short: 'Groceries, beverages and fast-moving products with thousands of codes.',
-        metaTitle: 'Sales forecasting for consumer-goods and grocery distributors | StockAI',
+        metaTitle: 'StockAI for consumer-goods and grocery distributors',
         metaDesc: 'A sales forecast per product and, from it, what to order and from whom, for grocery and consumer-goods distributors: real lead times per supplier, paydays and seasons, and overstock flagged early.',
         title: 'Sales forecasting and purchasing for consumer-goods and grocery distributors.',
         intro: 'Thousands of codes, daily turnover and suppliers who deliver when they can. The buyer reviews what they remember; the rest runs out or piles up. Here is how StockAI applies to that day.',
@@ -630,7 +630,7 @@ const en: ContentCopy = {
       hardware: {
         label: 'Hardware and materials',
         short: 'A long catalogue, a tail of products that barely move and a job site that will not wait.',
-        metaTitle: 'Sales forecasting for hardware stores and building-materials distributors | StockAI',
+        metaTitle: 'StockAI for hardware stores and building-materials distributors',
         metaDesc: 'Sales forecasting and purchasing for hardware stores and materials distributors: intermittent-demand products, real supplier lead times, minimum orders and money tied up in what does not turn over.',
         title: 'Sales forecasting and purchasing for hardware stores and materials distributors.',
         intro: 'An enormous catalogue, a few products that sell every day and a huge tail that sells now and then. You need the screw the contractor asks for today without filling the warehouse with what never leaves.',
@@ -667,7 +667,7 @@ const en: ContentCopy = {
       pharmacy: {
         label: 'Pharmacy and health',
         short: 'A shortage that shows at once, and product you should not let age.',
-        metaTitle: 'Sales forecasting for pharmacies and health-product distributors | StockAI',
+        metaTitle: 'StockAI for pharmacies and health distributors: forecasting',
         metaDesc: 'Sales forecasting and purchasing for pharmacies and health-product distributors: order before the stockout, watch overstock and log shrinkage from expiry, with each wholesaler’s real lead time.',
         title: 'Sales forecasting and purchasing for pharmacies and health-product distributors.',
         intro: 'Running out of what the customer came for shows immediately, and filling the stockroom with what expires is lost money. StockAI does not replace your regulatory system: it tells you when and how much to order.',
@@ -704,7 +704,7 @@ const en: ContentCopy = {
       autoparts: {
         label: 'Auto parts',
         short: 'Many references, parts that sell sporadically and suppliers with long lead times.',
-        metaTitle: 'Sales forecasting for auto-parts and spare-parts businesses | StockAI',
+        metaTitle: 'StockAI for spare parts and auto parts: forecasting and purchasing',
         metaDesc: 'Sales forecasting and purchasing for auto-parts houses: intermittent-demand references, import lead times learned from each reception, and overstock alerts.',
         title: 'Sales forecasting and purchasing for auto-parts businesses.',
         intro: 'Tens of thousands of references, parts that sell two or three times a year and suppliers who import with long lead times. Have the part when the workshop asks for it, without piling up the ones nobody looks for.',
@@ -741,7 +741,7 @@ const en: ContentCopy = {
       retail: {
         label: 'Multi-store retail',
         short: 'Several stores, different demand in each, and stock you can move between them.',
-        metaTitle: 'Sales forecasting for retail with several stores and warehouses | StockAI',
+        metaTitle: 'StockAI for retail with several stores and warehouses',
         metaDesc: 'Sales forecasts per store and consolidated, transfers between stores before buying, seasons and simulated promotions: StockAI for retail with several warehouses.',
         title: 'Sales forecasting and purchasing for multi-store retail.',
         intro: 'The same product is in surplus in one store and short in another. Buying for all three without looking at where each unit is is the most expensive way to fix it.',
@@ -780,7 +780,7 @@ const en: ContentCopy = {
     label: 'StockAI vs. Excel',
     title: 'StockAI against an Excel spreadsheet, plainly.',
     intro: 'Excel is the tool almost all of us start buying with, and for a small catalogue it is still a great option. This page says what it does well, where it stops being enough and what changes if you move to StockAI.',
-    metaTitle: 'StockAI vs. an Excel spreadsheet for sales forecasting and purchasing: an honest comparison',
+    metaTitle: 'StockAI vs. Excel: sales forecasting, an honest comparison',
     metaDesc: 'What Excel does well for estimating sales and buying, where it breaks (stockouts by supplier lead time, many products, promotions, several warehouses) and what changes with StockAI.',
     fairTitle: 'What Excel does well',
     fair: [
@@ -862,7 +862,7 @@ const en: ContentCopy = {
     label: 'Integrations and data',
     title: 'How your data gets into StockAI and how your decisions get out.',
     intro: 'This is the list of what exists today, with no promises: file upload, a connection to your database, a public API, a read-only MCP server, webhooks and WhatsApp. At the end, what does not exist yet, marked as such.',
-    metaTitle: 'StockAI integrations and data: CSV, Excel, SQL, API, MCP, webhooks and WhatsApp',
+    metaTitle: 'StockAI integrations: CSV, Excel, SQL, API, MCP and WhatsApp',
     metaDesc: 'What StockAI connects today: CSV or Excel upload, Postgres and MySQL databases, a public API with keys, a read-only MCP server, webhooks and WhatsApp. And what does not exist yet.',
     nowTitle: 'What exists today',
     now: [
