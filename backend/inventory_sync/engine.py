@@ -434,6 +434,15 @@ def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str
     with _closing(batches) as source:
         for batch in source:
             rows = prep.rows(batch)
+            if (incremental or profile.get("mode") == "incremental") and prep.watermark \
+                    and prep.watermark.get("type") not in ("datetime", "number"):
+                # Caught on the FIRST read, before anything is applied: a text
+                # column cannot be followed, and accepting it would make this run
+                # succeed and every later one fail.
+                raise AppError("inventory_sync_watermark_unsupported",
+                               "An incremental sync needs a date/time or numeric column to follow.",
+                               status_code=422, params={"type": prep.watermark.get("type"),
+                                                        "column": profile.get("watermark_column")})
             if is_sql and not checked and prep.seen_columns:
                 # A SQL result has the same columns on every row: check the first batch.
                 checked = True

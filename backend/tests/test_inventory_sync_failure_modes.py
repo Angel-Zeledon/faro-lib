@@ -572,6 +572,117 @@ class TestPrecedence:
         assert float(_stock(tid)[("A1", "Norte")]["current_stock"]) == 10     # the better profile owns it
 
 
+# ── Rows of the catalogue the classes above did not exercise end to end ──────
+
+class TestCatalogueGaps:
+
+    def test_row_count_drop_brakes(self, test_tenant, src_db, src_table):
+        tid = test_tenant["id"]
+        rows = [(f"S{i}", "Norte", 5) for i in range(100)]
+        p = _seed(tid, src_db, src_table, rows=rows, brake_max_vanished_pct=100)
+        before = _snapshot(tid)
+        _put(src_db, src_table, rows[:40])                       # 60 % of the rows gone
+        _expect(tid, p, _run(tid, p["id"]), status="braked", code="brake_row_count_drop", health="paused",
+                untouched_from=before)
+
+    def test_no_valid_rows_brakes(self, test_tenant, src_db, src_table):
+        tid = test_tenant["id"]
+        p = _seed(tid, src_db, src_table, brake_max_rejected_pct=100)
+        before = _snapshot(tid)
+        _put(src_db, src_table, [("A1", "Norte", -1), ("B2", "Norte", -2)])   # every row rejected
+        _expect(tid, p, _run(tid, p["id"]), status="braked", code="brake_no_valid_rows", health="paused",
+                untouched_from=before)
+
+    def test_query_failing_on_the_source_pauses(self, test_tenant, src_db, src_table):
+        tid = test_tenant["id"]
+        _put(src_db, src_table, [("A1", "Norte", 10)])
+        p = _profile(tid, _source(tid), src_table, source_kind="query", source_object=None,
+                     source_query=f"SELECT codigo, almacen, existencia / (existencia - 10) AS existencia "
+                                  f"FROM {src_table}")
+        run = _run(tid, p["id"])                                  # division by zero on the customer's side
+        o = _expect(tid, p, run, status="failed", code="sql_query_failed",
+                    health=failures.outcome_of("sql_query_failed").health)
+        assert o.retries is False and _stock(tid) == {}
+
+    def test_database_that_does_not_exist_blocks(self, test_tenant, src_db, src_table):
+        tid = test_tenant["id"]
+        p = _seed(tid, src_db, src_table)
+        before = _snapshot(tid)
+        _repoint(tid, p, _broken_source(tid, database="no_such_database_xyz"))
+        o = _expect(tid, p, _run(tid, p["id"]), status="failed", code="data_source_database_not_found",
+                    health="blocked", untouched_from=before)
+        assert o.retries is False
+
+    def test_a_text_watermark_fails_the_first_incremental_read_before_applying(self, test_tenant, src_db,
+                                                                               src_table):
+        tid = test_tenant["id"]
+        _put(src_db, src_table, [("A1", "Norte", 10)])
+        p = _profile(tid, _source(tid), src_table, mode="incremental", watermark_column="almacen")
+        run = _run(tid, p["id"])
+        assert run["status"] == "failed" and run["error_code"] == "inventory_sync_watermark_unsupported"
+        assert _stock(tid) == {}                                  # nothing applied, not "success then fail"
+        assert profiles.get(tid, p["id"])["health"] == failures.outcome_of(
+            "inventory_sync_watermark_unsupported").health
+
+    def test_a_run_whose_worker_died_while_reading_is_closed_as_interrupted(self, test_tenant, src_db,
+                                                                             src_table):
+        tid = test_tenant["id"]
+        p = _seed(tid, src_db, src_table)
+        dead = engine.start_run(tid, p["id"], "schedule")          # never staged: died while reading
+        execute("UPDATE inventory_sync_profiles SET enabled = TRUE, lease_until = NOW() - INTERVAL '1 second', "
+                "next_run_at = NOW() - INTERVAL '1 second' WHERE id = %s", (p["id"],))
+        claimed = scheduler.claim_due(owner="w-new", profile_id=p["id"])
+        scheduler.run_claimed(claimed, "w-new", "schedule")
+        row = query_one("SELECT status, error_code FROM inventory_sync_runs WHERE id = %s", (dead,))
+        assert (row["status"], row["error_code"]) == ("failed", "inventory_sync_interrupted")
+        latest = query_one("SELECT status FROM inventory_sync_runs WHERE profile_id = %s "
+                           "ORDER BY started_at DESC LIMIT 1", (p["id"],))
+        assert latest["status"] == "success"
+
+    def test_an_unexpected_error_is_internal_degraded_and_retried(self, test_tenant, src_db, src_table,
+                                                                 monkeypatch):
+        from backend.inventory_sync import apply as applier
+        tid = test_tenant["id"]
+        p = _seed(tid, src_db, src_table)
+        _put(src_db, src_table, [("A1", "Norte", 1), ("B2", "Norte", 1)])
+        before = _snapshot(tid)
+        monkeypatch.setattr(applier, "_apply_batch_once",
+                            lambda *a, **k: (_ for _ in ()).throw(ValueError("bug")))
+        o = _expect(tid, p, _run(tid, p["id"]), status="failed", code="inventory_sync_internal_error",
+                    health="degraded", untouched_from=before)
+        assert o.retries is True
+
+    def test_location_ceiling_refuses_new_warehouses_and_applies_the_rest(self, test_tenant, src_db,
+                                                                         src_table, monkeypatch):
+        from backend.entitlements import service as ent
+        from backend.inventory import warehouse_service as wh_svc
+        tid = test_tenant["id"]
+        p = _seed(tid, src_db, src_table, rows=[("A1", "Norte", 1)])
+        monkeypatch.setattr(settings, "testing_mode", False)
+        have = int(wh_svc.count_warehouses(tid))
+        monkeypatch.setattr(ent, "tenant_limits", lambda t: {"max_skus": 1000, "max_locations": have})
+        _put(src_db, src_table, [("A1", "Norte", 7), ("B2", "Bodega Nueva", 3)])
+        run = _run(tid, p["id"])
+        assert run["status"] == "success" and run["refused_ceiling"] == 1
+        stock = _stock(tid)
+        assert float(stock[("A1", "Norte")]["current_stock"]) == 7 and ("B2", "Bodega Nueva") not in stock
+        assert "inventory_sync_location_ceiling" in (run.get("warnings") or {}).get("codes", [])
+
+    def test_doctor_flags_an_unindexed_change_column_with_the_index_to_create(self, test_tenant, src_db,
+                                                                             src_table):
+        from backend.inventory_sync import doctor
+        tid = test_tenant["id"]
+        _put(src_db, src_table, [("A1", "Norte", 1)])
+        p = _profile(tid, _source(tid), src_table, mode="incremental", watermark_column="updated_at")
+        stage = next(s for s in doctor.run(tid, profiles.get(tid, p["id"]))["stages"] if s["stage"] == "index")
+        assert stage["status"] == "warning" and stage["code"] == "inventory_sync_filter_not_indexed"
+        assert "CREATE INDEX" in stage["detail"]["suggestion"] and src_table in stage["detail"]["suggestion"]
+        with src_db.cursor() as cur:
+            cur.execute(f"CREATE INDEX ON {src_table} (updated_at)")
+        stage = next(s for s in doctor.run(tid, profiles.get(tid, p["id"]))["stages"] if s["stage"] == "index")
+        assert stage["status"] == "ok"
+
+
 # ── The catalogue itself ──────────────────────────────────────────────────────
 
 def _catalogue_text() -> str:
