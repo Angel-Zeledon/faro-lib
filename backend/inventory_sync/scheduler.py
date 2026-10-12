@@ -46,6 +46,7 @@ from backend.inventory_sync import engine
 log = logging.getLogger(__name__)
 
 POLL_SECONDS = 5
+MAX_PER_TENANT = 2          # scheduled/continuous runs one tenant may hold at once
 MAX_BACKOFF_MINUTES = 24 * 60
 JITTER = 0.2
 _pool: Optional[ThreadPoolExecutor] = None
@@ -100,7 +101,12 @@ def claim_due(now: Optional[datetime] = None, owner: Optional[str] = None,
     the pick to one profile (the same rules), so a check about one profile is
     not answered by another tenant's due profile."""
     owner = owner or _owner()
-    only = " AND id = %s" if profile_id else ""
+    # Per-tenant gate: one tenant's many continuous profiles (polling every
+    # 15 s) cannot take every worker slot from the other tenants. Explicit
+    # requests (refresh, push, "sync now") go through claim_one, not here.
+    only = (" AND (SELECT COUNT(*) FROM inventory_sync_profiles o WHERE o.tenant_id = "
+            "inventory_sync_profiles.tenant_id AND o.lease_until > NOW()) < %s" % int(MAX_PER_TENANT))
+    only += " AND id = %s" if profile_id else ""
     params: tuple = (owner, engine.LEASE_MINUTES, now or datetime.now(timezone.utc))
     row = query_one(
         "UPDATE inventory_sync_profiles p SET lease_owner = %s, "

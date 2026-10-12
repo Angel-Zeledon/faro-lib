@@ -200,6 +200,24 @@ class TestScheduling:
         claimed = scheduler.claim_due(owner="w2", profile_id=p["id"])
         assert claimed and claimed["id"] == p["id"]
 
+    def test_one_tenant_cannot_hold_every_worker_slot(self, test_tenant, src_db, src_table):
+        tid = test_tenant["id"]
+        sid = _source(tid)
+        ps = [profiles.create(tid, "usr_test", {"name": f"p{i}", "data_source_id": sid, "source_kind": "table",
+                                                 "source_schema": "public", "source_object": src_table,
+                                                 "mapping": {"sku": "codigo", "warehouse": "almacen",
+                                                             "current_stock": "existencia"}})
+              for i in range(scheduler.MAX_PER_TENANT + 1)]
+        ids = [p["id"] for p in ps]
+        execute("UPDATE inventory_sync_profiles SET enabled = TRUE, next_run_at = NOW() - INTERVAL '1 minute' "
+                "WHERE id = ANY(%s)", (ids,))
+        execute("UPDATE inventory_sync_profiles SET lease_owner = 'busy', lease_until = NOW() + INTERVAL '5 minutes' "
+                "WHERE id = ANY(%s)", (ids[:scheduler.MAX_PER_TENANT],))
+        assert scheduler.claim_due(owner="w", profile_id=ids[-1]) is None      # the tenant's slots are full
+        execute("UPDATE inventory_sync_profiles SET lease_until = NULL WHERE id = %s", (ids[0],))
+        claimed = scheduler.claim_due(owner="w", profile_id=ids[-1])
+        assert claimed and claimed["id"] == ids[-1]
+
     def test_next_run_has_jitter(self, test_tenant, src_db, src_table):
         tid = test_tenant["id"]
         p = _ready(tid, src_db, src_table, [("A1", "Norte", 10)], interval_minutes=60)
