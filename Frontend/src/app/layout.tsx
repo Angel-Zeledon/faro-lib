@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { headers } from 'next/headers'
 import { Inter, Space_Grotesk } from 'next/font/google'
 import './globals.css'
 import ConditionalShell from '@/components/layout/ConditionalShell'
@@ -118,8 +119,12 @@ const textFont = Inter({
 const NO_FLASH =`try{document.documentElement.setAttribute('data-theme',localStorage.getItem('theme')||'light')}catch(e){}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // The English pages of the public site live under /en; middleware.ts marks
+  // those requests so the document says so before any script runs. Everything
+  // else — the Spanish site and the app — starts as Spanish, as it always has.
+  const lang = headers().get('x-site-lang') === 'en' ? 'en' : 'es'
   return (
-    <html lang="es" className={`${brandFont.variable} ${textFont.variable}`}>
+    <html lang={lang} className={`${brandFont.variable} ${textFont.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
       </head>

@@ -3,7 +3,7 @@
 // H2 sections, a visible FAQ (the same text the server wrapper publishes as
 // FAQPage), links to the product pages and a call to action to sign up.
 // Same shell, stylesheet and closing band as the other content pages.
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { Fragment } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { GUIDES, type GuideCallout } from '@/i18n/landingGuides'

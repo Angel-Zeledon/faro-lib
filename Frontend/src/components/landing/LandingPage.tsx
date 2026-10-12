@@ -16,7 +16,7 @@
 // instead of interrupting the engine. Later the same day ("elimina elementos
 // redundantes") the sections that said the same thing twice went: the
 // "Cada mañana" bullets, "Qué incluye" and "Para tu equipo técnico".
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { appHref } from '@/lib/siteUrls'
 import { useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'

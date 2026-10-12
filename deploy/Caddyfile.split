@@ -20,8 +20,11 @@ import /etc/caddy/extra/*.caddy
 	redir @www https://{$LANDING_DOMAIN}{uri} 308
 
 	# The landing's own pages (Frontend/src/app/{precios,como-funciona,...}) are
-	# listed by name: anything not named here is an app route.
-	@landing path / /precios /como-funciona /preguntas-frecuentes /seguridad /desarrolladores /industrias /industrias/consumo-masivo /industrias/ferreteria /industrias/farmacia /industrias/autopartes /industrias/retail /stockai-vs-excel /como-se-calcula /que-es-stockai /software-de-inventario-para-distribuidores /como-calcular-el-punto-de-reorden /stock-de-seguridad /pronostico-de-demanda-para-compras /integraciones /novedades /privacidad /terminos /cookies /aviso-legal /legal /uso-aceptable /procesamiento-de-datos /ia /divulgacion-responsable /accesibilidad /condiciones-comerciales /licencia /.well-known/* /docs /docs/* /api-response-examples.json /icon.svg /brand/* /icons/* /_next/* /*.png /*.jpg /*.svg /*.ico /*.webp /*.pdf /*.csv /*.txt /*.xml /*.webmanifest /google*.html
+	# listed by name: anything not named here is an app route. The English site
+	# (/en, /en/pricing, ..., Frontend/src/components/landing/sitePaths.ts) is
+	# listed the same way; /en/ is named so Next 308s it to /en on this domain
+	# instead of it being sent to the app domain.
+	@landing path / /precios /como-funciona /preguntas-frecuentes /seguridad /desarrolladores /industrias /industrias/consumo-masivo /industrias/ferreteria /industrias/farmacia /industrias/autopartes /industrias/retail /stockai-vs-excel /como-se-calcula /que-es-stockai /software-de-inventario-para-distribuidores /como-calcular-el-punto-de-reorden /stock-de-seguridad /pronostico-de-demanda-para-compras /integraciones /novedades /privacidad /terminos /cookies /aviso-legal /legal /uso-aceptable /procesamiento-de-datos /ia /divulgacion-responsable /accesibilidad /condiciones-comerciales /licencia /.well-known/* /docs /docs/* /en /en/ /en/pricing /en/how-it-works /en/faq /en/security /en/developers /en/industries /en/industries/consumer-goods /en/industries/hardware /en/industries/pharmacy /en/industries/auto-parts /en/industries/retail /en/stockai-vs-excel /en/how-it-is-calculated /en/integrations /en/whats-new /en/what-is-stockai /en/inventory-software-for-distributors /en/how-to-calculate-the-reorder-point /en/safety-stock /en/demand-forecasting-for-purchasing /en/privacy /en/terms /en/cookies /en/legal-notice /en/acceptable-use /en/data-processing /en/ai /en/responsible-disclosure /en/accessibility /en/commercial-terms /en/license /en/legal /en/docs /en/docs/* /api-response-examples.json /icon.svg /brand/* /icons/* /_next/* /*.png /*.jpg /*.svg /*.ico /*.webp /*.pdf /*.csv /*.txt /*.xml /*.webmanifest /google*.html
 	handle @landing {
 		reverse_proxy frontend:5000
 	}

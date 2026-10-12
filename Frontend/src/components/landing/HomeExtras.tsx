@@ -4,7 +4,7 @@
 // ships, and "who it is for / who it is not" with a way into the content
 // pages. Copy: i18n/landingContent.ts (`home`). The screenshots are the same
 // files the full tour uses (Frontend/public/shot-*.png): nothing is made up.
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { LANDING } from '@/i18n/landing'
 import { LANDING_CONTENT } from '@/i18n/landingContent'

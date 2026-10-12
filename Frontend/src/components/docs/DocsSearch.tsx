@@ -4,7 +4,7 @@
 // and fetched the first time search opens, so a reader who never searches
 // never downloads it. No external service, no library: a page set this size is
 // a few hundred chunks, and a substring scan over them is instant.
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import type { Lang } from '@/i18n/translations'

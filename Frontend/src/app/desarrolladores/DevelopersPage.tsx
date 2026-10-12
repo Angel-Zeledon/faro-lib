@@ -23,7 +23,7 @@
 //
 // The landing's chrome (Nav/Footer) and primitives are imported, never edited
 // here.
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, Copy, Link2, PanelLeft, Search, X } from 'lucide-react'
 import { useLanguage } from '@/contexts/LanguageContext'

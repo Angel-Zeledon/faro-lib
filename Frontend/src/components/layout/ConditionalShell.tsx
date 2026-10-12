@@ -4,6 +4,7 @@ import AppShell from './AppShell'
 import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 import { LEGAL_PUBLIC_PATHS } from '@/components/landing/legalPaths'
 import { CONTENT_PUBLIC_PATHS } from '@/components/landing/contentPaths'
+import { EN_PUBLIC_PATHS } from '@/components/landing/sitePaths'
 import StorageNotice from '@/components/legal/StorageNotice'
 import { FeedbackProvider } from '@/components/feedback/FeedbackDialog'
 
@@ -12,7 +13,8 @@ const AUTH_PATHS    = ['/login', '/signup', '/verify-email', '/forgot-password',
 // /desarrolladores: the API reference, a landing page with its own chrome.
 // The legal documents are public too: they must open for somebody who has no
 // account yet, and from inside the app without leaving it for a sign-in wall.
-const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS), ...LEGAL_PUBLIC_PATHS, ...CONTENT_PUBLIC_PATHS, '/desarrolladores']
+// The English site (/en/…, landing/sitePaths) is the same set of pages again.
+const LANDING_PATHS = ['/', ...Object.values(SUBPAGE_PATHS), ...LEGAL_PUBLIC_PATHS, ...CONTENT_PUBLIC_PATHS, '/desarrolladores', ...EN_PUBLIC_PATHS]
 
 export default function ConditionalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

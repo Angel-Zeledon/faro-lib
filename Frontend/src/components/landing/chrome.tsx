@@ -8,7 +8,8 @@
 // becomes `/#anchor`, unless that page renders the same section itself
 // (`localAnchors`) — the closing band is on every page, so "Contacto" never
 // leaves the page it is clicked on.
-import Link from 'next/link'
+import Link, { useLocalHref } from '@/components/landing/SiteLink'
+import NextLink from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Menu, X } from 'lucide-react'
@@ -23,6 +24,7 @@ import { LEGAL_HUB_PATH, LEGAL_ORDER, LEGAL_PATHS } from '@/components/landing/l
 import { BrandMark } from '@/components/brand/BrandMark'
 import { T } from '@/components/landing/theme'
 import { CONTACT_EMAIL, CONTACT_PHONE_HREF, CONTACT_PHONE_LABEL } from '@/components/landing/contact'
+import { counterpartPath, localizeHref } from '@/components/landing/sitePaths'
 
 export interface ChromeProps {
   // True only on `/`. Decides whether `#anchor` links stay on the page.
@@ -37,10 +39,12 @@ export function landingHref(href: string, { onHome, localAnchors = [] }: ChromeP
 }
 
 // A link to a subpage goes through Next's router (no full reload); anchors and
-// `/#anchor` stay plain anchors so the browser handles the jump.
+// `/#anchor` stay plain anchors so the browser handles the jump. Either way the
+// href is the one for the page's language (`/#motor` is `/en#motor` in English).
 function LandingLink({ href, className, onClick, children, current }: {
   href: string; className?: string; onClick?: () => void; children: React.ReactNode; current?: boolean
 }) {
+  const local = useLocalHref()
   if (href.startsWith('/') && !href.startsWith('/#')) {
     return (
       <Link href={href} className={className} onClick={onClick} aria-current={current ? 'page' : undefined}>
@@ -48,25 +52,50 @@ function LandingLink({ href, className, onClick, children, current }: {
       </Link>
     )
   }
-  return <a href={href} className={className} onClick={onClick}>{children}</a>
+  return <a href={local(href)} className={className} onClick={onClick}>{children}</a>
 }
 
 // Two letters, not a dropdown with flags. A flag is a country and this is a
 // language — Spanish is not Spain here, and English is not the United States.
-// The choice persists through LanguageProvider, so it also follows the visitor
-// into the app after they sign in.
+//
+// Each letter is a link to the same page in that language (/precios and
+// /en/pricing): the language of a public page is its URL, so a shared link
+// opens in the language it was shared in. The click also stores the choice as
+// the app's default, which is all it remembers — nothing redirects a visitor
+// by it. On a page with no counterpart it switches the language in place.
 function LangToggle({ lang, setLang }: { lang: 'es' | 'en'; setLang: (l: 'es' | 'en') => void }) {
+ const pathname = usePathname() ?? '/'
+ const remember = (code: 'es' | 'en') => {
+  try { localStorage.setItem('lang', code) } catch { /* storage blocked */ }
+ }
  return (
   <div role="group" aria-label="Language" className="lp-lang">
-   {(['es', 'en'] as const).map(code => (
-    <button
-     key={code}
-     type="button"
-     onClick={() => setLang(code)}
-     aria-pressed={lang === code}
-     className={lang === code ? 'is-on' : undefined}
-    >{code.toUpperCase()}</button>
-   ))}
+   {(['es', 'en'] as const).map(code => {
+    const target = counterpartPath(pathname, code)
+    if (target === null) {
+     return (
+      <button
+       key={code}
+       type="button"
+       onClick={() => setLang(code)}
+       aria-pressed={lang === code}
+       className={lang === code ? 'is-on' : undefined}
+      >{code.toUpperCase()}</button>
+     )
+    }
+    return (
+     <NextLink
+      key={code}
+      href={target}
+      hrefLang={code}
+      lang={code}
+      onClick={() => remember(code)}
+      aria-current={lang === code ? 'true' : undefined}
+      aria-label={code === 'es' ? 'Español' : 'English'}
+      className={lang === code ? 'is-on' : undefined}
+     >{code.toUpperCase()}</NextLink>
+    )
+   })}
   </div>
  )
 }
@@ -75,7 +104,7 @@ export function Nav(props: ChromeProps) {
  const { lang, setLang } = useLanguage()
  const pathname = usePathname()
  const L = LANDING[lang]
- const NAV_LINKS = L.nav.links.map(([href, label]) => [landingHref(href, props), label] as const)
+ const NAV_LINKS = L.nav.links.map(([href, label]) => [localizeHref(landingHref(href, props), lang), label] as const)
 
  // Below 900px the inline link row does not fit and is hidden. It used to be
  // hidden with nothing in its place, so a phone had no way to reach Precios,
@@ -111,7 +140,7 @@ export function Nav(props: ChromeProps) {
  return (
  <header>
  <nav aria-label={L.nav.ariaLabel} className={`nav-shell${scrolled || menuOpen ? ' is-scrolled' : ''}`}>
- <a href={props.onHome ? '#top' : '/'} aria-label="StockAI" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
+ <a href={props.onHome ? '#top' : localizeHref('/', lang)} aria-label="StockAI" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
  <BrandMark size={36} />
  </a>
  <div className="nav-links">

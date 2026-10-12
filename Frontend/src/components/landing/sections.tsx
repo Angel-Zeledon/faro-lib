@@ -3,7 +3,7 @@
 // how it decides, price, trust, FAQ and the closing band. The home page and
 // the subpages render these same components, so a change to the pitch lands
 // in both places at once. Moved verbatim from LandingPage.tsx.
-import Link from 'next/link'
+import Link, { useLocalHref } from '@/components/landing/SiteLink'
 import { useState } from 'react'
 import { appHref } from '@/lib/siteUrls'
 import { LANDING, type Titled } from '@/i18n/landing'
@@ -196,6 +196,7 @@ export function TrustSection({ decideHref, ruleDesc, extra = [], moreHref }: {
   moreHref?: string
 }) {
  const { L } = useCopy()
+ const local = useLocalHref()
  const last = L.trust.items.length - 1
  const items = [
   ...L.trust.items.map((item, i) => (i === last && ruleDesc ? { ...item, desc: ruleDesc } : item)),
@@ -216,7 +217,7 @@ export function TrustSection({ decideHref, ruleDesc, extra = [], moreHref }: {
  <h3 className="trust-title">{title}</h3>
  <p className="trust-desc">{desc}</p>
  {i === last && (
- <a href={decideHref} className="trust-link">{L.trust.decideLink}</a>
+ <a href={local(decideHref)} className="trust-link">{L.trust.decideLink}</a>
  )}
  </li>
  ))}

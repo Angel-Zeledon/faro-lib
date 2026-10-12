@@ -1,6 +1,9 @@
 # TLS is automatic (Let's Encrypt) for the domain in $DOMAIN.
 # Everything goes to the Next.js server, which proxies /api/* to the backend
 # in-network — the API container is never exposed publicly.
+# One domain, no path list: the public site in both languages (/precios,
+# /en/pricing, /docs, /en/docs/...) and the app all reach Next.js as they are.
+# Caddyfile.split is the one that names the landing's pages.
 # Extra sites from other projects on this VPS live in /etc/caddy/extra (a host directory
 # mounted read-only by docker-compose.prod.yml). Importing a glob that matches nothing is not an error.
 import /etc/caddy/extra/*.caddy

@@ -10,6 +10,8 @@ export interface DocsChromeCopy {
   title: string
   intro: string
   metaTitle: string
+  /** Before a page's own title in its search title ("StockAI ayuda: …"). */
+  metaPrefix: string
   sections: Record<DocSectionSlug, { title: string; blurb: string }>
   search: {
     open: string
@@ -50,6 +52,7 @@ export const DOCS_CHROME: Record<Lang, DocsChromeCopy> = {
       'Cómo usar StockAI de punta a punta: subir tus ventas, leer el pronóstico y el semáforo, generar y recibir órdenes de compra, ' +
       'y entender de dónde sale cada número que te mostramos.',
     metaTitle: 'StockAI centro de ayuda: guías de uso paso a paso',
+    metaPrefix: 'StockAI ayuda: ',
     sections: {
       'primeros-pasos': { title: 'Primeros pasos', blurb: 'De cuenta nueva a tu primer semáforo y tu primera orden de compra.' },
       'uso-diario': { title: 'Uso diario', blurb: 'Las pantallas de todos los días: compras, pedidos, inventario y proveedores.' },
@@ -103,7 +106,8 @@ export const DOCS_CHROME: Record<Lang, DocsChromeCopy> = {
     intro:
       'How to use StockAI end to end: upload your sales, read the forecast and the stock signal, create and receive purchase orders, ' +
       'and understand where every number we show you comes from.',
-    metaTitle: 'Help center — StockAI',
+    metaTitle: 'StockAI help center: step-by-step guides',
+    metaPrefix: 'StockAI help: ',
     sections: {
       'primeros-pasos': { title: 'Getting started', blurb: 'From a new account to your first stock signal and your first purchase order.' },
       'uso-diario': { title: 'Everyday use', blurb: 'The screens you open every day: purchasing, orders, inventory and suppliers.' },
