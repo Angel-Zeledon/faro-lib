@@ -61,6 +61,9 @@ ALLOWED: dict[str, str] = {
         "stored stock. The import itself (po_import) is guarded.",
     "webhooks.py:list_event_types":
         "A static catalogue of event names and payload keys; no tenant data.",
+    "inventory_sync.py:list_presets":
+        "A static catalogue of ERP query templates (the word 'warehouse' is in their "
+        "column names); no tenant data, no stock.",
     "inventory.py:supplier_scorecard":
         "Supplier-level statistics (lead time, on-time and fill rate). Not keyed by "
         "warehouse and shows no stock or warehouse names.",

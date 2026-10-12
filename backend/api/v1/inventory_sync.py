@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from backend import audit
+from backend.auth import warehouse_scope as wscope
 from backend.auth.guards import CurrentUser, get_current_user, require_analyst_or_above
 from backend.errors import AppError
 from backend.config import settings
@@ -147,8 +148,15 @@ def get_freshness(user: CurrentUser = Depends(get_current_user)):
     not succeeded within its expected window), `blocked` (a profile is paused
     or blocked and needs someone) or `none` (no sync). `data_as_of` is the
     oldest last success among live profiles: the stock is at least that fresh.
-    Each profile lists its own state and the reason code when not fresh."""
-    return ok(scheduler.freshness(user.tenant_id))
+    Each profile lists its own state and the reason code when not fresh.
+
+    Warehouse scope: the answer carries timestamps, sync names and health, no
+    stock and no warehouse, so a user limited to some warehouses sees it; but
+    a sync writes EVERY warehouse, so `can_refresh` is false for them (the
+    refresh endpoint refuses them)."""
+    out = scheduler.freshness(user.tenant_id)
+    out["can_refresh"] = not wscope.is_scoped(user)
+    return ok(out)
 
 
 @status_router.get("/inventory-sync/profiles")
@@ -157,12 +165,14 @@ def list_profiles(user: CurrentUser = Depends(get_current_user)):
     its age, `stale` (no success within twice the interval), `braked` (the
     safety brake stopped the last run), the last error code and the fields the
     source owns."""
+    wscope.require_company_wide(user)
     return ok([profiles.public(r) for r in profiles.list_for_tenant(user.tenant_id)])
 
 
 @status_router.get("/inventory-sync/profiles/{profile_id}")
 def get_profile(profile_id: str, user: CurrentUser = Depends(get_current_user)):
     """One inventory sync profile with the same status fields as the list."""
+    wscope.require_company_wide(user)
     return ok(profiles.public(profiles.require(user.tenant_id, profile_id)))
 
 
@@ -172,6 +182,7 @@ def list_runs(profile_id: str, limit: int = Query(default=30, ge=1, le=200),
     """The run log of a profile, newest first: rows read, created, updated,
     unchanged and rejected, the outcome (success / failed / braked), the error
     code and the watermark each run started from and reached."""
+    wscope.require_company_wide(user)
     return ok(profiles.list_runs(user.tenant_id, profile_id, limit))
 
 
@@ -180,6 +191,7 @@ def list_runs(profile_id: str, limit: int = Query(default=30, ge=1, le=200),
 @router.get("/inventory-sync/sources")
 def list_database_sources(user: CurrentUser = Depends(require_analyst_or_above)):
     """The connected databases a profile can read from."""
+    wscope.require_company_wide(user)
     from backend.db.connection import query
     rows = query(
         "SELECT id, name, connection_status, sql_config->>'engine' AS engine, "
@@ -193,6 +205,7 @@ def list_database_sources(user: CurrentUser = Depends(require_analyst_or_above))
 def discover(source_id: str, refresh: bool = Query(False),
              user: CurrentUser = Depends(require_analyst_or_above)):
     """Every table / view / collection, plus the best stock candidates first."""
+    wscope.require_company_wide(user)
     from backend.datasources.service import get_schema
     _source_or_404(user, source_id)
     schema = get_schema(user.tenant_id, source_id, refresh=refresh)
@@ -206,6 +219,7 @@ def columns(source_id: str, table: str = Query(..., min_length=1, max_length=256
             schema: str = Query("", max_length=256),
             user: CurrentUser = Depends(require_analyst_or_above)):
     """A table's columns with sample values and the proposed mapping."""
+    wscope.require_company_wide(user)
     from backend.datasources.service import get_table_columns
     src = _source_or_404(user, source_id)
     engine_name = (src.get("sql_config") or {}).get("engine")
@@ -227,6 +241,7 @@ def inspect(source_id: str, body: InspectBody,
             user: CurrentUser = Depends(require_analyst_or_above)):
     """Columns (from sample rows) and the proposed mapping for a saved query
     or a MongoDB pipeline — what the table listing cannot describe."""
+    wscope.require_company_wide(user)
     src = _source_or_404(user, source_id)
     engine_name = (src.get("sql_config") or {}).get("engine") or "postgresql"
     probe = {"data_source_id": source_id, "source_kind": body.source_kind,
@@ -245,6 +260,7 @@ def inspect(source_id: str, body: InspectBody,
 @router.post("/inventory-sync/dry-run")
 def dry_run_unsaved(body: ProfileBody, user: CurrentUser = Depends(require_analyst_or_above)):
     """Preview a configuration that is not saved yet. Writes nothing."""
+    wscope.require_company_setting(user)
     cfg = profiles.normalize(user.tenant_id, _body(body))
     return ok(engine.dry_run(user.tenant_id, cfg))
 
@@ -257,6 +273,7 @@ def create_profile(body: ProfileBody, request: Request,
                    user: CurrentUser = Depends(require_analyst_or_above)):
     """Create a profile (off until previewed and enabled). Send
     `Idempotency-Key` to make a retried POST create it once."""
+    wscope.require_company_setting(user)
     data = _body(body)
 
     def _do():
@@ -274,6 +291,7 @@ def update_profile(profile_id: str, body: ProfileBody, request: Request,
                    user: CurrentUser = Depends(require_analyst_or_above)):
     """Change a profile. Changing what it writes turns it off until previewed
     again (`disabled_by_edit: true`)."""
+    wscope.require_company_setting(user)
     row, disabled = profiles.update(user.tenant_id, profile_id, _body(body))
     audit.note(request, label=row["name"], after={"disabled_by_edit": disabled,
                                                   "config_hash": row["config_hash"]})
@@ -284,6 +302,7 @@ def update_profile(profile_id: str, body: ProfileBody, request: Request,
 def delete_profile(profile_id: str, request: Request,
                    user: CurrentUser = Depends(require_analyst_or_above)):
     """Delete a profile with its run log. The stock it synced stays as it is."""
+    wscope.require_company_setting(user)
     row = profiles.delete(user.tenant_id, profile_id)
     audit.note(request, label=row["name"])
     return ok({"deleted": profile_id})
@@ -293,6 +312,7 @@ def delete_profile(profile_id: str, request: Request,
 def dry_run_saved(profile_id: str, user: CurrentUser = Depends(require_analyst_or_above)):
     """Preview a saved profile. A successful preview is what allows enabling
     it (until its configuration changes again)."""
+    wscope.require_company_setting(user)
     row = profiles.require(user.tenant_id, profile_id)
     result = engine.dry_run(user.tenant_id, row)
     profiles.mark_dry_run(user.tenant_id, profile_id, row["config_hash"])
@@ -304,6 +324,7 @@ def enable_profile(profile_id: str, request: Request,
                    user: CurrentUser = Depends(require_analyst_or_above)):
     """Turn a profile on (refused with `inventory_sync_dry_run_required` until
     its current configuration was previewed)."""
+    wscope.require_company_setting(user)
     row = profiles.set_enabled(user.tenant_id, profile_id, True)
     audit.note(request, label=row["name"])
     return ok(profiles.public(row))
@@ -313,6 +334,7 @@ def enable_profile(profile_id: str, request: Request,
 def disable_profile(profile_id: str, request: Request,
                     user: CurrentUser = Depends(require_analyst_or_above)):
     """Turn a profile off: nothing runs on a schedule; refresh still works."""
+    wscope.require_company_setting(user)
     row = profiles.set_enabled(user.tenant_id, profile_id, False)
     audit.note(request, label=row["name"])
     return ok(profiles.public(row))
@@ -328,6 +350,7 @@ def refresh(body: RefreshBody, request: Request,
     and waits at most `wait_seconds` before answering `status: running` with
     the `data_as_of` of the last success — the stock shown is never blanked.
     Paused or blocked profiles answer with their reason instead of running."""
+    wscope.require_company_setting(user)
     result, _ = idempotency.run(
         user.tenant_id, idempotency_key, "refresh", body.model_dump(),
         lambda: scheduler.refresh(user.tenant_id, user.user_id, profile_id=body.profile_id,
@@ -356,6 +379,7 @@ async def ingest_rows(profile_id: str, request: Request,
     (409 `inventory_sync_batch_id_reused`). Without `snapshot_id` a batch is
     partial (absent SKUs are not "gone"); parts of one `snapshot_id` are staged
     and the part with `last: true` applies the full snapshot with every brake."""
+    wscope.require_company_setting(user)
     import asyncio
     import json as _json_mod
     from backend.inventory_sync import ingest
@@ -399,6 +423,7 @@ def run_now(profile_id: str, request: Request, body: Optional[RunBody] = None,
     `GET .../runs/{run_id}` for the outcome. `override_brake` runs once past
     the safety brake (audited). With `Idempotency-Key`, a retry does not start
     a second run."""
+    wscope.require_company_setting(user)
     override = bool(body and body.override_brake)
 
     def _do():
@@ -450,6 +475,7 @@ def profile_health(profile_id: str, strict: bool = Query(False),
     category and whether it retries on its own, the last-success age and the
     next run. `strict=true` answers with that HTTP status itself (a 503 for an
     uptime checker), the same body either way."""
+    wscope.require_company_wide(user)
     h = _health(profiles.require(user.tenant_id, profile_id))
     if strict:
         return JSONResponse(status_code=h["http_status"], content={"success": h["http_status"] == 200, "data": h})
@@ -459,6 +485,7 @@ def profile_health(profile_id: str, strict: bool = Query(False),
 @status_router.get("/inventory-sync/health")
 def tenant_health(strict: bool = Query(False), user: CurrentUser = Depends(get_current_user)):
     """Every profile's health in one call; `status` is the worst of them."""
+    wscope.require_company_wide(user)
     items = [_health(r) for r in profiles.list_for_tenant(user.tenant_id)]
     order = ["ok", "stale", "degraded", "paused", "blocked"]
     worst = max((i["status"] for i in items), key=lambda s: order.index(s) if s in order else 0, default="ok")
@@ -473,6 +500,7 @@ def tenant_health(strict: bool = Query(False), user: CurrentUser = Depends(get_c
 def run_detail(profile_id: str, run_id: str, user: CurrentUser = Depends(get_current_user)):
     """One run: counts, the outcome code with its category / stage / remedy
     key, rejected rows (with reasons), overwritten manual edits, warnings."""
+    wscope.require_company_wide(user)
     from backend.db.connection import query_one
     profiles.require(user.tenant_id, profile_id)
     run = query_one("SELECT * FROM inventory_sync_runs WHERE id = %s AND profile_id = %s AND tenant_id = %s",
@@ -488,6 +516,7 @@ def run_detail(profile_id: str, run_id: str, user: CurrentUser = Depends(get_cur
 def run_rejected_csv(profile_id: str, run_id: str, user: CurrentUser = Depends(get_current_user)):
     """The run's rejected rows as CSV (row, sku, code, params): bounded to the
     sample the run kept."""
+    wscope.require_company_wide(user)
     import csv
     import io
     import json as _j
@@ -516,12 +545,14 @@ def profile_doctor(profile_id: str, user: CurrentUser = Depends(require_analyst_
     row estimate, index on the incremental column (with the CREATE INDEX to
     run), supported change capture. `first_failure` names the stage and code;
     `diagnostic` is a secret-free bundle to paste to a DBA."""
+    wscope.require_company_setting(user)
     return ok(doctor.run(user.tenant_id, profiles.require(user.tenant_id, profile_id)))
 
 
 @router.post("/inventory-sync/doctor")
 def draft_doctor(body: ProfileBody, user: CurrentUser = Depends(require_analyst_or_above)):
     """The connection doctor for an unsaved configuration."""
+    wscope.require_company_setting(user)
     data = _body(body)
     try:
         cfg = profiles.normalize(user.tenant_id, data)
@@ -536,6 +567,7 @@ def reconcile(profile_id: str, sku: str = Query(..., min_length=1, max_length=20
               user: CurrentUser = Depends(require_analyst_or_above)):
     """Ledger profiles: StockAI says X, the running balance says Y, the
     source's SUM says Z — the difference and the movements behind it."""
+    wscope.require_company_wide(user)
     from backend.inventory_sync import ledger
     row = profiles.require(user.tenant_id, profile_id)
     if (row.get("stock_model") or "snapshot") != "ledger":
@@ -558,6 +590,7 @@ def export_profile(profile_id: str, format: str = Query("json", pattern="^(json|
                    user: CurrentUser = Depends(get_current_user)):
     """The profile as a versioned document to keep in git (JSON or YAML). The
     data source is referenced by its name; no secret is ever included."""
+    wscope.require_company_wide(user)
     doc = document.from_profile(profiles.require(user.tenant_id, profile_id))
     if format == "yaml":
         import yaml
@@ -590,6 +623,7 @@ async def apply_document(request: Request, dry_run: bool = Query(False),
     second time answers `action: unchanged`. Errors name the exact path
     (`mapping.current_stock.cast: 'int' is not one of ...`). `dry_run=true`
     validates and previews without saving."""
+    wscope.require_company_setting(user)
     import asyncio
     doc = await _read_document(request)
     if isinstance(doc, dict) and doc.get("slug") and not dry_run:
@@ -670,6 +704,7 @@ def suggest_view(source_id: str, body: ViewBody, user: CurrentUser = Depends(req
     """The CREATE VIEW stockai_inventory statement (or MongoDB view pipeline)
     for this source and mapping: hand it to the DBA, then map the view at
     confidence 1.0. StockAI never runs it."""
+    wscope.require_company_setting(user)
     from backend.datasources import catalog
     from backend.inventory_sync import devtools
     src = _source_or_404(user, source_id)

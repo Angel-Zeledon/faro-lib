@@ -3789,6 +3789,7 @@ export interface SyncFreshnessProfile {
 }
 export interface SyncFreshness {
   state: 'fresh' | 'stale' | 'blocked' | 'none'; data_as_of: string | null; profiles: SyncFreshnessProfile[]
+  can_refresh?: boolean
 }
 export interface SyncRefreshEntry {
   profile_id: string; profile_name: string; data_as_of: string | null

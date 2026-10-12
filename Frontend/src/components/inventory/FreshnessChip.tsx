@@ -102,6 +102,8 @@ export default function FreshnessChip({ canRefresh, visibleSkus, onRefreshed }: 
   if (!fresh || fresh.state === 'none') return null
   const color = COLOR[fresh.state]
   const running = fresh.profiles.some(p => p.running)
+  // A sync writes every warehouse: a user limited to some is not offered it.
+  const mayRefresh = canRefresh && fresh.can_refresh !== false
 
   return (
     <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -113,7 +115,7 @@ export default function FreshnessChip({ canRefresh, visibleSkus, onRefreshed }: 
         {running ? t('isync.chip_updating', { when: when(fresh.data_as_of) })
                  : t('isync.chip_as_of', { when: when(fresh.data_as_of) })}
       </button>
-      {canRefresh && (
+      {mayRefresh && (
         <button type="button" data-tour="inv.refresh_now" disabled={busy} onClick={() => void refresh(false)}
                 style={{ all: 'unset', cursor: busy ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center',
                          gap: 4, padding: '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
@@ -144,7 +146,7 @@ export default function FreshnessChip({ canRefresh, visibleSkus, onRefreshed }: 
               </li>
             ))}
           </ul>
-          {canRefresh && visibleSkus && visibleSkus.length > 0 && (
+          {mayRefresh && visibleSkus && visibleSkus.length > 0 && (
             <button type="button" disabled={busy} onClick={() => void refresh(true)}
                     style={{ all: 'unset', cursor: 'pointer', marginTop: 10, fontSize: 12, fontWeight: 600,
                              textDecoration: 'underline' }}>
