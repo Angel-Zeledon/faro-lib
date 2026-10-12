@@ -686,6 +686,12 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
             applier.apply_missing(tenant_id, profile, run_id, counters)
         if prep is not None and profile.get("mode") == "incremental":
             watermark_after = reader.max_watermark(profile.get("watermark_value"), prep.watermark)
+            capped = reader.cap_future(watermark_after)
+            if capped is not watermark_after:
+                # A row stamped in the future (clock skew, a typo'd date) would
+                # park the watermark ahead of every real change from then on.
+                counters["warnings_codes"].add("inventory_sync_future_timestamps")
+                watermark_after = capped
         if prep is not None and prep.extras.get("cursor_after") is not None:
             cursor_after = prep.extras["cursor_after"]
         if (profile.get("stock_model") or "snapshot") == "ledger":

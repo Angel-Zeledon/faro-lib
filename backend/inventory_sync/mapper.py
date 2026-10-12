@@ -31,6 +31,7 @@ from backend.inventory_sync import fields as F
 from backend.utils import stock_import
 
 DEFAULT_WAREHOUSE = "principal"
+_SCIENTIFIC = __import__("re").compile(r"^-?\d+(\.\d+)?[eE][+-]?\d+$")
 
 
 class Rejected(Exception):
@@ -76,6 +77,12 @@ def _to_number(value: Any, decimal: str, field: str) -> float:
             raise Rejected("not_a_number", field=field, value=str(value))
         return number
     text = _as_text(value).strip()
+    if _SCIENTIFIC.match(text):
+        # "1e3", "1.5E+02": what databases and exports print for floats.
+        number = float(text)
+        if math.isnan(number) or math.isinf(number):
+            raise Rejected("not_a_number", field=field, value=text[:40])
+        return number
     if decimal == "dot":
         parsed = stock_import.parse_number(text, decimal_comma=False, thousands_dot=False)
     elif decimal == "comma":

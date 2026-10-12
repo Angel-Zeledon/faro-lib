@@ -127,6 +127,7 @@ CATALOGUE: dict[str, Outcome] = {o.code: o for o in (
     # advice the doctor gives (never a run outcome by itself)
     _C("inventory_sync_filter_not_indexed", CONFIG, "read"),
     _C("inventory_sync_capture_fallback", TRANSIENT, "read"),
+    _C("inventory_sync_future_timestamps", CONFIG, "read"),
     # our side
     _C("inventory_sync_our_db_busy", OURS, "apply"),
     _C("inventory_sync_internal_error", OURS, "ours"),
@@ -205,3 +206,20 @@ def public_params(params: Any) -> dict:
         else:
             out[str(k)[:40]] = str(v)[:300]
     return out
+
+
+# ── Documented limits ─────────────────────────────────────────────────────────
+# Failure modes this package does NOT handle in code, on purpose, with the
+# reason and what to do instead. The screen and GET /inventory-sync/fields
+# show them; `test_inventory_sync_failure_modes.py` keeps the list honest.
+LIMITS: dict[str, str] = {
+    "read_replica_lag": "A lagging read replica returns older stock; nothing in a generic connection says how far behind it is. The row-count and quantity-jump brakes catch gross cases; point the source at the primary or a replica with bounded lag.",
+    "postgres_logical_replication": "Pulling a logical replication slot from StockAI would hold WAL on the customer's server if StockAI stopped reading; use the push path with Debezium or a trigger outbox instead.",
+    "mysql_binlog": "Reading the binlog needs REPLICATION SLAVE/CLIENT, not a read-only grant; use the push path (Debezium / Maxwell forwarder) instead.",
+    "postgres_xmin_cursor": "xmin is a 32-bit transaction id that wraps around; an updated_at watermark or the push path is used instead.",
+    "sqlserver_dirty_reads": "NOLOCK / READ UNCOMMITTED can read rows that are later rolled back: wrong stock. Reads use the default isolation; enable READ_COMMITTED_SNAPSHOT on the customer's database for lock-free consistent reads.",
+    "mongodb_multi_host": "One host is connected directly (no replica-set discovery), so every address passes the SSRF check; for failover, point the source at the current primary or a hidden secondary.",
+    "negative_stock_kept": "inventory_stock cannot hold a negative quantity; a negative balance is rejected (default) or clamped to 0 and counted.",
+    "resumable_read": "A crash while READING restarts the read (nothing was applied); a crash while APPLYING resumes from the checkpoint.",
+    "deletes_between_reconciles": "Incremental strategies see changes, not deletions of the whole row; deletions settle at the next full reconcile.",
+}

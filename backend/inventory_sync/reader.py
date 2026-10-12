@@ -82,6 +82,21 @@ def max_watermark(a: Optional[dict], b: Optional[dict]) -> Optional[dict]:
     return b if _key(b) > _key(a) else a
 
 
+FUTURE_ALLOWANCE = timedelta(days=1)
+
+
+def cap_future(wm: Optional[dict]) -> Optional[dict]:
+    """A datetime watermark more than a day ahead of now is capped at now (a
+    day absorbs any time-zone offset of a naive source clock)."""
+    if not wm or wm.get("type") != "datetime":
+        return wm
+    dt = datetime.fromisoformat(wm["value"])
+    now = datetime.now(timezone.utc) if dt.tzinfo else datetime.utcnow()
+    if dt > now + FUTURE_ALLOWANCE:
+        return {"type": "datetime", "value": now.replace(microsecond=0).isoformat()}
+    return wm
+
+
 def _start_point(wm: dict, overlap_minutes: int) -> dict:
     if wm["type"] == "datetime":
         dt = datetime.fromisoformat(wm["value"]) - timedelta(minutes=overlap_minutes)
