@@ -183,3 +183,48 @@ class TestScheduling:
                 (p["id"],))
         scheduler.prune()
         assert len(query("SELECT 1 FROM inventory_sync_runs WHERE profile_id = %s", (p["id"],))) == 20
+
+
+class TestCrashResume:
+
+    def test_a_worker_killed_mid_apply_is_resumed_from_its_checkpoint(self, test_tenant, src_db, src_table,
+                                                                     monkeypatch):
+        from backend.inventory_sync import apply as applier
+        tid = test_tenant["id"]
+        p = _ready(tid, src_db, src_table, [(f"S{i:03d}", "Norte", i + 1) for i in range(30)])
+        monkeypatch.setattr(applier, "BATCH", 10)
+        original = applier.apply_batch
+        calls = {"n": 0}
+
+        class Killed(BaseException):
+            """Stands in for the process dying (not an Exception: nothing catches it)."""
+
+        def dying(*a, **kw):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise Killed()
+            return original(*a, **kw)
+
+        monkeypatch.setattr(applier, "apply_batch", dying)
+        owner = "worker-a"
+        scheduler.claim_one(tid, p["id"], owner)
+        run_id = engine.start_run(tid, p["id"], "schedule", worker=owner)
+        with pytest.raises(Killed):
+            engine.execute_run(tid, p["id"], run_id, lease_owner=owner)
+        half = _stock(tid)
+        assert len(half) == 10                                   # first batch committed, no half batch
+        run = query_one("SELECT status, checkpoint, stage_complete, brake_passed FROM inventory_sync_runs "
+                        "WHERE id = %s", (run_id,))
+        assert run["status"] == "running" and run["stage_complete"] and run["brake_passed"]
+        assert run["checkpoint"]["after"] == ["S009", "Norte"]
+        # The lease expires; another worker takes the profile over and RESUMES.
+        monkeypatch.setattr(applier, "apply_batch", original)
+        execute("UPDATE inventory_sync_profiles SET lease_until = NOW() - INTERVAL '1 second', "
+                "next_run_at = NOW() - INTERVAL '1 second' WHERE id = %s", (p["id"],))
+        claimed = scheduler.claim_due(owner="worker-b")
+        assert claimed and claimed["id"] == p["id"]
+        scheduler.run_claimed(claimed, "worker-b", "schedule")
+        final = query_one("SELECT status, created FROM inventory_sync_runs WHERE id = %s", (run_id,))
+        assert final["status"] == "success" and final["created"] == 30
+        assert len(_stock(tid)) == 30
+        assert len(query("SELECT 1 FROM inventory_sync_runs WHERE profile_id = %s", (p["id"],))) == 1

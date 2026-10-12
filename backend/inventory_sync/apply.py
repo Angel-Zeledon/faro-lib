@@ -120,7 +120,7 @@ def _apply_batch_once(tenant_id: str, profile: dict, run_id: str,
         execute(
             "CREATE TEMP TABLE isb ON COMMIT DROP AS "
             "SELECT sku, warehouse, data FROM inventory_sync_staging "
-            f"WHERE run_id = %s AND NOT duplicate AND NOT applied {where_after} "
+            f"WHERE run_id = %s AND NOT duplicate {where_after} "
             f"ORDER BY sku, warehouse LIMIT {BATCH}", params, conn=conn)
         last = query_one("SELECT sku, warehouse FROM isb ORDER BY sku DESC, warehouse DESC LIMIT 1",
                          conn=conn)
@@ -128,6 +128,7 @@ def _apply_batch_once(tenant_id: str, profile: dict, run_id: str,
             return None
         last_key = (last["sku"], last["warehouse"])
         execute("CREATE INDEX ON isb (sku, warehouse)", conn=conn)
+        execute("ANALYZE isb", conn=conn)   # a temp table has no statistics until told
 
         # 2. precedence: another live profile with a better (priority, age) owns the key.
         owned_rows = query(
@@ -234,21 +235,17 @@ def _apply_batch_once(tenant_id: str, profile: dict, run_id: str,
         counters["unchanged"] += int(total) - len(created) - sum(1 for r in updated if not r["is_new"])
 
         # 7. the key ledger and the staging flags
-        keep = ", ".join(f"'{f}'" for f in owned)
+        # Staged data holds exactly the mapped value fields (the owned set).
         execute(
             "INSERT INTO inventory_sync_keys (tenant_id, profile_id, sku, warehouse, synced_values, "
             "last_seen_run, last_seen_at, inactive) "
-            "SELECT %s, %s, b.sku, b.warehouse, "
-            f"(SELECT COALESCE(jsonb_object_agg(e.key, e.value), '{{}}'::jsonb) FROM jsonb_each(b.data) e "
-            f"WHERE e.key IN ({keep})), %s, NOW(), FALSE FROM isb b "
+            "SELECT %s, %s, b.sku, b.warehouse, b.data, %s, NOW(), FALSE FROM isb b "
             "ON CONFLICT (profile_id, sku, warehouse) DO UPDATE SET "
             "synced_values = inventory_sync_keys.synced_values || EXCLUDED.synced_values, "
             "last_seen_run = EXCLUDED.last_seen_run, last_seen_at = NOW(), inactive = FALSE",
             (tenant_id, pid, run_id), conn=conn)
-        execute(
-            "UPDATE inventory_sync_staging SET applied = TRUE WHERE run_id = %s AND NOT duplicate "
-            "AND NOT applied AND (sku, warehouse) <= (%s, %s)" + (" AND (sku, warehouse) > (%s, %s)" if after else ""),
-            (run_id, *last_key, *(after or ())), conn=conn)
+        # No per-row "applied" flag: the run row's checkpoint (the last key
+        # applied, written after each batch) is what a resume continues from.
     return last_key
 
 
@@ -256,18 +253,20 @@ def apply_missing(tenant_id: str, profile: dict, run_id: str, counters: dict) ->
     """The missing-SKU policy (full snapshots only), set-based. Never deletes."""
     from backend.entitlements.service import limit_guard
     pid = profile["id"]
+    # An anti-join the planner can hash (a NOT EXISTS with stale statistics
+    # on a just-filled staging table was measured at 399 s for 50k keys).
     missing_sql = (
-        "FROM inventory_sync_keys k WHERE k.profile_id = %s AND NOT k.inactive AND NOT EXISTS ("
-        "SELECT 1 FROM inventory_sync_staging s WHERE s.run_id = %s AND s.sku = k.sku "
-        "AND s.warehouse = k.warehouse AND NOT s.duplicate)")
-    counters["missing"] = int(query_one(f"SELECT COUNT(*) AS n {missing_sql}", (pid, run_id))["n"])
+        "FROM inventory_sync_keys k LEFT JOIN inventory_sync_staging s ON s.run_id = %s "
+        "AND s.sku = k.sku AND s.warehouse = k.warehouse AND NOT s.duplicate "
+        "WHERE k.profile_id = %s AND NOT k.inactive AND s.sku IS NULL")
+    counters["missing"] = int(query_one(f"SELECT COUNT(*) AS n {missing_sql}", (run_id, pid))["n"])
     policy = profile.get("missing_policy") or "ignore"
     if not counters["missing"] or policy == "ignore":
         return
     with limit_guard(tenant_id) as conn:
         execute("SET LOCAL lock_timeout = '10s'", conn=conn)
         execute(f"CREATE TEMP TABLE ism ON COMMIT DROP AS SELECT k.sku, k.warehouse {missing_sql}",
-                (pid, run_id), conn=conn)
+                (run_id, pid), conn=conn)
         if policy == "zero":
             execute(
                 "INSERT INTO inventory_snapshots (tenant_id, sku, current_stock, warehouse) "

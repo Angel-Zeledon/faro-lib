@@ -410,6 +410,11 @@ def _stage(tenant_id: str, profile: dict, run_id: str, lease_owner: Optional[str
             prep.by_code["duplicate_key"] = prep.by_code.get("duplicate_key", 0) + first_rows
     valid = query_one("SELECT COUNT(*) AS n FROM inventory_sync_staging "
                       "WHERE run_id = %s AND NOT duplicate", (run_id,))["n"]
+    if valid > 10_000:
+        # Fresh statistics before the brake and apply joins over what was just
+        # staged: with the empty-table estimate the planner picks nested loops.
+        execute("ANALYZE inventory_sync_staging")
+        execute("ANALYZE inventory_sync_keys")
     return prep, int(valid)
 
 
@@ -625,6 +630,8 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
             execute("UPDATE inventory_sync_runs SET brake_passed = TRUE WHERE id = %s", (run_id,))
         _guard_profile(tenant_id, profile, trigger)
         after = None
+        if resume and isinstance(run.get("checkpoint"), dict) and run["checkpoint"].get("after"):
+            after = tuple(run["checkpoint"]["after"])
         while True:
             after = applier.apply_batch(tenant_id, profile, run_id, after, counters)
             if after is None:
