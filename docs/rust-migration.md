@@ -6,11 +6,26 @@ the training worker stay in Python.** The Python FastAPI app keeps serving
 every route that has not moved, and keeps the code of every route that has,
 so any route can go back to Python in seconds.
 
-Status: wave 0 (foundations), the wave-1 routes R1 to R4 and the outbox-free
-part of wave 2 ("wave 2b", section 12) are implemented in `backend-rs/`.
-**Nothing is deployed.** The compose and Caddy files under
-`deploy/rust-api/` are disabled examples. Parity claims in this document are
-limited to what `tests/contract/contract_test.py` showed (see "Results").
+Status (2026-10-11, branch `integration/batch8`, see "Batch 8" at the end):
+wave 0 (foundations), the wave-1 routes R1 to R4, the outbox-free part of
+wave 2 ("wave 2b", section 12) and wave 3 (stock, counts, reversals, PO
+reception, transfers, shrinkage) are implemented and registered in
+`backend-rs/`. Every feature branch (SAML, org hierarchy, MFA, custom roles,
+session policy, IP allowlist, audit stream, consensus, approval delegation,
+cost centers, customer portal, allocation, recurring deliveries, renewals,
+scheduled reports, multicurrency) is merged into `main`.
+
+**What is deployed** (commit 4eb0bfc): the `api-rs` container and the internal
+gateway (`deploy/docker-compose.rust-api.yml`), with ONLY the Rust-only route
+groups enabled, i.e. the `routes.d/*.caddy` files without `.example`: audit
+stream, cost centers and chains, approval links, commitment outlook, customer
+portal, IP allowlist, MFA, consensus, PO-approval delegations, scheduled
+reports, contract renewals, custom roles, multicurrency, organization,
+recurring deliveries, SAML config, session policy, stock allocation. None of
+the MIGRATED groups (R1-R4, wave 2b, wave 3, PO approvals) is enabled: their
+files are still `.example`, so Python serves those paths in production. Parity
+claims in this document are limited to what `tests/contract/contract_test.py`
+showed (see "Results").
 
 ## 1. How requests reach which implementation
 
@@ -424,6 +439,11 @@ Modules: `config`, `pycompat` (`isoformat`, `date.fromisoformat`,
     underscores (`1_0`), which Rust refuses (the value is then ignored).
 14. Invalid JSON bodies on `DELETE /tenant`: same status, type and `loc`
     shape as every other route; `ctx.error` is serde's wording (divergence 2).
+15. `%2F` anywhere in the path: Rust answers Starlette's 404 before any
+    handler. Python decodes first and matches the result, so a path whose
+    decoded form happens to be ANOTHER route (`/inventory/po/x%2Freceive` is
+    `/inventory/po/x/receive` to Starlette) reaches that route in Python and
+    is a 404 in Rust. Only a client that encodes a slash on purpose sees it.
 
 ## 8b. Forecast consensus (S&OP): new routes, Rust only
 
@@ -1110,7 +1130,10 @@ users port land. Run the harness for this section alone with
 ### Wave 3 (inventory hub), partial (2026-10-06)
 
 Stopped on the owner's instruction to slow the migration; what exists is below.
-Nothing here is deployed and **no Caddy example exists for any wave-3 group**.
+Nothing here is deployed. The only wave-3 gateway file is the disabled
+`42-reception-reversals.caddy.example` (unreceive, unsend; its header still names an older
+module path, `routes/reception_reversals.rs`, now `routes/w3/reversals.rs`); stock, counts,
+reception, transfers and shrinkage have no gateway file at all.
 
 **Map of `backend/api/v1/inventory*.py` (87 + 6 + 9 + 2 + 2 + 4 + 2 routes), by risk.**
 Highest (money decided by the numbers): `GET /inventory/status`, `/optimize`,
@@ -1133,11 +1156,14 @@ answer 404 for `%2F` inside a path parameter (Starlette routes on the decoded pa
 `inventory::scope::reject_slash`), and the database must be UTC (divergence 5).
 Per route: stock 7+21+23+9+38+19+8, counts 20+9+8+33+6+10+9+16+10, reversals 13+11.
 
-**Written, differential-tested where numeric, but NOT registered (no contract result yet):**
+**Wave 3b, registered 2026-10-11 after a green contract run (batch 8):**
 `routes/w3/receive.rs` (`GET /po/{id}/items`, `POST /po/{id}/receive`), `transfers.rs`
-(create, list, receive, cancel, close), `shrinkage.rs` (create, list, reasons). The cases
-exist (`tests/contract/w3_cases_3b.py`, about 150) but the run did not complete before the
-stop. Next step: build, start both services, run `run_w3.py`, fix, then register.
+(create, list, receive, cancel, close), `shrinkage.rs` (create, list, reasons). The first
+run found that the PO item rows (both reception routes and the already-registered
+`unreceive`) lacked the five multicurrency fields Python added after the port; fixed, then
+`run_w3.py` passed **382/382** (the 271 cases above plus 111 for 3b: items 6, receive 30,
+transfers 53, shrinkage 22). Still no Caddy file for any wave-3 group, so production keeps
+serving these paths from Python.
 
 **Numerics, bit-exact against Python (`backend-rs/src/inventory/calc.rs`, `pydt.rs`).**
 `cargo test differential` replays `backend-rs/tests/fixtures/inventory_calc.json`, written by
@@ -1163,8 +1189,9 @@ transaction where Python uses several autocommits. `SELECT *` without ORDER BY (
 warehouses on `GET /stock/{sku}`) relies on the same heap order. Not covered: ceilings
 (`max_skus`, `max_locations`) and `plan_feature_locked`, because `TESTING_MODE=true` turns
 them off on both sides; rate limits; `TRIAL_EXPIRED`. Python `float()` of non-ASCII digits
-and ordinal ISO dates are not reproduced. Rust handlers of waves 1-2 probably need the same
-`%2F` 404 guard.
+and ordinal ISO dates are not reproduced. The `%2F` guard was confirmed needed on waves 1-2
+as well (Python 404 before authentication, Rust 401) and is now one global middleware
+(`middleware::reject_encoded_slash`), see divergence 15.
 ## 10. New routes written in Rust only: approval delegation
 
 Everything above moves routes that already exist in Python. Purchase-order
