@@ -316,6 +316,13 @@ def build_cases(fx: Fixture) -> list[Case]:
         Case("entitlements wrong type", "GET", f"{API}/entitlements", who="refresh_type", route="GET /entitlements"),
         Case("entitlements HS512", "GET", f"{API}/entitlements", who="hs512", route="GET /entitlements"),
         Case("entitlements unknown key", "GET", f"{API}/entitlements", who="raw:Bearer sk_live_nope", route="GET /entitlements"),
+        # ── %2F inside a path parameter: Starlette routes on the decoded path,
+        # so it is a 404 before authentication, signed in or not ─────────────
+        *[Case(f"encoded slash {m} {p} ({who})", m, f"{API}{p}", who=who, route="%2F in a path parameter")
+          for m, p in (("GET", "/sessions/a%2Fb"), ("DELETE", "/sessions/a%2Fb"),
+                       ("PATCH", "/committed-demand/a%2fb"), ("GET", "/webhooks/a%2Fb/deliveries"),
+                       ("POST", "/inventory/po/a%2Fb/mark-paid"), ("DELETE", "/api-keys/a%2Fb"))
+          for who in ("none", "admin")],
         # ── committed demand: create ───────────────────────────────────────
         Case("cd create analyst", "POST", f"{API}/committed-demand", who="analyst", body=good,
              route="POST /committed-demand", state_check=check_created_row),

@@ -39,6 +39,23 @@ pub async fn reject_nul_in_path(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
+/// `%2F` inside a path segment. Starlette routes on the DECODED path, so
+/// `/sessions/a%2Fb` is `/sessions/a/b` to Python: no route, a 404 before any
+/// authentication. axum matches the raw path and would hand `a/b` to the
+/// `{id}` handler, which authenticates first (401) and then looks the id up.
+/// Every Rust route takes plain ids (none declares a `:path` parameter), so
+/// any encoded slash is answered with Starlette's 404, ahead of the handler.
+pub async fn reject_encoded_slash(req: Request, next: Next) -> Response {
+    if has_encoded_slash(req.uri().path()) {
+        return ApiError::http(404, "Not Found").into_response();
+    }
+    next.run(req).await
+}
+
+pub fn has_encoded_slash(raw_path: &str) -> bool {
+    raw_path.as_bytes().windows(3).any(|w| w[0] == b'%' && w[1] == b'2' && (w[2] == b'F' || w[2] == b'f'))
+}
+
 pub async fn request_context(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let started = Instant::now();
     let method = req.method().clone();
@@ -99,4 +116,19 @@ pub async fn request_context(State(state): State<AppState>, mut req: Request, ne
         response.headers_mut().insert("x-request-id", v);
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_encoded_slash;
+
+    #[test]
+    fn an_encoded_slash_is_found_in_either_case_and_nothing_else_is() {
+        for p in ["/api/v1/sessions/a%2Fb", "/api/v1/sessions/a%2fb", "/api/v1/webhooks/%2F/deliveries"] {
+            assert!(has_encoded_slash(p), "{p}");
+        }
+        for p in ["/api/v1/sessions/ab", "/api/v1/sessions/a%252Fb", "/api/v1/sessions/a%20b", "/api/v1/x%2", "/"] {
+            assert!(!has_encoded_slash(p), "{p}");
+        }
+    }
 }
