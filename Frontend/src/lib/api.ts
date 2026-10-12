@@ -3591,7 +3591,7 @@ export interface SyncFieldMapping {
   value_map?: Record<string, string> | null
 }
 export interface SyncFilter { column: string; op: string; value?: string | string[] | null }
-export type SyncSourceKind = 'table' | 'query' | 'collection' | 'pipeline'
+export type SyncSourceKind = 'table' | 'query' | 'collection' | 'pipeline' | 'push'
 
 export interface SyncProfileInput {
   name?: string
@@ -3614,6 +3614,15 @@ export interface SyncProfileInput {
   brake_max_vanished_pct?: number
   brake_min_row_ratio?: number
   brake_max_rejected_pct?: number
+  freshness?: 'scheduled' | 'continuous' | 'on_demand'
+  poll_seconds?: number
+  reconcile_minutes?: number
+  strategy?: string
+  stock_model?: 'snapshot' | 'aggregate' | 'ledger'
+  model_config?: Record<string, unknown>
+  priority?: number
+  brake_max_jump_pct?: number
+  slug?: string | null
 }
 
 export interface SyncProfile extends Required<Pick<SyncProfileInput,
@@ -3700,6 +3709,17 @@ export interface SyncDryRun {
   sample_limit: number
   sample_truncated: boolean
   owned_fields: string[]
+  stock_model?: 'snapshot' | 'aggregate' | 'ledger'
+  examples?: SyncDryRunExample[]
+}
+
+export interface SyncDryRunExample {
+  sku: string; warehouse: string; total: number | null
+  movements?: { id: string; type?: string | null; signed?: number; counted?: boolean; rejected?: string }[]
+  movement_count?: number
+  rows?: { quantity?: number; rejected?: string }[]
+  row_count?: number
+  aggregate?: string
 }
 
 export interface SyncColumn { name: string; type?: string; samples?: string[]; presence?: number }

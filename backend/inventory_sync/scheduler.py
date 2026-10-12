@@ -94,16 +94,21 @@ _CLAIMABLE = (
 )
 
 
-def claim_due(now: Optional[datetime] = None, owner: Optional[str] = None) -> Optional[dict]:
-    """Lease the most overdue runnable profile, or None."""
+def claim_due(now: Optional[datetime] = None, owner: Optional[str] = None,
+              profile_id: Optional[str] = None) -> Optional[dict]:
+    """Lease the most overdue runnable profile, or None. `profile_id` narrows
+    the pick to one profile (the same rules), so a check about one profile is
+    not answered by another tenant's due profile."""
     owner = owner or _owner()
+    only = " AND id = %s" if profile_id else ""
+    params: tuple = (owner, engine.LEASE_MINUTES, now or datetime.now(timezone.utc))
     row = query_one(
         "UPDATE inventory_sync_profiles p SET lease_owner = %s, "
         "       lease_until = NOW() + %s * INTERVAL '1 minute' "
-        f"WHERE p.id = (SELECT id FROM inventory_sync_profiles WHERE {_CLAIMABLE} "
+        f"WHERE p.id = (SELECT id FROM inventory_sync_profiles WHERE {_CLAIMABLE}{only} "
         "              ORDER BY next_run_at LIMIT 1 FOR UPDATE SKIP LOCKED) "
         "RETURNING p.*",
-        (owner, engine.LEASE_MINUTES, now or datetime.now(timezone.utc)))
+        params + ((profile_id,) if profile_id else ()))
     return row
 
 

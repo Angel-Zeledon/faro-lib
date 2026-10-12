@@ -119,11 +119,11 @@ class TestConnection:
         # Not claimed by the scheduler (a retry would lock the customer's account)...
         execute("UPDATE inventory_sync_profiles SET enabled = TRUE, next_run_at = NOW() - INTERVAL '1 minute' "
                 "WHERE id = %s", (p["id"],))
-        assert scheduler.claim_due(owner="w") is None
+        assert scheduler.claim_due(owner="w", profile_id=p["id"]) is None
         # ...until the data source is edited or re-tested.
         execute("UPDATE datasets SET updated_at = NOW() + INTERVAL '1 second' WHERE id = %s",
                 (profiles.get(tid, p["id"])["data_source_id"],))
-        assert scheduler.claim_due(owner="w2")["id"] == p["id"]
+        assert scheduler.claim_due(owner="w2", profile_id=p["id"])["id"] == p["id"]
 
     def test_missing_grants_block(self, test_tenant, src_db, src_table):
         tid = test_tenant["id"]
@@ -463,7 +463,7 @@ class TestSafety:
         _put(src_db, src_table, [("A1", "Norte", 10), ("B2", "Norte", 5)])     # the source heals
         execute("UPDATE inventory_sync_profiles SET enabled = TRUE, next_run_at = NOW() - INTERVAL '1 minute' "
                 "WHERE id = %s", (p["id"],))
-        assert scheduler.claim_due(owner="w") is None        # still paused: a person decides
+        assert scheduler.claim_due(owner="w", profile_id=p["id"]) is None        # still paused: a person decides
         assert scheduler.refresh(tid, "usr_test", wait_s=0)["profiles"][0]["status"] == "paused"
 
     def test_first_sync_has_no_vanished_rule_to_trip(self, test_tenant, src_db, src_table):

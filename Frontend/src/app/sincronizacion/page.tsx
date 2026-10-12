@@ -27,6 +27,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { translateErrorParts } from '@/lib/errorMessage'
+import { DevPanel, DoctorPanel, HealthPanel, RunDetailPanel } from '@/components/sync/SyncPanels'
 
 const C = {
   border: 'var(--border)', text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
@@ -67,7 +68,21 @@ interface Draft {
   brake_max_vanished_pct: number
   brake_min_row_ratio: number
   brake_max_rejected_pct: number
+  brake_max_jump_pct: number
+  freshness: 'scheduled' | 'continuous' | 'on_demand'
+  poll_seconds: number
+  reconcile_minutes: number
+  strategy: string
+  stock_model: 'snapshot' | 'aggregate' | 'ledger'
+  model_config_text: string
+  priority: number
+  slug: string
 }
+
+const LEDGER_TEMPLATE = JSON.stringify({
+  id_column: 'movement_id', cursor_column: 'movement_id',
+  sign: { mode: 'type_map', type_column: 'movement_type', type_map: { IN: 1, OUT: -1, ADJ: 1 }, unknown: 'reject' },
+}, null, 2)
 
 const emptyDraft = (sourceId: string, mongo: boolean, minInterval: number): Draft => ({
   id: null, name: '', data_source_id: sourceId, source_kind: mongo ? 'collection' : 'table',
@@ -75,7 +90,9 @@ const emptyDraft = (sourceId: string, mongo: boolean, minInterval: number): Draf
   default_warehouse: '', mode: 'full', watermark_column: '', overlap_minutes: 10,
   interval_minutes: Math.max(60, minInterval), missing_policy: 'ignore', negative_policy: 'reject',
   duplicate_policy: 'reject', allow_new_warehouses: false, brake_max_vanished_pct: 20,
-  brake_min_row_ratio: 0.5, brake_max_rejected_pct: 50,
+  brake_min_row_ratio: 0.5, brake_max_rejected_pct: 50, brake_max_jump_pct: 0,
+  freshness: 'scheduled', poll_seconds: 60, reconcile_minutes: 360, strategy: 'auto',
+  stock_model: 'snapshot', model_config_text: '', priority: 100, slug: '',
 })
 
 function draftFrom(p: SyncProfile): Draft {
@@ -94,7 +111,17 @@ function draftFrom(p: SyncProfile): Draft {
     negative_policy: p.negative_policy, duplicate_policy: p.duplicate_policy,
     allow_new_warehouses: p.allow_new_warehouses, brake_max_vanished_pct: p.brake_max_vanished_pct,
     brake_min_row_ratio: p.brake_min_row_ratio, brake_max_rejected_pct: p.brake_max_rejected_pct,
+    brake_max_jump_pct: p.brake_max_jump_pct ?? 0, freshness: p.freshness ?? 'scheduled',
+    poll_seconds: p.poll_seconds ?? 60, reconcile_minutes: p.reconcile_minutes ?? 360,
+    strategy: p.strategy ?? 'auto', stock_model: p.stock_model ?? 'snapshot',
+    model_config_text: p.model_config && Object.keys(p.model_config).length ? JSON.stringify(p.model_config, null, 2) : '',
+    priority: p.priority ?? 100, slug: p.slug ?? '',
   }
+}
+
+function parseModelConfig(text: string): Record<string, unknown> {
+  if (!text.trim()) return {}
+  try { const v = JSON.parse(text); return v && typeof v === 'object' ? v : {} } catch { return { __invalid_json__: true } }
 }
 
 function parseValueMap(text: string | undefined): Record<string, string> | null {
@@ -118,7 +145,8 @@ function payload(d: Draft): SyncProfileInput {
     }
   }
   return {
-    name: d.name.trim(), data_source_id: d.data_source_id, source_kind: d.source_kind,
+    name: d.name.trim(), data_source_id: d.source_kind === 'push' ? (null as unknown as string) : d.data_source_id,
+    source_kind: d.source_kind,
     source_schema: d.source_schema, source_object: d.source_object,
     source_query: d.source_query.trim() || null, mapping,
     filters: d.filters.filter(f => f.column.trim()), default_warehouse: d.default_warehouse.trim() || null,
@@ -128,6 +156,10 @@ function payload(d: Draft): SyncProfileInput {
     negative_policy: d.negative_policy, duplicate_policy: d.duplicate_policy,
     allow_new_warehouses: d.allow_new_warehouses, brake_max_vanished_pct: d.brake_max_vanished_pct,
     brake_min_row_ratio: d.brake_min_row_ratio, brake_max_rejected_pct: d.brake_max_rejected_pct,
+    brake_max_jump_pct: d.brake_max_jump_pct, freshness: d.freshness, poll_seconds: d.poll_seconds,
+    reconcile_minutes: d.reconcile_minutes, strategy: d.strategy, stock_model: d.stock_model,
+    model_config: d.stock_model === 'snapshot' ? {} : parseModelConfig(d.model_config_text),
+    priority: d.priority, slug: d.slug.trim() || null,
   }
 }
 
@@ -156,6 +188,8 @@ export default function InventorySyncPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [doctorFor, setDoctorFor] = useState<string | null>(null)
+  const [runDetail, setRunDetail] = useState<string | null>(null)
 
   const codeText = useCallback((code: string | null | undefined, params?: Record<string, unknown> | null) => {
     if (!code) return ''
@@ -198,6 +232,7 @@ export default function InventorySyncPage() {
   }, [anyRunning, load, selected])
 
   useEffect(() => {
+    setDoctorFor(null); setRunDetail(null)
     if (!selected) { setRuns([]); return }
     listSyncRuns(selected).then(setRuns).catch(e => setError(errorDetail(e)))
   }, [selected, errorDetail])
@@ -206,6 +241,8 @@ export default function InventorySyncPage() {
   const sourceOf = useCallback((id: string) => sources.find(s => s.id === id), [sources])
   const draftSource = draft ? sourceOf(draft.data_source_id) : undefined
   const isMongo = draftSource?.engine === 'mongodb'
+  const isPush = draft?.source_kind === 'push'
+  const egress = catalog?.egress_ips ?? []
 
   async function act(fn: () => Promise<unknown>, ok?: string) {
     // A preview on screen describes the moment it was taken; once something
@@ -376,8 +413,17 @@ export default function InventorySyncPage() {
                 {sourceOf(current.data_source_id)?.name ?? current.data_source_id}
                 {' · '}{current.source_object || t(`isync.kind.${current.source_kind}`)}
                 {' · '}{t(`isync.mode.${current.mode}`)}
-                {' · '}{t('isync.every', { n: current.interval_minutes })}
+                {' · '}{current.freshness === 'continuous'
+                  ? t('isync.every_seconds', { n: current.poll_seconds ?? 60 })
+                  : current.freshness === 'on_demand' ? t('isync.freshness.on_demand') : t('isync.every', { n: current.interval_minutes })}
+                {' · '}{t(`isync.model.${current.stock_model ?? 'snapshot'}`)}
+                {current.strategy && current.strategy !== 'auto' ? ` · ${t(`isync.strategy.${current.strategy}`)}` : ''}
               </p>
+              {current.source_kind === 'push' && (
+                <p style={{ ...small, marginTop: 4, overflowWrap: 'anywhere' }}>
+                  {t('isync.push_url')}: <code>POST /api/inventory-sync/profiles/{current.id}/ingest</code>
+                </p>
+              )}
             </div>
             <span style={{ fontSize: 12.5 }}>{statusBadge(current)}</span>
           </div>
@@ -423,6 +469,7 @@ export default function InventorySyncPage() {
           {current.needs_dry_run && (
             <p style={{ margin: '10px 0 0', fontSize: 12.5, color: C.amber }}>{t('isync.needs_dry_run')}</p>
           )}
+          <HealthPanel profile={current} egress={egress} onDoctor={() => setDoctorFor(current.id)} />
 
           {canEdit && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
@@ -446,6 +493,8 @@ export default function InventorySyncPage() {
         </Card>
       )}
 
+      {!draft && current && doctorFor === current.id && <DoctorPanel profileId={current.id} onClose={() => setDoctorFor(null)} />}
+
       {dry && <DryRunCard dry={dry} fieldLabel={fieldLabel} />}
 
       {!draft && current && (
@@ -463,7 +512,12 @@ export default function InventorySyncPage() {
               <tbody>
                 {runs.map(r => (
                   <tr key={r.id} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: 'top' }}>
-                    <td style={{ padding: '6px' }}>{when(r.started_at)}<div style={{ color: C.dim }}>{t(`isync.trigger.${r.trigger_kind}`)}</div></td>
+                    <td style={{ padding: '6px' }}>
+                      <button type="button" onClick={() => setRunDetail(r.id)} aria-label={t('isync.run_detail_open')}
+                              style={{ all: 'unset', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 }}>
+                        {when(r.started_at)}
+                      </button>
+                      <div style={{ color: C.dim }}>{t(`isync.trigger.${r.trigger_kind}`)}</div></td>
                     <td style={{ padding: '6px', color: r.status === 'success' ? C.green : r.status === 'running' ? C.muted : C.red }}>
                       {t(`isync.run_status.${r.status}`)}
                       {r.error_code && <div style={{ color: C.muted, maxWidth: 280 }}>{codeText(r.error_code, r.error_params)}</div>}
@@ -482,6 +536,25 @@ export default function InventorySyncPage() {
               </tbody>
             </table>
           </div>
+        </Card>
+      )}
+
+      {!draft && current && runDetail && (
+        <RunDetailPanel key={runDetail} profileId={current.id} runId={runDetail} onClose={() => setRunDetail(null)} />
+      )}
+
+      {!draft && canEdit && <DevPanel profile={current} />}
+
+      {!draft && (catalog.documented_limits?.length ?? 0) > 0 && (
+        <Card padding={16}>
+          <details>
+            <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>{t('isync.limits_title')}</summary>
+            <p style={{ ...small, marginTop: 6 }}>{t('isync.limits_intro')}</p>
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {catalog.documented_limits!.map(k => <li key={k}>{t(`isync.limit.${k}`)}</li>)}
+              <li>{t('isync.limit.mongodb_change_stream')}</li>
+            </ul>
+          </details>
         </Card>
       )}
 
@@ -514,7 +587,7 @@ export default function InventorySyncPage() {
           <Card padding={16}>
             <h2 style={{ ...h2, marginBottom: 10 }}>{t('isync.step2')}</h2>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-              {(isMongo ? ['collection', 'pipeline'] : ['table', 'query']).map(k => (
+              {(isMongo ? ['collection', 'pipeline', 'push'] : ['table', 'query', 'push']).map(k => (
                 <label key={k} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
                   <input type="radio" name="kind" checked={draft.source_kind === k}
                          onChange={() => setDraft(d => d && { ...d, source_kind: k as SyncSourceKind })} />
@@ -522,6 +595,7 @@ export default function InventorySyncPage() {
                 </label>
               ))}
             </div>
+            {isPush && <p style={small}>{t('isync.push_hint')}</p>}
             {(draft.source_kind === 'table' || draft.source_kind === 'collection' || draft.source_kind === 'pipeline') && (
               <>
                 {!tables && <LoadingState label={t('isync.discovering')} />}
@@ -573,7 +647,7 @@ export default function InventorySyncPage() {
           <Card padding={16}>
             <h2 style={{ ...h2, marginBottom: 4 }}>{t('isync.step3')}</h2>
             <p style={{ ...small, marginBottom: 10 }}>{t('isync.mapping_hint')}</p>
-            {columns.length === 0 ? <p style={small}>{t('isync.mapping_needs_source')}</p> : (
+            {columns.length === 0 && !isPush ? <p style={small}>{t('isync.mapping_needs_source')}</p> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {catalog.fields.map(f => {
                   const m = draft.mapping[f] || {}
@@ -591,11 +665,14 @@ export default function InventorySyncPage() {
                           <div style={{ fontSize: 11.5, color: C.dim, fontWeight: 400 }}>{t(`isync.field_hint.${f}`)}</div>
                         </div>
                         <Field label={t('isync.column')}>
-                          <Select value={m.column || ''} aria-label={`${fieldLabel(f)} — ${t('isync.column')}`}
-                                  onChange={e => set({ column: e.target.value || null })}>
-                            <option value="">{t('isync.not_mapped')}</option>
-                            {columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                          </Select>
+                          {isPush
+                            ? <Input value={m.column || ''} aria-label={`${fieldLabel(f)} — ${t('isync.column')}`} placeholder={f}
+                                     onChange={e => set({ column: e.target.value || null })} />
+                            : <Select value={m.column || ''} aria-label={`${fieldLabel(f)} — ${t('isync.column')}`}
+                                      onChange={e => set({ column: e.target.value || null })}>
+                                <option value="">{t('isync.not_mapped')}</option>
+                                {columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                              </Select>}
                         </Field>
                         <div style={{ fontSize: 12, color: C.muted, overflowWrap: 'anywhere' }}>
                           {col?.samples?.length ? `${t('isync.samples')}: ${col.samples.join(', ')}` : ''}
@@ -668,6 +745,59 @@ export default function InventorySyncPage() {
 
           <Card padding={16}>
             <h2 style={{ ...h2, marginBottom: 10 }}>{t('isync.step4')}</h2>
+            <div style={{ ...grid, marginBottom: 12 }}>
+              <Field label={t('isync.model_label')} hint={t(`isync.model_hint.${draft.stock_model}`)}>
+                <Select value={draft.stock_model} onChange={e => {
+                  const v = e.target.value as Draft['stock_model']
+                  setDraft(d => d && { ...d, stock_model: v,
+                    model_config_text: v === 'ledger' && !d.model_config_text ? LEDGER_TEMPLATE
+                      : v === 'aggregate' && !d.model_config_text ? JSON.stringify({ aggregate: 'sum' }, null, 2) : d.model_config_text })
+                }}>
+                  {(catalog.stock_models ?? ['snapshot']).map(m => <option key={m} value={m}>{t(`isync.model.${m}`)}</option>)}
+                </Select>
+              </Field>
+              <Field label={t('isync.freshness_label')} hint={t(`isync.freshness_hint.${draft.freshness}`)}>
+                <Select value={draft.freshness} onChange={e => setDraft(d => d && { ...d, freshness: e.target.value as Draft['freshness'] })}>
+                  {(catalog.freshness_modes ?? ['scheduled']).map(m => <option key={m} value={m}>{t(`isync.freshness.${m}`)}</option>)}
+                </Select>
+              </Field>
+              {draft.freshness === 'continuous' && (
+                <Field label={t('isync.poll_seconds')} hint={t('isync.poll_seconds_hint', { n: catalog.limits.min_poll_seconds ?? 15 })}>
+                  <Input type="number" min={catalog.limits.min_poll_seconds ?? 15} value={draft.poll_seconds}
+                         onChange={e => setDraft(d => d && { ...d, poll_seconds: Number(e.target.value) })} />
+                </Field>
+              )}
+              {draft.freshness === 'continuous' && (
+                <Field label={t('isync.reconcile_minutes')} hint={t('isync.reconcile_minutes_hint')}>
+                  <Input type="number" min={5} value={draft.reconcile_minutes}
+                         onChange={e => setDraft(d => d && { ...d, reconcile_minutes: Number(e.target.value) })} />
+                </Field>
+              )}
+              {!isPush && (
+                <Field label={t('isync.strategy_label')} hint={t(`isync.strategy_hint.${draft.strategy}`)}>
+                  <Select value={draft.strategy} onChange={e => setDraft(d => d && { ...d, strategy: e.target.value })}>
+                    {(catalog.strategies ?? ['auto']).map(s => <option key={s} value={s}>{t(`isync.strategy.${s}`)}</option>)}
+                  </Select>
+                </Field>
+              )}
+              <Field label={t('isync.priority')} hint={t('isync.priority_hint')}>
+                <Input type="number" min={0} max={1000} value={draft.priority}
+                       onChange={e => setDraft(d => d && { ...d, priority: Number(e.target.value) })} />
+              </Field>
+              <Field label={t('isync.slug')} hint={t('isync.slug_hint')}>
+                <Input value={draft.slug} maxLength={64} placeholder="erp-main-stock"
+                       onChange={e => setDraft(d => d && { ...d, slug: e.target.value })} />
+              </Field>
+            </div>
+            {draft.stock_model !== 'snapshot' && (
+              <div style={{ marginBottom: 12 }}>
+                <Field label={t('isync.model_config')} hint={t(`isync.model_config_hint.${draft.stock_model}`)}>
+                  <Textarea rows={draft.stock_model === 'ledger' ? 10 : 3} value={draft.model_config_text}
+                            style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
+                            onChange={e => setDraft(d => d && { ...d, model_config_text: e.target.value })} />
+                </Field>
+              </div>
+            )}
             <div style={grid}>
               <Field label={t('isync.mode_label')}>
                 <Select value={draft.mode} onChange={e => setDraft(d => d && { ...d, mode: e.target.value as Draft['mode'] })}>
@@ -728,11 +858,14 @@ export default function InventorySyncPage() {
               <Field label={t('isync.brake_rejected')}>
                 <Input type="number" min={0} max={100} value={draft.brake_max_rejected_pct} onChange={e => setDraft(d => d && { ...d, brake_max_rejected_pct: Number(e.target.value) })} />
               </Field>
+              <Field label={t('isync.brake_jump')} hint={t('isync.brake_jump_hint')}>
+                <Input type="number" min={0} value={draft.brake_max_jump_pct} onChange={e => setDraft(d => d && { ...d, brake_max_jump_pct: Number(e.target.value) })} />
+              </Field>
             </div>
           </Card>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" style={btn} disabled={busy || columns.length === 0} onClick={() => void previewDraft()}>{t('isync.dry_run')}</button>
+            <button type="button" style={btn} disabled={busy || (columns.length === 0 && !isPush)} onClick={() => void previewDraft()}>{t('isync.dry_run')}</button>
             <button type="button" style={{ ...primary, opacity: draft.name.trim() && !busy ? 1 : 0.5 }} disabled={!draft.name.trim() || busy}
                     onClick={() => void saveDraft()}>{draft.id ? t('isync.save_changes') : t('isync.save')}</button>
             <button type="button" style={btn} disabled={busy} onClick={() => { setDraft(null); setDry(null) }}>{t('isync.cancel')}</button>
@@ -807,6 +940,28 @@ function DryRunCard({ dry, fieldLabel }: {
               </li>
             ))}
           </ul>
+        </>
+      )}
+      {(dry.examples?.length ?? 0) > 0 && (
+        <>
+          <h3 style={{ margin: '12px 0 6px', fontSize: 12.5, fontWeight: 700 }}>{t(`isync.examples_title.${dry.stock_model}`)}</h3>
+          {dry.examples!.map((ex, i) => (
+            <div key={i} style={{ fontSize: 12.5, marginBottom: 8 }}>
+              <strong>{ex.sku}</strong> · {ex.warehouse}
+              <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11.5, color: C.muted, overflowWrap: 'anywhere' }}>
+                {ex.movements
+                  ? ex.movements.slice(0, 20).map(m => m.rejected ? `#${m.id} ${t(`isync.reject.${m.rejected}`)}`
+                      : `${m.counted === false ? '(' : ''}${(m.signed ?? 0) >= 0 ? '+' : ''}${m.signed}${m.type ? ` ${m.type}` : ''}${m.counted === false ? ')' : ''}`).join('  ')
+                  : (ex.rows ?? []).map(r => r.rejected ? t(`isync.reject.${r.rejected}`) : String(r.quantity)).join(ex.aggregate === 'sum' ? ' + ' : ', ')}
+                {' = '}<strong style={{ color: 'var(--text)' }}>{ex.total ?? '—'}</strong>
+                {ex.aggregate && ex.aggregate !== 'sum' ? ` (${ex.aggregate})` : ''}
+              </div>
+              {(ex.movement_count ?? ex.row_count ?? 0) > 20 && (
+                <div style={{ fontSize: 11.5, color: C.dim }}>{t('isync.examples_more', { n: ex.movement_count ?? ex.row_count ?? 0 })}</div>
+              )}
+            </div>
+          ))}
+          <p style={small}>{t('isync.examples_hint')}</p>
         </>
       )}
       <p style={{ ...small, marginTop: 10 }}>{t('isync.dry_nothing_written')}</p>

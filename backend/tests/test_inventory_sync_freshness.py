@@ -161,11 +161,11 @@ class TestScheduling:
         p = _ready(tid, src_db, src_table, [("A1", "Norte", 10)])
         execute("UPDATE inventory_sync_profiles SET next_run_at = NOW() - INTERVAL '1 minute', "
                 "health = 'blocked', health_changed_at = NOW() WHERE id = %s", (p["id"],))
-        assert scheduler.claim_due(owner="w") is None or scheduler.claim_due(owner="w")["id"] != p["id"]
+        assert scheduler.claim_due(owner="w", profile_id=p["id"]) is None
         # Editing (re-testing) the data source lifts the block on the next pass.
         execute("UPDATE datasets SET updated_at = NOW() + INTERVAL '1 second' WHERE id = %s",
                 (p["data_source_id"],))
-        claimed = scheduler.claim_due(owner="w2")
+        claimed = scheduler.claim_due(owner="w2", profile_id=p["id"])
         assert claimed and claimed["id"] == p["id"]
 
     def test_next_run_has_jitter(self, test_tenant, src_db, src_table):
@@ -221,7 +221,7 @@ class TestCrashResume:
         monkeypatch.setattr(applier, "apply_batch", original)
         execute("UPDATE inventory_sync_profiles SET lease_until = NOW() - INTERVAL '1 second', "
                 "next_run_at = NOW() - INTERVAL '1 second' WHERE id = %s", (p["id"],))
-        claimed = scheduler.claim_due(owner="worker-b")
+        claimed = scheduler.claim_due(owner="worker-b", profile_id=p["id"])
         assert claimed and claimed["id"] == p["id"]
         scheduler.run_claimed(claimed, "worker-b", "schedule")
         final = query_one("SELECT status, created FROM inventory_sync_runs WHERE id = %s", (run_id,))
