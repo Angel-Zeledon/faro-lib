@@ -1147,6 +1147,9 @@ def load(engine: str, scenarios: list[str], rows: int, moves: int) -> None:
     conn = raw_conn(engine, None if engine == "oracle" else SRC_DB)
     t0 = time.monotonic()
     _numbers(engine, conn)
+    d = D(engine)
+    for v in ("g_view2", "g_view1"):          # they depend on g_snap
+        conn.cursor().execute(d.drop(v, view=True))
     for s in scenarios:
         t1 = time.monotonic()
         print(f"loading {s} ...", flush=True)

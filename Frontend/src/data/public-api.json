@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 260,
-  "read": 160,
-  "write": 100
+  "total": 291,
+  "read": 167,
+  "write": 124
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -13165,6 +13165,2123 @@
    ]
   },
   {
+   "tag": "inventory-sync",
+   "endpoints": [
+    {
+     "id": "post-inventory-sync-doctor",
+     "method": "POST",
+     "path": "/inventory-sync/doctor",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Draft Doctor",
+     "description": "The connection doctor for an unsaved configuration.",
+     "parameters": [],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "name",
+         "required": false,
+         "type": "string",
+         "max_length": 120,
+         "nullable": true
+        },
+        {
+         "name": "data_source_id",
+         "required": false,
+         "type": "string",
+         "max_length": 64,
+         "nullable": true
+        },
+        {
+         "name": "source_kind",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "source_schema",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_object",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_query",
+         "required": false,
+         "type": "string",
+         "max_length": 100000,
+         "nullable": true
+        },
+        {
+         "name": "mapping",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "filters",
+         "required": false,
+         "type": "array",
+         "items": {
+          "type": "object",
+          "free_form": true
+         },
+         "nullable": true
+        },
+        {
+         "name": "default_warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 500,
+         "nullable": true
+        },
+        {
+         "name": "mode",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "watermark_column",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "overlap_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "interval_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "missing_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "negative_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "duplicate_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "allow_new_warehouses",
+         "required": false,
+         "type": "boolean",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_vanished_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_min_row_ratio",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_rejected_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_jump_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "slug",
+         "required": false,
+         "type": "string",
+         "max_length": 63,
+         "nullable": true
+        },
+        {
+         "name": "priority",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "stock_model",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "model_config",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "freshness",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "poll_seconds",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "reconcile_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "strategy",
+         "required": false,
+         "type": "string",
+         "max_length": 30,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {}
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-dry-run",
+     "method": "POST",
+     "path": "/inventory-sync/dry-run",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Dry Run Unsaved",
+     "description": "Preview a configuration that is not saved yet. Writes nothing.",
+     "parameters": [],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "name",
+         "required": false,
+         "type": "string",
+         "max_length": 120,
+         "nullable": true
+        },
+        {
+         "name": "data_source_id",
+         "required": false,
+         "type": "string",
+         "max_length": 64,
+         "nullable": true
+        },
+        {
+         "name": "source_kind",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "source_schema",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_object",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_query",
+         "required": false,
+         "type": "string",
+         "max_length": 100000,
+         "nullable": true
+        },
+        {
+         "name": "mapping",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "filters",
+         "required": false,
+         "type": "array",
+         "items": {
+          "type": "object",
+          "free_form": true
+         },
+         "nullable": true
+        },
+        {
+         "name": "default_warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 500,
+         "nullable": true
+        },
+        {
+         "name": "mode",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "watermark_column",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "overlap_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "interval_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "missing_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "negative_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "duplicate_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "allow_new_warehouses",
+         "required": false,
+         "type": "boolean",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_vanished_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_min_row_ratio",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_rejected_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_jump_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "slug",
+         "required": false,
+         "type": "string",
+         "max_length": 63,
+         "nullable": true
+        },
+        {
+         "name": "priority",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "stock_model",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "model_config",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "freshness",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "poll_seconds",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "reconcile_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "strategy",
+         "required": false,
+         "type": "string",
+         "max_length": 30,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {}
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-presets",
+     "method": "GET",
+     "path": "/inventory-sync/presets",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "List Presets",
+     "description": "ERP recipe presets (SAP, Oracle EBS, Dynamics, Business Central, JD Edwards, Infor M3, Odoo, Magento, WooCommerce, generic SCD2 / UNION ledgers): parameters, stock model, the gotchas each one guards against, and whether it was verified against a live system. Also the systems read another way (push, or a warehouse through an existing engine).",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-presets-preset_id-render",
+     "method": "POST",
+     "path": "/inventory-sync/presets/{preset_id}/render",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Render Preset",
+     "description": "The profile body a preset produces for one engine and its parameters (client, company, organisations...). Nothing is saved: the body goes through the wizard's dry run like any other.",
+     "parameters": [
+      {
+       "name": "preset_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<preset_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "engine",
+         "required": true,
+         "type": "string",
+         "max_length": 20
+        },
+        {
+         "name": "params",
+         "required": false,
+         "type": "object",
+         "values": {
+          "type": "string",
+          "nullable": true
+         }
+        }
+       ]
+      },
+      "example": {
+       "engine": "engine",
+       "params": {
+        "key": "params"
+       }
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles",
+     "method": "POST",
+     "path": "/inventory-sync/profiles",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Create Profile",
+     "description": "Create a profile (off until previewed and enabled). Send `Idempotency-Key` to make a retried POST create it once.",
+     "parameters": [
+      {
+       "name": "Idempotency-Key",
+       "in": "header",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 128
+       },
+       "example": "Idempotency-Key"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "name",
+         "required": false,
+         "type": "string",
+         "max_length": 120,
+         "nullable": true
+        },
+        {
+         "name": "data_source_id",
+         "required": false,
+         "type": "string",
+         "max_length": 64,
+         "nullable": true
+        },
+        {
+         "name": "source_kind",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "source_schema",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_object",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_query",
+         "required": false,
+         "type": "string",
+         "max_length": 100000,
+         "nullable": true
+        },
+        {
+         "name": "mapping",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "filters",
+         "required": false,
+         "type": "array",
+         "items": {
+          "type": "object",
+          "free_form": true
+         },
+         "nullable": true
+        },
+        {
+         "name": "default_warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 500,
+         "nullable": true
+        },
+        {
+         "name": "mode",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "watermark_column",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "overlap_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "interval_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "missing_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "negative_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "duplicate_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "allow_new_warehouses",
+         "required": false,
+         "type": "boolean",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_vanished_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_min_row_ratio",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_rejected_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_jump_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "slug",
+         "required": false,
+         "type": "string",
+         "max_length": 63,
+         "nullable": true
+        },
+        {
+         "name": "priority",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "stock_model",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "model_config",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "freshness",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "poll_seconds",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "reconcile_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "strategy",
+         "required": false,
+         "type": "string",
+         "max_length": 30,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {}
+     },
+     "success_status": 201,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles-apply",
+     "method": "POST",
+     "path": "/inventory-sync/profiles/apply",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Apply Document",
+     "description": "Apply a profile document (JSON or YAML): created, or updated by its `slug` — idempotent, so CI can re-apply the file on every deploy and the second time answers `action: unchanged`. Errors name the exact path (`mapping.current_stock.cast: 'int' is not one of ...`). `dry_run=true` validates and previews without saving.",
+     "parameters": [
+      {
+       "name": "dry_run",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": false
+       },
+       "example": false
+      },
+      {
+       "name": "Idempotency-Key",
+       "in": "header",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 128
+       },
+       "example": "Idempotency-Key"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles-validate",
+     "method": "POST",
+     "path": "/inventory-sync/profiles/validate",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Validate Document",
+     "description": "Validate a profile document without touching anything: every problem with its path.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "delete-inventory-sync-profiles-profile_id",
+     "method": "DELETE",
+     "path": "/inventory-sync/profiles/{profile_id}",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Delete Profile",
+     "description": "Delete a profile with its run log. The stock it synced stays as it is.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "patch-inventory-sync-profiles-profile_id",
+     "method": "PATCH",
+     "path": "/inventory-sync/profiles/{profile_id}",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Update Profile",
+     "description": "Change a profile. Changing what it writes turns it off until previewed again (`disabled_by_edit: true`).",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "name",
+         "required": false,
+         "type": "string",
+         "max_length": 120,
+         "nullable": true
+        },
+        {
+         "name": "data_source_id",
+         "required": false,
+         "type": "string",
+         "max_length": 64,
+         "nullable": true
+        },
+        {
+         "name": "source_kind",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "source_schema",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_object",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_query",
+         "required": false,
+         "type": "string",
+         "max_length": 100000,
+         "nullable": true
+        },
+        {
+         "name": "mapping",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "filters",
+         "required": false,
+         "type": "array",
+         "items": {
+          "type": "object",
+          "free_form": true
+         },
+         "nullable": true
+        },
+        {
+         "name": "default_warehouse",
+         "required": false,
+         "type": "string",
+         "max_length": 500,
+         "nullable": true
+        },
+        {
+         "name": "mode",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "watermark_column",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "overlap_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "interval_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "missing_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "negative_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "duplicate_policy",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "allow_new_warehouses",
+         "required": false,
+         "type": "boolean",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_vanished_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_min_row_ratio",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_rejected_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "brake_max_jump_pct",
+         "required": false,
+         "type": "number",
+         "nullable": true
+        },
+        {
+         "name": "slug",
+         "required": false,
+         "type": "string",
+         "max_length": 63,
+         "nullable": true
+        },
+        {
+         "name": "priority",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "stock_model",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "model_config",
+         "required": false,
+         "type": "object",
+         "free_form": true,
+         "nullable": true
+        },
+        {
+         "name": "freshness",
+         "required": false,
+         "type": "string",
+         "max_length": 20,
+         "nullable": true
+        },
+        {
+         "name": "poll_seconds",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "reconcile_minutes",
+         "required": false,
+         "type": "integer",
+         "nullable": true
+        },
+        {
+         "name": "strategy",
+         "required": false,
+         "type": "string",
+         "max_length": 30,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {}
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles-profile_id-disable",
+     "method": "POST",
+     "path": "/inventory-sync/profiles/{profile_id}/disable",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Disable Profile",
+     "description": "Turn a profile off: nothing runs on a schedule; refresh still works.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles-profile_id-doctor",
+     "method": "POST",
+     "path": "/inventory-sync/profiles/{profile_id}/doctor",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Profile Doctor",
+     "description": "The connection doctor for a saved profile: source, connection (dns, tcp, tls, auth, privileges, select, tables), object, columns, sample read, row estimate, index on the incremental column (with the CREATE INDEX to run), supported change capture. `first_failure` names the stage and code; `diagnostic` is a secret-free bundle to paste to a DBA.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles-profile_id-dry-run",
+     "method": "POST",
+     "path": "/inventory-sync/profiles/{profile_id}/dry-run",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Dry Run Saved",
+     "description": "Preview a saved profile. A successful preview is what allows enabling it (until its configuration changes again).",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles-profile_id-enable",
+     "method": "POST",
+     "path": "/inventory-sync/profiles/{profile_id}/enable",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Enable Profile",
+     "description": "Turn a profile on (refused with `inventory_sync_dry_run_required` until its current configuration was previewed).",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles-profile_id-ingest",
+     "method": "POST",
+     "path": "/inventory-sync/profiles/{profile_id}/ingest",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Ingest Rows",
+     "description": "Push rows (or, for a ledger profile, movements) into a `push` profile.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      },
+      {
+       "name": "batch_id",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 128
+       },
+       "example": "<batch_id>"
+      },
+      {
+       "name": "snapshot_id",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 128
+       },
+       "example": "<snapshot_id>"
+      },
+      {
+       "name": "last",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": true
+       },
+       "example": true
+      },
+      {
+       "name": "dry_run",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": false
+       },
+       "example": false
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-profiles-profile_id-reconcile",
+     "method": "GET",
+     "path": "/inventory-sync/profiles/{profile_id}/reconcile",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Reconcile",
+     "description": "Ledger profiles: StockAI says X, the running balance says Y, the source's SUM says Z — the difference and the movements behind it.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      },
+      {
+       "name": "sku",
+       "in": "query",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "min_length": 1,
+        "max_length": 200
+       },
+       "example": "SKU-001"
+      },
+      {
+       "name": "warehouse",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 200
+       },
+       "example": "principal"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-profiles-profile_id-run",
+     "method": "POST",
+     "path": "/inventory-sync/profiles/{profile_id}/run",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Run Now",
+     "description": "'Sync now'. Answers at once with the run row (status `running`); poll `GET .../runs/{run_id}` for the outcome. `override_brake` runs once past the safety brake (audited). With `Idempotency-Key`, a retry does not start a second run.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      },
+      {
+       "name": "Idempotency-Key",
+       "in": "header",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 128
+       },
+       "example": "Idempotency-Key"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": false,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "override_brake",
+         "required": false,
+         "type": "boolean",
+         "default": false
+        }
+       ],
+       "nullable": true
+      },
+      "example": {
+       "override_brake": false
+      }
+     },
+     "success_status": 202,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-recipes",
+     "method": "GET",
+     "path": "/inventory-sync/recipes",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Recipes",
+     "description": "Copy-paste material: least-privilege read-only GRANTs per engine (or for one data source), StockAI's egress IPs, example queries for common ERP schemas, a `stockai_inventory` view template and push forwarders.",
+     "parameters": [
+      {
+       "name": "engine",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 20
+       },
+       "example": "<engine>"
+      },
+      {
+       "name": "source_id",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 64
+       },
+       "example": "<source_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-refresh",
+     "method": "POST",
+     "path": "/inventory-sync/refresh",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Refresh",
+     "description": "'Refresh now': make the displayed stock current. Coalesces (a refresh that finds a run in flight joins it), honours a per-profile cooldown (`status: cooldown`, `retry_after_s`), refreshes only `skus` when given, and waits at most `wait_seconds` before answering `status: running` with the `data_as_of` of the last success — the stock shown is never blanked. Paused or blocked profiles answer with their reason instead of running.",
+     "parameters": [
+      {
+       "name": "Idempotency-Key",
+       "in": "header",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 128
+       },
+       "example": "Idempotency-Key"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "profile_id",
+         "required": false,
+         "type": "string",
+         "max_length": 64,
+         "nullable": true
+        },
+        {
+         "name": "skus",
+         "required": false,
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "nullable": true
+        },
+        {
+         "name": "wait_seconds",
+         "required": false,
+         "type": "number",
+         "minimum": 0.0,
+         "maximum": 60.0,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {
+       "profile_id": "<profile_id>",
+       "skus": [
+        "skus"
+       ],
+       "wait_seconds": 1.0
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-sources",
+     "method": "GET",
+     "path": "/inventory-sync/sources",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "List Database Sources",
+     "description": "The connected databases a profile can read from.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-sources-source_id-columns",
+     "method": "GET",
+     "path": "/inventory-sync/sources/{source_id}/columns",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Columns",
+     "description": "A table's columns with sample values and the proposed mapping.",
+     "parameters": [
+      {
+       "name": "source_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<source_id>"
+      },
+      {
+       "name": "table",
+       "in": "query",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "min_length": 1,
+        "max_length": 256
+       },
+       "example": "<table>"
+      },
+      {
+       "name": "schema",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 256,
+        "default": ""
+       },
+       "example": ""
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-sources-source_id-discover",
+     "method": "GET",
+     "path": "/inventory-sync/sources/{source_id}/discover",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Discover",
+     "description": "Every table / view / collection, plus the best stock candidates first.",
+     "parameters": [
+      {
+       "name": "source_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<source_id>"
+      },
+      {
+       "name": "refresh",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": false
+       },
+       "example": false
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-sources-source_id-inspect",
+     "method": "POST",
+     "path": "/inventory-sync/sources/{source_id}/inspect",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Inspect",
+     "description": "Columns (from sample rows) and the proposed mapping for a saved query or a MongoDB pipeline — what the table listing cannot describe.",
+     "parameters": [
+      {
+       "name": "source_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<source_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "source_kind",
+         "required": true,
+         "type": "string",
+         "max_length": 20
+        },
+        {
+         "name": "source_schema",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_object",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_query",
+         "required": false,
+         "type": "string",
+         "max_length": 100000,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {
+       "source_kind": "source_kind",
+       "source_schema": "source_schema",
+       "source_object": "source_object",
+       "source_query": "SELECT sku, date, quantity FROM sales"
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-sources-source_id-suggest-view",
+     "method": "POST",
+     "path": "/inventory-sync/sources/{source_id}/suggest-view",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Suggest View",
+     "description": "The CREATE VIEW stockai_inventory statement (or MongoDB view pipeline) for this source and mapping: hand it to the DBA, then map the view at confidence 1.0. StockAI never runs it.",
+     "parameters": [
+      {
+       "name": "source_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<source_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "source_kind",
+         "required": true,
+         "type": "string",
+         "max_length": 20
+        },
+        {
+         "name": "source_schema",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_object",
+         "required": false,
+         "type": "string",
+         "max_length": 256,
+         "nullable": true
+        },
+        {
+         "name": "source_query",
+         "required": false,
+         "type": "string",
+         "max_length": 100000,
+         "nullable": true
+        },
+        {
+         "name": "mapping",
+         "required": true,
+         "type": "object",
+         "free_form": true
+        }
+       ]
+      },
+      "example": {
+       "source_kind": "source_kind",
+       "source_schema": "source_schema",
+       "source_object": "source_object",
+       "source_query": "SELECT sku, date, quantity FROM sales",
+       "mapping": {}
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-inventory-sync-transform-test",
+     "method": "POST",
+     "path": "/inventory-sync/transform-test",
+     "tag": "inventory-sync",
+     "scope": "write",
+     "summary": "Transform Test",
+     "description": "Try a field's transforms on one sample value: the output, or the rejection code a run would report.",
+     "parameters": [],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "field",
+         "required": true,
+         "type": "string",
+         "max_length": 40
+        },
+        {
+         "name": "spec",
+         "required": false,
+         "type": "object",
+         "free_form": true
+        },
+        {
+         "name": "value",
+         "required": false,
+         "type": "any"
+        }
+       ]
+      },
+      "example": {
+       "field": "field",
+       "spec": {},
+       "value": null
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    }
+   ]
+  },
+  {
    "tag": "inventory-sync-status",
    "endpoints": [
     {
@@ -13189,6 +15306,79 @@
       {
        "status": 403,
        "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-freshness",
+     "method": "GET",
+     "path": "/inventory-sync/freshness",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Get Freshness",
+     "description": "How current the stock is: `state` is `fresh`, `stale` (a profile has not succeeded within its expected window), `blocked` (a profile is paused or blocked and needs someone) or `none` (no sync). `data_as_of` is the oldest last success among live profiles: the stock is at least that fresh. Each profile lists its own state and the reason code when not fresh.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-health",
+     "method": "GET",
+     "path": "/inventory-sync/health",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Tenant Health",
+     "description": "Every profile's health in one call; `status` is the worst of them.",
+     "parameters": [
+      {
+       "name": "strict",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": false
+       },
+       "example": false
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
       },
       {
        "status": 429,
@@ -13269,6 +15459,112 @@
      ]
     },
     {
+     "id": "get-inventory-sync-profiles-profile_id-export",
+     "method": "GET",
+     "path": "/inventory-sync/profiles/{profile_id}/export",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Export Profile",
+     "description": "The profile as a versioned document to keep in git (JSON or YAML). The data source is referenced by its name; no secret is ever included.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      },
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "default": "json"
+       },
+       "example": "json"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-profiles-profile_id-health",
+     "method": "GET",
+     "path": "/inventory-sync/profiles/{profile_id}/health",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Profile Health",
+     "description": "Machine-readable health for monitoring: `status` ok / stale / degraded / paused / blocked, `http_status` 200 or 503, the reason code with its category and whether it retries on its own, the last-success age and the next run. `strict=true` answers with that HTTP status itself (a 503 for an uptime checker), the same body either way.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      },
+      {
+       "name": "strict",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": false
+       },
+       "example": false
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
      "id": "get-inventory-sync-profiles-profile_id-runs",
      "method": "GET",
      "path": "/inventory-sync/profiles/{profile_id}/runs",
@@ -13316,6 +15612,139 @@
       {
        "status": 422,
        "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-profiles-profile_id-runs-run_id",
+     "method": "GET",
+     "path": "/inventory-sync/profiles/{profile_id}/runs/{run_id}",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Run Detail",
+     "description": "One run: counts, the outcome code with its category / stage / remedy key, rejected rows (with reasons), overwritten manual edits, warnings.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      },
+      {
+       "name": "run_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<run_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-profiles-profile_id-runs-run_id-rejected.csv",
+     "method": "GET",
+     "path": "/inventory-sync/profiles/{profile_id}/runs/{run_id}/rejected.csv",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Run Rejected Csv",
+     "description": "The run's rejected rows as CSV (row, sku, code, params): bounded to the sample the run kept.",
+     "parameters": [
+      {
+       "name": "profile_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<profile_id>"
+      },
+      {
+       "name": "run_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<run_id>"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-schema-profile.json",
+     "method": "GET",
+     "path": "/inventory-sync/schema/profile.json",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Profile Schema",
+     "description": "The JSON Schema (draft 2020-12) of a profile document, `stockai.inventory-sync/v1`. The importer validates against the same spec.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
       },
       {
        "status": 429,
