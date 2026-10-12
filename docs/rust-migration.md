@@ -2854,6 +2854,26 @@ IP allowlist: as documented in their sections (client address counted from the
 right, lockout guard). Not covered by this review: the OIDC and social sign-in
 paths, and the production `TRUSTED_PROXY_HOPS` value (not readable from here).
 
+### Other suites (same disposable cluster, run one at a time)
+
+* `cargo test`: 464 passed, 0 failed; the 29 ignored ones run separately: 25
+  approval-link DB tests and 3 Python differentials (cron, zones, recurring
+  dates) all pass, the last is run by the harness.
+* `ForecastingCore`: 1773 passed, 7 skipped. `npx tsc --noEmit`: clean.
+* Backend pytest: stopped at 96% when the machine ran short of memory (not a test
+  failure): 6077 passed, 82 failed, 106 skipped up to there. Fixed on this branch:
+  52 drifted compliance citations, the two routes the open-route guard flagged,
+  `exchange_rates`, the permission catalogue. Left as found (pre-existing on
+  `main`, outside this work): 15 drifted tech-manual citations;
+  `test_proactive_and_roi` (its SQL-text parser no longer reads the PO header
+  INSERT, `KeyError: 'sku_count'`); `test_public_api_examples` (the in-app console
+  copy does not state the demo tier's 200 calls a day, a copy decision);
+  `test_service_config_i18n` (`approval_links_enabled` has no es/en description in
+  `serviceConfig.ts`); `test_stress_audit` slashed-SKU 404 (expects the bare
+  `{"detail": "Not Found"}` without the error-code envelope); the datasource
+  wrong-password test (the disposable cluster uses trust auth, so any password
+  connects). The last 4% (and a clean full run) is still owed.
+
 ### Owed
 
 * A browser walk of the screens touched by fixes 1-3 (user management with a
