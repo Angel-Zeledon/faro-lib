@@ -1158,11 +1158,16 @@ def run_capabilities(args, db, secret) -> list:
         # GET /auth/sso/availability: public; the instance switch only.
         sso_route = "GET /auth/sso/availability"
         sso_path = f"{ct.API}/auth/sso/availability"
-        for label, rows_, want in (("no row, environment default", {}, False),
+        # The environment default is whatever the servers' env file says (the
+        # SAML section needs it on); a stored value overrides it either way.
+        env_raw = (ct.read_env_file(args.env_file).get("ENTERPRISE_SSO_ENABLED", "") if args.env_file else "")
+        env_default = env_raw.strip().lower() in ("1", "true", "yes", "on")
+        for label, rows_, want in (("no row, environment default", {}, env_default),
                                    ("stored true", {"enterprise_sso_enabled": "true"}, True),
                                    ("stored on", {"enterprise_sso_enabled": "On"}, True),
                                    ("stored false", {"enterprise_sso_enabled": "false"}, False),
-                                   ("junk stored value falls back to the default", {"enterprise_sso_enabled": "perhaps"}, False)):
+                                   ("junk stored value falls back to the default",
+                                    {"enterprise_sso_enabled": "perhaps"}, env_default)):
             set_rows(rows_, {}, {})
             for who, tok in (("anonymous", None), ("with a bogus bearer", "not.a.token"),
                              ("with a valid token", ct.auth_for(fa, "viewer"))):

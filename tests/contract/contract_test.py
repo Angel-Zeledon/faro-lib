@@ -23,6 +23,17 @@ What it does, in order:
 Only the standard library is required. `--db` needs psycopg2 (the backend
 venv has it); without `--db` the state checks are skipped and reported so.
 
+Both servers must be started from ONE env file, passed here as --env-file,
+with: TESTING_MODE=true, WORKER_ENABLED=false, SCHEDULER_ENABLED=false (the
+cron loop writes rows into the tenants under test), TRUSTED_PROXY_HOPS=1 (IP
+allowlist cases), ENTERPRISE_SSO_ENABLED=true (SAML cases; the wave-2b
+availability cases read it from the same file), PYTHON_API_URL=<the --python
+URL> (the scheduled-report preview), an absolute STORAGE_PATH both share, and a
+database whose time zone is UTC. A run between 18:00 and midnight on a machine
+west of UTC (local date != UTC date) fails five date cases (outlook cover
+dates, future delegations) that pass otherwise; see docs/rust-migration.md.
+`run_section.py` re-runs single sections.
+
 The Python test suite (backend/tests) is the SPEC; this file is the bridge
 that proves a Rust route answers like the Python route it replaces.
 """
