@@ -193,7 +193,7 @@ def _d365_inventsum(engine: str, p: dict) -> str:
 
 
 def _bc_ledger(engine: str, p: dict) -> str:
-    suffix = f"${p['app_id']}" if p.get("app_id") else ""
+    suffix = ("$" + p["app_id"]) if p.get("app_id") else ""     # BC's table-name separator, not money
     company = p["company"].replace(".", "_")
     table = f"[{company}$Item Ledger Entry{suffix}]"
     return ("SELECT [Entry No_] AS movement_id, [Item No_] AS sku, [Location Code] AS warehouse,\n"

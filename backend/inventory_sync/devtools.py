@@ -73,7 +73,7 @@ def mongo_view_pipeline(mapping: dict) -> list[dict]:
         spec = mapping.get(f) or {}
         col = spec.get("column") if isinstance(spec, dict) else spec
         if col:
-            proj[f] = f"${col}"
+            proj[f] = "$" + str(col)          # a MongoDB field path, not money
     return [{"$project": proj}]
 
 
