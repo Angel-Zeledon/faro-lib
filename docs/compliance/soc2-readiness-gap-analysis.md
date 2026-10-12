@@ -60,7 +60,7 @@ confirme si existe fuera del código.
 | Criterio | Controles | Brechas | Esfuerzo |
 |---|---|---|---|
 | C1.1 Identificar y proteger información confidencial | Aislamiento por tenant con tests cruzados (`backend/tests/test_permission_audit.py:2 · Permission-pair + cross-tenant audit`); secretos nunca devueltos por la API | Sin clasificación formal de datos; sin RLS | M-L |
-| C1.2 Eliminación | `DELETE /tenant` (`backend/tenants/data_export.py:466 · def delete_tenant`); cuentas de prueba borradas a las 24 h | No propaga a backups (14 días) ni a subencargados; sin certificado de borrado | M |
+| C1.2 Eliminación | `DELETE /tenant` (`backend/tenants/data_export.py:479 · def delete_tenant`); cuentas de prueba borradas a las 24 h | No propaga a backups (14 días) ni a subencargados; sin certificado de borrado | M |
 
 ## Privacidad (P1 a P8)
 

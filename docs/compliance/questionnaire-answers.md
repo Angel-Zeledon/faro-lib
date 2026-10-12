@@ -79,7 +79,7 @@ Detalle y brechas en `security-overview.md`, `data-processing-and-subprocessors.
 | 50 | ¿Protección contra path traversal? | Sí | Guarda en la descarga de artefactos (`backend/api/v1/artifacts.py:54 · full = (base / artifact_path).resolve()`) |
 | 51 | ¿Límites de tasa? | Parcial | Login, verificación, OTP, trial y API keys; sin límite global por IP (`backend/auth/api_key_auth.py:102 · def check_rate` falla abierto ante fallo de BD) |
 | 52 | ¿Documentación de API expuesta en producción? | No | OpenAPI/Docs apagados en producción (`backend/main.py:151 · openapi_url=None if settings.environment == "production"`) |
-| 53 | ¿Separación de entornos y configuración de producción forzada? | Parcial | `ENVIRONMENT`; producción se niega a arrancar con `TESTING_MODE` (`backend/config.py:293 · def _refuse_testing_mode_in_production`) |
+| 53 | ¿Separación de entornos y configuración de producción forzada? | Parcial | `ENVIRONMENT`; producción se niega a arrancar con `TESTING_MODE` (`backend/config.py:316 · def _refuse_testing_mode_in_production`) |
 | 54 | ¿Hay secretos en el repositorio? | No | `.env*` ignorados, solo `.env.example` versionado (`.gitignore`) |
 
 ## E. Infraestructura y operación

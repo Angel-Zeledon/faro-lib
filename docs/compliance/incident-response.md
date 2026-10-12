@@ -23,7 +23,7 @@ credenciales comprometidas, hay pérdida de datos?
 | Señal | Dónde |
 |---|---|
 | Estado general en un lugar | Panel "Estado de la instalación" en `/instalacion` o `GET /service-config/ops` (`backend/api/v1/service_config.py:116 · @router.get("/ops")`): cola, jobs corriendo, latido del worker, fallos de 24 h por clase de error, pool de BD, consultas lentas, disco, último backup, latencia |
-| Servicios apagados o degradados | `GET /health` (`backend/main.py:460 · @app.get("/health"`) |
+| Servicios apagados o degradados | `GET /health` (`backend/main.py:463 · @app.get("/health"`) |
 | Loops cron que no corrieron | `/health` → `loops` (`backend/workers/loop_state.py`) |
 | Qué falló en las últimas 24 h en todos los tenants | Correo diario al operador (`backend/notifications/operator_digest.py`) |
 | Qué hizo un usuario o una API key | Auditoría del tenant: `GET /audit` y `/audit/export` (CSV), solo `admin` (`backend/api/v1/audit.py:27 · router = APIRouter(prefix="/audit"`) |

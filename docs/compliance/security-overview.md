@@ -37,7 +37,7 @@ worker (contenedor propio): cola de jobs en la tabla `jobs`, entrenamiento y loo
   o SMTP (correo), Twilio (WhatsApp/SMS). No hay telemetría ni analítica
   (`docs/data-that-leaves.md`). Detalle en `data-processing-and-subprocessors.md`.
 - Un deploy a producción rechaza arrancar si `TESTING_MODE` está activo
-  (`backend/config.py:293 · def _refuse_testing_mode_in_production`) y si las migraciones fallan
+  (`backend/config.py:316 · def _refuse_testing_mode_in_production`) y si las migraciones fallan
   (`backend/main.py:112 · refusing to boot`).
 - Los contenedores de API y frontend corren como usuario no root
   (`backend/Dockerfile:42 · USER faro`; `Frontend/Dockerfile` hace lo mismo).
@@ -207,7 +207,7 @@ volumen).
 ## 11. Operación y monitoreo
 
 - `/health` informa base de datos, estado por servicio y último pase de cada loop cron
-  (`backend/main.py:460 · @app.get("/health"`).
+  (`backend/main.py:463 · @app.get("/health"`).
 - Superficie para operadores `GET /service-config/ops` y panel "Estado de la instalación" en
   `/instalacion`: cola, jobs corriendo, latido del worker, fallos 24 h por clase de error, pool de
   conexiones, consultas lentas, disco, último backup y latencia por familia de rutas, con umbrales
