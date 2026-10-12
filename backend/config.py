@@ -206,6 +206,13 @@ class Settings(BaseSettings):
     # (tests, queries, exports, refreshes). The next waits briefly, then is
     # refused with a clear message instead of piling onto a customer's ERP.
     sql_sources_max_concurrent_per_tenant: int = 4
+    # Inventory sync (backend/inventory_sync/): sane ceilings, not plan gates.
+    # Profiles one tenant may keep, rows one run may read (more is a refusal
+    # that changes nothing, never a silent truncation), and the shortest
+    # schedule interval a profile may ask for.
+    inventory_sync_max_profiles_per_tenant: int = 20
+    inventory_sync_max_rows_per_run: int = 200_000
+    inventory_sync_min_interval_minutes: int = 5
     # Relative worsening of a session's realised WAPE over its training-time WAPE
     # at which the one in-app "forecast is degrading" alert is raised (percent).
     accuracy_degradation_threshold_pct: float = 25.0

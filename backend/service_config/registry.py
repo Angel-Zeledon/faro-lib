@@ -1194,6 +1194,30 @@ SQL_SOURCES = Service(
                 "waits up to 10 seconds, then is refused with a clear message.",
             default="4", example="4",
         ),
+        ConfigField(
+            key="inventory_sync_max_profiles_per_tenant",
+            env="INVENTORY_SYNC_MAX_PROFILES_PER_TENANT", kind="int", editable=False,
+            doc="Inventory sync profiles one tenant may keep (each keeps one "
+                "target in step with one table, collection or query of its "
+                "database). Creating one more is refused with a clear message.",
+            default="20", example="20",
+        ),
+        ConfigField(
+            key="inventory_sync_max_rows_per_run",
+            env="INVENTORY_SYNC_MAX_ROWS_PER_RUN", kind="int", editable=False,
+            doc="Rows one inventory sync run may read from the customer's "
+                "database. A source that returns more fails the run before "
+                "anything is written (never a silent truncation); narrow the "
+                "query or raise this.",
+            default="200000", example="200000",
+        ),
+        ConfigField(
+            key="inventory_sync_min_interval_minutes",
+            env="INVENTORY_SYNC_MIN_INTERVAL_MINUTES", kind="int", editable=False,
+            doc="Shortest schedule an inventory sync profile may ask for, in "
+                "minutes, so a profile cannot hammer a customer's ERP.",
+            default="5", example="5",
+        ),
     ),
 )
 

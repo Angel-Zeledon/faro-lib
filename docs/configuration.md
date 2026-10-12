@@ -343,6 +343,9 @@ Hosted deployments keep private hosts refused: a tenant must not be able to poin
 |---|---|---|---|
 | `SQL_SOURCES_ALLOW_PRIVATE_HOSTS` | `false` | environment only | Let SQL data sources connect to loopback and private-network addresses (RFC 1918, CGNAT, IPv6 unique-local). Off by default; turn it on only on a self-hosted installation whose databases live on its own network. |
 | `SQL_SOURCES_MAX_CONCURRENT_PER_TENANT` | `4` | environment only | Connections one tenant may have open to its databases at the same time (tests, queries, exports, refreshes). The next one waits up to 10 seconds, then is refused with a clear message. |
+| `INVENTORY_SYNC_MAX_PROFILES_PER_TENANT` | `20` | environment only | Inventory sync profiles one tenant may keep (each keeps one target in step with one table, collection or query of its database). Creating one more is refused with a clear message. |
+| `INVENTORY_SYNC_MAX_ROWS_PER_RUN` | `200000` | environment only | Rows one inventory sync run may read from the customer's database. A source that returns more fails the run before anything is written (never a silent truncation); narrow the query or raise this. |
+| `INVENTORY_SYNC_MIN_INTERVAL_MINUTES` | `5` | environment only | Shortest schedule an inventory sync profile may ask for, in minutes, so a profile cannot hammer a customer's ERP. |
 
 ## `api_surface` - Public-API-only mode.
 
