@@ -357,6 +357,19 @@ class TestErrorClassification:
         wrapped = ds_errors.classify(_Wrapped(exc), engine=engine, during=during)
         assert wrapped.code == code
 
+    def test_a_mysql_server_that_hangs_while_connecting_is_a_connect_timeout(self):
+        # Found walking /sincronizacion with the MySQL container paused: the
+        # handshake read timed out (PyMySQL says "during query" even then), and
+        # the run told the user to add an index because "the query was
+        # cancelled on the server" — a server it never reached. While
+        # CONNECTING it is a connect timeout: transient, about the server.
+        exc = Exception(2013, "Lost connection to MySQL server during query (timed out)")
+        got = ds_errors.classify(exc, engine="mysql", host="erp.local", during="auth")
+        assert (got.code, got.stage, got.transient) == ("data_source_connect_timeout", "tcp", True)
+        assert got.params["host"] == "erp.local"
+        # Running a statement it stays a query timeout.
+        assert ds_errors.classify(exc, engine="mysql", during="query").code == "data_source_query_timeout"
+
     def test_transient_only_for_what_can_heal(self):
         assert ds_errors.classify(Exception(1040, "Too many connections"), engine="mysql").transient
         assert not ds_errors.classify(Exception(1045, "Access denied"), engine="mysql", during="auth").transient

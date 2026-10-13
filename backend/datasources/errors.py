@@ -229,6 +229,11 @@ def classify(exc: BaseException, *, engine: str = "", secrets: Iterable[str] = (
                       reason="refused" if re.search(r"refused|errno 111|10061", low) else "unreachable")
         if errno in (2013, 2006, 2055):
             if "timed out" in low:
+                if during in (STAGE_AUTH, STAGE_TCP, STAGE_TLS, STAGE_DNS):
+                    # The read timed out during the HANDSHAKE (PyMySQL still
+                    # says "during query"): a hung or paused server, not a slow
+                    # statement — nothing reached it to be cancelled.
+                    return _c("data_source_connect_timeout", STAGE_TCP, transient=True, host=host)
                 # The client-side read timeout fired: the statement outlived it.
                 return _c("data_source_query_timeout", STAGE_QUERY, status=504)
             return _c("data_source_connection_lost", STAGE_QUERY, transient=True, status=503)
