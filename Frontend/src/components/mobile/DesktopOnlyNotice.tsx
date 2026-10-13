@@ -56,6 +56,7 @@ export const MOBILE_READY = [
   '/automatizacion',
   '/api',
   '/instalacion',
+  '/modelo-ia',     // one column of cards and a form; built at 390 px
 ]
 
 /** Does `path` have a real phone layout? Links that lead from a phone screen

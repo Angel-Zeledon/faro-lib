@@ -269,6 +269,32 @@ def _force_local_llm_in_tests():
 
 
 @pytest.fixture(autouse=True)
+def _company_ai_providers_stay_on_this_machine(request, monkeypatch):
+    """A company's own AI provider (backend/ai/providers/) is called through
+    `transport._resolve`. In the normal suite every address it resolves to
+    must be loopback — the fake provider in `fake_llm_server.py` — so no test
+    can bill a real OpenAI / Claude / Gemini key. The resolver's own refusals
+    (private, metadata, DNS) still run first, so the SSRF tests see them.
+    Opt out only with `@pytest.mark.live_llm` (skipped without real keys)."""
+    if request.node.get_closest_marker("live_llm"):
+        yield
+        return
+    import ipaddress
+    from backend.ai.providers import transport
+    real = transport._resolve
+
+    def guarded(host, port, **kw):
+        addresses = real(host, port, **kw)
+        for ip in addresses:
+            if not ipaddress.ip_address(str(ip)).is_loopback:
+                raise RuntimeError(f"test tried to reach a real AI provider at {host} ({ip})")
+        return addresses
+
+    monkeypatch.setattr(transport, "_resolve", guarded)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_background_accuracy_tracking(monkeypatch):
     """Every sales upload schedules a background accuracy reading
     (forecast_check/tracking.py). A daemon thread racing the next test's tenant

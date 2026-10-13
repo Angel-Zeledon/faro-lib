@@ -18,6 +18,8 @@ import { MessageBubble, TypingBubble, Welcome, previewText, clampStyle } from '.
 import AssistantMobile from './AssistantMobile'
 import FavoritesList from './Favorites'
 import { AssistantAvatar } from '@/components/brand/AssistantAvatar'
+import { getUser } from '@/lib/auth'
+import ProviderNotice from './ProviderNotice'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
 import {
   Plus, Search, Star, Trash2, Send, Mic, Square,
@@ -198,8 +200,10 @@ export default function AnalystPage() {
   // is always the same and always late: the user writes a question, waits out
   // the request, and reads "the assistant could not answer". Asking first turns
   // that into a sentence at the top of the screen, before anybody types.
-  const { can } = useCapabilities()
+  const { can, refresh: refreshCaps } = useCapabilities()
   const assistantOff = !can('assistant')
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => { setIsAdmin(getUser()?.role === 'admin') }, [])
   const [chats,       setChats]       = useState<Chat[]>([])
   const [activeChatId, setActive]     = useState<string | null>(null)
   const [messages,    setMessages]    = useState<ChatMessage[]>([])
@@ -359,6 +363,10 @@ export default function AnalystPage() {
       setTimeout(() => scrollToBottom(), 30)
 
       const res = await sendChatMessage(targetId, q, lang)
+      // The company's own provider failed on this very question: the answer
+      // already says so; refresh the banner so it says it too (and, after
+      // repeated failures, that the provider is paused).
+      if (res.assistant?.provider_error) void refreshCaps()
 
       // Replace optimistic with real messages
       setMessages(prev => [
@@ -419,7 +427,7 @@ export default function AnalystPage() {
       setSending(false)
       inputRef.current?.focus()
     }
-  }, [activeChatId, chats, sending, creatingChat, scrollToBottom, t, lang])
+  }, [activeChatId, chats, sending, creatingChat, scrollToBottom, t, lang, refreshCaps])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -592,6 +600,7 @@ export default function AnalystPage() {
         onRetry={retryable ? retryLast : undefined}
         welcome={welcome}
         assistantOff={assistantOff}
+        isAdmin={isAdmin}
         onToggleFavorite={toggleFav}
         onDelete={handleDelete}
         relTime={iso => fmtRelative(iso, t)}
@@ -790,17 +799,10 @@ export default function AnalystPage() {
               inviting empty state, created a chat, typed a question, and only
               THEN learned that this installation has no model. The sentence
               belongs before the first click, not after the third. */}
-          {assistantOff && (
-            <div role="status" style={{
-              display: 'flex', gap: 8, alignItems: 'flex-start',
-              padding: '12px 16px', margin: '12px 16px 0', borderRadius: 8,
-              background: 'var(--surface-2)', border: '1px solid var(--border)',
-              fontSize: 12, color: 'var(--text)', lineHeight: 1.55, flexShrink: 0,
-            }}>
-              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 2, color: '#B7791F' }} aria-hidden="true" />
-              <span>{t('analyst.unavailable_banner')}</span>
-            </div>
-          )}
+          {/* Says WHICH reason: no model on this installation, or the
+              company's own provider failing (with its remedy and, for an
+              admin, the link to fix it). */}
+          <ProviderNotice isAdmin={isAdmin} />
           {view === 'favorites' ? (
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
               <div style={{ maxWidth: 760, margin: '0 auto' }}>

@@ -145,8 +145,7 @@ def _alert_once_a_day(cfg: store.ProviderConfig, exc: ProviderError) -> None:
         from backend.activity.events import record_event
         record_event(cfg.tenant_id, "system", "ai_provider.failing",
                      resource=cfg.provider,
-                     details={"provider": cfg.provider, "model": cfg.model,
-                              "error_code": exc.code},
+                     details={"provider": cfg.provider, "model": cfg.model},
                      reason="ai_provider_call_failed",
                      reason_params={"error_code": exc.code, "provider": cfg.provider},
                      status="failed")

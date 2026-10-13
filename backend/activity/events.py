@@ -676,7 +676,9 @@ EVENTS: dict[str, EventSpec] = {
     # first, so a broken key at 3 a.m. is in the bell at 8 and not 300 times.
     "ai_provider.failing": EventSpec(
         kind="account", severity=WARNING,
-        detail_keys=("provider", "model", "error_code"),
+        # The error CODE travels in reason_params, not as a detail: the feed
+        # prints details as "Label: value", and a raw code is not copy.
+        detail_keys=("provider", "model"),
     ),
     # SCIM provisioning (backend/scim/). The actor is "scim": the company's
     # identity provider did these, not a person in the app. Losing or regaining
