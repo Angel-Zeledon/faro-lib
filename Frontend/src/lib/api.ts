@@ -18,7 +18,7 @@ import type {
   SignalThresholdFactors, SignalThresholdScope, SignalThresholdRule,
   SignalThresholdsState, SignalThresholdsPreview,
 } from './types'
-import { getToken, clearAuth, tryRefresh } from './auth'
+import { getToken, endSession, tryRefresh } from './auth'
 import { translateErrorParts } from './errorMessage'
 
 const BASE = '/api'
@@ -233,13 +233,32 @@ function _doFetch(
   })
 }
 
-function _sessionLost(): never {
+// `rejectedToken` is the access token the server just refused. Whether that
+// ends the session for every tab or only sends this one to /login is decided
+// by `endSession` (a tab without a refresh token must not log out the others).
+function _sessionLost(rejectedToken: string | null): never {
   if (!_redirectingToLogin) {
     _redirectingToLogin = true
-    clearAuth()
+    endSession(rejectedToken)
     window.location.href = '/login'
   }
   throw new Error('Session expired')
+}
+
+/**
+ * Send `send()` and, on a 401, renew the shared access token (this tab's own
+ * refresh token, or another tab's on its behalf) and retry ONCE. Used by every
+ * authenticated fetch so none of them treats an expired token differently.
+ */
+async function withRenewal(send: () => Promise<Response>): Promise<Response> {
+  const sentToken = getToken()
+  let res = await send()
+  if (res.status !== 401) return res
+  if (!(await tryRefresh(sentToken))) _sessionLost(sentToken)
+  const retryToken = getToken()
+  res = await send()
+  if (res.status === 401) _sessionLost(retryToken)
+  return res
 }
 
 async function request<T = unknown>(
@@ -251,6 +270,7 @@ async function request<T = unknown>(
     : opts.headers
 
   let res: Response
+  const sentToken = getToken()
   try {
     res = await _doFetch(method, path, body, sendHeaders)
   } catch {
@@ -277,13 +297,17 @@ async function request<T = unknown>(
     }
     // Expired access token: renew silently with the refresh token and retry
     // once, so a 15-minute token never kicks the user back to /login mid-task.
-    // `_sessionLost()` never returns — it clears auth and redirects.
-    if (await tryRefresh()) {
+    // `_sessionLost()` never returns — it ends the session and redirects.
+    if (!(await tryRefresh(sentToken))) _sessionLost(sentToken)
+    const retryToken = getToken()
+    try {
       res = await _doFetch(method, path, body, sendHeaders)
-      if (res.status === 401) _sessionLost()
-    } else {
-      _sessionLost()
+    } catch {
+      const err = new ApiError('network', 0, '', path)
+      notify(err, silent)
+      throw err
     }
+    if (res.status === 401) _sessionLost(retryToken)
   }
 
   if (!res.ok) {
@@ -309,15 +333,7 @@ async function downloadBlob(path: string, filename: string): Promise<void> {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
   }
-  let res = await fetchBlob()
-  if (res.status === 401) {
-    if (await tryRefresh()) {
-      res = await fetchBlob()
-      if (res.status === 401) _sessionLost()
-    } else {
-      _sessionLost()
-    }
-  }
+  const res = await withRenewal(fetchBlob)
   if (!res.ok) {
     const err = await apiErrorFromResponse(res, path)
     notify(err, false)
@@ -344,15 +360,7 @@ async function downloadBlobPost(path: string, body: unknown, filename: string): 
       body: JSON.stringify(body),
     })
   }
-  let res = await fetchBlob()
-  if (res.status === 401) {
-    if (await tryRefresh()) {
-      res = await fetchBlob()
-      if (res.status === 401) _sessionLost()
-    } else {
-      _sessionLost()
-    }
-  }
+  const res = await withRenewal(fetchBlob)
   if (!res.ok) {
     const err = await apiErrorFromResponse(res, path)
     notify(err, false)
@@ -1544,10 +1552,12 @@ export const upsertBOMItem = (
     'PUT', `/inventory/bom/${encodeURIComponent(parentSku)}/${encodeURIComponent(childSku)}`, body
   )
 
+// The five DELETEs below used a bare fetch that resolved on ANY status: a 401
+// (expired token), 403 or 404 reported success, their callers' catch blocks
+// could never run, and an expired token was never renewed. They go through
+// `request` like everything else.
 export const deleteBOMItem = (parentSku: string, childSku: string) =>
-  fetch(`${BASE}/inventory/bom/${encodeURIComponent(parentSku)}/${encodeURIComponent(childSku)}`, {
-    method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` },
-  }).then(() => undefined as void)
+  request<void>('DELETE', `/inventory/bom/${encodeURIComponent(parentSku)}/${encodeURIComponent(childSku)}`)
 
 export const getWhereUsed = (childSku: string) =>
   request<{ parent_sku: string; parent_name: string | null; quantity: number }[]>(
@@ -1570,10 +1580,7 @@ export const patchInventoryStock = (sku: string, body: Partial<InventoryStock>) 
   request<InventoryStock>('PATCH', `/inventory/stock/${encodeURIComponent(sku)}`, body)
 
 export const deleteInventoryStock = (sku: string) =>
-  fetch(`${BASE}/inventory/stock/${encodeURIComponent(sku)}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${getToken()}` },
-  }).then(() => undefined as void)
+  request<void>('DELETE', `/inventory/stock/${encodeURIComponent(sku)}`)
 
 // ── Semáforo multipliers ──────────────────────────────────────────────────────
 // Tenant rule ('global') plus per-supplier / per-category overrides. Reading is
@@ -1713,10 +1720,7 @@ export const toggleCalendarEntry = (catalogKey: string, active: boolean) =>
     'PATCH', `/inventory/events/catalog/${catalogKey}`, { active },
   )
 export const deleteInventoryEvent  = (id: string) =>
-  fetch(`${BASE}/inventory/events/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${getToken()}` },
-  }).then(() => undefined as void)
+  request<void>('DELETE', `/inventory/events/${id}`)
 
 // ── Multi-warehouse (feature 5.4) ────────────────────────────────────────────
 export const listWarehouses = () =>
@@ -2572,10 +2576,7 @@ export const updateSupplier   = (id: string, body: Partial<SupplierInput>) =>
   request<Supplier>('PATCH', `/inventory/suppliers/${id}`, body)
 
 export const deleteSupplier   = (id: string) =>
-  fetch(`${BASE}/inventory/suppliers/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${getToken()}` },
-  }).then(() => undefined as void)
+  request<void>('DELETE', `/inventory/suppliers/${id}`)
 
 /** Manual purchase order — supplier chosen explicitly, no forecast session. */
 /** Deliver a PO to the buyer's own WhatsApp; always returns text + wa.me link. */
@@ -2600,10 +2601,7 @@ export const assignSkuSupplier = (sku: string, supplierId: string, body: {
   request<SkuSupplier>('PUT', `/inventory/stock/${encodeURIComponent(sku)}/suppliers/${supplierId}`, body)
 
 export const removeSkuSupplier = (sku: string, supplierId: string) =>
-  fetch(`${BASE}/inventory/stock/${encodeURIComponent(sku)}/suppliers/${supplierId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${getToken()}` },
-  }).then(() => undefined as void)
+  request<void>('DELETE', `/inventory/stock/${encodeURIComponent(sku)}/suppliers/${supplierId}`)
 
 // ── Dead capital / "capital parado" ───────────────────────────────────────────
 // Needs no session: it ranks money that has not moved by real stock-level

@@ -39,7 +39,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
     if (!isAuthenticated()) {
       // Expired access token ≠ logged out: renew silently with the refresh
-      // token before falling back to /login.
+      // token before falling back to /login. A tab without a refresh token
+      // (opened from a link) asks another tab to renew for it; failing that it
+      // goes to /login WITHOUT clearing the shared token, so the other tabs
+      // keep their session.
       let cancelled = false
       tryRefresh().then(ok => {
         if (cancelled) return
