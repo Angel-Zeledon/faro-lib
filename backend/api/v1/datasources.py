@@ -33,6 +33,8 @@ class _SqlConnectionFields(BaseModel):
     connect_timeout_s:   Optional[int] = None
     statement_timeout_s: Optional[int] = None
     connection_string:   Optional[str] = Field(default=None, max_length=4096)
+    # MongoDB only: the database the user authenticates against ("admin" when empty).
+    auth_source:         Optional[str] = Field(default=None, max_length=128)
 
 
 class CreateSqlSourceRequest(_SqlConnectionFields):
@@ -219,6 +221,7 @@ def create_sql_source(
             connect_timeout_s=body.connect_timeout_s,
             statement_timeout_s=body.statement_timeout_s,
             connection_string=body.connection_string,
+            auth_source=body.auth_source,
         )
         # Where it points, never the password or the certificate itself.
         stored = svc.get_source(user.tenant_id, src["id"]) or {}
@@ -271,6 +274,7 @@ def update_sql_config(
             connect_timeout_s=body.connect_timeout_s,
             statement_timeout_s=body.statement_timeout_s,
             connection_string=body.connection_string,
+            auth_source=body.auth_source,
         )
     except ValueError as e:
         raise _service_error(e)

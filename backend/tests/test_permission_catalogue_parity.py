@@ -107,6 +107,13 @@ class TestEveryMutatingRouteIsDeclared:
             "/auth", "/scim", "/billing/stripe", "/billing/paypal", "/inbound/email",
             "/whatsapp", "/supplier-portal", "/trial", "/feedback", "/me", "/users/me",
             "/alerts", "/messages", "/entitlements", "/mcp",
+            # No person behind these: a signed token in the URL, or the HMAC
+            # of the installation key (the Rust API calling Python).
+            "/approval-links", "/customer-portal/public", "/public/report-unsubscribe",
+            "/internal/scheduled-reports",
+            # Everyone manages their OWN second factor; the tenant policy and
+            # another person's reset have their own rules.
+            "/mfa",
         ])
 
 

@@ -1005,8 +1005,16 @@ def _tables_case(ct, db):
     cur.execute("""SELECT c.relname FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
                     JOIN pg_class p ON p.oid = k.confrelid WHERE k.contype = 'f' AND p.relname = 'tenants'""")
     fk = {r[0] for r in cur.fetchall()}
-    if fk - order - {"tenants"}:
-        problems.append(f"tables with an FK to tenants missing from the erasure list: {sorted(fk - order)}")
+    # org_links names tenants in parent_tenant_id / child_tenant_id, so
+    # delete_tenant ends those links itself (organizations.service
+    # .end_links_for_erasure, which also tells the surviving side) before the
+    # ordered deletes. Exempt only while that call is still there.
+    handled = set()
+    if "end_links_for_erasure" in (ROOT / "backend" / "tenants" / "data_export.py").read_text(encoding="utf-8"):
+        handled = {"org_links", "org_link_grants"}
+    if fk - order - {"tenants"} - handled:
+        problems.append(f"tables with an FK to tenants missing from the erasure list: "
+                        f"{sorted(fk - order - {'tenants'} - handled)}")
     rs_src = (ROOT / "backend-rs" / "src" / "routes" / "w2b" / "tenant_data.rs").read_text(encoding="utf-8")
     if "DELETE_ORDER" not in rs_src or "tenant_tables" not in rs_src:
         problems.append("tenant_data.rs does not use the generated lists")
@@ -1150,11 +1158,16 @@ def run_capabilities(args, db, secret) -> list:
         # GET /auth/sso/availability: public; the instance switch only.
         sso_route = "GET /auth/sso/availability"
         sso_path = f"{ct.API}/auth/sso/availability"
-        for label, rows_, want in (("no row, environment default", {}, False),
+        # The environment default is whatever the servers' env file says (the
+        # SAML section needs it on); a stored value overrides it either way.
+        env_raw = (ct.read_env_file(args.env_file).get("ENTERPRISE_SSO_ENABLED", "") if args.env_file else "")
+        env_default = env_raw.strip().lower() in ("1", "true", "yes", "on")
+        for label, rows_, want in (("no row, environment default", {}, env_default),
                                    ("stored true", {"enterprise_sso_enabled": "true"}, True),
                                    ("stored on", {"enterprise_sso_enabled": "On"}, True),
                                    ("stored false", {"enterprise_sso_enabled": "false"}, False),
-                                   ("junk stored value falls back to the default", {"enterprise_sso_enabled": "perhaps"}, False)):
+                                   ("junk stored value falls back to the default",
+                                    {"enterprise_sso_enabled": "perhaps"}, env_default)):
             set_rows(rows_, {}, {})
             for who, tok in (("anonymous", None), ("with a bogus bearer", "not.a.token"),
                              ("with a valid token", ct.auth_for(fa, "viewer"))):

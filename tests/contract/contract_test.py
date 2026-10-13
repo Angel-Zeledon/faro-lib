@@ -23,6 +23,17 @@ What it does, in order:
 Only the standard library is required. `--db` needs psycopg2 (the backend
 venv has it); without `--db` the state checks are skipped and reported so.
 
+Both servers must be started from ONE env file, passed here as --env-file,
+with: TESTING_MODE=true, WORKER_ENABLED=false, SCHEDULER_ENABLED=false (the
+cron loop writes rows into the tenants under test), TRUSTED_PROXY_HOPS=1 (IP
+allowlist cases), ENTERPRISE_SSO_ENABLED=true (SAML cases; the wave-2b
+availability cases read it from the same file), PYTHON_API_URL=<the --python
+URL> (the scheduled-report preview), an absolute STORAGE_PATH both share, and a
+database whose time zone is UTC. A run between 18:00 and midnight on a machine
+west of UTC (local date != UTC date) fails five date cases (outlook cover
+dates, future delegations) that pass otherwise; see docs/rust-migration.md.
+`run_section.py` re-runs single sections.
+
 The Python test suite (backend/tests) is the SPEC; this file is the bridge
 that proves a Rust route answers like the Python route it replaces.
 """
@@ -316,6 +327,13 @@ def build_cases(fx: Fixture) -> list[Case]:
         Case("entitlements wrong type", "GET", f"{API}/entitlements", who="refresh_type", route="GET /entitlements"),
         Case("entitlements HS512", "GET", f"{API}/entitlements", who="hs512", route="GET /entitlements"),
         Case("entitlements unknown key", "GET", f"{API}/entitlements", who="raw:Bearer sk_live_nope", route="GET /entitlements"),
+        # ── %2F inside a path parameter: Starlette routes on the decoded path,
+        # so it is a 404 before authentication, signed in or not ─────────────
+        *[Case(f"encoded slash {m} {p} ({who})", m, f"{API}{p}", who=who, route="%2F in a path parameter")
+          for m, p in (("GET", "/sessions/a%2Fb"), ("DELETE", "/sessions/a%2Fb"),
+                       ("PATCH", "/committed-demand/a%2fb"), ("GET", "/webhooks/a%2Fb/deliveries"),
+                       ("POST", "/inventory/po/a%2Fb/mark-paid"), ("DELETE", "/api-keys/a%2Fb"))
+          for who in ("none", "admin")],
         # ── committed demand: create ───────────────────────────────────────
         Case("cd create analyst", "POST", f"{API}/committed-demand", who="analyst", body=good,
              route="POST /committed-demand", state_check=check_created_row),
@@ -1084,6 +1102,11 @@ def build_r1_cases(fx: Fixture) -> list[Case]:
              setup=r1_settings_reset("currency", "XXX")),
         Case("r1 currency get list stored", "GET", cur, route=R["cur_get"],
              setup=r1_settings_reset("currency", ["USD"])),
+        # Puts the setting back: the list above makes every route that reads
+        # the currency 500 (on both sides), so leaving it would break the
+        # outlook, money and allocation sections that run later on this tenant.
+        Case("r1 currency get after the setting is removed again", "GET", cur, route=R["cur_get"],
+             setup=r1_settings_reset("currency", remove=True)),
         # ── timezone ───────────────────────────────────────────────────────
         Case("r1 timezone patch admin madrid", "PATCH", tz, body={"timezone": " Europe/Madrid "},
              route="PATCH /tenant/timezone", setup=r1_tz_setup("America/Costa_Rica"),
@@ -1784,7 +1807,8 @@ def run_outbox(args, fx: Fixture, db) -> list:
     problems = []
     statuses = sorted((r[1], r[2], r[4], r[6]) for r in after_r)
     if not all(r[3] == {} for r in after_r):
-        problems.append("a final row kept its params")
+        kept = [(r[0], r[1], r[4], r[6]) for r in after_r if r[3] != {}]
+        problems.append(f"a final row kept its params: (channel, kind, status, last_error) {kept}")
     if ("verification_code", "+50688887777", "sent", None) not in statuses:
         problems.append(f"the WhatsApp row did not send: {statuses}")
     if ("password_reset_otp", "demo-abc123@stockai.demo", "abandoned", "trial_address") not in statuses:
@@ -3868,30 +3892,6 @@ def run_delegation(args, fx: Fixture, db) -> list:
     def record(name: str, problems: list) -> None:
         results.append((R4Case(name, "-", "-", route="po-approval delegations"),
                         "FAIL" if problems else "PASS", problems))
-# ── Cost centers and approval chains: Rust-only routes, honoured by Python ───
-#
-# Centers, chains, the evaluate preview, the spend report and the order's
-# attribution exist ONLY in Rust (no Python route, no failover), so there is
-# nothing to diff on those. What the harness pins is the cross-service
-# contract: what Rust writes, Python's approval decision path (still Python)
-# honours level by level, and fails closed on what cannot be resolved. Every
-# refusal also leaves the database as it was. Needs --db. The seeded
-# differential of the evaluator itself is tests/contract/chain_differential.py.
-
-CENTERS = f"{API}/cost-centers"
-CHAINS = f"{API}/approval-chains"
-
-
-def run_cost_centers(args, fx: Fixture, db) -> list:
-    if db is None:
-        print("cost-center cases skipped: they need --db")
-        return []
-    results = []
-    cur = db.cursor()
-    route = "cost centers / approval chains"
-
-    def record(name: str, problems: list) -> None:
-        results.append((R4Case(name, "-", "-", route=route), "FAIL" if problems else "PASS", problems))
 
     def expect(name: str, r: Resp, status: int, code: Optional[str] = None, extra=None) -> None:
         problems = []
@@ -3919,6 +3919,11 @@ def run_cost_centers(args, fx: Fixture, db) -> list:
     # Invited people have no password yet, so their status is not 'active'.
     cur.execute("UPDATE users SET status = 'active' WHERE id IN (%s, %s, %s)",
                 (fx.analyst_id, sub_id, fx.viewer_id))
+    # This section's premise, set here rather than inherited: the analyst is
+    # the ONLY approver and there is one rule (earlier sections flag the admin
+    # as an approver and leave rules behind).
+    cur.execute("UPDATE users SET can_approve_po = FALSE WHERE tenant_id = %s", (fx.tenant_id,))
+    cur.execute("DELETE FROM po_approval_rules WHERE tenant_id = %s", (fx.tenant_id,))
     cur.execute("UPDATE users SET can_approve_po = TRUE WHERE id = %s", (fx.analyst_id,))
     cur.execute("""INSERT INTO po_approval_rules (tenant_id, threshold, created_by)
                    VALUES (%s, 500, %s)""", (fx.tenant_id, fx.admin_id))
@@ -4045,7 +4050,291 @@ def run_cost_centers(args, fx: Fixture, db) -> list:
     r3 = http(args.python, "POST", f"{API}/inventory/po/{pos[2]}/approval/approve", token=sub, body={})
     expect("python: an expired delegation is refused with no cleanup job", r3, 403,
            "po_approval_not_approver", extra=lambda: untouched(pos[2]))
+    # Leave no rule and no approver behind: later sections decide their own.
+    cur.execute("DELETE FROM po_approval_rules WHERE tenant_id = %s", (fx.tenant_id,))
+    cur.execute("UPDATE users SET can_approve_po = FALSE WHERE tenant_id = %s", (fx.tenant_id,))
     return results
+
+
+# ── Cost centers and approval chains: Rust-only routes, honoured by Python ───
+#
+# Centers, chains, the evaluate preview, the spend report and the order's
+# attribution exist ONLY in Rust (no Python route, no failover), so there is
+# nothing to diff on those. What the harness pins is the cross-service
+# contract: what Rust writes, Python's approval decision path (still Python)
+# honours level by level, and fails closed on what cannot be resolved. Every
+# refusal also leaves the database as it was. Needs --db. The seeded
+# differential of the evaluator itself is tests/contract/chain_differential.py.
+
+CENTERS = f"{API}/cost-centers"
+CHAINS = f"{API}/approval-chains"
+
+
+def run_cost_centers(args, fx: Fixture, db) -> list:
+    if db is None:
+        print("cost-center cases skipped: they need --db")
+        return []
+    results = []
+    cur = db.cursor()
+    route = "cost centers / approval chains"
+
+    def record(name: str, problems: list) -> None:
+        results.append((R4Case(name, "-", "-", route=route), "FAIL" if problems else "PASS", problems))
+
+    def expect(name: str, r: Resp, status: int, code: Optional[str] = None, extra=None) -> None:
+        problems = []
+        if r.status != status:
+            problems.append(f"status {r.status} (wanted {status}): {json.dumps(r.body)[:300]}")
+        elif code and (r.body or {}).get("error_code") != code:
+            problems.append(f"error_code {(r.body or {}).get('error_code')!r} (wanted {code!r})")
+        if extra and not problems:
+            problems += extra()
+        record(name, problems)
+
+    def count(table: str) -> int:
+        cur.execute(f"SELECT COUNT(*) FROM {table} WHERE tenant_id = %s", (fx.tenant_id,))
+        return cur.fetchone()[0]
+
+    def events(action: str, resource: Optional[str] = None) -> list:
+        sql = "SELECT user_id, context FROM activity_logs WHERE tenant_id = %s AND action = %s"
+        params = [fx.tenant_id, action]
+        if resource:
+            sql += " AND resource = %s"
+            params.append(resource)
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+    def rows(sql: str, params=()) -> list:
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+    admin, analyst, viewer = (auth_for(fx, w) for w in ("admin", "analyst", "viewer"))
+    tag = secrets.token_hex(3).upper()
+    r = http(args.python, "POST", f"{API}/users", token=admin, body={
+        "email": f"contract-{tag.lower()}-cc@stockai.demo", "role": "analyst", "full_name": "Contract level two"})
+    if r.status != 201:
+        record("setup: create the second approver", [f"{r.status} {r.body}"])
+        return results
+    sub_id = r.body["data"]["user"]["id"]
+    sub = mint_access_token(fx.secret, sub_id, fx.tenant_id, "analyst")
+    cur.execute("UPDATE users SET status = 'active' WHERE id IN (%s, %s, %s)",
+                (fx.analyst_id, sub_id, fx.viewer_id))
+    # This section's premise: approval is decided by chains alone, so no
+    # threshold rule an earlier section left behind may apply.
+    cur.execute("DELETE FROM po_approval_rules WHERE tenant_id = %s", (fx.tenant_id,))
+
+    # ── centers ──
+    body = {"code": f"OPS{tag}", "name": "Operations"}
+    n0 = count("cost_centers")
+    expect("viewer cannot create a center", http(args.rust, "POST", CENTERS, token=viewer, body=body),
+           403, "role_not_permitted")
+    expect("an analyst cannot create a center", http(args.rust, "POST", CENTERS, token=analyst, body=body),
+           403, "role_not_permitted")
+    expect("missing fields are a 422", http(args.rust, "POST", CENTERS, token=admin, body={}), 422, "validation_error")
+    expect("a blank name is refused", http(args.rust, "POST", CENTERS, token=admin,
+           body={"code": "X", "name": "   "}), 422, "cost_center_invalid")
+    expect("an unknown parent is a 404", http(args.rust, "POST", CENTERS, token=admin,
+           body={**body, "parent_id": "nope"}), 404, "cost_center_not_found")
+    record("refused center creates wrote nothing", [] if count("cost_centers") == n0 else ["a row was written"])
+    if fx.write_key:
+        expect("an API key never reaches the centers", http(args.rust, "POST", CENTERS, token=fx.write_key,
+               body=body), 403, "api_key_route_not_exposed")
+    r = http(args.rust, "POST", CENTERS, token=admin, body=body)
+
+    def center_ok():
+        row = rows("SELECT code, name, parent_id, active, created_by FROM cost_centers WHERE id = %s",
+                   (r.body["data"]["id"],))
+        problems = [] if row == [(f"OPS{tag}", "Operations", None, True, fx.admin_id)] else [f"row {row}"]
+        ev = events("cost_center.created", r.body["data"]["id"])
+        if len(ev) != 1 or ev[0][1].get("code") != f"OPS{tag}":
+            problems.append(f"events {ev}")
+        return problems
+    expect("an admin creates a center", r, 201, extra=center_ok)
+    ops = r.body["data"]["id"]
+    expect("the code is unique ignoring case", http(args.rust, "POST", CENTERS, token=admin,
+           body={"code": f"ops{tag.lower()}", "name": "Again"}), 409, "cost_center_code_taken")
+    r = http(args.rust, "POST", CENTERS, token=admin, body={"code": f"NORTH{tag}", "name": "North", "parent_id": ops})
+    expect("a child center", r, 201)
+    north = r.body["data"]["id"]
+    r = http(args.rust, "POST", CENTERS, token=admin, body={"code": f"OLD{tag}", "name": "Retired"})
+    old = r.body["data"]["id"]
+    expect("a center is deactivated, never deleted", http(args.rust, "PATCH", f"{CENTERS}/{old}", token=admin,
+           body={"active": False}), 200, extra=lambda: [] if events("cost_center.updated", old) else ["no event"])
+    expect("no new children under an inactive center", http(args.rust, "POST", CENTERS, token=admin,
+           body={"code": f"K{tag}", "name": "K", "parent_id": old}), 409, "cost_center_inactive")
+    expect("a cycle is refused", http(args.rust, "PATCH", f"{CENTERS}/{ops}", token=admin,
+           body={"parent_id": north}), 409, "cost_center_parent_invalid")
+    record("a refused reparent changed nothing",
+           [] if rows("SELECT parent_id FROM cost_centers WHERE id = %s", (ops,)) == [(None,)] else ["parent moved"])
+    n_ev = len(events("cost_center.updated"))
+    expect("a no-op patch changes nothing", http(args.rust, "PATCH", f"{CENTERS}/{north}", token=admin,
+           body={"name": "North"}), 200,
+           extra=lambda: [] if len(events("cost_center.updated")) == n_ev else ["event for a no-op"])
+    expect("viewer cannot patch", http(args.rust, "PATCH", f"{CENTERS}/{north}", token=viewer,
+           body={"name": "Hacked"}), 403, "role_not_permitted")
+    expect("an unknown center is a 404", http(args.rust, "PATCH", f"{CENTERS}/nope", token=admin,
+           body={"name": "x"}), 404, "cost_center_not_found")
+    lst = http(args.rust, "GET", CENTERS, token=viewer)
+    expect("anybody lists the tree, children under parents", lst, 200, extra=lambda: (
+        [] if [(i["id"], i["depth"]) for i in lst.body["data"]["items"] if i["id"] in (ops, north)] == [(ops, 0), (north, 1)]
+        and any(i["path"] == f"OPS{tag} / NORTH{tag}" for i in lst.body["data"]["items"])
+        else [f"list {json.dumps(lst.body)[:400]}"]))
+
+    # ── chains ──
+    level_a, level_b = {"kind": "users", "user_ids": [fx.analyst_id]}, {"kind": "users", "user_ids": [sub_id]}
+    chain_body = {"name": "Operations chain", "cost_center_id": ops,
+                  "bands": [{"min_amount": 500, "levels": [level_a, level_b]}]}
+    c0 = count("approval_chains")
+    expect("viewer cannot create a chain", http(args.rust, "POST", CHAINS, token=viewer, body=chain_body),
+           403, "role_not_permitted")
+    expect("a level that is not a role or users", http(args.rust, "POST", CHAINS, token=admin, body={
+        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "x"}]}]}), 422, "approval_chain_invalid")
+    expect("a role that cannot approve", http(args.rust, "POST", CHAINS, token=admin, body={
+        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "role", "role": "viewer"}]}]}),
+        422, "approval_chain_invalid")
+    expect("a named viewer is refused", http(args.rust, "POST", CHAINS, token=admin, body={
+        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "users", "user_ids": [fx.viewer_id]}]}]}),
+        422, "approval_chain_user_invalid")
+    expect("an unknown center is a 404", http(args.rust, "POST", CHAINS, token=admin,
+           body={**chain_body, "cost_center_id": "nope"}), 404, "cost_center_not_found")
+    expect("an inactive center is refused", http(args.rust, "POST", CHAINS, token=admin,
+           body={**chain_body, "cost_center_id": old}), 409, "cost_center_inactive")
+    record("refused chain creates wrote nothing", [] if count("approval_chains") == c0 else ["a row was written"])
+    r = http(args.rust, "POST", CHAINS, token=admin, body=chain_body)
+
+    def chain_ok():
+        got = rows("SELECT c.name, c.cost_center_id, c.active, b.min_amount, b.levels FROM approval_chains c "
+                   "JOIN approval_chain_bands b ON b.chain_id = c.id WHERE c.id = %s", (r.body["data"]["id"],))
+        problems = [] if got == [("Operations chain", ops, True, 500.0, [level_a, level_b])] else [f"rows {got}"]
+        if len(events("approval_chain.created", r.body["data"]["id"])) != 1:
+            problems.append("event count")
+        return problems
+    expect("an admin creates a two-level chain", r, 201, extra=chain_ok)
+    chain_id = r.body["data"]["id"]
+    expect("one active chain per center", http(args.rust, "POST", CHAINS, token=admin, body=chain_body),
+           409, "approval_chain_center_taken")
+    lst = http(args.rust, "GET", CHAINS, token=viewer)
+    expect("anybody lists chains with the names of the people", lst, 200, extra=lambda: (
+        [] if [u["id"] for u in lst.body["data"]["items"][0]["bands"][0]["levels"][1]["users"]] == [sub_id]
+        and sub_id in [c["id"] for c in lst.body["data"]["candidates"]]
+        and fx.viewer_id not in [c["id"] for c in lst.body["data"]["candidates"]]
+        else [f"list {json.dumps(lst.body)[:500]}"]))
+
+    def ev(who, **b):
+        return http(args.rust, "POST", f"{CHAINS}/evaluate", token=who, body=b)
+
+    def verdict(name, r, state, reason=None, **more):
+        d = (r.body or {}).get("data") or {}
+        want = {"state": state, "reason": reason, **more}
+        got = {k: d.get(k) for k in want}
+        expect(name, r, 200, extra=lambda: [] if got == want else [f"wanted {want}, got {d}"])
+
+    verdict("evaluate: a child uses its parent's chain", ev(viewer, cost_center_id=north, amount=600),
+            "required", None, chain_id=chain_id)
+    verdict("evaluate: no center and no default fails closed", ev(analyst, amount=600),
+            "unresolved", "no_cost_center")
+    verdict("evaluate: an unknown value fails closed", ev(analyst, cost_center_id=ops),
+            "unresolved", "amount_unknown")
+    verdict("evaluate: an inactive center fails closed", ev(analyst, cost_center_id=old, amount=900),
+            "unresolved", "cost_center_invalid")
+    verdict("evaluate: below every band needs nothing", ev(analyst, cost_center_id=ops, amount=10), "not_required")
+    verdict("evaluate: an over-budget order takes the top band",
+            ev(analyst, cost_center_id=ops, amount=10, escalate=True), "required", None, escalated=True)
+    expect("evaluate: a bad body is a 422", ev(analyst, amount="lots"), 422, "validation_error")
+
+    # ── an order, end to end ──
+    def seed_po(suffix: str) -> str:
+        po_id = _r4_seed_po(db, fx.tenant_id, fx.admin_id, f"CC-{tag}-{suffix}", {"sent": False, "qty": 10})
+        cur.execute("UPDATE inventory_po_items SET unit_cost = 100 WHERE po_log_id = %s", (po_id,))
+        return po_id
+
+    def po_row(p):
+        return rows("SELECT cost_center_id, approval_status, approved_amount FROM inventory_po_log WHERE id = %s",
+                    (p,))[0]
+
+    def request(who, p):
+        return http(args.python, "POST", f"{API}/inventory/po/{p}/approval/request", token=who, body={})
+
+    def approve(who, p):
+        return http(args.python, "POST", f"{API}/inventory/po/{p}/approval/approve", token=who, body={})
+
+    def put(who, p, center):
+        return http(args.rust, "PUT", f"{API}/inventory/po/{p}/cost-center", token=who,
+                    body={"cost_center_id": center})
+
+    po = seed_po("A")                                                    # 10 x 100 = 1000
+    n_app = count("po_approvals")
+    expect("python: an order with no center cannot ask (fails closed)", request(admin, po), 409,
+           "po_approval_chain_unresolved", extra=lambda: (
+               [] if count("po_approvals") == n_app and po_row(po)[1] is None else ["state written"]))
+    expect("viewer cannot attribute an order", put(viewer, po, north), 403, "role_not_permitted")
+    expect("an unknown center is a 404", put(analyst, po, "nope"), 404, "cost_center_not_found")
+    expect("an inactive center is refused", put(analyst, po, old), 409, "cost_center_inactive")
+    expect("an unknown order is a 404", http(args.rust, "PUT", f"{API}/inventory/po/nope/cost-center",
+           token=analyst, body={"cost_center_id": north}), 404, "po_not_found")
+    record("refused attributions wrote nothing", [] if po_row(po)[0] is None else ["center written"])
+    expect("an analyst attributes the order", put(analyst, po, north), 200, extra=lambda: (
+        [] if po_row(po)[0] == north and len(events("purchase.order_cost_center_set", po)) == 1
+        else [f"row {po_row(po)} events {events('purchase.order_cost_center_set', po)}"]))
+    expect("attributing again is a no-op", put(analyst, po, north), 200, extra=lambda: (
+        [] if len(events("purchase.order_cost_center_set", po)) == 1 else ["a second event"]))
+
+    expect("python: now it asks, with a pending step per level", request(admin, po), 200, extra=lambda: (
+        [] if rows("SELECT s.level_no, s.status FROM po_approval_steps s JOIN po_approvals a ON a.id = s.approval_id "
+                   "WHERE a.po_log_id = %s ORDER BY 1", (po,)) == [(1, "pending"), (2, "pending")]
+        and po_row(po)[1] == "pending_approval" else ["steps or status wrong"]))
+    expect("a pending order's center is locked", put(analyst, po, ops), 409, "po_cost_center_locked",
+           extra=lambda: [] if po_row(po)[0] == north else ["center moved"])
+    expect("python: level two cannot jump the queue", approve(sub, po), 403, "po_approval_chain_wrong_level",
+           extra=lambda: [] if po_row(po)[1] == "pending_approval" else ["state moved"])
+    expect("python: the requester never approves a level", approve(admin, po), 403)
+    expect("python: level one approves, the order is NOT approved yet", approve(analyst, po), 200, extra=lambda: (
+        [] if po_row(po)[1] == "pending_approval" and len(events("purchase.approval_level_approved", po)) == 1
+        and not events("purchase.approval_approved", po) else [f"row {po_row(po)}"]))
+    expect("python: level two approves, now it is approved", approve(sub, po), 200, extra=lambda: (
+        [] if po_row(po)[1] == "approved" and po_row(po)[2] == 1000.0
+        and len(events("purchase.approval_approved", po)) == 1 else [f"row {po_row(po)}"]))
+
+    # ── spend and budgets ──
+    r = http(args.rust, "GET", f"{CENTERS}/spend", token=analyst)
+    expect("spend: the child's order counts for the child and rolls up to the parent", r, 200, extra=lambda: (
+        [] if (lambda items: items[north]["own_ordered"] == 1000.0 and items[ops]["rolled_up_ordered"] == 1000.0
+               and items[ops]["own_ordered"] == 0.0)({i["id"]: i for i in r.body["data"]["items"]})
+        else [f"spend {json.dumps(r.body['data'])[:500]}"]))
+    expect("spend: a backwards period is refused",
+           http(args.rust, "GET", f"{CENTERS}/spend?from=2026-02-01&to=2026-01-01", token=analyst),
+           422, "cost_center_period_invalid")
+    r = http(args.python, "POST", f"{API}/inventory/budgets", token=admin, body={
+        "period_type": "month", "period_start": today_plus(0), "amount": 5000.0,
+        "scope_type": "cost_center", "scope_value": ops})
+    expect("python: a budget scoped to a cost center", r, 201)
+    po2 = seed_po("B")
+    expect("a budgeted center cannot be assigned afterwards (the cap is checked at placement)",
+           put(analyst, po2, north), 409, "po_cost_center_budgeted",
+           extra=lambda: [] if po_row(po2)[0] is None else ["center written"])
+    r = http(args.rust, "GET", f"{CENTERS}/spend", token=analyst)
+    expect("spend: lists the budget on its center", r, 200, extra=lambda: (
+        [] if any(i["id"] == ops and i["budgets"] and i["budgets"][0]["amount"] == 5000.0
+                  for i in r.body["data"]["items"]) else ["budget missing"]))
+
+    # ── editing chains ──
+    expect("viewer cannot edit a chain", http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=viewer,
+           body={"name": "x"}), 403, "role_not_permitted")
+    expect("an unknown chain is a 404", http(args.rust, "PATCH", f"{CHAINS}/nope", token=admin,
+           body={"name": "x"}), 404, "approval_chain_not_found")
+    r = http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=admin, body={"bands": [
+        {"min_amount": 500, "levels": [level_b]}, {"min_amount": 5000, "levels": [level_a, level_b]}]})
+    expect("an admin replaces the bands", r, 200, extra=lambda: (
+        [] if rows("SELECT COUNT(*) FROM approval_chain_bands WHERE chain_id = %s", (chain_id,)) == [(2,)]
+        and len(events("approval_chain.updated", chain_id)) == 1 else ["bands/events"]))
+    po3 = seed_po("C")
+    expect("an admin switches the last chain off", http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=admin,
+           body={"active": False}), 200)
+    expect("python: with no active chain a chain asks nothing of the order", request(admin, po3), 409,
+           "po_approval_not_required")
+    return results
+
+
 # ── Customer portal: Rust-only routes, asserted against expectations ─────────
 #
 # There is no Python twin to diff against (the group is new in Rust, with no
@@ -5153,7 +5442,11 @@ def run_saml(args, fx: Fixture, db) -> list:
     py, rs = args.python, args.rust
     cfg_path = f"{API}/auth/saml/config"
     domain = "stockai.demo"
-    frontend = "http://localhost:5000"
+    # The audience and ACS both services derive from FRONTEND_URL: read it from
+    # the env file the servers were started with.
+    frontend = (read_env_file(args.env_file).get("FRONTEND_URL") if args.env_file else None) \
+        or "http://localhost:5000"
+    frontend = frontend.rstrip("/")
     sp_entity = f"{frontend}/api/v1/auth/saml/sp/{fx.tenant_id}"
     acs = f"{frontend}/api/v1/auth/saml/acs"
     idp = sf.FakeIdp()
@@ -5499,7 +5792,8 @@ def run_saml(args, fx: Fixture, db) -> list:
     record("saml admin signs in", problems)
     r = http(rs, "GET", cfg_path, token=tok())
     record("saml get reports the admin signed in",
-           [] if r.body["data"]["config"]["admin_signed_in"] is True else [str(r.body)])
+           [] if (((r.body or {}).get("data") or {}).get("config") or {}).get("admin_signed_in") is True
+           else [f"{r.status} {r.body}"])
 
     # ── enforcement ────────────────────────────────────────────────────────
     r = put(good(enforce_sso=True, default_role="viewer", groups_attribute="groups",
@@ -5601,6 +5895,9 @@ def run_saml(args, fx: Fixture, db) -> list:
     for t in created_tenants:
         erase_fixture(py, t)
     cur.execute("DELETE FROM sso_domains WHERE tenant_id = %s", (fx.tenant_id,))
+    return out
+
+
 # ── Audit stream: configuration, cursor and delivery-log routes ─────────────
 #
 # NEW routes with no Python twin (docs/rust-migration.md: no Python failover),
@@ -5619,114 +5916,6 @@ def run_audit_stream(args, fx: Fixture, db) -> list:
     route = "audit-stream"
     tid = fx.tenant_id
     S = f"{API}/audit-stream"
-# ── ORG: organization hierarchy (Rust only, no Python route) ────────────────
-#
-# There is no Python twin to diff against: `/org/*` exists only in Rust, so
-# these cases assert the Rust answers and the database state they leave. The
-# cases are adversarial on purpose: this is the one feature where a bug shows
-# one tenant another tenant's purchasing data.
-#
-# Five throwaway tenants: HOLDING (the main fixture: admin, analyst, viewer),
-# SUB1 and SUB2 (subsidiaries), OUT (linked to nothing) and, when a case needs a
-# second holding, OUT creates the codes. Each tenant's data is seeded with
-# numbers that cannot be confused (OUT's are enormous), so a leak shows up as a
-# number or an id in a response that must not contain it.
-
-ORG_ROUTES = [
-    ("GET", "/org/overview", None),
-    ("GET", "/org/links", None),
-    ("POST", "/org/links", {"label": "x"}),
-    ("POST", "/org/links/accept", {"code": "orgl_" + "a" * 48}),
-    ("DELETE", "/org/links/x", None),
-    ("GET", "/org/links/x/members", None),
-    ("PUT", "/org/links/x/members/y", None),
-    ("DELETE", "/org/links/x/members/y", None),
-    ("GET", "/org/consolidated/committed-demand", None),
-    ("GET", "/org/consolidated/stock-signals", None),
-    ("GET", "/org/consolidated/purchase-orders", None),
-    ("GET", "/org/consolidated/budgets", None),
-]
-ORG_VIEWS = ["committed-demand", "stock-signals", "purchase-orders", "budgets"]
-
-
-def org_seed(db, fx: Fixture, spec: dict) -> None:
-    """Business data for one tenant, straight into the database. `spec` keys:
-    commit (list of (qty, prob, on_top, status, withdrawn, days)), pos (list of
-    dicts), budget (dict), snapshot ('fresh'|'stale'|None, {signal: n})."""
-    cur = db.cursor()
-    t = fx.tenant_id
-    for qty, prob, on_top, status, withdrawn, days in spec.get("commit", []):
-        cur.execute(
-            """INSERT INTO committed_demand (tenant_id, sku, delivery_date, quantity, customer, probability,
-                                             on_top_of_base, status, created_by, contract_withdrawn_at)
-               VALUES (%s, %s, CURRENT_DATE + %s, %s, 'seed', %s, %s, %s, %s, CASE WHEN %s THEN NOW() END)""",
-            (t, f"ORG-{secrets.token_hex(3)}", days, qty, prob, on_top, status, fx.admin_id, withdrawn))
-    for po in spec.get("pos", []):
-        cur.execute(
-            """INSERT INTO inventory_po_log (tenant_id, generated_at, sku_count, total_units, total_value,
-                                             sent_at, paid_at, cancelled_at, reception_status)
-               VALUES (%s, NOW() - %s * INTERVAL '1 day', 1, 1, %s,
-                       CASE WHEN %s THEN NOW() END, CASE WHEN %s THEN NOW() END,
-                       CASE WHEN %s THEN NOW() END, %s)
-               RETURNING id""",
-            (t, po.get("age", 1), po.get("value"), po.get("sent", True), po.get("paid", False),
-             po.get("cancelled", False), po.get("reception", "pending")))
-        po_id = cur.fetchone()[0]
-        for qty, cost, status in po.get("lines", []):
-            cur.execute(
-                """INSERT INTO inventory_po_items (po_log_id, tenant_id, sku, recommended_qty, final_qty, unit_cost, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (po_id, t, f"ORGL-{secrets.token_hex(3)}", qty, qty, cost, status))
-    b = spec.get("budget")
-    if b:
-        rid = f"orgb_{secrets.token_hex(6)}"
-        cur.execute(
-            """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
-                                             amount, currency, scope_type, created_by)
-               VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, %s, %s, 'company', %s)""",
-            (rid, t, rid, b["amount"], b["currency"], fx.admin_id))
-        if b.get("other_scope"):
-            rid2 = f"orgb_{secrets.token_hex(6)}"
-            cur.execute(
-                """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
-                                                 amount, currency, scope_type, scope_value, created_by)
-                   VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, 5, %s, 'category', 'x', %s)""",
-                (rid2, t, rid2, b["currency"], fx.admin_id))
-    snap = spec.get("snapshot")
-    if snap:
-        kind, counts = snap
-        cur.execute("SELECT COALESCE(MAX(id), 0) FROM status_input_bumps WHERE tenant_id = %s", (t,))
-        version = cur.fetchone()[0]
-        n = sum(counts.values())
-        cur.execute(
-            """INSERT INTO inventory_status_snapshot_meta
-                   (tenant_id, session_id, period, service_level, generation, inputs_version, code_hash,
-                    computed_on, computed_at, n_rows)
-               VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 'x', CURRENT_DATE,
-                       CASE WHEN %s THEN NOW() - INTERVAL '3 hours' ELSE NOW() END, %s)""",
-            (t, version, kind == "stale", n))
-        for signal, c in counts.items():
-            for i in range(c):
-                cur.execute(
-                    """INSERT INTO inventory_status_snapshot
-                           (tenant_id, session_id, period, service_level, generation, sku, urgency_pos, signal,
-                            supplier_lc, search_text, has_stock, has_forecast, inventory_value, sort_keys, item,
-                            computed_at)
-                       VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 0, %s, '', '', true, true, %s, '{}', '{}', NOW())""",
-                    (t, f"{signal}-{i}", signal, 10.0))
-
-
-def run_org(args, fx: Fixture, db) -> list:
-    rs = args.rust
-    py = args.python
-    out: list = []
-    if db is None:
-        return [(Case("org (all)", "-", "-", route="ORG"), "SKIP", ["ORG needs --db: grants are checked in the database"])]
-
-    def q1(sql, params=()):
-        cur = db.cursor()
-        cur.execute(sql, params)
-        return cur.fetchone()
 
     def qa(sql, params=()):
         cur = db.cursor()
@@ -5995,6 +6184,125 @@ def run_org(args, fx: Fixture, db) -> list:
                status=404, code="audit_stream_not_configured")
     expect("audit-stream replay since without a destination is 404", "POST", f"{S}/replay", body={"since": "2999-01-01"},
            status=404, code="audit_stream_not_configured")
+    # The zone change above was only a way to make Python write an audit row;
+    # put the tenant back on the default zone for the sections after this one.
+    execute("UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb) - 'timezone' WHERE id = %s", (tid,))
+    return out
+
+# ── ORG: organization hierarchy (Rust only, no Python route) ────────────────
+#
+# There is no Python twin to diff against: `/org/*` exists only in Rust, so
+# these cases assert the Rust answers and the database state they leave. The
+# cases are adversarial on purpose: this is the one feature where a bug shows
+# one tenant another tenant's purchasing data.
+#
+# Five throwaway tenants: HOLDING (the main fixture: admin, analyst, viewer),
+# SUB1 and SUB2 (subsidiaries), OUT (linked to nothing) and, when a case needs a
+# second holding, OUT creates the codes. Each tenant's data is seeded with
+# numbers that cannot be confused (OUT's are enormous), so a leak shows up as a
+# number or an id in a response that must not contain it.
+
+ORG_ROUTES = [
+    ("GET", "/org/overview", None),
+    ("GET", "/org/links", None),
+    ("POST", "/org/links", {"label": "x"}),
+    ("POST", "/org/links/accept", {"code": "orgl_" + "a" * 48}),
+    ("DELETE", "/org/links/x", None),
+    ("GET", "/org/links/x/members", None),
+    ("PUT", "/org/links/x/members/y", None),
+    ("DELETE", "/org/links/x/members/y", None),
+    ("GET", "/org/consolidated/committed-demand", None),
+    ("GET", "/org/consolidated/stock-signals", None),
+    ("GET", "/org/consolidated/purchase-orders", None),
+    ("GET", "/org/consolidated/budgets", None),
+]
+ORG_VIEWS = ["committed-demand", "stock-signals", "purchase-orders", "budgets"]
+
+
+def org_seed(db, fx: Fixture, spec: dict) -> None:
+    """Business data for one tenant, straight into the database. `spec` keys:
+    commit (list of (qty, prob, on_top, status, withdrawn, days)), pos (list of
+    dicts), budget (dict), snapshot ('fresh'|'stale'|None, {signal: n})."""
+    cur = db.cursor()
+    t = fx.tenant_id
+    for qty, prob, on_top, status, withdrawn, days in spec.get("commit", []):
+        cur.execute(
+            """INSERT INTO committed_demand (tenant_id, sku, delivery_date, quantity, customer, probability,
+                                             on_top_of_base, status, created_by, contract_withdrawn_at)
+               VALUES (%s, %s, CURRENT_DATE + %s, %s, 'seed', %s, %s, %s, %s, CASE WHEN %s THEN NOW() END)""",
+            (t, f"ORG-{secrets.token_hex(3)}", days, qty, prob, on_top, status, fx.admin_id, withdrawn))
+    for po in spec.get("pos", []):
+        cur.execute(
+            """INSERT INTO inventory_po_log (tenant_id, generated_at, sku_count, total_units, total_value,
+                                             sent_at, paid_at, cancelled_at, reception_status)
+               VALUES (%s, NOW() - %s * INTERVAL '1 day', 1, 1, %s,
+                       CASE WHEN %s THEN NOW() END, CASE WHEN %s THEN NOW() END,
+                       CASE WHEN %s THEN NOW() END, %s)
+               RETURNING id""",
+            (t, po.get("age", 1), po.get("value"), po.get("sent", True), po.get("paid", False),
+             po.get("cancelled", False), po.get("reception", "pending")))
+        po_id = cur.fetchone()[0]
+        for qty, cost, status in po.get("lines", []):
+            cur.execute(
+                """INSERT INTO inventory_po_items (po_log_id, tenant_id, sku, recommended_qty, final_qty, unit_cost, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (po_id, t, f"ORGL-{secrets.token_hex(3)}", qty, qty, cost, status))
+    b = spec.get("budget")
+    if b:
+        rid = f"orgb_{secrets.token_hex(6)}"
+        cur.execute(
+            """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
+                                             amount, currency, scope_type, created_by)
+               VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, %s, %s, 'company', %s)""",
+            (rid, t, rid, b["amount"], b["currency"], fx.admin_id))
+        if b.get("other_scope"):
+            rid2 = f"orgb_{secrets.token_hex(6)}"
+            cur.execute(
+                """INSERT INTO purchase_budgets (id, tenant_id, root_id, revision, period_type, period_start, period_end,
+                                                 amount, currency, scope_type, scope_value, created_by)
+                   VALUES (%s, %s, %s, 1, 'custom', CURRENT_DATE - 10, CURRENT_DATE + 20, 5, %s, 'category', 'x', %s)""",
+                (rid2, t, rid2, b["currency"], fx.admin_id))
+    snap = spec.get("snapshot")
+    if snap:
+        kind, counts = snap
+        cur.execute("SELECT COALESCE(MAX(id), 0) FROM status_input_bumps WHERE tenant_id = %s", (t,))
+        version = cur.fetchone()[0]
+        n = sum(counts.values())
+        cur.execute(
+            """INSERT INTO inventory_status_snapshot_meta
+                   (tenant_id, session_id, period, service_level, generation, inputs_version, code_hash,
+                    computed_on, computed_at, n_rows)
+               VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 'x', CURRENT_DATE,
+                       CASE WHEN %s THEN NOW() - INTERVAL '3 hours' ELSE NOW() END, %s)""",
+            (t, version, kind == "stale", n))
+        for signal, c in counts.items():
+            for i in range(c):
+                cur.execute(
+                    """INSERT INTO inventory_status_snapshot
+                           (tenant_id, session_id, period, service_level, generation, sku, urgency_pos, signal,
+                            supplier_lc, search_text, has_stock, has_forecast, inventory_value, sort_keys, item,
+                            computed_at)
+                       VALUES (%s, 'org-s', 'month', 0.95, 1, %s, 0, %s, '', '', true, true, %s, '{}', '{}', NOW())""",
+                    (t, f"{signal}-{i}", signal, 10.0))
+
+
+def run_org(args, fx: Fixture, db) -> list:
+    rs = args.rust
+    py = args.python
+    out: list = []
+    if db is None:
+        return [(Case("org (all)", "-", "-", route="ORG"), "SKIP", ["ORG needs --db: grants are checked in the database"])]
+
+    def q1(sql, params=()):
+        cur = db.cursor()
+        cur.execute(sql, params)
+        return cur.fetchone()
+
+    def qa(sql, params=()):
+        cur = db.cursor()
+        cur.execute(sql, params)
+        return cur.fetchall()
+
     def ex(sql, params=()):
         db.cursor().execute(sql, params)
 
@@ -6560,245 +6868,7 @@ def run_org(args, fx: Fixture, db) -> list:
             tok = mint_access_token(secret, f.admin_id, f.tenant_id, "admin")
             http(py, "DELETE", f"{API}/tenant", token=tok, body={"confirm": "DELETE"})
     return out
-    def count(table: str) -> int:
-        cur.execute(f"SELECT COUNT(*) FROM {table} WHERE tenant_id = %s", (fx.tenant_id,))
-        return cur.fetchone()[0]
 
-    def events(action: str, resource: Optional[str] = None) -> list:
-        sql = "SELECT user_id, context FROM activity_logs WHERE tenant_id = %s AND action = %s"
-        params = [fx.tenant_id, action]
-        if resource:
-            sql += " AND resource = %s"
-            params.append(resource)
-        cur.execute(sql, params)
-        return cur.fetchall()
-
-    def rows(sql: str, params=()) -> list:
-        cur.execute(sql, params)
-        return cur.fetchall()
-
-    admin, analyst, viewer = (auth_for(fx, w) for w in ("admin", "analyst", "viewer"))
-    tag = secrets.token_hex(3).upper()
-    r = http(args.python, "POST", f"{API}/users", token=admin, body={
-        "email": f"contract-{tag.lower()}-cc@stockai.demo", "role": "analyst", "full_name": "Contract level two"})
-    if r.status != 201:
-        record("setup: create the second approver", [f"{r.status} {r.body}"])
-        return results
-    sub_id = r.body["data"]["user"]["id"]
-    sub = mint_access_token(fx.secret, sub_id, fx.tenant_id, "analyst")
-    cur.execute("UPDATE users SET status = 'active' WHERE id IN (%s, %s, %s)",
-                (fx.analyst_id, sub_id, fx.viewer_id))
-
-    # ── centers ──
-    body = {"code": f"OPS{tag}", "name": "Operations"}
-    n0 = count("cost_centers")
-    expect("viewer cannot create a center", http(args.rust, "POST", CENTERS, token=viewer, body=body),
-           403, "role_not_permitted")
-    expect("an analyst cannot create a center", http(args.rust, "POST", CENTERS, token=analyst, body=body),
-           403, "role_not_permitted")
-    expect("missing fields are a 422", http(args.rust, "POST", CENTERS, token=admin, body={}), 422, "validation_error")
-    expect("a blank name is refused", http(args.rust, "POST", CENTERS, token=admin,
-           body={"code": "X", "name": "   "}), 422, "cost_center_invalid")
-    expect("an unknown parent is a 404", http(args.rust, "POST", CENTERS, token=admin,
-           body={**body, "parent_id": "nope"}), 404, "cost_center_not_found")
-    record("refused center creates wrote nothing", [] if count("cost_centers") == n0 else ["a row was written"])
-    if fx.write_key:
-        expect("an API key never reaches the centers", http(args.rust, "POST", CENTERS, token=fx.write_key,
-               body=body), 403, "api_key_route_not_exposed")
-    r = http(args.rust, "POST", CENTERS, token=admin, body=body)
-
-    def center_ok():
-        row = rows("SELECT code, name, parent_id, active, created_by FROM cost_centers WHERE id = %s",
-                   (r.body["data"]["id"],))
-        problems = [] if row == [(f"OPS{tag}", "Operations", None, True, fx.admin_id)] else [f"row {row}"]
-        ev = events("cost_center.created", r.body["data"]["id"])
-        if len(ev) != 1 or ev[0][1].get("code") != f"OPS{tag}":
-            problems.append(f"events {ev}")
-        return problems
-    expect("an admin creates a center", r, 201, extra=center_ok)
-    ops = r.body["data"]["id"]
-    expect("the code is unique ignoring case", http(args.rust, "POST", CENTERS, token=admin,
-           body={"code": f"ops{tag.lower()}", "name": "Again"}), 409, "cost_center_code_taken")
-    r = http(args.rust, "POST", CENTERS, token=admin, body={"code": f"NORTH{tag}", "name": "North", "parent_id": ops})
-    expect("a child center", r, 201)
-    north = r.body["data"]["id"]
-    r = http(args.rust, "POST", CENTERS, token=admin, body={"code": f"OLD{tag}", "name": "Retired"})
-    old = r.body["data"]["id"]
-    expect("a center is deactivated, never deleted", http(args.rust, "PATCH", f"{CENTERS}/{old}", token=admin,
-           body={"active": False}), 200, extra=lambda: [] if events("cost_center.updated", old) else ["no event"])
-    expect("no new children under an inactive center", http(args.rust, "POST", CENTERS, token=admin,
-           body={"code": f"K{tag}", "name": "K", "parent_id": old}), 409, "cost_center_inactive")
-    expect("a cycle is refused", http(args.rust, "PATCH", f"{CENTERS}/{ops}", token=admin,
-           body={"parent_id": north}), 409, "cost_center_parent_invalid")
-    record("a refused reparent changed nothing",
-           [] if rows("SELECT parent_id FROM cost_centers WHERE id = %s", (ops,)) == [(None,)] else ["parent moved"])
-    n_ev = len(events("cost_center.updated"))
-    expect("a no-op patch changes nothing", http(args.rust, "PATCH", f"{CENTERS}/{north}", token=admin,
-           body={"name": "North"}), 200,
-           extra=lambda: [] if len(events("cost_center.updated")) == n_ev else ["event for a no-op"])
-    expect("viewer cannot patch", http(args.rust, "PATCH", f"{CENTERS}/{north}", token=viewer,
-           body={"name": "Hacked"}), 403, "role_not_permitted")
-    expect("an unknown center is a 404", http(args.rust, "PATCH", f"{CENTERS}/nope", token=admin,
-           body={"name": "x"}), 404, "cost_center_not_found")
-    lst = http(args.rust, "GET", CENTERS, token=viewer)
-    expect("anybody lists the tree, children under parents", lst, 200, extra=lambda: (
-        [] if [(i["id"], i["depth"]) for i in lst.body["data"]["items"] if i["id"] in (ops, north)] == [(ops, 0), (north, 1)]
-        and any(i["path"] == f"OPS{tag} / NORTH{tag}" for i in lst.body["data"]["items"])
-        else [f"list {json.dumps(lst.body)[:400]}"]))
-
-    # ── chains ──
-    level_a, level_b = {"kind": "users", "user_ids": [fx.analyst_id]}, {"kind": "users", "user_ids": [sub_id]}
-    chain_body = {"name": "Operations chain", "cost_center_id": ops,
-                  "bands": [{"min_amount": 500, "levels": [level_a, level_b]}]}
-    c0 = count("approval_chains")
-    expect("viewer cannot create a chain", http(args.rust, "POST", CHAINS, token=viewer, body=chain_body),
-           403, "role_not_permitted")
-    expect("a level that is not a role or users", http(args.rust, "POST", CHAINS, token=admin, body={
-        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "x"}]}]}), 422, "approval_chain_invalid")
-    expect("a role that cannot approve", http(args.rust, "POST", CHAINS, token=admin, body={
-        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "role", "role": "viewer"}]}]}),
-        422, "approval_chain_invalid")
-    expect("a named viewer is refused", http(args.rust, "POST", CHAINS, token=admin, body={
-        **chain_body, "bands": [{"min_amount": 1, "levels": [{"kind": "users", "user_ids": [fx.viewer_id]}]}]}),
-        422, "approval_chain_user_invalid")
-    expect("an unknown center is a 404", http(args.rust, "POST", CHAINS, token=admin,
-           body={**chain_body, "cost_center_id": "nope"}), 404, "cost_center_not_found")
-    expect("an inactive center is refused", http(args.rust, "POST", CHAINS, token=admin,
-           body={**chain_body, "cost_center_id": old}), 409, "cost_center_inactive")
-    record("refused chain creates wrote nothing", [] if count("approval_chains") == c0 else ["a row was written"])
-    r = http(args.rust, "POST", CHAINS, token=admin, body=chain_body)
-
-    def chain_ok():
-        got = rows("SELECT c.name, c.cost_center_id, c.active, b.min_amount, b.levels FROM approval_chains c "
-                   "JOIN approval_chain_bands b ON b.chain_id = c.id WHERE c.id = %s", (r.body["data"]["id"],))
-        problems = [] if got == [("Operations chain", ops, True, 500.0, [level_a, level_b])] else [f"rows {got}"]
-        if len(events("approval_chain.created", r.body["data"]["id"])) != 1:
-            problems.append("event count")
-        return problems
-    expect("an admin creates a two-level chain", r, 201, extra=chain_ok)
-    chain_id = r.body["data"]["id"]
-    expect("one active chain per center", http(args.rust, "POST", CHAINS, token=admin, body=chain_body),
-           409, "approval_chain_center_taken")
-    lst = http(args.rust, "GET", CHAINS, token=viewer)
-    expect("anybody lists chains with the names of the people", lst, 200, extra=lambda: (
-        [] if [u["id"] for u in lst.body["data"]["items"][0]["bands"][0]["levels"][1]["users"]] == [sub_id]
-        and sub_id in [c["id"] for c in lst.body["data"]["candidates"]]
-        and fx.viewer_id not in [c["id"] for c in lst.body["data"]["candidates"]]
-        else [f"list {json.dumps(lst.body)[:500]}"]))
-
-    def ev(who, **b):
-        return http(args.rust, "POST", f"{CHAINS}/evaluate", token=who, body=b)
-
-    def verdict(name, r, state, reason=None, **more):
-        d = (r.body or {}).get("data") or {}
-        want = {"state": state, "reason": reason, **more}
-        got = {k: d.get(k) for k in want}
-        expect(name, r, 200, extra=lambda: [] if got == want else [f"wanted {want}, got {d}"])
-
-    verdict("evaluate: a child uses its parent's chain", ev(viewer, cost_center_id=north, amount=600),
-            "required", None, chain_id=chain_id)
-    verdict("evaluate: no center and no default fails closed", ev(analyst, amount=600),
-            "unresolved", "no_cost_center")
-    verdict("evaluate: an unknown value fails closed", ev(analyst, cost_center_id=ops),
-            "unresolved", "amount_unknown")
-    verdict("evaluate: an inactive center fails closed", ev(analyst, cost_center_id=old, amount=900),
-            "unresolved", "cost_center_invalid")
-    verdict("evaluate: below every band needs nothing", ev(analyst, cost_center_id=ops, amount=10), "not_required")
-    verdict("evaluate: an over-budget order takes the top band",
-            ev(analyst, cost_center_id=ops, amount=10, escalate=True), "required", None, escalated=True)
-    expect("evaluate: a bad body is a 422", ev(analyst, amount="lots"), 422, "validation_error")
-
-    # ── an order, end to end ──
-    def seed_po(suffix: str) -> str:
-        po_id = _r4_seed_po(db, fx.tenant_id, fx.admin_id, f"CC-{tag}-{suffix}", {"sent": False, "qty": 10})
-        cur.execute("UPDATE inventory_po_items SET unit_cost = 100 WHERE po_log_id = %s", (po_id,))
-        return po_id
-
-    def po_row(p):
-        return rows("SELECT cost_center_id, approval_status, approved_amount FROM inventory_po_log WHERE id = %s",
-                    (p,))[0]
-
-    def request(who, p):
-        return http(args.python, "POST", f"{API}/inventory/po/{p}/approval/request", token=who, body={})
-
-    def approve(who, p):
-        return http(args.python, "POST", f"{API}/inventory/po/{p}/approval/approve", token=who, body={})
-
-    def put(who, p, center):
-        return http(args.rust, "PUT", f"{API}/inventory/po/{p}/cost-center", token=who,
-                    body={"cost_center_id": center})
-
-    po = seed_po("A")                                                    # 10 x 100 = 1000
-    n_app = count("po_approvals")
-    expect("python: an order with no center cannot ask (fails closed)", request(admin, po), 409,
-           "po_approval_chain_unresolved", extra=lambda: (
-               [] if count("po_approvals") == n_app and po_row(po)[1] is None else ["state written"]))
-    expect("viewer cannot attribute an order", put(viewer, po, north), 403, "role_not_permitted")
-    expect("an unknown center is a 404", put(analyst, po, "nope"), 404, "cost_center_not_found")
-    expect("an inactive center is refused", put(analyst, po, old), 409, "cost_center_inactive")
-    expect("an unknown order is a 404", http(args.rust, "PUT", f"{API}/inventory/po/nope/cost-center",
-           token=analyst, body={"cost_center_id": north}), 404, "po_not_found")
-    record("refused attributions wrote nothing", [] if po_row(po)[0] is None else ["center written"])
-    expect("an analyst attributes the order", put(analyst, po, north), 200, extra=lambda: (
-        [] if po_row(po)[0] == north and len(events("purchase.order_cost_center_set", po)) == 1
-        else [f"row {po_row(po)} events {events('purchase.order_cost_center_set', po)}"]))
-    expect("attributing again is a no-op", put(analyst, po, north), 200, extra=lambda: (
-        [] if len(events("purchase.order_cost_center_set", po)) == 1 else ["a second event"]))
-
-    expect("python: now it asks, with a pending step per level", request(admin, po), 200, extra=lambda: (
-        [] if rows("SELECT s.level_no, s.status FROM po_approval_steps s JOIN po_approvals a ON a.id = s.approval_id "
-                   "WHERE a.po_log_id = %s ORDER BY 1", (po,)) == [(1, "pending"), (2, "pending")]
-        and po_row(po)[1] == "pending_approval" else ["steps or status wrong"]))
-    expect("a pending order's center is locked", put(analyst, po, ops), 409, "po_cost_center_locked",
-           extra=lambda: [] if po_row(po)[0] == north else ["center moved"])
-    expect("python: level two cannot jump the queue", approve(sub, po), 403, "po_approval_chain_wrong_level",
-           extra=lambda: [] if po_row(po)[1] == "pending_approval" else ["state moved"])
-    expect("python: the requester never approves a level", approve(admin, po), 403)
-    expect("python: level one approves, the order is NOT approved yet", approve(analyst, po), 200, extra=lambda: (
-        [] if po_row(po)[1] == "pending_approval" and len(events("purchase.approval_level_approved", po)) == 1
-        and not events("purchase.approval_approved", po) else [f"row {po_row(po)}"]))
-    expect("python: level two approves, now it is approved", approve(sub, po), 200, extra=lambda: (
-        [] if po_row(po)[1] == "approved" and po_row(po)[2] == 1000.0
-        and len(events("purchase.approval_approved", po)) == 1 else [f"row {po_row(po)}"]))
-
-    # ── spend and budgets ──
-    r = http(args.rust, "GET", f"{CENTERS}/spend", token=analyst)
-    expect("spend: the child's order counts for the child and rolls up to the parent", r, 200, extra=lambda: (
-        [] if (lambda items: items[north]["own_ordered"] == 1000.0 and items[ops]["rolled_up_ordered"] == 1000.0
-               and items[ops]["own_ordered"] == 0.0)({i["id"]: i for i in r.body["data"]["items"]})
-        else [f"spend {json.dumps(r.body['data'])[:500]}"]))
-    expect("spend: a backwards period is refused",
-           http(args.rust, "GET", f"{CENTERS}/spend?from=2026-02-01&to=2026-01-01", token=analyst),
-           422, "cost_center_period_invalid")
-    r = http(args.python, "POST", f"{API}/inventory/budgets", token=admin, body={
-        "period_type": "month", "period_start": today_plus(0), "amount": 5000.0,
-        "scope_type": "cost_center", "scope_value": ops})
-    expect("python: a budget scoped to a cost center", r, 201)
-    po2 = seed_po("B")
-    expect("a budgeted center cannot be assigned afterwards (the cap is checked at placement)",
-           put(analyst, po2, north), 409, "po_cost_center_budgeted",
-           extra=lambda: [] if po_row(po2)[0] is None else ["center written"])
-    r = http(args.rust, "GET", f"{CENTERS}/spend", token=analyst)
-    expect("spend: lists the budget on its center", r, 200, extra=lambda: (
-        [] if any(i["id"] == ops and i["budgets"] and i["budgets"][0]["amount"] == 5000.0
-                  for i in r.body["data"]["items"]) else ["budget missing"]))
-
-    # ── editing chains ──
-    expect("viewer cannot edit a chain", http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=viewer,
-           body={"name": "x"}), 403, "role_not_permitted")
-    expect("an unknown chain is a 404", http(args.rust, "PATCH", f"{CHAINS}/nope", token=admin,
-           body={"name": "x"}), 404, "approval_chain_not_found")
-    r = http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=admin, body={"bands": [
-        {"min_amount": 500, "levels": [level_b]}, {"min_amount": 5000, "levels": [level_a, level_b]}]})
-    expect("an admin replaces the bands", r, 200, extra=lambda: (
-        [] if rows("SELECT COUNT(*) FROM approval_chain_bands WHERE chain_id = %s", (chain_id,)) == [(2,)]
-        and len(events("approval_chain.updated", chain_id)) == 1 else ["bands/events"]))
-    po3 = seed_po("C")
-    expect("an admin switches the last chain off", http(args.rust, "PATCH", f"{CHAINS}/{chain_id}", token=admin,
-           body={"active": False}), 200)
-    expect("python: with no active chain a chain asks nothing of the order", request(admin, po3), 409,
-           "po_approval_not_required")
-    return results
 # ── Recurring delivery schedules (Rust-only routes, no Python twin) ──────────
 #
 # These routes exist only in the Rust service, so there is nothing to diff
@@ -7139,6 +7209,9 @@ def run_rd(args, fx: Fixture, db) -> list:
             check("rd rows carry the schedule's warehouse", [] if wh_rows == [wid] else [f"warehouses {wh_rows}"])
     else:
         check("rd scope setup", [f"creating the scoped analyst failed: {r.status} {r.body}"])
+    return out
+
+
 # ── Contract renewals: Rust-only routes ─────────────────────────────────────
 #
 # `GET /supply-contracts/renewals`, `GET /supply-contracts/{id}/comparison` and
@@ -7657,49 +7730,78 @@ def run(args) -> int:
             hard = [p for p in problems if not p.startswith("(")]
             results.append((case, "FAIL" if hard else "PASS", problems))
         if not only_saml:
-            results += run_r3(args, fx, db)
-            results += run_r4(args, fx, db)
-            results += run_ip_allowlist(args, fx, db)
-            results += run_cd_resync(args, fx, db)
-            results += run_outbox(args, fx, db)
+            results += _guarded("run_r3", run_r3, args, fx, db)
+            results += _guarded("run_r4", run_r4, args, fx, db)
+            results += _guarded("run_ip_allowlist", run_ip_allowlist, args, fx, db)
+            results += _guarded("run_cd_resync", run_cd_resync, args, fx, db)
+            results += _guarded("run_outbox", run_outbox, args, fx, db)
             import w2b_cases  # noqa: PLC0415 - wave 2b section, its own file
-            results += w2b_cases.run_w2b(args, secret, db)
+            results += _guarded("w2b_cases.run_w2b", w2b_cases.run_w2b, args, secret, db)
             import w3_cases  # wave 3 (inventory hub): its own file, its own tenants
-            results += w3_cases.run_w3(args, fx, db, sys.modules[__name__])
-            results += run_delegation(args, fx, db)
-            results += cf_outlook_cases.run_cf(args, fx, db, sys.modules[__name__])
-            results += run_portal(args, fx, db)
+            results += _guarded("w3_cases.run_w3", w3_cases.run_w3, args, fx, db, sys.modules[__name__])
+            results += _guarded("run_delegation", run_delegation, args, fx, db)
+            results += _guarded("cf_outlook_cases.run_cf", cf_outlook_cases.run_cf, args, fx, db, sys.modules[__name__])
+            results += _guarded("run_portal", run_portal, args, fx, db)
             # MFA (tests/contract/mfa_cases.py): Rust-only routes + the Python login challenge.
             from mfa_cases import run_mfa  # noqa: PLC0415
-            results += run_mfa(sys.modules[__name__], args, fx, db)
-            results += run_fx_section(args, fx, db)
+            results += _guarded("run_mfa", run_mfa, sys.modules[__name__], args, fx, db)
+            results += _guarded("run_fx_section", run_fx_section, args, fx, db)
             # Custom roles (Rust-only routes + enforcement on both): own file.
             from custom_roles_cases import run_custom_roles
-            results += run_custom_roles(args, fx, db)
-            results += run_session_policy(args, fx, db)
-        results += run_saml(args, fx, db)
-        results += run_audit_stream(args, fx, db)
-        results += run_org(args, fx, db)
-        results += run_cost_centers(args, fx, db)
-        results += cf_money_cases.run_money(args, fx, db, sys.modules[__name__])
-        results += run_allocation(args, fx, db, dict(http=http, API=API, auth_for=auth_for, today_plus=today_plus, Case=Case,
+            results += _guarded("run_custom_roles", run_custom_roles, args, fx, db)
+            results += _guarded("run_session_policy", run_session_policy, args, fx, db)
+        results += _guarded("run_saml", run_saml, args, fx, db)
+        results += _guarded("run_audit_stream", run_audit_stream, args, fx, db)
+        results += _guarded("run_cost_centers", run_cost_centers, args, fx, db)
+        results += _guarded("cf_money_cases.run_money", cf_money_cases.run_money, args, fx, db, sys.modules[__name__])
+        results += _guarded("run_allocation", run_allocation, args, fx, db, dict(http=http, API=API, auth_for=auth_for, today_plus=today_plus, Case=Case,
                                                      mint_access_token=mint_access_token, make_fixture=make_fixture,
                                                      erase_fixture=erase_fixture))
-        results += run_rd(args, fx, db)
-        results += run_cr(args, fx, db)
+        results += _guarded("run_rd", run_rd, args, fx, db)
+        results += _guarded("run_cr", run_cr, args, fx, db)
         # S&OP consensus: Rust-only routes, asserted against the database (consensus_cases.py).
         from consensus_cases import run_consensus  # noqa: PLC0415
-        results += run_consensus(args, fx, db, sys.modules[__name__])
+        results += _guarded("run_consensus", run_consensus, args, fx, db, sys.modules[__name__])
         import scheduled_reports_contract  # own file, same directory (sys.path[0] is this script's)
-        results += scheduled_reports_contract.run(args, fx, db, sys.modules[__name__])
+        # Its own tenant: its cases assert sections with NO data (no running
+        # budget, no supplier history), which the shared tenant has by now.
+        fx_sr = make_fixture(args.python, secret)
+        try:
+            results += _guarded("scheduled_reports_contract.run", scheduled_reports_contract.run, args, fx_sr, db,
+                                sys.modules[__name__])
+        finally:
+            if not args.keep:
+                erase_fixture(args.python, fx_sr)
         # Approve or reject from a message: its own file, Rust-only routes.
         from approval_links_contract import run_approval_links  # noqa: PLC0415
-        results += run_approval_links(args, fx, db, {"http": http, "Case": Case, "API": API, "auth_for": auth_for,
+        results += _guarded("run_approval_links", run_approval_links, args, fx, db, {"http": http, "Case": Case, "API": API, "auth_for": auth_for,
                                                      "signup": _r4_signup, "mint": mint_access_token})
+        # LAST, always: its final step erases the holding, which IS this run's
+        # shared tenant (fx.erased). Every section after it would run against
+        # a deleted tenant (a user row that cannot be read is treated as
+        # limited to no warehouse, so the failures look like scope errors).
+        results += _guarded("run_org", run_org, args, fx, db)
     finally:
         if not args.keep:
             erase_fixture(args.python, fx)
     return _report(args, fx, results)
+
+
+def _guarded(name: str, fn, *args, **kwargs) -> list:
+    """Run one section; a crash or a missing result list is a FAIL with the
+    traceback, and the run goes on (one crash used to discard every verdict)."""
+    import traceback  # noqa: PLC0415
+    try:
+        out = fn(*args, **kwargs)
+    except (Exception, SystemExit):  # noqa: BLE001 - reported as a failure, never swallowed
+        # Sections abort with SystemExit when their setup fails; that is this
+        # section's failure, not a reason to throw away every other verdict.
+        return [(Case(f"{name}: section crashed", "-", "-", route=name), "FAIL",
+                 [traceback.format_exc()[-2000:]])]
+    if out is None:
+        return [(Case(f"{name}: section returned no results", "-", "-", route=name), "FAIL",
+                 ["the section function returned None"])]
+    return out
 
 
 def _report(args, fx, results) -> int:

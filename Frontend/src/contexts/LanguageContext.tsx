@@ -1,9 +1,11 @@
 'use client'
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { usePathname } from 'next/navigation'
 import { translations, type Lang } from '@/i18n/translations'
 import { setErrorLanguage } from '@/lib/errorMessage'
 import { setNumberLocale } from '@/lib/numberLocale'
 import { persistPreference } from '@/lib/persistPreference'
+import { siteLangOfPath } from '@/components/landing/sitePaths'
 
 interface LangCtx {
   lang: Lang
@@ -17,7 +19,14 @@ interface LangCtx {
 const Ctx = createContext<LangCtx>({ lang: 'es', t: (k: string) => k, setLang: () => {} })
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = useState<Lang>('es')
+  const [stored, setLangState] = useState<Lang>('es')
+  // A page of the public site is written in the language of its URL (/en/…
+  // is English, the rest Spanish), on the server and on the first client
+  // render alike, so the HTML a crawler or a shared link gets is already in
+  // the right language. Everything else (the app, the sign-in forms) follows
+  // the user's own setting below.
+  const pathname = usePathname()
+  const lang: Lang = siteLangOfPath(pathname ?? '') ?? stored
 
   // The api layer has no React context; it reads the language from here so
   // `ApiError.message` is always in the language the user chose.
@@ -28,9 +37,24 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   setNumberLocale(lang)
 
   useEffect(() => {
-    const saved = (localStorage.getItem('lang') as Lang | null) ?? 'es'
-    setLangState(saved)
-  }, [])
+    // `?lang=en` is how an English page of the public site sends a visitor
+    // into the sign-in forms: on a split deployment the app is another origin
+    // and cannot read the landing's storage. It becomes the stored default.
+    // Re-read on every navigation, not only on mount: on a single domain the
+    // click from /en to /login is a client-side navigation, and the provider
+    // (in the root layout) does not mount again.
+    let fromUrl: Lang | null = null
+    try {
+      const q = new URLSearchParams(window.location.search).get('lang')
+      if (q === 'es' || q === 'en') fromUrl = q
+    } catch { /* no URL to read */ }
+    let saved: Lang = 'es'
+    try {
+      if (fromUrl) localStorage.setItem('lang', fromUrl)
+      saved = (localStorage.getItem('lang') as Lang | null) ?? 'es'
+    } catch { /* storage blocked: keep the default */ }
+    setLangState(fromUrl ?? saved)
+  }, [pathname])
 
   // The tab title and meta description are a `metadata` export in
   // `app/layout.tsx`, which Next renders on the server — where the chosen
@@ -38,14 +62,15 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // So that export stays Spanish (the app's default, and the right thing for
   // a crawler in the primary market) and an English user's tab is corrected
   // here, after hydration. Without this the browser tab said
-  // "StockAI — Inventario Inteligente" on an otherwise fully English app.
+  // the Spanish app title on an otherwise fully English app.
   //
   // Only the app's generic title is swapped. The landing and its subpages
   // (/precios, /como-funciona, …) export their own title and description, and
   // this used to overwrite them too — so a crawler that runs JavaScript read
-  // "StockAI — Inventario Inteligente" on every public page. A title that is
+  // the generic Spanish app title on every public page. A title that is
   // not one of the two app titles belongs to that page and is left alone.
-  // The server renders <html lang="es">; an English visitor's document must say
+  // The server renders <html lang="es"> (lang="en" under /en, see
+  // middleware.ts); an English visitor's document must say
   // so too (screen readers pick the voice from it, browsers offer translation).
   useEffect(() => { document.documentElement.lang = lang }, [lang])
 

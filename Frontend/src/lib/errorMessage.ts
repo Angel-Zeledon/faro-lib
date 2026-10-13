@@ -106,6 +106,13 @@ function catalogueKeys(code: string, params: Record<string, unknown>): string[] 
   if (code === 'plan_feature_locked' && typeof params.feature === 'string') {
     return [`errors.plan_feature_locked_${params.feature}`, 'errors.plan_feature_locked']
   }
+  // An inventory-sync configuration refusal names WHAT is wrong in `reason`
+  // (a missing column, an unknown sign mode): one sentence per reason, the
+  // generic one only for a reason the catalogue does not know yet.
+  if ((code === 'inventory_sync_model_invalid' || code === 'inventory_sync_master_invalid')
+      && typeof params.reason === 'string') {
+    return [`errors.${code}.${params.reason}`, `errors.${code}`]
+  }
   return code === code.toLowerCase()
     ? [`errors.${code}`]
     : [`errors.${code}`, `errors.${code.toLowerCase()}`]

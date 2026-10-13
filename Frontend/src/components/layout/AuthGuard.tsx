@@ -6,6 +6,7 @@ import Spinner from '@/components/ui/Spinner'
 import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
 import { LEGAL_PUBLIC_PATHS } from '@/components/landing/legalPaths'
 import { CONTENT_PUBLIC_PATHS } from '@/components/landing/contentPaths'
+import { EN_PUBLIC_PATHS } from '@/components/landing/sitePaths'
 
 // The landing's public subpages are listed too. ConditionalShell already keeps
 // them out of the app shell (and so out of this guard); naming them here means
@@ -28,14 +29,20 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [ready,  setReady] = useState(false)
 
   useEffect(() => {
-    const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p))
+    // The English public site is matched exactly (EN_PUBLIC_PATHS), not by
+    // the /en prefix: a future app screen whose name starts with "en" must
+    // not become public by accident.
+    const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p)) || EN_PUBLIC_PATHS.includes(pathname)
     if (isPublic) {
       setReady(true)
       return
     }
     if (!isAuthenticated()) {
       // Expired access token ≠ logged out: renew silently with the refresh
-      // token before falling back to /login.
+      // token before falling back to /login. A tab without a refresh token
+      // (opened from a link) asks another tab to renew for it; failing that it
+      // goes to /login WITHOUT clearing the shared token, so the other tabs
+      // keep their session.
       let cancelled = false
       tryRefresh().then(ok => {
         if (cancelled) return

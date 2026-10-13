@@ -10,7 +10,8 @@
     "check:samples": "node scripts/check-code-samples.mjs",
     "check:icons": "node scripts/check-icons.mjs",
     "check:qr": "python scripts/check_qr.py",
-    "check:landing-routes": "node scripts/check-landing-routes.mjs"
+    "check:landing-routes": "node scripts/check-landing-routes.mjs",
+    "test:auth": "node --test scripts/test-auth-multitab.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

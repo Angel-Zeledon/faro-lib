@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { headers } from 'next/headers'
 import { Inter, Space_Grotesk } from 'next/font/google'
 import './globals.css'
 import ConditionalShell from '@/components/layout/ConditionalShell'
@@ -19,9 +20,23 @@ export const metadata: Metadata = {
   // Resolves every relative URL in page metadata (og:image, canonical) against
   // the landing's public origin — see lib/siteUrls.ts.
   metadataBase: new URL(SITE_URL),
-  title: 'StockAI — Inventario Inteligente',
-  description: 'Plataforma de inventario inteligente para distribuidores y mayoristas',
+  title: 'StockAI — Predicción de ventas con IA',
+  description: 'Predicción de ventas por producto con inteligencia artificial, para distribuidores, mayoristas y fabricantes',
   applicationName: 'StockAI',
+  // Declared by hand, at paths that did not exist before the rebrand. Search
+  // engines refetch an icon when its URL changes, not when the file behind the
+  // same URL does, so the old mark kept showing in results for weeks. Sizes are
+  // multiples of 48 (Google's rule for the result-page icon); the SVG scales to
+  // any density. /favicon.ico stays for browsers that ask for it by default.
+  icons: {
+    icon: [
+      { url: '/brand/favicon-48.png', sizes: '48x48', type: 'image/png' },
+      { url: '/brand/favicon-96.png', sizes: '96x96', type: 'image/png' },
+      { url: '/brand/favicon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/brand/icon-512.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: '48x48' },
+    ],
+  },
   // The link preview of EVERY route that does not set its own (the app and its
   // sign-in form included). Without these a chat or social app that unfurls
   // `app.stockai.es` has no image to show and falls back to whatever icon it
@@ -30,13 +45,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     siteName: 'StockAI',
-    title: 'StockAI — Qué pedir hoy, cuánto y a qué proveedor',
-    description: 'Compras de inventario para distribuidores y mayoristas de Latinoamérica.',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StockAI' }],
+    title: 'StockAI — Predicción de ventas con IA, producto por producto',
+    description: 'Pronostica cuánto vas a vender de cada producto, con modelos que compiten sobre tu historial, y decide qué pedir con ese pronóstico.',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StockAI: predicción de ventas con IA, producto por producto' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'StockAI — Qué pedir hoy, cuánto y a qué proveedor',
+    title: 'StockAI — Predicción de ventas con IA, producto por producto',
+    description: 'Pronostica cuánto vas a vender de cada producto, con modelos que compiten sobre tu historial, y decide qué pedir con ese pronóstico.',
     images: ['/og-image.png'],
   },
   // Every route but the landing is the signed-in app or a sign-in form, so the
@@ -103,8 +119,12 @@ const textFont = Inter({
 const NO_FLASH =`try{document.documentElement.setAttribute('data-theme',localStorage.getItem('theme')||'light')}catch(e){}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // The English pages of the public site live under /en; middleware.ts marks
+  // those requests so the document says so before any script runs. Everything
+  // else — the Spanish site and the app — starts as Spanish, as it always has.
+  const lang = headers().get('x-site-lang') === 'en' ? 'en' : 'es'
   return (
-    <html lang="es" className={`${brandFont.variable} ${textFont.variable}`}>
+    <html lang={lang} className={`${brandFont.variable} ${textFont.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
       </head>

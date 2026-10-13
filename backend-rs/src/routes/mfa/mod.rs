@@ -621,6 +621,32 @@ async fn put_policy(
 
 // ── POST /mfa/users/{user_id}/reset ──────────────────────────────────────────
 
+/// `custom_role_escalation` when the caller holds a custom role and the target
+/// can do something the caller cannot (a person with no custom role can do
+/// everything). Same text and params as `routes/roles.rs` and Python's
+/// `permissions.ensure_may_manage_user`.
+async fn ensure_within_caller(state: &AppState, caller: &CurrentUser, target_id: &str) -> Result<(), ApiError> {
+    use crate::auth::permissions;
+    let failed = |e: sqlx::Error| {
+        tracing::error!(error = %e, "could not read custom roles");
+        ApiError::app("permission_check_failed", "Permissions could not be verified, so the request was refused.",
+            403, json!({}))
+    };
+    let mine = permissions::effective_for(&state.pool, &caller.tenant_id, &caller.user_id).await.map_err(failed)?;
+    if !mine.restricted {
+        return Ok(());
+    }
+    let theirs = permissions::effective_for(&state.pool, &caller.tenant_id, target_id).await.map_err(failed)?;
+    let excess: Vec<String> = theirs.grantable().difference(&mine.grantable()).cloned().collect();
+    if excess.is_empty() {
+        Ok(())
+    } else {
+        Err(ApiError::app("custom_role_escalation",
+            "You cannot grant, change or remove permissions you do not hold yourself.", 403,
+            json!({"permissions": excess})))
+    }
+}
+
 async fn reset_user(
     State(state): State<AppState>, Extension(actors): Extension<RequestActors>, Path(user_id): Path<String>,
     headers: HeaderMap,
@@ -639,6 +665,9 @@ async fn reset_user(
             json!({}),
         ));
     }
+    // A restricted admin (custom role) may not strip the second factor of
+    // somebody whose powers exceed their own: the role routes' rule.
+    ensure_within_caller(&state, &admin, &user_id).await?;
     if mfa_row(&state, &user_id).await?.is_none() {
         return Err(ApiError::app("mfa_not_enrolled", "Two-step sign-in is not on for this account.", 409, json!({})));
     }

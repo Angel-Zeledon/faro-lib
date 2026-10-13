@@ -56,11 +56,20 @@ export default function TourOverlay() {
     const measure = () => {
       const r = anchorRect(step)
       setRect(r)
-      if (r) {
+      if (r && !narrow) {
         const el = document.querySelector<HTMLElement>(`[data-tour="${CSS.escape(step.anchor!)}"]`)
         // 'nearest' so a step already in view does not jump the page.
         el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
       }
+    }
+    // On a phone the card is a bottom sheet over the lower part of the screen:
+    // 'nearest' parked an anchor that started below the fold right at the
+    // bottom edge, UNDER the sheet (walking /sincronizacion at 390 px, the
+    // "health" step pointed at nothing visible). Centre it once per step,
+    // above the sheet; not on every scroll, or the person could not scroll.
+    if (narrow && step.anchor) {
+      document.querySelector<HTMLElement>(`[data-tour="${CSS.escape(step.anchor)}"]`)
+        ?.scrollIntoView({ block: 'center', inline: 'nearest' })
     }
     measure()
     window.addEventListener('resize', measure)
@@ -69,7 +78,7 @@ export default function TourOverlay() {
       window.removeEventListener('resize', measure)
       window.removeEventListener('scroll', measure, true)
     }
-  }, [step])
+  }, [step, narrow])
 
   // A step's body is a short paragraph, so the card's height is not knowable
   // until it renders. Placed below a low anchor it could push Next and Back off

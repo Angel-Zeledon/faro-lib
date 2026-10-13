@@ -458,6 +458,19 @@ and the count intact, at any plan size).
 Verified to fail against the previous code: 4 of the 10 red.
 
 ---
+## 1.decies Found while testing inventory sync at scale (2026-10-12) — open
+
+- **`/inventario` shows "0 SKUs" and the welcome screen for a tenant whose stock
+  arrived by sync but who has no sales history yet.** 300 synced rows were in
+  `inventory_stock`; the screen said there was nothing. A customer who connects
+  the ERP first (the order the sync screen suggests) sees an empty inventory.
+  Not fixed: the screen's list is driven by the forecast/catalogue side, and
+  changing what it lists is a product decision.
+- **Docker's 64 MB `/dev/shm` breaks large PostgreSQL parallel queries.** The
+  bundled `db` service in `deploy/docker-compose.prod.yml` now sets
+  `shm_size: 256mb` (fixed 90d523f); any other PostgreSQL container that serves
+  StockAI needs the same.
+
 ## 2. The "what is missing" column of `screen-inventory.md` is the backlog
 
 All 26 screens have had **some** walk. **None is walked end to end.** That column

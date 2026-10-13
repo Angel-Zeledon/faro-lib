@@ -114,7 +114,12 @@ pub(crate) fn supported_or_default<'a>(
         _ => return Ok(default.to_string()),
     };
     match v {
-        Value::Array(_) | Value::Object(_) => Err(ApiError::internal()),
+        Value::Array(_) | Value::Object(_) => {
+            // Python's 500 here comes with a traceback in its log; this one
+            // must say why too, or every route reading the setting fails blind.
+            tracing::error!(stored = %v, "tenant setting is a list or an object; answering 500 as Python does");
+            Err(ApiError::internal())
+        }
         Value::String(s) if is_supported(s) => Ok(s.clone()),
         _ => {
             tracing::warn!(stored = %v, default, "unsupported tenant setting, using the default");

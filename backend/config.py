@@ -221,6 +221,29 @@ class Settings(BaseSettings):
     ai_provider_breaker_cooldown_s: int = 120
     ai_provider_max_concurrent_per_tenant: int = 4
     ai_provider_max_output_tokens: int = 4096
+    # Inventory sync (backend/inventory_sync/): sane ceilings, not plan gates.
+    # Profiles one tenant may keep, rows one run may read (more is a refusal
+    # that changes nothing, never a silent truncation), and the shortest
+    # schedule interval a profile may ask for.
+    inventory_sync_max_profiles_per_tenant: int = 20
+    inventory_sync_max_rows_per_run: int = 200_000
+    inventory_sync_min_interval_minutes: int = 5
+    # Continuous freshness: the shortest poll a profile may ask for (seconds).
+    inventory_sync_min_poll_seconds: int = 15
+    # On-demand refresh: how long a request waits for the run before answering
+    # "still running" (seconds), and how soon the same profile may be refreshed
+    # again (seconds). A scoped (few SKUs) refresh skips the cooldown.
+    inventory_sync_refresh_wait_seconds: int = 8
+    inventory_sync_refresh_cooldown_seconds: int = 30
+    # Runs one worker process executes at the same time (all tenants).
+    inventory_sync_max_parallel_runs: int = 4
+    # Run-log retention (days); the last 20 runs of a profile are always kept.
+    inventory_sync_run_retention_days: int = 90
+    # Rows one push-ingest request may carry.
+    inventory_sync_max_ingest_rows: int = 50_000
+    # The public addresses this installation connects FROM, shown to customers
+    # who must allow them in a firewall / IP allowlist. Comma-separated.
+    inventory_sync_egress_ips: str = ""
     # Relative worsening of a session's realised WAPE over its training-time WAPE
     # at which the one in-app "forecast is degrading" alert is raised (percent).
     accuracy_degradation_threshold_pct: float = 25.0

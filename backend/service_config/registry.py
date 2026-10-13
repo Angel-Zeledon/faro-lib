@@ -350,7 +350,8 @@ EMAIL = Service(
         ),
         ConfigField(
             key="smtp_port", env="SMTP_PORT", kind="int",
-            doc="SMTP port. 587 is STARTTLS, which is what the client uses.",
+            doc="SMTP port. 587 negotiates STARTTLS; 465 is implicit TLS (SSL). "
+                "The client handles both and verifies the server certificate.",
             default="587", example="587",
         ),
         ConfigField(
@@ -361,7 +362,8 @@ EMAIL = Service(
         ConfigField(
             key="smtp_pass", env="SMTP_PASS", secret=True,
             doc="SMTP password. For Gmail this is an app password, not the "
-                "account password.",
+                "account password; for Hostinger it is the mailbox password, "
+                "not the hPanel one.",
             example="your-app-password",
         ),
     ),
@@ -1196,6 +1198,72 @@ SQL_SOURCES = Service(
                 "same time (tests, queries, exports, refreshes). The next one "
                 "waits up to 10 seconds, then is refused with a clear message.",
             default="4", example="4",
+        ),
+        ConfigField(
+            key="inventory_sync_max_profiles_per_tenant",
+            env="INVENTORY_SYNC_MAX_PROFILES_PER_TENANT", kind="int", editable=False,
+            doc="Inventory sync profiles one tenant may keep (each keeps one "
+                "target in step with one table, collection or query of its "
+                "database). Creating one more is refused with a clear message.",
+            default="20", example="20",
+        ),
+        ConfigField(
+            key="inventory_sync_max_rows_per_run",
+            env="INVENTORY_SYNC_MAX_ROWS_PER_RUN", kind="int", editable=False,
+            doc="Rows one inventory sync run may read from the customer's "
+                "database. A source that returns more fails the run before "
+                "anything is written (never a silent truncation); narrow the "
+                "query or raise this.",
+            default="200000", example="200000",
+        ),
+        ConfigField(
+            key="inventory_sync_min_interval_minutes",
+            env="INVENTORY_SYNC_MIN_INTERVAL_MINUTES", kind="int", editable=False,
+            doc="Shortest schedule an inventory sync profile may ask for, in "
+                "minutes, so a profile cannot hammer a customer's ERP.",
+            default="5", example="5",
+        ),
+        ConfigField(
+            key="inventory_sync_min_poll_seconds",
+            env="INVENTORY_SYNC_MIN_POLL_SECONDS", kind="int", editable=False,
+            doc="Shortest poll interval (seconds) a continuous inventory sync may ask for. Lower means fresher stock and more queries against the customer's database.",
+            default="15", example="15",
+        ),
+        ConfigField(
+            key="inventory_sync_refresh_wait_seconds",
+            env="INVENTORY_SYNC_REFRESH_WAIT_SECONDS", kind="int", editable=False,
+            doc="How long an on-demand inventory refresh waits for its run before answering 'still running, data as of ...' instead of keeping the person waiting.",
+            default="8", example="8",
+        ),
+        ConfigField(
+            key="inventory_sync_refresh_cooldown_seconds",
+            env="INVENTORY_SYNC_REFRESH_COOLDOWN_SECONDS", kind="int", editable=False,
+            doc='How soon the same inventory sync may be refreshed on demand again. Presses inside the window join the run in flight or are told when to retry.',
+            default="30", example="30",
+        ),
+        ConfigField(
+            key="inventory_sync_max_parallel_runs",
+            env="INVENTORY_SYNC_MAX_PARALLEL_RUNS", kind="int", editable=False,
+            doc='Inventory sync runs one worker process executes at the same time, across all tenants. The per-tenant database connection limit still applies to each.',
+            default="4", example="4",
+        ),
+        ConfigField(
+            key="inventory_sync_run_retention_days",
+            env="INVENTORY_SYNC_RUN_RETENTION_DAYS", kind="int", editable=False,
+            doc='Days inventory sync run logs are kept; the last 20 runs of each profile are always kept.',
+            default="90", example="90",
+        ),
+        ConfigField(
+            key="inventory_sync_max_ingest_rows",
+            env="INVENTORY_SYNC_MAX_INGEST_ROWS", kind="int", editable=False,
+            doc='Rows one push-ingest request (POST .../ingest) may carry; send more as several batches.',
+            default="50000", example="50000",
+        ),
+        ConfigField(
+            key="inventory_sync_egress_ips",
+            env="INVENTORY_SYNC_EGRESS_IPS", kind="str", editable=False,
+            doc="Public IP addresses this installation connects to customers' databases FROM, shown in the inventory sync screen so a customer can allow them in a firewall. Empty: the screen tells the customer to ask the operator.",
+            default="", example="203.0.113.10, 203.0.113.11",
         ),
     ),
 )

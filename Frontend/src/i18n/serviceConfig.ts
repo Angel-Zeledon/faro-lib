@@ -58,6 +58,7 @@ export type FieldKey =
   | 'ai_provider_total_deadline_s' | 'ai_provider_max_retries' | 'ai_provider_breaker_threshold'
   | 'ai_provider_breaker_cooldown_s' | 'ai_provider_max_concurrent_per_tenant' | 'ai_provider_max_output_tokens'
   | 'public_api_only'
+  | 'approval_links_enabled' | 'inventory_sync_max_profiles_per_tenant' | 'inventory_sync_max_rows_per_run' | 'inventory_sync_min_interval_minutes' | 'inventory_sync_min_poll_seconds' | 'inventory_sync_refresh_wait_seconds' | 'inventory_sync_refresh_cooldown_seconds' | 'inventory_sync_max_parallel_runs' | 'inventory_sync_run_retention_days' | 'inventory_sync_max_ingest_rows' | 'inventory_sync_egress_ips'
   // Operations thresholds (installation status panel)
   | 'ops_queue_wait_degraded_minutes' | 'ops_running_job_degraded_minutes'
   | 'ops_worker_heartbeat_stale_seconds' | 'ops_disk_free_min_percent'
@@ -351,6 +352,17 @@ const es: ServiceConfigCopy = {
     ai_provider_breaker_cooldown_s: 'Segundos que espera un proveedor pausado antes de dejar pasar una llamada de prueba. Si sale bien, se reanuda; si falla, vuelve a pausarse.',
     ai_provider_max_concurrent_per_tenant: 'Llamadas que una misma empresa puede tener en curso a la vez hacia su proveedor desde este proceso. La siguiente espera un momento y luego se reporta como límite de uso.',
     ai_provider_max_output_tokens: 'Largo máximo de respuesta que una empresa puede configurar, en tokens. Respuestas más largas le cuestan más en su propia factura.',
+    approval_links_enabled: 'Pone un enlace de decisión de un solo uso en las solicitudes de aprobación de órdenes de compra, para aprobar o rechazar desde el mensaje. Enciéndelo solo cuando la API que sirve esa página esté enrutada; apagado, no se emite enlace y las aprobaciones funcionan como antes.',
+    inventory_sync_max_profiles_per_tenant: 'Sincronizaciones de inventario que un mismo cliente puede tener.',
+    inventory_sync_max_rows_per_run: 'Filas que una ejecución de sincronización puede leer de la base del cliente; pasar de ahí es un fallo con nombre, nunca un recorte silencioso.',
+    inventory_sync_min_interval_minutes: 'Programación más corta que puede pedir una sincronización, en minutos.',
+    inventory_sync_min_poll_seconds: 'Intervalo mínimo (segundos) de una sincronización continua. Menos es existencia más al día y más consultas a la base del cliente.',
+    inventory_sync_refresh_wait_seconds: 'Cuánto espera «Actualizar ahora» su ejecución antes de responder «sigue corriendo, datos al …».',
+    inventory_sync_refresh_cooldown_seconds: 'Cuándo se puede volver a actualizar a pedido la misma sincronización; las pulsaciones dentro de la ventana se suman a la ejecución en curso.',
+    inventory_sync_max_parallel_runs: 'Ejecuciones de sincronización simultáneas por proceso de trabajo, entre todos los clientes (un cliente usa como mucho dos).',
+    inventory_sync_run_retention_days: 'Días que se guardan los registros de ejecución; las últimas 20 de cada sincronización se guardan siempre.',
+    inventory_sync_max_ingest_rows: 'Filas que puede traer un envío (POST …/ingest); más filas van en varios lotes.',
+    inventory_sync_egress_ips: 'IP públicas desde las que esta instalación se conecta a las bases de los clientes; se muestran en la pantalla de sincronización para que las permitan en su firewall. Vacío: la pantalla les dice que las pidan al operador.',
     accuracy_degradation_threshold_pct: 'Cuánto peor (en porcentaje relativo) debe rendir un pronóstico contra las ventas reales, comparado con su precisión al entrenarse, para que la app avise una sola vez. Es solo un aviso: nada se reentrena solo.',
     reforecast_full_refit_days: 'Edad en días a partir de la cual un reentrenamiento programado en modo «actualizar a diario, reajustar periódicamente» deja de usar los modelos guardados y los entrena de nuevo. Con menos edad, las ventas nuevas solo adelantan el pronóstico.',
     public_api_only: 'Servir en esta instancia únicamente la superficie pública de integración.',
@@ -636,6 +648,17 @@ const en: ServiceConfigCopy = {
     ai_provider_breaker_cooldown_s: 'Seconds a paused provider waits before one trial call is let through. A success resumes it; a failure pauses it again.',
     ai_provider_max_concurrent_per_tenant: 'Calls one company may have in flight to its provider at the same time from this process. The next waits briefly, then is reported as rate limited.',
     ai_provider_max_output_tokens: 'Upper bound for the answer length a company may configure, in tokens. Longer answers cost the company more on its own bill.',
+    approval_links_enabled: 'Puts a one-time decision link in purchase-order approval requests, so an approver can approve or reject from the message. Turn it on only once the API that serves the decision page is routed; off, no link is issued and approvals behave exactly as before.',
+    inventory_sync_max_profiles_per_tenant: 'Inventory sync profiles one tenant may keep.',
+    inventory_sync_max_rows_per_run: 'Rows one inventory sync run may read from the customer\'s database; going past it is a named failure, never a silent cut.',
+    inventory_sync_min_interval_minutes: 'Shortest schedule an inventory sync profile may ask for, in minutes.',
+    inventory_sync_min_poll_seconds: 'Shortest poll interval (seconds) of a continuous sync. Lower means fresher stock and more queries against the customer\'s database.',
+    inventory_sync_refresh_wait_seconds: 'How long "Refresh now" waits for its run before answering "still running, data as of …".',
+    inventory_sync_refresh_cooldown_seconds: 'How soon the same sync may be refreshed on demand again; presses inside the window join the run in flight.',
+    inventory_sync_max_parallel_runs: 'Inventory sync runs one worker process executes at once across all tenants (one tenant uses at most two).',
+    inventory_sync_run_retention_days: 'Days inventory sync run logs are kept; the last 20 runs of each profile are always kept.',
+    inventory_sync_max_ingest_rows: 'Rows one push-ingest request (POST …/ingest) may carry; send more as several batches.',
+    inventory_sync_egress_ips: 'Public IP addresses this installation connects to customers\' databases from, shown in the sync screen so they can allow them in a firewall. Empty: the screen tells them to ask the operator.',
     accuracy_degradation_threshold_pct: 'How much worse (relative percent) a forecast must perform against real sales, compared with its accuracy at training, before the app raises its single alert. A notice only: nothing retrains by itself.',
     reforecast_full_refit_days: 'Age in days after which a scheduled retrain set to "update daily, refit periodically" stops using the stored models and trains them again. Younger than that, new sales only advance the forecast.',
     public_api_only: 'Serve only the public integration surface on this instance.',

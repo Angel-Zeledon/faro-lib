@@ -44,10 +44,12 @@ const WRITE: RouteAuth = RouteAuth { exposure: Exposure::Exposed { write: true }
 /// `RECEIVABLE_STATES`.
 const RECEIVABLE: [&str; 3] = ["pending", "partial", "not_received"];
 
-async fn get_po_items(conn: &mut PgConnection, tenant_id: &str, po_log_id: &str) -> Result<Vec<Map<String, Value>>, ApiError> {
+pub(super) async fn get_po_items(conn: &mut PgConnection, tenant_id: &str, po_log_id: &str) -> Result<Vec<Map<String, Value>>, ApiError> {
     let rows = sqlx::query(
         "SELECT id, sku, display_name, supplier, supplier_id, signal, status,
-                recommended_qty, final_qty, received_qty, unit_cost, warehouse
+                recommended_qty, final_qty, received_qty, unit_cost, warehouse,
+                currency, fx_base_currency, fx_rate::float8 AS fx_rate, fx_rate_date,
+                value_base::float8 AS value_base
            FROM inventory_po_items
           WHERE po_log_id = $1 AND tenant_id = $2
           ORDER BY supplier NULLS LAST, sku",

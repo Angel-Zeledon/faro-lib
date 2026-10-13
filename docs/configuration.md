@@ -115,9 +115,9 @@ A tenant override applies ONLY to mail addressed to that tenant's own people and
 | `RESEND_API_KEY` | - | secret | Resend API key. When set, Resend is the transport and SMTP is not consulted. |
 | `EMAIL_FROM` | `StockAI <onboarding@resend.dev>` | - | Sender shown to the recipient. 'onboarding@resend.dev' works without domain verification and is fine for a trial; a real deployment should send from its own verified domain. |
 | `SMTP_SERVER` | `smtp.gmail.com` | - | SMTP host for the fallback transport. |
-| `SMTP_PORT` | `587` | - | SMTP port. 587 is STARTTLS, which is what the client uses. |
+| `SMTP_PORT` | `587` | - | SMTP port. 587 negotiates STARTTLS; 465 is implicit TLS (SSL). The client handles both and verifies the server certificate. |
 | `SMTP_USER` | - | - | SMTP username; also the From address on the SMTP path. |
-| `SMTP_PASS` | - | secret | SMTP password. For Gmail this is an app password, not the account password. |
+| `SMTP_PASS` | - | secret | SMTP password. For Gmail this is an app password, not the account password; for Hostinger it is the mailbox password, not the hPanel one. |
 
 Writable from the panel: `RESEND_API_KEY`, `EMAIL_FROM`, `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
 
@@ -365,6 +365,16 @@ Hosted deployments keep private hosts refused: a tenant must not be able to poin
 |---|---|---|---|
 | `SQL_SOURCES_ALLOW_PRIVATE_HOSTS` | `false` | environment only | Let SQL data sources connect to loopback and private-network addresses (RFC 1918, CGNAT, IPv6 unique-local). Off by default; turn it on only on a self-hosted installation whose databases live on its own network. |
 | `SQL_SOURCES_MAX_CONCURRENT_PER_TENANT` | `4` | environment only | Connections one tenant may have open to its databases at the same time (tests, queries, exports, refreshes). The next one waits up to 10 seconds, then is refused with a clear message. |
+| `INVENTORY_SYNC_MAX_PROFILES_PER_TENANT` | `20` | environment only | Inventory sync profiles one tenant may keep (each keeps one target in step with one table, collection or query of its database). Creating one more is refused with a clear message. |
+| `INVENTORY_SYNC_MAX_ROWS_PER_RUN` | `200000` | environment only | Rows one inventory sync run may read from the customer's database. A source that returns more fails the run before anything is written (never a silent truncation); narrow the query or raise this. |
+| `INVENTORY_SYNC_MIN_INTERVAL_MINUTES` | `5` | environment only | Shortest schedule an inventory sync profile may ask for, in minutes, so a profile cannot hammer a customer's ERP. |
+| `INVENTORY_SYNC_MIN_POLL_SECONDS` | `15` | environment only | Shortest poll interval (seconds) a continuous inventory sync may ask for. Lower means fresher stock and more queries against the customer's database. |
+| `INVENTORY_SYNC_REFRESH_WAIT_SECONDS` | `8` | environment only | How long an on-demand inventory refresh waits for its run before answering 'still running, data as of ...' instead of keeping the person waiting. |
+| `INVENTORY_SYNC_REFRESH_COOLDOWN_SECONDS` | `30` | environment only | How soon the same inventory sync may be refreshed on demand again. Presses inside the window join the run in flight or are told when to retry. |
+| `INVENTORY_SYNC_MAX_PARALLEL_RUNS` | `4` | environment only | Inventory sync runs one worker process executes at the same time, across all tenants. The per-tenant database connection limit still applies to each. |
+| `INVENTORY_SYNC_RUN_RETENTION_DAYS` | `90` | environment only | Days inventory sync run logs are kept; the last 20 runs of each profile are always kept. |
+| `INVENTORY_SYNC_MAX_INGEST_ROWS` | `50000` | environment only | Rows one push-ingest request (POST .../ingest) may carry; send more as several batches. |
+| `INVENTORY_SYNC_EGRESS_IPS` | - | environment only | Public IP addresses this installation connects to customers' databases FROM, shown in the inventory sync screen so a customer can allow them in a firewall. Empty: the screen tells the customer to ask the operator. |
 
 ## `api_surface` - Public-API-only mode.
 

@@ -99,7 +99,19 @@ def spec_from_stored(cfg: dict) -> ConnectionSpec:
         ssl_ca=ca,
         connect_timeout_s=int(cfg.get("connect_timeout_s") or DEFAULT_CONNECT_TIMEOUT_S),
         statement_timeout_s=int(cfg.get("statement_timeout_s") or DEFAULT_STATEMENT_TIMEOUT_S),
+        auth_source=str(cfg.get("auth_source") or ""),
     )
+
+
+def require_sql_engine(spec: ConnectionSpec) -> None:
+    """Refuse a document-engine source on a SQL path, by name. Without this a
+    MongoDB source reaching the query editor would fail on a missing dialect
+    with a message nobody could act on."""
+    from backend.datasources.connection import ENGINES
+    if spec.engine not in ENGINES:
+        raise AppError("data_source_engine_not_sql",
+                       f"This action needs a SQL database; {spec.engine} is read through "
+                       "inventory sync instead.", status_code=400, params={"engine": spec.engine})
 
 
 # ── Per-tenant concurrency ────────────────────────────────────────────────────
@@ -418,6 +430,7 @@ def open_session(cfg_or_spec: Any, *, tenant_id: Optional[str],
     import sqlalchemy
 
     spec = cfg_or_spec if isinstance(cfg_or_spec, ConnectionSpec) else spec_from_stored(cfg_or_spec)
+    require_sql_engine(spec)
     timeout_s = statement_timeout_s or (spec.bulk_timeout_s if bulk else spec.statement_timeout_s)
     with tenant_slot(tenant_id):
         addresses = resolve_checked(spec)

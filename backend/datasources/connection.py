@@ -33,10 +33,18 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 from backend.errors import AppError
 
+# The SQL engines: everything that goes through SQLAlchemy and `sql_guard`.
 ENGINES: tuple[str, ...] = ("postgresql", "mysql", "mssql", "oracle")
+# Document engines: connected through their own read-only client
+# (`backend/datasources/mongo.py`), never through a SQL path. A stored source
+# with one of these engines is refused by every SQL-only action with
+# `data_source_engine_not_sql` instead of reaching a dialect that does not exist.
+DOCUMENT_ENGINES: tuple[str, ...] = ("mongodb",)
+ALL_ENGINES: tuple[str, ...] = ENGINES + DOCUMENT_ENGINES
 
 DEFAULT_PORTS: dict[str, int] = {
     "postgresql": 5432, "mysql": 3306, "mssql": 1433, "oracle": 1521,
+    "mongodb": 27017,
 }
 
 SSL_MODES: tuple[str, ...] = ("disable", "prefer", "require", "verify-ca", "verify-full")
@@ -47,6 +55,8 @@ SSL_MODES: tuple[str, ...] = ("disable", "prefer", "require", "verify-ca", "veri
 # encryption and trusted any certificate; Oracle connected in plain TCP.
 LEGACY_SSL_MODE: dict[str, str] = {
     "postgresql": "prefer", "mysql": "prefer", "mssql": "require", "oracle": "disable",
+    # MongoDB has no opportunistic TLS; an on-prem server is most often plain.
+    "mongodb": "disable",
 }
 
 # The default a NEW connection form proposes. Same as legacy on purpose: a form
@@ -64,8 +74,10 @@ SUPPORTED_SSL_MODES: dict[str, tuple[str, ...]] = {
     "mysql": SSL_MODES,
     "mssql": ("disable", "prefer", "require", "verify-full"),
     "oracle": ("disable", "require", "verify-ca", "verify-full"),
+    #   * mongodb (pymongo): TLS is on or off, there is no "prefer".
+    "mongodb": ("disable", "require", "verify-ca", "verify-full"),
 }
-CA_CERT_ENGINES = frozenset({"postgresql", "mysql", "oracle"})
+CA_CERT_ENGINES = frozenset({"postgresql", "mysql", "oracle", "mongodb"})
 MAX_CA_PEM_BYTES = 64 * 1024
 
 CONNECT_TIMEOUT_RANGE = (1, 60)
@@ -92,11 +104,13 @@ def _reject(code: str, message: str, **params: Any) -> AppError:
 
 def normalize_engine(engine: Any) -> str:
     value = str(engine or "").strip().lower()
-    if value not in ENGINES:
+    if value == "mariadb":
+        value = "mysql"
+    if value not in ALL_ENGINES:
         raise _reject(
             "data_source_engine_unsupported",
-            f"Unsupported engine {value!r}. Options: {', '.join(ENGINES)}.",
-            engine=value, allowed=", ".join(ENGINES),
+            f"Unsupported engine {value!r}. Options: {', '.join(ALL_ENGINES)}.",
+            engine=value, allowed=", ".join(ALL_ENGINES),
         )
     return value
 
@@ -286,6 +300,7 @@ class ConnectionSpec:
     ssl_ca: Optional[str] = field(default=None, repr=False)
     connect_timeout_s: int = DEFAULT_CONNECT_TIMEOUT_S
     statement_timeout_s: int = DEFAULT_STATEMENT_TIMEOUT_S
+    auth_source: str = ""          # MongoDB only
 
     @property
     def host_name(self) -> str:
@@ -317,14 +332,16 @@ def normalize_fields(fields: dict) -> dict:
     engine = normalize_engine(fields.get("engine"))
     port_raw = fields.get("port")
     port = DEFAULT_PORTS[engine] if port_raw in (None, "") else normalize_port(port_raw)
-    return {
+    out = {
         "engine": engine,
         "host": normalize_host(fields.get("host"), engine),
         "port": port,
         "database": _normalize_name(fields.get("database"), "data_source_database_required",
                                     "database", required=True),
+        # A MongoDB server may run without authentication; every SQL engine
+        # needs a login.
         "username": _normalize_name(fields.get("username"), "data_source_username_required",
-                                    "user name", required=True),
+                                    "user name", required=engine not in DOCUMENT_ENGINES),
         "ssl_mode": normalize_ssl_mode(fields.get("ssl_mode"), engine),
         "connect_timeout_s": normalize_timeout(
             fields.get("connect_timeout_s"), "connect_timeout_s",
@@ -333,6 +350,12 @@ def normalize_fields(fields: dict) -> dict:
             fields.get("statement_timeout_s"), "statement_timeout_s",
             STATEMENT_TIMEOUT_RANGE, DEFAULT_STATEMENT_TIMEOUT_S),
     }
+    if engine in DOCUMENT_ENGINES:
+        # The database MongoDB authenticates the user against. Empty means
+        # "admin", where most deployments create their users.
+        out["auth_source"] = _normalize_name(fields.get("auth_source"), "data_source_database_required",
+                                             "authentication database", required=False)
+    return out
 
 
 def check_ca_compatible(engine: str, ssl_mode: str, has_ca: bool) -> None:
@@ -357,6 +380,7 @@ _SCHEMES = {
     "mssql": "mssql", "sqlserver": "mssql", "mssql+pyodbc": "mssql",
     "mssql+pymssql": "mssql",
     "oracle": "oracle", "oracle+oracledb": "oracle", "oracle+cx_oracle": "oracle",
+    "mongodb": "mongodb",
 }
 
 _SSL_QUERY_KEYS = ("sslmode", "ssl-mode", "ssl_mode", "ssl", "encrypt", "useSSL")
@@ -378,7 +402,7 @@ def _ssl_from_params(params: dict[str, str], engine: str) -> Optional[str]:
     for key in ("sslmode", "ssl-mode", "ssl_mode"):
         if key in low:
             return low[key]
-    for key in ("ssl", "usessl"):
+    for key in ("ssl", "usessl", "tls"):
         if key in low:
             return "require" if low[key].lower() in ("true", "1", "yes", "require") else "disable"
     return None
@@ -529,6 +553,12 @@ def parse_connection_string(text: str) -> dict:
     if m:
         scheme = m.group("scheme").lower()
         engine = _SCHEMES.get(scheme)
+        if scheme == "mongodb+srv":
+            # An SRV record names hosts this server would connect to without
+            # them ever passing the SSRF check. Refused by name.
+            raise _reject("data_source_connection_string_invalid",
+                          "mongodb+srv:// is not supported; use mongodb://host:port.",
+                          reason="srv_unsupported")
         if not engine:
             raise _reject("data_source_connection_string_invalid",
                           f"Unsupported scheme {scheme!r}.", reason="unsupported_scheme",
@@ -545,6 +575,10 @@ def parse_connection_string(text: str) -> dict:
             database = params.get("service_name") or database
         if engine == "mssql":
             database = database or params.get("database")
+        if engine == "mongodb" and "," in (parts.netloc or ""):
+            raise _reject("data_source_connection_string_invalid",
+                          "Name one MongoDB host; replica-set lists are not supported.",
+                          reason="multiple_hosts")
         return _clean({
             "engine": engine,
             "host": parts.hostname,
@@ -553,6 +587,7 @@ def parse_connection_string(text: str) -> dict:
             "username": unquote(parts.username) if parts.username else None,
             "password": unquote(parts.password) if parts.password else None,
             "ssl_mode": _ssl_from_params(params, engine),
+            "auth_source": params.get("authSource") if engine == "mongodb" else None,
         })
 
     # ADO.NET (semicolon key=value)

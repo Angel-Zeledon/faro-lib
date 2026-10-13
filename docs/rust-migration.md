@@ -6,11 +6,26 @@ the training worker stay in Python.** The Python FastAPI app keeps serving
 every route that has not moved, and keeps the code of every route that has,
 so any route can go back to Python in seconds.
 
-Status: wave 0 (foundations), the wave-1 routes R1 to R4 and the outbox-free
-part of wave 2 ("wave 2b", section 12) are implemented in `backend-rs/`.
-**Nothing is deployed.** The compose and Caddy files under
-`deploy/rust-api/` are disabled examples. Parity claims in this document are
-limited to what `tests/contract/contract_test.py` showed (see "Results").
+Status (2026-10-11, branch `integration/batch8`, see "Batch 8" at the end):
+wave 0 (foundations), the wave-1 routes R1 to R4, the outbox-free part of
+wave 2 ("wave 2b", section 12) and wave 3 (stock, counts, reversals, PO
+reception, transfers, shrinkage) are implemented and registered in
+`backend-rs/`. Every feature branch (SAML, org hierarchy, MFA, custom roles,
+session policy, IP allowlist, audit stream, consensus, approval delegation,
+cost centers, customer portal, allocation, recurring deliveries, renewals,
+scheduled reports, multicurrency) is merged into `main`.
+
+**What is deployed** (commit 4eb0bfc): the `api-rs` container and the internal
+gateway (`deploy/docker-compose.rust-api.yml`), with ONLY the Rust-only route
+groups enabled, i.e. the `routes.d/*.caddy` files without `.example`: audit
+stream, cost centers and chains, approval links, commitment outlook, customer
+portal, IP allowlist, MFA, consensus, PO-approval delegations, scheduled
+reports, contract renewals, custom roles, multicurrency, organization,
+recurring deliveries, SAML config, session policy, stock allocation. None of
+the MIGRATED groups (R1-R4, wave 2b, wave 3, PO approvals) is enabled: their
+files are still `.example`, so Python serves those paths in production. Parity
+claims in this document are limited to what `tests/contract/contract_test.py`
+showed (see "Results").
 
 ## 1. How requests reach which implementation
 
@@ -424,6 +439,11 @@ Modules: `config`, `pycompat` (`isoformat`, `date.fromisoformat`,
     underscores (`1_0`), which Rust refuses (the value is then ignored).
 14. Invalid JSON bodies on `DELETE /tenant`: same status, type and `loc`
     shape as every other route; `ctx.error` is serde's wording (divergence 2).
+15. `%2F` anywhere in the path: Rust answers Starlette's 404 before any
+    handler. Python decodes first and matches the result, so a path whose
+    decoded form happens to be ANOTHER route (`/inventory/po/x%2Freceive` is
+    `/inventory/po/x/receive` to Starlette) reaches that route in Python and
+    is a 404 in Rust. Only a client that encodes a slash on purpose sees it.
 
 ## 8b. Forecast consensus (S&OP): new routes, Rust only
 
@@ -1110,7 +1130,10 @@ users port land. Run the harness for this section alone with
 ### Wave 3 (inventory hub), partial (2026-10-06)
 
 Stopped on the owner's instruction to slow the migration; what exists is below.
-Nothing here is deployed and **no Caddy example exists for any wave-3 group**.
+Nothing here is deployed. The only wave-3 gateway file is the disabled
+`42-reception-reversals.caddy.example` (unreceive, unsend; its header still names an older
+module path, `routes/reception_reversals.rs`, now `routes/w3/reversals.rs`); stock, counts,
+reception, transfers and shrinkage have no gateway file at all.
 
 **Map of `backend/api/v1/inventory*.py` (87 + 6 + 9 + 2 + 2 + 4 + 2 routes), by risk.**
 Highest (money decided by the numbers): `GET /inventory/status`, `/optimize`,
@@ -1133,11 +1156,14 @@ answer 404 for `%2F` inside a path parameter (Starlette routes on the decoded pa
 `inventory::scope::reject_slash`), and the database must be UTC (divergence 5).
 Per route: stock 7+21+23+9+38+19+8, counts 20+9+8+33+6+10+9+16+10, reversals 13+11.
 
-**Written, differential-tested where numeric, but NOT registered (no contract result yet):**
+**Wave 3b, registered 2026-10-11 after a green contract run (batch 8):**
 `routes/w3/receive.rs` (`GET /po/{id}/items`, `POST /po/{id}/receive`), `transfers.rs`
-(create, list, receive, cancel, close), `shrinkage.rs` (create, list, reasons). The cases
-exist (`tests/contract/w3_cases_3b.py`, about 150) but the run did not complete before the
-stop. Next step: build, start both services, run `run_w3.py`, fix, then register.
+(create, list, receive, cancel, close), `shrinkage.rs` (create, list, reasons). The first
+run found that the PO item rows (both reception routes and the already-registered
+`unreceive`) lacked the five multicurrency fields Python added after the port; fixed, then
+`run_w3.py` passed **382/382** (the 271 cases above plus 111 for 3b: items 6, receive 30,
+transfers 53, shrinkage 22). Still no Caddy file for any wave-3 group, so production keeps
+serving these paths from Python.
 
 **Numerics, bit-exact against Python (`backend-rs/src/inventory/calc.rs`, `pydt.rs`).**
 `cargo test differential` replays `backend-rs/tests/fixtures/inventory_calc.json`, written by
@@ -1163,8 +1189,9 @@ transaction where Python uses several autocommits. `SELECT *` without ORDER BY (
 warehouses on `GET /stock/{sku}`) relies on the same heap order. Not covered: ceilings
 (`max_skus`, `max_locations`) and `plan_feature_locked`, because `TESTING_MODE=true` turns
 them off on both sides; rate limits; `TRIAL_EXPIRED`. Python `float()` of non-ASCII digits
-and ordinal ISO dates are not reproduced. Rust handlers of waves 1-2 probably need the same
-`%2F` 404 guard.
+and ordinal ISO dates are not reproduced. The `%2F` guard was confirmed needed on waves 1-2
+as well (Python 404 before authentication, Rust 401) and is now one global middleware
+(`middleware::reject_encoded_slash`), see divergence 15.
 ## 10. New routes written in Rust only: approval delegation
 
 Everything above moves routes that already exist in Python. Purchase-order
@@ -2712,3 +2739,147 @@ offsetting it 30 minutes.
 **Divergences**: none against Python (nothing to diverge from). Decision rule for
 the owner: external recipients can only be addresses an admin put on the
 allow-list; removing an address from the list stops mail to it at the next run.
+
+## Batch 8: verification, security review, wave 3b (2026-10-11, `integration/batch8`)
+
+Branch `integration/batch8` from `main` 5979dd7. Not merged, not pushed, not
+deployed. Everything below ran on this machine against a DISPOSABLE Postgres 18
+cluster (own data directory in a temp folder, port 5561, `timezone = UTC`, trust
+auth), never the dev or production data. Docker was not running, so no image was
+built.
+
+### What the full contract harness had become, and what was fixed in it
+
+The "474/477" baseline predates the batch-6/7 merges. On `main` the full harness
+**could not finish**: four merge splices had broken it.
+* `run_delegation` was a 10-line header (it returned `None`, so the run died at
+  the end and printed no verdict at all); its cases sat inside `run_cost_centers`,
+  and the real cost-center cases were dead code after `run_org`'s `return`.
+* `run_audit_stream` was its 9-line header; its 268-line body sat inside
+  `run_org`, where it crashed.
+* `run_saml` and `run_rd` had lost their final `return out` (the next section's
+  header took its place), so their verdicts were discarded.
+All four were rebuilt from the feature branches and asserted line for line
+against them; an AST scan finds no other function that can fall off its end, and
+no other function shorter than its branch version.
+
+Then the sections were made independent of their order on the shared tenant
+(each sets its own premise instead of inheriting one): `run_org` runs last (its
+final step erases the shared tenant, so every later section ran against a deleted
+tenant); custom roles clear the roles they assign; delegation and cost centers set
+their own approvers and rules; consensus starts with no approver; scheduled
+reports get their own tenant; audit stream puts the time zone back; the R1 case
+that stores `settings.currency` as a list puts it back (that value makes every
+route reading the currency 500, on both services). A crashing section, or one
+that returns nothing, is now a recorded FAIL with its traceback instead of the end
+of the run. `tests/contract/run_section.py` re-runs one or several sections on
+one tenant in minutes. The env the harness needs is listed in its docstring.
+
+**Final full run: 2469 of 2475 pass, 6 fail, 7 skip** (Python and Rust from this
+branch, debug build). The 6 failures are clock-dependent, not service defects;
+the run ended at about 21:00 in UTC-6, when the local date is one day behind UTC:
+* 2 outlook cover dates and 3 future/expired delegation cases: the harness builds
+  "tomorrow" from the machine's local date; both services read the DATABASE date
+  (UTC) or compare it with UTC timestamps, and agree with each other (Python
+  approves through the delegation Rust stored as active). In production every
+  clock is UTC.
+* 1 scheduled-report worker case expects the next weekly slot more than 24 h away;
+  the run happened 9.5 h before Monday 06:00 Costa Rica.
+The 7 skips are the documented ones (plan gates and ceilings under
+`TESTING_MODE=true`, portal rate limits, the MFA throttle without
+`--rust-strict`, one renewal comparison, one approval-link group).
+
+Wave 3 alone (`run_w3.py`): **382/382**. SAML alone: 78/78. Scheduled reports
+alone: 72/73 (the time-of-week case).
+
+### Defects found and fixed (real ones, in the services)
+
+Security (each with a test that failed before the fix):
+1. **Custom-role escalation through the user routes** (Python). A restricted
+   admin holding only `view_users` + `manage_users` could invite a new admin
+   (a new person has no custom role, i.e. the whole catalogue), promote a
+   role-less colleague to admin, or suspend, delete or re-scope one. The Rust
+   role routes refused exactly this; the Python user routes never asked.
+   `permissions.ensure_may_manage_user` now applies the same rule
+   (`custom_role_escalation`) to create, invite, patch, warehouse scope, delete
+   and status. 5 new pytest cases failed before the fix; 3 positive cases pin
+   that unrestricted admins and in-set edits are untouched.
+2. **58 mutating routes had no permission rule**, so ANY user with a custom role
+   got 403 `unclassified_route` on them: enrolling in two-step sign-in (a
+   restricted user could not enrol, so a tenant requiring MFA locked them out),
+   IP allowlist, session policy, audit stream, org links, cost centers, approval
+   chains, consensus, customer portal, allocation, recurring deliveries,
+   scheduled reports, approval links, the internal render. All classified (both
+   copies of `permissions.json`), plus read rules for the audit stream, IP
+   allowlist, session policy and MFA policy. `test_permission_catalogue_parity.py`
+   was red on `main` because of it.
+3. **MFA reset of a superior** (Rust, live route). `POST /mfa/users/{id}/reset`
+   let a restricted admin with `manage_users` wipe an unrestricted admin's
+   enrollment and sessions. Same escalation rule now; contract case added.
+
+Correctness:
+4. `exchange_rates` was in neither tenant list (`data_export.py`): the data export
+   left out every rate, erasure relied on the FK cascade.
+   `test_delete_order_covers_every_tenant_scoped_table` was red on `main`.
+5. Rust tenant export (not enabled) missed 24 tables (stale generated list) and the
+   three org-link members Python adds by hand; both fixed.
+6. Rust PO-approval valuation (not enabled) valued a foreign-currency line at
+   qty x cost instead of its recorded `value_base`, and summed without CPython
+   3.12's compensation: ported `line_base_value` and `py_sum`.
+7. Wave-3 PO item rows (reception and the registered `unreceive`) lacked the five
+   multicurrency fields Python added after the port.
+8. `%2F` in a path: Python 404 before authentication, Rust 401 (waves 1-2): one
+   global middleware now (divergence 15).
+9. The live commitment outlook could answer 500 with nothing in the log (a
+   currency setting stored as a list, three invariant paths): they log now.
+10. `GET /alerts/kinds` order differed from `events.py`; `public-api.json` was
+    stale (demo tier API calls).
+
+### Security review: what was looked at and found sound
+
+SAML: Rust only stores configuration (https sign-on URL without credentials,
+RSA >= 2048 certificates, domain ownership by the admin's verified address, one
+protocol per tenant, enforcement only after an admin signed in through the same
+provider, no enforcement while the provider changes). Python's ACS consumes the
+single-use flow before validating, binds the response to the request id and the
+browser cookie, requires the reference URI to be the signature's own parent,
+verifies every signature against stored certificates only (KeyInfo ignored),
+refuses DTDs, encrypted content, unknown conditions, a second assertion and
+misplaced signatures, and redirects only to the frontend. MFA: secrets
+Fernet-encrypted, recovery codes HMAC'd, time steps and codes burned by
+compare-and-set, constant-time comparison, rate shared with the sign-in
+challenge, reset tenant-scoped. Org hierarchy: tenant ids derived only from the
+verified identity and live grants; a foreign id is a flat 404. Session policy and
+IP allowlist: as documented in their sections (client address counted from the
+right, lockout guard). Not covered by this review: the OIDC and social sign-in
+paths, and the production `TRUSTED_PROXY_HOPS` value (not readable from here).
+
+### Other suites (same disposable cluster, run one at a time)
+
+* `cargo test`: 464 passed, 0 failed; the 29 ignored ones run separately: 25
+  approval-link DB tests and 3 Python differentials (cron, zones, recurring
+  dates) all pass, the last is run by the harness.
+* `ForecastingCore`: 1773 passed, 7 skipped. `npx tsc --noEmit`: clean.
+* Backend pytest: stopped at 96% when the machine ran short of memory (not a test
+  failure): 6077 passed, 82 failed, 106 skipped up to there. Fixed on this branch:
+  52 drifted compliance citations, the two routes the open-route guard flagged,
+  `exchange_rates`, the permission catalogue. Left as found (pre-existing on
+  `main`, outside this work): 15 drifted tech-manual citations;
+  `test_proactive_and_roi` (its SQL-text parser no longer reads the PO header
+  INSERT, `KeyError: 'sku_count'`); `test_public_api_examples` (the in-app console
+  copy does not state the demo tier's 200 calls a day, a copy decision);
+  `test_service_config_i18n` (`approval_links_enabled` has no es/en description in
+  `serviceConfig.ts`); `test_stress_audit` slashed-SKU 404 (expects the bare
+  `{"detail": "Not Found"}` without the error-code envelope); the datasource
+  wrong-password test (the disposable cluster uses trust auth, so any password
+  connects). The last 4% (and a clean full run) is still owed.
+
+### Owed
+
+* A browser walk of the screens touched by fixes 1-3 (user management with a
+  restricted admin, MFA enrollment with a custom role).
+* A contract run at a time when local and UTC dates agree (or on a UTC machine),
+  to see the 6 clock cases pass, and the harness's "today" made the database's.
+* Gateway files for wave 3 (none exist besides the disabled reversal example),
+  and a production run of any migrated (non Rust-only) group.
+* The Docker image (Docker was off).

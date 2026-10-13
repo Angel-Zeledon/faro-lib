@@ -48,6 +48,9 @@ PUBLIC = {
     "POST /api/v1/billing/stripe/webhook": "authenticated by the provider's signature (HMAC) over the raw body",
     "POST /api/v1/billing/paypal/webhook": "authenticated by PayPal's verify-webhook-signature call",
     "POST /api/v1/auth/login": "you cannot be authorised before you log in",
+    "POST /api/v1/auth/mfa/verify": "second step of a password login, before any session exists: the single-use "
+                                    "challenge token minted by /auth/login is the credential (attempt-counted, "
+                                    "per-user rate limited, account state re-checked)",
     "POST /api/v1/auth/signup": "creates the account and its tenant",
     "POST /api/v1/trial": "the landing visitor has no account yet; it creates one",
     "POST /api/v1/supplier-portal/{token}/confirm": "a supplier answers a purchase order from the link in the message, no account; the 256-bit link token is the credential",
@@ -101,6 +104,12 @@ INFRA = {
     # address picks the tenant and only verified analysts/admins or listed
     # senders get a file ingested (backend/inbound_email/ingest.py).
     "POST /api/v1/inbound/email": "mail-provider webhook, verified by shared secret + per-tenant address + sender allow-list",
+    # The Rust API asking Python to render a report preview. Not under /api/v1
+    # (the frontend proxy never forwards it); answered 401 unless it carries an
+    # HMAC of SECRET_KEY over a 60-second timestamp and the body's SHA-256, and
+    # it writes nothing (builds and returns the report). The person was
+    # authenticated and authorised by the Rust route that calls it.
+    "POST /internal/scheduled-reports/render": "service-to-service, HMAC-signed by SECRET_KEY; read-only render",
 }
 
 # POSTs that read. HTTP makes you POST anything with a body, so a query, an

@@ -1,16 +1,18 @@
 // The help center's inline markup — **bold**, `code`, [label](href) — turned
 // into elements. Deliberately tiny: the pages are typed data, not Markdown,
 // and three marks are all they use (src/i18n/docs/types.ts).
-import Link from 'next/link'
+import Link, { useLocalHref } from '@/components/landing/SiteLink'
 import { Fragment, type ReactNode } from 'react'
 import { appHref } from '@/lib/siteUrls'
 
 const TOKEN = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g
 
 function DocLink({ href, children }: { href: string; children: ReactNode }) {
+  const local = useLocalHref()
   // `app:/route` is a screen of the app, which may live on another origin.
+  // From an English page the sign-in forms open in English (?lang=en).
   if (href.startsWith('app:')) {
-    return <a href={appHref(href.slice(4))}>{children}</a>
+    return <a href={local(appHref(href.slice(4)))}>{children}</a>
   }
   if (/^https?:\/\//.test(href) || href.startsWith('mailto:')) {
     return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>

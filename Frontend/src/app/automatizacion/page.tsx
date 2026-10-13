@@ -258,6 +258,7 @@ const FALLBACK_WEBHOOK_EVENTS = [
   'purchase_order.approved', 'purchase_order.rejected', 'purchase_order.sent',
   'purchase_order.cancelled', 'stockout.imminent', 'commitment.at_risk',
   'commitment.fulfilled', 'job.completed', 'job.failed',
+  'inventory_sync.run_finished', 'inventory_sync.blocked', 'inventory_sync.recovered',
 ]
 
 const DELIVERY_VARIANT: Record<WebhookDeliveryStatus, 'success' | 'info' | 'danger' | 'muted'> = {

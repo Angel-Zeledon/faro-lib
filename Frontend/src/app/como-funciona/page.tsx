@@ -1,15 +1,15 @@
 import { HowItWorksPage } from '@/components/landing/Subpages'
 import { SubpageStructuredData } from '@/components/landing/StructuredData'
 import { subpageMetadata } from '@/components/landing/subpageMetadata'
+import { SUBPAGE_PATHS } from '@/components/landing/subpagePaths'
+import { SITE_META } from '@/i18n/siteMeta'
 
 // Server wrapper: the page body is a client component (it follows the
-// visitor's language and theme), so its search metadata lives here.
-export const metadata = subpageMetadata(
-  '/como-funciona',
-  'StockAI: cómo funciona, de tus ventas a la orden de compra',
-  'Sube tus ventas en CSV o Excel y StockAI te dice qué pedir hoy y cuánto. ' +
-  'Los cuatro pasos, la regla del semáforo y cada pantalla con capturas reales.',
-)
+// language of the URL and the visitor's theme), so its search metadata lives here.
+// The same page in the other language: /en/how-it-works.
+const M = SITE_META.es.subpages.how
+
+export const metadata = subpageMetadata(SUBPAGE_PATHS.how, M.title, M.description)
 
 export default function Page() {
   return (

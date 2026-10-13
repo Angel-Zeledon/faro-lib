@@ -337,7 +337,9 @@ class TestInventoryEdgeCases:
             headers=auth_headers,
         )
         assert resp.status_code == 404
-        assert resp.json() == {"detail": "Not Found"}, (
+        # Starlette's own router 404, which since 1eac5b8 also carries the
+        # catalogued framework code; an endpoint's 404 would name its resource.
+        assert resp.json() == {"detail": "Not Found", "error_code": "not_found", "error_params": {}}, (
             "a slashed SKU reached an endpoint instead of falling off the router"
         )
         assert _stock_count(tid) == before, "an unrouted PUT still wrote a row"

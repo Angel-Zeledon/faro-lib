@@ -160,6 +160,11 @@ services:
     image: postgres:16-alpine
     profiles: ["bundled-db"]
     restart: unless-stopped
+    # Docker's default /dev/shm is 64 MB; PostgreSQL's parallel hash joins
+    # allocate their shared memory there. An inventory sync of ~1M rows failed
+    # its post-apply count with "could not resize shared memory segment ... No
+    # space left on device" (measured 2026-10-12 with the giant-sync harness).
+    shm_size: 256mb
     environment:
       POSTGRES_DB: faro
       POSTGRES_USER: faro

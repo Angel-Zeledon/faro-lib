@@ -319,3 +319,64 @@ class TestResendTransport:
                 email_mod._transport_send("dest@example.com", "Prueba", "<b>hola</b>")
         post.assert_not_called()
         smtp.assert_not_called()
+
+class TestSmtpTransport:
+    """The SMTP sender speaks both TLS styles, verifies the certificate and has a deadline."""
+
+    @pytest.mark.offline
+    @pytest.mark.parametrize("port", [587, 2525])
+    def test_starttls_ports_negotiate_tls_with_a_verified_context_and_a_timeout(self, port):
+        from backend.notifications import email as email_mod
+
+        with mock.patch.object(config_settings, "smtp_server", "smtp.example.com"), \
+             mock.patch.object(config_settings, "smtp_port", port), \
+             mock.patch.object(config_settings, "smtp_user", "me@example.com"), \
+             mock.patch.object(config_settings, "smtp_pass", "secret"), \
+             mock.patch("smtplib.SMTP") as plain, mock.patch("smtplib.SMTP_SSL") as ssl_cls:
+            email_mod._send_smtp("dest@example.com", "Prueba", "<b>hola</b>")
+
+        ssl_cls.assert_not_called()
+        args, kwargs = plain.call_args
+        assert args == ("smtp.example.com", port)
+        assert kwargs["timeout"] == email_mod._SMTP_TIMEOUT_SECONDS
+        server = plain.return_value.__enter__.return_value
+        starttls_kwargs = server.starttls.call_args.kwargs
+        assert starttls_kwargs["context"].verify_mode.name == "CERT_REQUIRED"
+        server.login.assert_called_once_with("me@example.com", "secret")
+        server.sendmail.assert_called_once()
+
+    @pytest.mark.offline
+    def test_port_465_uses_implicit_tls_and_never_calls_starttls(self):
+        from backend.notifications import email as email_mod
+
+        with mock.patch.object(config_settings, "smtp_server", "smtp.example.com"), \
+             mock.patch.object(config_settings, "smtp_port", 465), \
+             mock.patch.object(config_settings, "smtp_user", "me@example.com"), \
+             mock.patch.object(config_settings, "smtp_pass", "secret"), \
+             mock.patch("smtplib.SMTP") as plain, mock.patch("smtplib.SMTP_SSL") as ssl_cls:
+            email_mod._send_smtp("dest@example.com", "Prueba", "<b>hola</b>")
+
+        plain.assert_not_called()
+        args, kwargs = ssl_cls.call_args
+        assert args == ("smtp.example.com", 465)
+        assert kwargs["timeout"] == email_mod._SMTP_TIMEOUT_SECONDS
+        assert kwargs["context"].verify_mode.name == "CERT_REQUIRED"
+        server = ssl_cls.return_value.__enter__.return_value
+        server.starttls.assert_not_called()
+        server.login.assert_called_once_with("me@example.com", "secret")
+
+    @pytest.mark.offline
+    def test_a_login_failure_raises_instead_of_reporting_a_send(self):
+        import smtplib
+        from backend.notifications import email as email_mod
+
+        with mock.patch.object(config_settings, "resend_api_key", ""), \
+             mock.patch.object(config_settings, "smtp_user", "me@example.com"), \
+             mock.patch.object(config_settings, "smtp_pass", "wrong"), \
+             mock.patch("smtplib.SMTP") as plain:
+            server = plain.return_value.__enter__.return_value
+            server.login.side_effect = smtplib.SMTPAuthenticationError(535, b"bad credentials")
+            with pytest.raises(smtplib.SMTPAuthenticationError):
+                email_mod._transport_send("dest@example.com", "Prueba", "<b>hola</b>")
+        server.sendmail.assert_not_called()
+

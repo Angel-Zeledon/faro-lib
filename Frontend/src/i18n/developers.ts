@@ -106,7 +106,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     label: 'Desarrolladores',
     title: 'La API de StockAI',
     intro:
-      'Casi todo lo que haces dentro de StockAI también se puede hacer por API: subir ventas, entrenar, leer el semáforo, registrar órdenes, administrar proveedores y bodegas. Así puedes conectarlo a tu ERP, tu POS o cualquier sistema propio.',
+      'Casi todo lo que haces dentro de StockAI también se puede hacer por API: subir ventas, entrenar y leer el pronóstico, leer el semáforo, registrar órdenes, administrar proveedores y bodegas. Así puedes conectarlo a tu ERP, tu POS o cualquier sistema propio.',
     facts: {
       base: 'URL base',
       auth: 'Autenticación',
@@ -316,7 +316,7 @@ export const DEVELOPERS: Record<Lang, DevelopersCopy> = {
     label: 'Developers',
     title: 'The StockAI API',
     intro:
-      'Almost everything you do inside StockAI can also be done through the API: upload sales, train, read the traffic light, record orders, manage suppliers and warehouses. Connect it to your ERP, your POS or any system of your own.',
+      'Almost everything you do inside StockAI can also be done through the API: upload sales, train and read the forecast, read the traffic light, record orders, manage suppliers and warehouses. Connect it to your ERP, your POS or any system of your own.',
     facts: {
       base: 'Base URL',
       auth: 'Authentication',

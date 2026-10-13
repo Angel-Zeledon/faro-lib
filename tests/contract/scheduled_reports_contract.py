@@ -117,6 +117,9 @@ def run(args, fx, db, ct) -> list:
             q(f"DELETE FROM {t} WHERE tenant_id = %s", (tenant,))
         q("DELETE FROM outbound_messages WHERE tenant_id = %s AND kind = 'scheduled_report'", (tenant,))
         q("UPDATE users SET status = 'active', warehouse_scope = NULL WHERE tenant_id = %s", (tenant,))
+        # The tenant zone this section's expectations are computed in: the
+        # default (an earlier section on the shared tenant moves it).
+        q("UPDATE tenants SET settings = COALESCE(settings, '{}'::jsonb) - 'timezone' WHERE id = %s", (tenant,))
 
     def allow(*addresses: str) -> None:
         for a in addresses:

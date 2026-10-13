@@ -37,6 +37,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   '/actividad':     'nav.activity',
   '/configurar-inventario': 'nav.inventory_setup',
   '/conteo-fisico': 'count.page_title',
+  '/sincronizacion': 'nav.inventory_sync',
   '/escenarios':    'nav.scenarios',
   '/impacto':       'nav.roi',
   '/pronosticos':   'skus.page_title',

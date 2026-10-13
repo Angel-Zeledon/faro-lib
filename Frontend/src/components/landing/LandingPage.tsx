@@ -16,7 +16,7 @@
 // instead of interrupting the engine. Later the same day ("elimina elementos
 // redundantes") the sections that said the same thing twice went: the
 // "Cada mañana" bullets, "Qué incluye" and "Para tu equipo técnico".
-import Link from 'next/link'
+import Link from '@/components/landing/SiteLink'
 import { appHref } from '@/lib/siteUrls'
 import { useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -166,16 +166,8 @@ export default function LandingPage() {
  </div>
  </div>
 
- {/* ── YOUR MORNING WITH STOCKAI (the outcome, first) ──────────────── */}
- {/* This slot used to hold a second "every morning" block — ten bullets
-     ("Cada mañana") that repeated, item for item, the steps of the
-     morning walk-through further down, the features grid and the stats
-     strip. One morning section now, kept where the outcome-first order
-     put the first one. */}
- <MorningSection />
-
  {/* ── THE PROBLEM ──────────────────────────────────────────────────── */}
- <Section id="problema" alt>
+ <Section id="problema">
  <Tag>{L.problem.tag}</Tag>
  <H2>{L.problem.title}</H2>
  <Lead>
@@ -193,7 +185,7 @@ export default function LandingPage() {
  </Section>
 
  {/* ── HOW IT WORKS ─────────────────────────────────────────────────── */}
- <Section id="solucion">
+ <Section id="solucion" alt>
  <Tag>{L.how.tag}</Tag>
  <H2>{L.how.title}</H2>
  <Lead maxWidth={660}>
@@ -213,7 +205,13 @@ export default function LandingPage() {
  </Section>
 
  {/* ── THE MODELS ───────────────────────────────────────────────────── */}
- <ModelsSection />
+ <ModelsSection alt={false} />
+
+ {/* ── YOUR MORNING WITH STOCKAI (what you do with the forecast) ────── */}
+ {/* It used to open the page, right under the hero. Since 2026-10-11 the
+     landing sells sales forecasting (owner), so the forecast — how it works
+     and the models — comes first and the buying day it drives follows. */}
+ <MorningSection alt />
 
  {/* ── EVERY FEATURE, GROUPED ───────────────────────────────────────── */}
  <FeaturesSection />

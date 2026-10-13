@@ -365,7 +365,7 @@ def _merge_connection_string(fields: dict, connection_string: Optional[str]) -> 
         return fields, None
     parsed = conn_mod.parse_connection_string(connection_string)
     merged = dict(fields)
-    for key in ("engine", "host", "port", "database", "username", "ssl_mode"):
+    for key in ("engine", "host", "port", "database", "username", "ssl_mode", "auth_source"):
         if merged.get(key) in (None, "") and parsed.get(key) not in (None, ""):
             merged[key] = parsed[key]
     return merged, parsed.get("password")
@@ -435,10 +435,11 @@ def create_sql_source(
     connect_timeout_s: Optional[int] = None,
     statement_timeout_s: Optional[int] = None,
     connection_string: Optional[str] = None,
+    auth_source: Optional[str] = None,
 ) -> dict:
     sql_config = build_sql_config(
         {"engine": engine, "host": host, "port": port, "database": database,
-         "username": username, "ssl_mode": ssl_mode,
+         "username": username, "ssl_mode": ssl_mode, "auth_source": auth_source,
          "connect_timeout_s": connect_timeout_s, "statement_timeout_s": statement_timeout_s},
         password, ssl_ca=ssl_ca, connection_string=connection_string,
     )
@@ -492,6 +493,7 @@ def update_sql_config(
     connect_timeout_s: Optional[int] = None,
     statement_timeout_s: Optional[int] = None,
     connection_string: Optional[str] = None,
+    auth_source: Optional[str] = None,
 ) -> dict:
     """Change a connection without re-entering what did not change.
 
@@ -506,7 +508,7 @@ def update_sql_config(
     old_engine = old.get("engine") or "postgresql"
 
     given = {"engine": engine, "host": host, "port": port, "database": database,
-             "username": username, "ssl_mode": ssl_mode,
+             "username": username, "ssl_mode": ssl_mode, "auth_source": auth_source,
              "connect_timeout_s": connect_timeout_s, "statement_timeout_s": statement_timeout_s}
     given, cs_password = _merge_connection_string(given, connection_string)
     password = password or cs_password
@@ -984,6 +986,10 @@ def get_schema(tenant_id: str, source_id: str, *, refresh: bool = False) -> dict
 
     def _load() -> dict:
         try:
+            if cfg.get("engine") == "mongodb":
+                from backend.datasources import mongo
+                with mongo.open_mongo(cfg, tenant_id=tenant_id) as msession:
+                    return mongo.list_collections(msession)
             with open_session(cfg, tenant_id=tenant_id) as session:
                 return catalog.list_tables(session.conn, session.spec.engine)
         except Exception as exc:  # noqa: BLE001
@@ -1005,6 +1011,10 @@ def get_table_columns(tenant_id: str, source_id: str, schema: str, table: str, *
 
     def _load() -> dict:
         try:
+            if engine == "mongodb":
+                from backend.datasources import mongo
+                with mongo.open_mongo(cfg, tenant_id=tenant_id) as msession:
+                    return mongo.sample_fields(msession, table)
             with open_session(cfg, tenant_id=tenant_id) as session:
                 return catalog.list_columns(session.conn, engine, schema, table)
         except Exception as exc:  # noqa: BLE001
@@ -1013,7 +1023,8 @@ def get_table_columns(tenant_id: str, source_id: str, schema: str, table: str, *
     data, cached_at = get_or_load(tenant_id, source_id, cfg, ("columns", schema, table), _load,
                                   refresh=refresh)
     return {**data, "cached_at": cached_at,
-            "select_sql": catalog.select_preview_sql(engine, schema, table)}
+            "select_sql": (None if engine == "mongodb"
+                           else catalog.select_preview_sql(engine, schema, table))}
 
 
 # ── Preview ────────────────────────────────────────────────────────────────────

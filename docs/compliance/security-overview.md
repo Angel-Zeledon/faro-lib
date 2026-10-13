@@ -37,7 +37,7 @@ worker (contenedor propio): cola de jobs en la tabla `jobs`, entrenamiento y loo
   o SMTP (correo), Twilio (WhatsApp/SMS). No hay telemetría ni analítica
   (`docs/data-that-leaves.md`). Detalle en `data-processing-and-subprocessors.md`.
 - Un deploy a producción rechaza arrancar si `TESTING_MODE` está activo
-  (`backend/config.py:242 · def _refuse_testing_mode_in_production`) y si las migraciones fallan
+  (`backend/config.py:316 · def _refuse_testing_mode_in_production`) y si las migraciones fallan
   (`backend/main.py:112 · refusing to boot`).
 - Los contenedores de API y frontend corren como usuario no root
   (`backend/Dockerfile:42 · USER faro`; `Frontend/Dockerfile` hace lo mismo).
@@ -56,10 +56,10 @@ worker (contenedor propio): cola de jobs en la tabla `jobs`, entrenamiento y loo
 | Dato | Cómo se guarda | Estado |
 |---|---|---|
 | Contraseñas de usuario | bcrypt con sal por contraseña (`backend/auth/password.py:6 · bcrypt.hashpw`) | Implementado |
-| Refresh tokens | solo su SHA-256 (`backend/auth/jwt_handler.py:64 · def create_refresh_token`) | Implementado |
+| Refresh tokens | solo su SHA-256 (`backend/auth/jwt_handler.py:73 · def create_refresh_token`) | Implementado |
 | API keys `sk_live_*` | solo su SHA-256 (`backend/auth/api_key_auth.py:32 · def hash_key`) | Implementado |
 | Credenciales de servicios (DeepSeek, Twilio, SMTP...) guardadas desde `/instalacion` | Fernet con `INTEGRATIONS_SECRET_KEY` o `storage/instance_secret.key` (`backend/service_config/crypto.py:40 · from cryptography.fernet import Fernet`); sin llave el panel **rechaza** guardar, no guarda en claro | Implementado |
-| Contraseñas de conexiones SQL del cliente (fuentes de datos) | Fernet con llave derivada de `SECRET_KEY` (`backend/datasources/service.py:100 · def _fernet`) | Implementado, con riesgo: la misma `SECRET_KEY` firma los JWT; rotarla invalida esas contraseñas |
+| Contraseñas de conexiones SQL del cliente (fuentes de datos) | Fernet con llave derivada de `SECRET_KEY` (`backend/datasources/secrets.py:25 · def _fernet`) | Implementado, con riesgo: la misma `SECRET_KEY` firma los JWT; rotarla invalida esas contraseñas |
 | Datasets, artefactos de modelos, documentos | Archivos en `storage/` **sin cifrado a nivel de aplicación** | **BRECHA** |
 | Filas de negocio en Postgres | **Sin cifrado a nivel de aplicación** | **BRECHA** |
 | Cifrado de disco del VPS | Depende de Hostinger | **NO VERIFICADO** |
@@ -74,7 +74,7 @@ volumen).
 ## 4. Manejo de secretos
 
 - Un único registro declara cada variable, si es secreta y qué deja de funcionar sin ella
-  (`backend/service_config/registry.py:821 · OPERATIONS = Service(` es la última entrada; el registro
+  (`backend/service_config/registry.py:1064 · OPERATIONS = Service(` es la última entrada; el registro
   completo genera `backend/.env.example` y `docs/configuration.md`, y un test falla si algo queda
   sin declarar).
 - Un secreto guardado desde el panel nunca se devuelve: la API da a lo sumo los 4 últimos
@@ -97,15 +97,15 @@ volumen).
   refresh token opaco de 7 días (`backend/auth/jwt_handler.py:18 · _REFRESH_EXPIRE_DAYS = 7`) guardado
   como hash.
 - `POST /auth/refresh` emite un access token nuevo pero **no rota** el refresh token
-  (`backend/api/v1/auth.py:367 · async def refresh`). **BRECHA:** un refresh token robado sirve hasta su
+  (`backend/api/v1/auth.py:496 · async def refresh`). **BRECHA:** un refresh token robado sirve hasta su
   vencimiento o hasta un logout/cambio de contraseña.
 - Logout: revoca el `jti` del access token en la lista `revoked_tokens`
   (`backend/auth/blocklist.py:13 · CREATE TABLE IF NOT EXISTS revoked_tokens`) y borra los refresh
-  tokens del usuario (`backend/api/v1/auth.py:495 · async def logout`).
+  tokens del usuario (`backend/api/v1/auth.py:636 · async def logout`).
 - Cambiar o restablecer la contraseña invalida los tokens emitidos antes
-  (`backend/auth/guards.py:159 · "SELECT sessions_invalid_before FROM users`).
+  (`backend/auth/guards.py:213 · "SELECT sessions_invalid_before FROM users`).
 - Suspender o desactivar un usuario borra sus refresh tokens y le impide iniciar sesión
-  (`backend/users/service.py:275 · def update_status`); un access token ya emitido sigue valiendo hasta
+  (`backend/users/service.py:281 · def update_status`); un access token ya emitido sigue valiendo hasta
   15 minutos.
 - Verificación de correo: existe; un correo sin verificar no bloquea el login pero limita acciones
   de salida (`require_verified_*` en `backend/auth/guards.py`).
@@ -126,9 +126,9 @@ volumen).
 ## 6. Control de acceso por rol (RBAC)
 
 - Tres roles por tenant: `admin`, `analyst`, `viewer`. Toda ruta que modifica datos exige analista
-  o superior (`backend/auth/guards.py:255 · def require_analyst_or_above`); exportar o borrar el tenant
+  o superior (`backend/auth/guards.py:326 · def require_analyst_or_above`); exportar o borrar el tenant
   completo, leer la auditoría y gestionar usuarios exigen `admin`
-  (`backend/auth/guards.py:252 · require_admin = require_role("admin")`).
+  (`backend/auth/guards.py:323 · require_admin = require_role("admin")`).
 - Operador de la instalación (rol distinto del `admin`): ve cifras de todos los tenants
   (`GET /service-config/ops`, `backend/api/v1/service_config.py:116 · @router.get("/ops")`) y edita la
   configuración global. Una API key **nunca** es operador
@@ -146,10 +146,10 @@ volumen).
   con API key el actor es la llave, no la persona que la creó.
 - Solo se registran éxitos; las lecturas no se registran. Los eventos previos (`record_event`) se
   muestran en el mismo formato.
-- Solo un `admin` la lee (`backend/api/v1/audit.py:25 · router = APIRouter(prefix="/audit"`), con filtros
+- Solo un `admin` la lee (`backend/api/v1/audit.py:27 · router = APIRouter(prefix="/audit"`), con filtros
   y exportación CSV que neutraliza fórmulas. Test:
-  `backend/tests/test_audit_trail.py:174 · def test_only_an_admin_may_read_it` y
-  `backend/tests/test_audit_trail.py:222 · def test_it_never_shows_another_tenants_trail`.
+  `backend/tests/test_audit_trail.py:178 · def test_only_an_admin_may_read_it` y
+  `backend/tests/test_audit_trail.py:226 · def test_it_never_shows_another_tenants_trail`.
 - **BRECHA:** la tabla `activity_logs` no es inmutable (a diferencia de `session_manifests`, que sí
   tiene un trigger), no tiene política de retención (`docs/stability.md`, "What is deliberately NOT
   here") y se borra con el tenant. No se envía a un SIEM.
@@ -161,7 +161,7 @@ volumen).
 ## 8. Límites de uso y protección contra abuso
 
 - Login: 5 intentos por correo cada 5 minutos; reenvío de verificación 3 cada 15; código OTP 10 cada
-  10 (`backend/api/v1/auth.py:296 · _check_rate(f"login:`). Se guarda en Postgres (`auth_rate_events`),
+  10 (`backend/api/v1/auth.py:302 · _check_rate(f"login:`). Se guarda en Postgres (`auth_rate_events`),
   así que sobrevive a reinicios.
 - **BRECHA:** el límite de login es **por correo, no por IP**, y no hay límite global por IP en
   Caddy ni en la app para rutas autenticadas. Sin WAF/anti-DDoS propio (puede ofrecerlo el
@@ -170,8 +170,8 @@ volumen).
   (`backend/auth/api_key_auth.py:102 · def check_rate`). **Falla abierto** si la base de datos no responde
   (decisión documentada: no tumbar integraciones por un fallo del limitador).
 - Cuentas de prueba: creación limitada por IP (`backend/api/v1/trial.py:32 · _check_rate(`) y borrado
-  automático a las 24 h (`backend/workers/worker.py:522 · def _trial_reaper_loop`).
-- Subidas: lista de extensiones permitidas (`backend/datasets/service.py:40 · if suffix not in ALLOWED_EXTENSIONS`)
+  automático a las 24 h (`backend/workers/worker.py:572 · def _trial_reaper_loop`).
+- Subidas: lista de extensiones permitidas (`backend/datasets/service.py:42 · if suffix not in ALLOWED_EXTENSIONS`)
   y techo de tamaño por plan (25 MB `free`).
 - Descarga de artefactos con guarda contra path traversal
   (`backend/api/v1/artifacts.py:54 · full = (base / artifact_path).resolve()`).
@@ -185,10 +185,10 @@ volumen).
   configuración o admin (`backend/api/public_surface.py`; test
   `backend/tests/test_public_api_surface.py:13 · EXPOSED_TAGS`).
 - El servidor MCP (`/api/v1/mcp`) solo tiene herramientas de lectura y un test lo exige
-  (`backend/tests/test_mcp_server.py:150 · def test_every_tool_actually_only_calls_GET_endpoints`).
+  (`backend/tests/test_mcp_server.py:156 · def test_every_tool_actually_only_calls_GET_endpoints`).
 - Firmas: los webhooks entrantes de Twilio se validan por firma
-  (`backend/api/v1/whatsapp.py:110 · signature = request.headers.get("X-Twilio-Signature"`); los webhooks
-  salientes se firman con HMAC-SHA256 (`backend/api/v1/webhooks.py:94 · hmac.new(hook["secret"]`).
+  (`backend/api/v1/whatsapp.py:145 · signature = request.headers.get("X-Twilio-Signature"`); los webhooks
+  salientes se firman con HMAC-SHA256 (`backend/webhooks/signing.py:34 · return hmac.new(secret.encode()`).
 
 ## 10. Aislamiento entre tenants
 
@@ -207,7 +207,7 @@ volumen).
 ## 11. Operación y monitoreo
 
 - `/health` informa base de datos, estado por servicio y último pase de cada loop cron
-  (`backend/main.py:404 · @app.get("/health"`).
+  (`backend/main.py:463 · @app.get("/health"`).
 - Superficie para operadores `GET /service-config/ops` y panel "Estado de la instalación" en
   `/instalacion`: cola, jobs corriendo, latido del worker, fallos 24 h por clase de error, pool de
   conexiones, consultas lentas, disco, último backup y latencia por familia de rutas, con umbrales

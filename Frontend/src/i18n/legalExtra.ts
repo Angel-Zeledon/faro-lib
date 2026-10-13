@@ -248,7 +248,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Subencargado', 'Para qué', 'Cuándo', 'Dónde'],
               rows: [
-                ['Hostinger', 'Servidor (VPS) donde corren la aplicación y la base de datos; correo de stockai.es', 'Siempre', '[UBICACIÓN DEL SERVIDOR — confirmar con el propietario]'],
+                ['Hostinger', 'Servidor (VPS) donde corren la aplicación y la base de datos; correo de stockai.es', 'Siempre', 'Boston, Estados Unidos'],
                 ['DeepSeek', 'Modelo de lenguaje del asistente, los resúmenes, las explicaciones y el diagnóstico de archivos (ver [cómo usamos la IA](/ia))', 'Solo cuando se usan esas funciones', 'China'],
                 ['Proveedor de correo: Hostinger (SMTP) o Resend, según la configuración', 'Enviar correos del servicio, avisos y órdenes de compra', 'Cuando se envía un correo', '[UBICACIÓN — confirmar con el propietario]'],
                 ['Twilio', 'Enviar y recibir mensajes de WhatsApp y SMS', 'Solo si WhatsApp o SMS están activados', 'Estados Unidos'],
@@ -263,7 +263,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         id: 'transfers',
         title: 'Transferencias internacionales',
         blocks: [
-          'Por los subencargados de arriba, los datos pueden tratarse fuera del país del cliente: en [UBICACIÓN DEL SERVIDOR — confirmar con el propietario], en China (DeepSeek, solo si se usan las funciones de IA) y en Estados Unidos (Twilio, solo si se activan WhatsApp o SMS).',
+          'Por los subencargados de arriba, los datos pueden tratarse fuera del país del cliente: en Boston, Estados Unidos, en China (DeepSeek, solo si se usan las funciones de IA) y en Estados Unidos (Twilio, solo si se activan WhatsApp o SMS).',
           'Para clientes en la Unión Europea o en España: China no tiene una decisión de adecuación de la Comisión Europea. [MECANISMO DE TRANSFERENCIA — cláusulas contractuales tipo u otro, confirmar con un abogado para DeepSeek y Twilio]. Si el cliente no puede aceptar la transferencia a China, puede pedirnos que su cuenta no use las funciones de IA escribiendo a ' + MAIL + '.',
         ],
       },
@@ -874,7 +874,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
     summary: [
       'For the business data you upload, **your company is the controller** and StockAI is the **processor**: we process it only to provide the service and on your instructions.',
       'We tell you which providers (sub-processors) we use and where they are, and we warn you before adding one.',
-      'If a security breach affects your data, we notify you within [PLAZO DE NOTIFICACIÓN — confirmar].',
+      'If a security breach affects your data, we notify you within [NOTIFICATION PERIOD — confirm].',
       'At the end, we hand you a complete copy of your data and delete it.',
     ],
     sections: [
@@ -882,8 +882,8 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'parties',
         title: 'Parties and purpose',
         blocks: [
-          'This agreement is between the customer company that uses StockAI ("the customer") and [RAZÓN SOCIAL], [CÉDULA JURÍDICA / NIF] ("StockAI"). It is part of the [terms of service](/terminos) and applies from the moment the customer creates an account and uploads data.',
-          'If the customer needs a signed version of this agreement, it can ask for one at ' + MAIL + '. [VERSIÓN FIRMADA — confirmar si se ofrece y quién la firma]',
+          'This agreement is between the customer company that uses StockAI ("the customer") and [LEGAL COMPANY NAME], [COMPANY ID / TAX ID] ("StockAI"). It is part of the [terms of service](/terminos) and applies from the moment the customer creates an account and uploads data.',
+          'If the customer needs a signed version of this agreement, it can ask for one at ' + MAIL + '. [SIGNED VERSION — confirm whether it is offered and who signs it]',
           'Where this agreement contradicts the terms on personal data, this agreement prevails.',
         ],
       },
@@ -926,7 +926,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'confidentiality',
         title: 'Confidentiality',
         blocks: [
-          'Only the StockAI staff who need it to run, maintain or support the service have access to the customer\'s data, and they are bound to confidentiality. [COMPROMISOS DE CONFIDENCIALIDAD DEL PERSONAL — confirmar cómo se documentan]',
+          'Only the StockAI staff who need it to run, maintain or support the service have access to the customer\'s data, and they are bound to confidentiality. [STAFF CONFIDENTIALITY COMMITMENTS — confirm how they are documented]',
           'We do not look at an account\'s data except to solve a problem the customer raises, to maintain the service or when the law requires it.',
         ],
       },
@@ -959,30 +959,30 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
             table: {
               head: ['Sub-processor', 'What for', 'When', 'Where'],
               rows: [
-                ['Hostinger', 'Server (VPS) running the app and the database; stockai.es email', 'Always', '[UBICACIÓN DEL SERVIDOR — confirmar con el propietario]'],
+                ['Hostinger', 'Server (VPS) running the app and the database; stockai.es email', 'Always', 'Boston, United States'],
                 ['DeepSeek', 'Language model behind the assistant, summaries, explanations and file diagnosis (see [how we use AI](/ia))', 'Only when those features are used', 'China'],
-                ['Email provider: Hostinger (SMTP) or Resend, depending on the configuration', 'Sending service emails, alerts and purchase orders', 'When an email is sent', '[UBICACIÓN — confirmar con el propietario]'],
+                ['Email provider: Hostinger (SMTP) or Resend, depending on the configuration', 'Sending service emails, alerts and purchase orders', 'When an email is sent', '[LOCATION — confirm with the owner]'],
                 ['Twilio', 'Sending and receiving WhatsApp and SMS messages', 'Only if WhatsApp or SMS is turned on', 'United States'],
               ],
             },
           },
-          'We require each sub-processor to meet data-protection obligations equivalent to those in this agreement, as far as its terms allow. [CONTRATOS CON SUBENCARGADOS — confirmar que existen y dónde constan]',
-          'Before adding or changing a sub-processor, we update this list and notify the customer by email [PLAZO DE AVISO — confirmar] in advance. If the customer objects on reasonable grounds and we cannot find a solution, it may end the service without penalty.',
+          'We require each sub-processor to meet data-protection obligations equivalent to those in this agreement, as far as its terms allow. [CONTRACTS WITH SUBPROCESSORS — confirm they exist and where they are recorded]',
+          'Before adding or changing a sub-processor, we update this list and notify the customer by email [NOTICE PERIOD — confirm] in advance. If the customer objects on reasonable grounds and we cannot find a solution, it may end the service without penalty.',
         ],
       },
       {
         id: 'transfers',
         title: 'International transfers',
         blocks: [
-          'Because of the sub-processors above, data may be processed outside the customer\'s country: in [UBICACIÓN DEL SERVIDOR — confirmar con el propietario], in China (DeepSeek, only if the AI features are used) and in the United States (Twilio, only if WhatsApp or SMS is turned on).',
-          'For customers in the European Union or Spain: China has no adequacy decision from the European Commission. [MECANISMO DE TRANSFERENCIA — cláusulas contractuales tipo u otro, confirmar con un abogado para DeepSeek y Twilio]. If the customer cannot accept the transfer to China, it can ask us for its account not to use the AI features by writing to ' + MAIL + '.',
+          'Because of the sub-processors above, data may be processed outside the customer\'s country: in Boston, United States, in China (DeepSeek, only if the AI features are used) and in the United States (Twilio, only if WhatsApp or SMS is turned on).',
+          'For customers in the European Union or Spain: China has no adequacy decision from the European Commission. [TRANSFER MECHANISM — standard contractual clauses or other, confirm with a lawyer for DeepSeek and Twilio]. If the customer cannot accept the transfer to China, it can ask us for its account not to use the AI features by writing to ' + MAIL + '.',
         ],
       },
       {
         id: 'breaches',
         title: 'Security breaches',
         blocks: [
-          'If StockAI becomes aware of a security breach affecting the customer\'s personal data, it will notify the customer without undue delay and within [PLAZO DE NOTIFICACIÓN — confirmar] of becoming aware, at the account administrator\'s email.',
+          'If StockAI becomes aware of a security breach affecting the customer\'s personal data, it will notify the customer without undue delay and within [NOTIFICATION PERIOD — confirm] of becoming aware, at the account administrator\'s email.',
           'The notice will say, as far as is known at the time: what happened, which data and how many people may be affected, the likely consequences, what we have done and what we recommend doing. Whatever is not known at first we will send as soon as we know it.',
           'The customer, as controller, decides whether to notify the authority and the people affected; we will give it the information it needs to do so.',
         ],
@@ -1008,7 +1008,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         title: 'Audits',
         blocks: [
           'On the customer\'s reasonable request, we will provide the information needed to show that we comply with this agreement: for example, the description of the security measures and the list of sub-processors.',
-          'If that is not enough, the customer may carry out an audit, itself or through an auditor bound to confidentiality, with [PREAVISO — confirmar] notice, during business hours, without affecting the service or other customers\' data, and at its own cost. [FRECUENCIA Y CONDICIONES DE AUDITORÍA — confirmar]',
+          'If that is not enough, the customer may carry out an audit, itself or through an auditor bound to confidentiality, with [ADVANCE NOTICE — confirm] notice, during business hours, without affecting the service or other customers\' data, and at its own cost. [AUDIT FREQUENCY AND CONDITIONS — confirm]',
         ],
       },
       {
@@ -1103,7 +1103,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'training',
         title: 'Training third-party models',
         blocks: [
-          'We do not use your data to train language models, nor do we share it for that purpose. DeepSeek receives the data to answer each request; what DeepSeek does with it is governed by its own terms. [CONDICIONES DE DEEPSEEK SOBRE USO DE DATOS PARA ENTRENAMIENTO — verificar el contrato o los términos de la API vigentes y resumirlos aquí]',
+          'We do not use your data to train language models, nor do we share it for that purpose. DeepSeek receives the data to answer each request; what DeepSeek does with it is governed by its own terms. [DEEPSEEK TERMS ON USING DATA FOR TRAINING — check the current contract or API terms and summarise them here]',
         ],
       },
       {
@@ -1189,7 +1189,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
               'Do not access, change or delete data that is not yours. If you come across someone else\'s data, stop, do not keep it and tell us.',
               'Respect the API limits and do not run tests that degrade the service for others.',
               'Do not use what you find for anything other than demonstrating the problem.',
-              'Keep the finding confidential until we have fixed it or until [PLAZO DE DIVULGACIÓN — p. ej. 90 días, confirmar] have passed since your report, whichever comes first, and coordinate publication with us.',
+              'Keep the finding confidential until we have fixed it or until [DISCLOSURE PERIOD — e.g. 90 days, confirm] have passed since your report, whichever comes first, and coordinate publication with us.',
             ],
           },
         ],
@@ -1198,7 +1198,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'safe-harbour',
         title: 'Protection for good-faith research',
         blocks: [
-          'If you research and report in good faith following this policy, we will consider your research authorised, we will not take legal action against you for it and, if a third party does, we will make clear that you acted with our permission. [ALCANCE DEL PUERTO SEGURO — revisar con un abogado]',
+          'If you research and report in good faith following this policy, we will consider your research authorised, we will not take legal action against you for it and, if a third party does, we will make clear that you acted with our permission. [SCOPE OF THE SAFE HARBOUR — review with a lawyer]',
           'This protection does not cover anyone who breaks the rules above, for example by accessing other customers\' data beyond what is needed to demonstrate the problem.',
         ],
       },
@@ -1208,13 +1208,13 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         blocks: [
           {
             list: [
-              'We acknowledge your report within [PLAZO DE ACUSE DE RECIBO — confirmar].',
-              'We give you a first assessment within [PLAZO DE VALORACIÓN — confirmar].',
+              'We acknowledge your report within [ACKNOWLEDGEMENT PERIOD — confirm].',
+              'We give you a first assessment within [ASSESSMENT PERIOD — confirm].',
               'We keep you informed while we fix it and tell you when it is resolved.',
               'If you wish, we credit you as the finder when we publish it.',
             ],
           },
-          'We do not have a monetary reward programme. [PROGRAMA DE RECOMPENSAS — confirmar con el propietario]',
+          'We do not have a monetary reward programme. [BUG BOUNTY PROGRAMME — confirm with the owner]',
         ],
       },
     ],
@@ -1270,14 +1270,14 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
               'We have not tested every screen with screen readers or through an independent audit, so there may be other problems we do not know about.',
             ],
           },
-          'These limitations are on our work list. [FECHA PREVISTA DE CORRECCIÓN — confirmar con el propietario]',
+          'These limitations are on our work list. [EXPECTED FIX DATE — confirm with the owner]',
         ],
       },
       {
         id: 'report',
         title: 'How to tell us about a problem',
         blocks: [
-          `Write to us at ${MAIL} with the subject "Accessibility". Tell us which screen you were on, what you were trying to do and what technology you use (for example, the screen reader and the browser). We reply within [PLAZO DE RESPUESTA — confirmar] and, while we fix it, we find another way to give you the information or get the task done.`,
+          `Write to us at ${MAIL} with the subject "Accessibility". Tell us which screen you were on, what you were trying to do and what technology you use (for example, the screen reader and the browser). We reply within [RESPONSE PERIOD — confirm] and, while we fix it, we find another way to give you the information or get the task done.`,
         ],
       },
       {
@@ -1315,7 +1315,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         blocks: [
           `Write to us at ${MAIL} and we will close the purchase and the details of delivery with you.`,
           'Licence: the terms for using the code are in the [source-code licence](/licencia).',
-          '[ENTREGA, SOPORTE, FORMA DE PAGO, IMPUESTOS Y REEMBOLSO DE LA COMPRA — confirmar con el propietario]',
+          '[DELIVERY, SUPPORT, PAYMENT METHOD, TAXES AND REFUND OF THE PURCHASE — confirm with the owner]',
         ],
       },
       {
@@ -1343,7 +1343,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'scope',
         title: 'What it is and who it applies to',
         blocks: [
-          'These terms govern the copy of the StockAI source code that [NOMBRE DEL LICENCIANTE] ("the licensor", "we") delivers to an organisation that contracts it ("the licensee", "you"). They apply together with the licence agreement we sign with you; **where the agreement says something different, the agreement prevails**.',
+          'These terms govern the copy of the StockAI source code that [LICENSOR NAME] ("the licensor", "we") delivers to an organisation that contracts it ("the licensee", "you"). They apply together with the licence agreement we sign with you; **where the agreement says something different, the agreement prevails**.',
           'The "software" is the source and compiled code of StockAI — the web application, the API, the forecasting engine — its documentation and the updates we deliver to you. These terms do not apply to the hosted service at app.stockai.es, which is governed by the [terms of service](/terminos).',
           'Without a signed licence agreement you have no rights to the software, even if you have obtained a copy.',
         ],
@@ -1361,7 +1361,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
               'make the copies you need for the above, including backups and test environments.',
             ],
           },
-          'If we agree so in writing, the licence may extend to your affiliates or subsidiaries. The number of installations, organisations or users, the price and the term are those in the agreement: [PRECIO/VIGENCIA según contrato].',
+          'If we agree so in writing, the licence may extend to your affiliates or subsidiaries. The number of installations, organisations or users, the price and the term are those in the agreement: [PRICE/TERM per contract].',
         ],
       },
       {
@@ -1387,7 +1387,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         title: 'Ownership',
         blocks: [
           'The software, its copies and the StockAI brand are and remain the licensor\'s. We license the software to you, we do not sell it, and you acquire no right that is not written here or in the agreement.',
-          'You may use your modifications only together with the software and within this licence. [TITULARIDAD DE LAS MODIFICACIONES DEL LICENCIATARIO — confirmar con un abogado]',
+          'You may use your modifications only together with the software and within this licence. [OWNERSHIP OF THE LICENSEE’S MODIFICATIONS — confirm with a lawyer]',
           'If you send us suggestions or fixes, we may use them without obligation to you.',
         ],
       },
@@ -1403,7 +1403,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         title: 'Confidentiality of the code',
         blocks: [
           'The source code is our confidential information. You must protect it with at least the care you give your own confidential information, and only your employees and contractors who need it for the permitted uses, and who are bound to confidentiality, may access it.',
-          'This obligation survives the end of the licence. [PLAZO DE CONFIDENCIALIDAD TRAS LA TERMINACIÓN — confirmar]',
+          'This obligation survives the end of the licence. [CONFIDENTIALITY PERIOD AFTER TERMINATION — confirm]',
         ],
       },
       {
@@ -1434,14 +1434,14 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'audit',
         title: 'Verifying compliance',
         blocks: [
-          'With reasonable notice of [PREAVISO — confirmar], we may ask you for a written statement that you comply with this licence (for example, how many installations you have and who uses them) and, if there are well-founded reasons, verify it ourselves or through an auditor bound to confidentiality, during business hours and without undue interference with your operations. [FRECUENCIA, COSTO Y CONDICIONES DE LA VERIFICACIÓN — confirmar]',
+          'With reasonable notice of [ADVANCE NOTICE — confirm], we may ask you for a written statement that you comply with this licence (for example, how many installations you have and who uses them) and, if there are well-founded reasons, verify it ourselves or through an auditor bound to confidentiality, during business hours and without undue interference with your operations. [FREQUENCY, COST AND CONDITIONS OF THE VERIFICATION — confirm]',
         ],
       },
       {
         id: 'termination',
         title: 'Termination',
         blocks: [
-          'The licence ends when the agreement\'s term expires and is not renewed, or earlier if you breach these terms or the agreement and do not cure it within [PLAZO DE SUBSANACIÓN — confirmar] of our notice. A serious breach of the restrictions or of confidentiality ends it without any cure period.',
+          'The licence ends when the agreement\'s term expires and is not renewed, or earlier if you breach these terms or the agreement and do not cure it within [CURE PERIOD — confirm] of our notice. A serious breach of the restrictions or of confidentiality ends it without any cure period.',
           'When it ends, you must **stop using the software and delete all copies of it**, including modified ones and backups, and confirm to us in writing that you did. Your business data in your installation is yours: export it before deleting the installation.',
           'The sections on ownership, confidentiality, warranty, liability and governing law survive termination.',
         ],
@@ -1457,7 +1457,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'law',
         title: 'Governing law',
         blocks: [
-          'This licence is governed by the laws of [JURISDICCIÓN], and any dispute will be resolved before the courts named in the agreement or, failing that, those of [JURISDICCIÓN].',
+          'This licence is governed by the laws of [JURISDICTION], and any dispute will be resolved before the courts named in the agreement or, failing that, those of [JURISDICTION].',
         ],
       },
     ],

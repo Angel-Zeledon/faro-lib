@@ -15,7 +15,7 @@
  *     "no permission" is written once) plus a retry affordance.
  */
 import { useFeedback } from '@/components/feedback/context'
-import type { ReactNode } from 'react'
+import { useCallback, type ReactNode } from 'react'
 import Link from 'next/link'
 import { RefreshCw, AlertTriangle, Lock, SearchX, WifiOff, ServerCrash } from 'lucide-react'
 import { isApiError, type ApiErrorKind } from '@/lib/api'
@@ -62,7 +62,10 @@ const ERROR_COPY: Record<ApiErrorKind | 'unknown', {
  */
 export function useErrorDetail() {
   const { lang } = useLanguage()
-  return (err: unknown): string => {
+  // Stable per language: screens list it as a dependency of their loaders, and
+  // a new function on every render re-ran those loaders forever
+  // (/reportes-programados re-fetched its lists in a loop).
+  return useCallback((err: unknown): string => {
     if (isApiError(err)) {
       return translateErrorParts(
         { status: err.status, code: err.code, params: err.params, fieldErrors: err.fieldErrors },
@@ -70,7 +73,7 @@ export function useErrorDetail() {
       )
     }
     return err instanceof Error ? err.message : ''
-  }
+  }, [lang])
 }
 
 /**

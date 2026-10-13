@@ -93,6 +93,10 @@ _ALLOWED = {
     # ("proveedor", "orden de compra") read from uploaded files, plus the
     # example rows of the downloadable templates (a LatAm distributor's data).
     "inventory/bulk_import.py",
+    # Same category for inventory sync's mapping assistant: column and table
+    # names of real customer databases ("existencia", "bodega", "costo") it
+    # matches to propose a mapping. They read the customer's schema; not copy.
+    "inventory_sync/suggest.py",
     # Dev script that fills docs examples: its CSV headers are user-data aliases.
     "scripts/capture_api_examples.py",
     "datasources/service.py",
