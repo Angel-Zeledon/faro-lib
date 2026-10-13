@@ -29,7 +29,9 @@ from pydantic import BaseModel, Field
 from backend.api.v1.auth import _check_rate
 from backend.api.v1.trial import _client_address
 from backend.auth.guards import CurrentUser, get_current_user
-from backend.auth.jwt_handler import create_access_token, create_refresh_token
+from backend.auth.jwt_handler import (
+    access_token_ttl_seconds, create_access_token, create_refresh_token,
+)
 from backend.auth.social import flow, providers
 from backend.auth.social.providers import SocialAuthError
 from backend.config import settings
@@ -227,7 +229,7 @@ def oauth_exchange(body: ExchangeRequest, request: Request):
         "access_token": access_token,
         "refresh_token": raw_refresh,
         "token_type": "bearer",
-        "expires_in": 15 * 60,
+        "expires_in": access_token_ttl_seconds(),
         "provider": row["provider"],
         "is_new_account": bool(row["is_new_account"]),
         "user": {

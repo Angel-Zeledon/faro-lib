@@ -17,8 +17,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 _security = HTTPBearer(auto_error=False)
 
 from backend.auth.jwt_handler import (
-    create_access_token, create_refresh_token, create_signed_token,
-    decode_token, hash_token,
+    access_token_ttl_seconds, create_access_token, create_refresh_token,
+    create_signed_token, decode_token, hash_token,
 )
 from backend.auth.password import validate_strength
 from backend.config import settings
@@ -415,7 +415,7 @@ def _complete_login(user: dict, email_verified: bool) -> dict:
         "access_token": access_token,
         "refresh_token": raw_refresh,
         "token_type": "bearer",
-        "expires_in": 15 * 60,
+        "expires_in": access_token_ttl_seconds(),
         "user": {
             "id": user["id"],
             "email": user["email"],
@@ -531,7 +531,7 @@ async def refresh(body: RefreshRequest, request: Request):
     return ok({
         "access_token": access_token,
         "token_type": "bearer",
-        "expires_in": 15 * 60,
+        "expires_in": access_token_ttl_seconds(),
         "email_verified": bool(user.get("email_verified")),
     })
 
