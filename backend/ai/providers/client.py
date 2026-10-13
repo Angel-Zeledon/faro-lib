@@ -170,6 +170,17 @@ class _TenantMessages:
         if spec is None:
             raise ProviderError("bad_request", "unknown provider", params={"reason": "unknown_provider"})
 
+        if spec.key_required and not cfg.api_key:
+            # The stored key cannot be read (the encryption key changed) or is
+            # missing. Sending the request without one would come back as a
+            # provider 401 and send the admin to check a key that is fine at
+            # the provider; say it here, without a network call.
+            exc = ProviderError("invalid_key", "no usable API key is stored; enter it again",
+                                params={"reason": "missing"})
+            store.record_failure(cfg, exc.code, exc.message, counts=True, threshold=s["threshold"])
+            _alert_once_a_day(cfg, exc)
+            raise exc
+
         r = store.row(cfg.tenant_id)
         state = store.breaker_state(r, s["cooldown"])
         if state == "open" or (state == "half_open"

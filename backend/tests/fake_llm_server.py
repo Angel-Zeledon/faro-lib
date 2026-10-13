@@ -26,6 +26,7 @@ class Reply:
     body: Any = None                  # dict/list -> JSON; bytes/str -> raw
     headers: dict = field(default_factory=dict)
     delay_s: float = 0.0              # sleep before answering (timeouts)
+    drop: bool = False                # read the request, then hang up without answering
 
 
 @dataclass
@@ -61,6 +62,13 @@ class FakeProvider:
                     reply = fake._next(self.path)
                 if reply.delay_s:
                     time.sleep(reply.delay_s)
+                if reply.drop:
+                    self.close_connection = True
+                    try:
+                        self.connection.shutdown(2)
+                    except OSError:
+                        pass
+                    return
                 payload = reply.body
                 if isinstance(payload, (dict, list)):
                     data = json.dumps(payload).encode()

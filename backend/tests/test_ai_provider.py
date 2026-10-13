@@ -392,6 +392,29 @@ class TestErrors:
         assert e.value.code == "timeout" and e.value.phase == "read"
         assert len(fake.requests) == 1  # could have been billed: not repeated
 
+    def test_an_unreadable_stored_key_is_reported_without_calling_the_provider(
+            self, test_tenant, fake, monkeypatch):
+        tid = test_tenant["id"]
+        _point(monkeypatch, "openai", fake)
+        _store(tid, provider="openai", model="gpt-4.1")
+        execute("UPDATE tenant_ai_providers SET api_key_enc = 'gAAAAA-not-a-token' WHERE tenant_id = %s",
+                (tid,))
+        with pytest.raises(ProviderError) as e:
+            _call(tid)
+        assert e.value.code == "invalid_key" and e.value.params["reason"] == "missing"
+        assert fake.requests == []
+        assert _row(tid)["last_failure_code"] == "invalid_key"
+
+    def test_a_connection_dropped_mid_answer_is_never_retried(self, test_tenant, fake):
+        tid = test_tenant["id"]
+        _store(tid, base_url=fake.base + "/v1")
+        fake.reply(Reply(200, openai_ok("lost"), drop=True))
+        with pytest.raises(ProviderError) as e:
+            _call(tid)
+        # The request reached the provider: it may have been processed and billed.
+        assert e.value.code == "unreachable" and e.value.phase == "read"
+        assert not e.value.retryable and len(fake.requests) == 1
+
     def test_nothing_listening_fails_before_sending_so_it_is_retried(
             self, test_tenant, fake, fast_and_local):
         tid = test_tenant["id"]
