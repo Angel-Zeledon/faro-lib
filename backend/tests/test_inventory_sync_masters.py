@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 
 from backend.db.connection import execute, query, query_one
+from backend.errors import AppError
 from backend.inventory_sync import masters, profiles
 from backend.tests.test_inventory_sync import (  # noqa: F401 - fixtures
     _booted, _put, _run, _source, _stock, src_db, src_table,
@@ -193,6 +194,52 @@ class TestWarehouseMaster:
         p = _profile(tid, _source(tid), src_table, brake_max_rejected_pct=100)
         run = _run(tid, p["id"])
         assert run["rejected_sample"][0]["code"] == "unknown_warehouse" and _stock(tid) == {}
+
+    def test_a_master_column_the_source_lacks_is_named_not_read_as_an_empty_master(
+            self, test_tenant, src_db, src_table, wh_master):
+        # Found walking /sincronizacion: the master's columns are typed by hand,
+        # and a typo ("codigo_bodega" for "code") read every master row as
+        # code-less, so the preview reported "master_rows: 0" and proposed raw
+        # codes as new warehouses — and a run would then mark every code the
+        # master used to list inactive. It must stop and name the column.
+        tid = test_tenant["id"]
+        _fill(src_db, wh_master, [("1", "Norte", "A", None, None)])
+        _put(src_db, src_table, [("A1", "1", 10)])
+        cfg = _wh_cfg(wh_master)
+        cfg["warehouses"]["code_column"] = "codigo_bodega"
+        p = _profile(tid, _source(tid), src_table, masters=cfg)
+        engine = __import__("backend.inventory_sync.engine", fromlist=["x"])
+        with pytest.raises(AppError) as exc:
+            engine.dry_run(tid, dict(p))
+        assert exc.value.code == "inventory_sync_column_missing"
+        assert exc.value.params["column"] == "codigo_bodega"
+        run = _run(tid, p["id"])
+        assert run["status"] != "success"
+        assert (run["error_code"], run["error_params"]["column"]) == ("inventory_sync_column_missing",
+                                                                      "codigo_bodega")
+        assert _stock(tid) == {} and "1" not in _warehouses(tid)
+        assert query("SELECT * FROM inventory_sync_warehouses WHERE profile_id = %s", (p["id"],)) == []
+
+    def test_an_optional_master_column_the_source_lacks_is_named_too(self, test_tenant, src_db, src_table,
+                                                                     wh_master):
+        tid = test_tenant["id"]
+        _fill(src_db, wh_master, [("1", "Norte", "A", None, None)])
+        _put(src_db, src_table, [("A1", "1", 10)])
+        cfg = _wh_cfg(wh_master)
+        cfg["warehouses"]["city_column"] = "ciudad"
+        p = _profile(tid, _source(tid), src_table, masters=cfg)
+        engine = __import__("backend.inventory_sync.engine", fromlist=["x"])
+        with pytest.raises(AppError) as exc:
+            engine.dry_run(tid, dict(p))
+        assert (exc.value.code, exc.value.params["column"]) == ("inventory_sync_column_missing", "ciudad")
+
+    def test_an_empty_master_is_not_a_missing_column(self, test_tenant, src_db, src_table, wh_master):
+        tid = test_tenant["id"]
+        _fill(src_db, wh_master, [])
+        _put(src_db, src_table, [("A1", "1", 10)])
+        p = _profile(tid, _source(tid), src_table, masters=_wh_cfg(wh_master))
+        dry = __import__("backend.inventory_sync.engine", fromlist=["x"]).dry_run(tid, dict(p))
+        assert dry["masters"]["warehouses"]["master_rows"] == 0
 
 
 class TestSupplierMaster:

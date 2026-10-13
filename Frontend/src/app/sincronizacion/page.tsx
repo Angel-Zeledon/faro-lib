@@ -174,7 +174,9 @@ function payload(d: Draft): SyncProfileInput {
   }
 }
 
-const MASTER_WH_COLS: (keyof SyncMasterSource)[] = ['code_column', 'name_column', 'active_column', 'kind_column', 'city_column']
+const masterKey = (sourceId: string, m: SyncMasterSource) =>
+  `${sourceId}|${m.source_schema ?? ''}|${m.source_object ?? ''}`
+const MASTER_WH_COLS:(keyof SyncMasterSource)[] = ['code_column', 'name_column', 'active_column', 'kind_column', 'city_column']
 const MASTER_SUP_COLS: (keyof SyncMasterSource)[] = ['code_column', 'name_column', 'active_column', 'lead_time_column',
   'payment_terms_column', 'email_column']
 const MASTER_LABEL: Record<string, string> = {
@@ -210,6 +212,28 @@ export default function InventorySyncPage() {
   const [busy, setBusy] = useState(false)
   const [doctorFor, setDoctorFor] = useState<string | null>(null)
   const [runDetail, setRunDetail] = useState<string | null>(null)
+  // The preview and the error render above the form, but the buttons that
+  // produce them sit at the bottom of a long form: without scrolling to the
+  // outcome, "Preview" looked like it did nothing.
+  // Column names of each master table, keyed by masterKey().
+  const [masterCols, setMasterCols] = useState<Record<string, string[]>>({})
+  const whMaster = draft?.wh_master, supMaster = draft?.sup_master, draftSourceId = draft?.data_source_id
+  useEffect(() => {
+    if (!draftSourceId) return
+    for (const m of [whMaster, supMaster]) {
+      if (!m?.source_object || (m.source_kind !== 'table' && m.source_kind !== 'collection')) continue
+      const k = masterKey(draftSourceId, m)
+      if (masterCols[k]) continue
+      getSyncTableColumns(draftSourceId, m.source_schema ?? null, m.source_object)
+        .then(r => setMasterCols(prev => ({ ...prev, [k]: r.columns.map(c => c.name) })))
+        .catch(() => { /* the free-text field stays; the dry run names a wrong column */ })
+    }
+  }, [draftSourceId, whMaster, supMaster, masterCols])
+  const tablesFor = useRef<string | null>(null)
+  const errorBox = useRef<HTMLParagraphElement>(null)
+  const dryRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (error) errorBox.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
+  useEffect(() => { if (dry) dryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [dry])
 
   const codeText = useCallback((code: string | null | undefined, params?: Record<string, unknown> | null) => {
     if (!code) return ''
@@ -287,8 +311,15 @@ export default function InventorySyncPage() {
   }
 
   async function loadTables(sourceId: string, refresh = false) {
+    // Discovery can take seconds and the person may switch database meanwhile:
+    // only the answer for the database now selected may land, or the slower,
+    // older one would list another database's tables under this one.
+    tablesFor.current = sourceId
     setTables(null)
-    try { setTables(await discoverSyncSource(sourceId, refresh)) } catch (e) { setError(errorDetail(e)) }
+    try {
+      const r = await discoverSyncSource(sourceId, refresh)
+      if (tablesFor.current === sourceId) setTables(r)
+    } catch (e) { if (tablesFor.current === sourceId) setError(errorDetail(e)) }
   }
 
   async function pickTable(tb: SyncTable) {
@@ -383,7 +414,7 @@ export default function InventorySyncPage() {
   return (
     <div style={{ width: '100%', maxWidth: 980, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
       <p style={{ margin: 0, fontSize: 13, color: C.muted, lineHeight: 1.5 }}>{t('isync.intro')}</p>
-      {error && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: C.red }}>{error}</p>}
+      {error && <p ref={errorBox} role="alert" style={{ margin: 0, fontSize: 12.5, color: C.red }}>{error}</p>}
       {notice && <p role="status" style={{ margin: 0, fontSize: 12.5, color: C.green }}>{notice}</p>}
 
       {/* ── Profile list ─────────────────────────────────────────────────── */}
@@ -517,7 +548,7 @@ export default function InventorySyncPage() {
 
       {!draft && current && doctorFor === current.id && <DoctorPanel profileId={current.id} onClose={() => setDoctorFor(null)} />}
 
-      {dry && <DryRunCard dry={dry} fieldLabel={fieldLabel} />}
+      {dry && <div ref={dryRef} style={{ scrollMarginTop: 16 }}><DryRunCard dry={dry} fieldLabel={fieldLabel} /></div>}
 
       {!draft && current && (
         <Card padding={16}>
@@ -816,11 +847,26 @@ export default function InventorySyncPage() {
                           ))}
                         </Select>
                       </Field>
-                      {m?.source_object && cols.map(c => (
-                        <Field key={c} label={t(MASTER_LABEL[c])}>
-                          <Input value={String(m[c] ?? '')} onChange={e => set({ [c]: e.target.value || null } as Partial<SyncMasterSource>)} />
-                        </Field>
-                      ))}
+                      {m?.source_object && cols.map(c => {
+                        const known = masterCols[masterKey(draft.data_source_id, m)]
+                        const value = String(m[c] ?? '')
+                        return (
+                          <Field key={c} label={t(MASTER_LABEL[c])}>
+                            {/* The master's own columns, read from the source: typed by
+                                hand, a typo silently emptied the whole master. Free
+                                text stays only while the column list is unavailable. */}
+                            {known ? (
+                              <Select value={value} onChange={e => set({ [c]: e.target.value || null } as Partial<SyncMasterSource>)}>
+                                <option value="">{t('isync.not_mapped')}</option>
+                                {value && !known.includes(value) && <option value={value}>{value}</option>}
+                                {known.map(col => <option key={col} value={col}>{col}</option>)}
+                              </Select>
+                            ) : (
+                              <Input value={value} onChange={e => set({ [c]: e.target.value || null } as Partial<SyncMasterSource>)} />
+                            )}
+                          </Field>
+                        )
+                      })}
                     </div>
                     {key === 'sup_master' && m?.source_object && (
                       <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, marginTop: 8, cursor: 'pointer' }}>
