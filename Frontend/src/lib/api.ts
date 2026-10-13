@@ -3817,7 +3817,7 @@ export interface SyncFreshness {
 }
 export interface SyncRefreshEntry {
   profile_id: string; profile_name: string; data_as_of: string | null
-  status: 'done' | 'running' | 'cooldown' | 'paused' | 'blocked' | 'failed' | 'braked'
+  status: 'done' | 'running' | 'cooldown' | 'paused' | 'blocked' | 'failed' | 'braked' | 'push'
   run_id?: string; joined?: boolean; retry_after_s?: number; reason?: string | null; error_code?: string | null
   created?: number; updated?: number; unchanged?: number; rejected?: number
 }

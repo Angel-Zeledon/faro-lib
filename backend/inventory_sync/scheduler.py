@@ -87,7 +87,9 @@ def _resume_or_close(profile_id: str) -> Optional[str]:
 
 
 _CLAIMABLE = (
-    "enabled AND freshness <> 'on_demand' AND next_run_at IS NOT NULL AND next_run_at <= %s "
+    # A push profile is fed by the customer's system; there is nothing to pull.
+    "enabled AND source_kind <> 'push' AND freshness <> 'on_demand' AND next_run_at IS NOT NULL "
+    "AND next_run_at <= %s "
     "AND (lease_until IS NULL OR lease_until < NOW()) "
     "AND (health NOT IN ('paused', 'blocked') OR (health = 'blocked' AND EXISTS ("
     "  SELECT 1 FROM datasets d WHERE d.id = inventory_sync_profiles.data_source_id "
@@ -214,6 +216,17 @@ def _require_previewed(tenant_id: str, profile_id: str) -> dict:
     return current
 
 
+def _refuse_push(tenant_id: str, profile_id: str) -> None:
+    """A push profile has no source to read: running it as a pull failed with
+    data_source_not_found and marked a healthy push sync "blocked"."""
+    row = query_one("SELECT source_kind FROM inventory_sync_profiles WHERE id = %s AND tenant_id = %s",
+                    (profile_id, tenant_id))
+    if row and row["source_kind"] == "push":
+        raise AppError("inventory_sync_push_has_nothing_to_pull",
+                       "This sync is fed by your system (push): send it a batch instead.",
+                       status_code=409, params={"profile_id": profile_id})
+
+
 def start_manual(tenant_id: str, profile_id: str, user_id: str, *,
                  override_brake: bool = False, background: bool = True,
                  trigger: str = "manual", kind: Optional[str] = None,
@@ -221,6 +234,7 @@ def start_manual(tenant_id: str, profile_id: str, user_id: str, *,
     """'Sync now': lease, create the run row, run it (in a thread unless
     `background` is False) and return the run row as it is at start."""
     owner = f"manual:{_owner()}"
+    _refuse_push(tenant_id, profile_id)
     _require_previewed(tenant_id, profile_id)
     profile = claim_one(tenant_id, profile_id, owner)
     try:
@@ -278,6 +292,10 @@ def refresh(tenant_id: str, user_id: str, *, profile_id: Optional[str] = None,
     results = []
     for p in _refreshable(tenant_id, profile_id):
         entry = {"profile_id": p["id"], "profile_name": p["name"], "data_as_of": _iso(p.get("data_as_of"))}
+        if p.get("source_kind") == "push":
+            # Fed by the customer's system: its data is as of its last batch.
+            results.append({**entry, "status": "push"})
+            continue
         if p.get("health") in ("paused", "blocked"):
             results.append({**entry, "status": p["health"], "reason": p.get("health_reason")})
             continue

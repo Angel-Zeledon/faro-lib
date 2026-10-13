@@ -158,3 +158,32 @@ class TestPush:
             "name": "push draft", "source_kind": "push",
             "mapping": {"sku": "code", "warehouse": "store", "current_stock": "qty"}})
         assert r.status_code == 409 and r.json()["error_code"] == "inventory_sync_push_preview_by_batch"
+
+    def test_an_enabled_push_sync_is_never_pulled(self, client, analyst_headers, test_tenant):
+        # Found walking /sincronizacion: once a push sync was turned on, the
+        # scheduler ran it as a pull every interval ("programada" run failing
+        # with data_source_not_found), the health went to "blocked" with the
+        # remedy "the connection was deleted", and "Sync now" / "Refresh now"
+        # did the same.
+        from datetime import datetime, timedelta, timezone
+        from backend.db.connection import execute
+        from backend.inventory_sync import scheduler
+        tid = test_tenant["id"]
+        p = _push_profile(tid)
+        _enable(tid, p["id"], [{"code": "A", "store": "N", "qty": 1}])
+        execute("UPDATE inventory_sync_profiles SET next_run_at = NOW() - INTERVAL '1 hour' WHERE id = %s",
+                (p["id"],))
+        claimed = scheduler.claim_due(now=datetime.now(timezone.utc) + timedelta(minutes=1), profile_id=p["id"])
+        assert claimed is None
+        r = client.post(f"{URL}/profiles/{p['id']}/run", headers=analyst_headers)
+        assert r.status_code == 409 and r.json()["error_code"] == "inventory_sync_push_has_nothing_to_pull"
+        out = client.post(f"{URL}/refresh", json={}, headers=analyst_headers).json()["data"]
+        mine = [e for e in out["profiles"] if e["profile_id"] == p["id"]]
+        assert mine and mine[0]["status"] == "push"
+        assert query("SELECT 1 FROM inventory_sync_runs WHERE profile_id = %s AND trigger_kind <> 'push'",
+                     (p["id"],)) == []
+        row = profiles.get(tid, p["id"])
+        assert row["health"] not in ("blocked", "paused")
+        # It still takes batches.
+        res = ingest.ingest(tid, "usr_test", p["id"], batch_id="b1", rows=[{"code": "A", "store": "N", "qty": 4}])
+        assert res["run"]["status"] == "success"

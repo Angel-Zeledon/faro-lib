@@ -491,7 +491,7 @@ export default function InventorySyncPage() {
               </p>
               {current.source_kind === 'push' && (
                 <p style={{ ...small, marginTop: 4, overflowWrap: 'anywhere' }}>
-                  {t('isync.push_url')}: <code>POST /api/inventory-sync/profiles/{current.id}/ingest</code>
+                  {t('isync.push_url')}: <code>POST /api/v1/inventory-sync/profiles/{current.id}/ingest</code>
                 </p>
               )}
             </div>
@@ -502,7 +502,8 @@ export default function InventorySyncPage() {
             <div><div style={small}>{t('isync.last_success_label')}</div>
               <strong style={{ fontSize: 13 }}>{current.last_success_at ? `${age(current.last_success_age_s)} · ${when(current.last_success_at)}` : t('isync.never')}</strong></div>
             <div><div style={small}>{t('isync.next_run_label')}</div>
-              <strong style={{ fontSize: 13 }}>{current.enabled && current.next_run_at ? when(current.next_run_at) : t('isync.not_scheduled')}</strong></div>
+              <strong style={{ fontSize: 13 }}>{current.source_kind === 'push' ? t('isync.push_on_arrival')
+                : current.enabled && current.next_run_at ? when(current.next_run_at) : t('isync.not_scheduled')}</strong></div>
             <div><div style={small}>{t('isync.owned_label')}</div>
               <strong style={{ fontSize: 13 }}>{current.owned_fields.map(fieldLabel).join(', ') || '—'}</strong></div>
           </div>
@@ -554,9 +555,12 @@ export default function InventorySyncPage() {
                 ? <button type="button" style={btn} disabled={busy} onClick={() => act(() => disableSyncProfile(current.id), t('isync.disabled'))}>{t('isync.disable')}</button>
                 : <button type="button" style={{ ...primary, opacity: current.needs_dry_run ? 0.5 : 1 }} disabled={busy || current.needs_dry_run}
                           onClick={() => act(() => enableSyncProfile(current.id), t('isync.enabled'))}>{t('isync.enable')}</button>}
-              <button type="button" style={{ ...btn, opacity: current.needs_dry_run || current.running ? 0.5 : 1 }}
-                      disabled={busy || current.needs_dry_run || current.running}
-                      onClick={() => act(() => runSyncProfile(current.id), t('isync.run_started'))}>{t('isync.run_now')}</button>
+              {/* A push sync is fed by the customer's system: nothing to pull. */}
+              {current.source_kind !== 'push' && (
+                <button type="button" style={{ ...btn, opacity: current.needs_dry_run || current.running ? 0.5 : 1 }}
+                        disabled={busy || current.needs_dry_run || current.running}
+                        onClick={() => act(() => runSyncProfile(current.id), t('isync.run_started'))}>{t('isync.run_now')}</button>
+              )}
               <button type="button" style={btn} disabled={busy} onClick={() => void startEdit(current)}>{t('isync.edit')}</button>
               <button type="button" style={btn} disabled={busy} onClick={async () => {
                 if (await confirm({ title: t('isync.delete_title'), message: t('isync.delete_body', { name: current.name }),

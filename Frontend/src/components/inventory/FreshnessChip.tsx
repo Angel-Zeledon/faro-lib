@@ -82,6 +82,7 @@ export default function FreshnessChip({ canRefresh, visibleSkus, onRefreshed }: 
   function summarize(r: SyncRefreshResult): string {
     const parts = r.profiles.map(p => {
       if (p.status === 'done') return t('isync.refresh_status.done', { name: p.profile_name })
+      if (p.status === 'push') return t('isync.refresh_status.push', { name: p.profile_name })
       if (p.status === 'running') return t('isync.refresh_status.running', { name: p.profile_name, when: when(p.data_as_of) })
       if (p.status === 'cooldown') return t('isync.refresh_status.cooldown', { name: p.profile_name, n: p.retry_after_s ?? 0 })
       if (p.status === 'paused' || p.status === 'blocked')
