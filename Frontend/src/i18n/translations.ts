@@ -618,7 +618,7 @@ export const translations = {
     // New source panel
     'data.new_data_source':           'Nueva fuente de datos',
     'data.file_upload':               'Subir archivo',
-    'data.sql_database':              'Base de datos SQL',
+    'data.sql_database':              'Base de datos',
     'data.field_name_optional':       'Nombre (opcional)',
     'data.field_description_optional': 'Descripción (opcional)',
     'data.conn.engine_postgresql': 'PostgreSQL',
@@ -9516,7 +9516,7 @@ export const translations = {
     // New source panel
     'data.new_data_source':           'New Data Source',
     'data.file_upload':               'File Upload',
-    'data.sql_database':              'SQL Database',
+    'data.sql_database':              'Database',
     'data.field_name_optional':       'Name (optional)',
     'data.field_description_optional': 'Description (optional)',
     'data.conn.engine_postgresql': 'PostgreSQL',
