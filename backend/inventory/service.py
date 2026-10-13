@@ -2026,8 +2026,38 @@ def get_inventory_status(tenant_id: str, session_id: str, service_level: float =
     return _compute_inventory_status(tenant_id, session_id, service_level, period=period)
 
 
+def get_stock_only_status(tenant_id: str, service_level: float = 0.95, period: str = "daily",
+                          stock_rows: Optional[list] = None) -> list[dict]:
+    """Every stock row of a tenant that has NO completed forecast yet.
+
+    Stock arrives before sales history more often than not: a customer who
+    connects the ERP first had 300 synced rows in `inventory_stock` and an
+    Inventario screen that said "0 SKUs". This lists them with what is known
+    (quantity, warehouses, supplier, cost) and the honest SIN_DATOS signal —
+    no demand, no coverage, no recommended quantity, because there is no
+    forecast to derive one from. A customer commitment still raises its own
+    order signal exactly as it does for any SKU without a forecast.
+
+    Never feeds planning: it is not a session, writes nothing to the
+    recommendation log and is only served when the caller asks for it.
+    `stock_rows` lets a warehouse-scoped caller pass its own rows."""
+    if stock_rows is None:
+        stock_rows = list_stock(tenant_id)
+    items = _compute_inventory_status(tenant_id, None, service_level, period=period,
+                                      stock_rows=stock_rows)
+    by_sku: dict[str, list[dict]] = {}
+    for r in stock_rows:
+        by_sku.setdefault(r["sku"], []).append({
+            "warehouse": r.get("warehouse"),
+            "current_stock": float(r["current_stock"]) if r.get("current_stock") is not None else None,
+        })
+    for item in items:
+        item["warehouses"] = sorted(by_sku.get(item["sku"], []), key=lambda w: str(w["warehouse"] or ""))
+    return items
+
+
 def _compute_inventory_status(
-    tenant_id: str, session_id: str, service_level: float = 0.95,
+    tenant_id: str, session_id: Optional[str], service_level: float = 0.95,
     *,
     forecasts: Optional[dict] = None,
     stock_rows: Optional[list] = None,
@@ -2053,8 +2083,11 @@ def _compute_inventory_status(
     from backend.db import session_store
     from backend.inventory.series import rollup_by_sku
 
+    # No session (get_stock_only_status): no forecast exists, so every stock
+    # row is listed and none can get a demand-driven signal.
+    stock_only = session_id is None
     if forecasts is None:
-        forecasts = session_store.get_forecasts(tenant_id, session_id) or {}
+        forecasts = {} if stock_only else (session_store.get_forecasts(tenant_id, session_id) or {})
     # Store-keyed sessions ("sku│store") collapse to per-SKU totals here — this
     # view is the whole-tenant aggregate; the per-warehouse view is
     # get_inventory_status_by_warehouse. Legacy dicts pass through unchanged.
@@ -2071,7 +2104,7 @@ def _compute_inventory_status(
     demand_risk: dict[str, dict] = {}
     service_level_caveats: dict[str, str] = {}
     try:
-        result = session_store.get_training_result(tenant_id, session_id) or {}
+        result = {} if stock_only else (session_store.get_training_result(tenant_id, session_id) or {})
         service_level_caveats = _service_level_caveats(result)
         quality: dict = result.get("data_quality") or {}
         for sku_key, q in quality.items():
@@ -2118,6 +2151,10 @@ def _compute_inventory_status(
     from backend.inventory import committed_demand_service as _cd_all
     _committed_skus = _cd_all.active_by_sku(tenant_id)
     all_skus = sorted(set(forecasts.keys()) | set(_committed_skus.keys()))
+    if stock_only:
+        # Without a session there is no "this session's SKUs" to scope to: the
+        # stock rows themselves are the catalogue the person has.
+        all_skus = sorted(set(all_skus) | set(stock_map.keys()))
 
     # Forecast by analogy: a product the engine could not train (too little
     # history) can be planned from the products a person said it sells like.
@@ -2216,7 +2253,7 @@ def _compute_inventory_status(
     # Manual forecast adjustments ("+15%, promotion", by who): one query for the
     # whole tenant, applied beside the events below and always named on the row.
     from backend.inventory import forecast_adjustment_service as _fa_svc
-    adjustments_by_sku = _fa_svc.active_by_sku(tenant_id, session_id, today)
+    adjustments_by_sku = {} if stock_only else _fa_svc.active_by_sku(tenant_id, session_id, today)
     # Orders customers placed ahead of time: units inside the protection interval
     # are added on top of the forecast and named on the row. Empty for a tenant
     # that recorded none, which leaves every number below exactly as it was.
@@ -2683,8 +2720,9 @@ def _compute_inventory_status(
     #
     # It can never break the read: the recommendation is the product, the log
     # is a record of it.
-    if signal_threshold_patch is not None:
-        # A preview of unsaved multipliers: nobody was told this.
+    if signal_threshold_patch is not None or stock_only:
+        # A preview of unsaved multipliers, or a stock list with no forecast
+        # behind it: no recommendation was made, so there is nothing to log.
         return items
     try:
         from backend.inventory import recommendation_log
