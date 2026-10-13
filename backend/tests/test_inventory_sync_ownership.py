@@ -128,5 +128,29 @@ def test_another_tenant_sees_nothing(client, synced, make_tenant_user_headers):
     assert data == {"items": [], "profiles": [], "truncated": False}
 
 
+def test_the_import_preview_names_the_sync_that_will_replace_rows(client, synced):
+    tid, p = synced
+    _enable(p["id"])
+    before = {k: float(v["current_stock"]) for k, v in _stock(tid).items()}
+    csv = b"sku,current_stock,category\nA1,3,Tools\nB2,,Tools\nZZ,1,Tools\n"
+    r = client.post("/api/v1/inventory/bulk/preview", files={"file": ("s.csv", csv, "text/csv")},
+                    headers=_headers(tid, "analyst"))
+    assert r.status_code == 200, r.text
+    (hit,) = r.json()["data"]["synced_overwrites"]
+    # A1 sets the synced quantity; B2 sets only a field the sync does not own.
+    assert hit["profile_id"] == p["id"] and hit["name"] == "ERP Bodega"
+    assert hit["rows"] == 1 and hit["fields"] == ["current_stock"]
+    assert hit["next_sync_at"] is not None
+    assert {k: float(v["current_stock"]) for k, v in _stock(tid).items()} == before   # a preview
+
+
+def test_the_import_preview_is_quiet_without_a_live_sync(client, synced):
+    tid, _ = synced
+    r = client.post("/api/v1/inventory/bulk/preview",
+                    files={"file": ("s.csv", b"sku,current_stock\nA1,3\n", "text/csv")},
+                    headers=_headers(tid, "analyst"))
+    assert r.status_code == 200 and r.json()["data"]["synced_overwrites"] == []
+
+
 def test_requires_a_signed_in_user(client, synced):
     assert client.get(URL).status_code in (401, 403)

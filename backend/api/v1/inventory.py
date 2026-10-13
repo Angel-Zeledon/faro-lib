@@ -579,7 +579,15 @@ async def bulk_import_preview(
             group["samples"].append({"row": err["row"], "sku": err["sku"],
                                      "value": err["params"].get("value")})
 
+    # Rows that set a field a live inventory sync owns: the import is allowed
+    # (the source wins at the sync's next run, and that is audit-logged), but
+    # the person is told BEFORE importing which sync will replace them.
+    from backend.inventory_sync import ownership
+    visible = (lambda w: wscope.in_scope(user, w)) if wscope.is_scoped(user) else None
+    synced_overwrites = ownership.overwrites_for(user.tenant_id, rows, warehouse_visible=visible)
+
     return ok({
+        "synced_overwrites": synced_overwrites,
         "format": fmt,
         "separator": sep,
         "columns": columns,

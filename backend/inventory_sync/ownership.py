@@ -78,3 +78,40 @@ def owned_keys(tenant_id: str, skus: Optional[list[str]] = None,
                      for pid, p in sorted(profiles.items())],
         "truncated": truncated,
     }
+
+
+def overwrites_for(tenant_id: str, rows: list[dict], warehouse_visible=None) -> list[dict]:
+    """For rows a person is about to write (an import preview): per owning
+    profile, how many of them set a field that sync will replace at its next
+    run, and which fields. A row that names no warehouse matches the SKU in
+    any warehouse (the import resolves the default one later)."""
+    skus = sorted({str(r["sku"]) for r in rows if r.get("sku")})
+    if not skus:
+        return []
+    owned = owned_keys(tenant_id, skus, warehouse_visible=warehouse_visible)
+    by_key = {(i["sku"], i["warehouse"]): i for i in owned["items"]}
+    by_sku: dict[str, list[dict]] = {}
+    for i in owned["items"]:
+        by_sku.setdefault(i["sku"], []).append(i)
+    from backend.inventory import warehouse_service as wh_svc
+    canonical: dict[str, str] = {}
+    groups: dict[str, dict] = {}
+    for r in rows:
+        sku, wh = str(r.get("sku") or ""), r.get("warehouse")
+        if wh:
+            # "norte " and "Norte" are one warehouse, as the import will store it.
+            if wh not in canonical:
+                canonical[wh] = wh_svc.resolve_canonical_name(tenant_id, wh)
+            wh = canonical[wh]
+        hits = [by_key[(sku, wh)]] if wh and (sku, wh) in by_key else ([] if wh else by_sku.get(sku, []))
+        for hit in hits[:1]:
+            fields = [f for f in hit["fields"] if r.get(f) is not None]
+            if not fields:
+                continue
+            g = groups.setdefault(hit["profile_id"], {"rows": 0, "fields": set()})
+            g["rows"] += 1
+            g["fields"].update(fields)
+    meta = {p["id"]: p for p in owned["profiles"]}
+    return [{**{k: meta[pid][k] for k in ("name", "freshness", "push", "next_sync_at")},
+             "profile_id": pid, "rows": g["rows"], "fields": sorted(g["fields"])}
+            for pid, g in sorted(groups.items())]
