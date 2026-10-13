@@ -962,11 +962,11 @@ def execute_run(tenant_id: str, profile_id: str, run_id: str, *, override_brake:
         drift = int(run_row.get("drift_count") or 0)
         if drift:
             _event(tenant_id, "inventory_sync.ledger_drift", profile, user_id=user_id,
-                   details={"count": drift}, reason="inventory_sync_ledger_drift_healed",
+                   details={"keys_drifted": drift}, reason="inventory_sync_ledger_drift_healed",
                    reason_params={"count": drift})
         if counters["manual_overwritten"]:
             _event(tenant_id, "inventory_sync.manual_edits_overwritten", profile, user_id=user_id,
-                   details={"count": counters["manual_overwritten"]},
+                   details={"edits_replaced": counters["manual_overwritten"]},
                    reason="inventory_sync_source_wins",
                    reason_params={"count": counters["manual_overwritten"]})
         _webhook(tenant_id, "inventory_sync.run_finished", {
