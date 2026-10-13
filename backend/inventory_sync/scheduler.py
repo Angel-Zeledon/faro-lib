@@ -377,7 +377,12 @@ def freshness(tenant_id: str) -> dict:
     all_rows = query("SELECT id, name, enabled, freshness, interval_minutes, poll_seconds, health, "
                      "health_reason, data_as_of, last_success_at, lease_until FROM inventory_sync_profiles "
                      "WHERE tenant_id = %s", (tenant_id,))
-    rows = [r for r in all_rows if r["enabled"] or r["freshness"] == "on_demand"] or all_rows
+    # With no live profile, the switched-off ones that wrote the stock on screen
+    # (a success on record) describe it; one that never ran says nothing about
+    # it and would turn "data as of 09:30" into "never".
+    rows = ([r for r in all_rows if r["enabled"] or r["freshness"] == "on_demand"]
+            or [r for r in all_rows if r.get("data_as_of") or r.get("last_success_at")]
+            or all_rows)
     if not rows:
         return {"state": "none", "data_as_of": None, "profiles": []}
     now = datetime.now(timezone.utc)

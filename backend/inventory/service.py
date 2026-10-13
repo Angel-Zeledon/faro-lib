@@ -2052,6 +2052,10 @@ def get_stock_only_status(tenant_id: str, service_level: float = 0.95, period: s
             "current_stock": float(r["current_stock"]) if r.get("current_stock") is not None else None,
         })
     for item in items:
+        # ABC ranks by value moved; with no demand there is no ranking to state
+        # (every row would read "C", a verdict nobody made).
+        item["abc"] = "?"
+        item["abc_xyz"] = "?"
         item["warehouses"] = sorted(by_sku.get(item["sku"], []), key=lambda w: str(w["warehouse"] or ""))
     return items
 

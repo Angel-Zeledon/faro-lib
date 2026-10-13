@@ -81,6 +81,7 @@ class TestStatusWithoutForecast:
         assert len(items) == len({k[0] for k in _stock(tid)})          # every SKU in the table
         for i in items.values():
             assert i["signal"] == "SIN_DATOS"
+            assert i["abc"] == "?"                                      # no demand, no ranking
             assert i["recommended_qty"] is None and i["daily_demand"] is None
             assert i["coverage_days"] is None and i["has_forecast"] is False
         assert items["HAND1"]["current_stock"] == 10.0                  # summed over warehouses
@@ -173,6 +174,16 @@ class TestFreshnessOfASyncThatWasNeverSwitchedOn:
         assert [x["status"] for x in out["profiles"]] == ["done"]
         assert float(_stock(tid)[("A1", "Norte")]["current_stock"]) == 12
         assert profiles.get(tid, p["id"])["enabled"] is False      # refreshing did not switch it on
+
+    def test_a_sync_that_never_ran_does_not_turn_the_date_into_never(self, test_tenant, src_db, src_table):
+        tid = test_tenant["id"]
+        _put(src_db, src_table, [("A1", "Norte", 10)])
+        ran = _profile(tid, _source(tid), src_table, name="Ran")
+        assert _run(tid, ran["id"])["status"] == "success"
+        _profile(tid, _source(tid), src_table, name="Never ran")
+        fresh = scheduler.freshness(tid)
+        assert fresh["data_as_of"] is not None
+        assert [x["name"] for x in fresh["profiles"]] == ["Ran"]
 
     def test_a_live_sync_hides_a_switched_off_one(self, test_tenant, src_db, src_table):
         tid = test_tenant["id"]
