@@ -43,6 +43,34 @@ class TestProfileDocuments:
         jsonschema.Draft202012Validator(schema).validate(exported)
         assert "password" not in json.dumps(exported).lower()
 
+    def test_an_export_keeps_the_masters_and_the_unknown_warehouse_rule(
+            self, client, analyst_headers, test_tenant, src_db, src_table):
+        # Found walking /sincronizacion: "profile as code" dropped the
+        # warehouse / supplier masters and the unknown-warehouse rule, so a
+        # profile applied from its own export rejected every row whose
+        # warehouse was a code the master used to translate.
+        jsonschema = pytest.importorskip("jsonschema")
+        tid = test_tenant["id"]
+        masters = {"warehouses": {"source_kind": "table", "source_schema": "public", "source_object": "whm",
+                                  "code_column": "code", "name_column": "descr", "city_column": "city"},
+                   "suppliers": {"source_kind": "table", "source_schema": "public", "source_object": "supm",
+                                 "code_column": "vendor", "name_column": "vname", "lead_time_column": "lead",
+                                 "source_wins": True}}
+        p = _profile(tid, _source(tid), src_table, masters=masters, unknown_warehouse="default",
+                     default_warehouse="Central")
+        exported = document.from_profile(profiles.get(tid, p["id"]))
+        jsonschema.Draft202012Validator(document.json_schema()).validate(exported)
+        assert document.validate(exported) == []
+        exported["slug"], exported["name"] = "copy-of-erp", "Copy"
+        r = client.post(f"{URL}/profiles/apply", json=exported, headers=analyst_headers)
+        assert r.status_code == 200, r.text
+        copy = profiles.get(tid, r.json()["data"]["profile_id"])
+        original = profiles.get(tid, p["id"])
+        assert copy["masters"] == original["masters"]
+        assert copy["masters"]["warehouses"]["source_object"] == "whm"
+        assert copy["masters"]["suppliers"]["source_wins"] is True
+        assert copy["unknown_warehouse"] == "default"
+
     def test_apply_creates_then_is_idempotent_by_slug(self, client, analyst_headers, test_tenant,
                                                       src_db, src_table):
         tid = test_tenant["id"]
