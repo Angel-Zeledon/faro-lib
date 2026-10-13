@@ -83,7 +83,7 @@ export function EgressNote({ ips, code }: { ips: string[]; code?: string | null 
 
 // ── Health ───────────────────────────────────────────────────────────────────
 
-export function HealthPanel({ profile, egress, onDoctor }: { profile: SyncProfile; egress: string[]; onDoctor: () => void }) {
+export function HealthPanel({ profile, egress, onDoctor }: { profile: SyncProfile; egress: string[]; onDoctor?: () => void }) {
   const { t } = useLanguage()
   const { text, remedy } = useCodeText()
   const health = profile.health || 'new'
@@ -97,7 +97,9 @@ export function HealthPanel({ profile, egress, onDoctor }: { profile: SyncProfil
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <strong style={{ color, fontSize: 13 }}>{t('isync.health_title')}: {t(`isync.health.${health}`)}</strong>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button type="button" data-tour="sync.doctor" style={btn} onClick={onDoctor}>{t('isync.doctor_run')}</button>
+          {/* The doctor connects to the customer's database: analysts and admins only (a
+              viewer's click was refused after the fact). */}
+          {onDoctor && <button type="button" data-tour="sync.doctor" style={btn} onClick={onDoctor}>{t('isync.doctor_run')}</button>}
           <CopyButton value={diag} label={t('isync.copy_diagnostic')} />
         </div>
       </div>

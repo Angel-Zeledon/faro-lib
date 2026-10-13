@@ -531,7 +531,7 @@ export default function InventorySyncPage() {
           {current.needs_dry_run && (
             <p style={{ margin: '10px 0 0', fontSize: 12.5, color: C.amber }}>{t('isync.needs_dry_run')}</p>
           )}
-          <div data-tour="sync.health"><HealthPanel profile={current} egress={egress} onDoctor={() => setDoctorFor(current.id)} /></div>
+          <div data-tour="sync.health"><HealthPanel profile={current} egress={egress} onDoctor={canEdit ? () => setDoctorFor(current.id) : undefined} /></div>
 
           {canEdit && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
