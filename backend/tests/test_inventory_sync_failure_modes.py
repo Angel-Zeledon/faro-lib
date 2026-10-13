@@ -739,6 +739,27 @@ def test_every_run_warning_has_copy_in_both_languages():
     assert not missing, missing
 
 
+def test_the_health_hint_describes_the_failures_that_lead_to_it():
+    """Found walking /sincronizacion: a run stopped by the safety brake
+    (health "paused") was explained as a password / firewall problem "so your
+    account is not locked out", while the brake's sentence sat under
+    "blocked", which is where credential failures land. The hints follow
+    failures.HEALTH_OF."""
+    assert failures.HEALTH_OF[failures.SAFETY] == "paused"
+    assert failures.HEALTH_OF[failures.CUSTOMER] == "blocked"
+    cat = _catalogue_text()
+
+    def hints(health):
+        return re.findall(rf"'isync\.health_hint\.{health}': '((?:[^'\\]|\\.)*)'", cat)
+
+    es_paused, en_paused = hints("paused")
+    es_blocked, en_blocked = hints("blocked")
+    assert "freno" in es_paused and "brake" in en_paused
+    assert "contraseña" not in es_paused and "password" not in en_paused
+    assert "contraseña" in es_blocked and "password" in en_blocked
+    assert "freno" not in es_blocked and "brake" not in en_blocked
+
+
 def test_every_invalid_model_or_master_reason_reads_as_a_sentence():
     """`inventory_sync_model_invalid` / `_master_invalid` carry a `reason`; the
     generic sentence printed it raw ("...no es válido (column_required).") and
