@@ -617,6 +617,23 @@ def explain(tenant_id: str, profile: dict, skus: list[str]) -> list[dict]:
     return out
 
 
+def _source_warehouse(profile: dict, sku: str, stock_wh: str) -> str:
+    """The warehouse key the ledger itself uses for a StockAI warehouse: the
+    source code a master renamed (inventory_sync_warehouses remembers the
+    normalised code), else the name unchanged."""
+    from backend.inventory_sync import masters
+    links = query("SELECT source_code FROM inventory_sync_warehouses WHERE profile_id = %s "
+                  "AND warehouse_name = %s", (profile["id"], stock_wh))
+    if not links:
+        return stock_wh
+    codes = {r["source_code"] for r in links}
+    for r in query("SELECT DISTINCT warehouse FROM inventory_sync_ledger_balances "
+                   "WHERE profile_id = %s AND sku = %s", (profile["id"], sku)):
+        if masters.norm_code(r["warehouse"]) in codes:
+            return r["warehouse"]
+    return stock_wh
+
+
 def reconcile_view(tenant_id: str, profile: dict, sku: str, warehouse: Optional[str]) -> dict:
     """StockAI says X, our running balance says Y, the source's SUM says Z,
     and the movements not applied yet (after our cursor)."""
@@ -627,8 +644,11 @@ def reconcile_view(tenant_id: str, profile: dict, sku: str, warehouse: Optional[
                       "AND (%s = '' OR warehouse = %s) ORDER BY warehouse LIMIT 1",
                       (tenant_id, sku, wh_filter, wh_filter))
     wh = (stock or {}).get("warehouse") or warehouse
+    # With a warehouse master, stock is booked under the master's NAME while
+    # balances and source rows carry the source CODE: compare under the code.
+    src_wh = _source_warehouse(profile, sku, wh) if wh else None
     bal = query_one("SELECT balance FROM inventory_sync_ledger_balances WHERE profile_id = %s AND sku = %s "
-                    "AND warehouse = %s", (profile["id"], sku, wh)) if wh else None
+                    "AND warehouse = %s", (profile["id"], sku, src_wh)) if src_wh else None
     source_sum = None
     if engine != "mongodb":
         for batch in _rows(tenant_id, profile, full_sql(profile, engine, None, {"skus": [sku]})):
@@ -637,7 +657,7 @@ def reconcile_view(tenant_id: str, profile: dict, sku: str, warehouse: Optional[
                     k = _Keys(tenant_id, profile).key(raw)
                 except mapper.Rejected:
                     continue
-                if wh is None or k[1] == wh:
+                if src_wh is None or k[1] == src_wh:
                     source_sum = float(raw.get(profile["mapping"]["current_stock"]["column"]) or 0)
     pending = explain(tenant_id, profile, [sku])
     stockai = float(stock["current_stock"]) if stock else None

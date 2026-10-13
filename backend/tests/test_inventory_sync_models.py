@@ -243,6 +243,31 @@ class TestLedger:
         assert view["stockai"] == 40 and view["running_balance"] == 40
         assert view["source_sum"] == 25 and view["difference"] == -15
 
+    def test_reconcile_view_with_a_warehouse_master(self, test_tenant, src_db, mov_table):
+        # Found walking /sincronizacion: with a master, stock is booked under
+        # the master's name ("Bodega Norte") but balances and source rows carry
+        # the code ("BOD-NOR"), so the view answered null balance, null source
+        # sum and no difference for every key.
+        tid = test_tenant["id"]
+        master = f"whm_{uuid4().hex[:8]}"
+        with src_db.cursor() as cur:
+            cur.execute(f"CREATE TABLE {master} (code TEXT, descr TEXT)")
+            cur.execute(f"INSERT INTO {master} VALUES ('BOD-NOR', 'Bodega Norte')")
+        try:
+            _insert(src_db, mov_table, [{"id": 1, "item": "A", "wh": "BOD-NOR", "qty": 40, "mtype": "REC"}])
+            p = _ledger_profile(tid, _source(tid), mov_table, masters={"warehouses": {
+                "source_kind": "table", "source_schema": "public", "source_object": master,
+                "code_column": "code", "name_column": "descr"}})
+            assert _run(tid, p["id"])["status"] == "success"
+            assert float(_stock(tid)[("A", "Bodega Norte")]["current_stock"]) == 40
+            _insert(src_db, mov_table, [{"id": 2, "item": "A", "wh": "BOD-NOR", "qty": 15, "mtype": "SALE"}])
+            view = ledger.reconcile_view(tid, profiles.get(tid, p["id"]), "A", "Bodega Norte")
+            assert view["stockai"] == 40 and view["running_balance"] == 40
+            assert view["source_sum"] == 25 and view["difference"] == -15
+        finally:
+            with src_db.cursor() as cur:
+                cur.execute(f"DROP TABLE IF EXISTS {master}")
+
     def test_ledger_config_validation(self, test_tenant, src_db, mov_table):
         from backend.errors import AppError
         tid = test_tenant["id"]
