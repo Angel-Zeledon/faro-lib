@@ -367,15 +367,24 @@ export default function InventorySyncPage() {
     } catch (e) { setError(errorDetail(e)) }
   }
 
+  // Broken JSON in the model configuration used to travel as a marker object
+  // and come back as "column_required" — a refusal about something else.
+  function modelJsonBroken(d: Draft): boolean {
+    if (d.stock_model === 'snapshot' || !d.model_config_text.trim()) return false
+    if (!('__invalid_json__' in parseModelConfig(d.model_config_text))) return false
+    setError(t('errors.inventory_sync_model_invalid.invalid_json'))
+    return true
+  }
+
   async function previewDraft() {
-    if (!draft) return
+    if (!draft || modelJsonBroken(draft)) return
     setBusy(true); setError(null); setDry(null)
     try { setDry(await dryRunSyncDraft(payload(draft))) }
     catch (e) { setError(errorDetail(e)) } finally { setBusy(false) }
   }
 
   async function saveDraft() {
-    if (!draft) return
+    if (!draft || modelJsonBroken(draft)) return
     setBusy(true); setError(null); setNotice(null)
     try {
       let saved: SyncProfile

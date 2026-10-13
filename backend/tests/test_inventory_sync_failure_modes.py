@@ -739,6 +739,25 @@ def test_every_run_warning_has_copy_in_both_languages():
     assert not missing, missing
 
 
+def test_every_invalid_model_or_master_reason_reads_as_a_sentence():
+    """`inventory_sync_model_invalid` / `_master_invalid` carry a `reason`; the
+    generic sentence printed it raw ("...no es válido (column_required).") and
+    never said WHICH setting was missing. Each reason needs its own sentence."""
+    cat = _catalogue_text()
+    src = ROOT / "backend" / "inventory_sync"
+    wanted = set()
+    for name, code in (("ledger.py", "inventory_sync_model_invalid"), ("masters.py", "inventory_sync_master_invalid")):
+        for reason in re.findall(r'_bad\("([a-z_]+)"', (src / name).read_text(encoding="utf-8")):
+            wanted.add(f"{code}.{reason}")
+    for reason in re.findall(r'"inventory_sync_model_invalid",[^)]*?reason="([a-z_]+)"',
+                             (src / "profiles.py").read_text(encoding="utf-8"), re.S):
+        wanted.add(f"inventory_sync_model_invalid.{reason}")
+    assert {"inventory_sync_model_invalid.column_required", "inventory_sync_master_invalid.column_required",
+            "inventory_sync_model_invalid.filters_need_snapshot"} <= wanted
+    missing = sorted(k for k in wanted if cat.count(f"'errors.{k}'") != 2)
+    assert not missing, missing
+
+
 def test_every_code_the_sync_can_raise_is_catalogued():
     """Grep the inventory sync and data-source code for raised codes: each
     must be in the catalogue (or be a validation refusal answered at once,
