@@ -106,6 +106,11 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("POST", "/inbound-email/regenerate"):          _r("inbound_email.address_regenerated", "inbound_email"),
     ("PUT", "/inbound-email/senders"):              _r("inbound_email.senders_changed", "inbound_email"),
     # integrations a person wires up
+    # the company's own AI provider: which one, whether the key changed (never
+    # the key), and each connection test with its outcome code
+    ("PUT", "/ai-provider/config"):                 _r("ai_provider.saved", "ai_provider"),
+    ("POST", "/ai-provider/test"):                  _r("ai_provider.tested", "ai_provider"),
+    ("POST", "/ai-provider/reset"):                 _r("ai_provider.reset", "ai_provider"),
     ("POST", "/webhooks"):                          _r("webhook.created", "webhook"),
     ("DELETE", "/webhooks/{webhook_id}"):           _r("webhook.deleted", "webhook", "webhook_id"),
     ("POST", "/webhooks/{webhook_id}/rotate-secret"): _r("webhook.secret_rotated", "webhook", "webhook_id"),

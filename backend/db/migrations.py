@@ -2640,6 +2640,60 @@ _SESSION_POLICY = [
 _MIGRATIONS += _SESSION_POLICY
 
 
+# ── A company's own AI provider (backend/ai/providers/) ──────────────────────
+# Additive: a tenant with no row keeps exactly the previous behaviour (the
+# instance's DeepSeek, or "not configured"). One row per tenant; the key is
+# Fernet ciphertext (`api_key_enc`) and only its last four characters are kept
+# in clear, for the mask. The breaker and health columns live on the same row
+# so every process reads one state.
+_AI_PROVIDER = [
+    ("create_tenant_ai_providers",
+     """CREATE TABLE IF NOT EXISTS tenant_ai_providers (
+         tenant_id              TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+         provider               TEXT NOT NULL,
+         model                  TEXT NOT NULL,
+         base_url               TEXT,
+         api_key_enc            TEXT,
+         api_key_hint           TEXT,
+         organization           TEXT,
+         project                TEXT,
+         temperature            DOUBLE PRECISION CHECK (temperature BETWEEN 0 AND 2),
+         max_tokens             INTEGER CHECK (max_tokens BETWEEN 16 AND 32000),
+         enabled                BOOLEAN NOT NULL DEFAULT TRUE,
+         created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         created_by             TEXT,
+         updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_by             TEXT,
+         last_test_at           TIMESTAMPTZ,
+         last_test_ok           BOOLEAN,
+         last_test_code         TEXT,
+         last_test_latency_ms   INTEGER,
+         last_success_at        TIMESTAMPTZ,
+         last_failure_at        TIMESTAMPTZ,
+         last_failure_code      TEXT,
+         last_failure_message   TEXT,
+         consecutive_failures   INTEGER NOT NULL DEFAULT 0,
+         breaker_opened_at      TIMESTAMPTZ,
+         last_alerted_on        DATE
+     )"""),
+    # Calls and tokens per tenant, day, provider and model: what the company's
+    # own bill is made of, shown on its settings card.
+    ("create_ai_provider_usage_daily",
+     """CREATE TABLE IF NOT EXISTS ai_provider_usage_daily (
+         tenant_id      TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+         day            DATE NOT NULL,
+         provider       TEXT NOT NULL,
+         model          TEXT NOT NULL,
+         calls          INTEGER NOT NULL DEFAULT 0,
+         failures       INTEGER NOT NULL DEFAULT 0,
+         input_tokens   BIGINT NOT NULL DEFAULT 0,
+         output_tokens  BIGINT NOT NULL DEFAULT 0,
+         PRIMARY KEY (tenant_id, day, provider, model)
+     )"""),
+]
+_MIGRATIONS += _AI_PROVIDER
+
+
 # Postgres SQLSTATE codes that mean "this object is already there", which is the
 # expected outcome of re-running an idempotent migration on a live database.
 # Everything else is a real failure and must not be swallowed.

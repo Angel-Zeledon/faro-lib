@@ -23,7 +23,7 @@ import type { Lang } from './translations'
 export type ServiceKey =
   | 'core' | 'llm' | 'email' | 'whatsapp' | 'sms' | 'rag'
   | 'secret_storage' | 'contact' | 'billing' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'api_surface' | 'operations'
-  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'sql_sources' | 'api_surface' | 'operations'
+  | 'secret_storage' | 'contact' | 'social_login' | 'inbound_email' | 'enterprise_sso' | 'worker' | 'limits' | 'sql_sources' | 'api_surface' | 'operations' | 'ai_provider'
 
 /** Field keys, exactly as the registry declares them (= `Settings` attributes). */
 export type FieldKey =
@@ -54,6 +54,9 @@ export type FieldKey =
   | 'sql_materialize_max_rows' | 'accuracy_degradation_threshold_pct'
   | 'reforecast_full_refit_days'
   | 'sql_sources_allow_private_hosts' | 'sql_sources_max_concurrent_per_tenant'
+  | 'ai_provider_allow_private_hosts' | 'ai_provider_connect_timeout_s' | 'ai_provider_read_timeout_s'
+  | 'ai_provider_total_deadline_s' | 'ai_provider_max_retries' | 'ai_provider_breaker_threshold'
+  | 'ai_provider_breaker_cooldown_s' | 'ai_provider_max_concurrent_per_tenant' | 'ai_provider_max_output_tokens'
   | 'public_api_only'
   | 'approval_links_enabled' | 'inventory_sync_max_profiles_per_tenant' | 'inventory_sync_max_rows_per_run' | 'inventory_sync_min_interval_minutes' | 'inventory_sync_min_poll_seconds' | 'inventory_sync_refresh_wait_seconds' | 'inventory_sync_refresh_cooldown_seconds' | 'inventory_sync_max_parallel_runs' | 'inventory_sync_run_retention_days' | 'inventory_sync_max_ingest_rows' | 'inventory_sync_egress_ips'
   // Operations thresholds (installation status panel)
@@ -169,9 +172,9 @@ const es: ServiceConfigCopy = {
     },
     llm: {
       name: 'Asistente (DeepSeek)',
-      summary: 'DeepSeek, el único motor de lenguaje. Mueve todas las funciones de IA.',
+      summary: 'DeepSeek, el motor de lenguaje predeterminado de StockAI. Mueve las funciones de IA de las empresas que no eligieron su propio proveedor.',
       whatBreaks: 'El asistente deja de responder, el resumen de la mañana y la lectura de inventario vuelven a su texto por reglas, el analista de documentos se apaga y el diagnóstico de datos reporta solo sus revisiones deterministas. Nada da error: cada pantalla dice que el asistente no está disponible.',
-      note: 'Hay un solo proveedor y ninguna cadena de respaldo. Una versión anterior usaba la llave que estuviera puesta, así que un error de tipeo en el nombre de la variable producía funciones de IA que respondían desde otro proveedor — visible solo en la factura.',
+      note: 'No hay cadena de respaldo. Una versión anterior usaba la llave que estuviera puesta, así que un error de tipeo en el nombre de la variable producía funciones de IA que respondían desde otro proveedor — visible solo en la factura. Una empresa puede elegir su propio proveedor: es una elección guardada, y si falla se le avisa; nunca se responde con esta llave en su lugar.',
     },
     email: {
       name: 'Correo',
@@ -250,6 +253,12 @@ const es: ServiceConfigCopy = {
       summary: 'Conexiones a las bases de datos propias de cada cliente (fuentes SQL).',
       whatBreaks: 'No se apaga nada. Deciden a qué direcciones de red puede conectarse una fuente SQL y cuántas conexiones puede tener abiertas un mismo cliente; una dirección rechazada o los cupos llenos siempre se explican en pantalla, nunca fallan en silencio.',
       note: 'En el servicio alojado las redes privadas quedan rechazadas: un cliente no debe poder apuntar una «base de datos» a la red interna de este servidor. Una instalación propia que se conecta a un ERP en su red local pone SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true. Las direcciones link-local y de metadatos de la nube (169.254.0.0/16, fe80::/10 y las IP de metadatos conocidas) se rechazan siempre.',
+    },
+    ai_provider: {
+      name: 'IA propia de cada empresa',
+      summary: 'Límites de cómo StockAI habla con el proveedor de IA que eligió cada empresa.',
+      whatBreaks: 'No se apaga nada. Una empresa que eligió su propio proveedor (OpenAI, Claude, Gemini, Groq, OpenRouter, DeepSeek o cualquier URL compatible con OpenAI) se llama dentro de estos tiempos y reintentos; si su proveedor falla, el asistente responde con los datos y dice qué problema tuvo el proveedor. Nunca responde con el modelo de StockAI en su lugar.',
+      note: 'Esto nunca elige un proveedor: eso lo decide cada empresa, queda guardado por empresa y se edita desde la tarjeta de configuración del asistente. Las direcciones privadas para una URL propia quedan rechazadas en el servicio alojado; una instalación propia cuyo Ollama o vLLM corre en su red pone AI_PROVIDER_ALLOW_PRIVATE_HOSTS=true. Las direcciones link-local y de metadatos de la nube se rechazan siempre.',
     },
     api_surface: {
       name: 'Modo solo-API',
@@ -334,6 +343,15 @@ const es: ServiceConfigCopy = {
     sql_materialize_max_rows: 'Tope de filas al convertir una consulta SQL en un archivo. Pasarse es un rechazo, nunca un recorte.',
     sql_sources_allow_private_hosts: 'Deja que las fuentes SQL se conecten a direcciones locales y de redes privadas (RFC 1918, CGNAT, IPv6 de uso local). Apagado por defecto; enciéndelo solo en una instalación propia cuyas bases de datos estén en su propia red.',
     sql_sources_max_concurrent_per_tenant: 'Conexiones que un mismo cliente puede tener abiertas a la vez hacia sus bases de datos (pruebas, consultas, exportaciones, actualizaciones). La siguiente espera hasta 10 segundos y luego se rechaza con un mensaje claro.',
+    ai_provider_allow_private_hosts: 'Deja que la URL propia de IA de una empresa apunte a direcciones locales o de redes privadas (un Ollama en su red). Apagado por defecto; enciéndelo solo en una instalación propia. Solo para esas direcciones privadas se acepta http sin cifrar.',
+    ai_provider_connect_timeout_s: 'Segundos para abrir la conexión con el proveedor de IA de una empresa antes de reportarlo como inalcanzable.',
+    ai_provider_read_timeout_s: 'Segundos de espera por la respuesta del proveedor una vez conectado. Una llamada cortada aquí nunca se reintenta: el proveedor quizá ya la cobró.',
+    ai_provider_total_deadline_s: 'Tope de una llamada contando sus reintentos. Cada pantalla puede pedir menos (el chat cabe bajo los 30 segundos del proxy web).',
+    ai_provider_max_retries: 'Intentos extra tras una falla pasajera (límite de uso, error del proveedor, conexión caída). Una llave rechazada, un saldo agotado o un modelo inexistente nunca se reintentan.',
+    ai_provider_breaker_threshold: 'Llamadas fallidas seguidas tras las cuales se pausa el proveedor de una empresa, para que un proveedor caído no haga esperar a cada pantalla.',
+    ai_provider_breaker_cooldown_s: 'Segundos que espera un proveedor pausado antes de dejar pasar una llamada de prueba. Si sale bien, se reanuda; si falla, vuelve a pausarse.',
+    ai_provider_max_concurrent_per_tenant: 'Llamadas que una misma empresa puede tener en curso a la vez hacia su proveedor desde este proceso. La siguiente espera un momento y luego se reporta como límite de uso.',
+    ai_provider_max_output_tokens: 'Largo máximo de respuesta que una empresa puede configurar, en tokens. Respuestas más largas le cuestan más en su propia factura.',
     approval_links_enabled: 'Pone un enlace de decisión de un solo uso en las solicitudes de aprobación de órdenes de compra, para aprobar o rechazar desde el mensaje. Enciéndelo solo cuando la API que sirve esa página esté enrutada; apagado, no se emite enlace y las aprobaciones funcionan como antes.',
     inventory_sync_max_profiles_per_tenant: 'Sincronizaciones de inventario que un mismo cliente puede tener.',
     inventory_sync_max_rows_per_run: 'Filas que una ejecución de sincronización puede leer de la base del cliente; pasar de ahí es un fallo con nombre, nunca un recorte silencioso.',
@@ -450,9 +468,9 @@ const en: ServiceConfigCopy = {
     },
     llm: {
       name: 'Assistant (DeepSeek)',
-      summary: 'DeepSeek, the only language model. Powers every AI feature.',
+      summary: 'DeepSeek, StockAI’s default language model. Powers the AI features of companies that did not choose their own provider.',
       whatBreaks: 'The assistant stops answering, the morning summary and the inventory read fall back to rule-based text, the document analyst goes off, and the data diagnosis reports only its deterministic checks. Nothing errors: each screen says the assistant is unavailable.',
-      note: 'One provider, no fallback chain. An earlier version used whichever key happened to be set, so a typo in the variable name produced working AI features answered by a different vendor — visible only on the invoice.',
+      note: 'No fallback chain. An earlier version used whichever key happened to be set, so a typo in the variable name produced working AI features answered by a different vendor — visible only on the invoice. A company may choose its own provider: that is a stored choice, and when it fails the company is told; it is never answered from this key instead.',
     },
     email: {
       name: 'Email',
@@ -531,6 +549,12 @@ const en: ServiceConfigCopy = {
       summary: 'Connections to customers’ own databases (SQL data sources).',
       whatBreaks: 'Nothing turns off. They decide which network addresses a SQL data source may reach and how many connections one tenant may hold open at once; a refused address or a full set of slots is always explained on screen, never a silent failure.',
       note: 'Hosted deployments keep private hosts refused: a tenant must not be able to point a “database” at this server’s own network. A self-hosted installation that connects to an ERP database on its LAN sets SQL_SOURCES_ALLOW_PRIVATE_HOSTS=true. Link-local and cloud metadata addresses (169.254.0.0/16, fe80::/10 and the known metadata IPs) are refused either way.',
+    },
+    ai_provider: {
+      name: 'Each company’s own AI',
+      summary: 'Limits on how StockAI talks to the AI provider each company chose.',
+      whatBreaks: 'Nothing turns off. A company that chose its own provider (OpenAI, Claude, Gemini, Groq, OpenRouter, DeepSeek or any OpenAI-compatible URL) is called within these timeouts and retries; when its provider fails, the assistant answers from the data and says which provider problem happened. It never answers from StockAI’s own model instead.',
+      note: 'These never pick a provider: that is each company’s explicit choice, stored per company and edited from the assistant’s settings card. Private addresses for a custom base URL stay refused on a hosted deployment; a self-hosted installation whose Ollama or vLLM runs on its own network sets AI_PROVIDER_ALLOW_PRIVATE_HOSTS=true. Link-local and cloud metadata addresses are refused either way.',
     },
     api_surface: {
       name: 'Public-API-only mode',
@@ -615,6 +639,15 @@ const en: ServiceConfigCopy = {
     sql_materialize_max_rows: 'Row ceiling when turning a SQL query into a file. Exceeding it is a refusal, never a truncation.',
     sql_sources_allow_private_hosts: 'Let SQL data sources connect to loopback and private-network addresses (RFC 1918, CGNAT, IPv6 unique-local). Off by default; turn it on only on a self-hosted installation whose databases live on its own network.',
     sql_sources_max_concurrent_per_tenant: 'Connections one tenant may have open to its databases at the same time (tests, queries, exports, refreshes). The next one waits up to 10 seconds, then is refused with a clear message.',
+    ai_provider_allow_private_hosts: 'Let a company’s custom AI base URL point at loopback and private-network addresses (a self-hosted Ollama on its LAN). Off by default; turn it on only on a self-hosted installation. Plain http is accepted only for those private addresses.',
+    ai_provider_connect_timeout_s: 'Seconds to open a connection to a company’s AI provider before the call is reported as unreachable.',
+    ai_provider_read_timeout_s: 'Seconds to wait for the provider’s answer once connected. A call cut here is never retried: the provider may already have billed it.',
+    ai_provider_total_deadline_s: 'Ceiling for one call including its retries. Each screen may ask for less (the chat fits under the web proxy’s 30 seconds).',
+    ai_provider_max_retries: 'Extra attempts after a transient failure (rate limit, provider error, connection failure). A rejected key, an exhausted quota or an unknown model is never retried.',
+    ai_provider_breaker_threshold: 'Consecutive failed calls after which a company’s provider is paused, so a dead provider does not make every screen wait out its timeouts.',
+    ai_provider_breaker_cooldown_s: 'Seconds a paused provider waits before one trial call is let through. A success resumes it; a failure pauses it again.',
+    ai_provider_max_concurrent_per_tenant: 'Calls one company may have in flight to its provider at the same time from this process. The next waits briefly, then is reported as rate limited.',
+    ai_provider_max_output_tokens: 'Upper bound for the answer length a company may configure, in tokens. Longer answers cost the company more on its own bill.',
     approval_links_enabled: 'Puts a one-time decision link in purchase-order approval requests, so an approver can approve or reject from the message. Turn it on only once the API that serves the decision page is routed; off, no link is issued and approvals behave exactly as before.',
     inventory_sync_max_profiles_per_tenant: 'Inventory sync profiles one tenant may keep.',
     inventory_sync_max_rows_per_run: 'Rows one inventory sync run may read from the customer\'s database; going past it is a named failure, never a silent cut.',

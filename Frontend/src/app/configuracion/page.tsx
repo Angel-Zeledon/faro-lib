@@ -23,7 +23,7 @@
  */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ChevronRight, User } from 'lucide-react'
+import { ChevronRight, Sparkles, User } from 'lucide-react'
 import { getUser, type AuthUser } from '@/lib/auth'
 import { roleLabel } from '@/lib/enumLabels'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -148,6 +148,20 @@ export default function SettingsHubPage() {
           )}
         </HubSection>
       ))}
+
+      {/* Which AI model the company's assistant runs on. Admins edit it,
+          analysts read it; a viewer has nothing to do there (the API refuses). */}
+      {(user?.role === 'admin' || user?.role === 'analyst') && (
+        <HubSection id="ai" title={t('hub.ai_title')}>
+          <HubRow
+            href="/modelo-ia"
+            icon={<Sparkles size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />}
+            title={t('aiProvider.page_title')}
+            description={t('hub.ai_model_desc')}
+            last
+          />
+        </HubSection>
+      )}
 
       <HubSection id="legal" title={t('legal.group')}>
         <div style={{ padding: '6px 8px', minHeight: ROW_MIN_HEIGHT - 12, display: 'flex', alignItems: 'center' }}>

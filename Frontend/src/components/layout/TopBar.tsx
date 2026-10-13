@@ -33,6 +33,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   '/automatizacion': 'nav.automation',
   '/api':           'nav.api',
   '/instalacion':   'nav.installation',
+  '/modelo-ia':     'aiProvider.page_title',
   '/actividad':     'nav.activity',
   '/configurar-inventario': 'nav.inventory_setup',
   '/conteo-fisico': 'count.page_title',

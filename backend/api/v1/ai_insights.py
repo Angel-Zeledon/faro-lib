@@ -77,7 +77,8 @@ def morning_narrative(
         # rule-based fallback quote money, and this reader is a DB query.
         result   = generate_morning_narrative(briefing, body.profile,
                                               currency_of(user.tenant_id),
-                                              language=body.language)
+                                              language=body.language,
+                                              tenant_id=user.tenant_id)
         return ok(result)
     except Exception as e:
         log.error("Morning narrative error: %s", e)
@@ -101,7 +102,8 @@ def inventory_insight(
         items  = get_inventory_status(user.tenant_id, body.session_id, period=period)
         result = generate_inventory_insight(items, body.profile,
                                            currency_of(user.tenant_id),
-                                           language=body.language)
+                                           language=body.language,
+                                           tenant_id=user.tenant_id)
         return ok(result)
     except Exception as e:
         log.error("Inventory insight error: %s", e)
@@ -127,7 +129,8 @@ def forecast_explanation(
         if not sku_data:
             raise HTTPException(status_code=404, detail=f"SKU '{body.sku}' not found in inventory status")
         result = generate_forecast_explanation(body.sku, sku_data, body.profile,
-                                               language=body.language)
+                                               language=body.language,
+                                               tenant_id=user.tenant_id)
         return ok(result)
     except HTTPException:
         raise

@@ -58,7 +58,7 @@ Environment only, on purpose: these are read at import time by the connection po
 | `STORAGE_PATH` | `backend/storage` | environment only | Directory holding uploaded datasets, model artifacts and documents. Postgres holds the metadata; these are the bytes. It is NOT in the database backup — back it up separately. |
 | `TESTING_MODE` | `false` | environment only | Bypasses ALL quotas, rate limits and upload caps. For load and functional testing only. The server refuses to boot with this on when ENVIRONMENT=production. |
 
-## `llm` - DeepSeek — the only LLM backend. Powers every AI feature.
+## `llm` - DeepSeek — StockAI's default LLM. Powers every AI feature for companies that did not choose their own provider.
 
 *Kind:* external service. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* yes.
 
@@ -66,7 +66,7 @@ Environment only, on purpose: these are read at import time by the connection po
 
 **Minimum to turn it on:** `DEEPSEEK_API_KEY`
 
-There is exactly one provider and no fallback chain. A previous version picked whichever key happened to be set, which meant a typo in the variable name produced working AI features answered by a different vendor — visible only on the invoice.
+There is no fallback chain. A previous version picked whichever key happened to be set, which meant a typo in the variable name produced working AI features answered by a different vendor — visible only on the invoice. A company may choose its own provider (see ai_provider); that is a stored choice, and when it fails the company is told, it is never answered from this key instead.
 
 | Variable | Default | Notes | What it does |
 |---|---|---|---|
@@ -75,6 +75,28 @@ There is exactly one provider and no fallback chain. A previous version picked w
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | - | API base. Point it at a compatible gateway to route through your own proxy — the wire format is OpenAI-shaped. |
 
 Writable from the panel: `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`.
+
+## `ai_provider` - Limits on how StockAI talks to a company's own AI provider.
+
+*Kind:* deployment. *Editable from the panel:* yes. *Per tenant:* no. *Connection test:* no.
+
+**What is lost without it:** Nothing turns off. A company that chose its own provider (OpenAI, Claude, Gemini, Groq, OpenRouter, DeepSeek or any OpenAI-compatible URL) is called within these timeouts and retries; when its provider fails, the assistant answers from the data and says which provider problem happened. It never answers from StockAI's own model instead.
+
+These never pick a provider: that is each company's explicit choice, stored per tenant and edited from the assistant's settings card. Private addresses for a custom base URL stay refused on a hosted deployment; a self-hosted installation whose Ollama or vLLM runs on its own network sets AI_PROVIDER_ALLOW_PRIVATE_HOSTS=true. Link-local and cloud metadata addresses are refused either way.
+
+| Variable | Default | Notes | What it does |
+|---|---|---|---|
+| `AI_PROVIDER_ALLOW_PRIVATE_HOSTS` | `false` | environment only | Let a company's custom AI base URL point at loopback and private-network addresses (a self-hosted Ollama on its LAN). Off by default; turn it on only on a self-hosted installation. Plain http is accepted only for those private addresses. |
+| `AI_PROVIDER_CONNECT_TIMEOUT_S` | `5.0` | - | Seconds to open a connection to a company's AI provider before the call is reported as unreachable. |
+| `AI_PROVIDER_READ_TIMEOUT_S` | `30.0` | - | Seconds to wait for the provider's answer once connected. A call cut here is never retried: the provider may already have billed it. |
+| `AI_PROVIDER_TOTAL_DEADLINE_S` | `45.0` | - | Ceiling for one call including its retries. Each screen may ask for less (the chat fits under the web proxy's 30 seconds). |
+| `AI_PROVIDER_MAX_RETRIES` | `2` | - | Extra attempts after a transient failure (rate limit, provider error, connection failure). A rejected key, an exhausted quota or an unknown model is never retried. |
+| `AI_PROVIDER_BREAKER_THRESHOLD` | `5` | - | Consecutive failed calls after which a company's provider is paused, so a dead provider does not make every screen wait out its timeouts. |
+| `AI_PROVIDER_BREAKER_COOLDOWN_S` | `120` | - | Seconds a paused provider waits before one trial call is let through. A success resumes it; a failure pauses it again. |
+| `AI_PROVIDER_MAX_CONCURRENT_PER_TENANT` | `4` | - | Calls one company may have in flight to its provider at the same time from this process. The next waits briefly, then is reported as rate limited. |
+| `AI_PROVIDER_MAX_OUTPUT_TOKENS` | `4096` | - | Upper bound for the answer length a company may configure, in tokens. Longer answers cost the company more on its own bill. |
+
+Writable from the panel: `AI_PROVIDER_CONNECT_TIMEOUT_S`, `AI_PROVIDER_READ_TIMEOUT_S`, `AI_PROVIDER_TOTAL_DEADLINE_S`, `AI_PROVIDER_MAX_RETRIES`, `AI_PROVIDER_BREAKER_THRESHOLD`, `AI_PROVIDER_BREAKER_COOLDOWN_S`, `AI_PROVIDER_MAX_CONCURRENT_PER_TENANT`, `AI_PROVIDER_MAX_OUTPUT_TOKENS`.
 
 ## `email` - Transactional email — Resend first, SMTP as the fallback.
 

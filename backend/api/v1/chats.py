@@ -252,7 +252,7 @@ def send_message(
     # ── Auto-generate title on first message ──────────────────────────
     if chat.get("message_count", 0) == 0 and chat.get("title") == "New Chat":
         try:
-            title = _auto_title(question)
+            title = _auto_title(question, user.tenant_id)
             chat_store.update_chat(user.tenant_id, chat_id, title=title)
         except Exception as exc:
             log.warning("Auto-title failed: %s", exc)
@@ -286,7 +286,8 @@ def send_message(
     return ok({"user_message": user_msg, "ai_message": ai_msg,
                "assistant": {"source": reply.source, "reason": reply.reason,
                              "grounded": reply.grounded, "unverified": reply.unverified,
-                             "tools_used": reply.tools_used}})
+                             "tools_used": reply.tools_used,
+                             "provider_error": reply.provider_error}})
 
 
 # ── The assistant's opening ────────────────────────────────────────────────────
@@ -308,11 +309,11 @@ def get_data_source_types(_: CurrentUser = Depends(get_current_user)):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _auto_title(question: str) -> str:
+def _auto_title(question: str, tenant_id: Optional[str] = None) -> str:
     """Use the local LLM to generate a short 4-6 word chat title."""
     try:
-        from backend.ai.local_llm import get_local_llm_client
-        client = get_local_llm_client(timeout=_TITLE_BUDGET_S)
+        from backend.ai.local_llm import get_llm_client
+        client = get_llm_client(tenant_id, timeout=_TITLE_BUDGET_S)
         msg = client.messages.create(
             max_tokens=30,
             messages=[{

@@ -64,9 +64,14 @@ class AssistantReply:
     unverified: list[str] = field(default_factory=list)
     tools_used: list[str] = field(default_factory=list)
     context_sections: list[str] = field(default_factory=list)
-    # Why the rule-based answer was used: "not_configured" | "llm_error" | "timeout".
+    # Why the rule-based answer was used: "not_configured" | "llm_error" |
+    # "timeout" | "provider_error" (the company's OWN provider failed; the
+    # specific code is in `provider_error`).
     reason: str | None = None
     first_name: str = ""
+    # {"provider", "code", "params"} when the company's own provider failed.
+    # Never a message from the provider (it could echo a key) — codes only.
+    provider_error: dict | None = None
 
 
 def _resolve_language(data: AccountData, language: str | None) -> str:
@@ -136,15 +141,27 @@ def _history_messages(history: list[dict] | None) -> list[dict]:
 
 # ── The rule-based answer ────────────────────────────────────────────────────
 
-def rules_answer(data: AccountData, language: str, reason: str) -> str:
+def rules_answer(data: AccountData, language: str, reason: str,
+                 provider_error: dict | None = None) -> str:
     """What the data says, with no model: greeting, counts, top risks, late
     orders, and where to look. Opens by saying WHY there is no AI answer, so a
-    missing key is never mistaken for the assistant's considered reply."""
+    missing key is never mistaken for the assistant's considered reply — and,
+    when the company's own provider failed, WHICH provider and what problem."""
     from backend.inventory.roi_service import format_po_number
 
     r = lambda key, **p: render(language, key, **p)  # noqa: E731
     lines: list[str] = []
-    intro = r("assistant_intro_not_configured" if reason == "not_configured" else "assistant_intro_failed")
+    if reason == "provider_error" and provider_error:
+        from backend.ai.providers import catalog as provider_catalog
+        key = provider_error.get("provider") or ""
+        spec = provider_catalog.get(key)
+        # A product name reads the same in every language; "a custom URL" does not.
+        name = r("llm_custom_provider") if key == "custom" or not spec else spec.label
+        intro = r("assistant_intro_provider_failed", provider=name,
+                  problem=r(f"llm_problem_{provider_error.get('code') or 'provider_down'}"))
+    else:
+        intro = r("assistant_intro_not_configured" if reason == "not_configured"
+                  else "assistant_intro_failed")
     greet = r("assistant_greeting", name=data.first_name) if data.first_name else ""
     lines.append(greet + intro)
 
@@ -188,18 +205,20 @@ class _OutOfTime(Exception):
     pass
 
 
-def _client(remaining: float):
+def _client(remaining: float, tenant_id: str | None = None):
     # Looked up on the module at call time, so the suite-wide patch in
-    # conftest.py (and a test's own patch) is what runs.
+    # conftest.py (and a test's own patch) is what runs. The tenant decides
+    # whether its OWN provider answers (backend/ai/providers/).
     from backend.ai import local_llm
-    return local_llm.get_local_llm_client(timeout=max(1.0, remaining - 0.5))
+    return local_llm.get_llm_client(tenant_id, timeout=max(1.0, remaining - 0.5))
 
 
-def _call(deadline: float, *, system: str, messages: list, max_tokens: int, tools: list | None):
+def _call(deadline: float, *, system: str, messages: list, max_tokens: int, tools: list | None,
+          tenant_id: str | None = None):
     remaining = deadline - time.monotonic()
     if remaining < MIN_CALL_S:
         raise _OutOfTime()
-    client = _client(remaining)
+    client = _client(remaining, tenant_id)
     kwargs = {"max_tokens": max_tokens, "system": system, "messages": messages}
     if tools:
         kwargs["tools"] = tools
@@ -236,14 +255,16 @@ def answer(
     lang = _resolve_language(data, language)
     ctx = build_account_context(data, message, language=lang, channel=chan.name)
 
-    def _rules(reason: str) -> AssistantReply:
+    def _rules(reason: str, provider_error: dict | None = None) -> AssistantReply:
         return AssistantReply(
-            text=chan.format(rules_answer(data, lang, reason)), source="rules",
+            text=chan.format(rules_answer(data, lang, reason, provider_error)), source="rules",
             language=lang, channel=chan.name, reason=reason,
             context_sections=ctx.sections, first_name=ctx.first_name,
+            provider_error=provider_error,
         )
 
     from backend.ai.local_llm import LLMNotConfigured
+    from backend.ai.providers.errors import ProviderError
 
     system = _system_prompt(ctx, data, chan)
     messages = _history_messages(history) + [{"role": "user", "content": message}]
@@ -260,7 +281,7 @@ def answer(
             # Tools are offered only while there is time for another round
             # after this one; the last call must produce prose.
             offer = round_no < MAX_TOOL_ROUNDS and (deadline - time.monotonic()) > TOOL_ROUND_MIN_S
-            resp = _call(deadline, system=system, messages=messages,
+            resp = _call(deadline, system=system, messages=messages, tenant_id=tenant_id,
                          max_tokens=max_tokens, tools=specs if offer else None)
             calls = list(getattr(resp, "tool_calls", None) or [])
             if not calls or not offer:
@@ -297,7 +318,8 @@ def answer(
         if unverified:
             log.info("[assistant] ungrounded figures %s; asking for a rewrite", unverified)
             try:
-                retry = _call(deadline, system=system, max_tokens=max_tokens, tools=None, messages=messages + [
+                retry = _call(deadline, system=system, max_tokens=max_tokens, tools=None,
+                              tenant_id=tenant_id, messages=messages + [
                     {"role": "assistant", "content": text},
                     {"role": "user", "content": (
                         "Automatic check: these figures in your draft do not appear in the account "
@@ -326,6 +348,15 @@ def answer(
         )
     except LLMNotConfigured:
         return _rules("not_configured")
+    except ProviderError as exc:
+        # The company's OWN provider failed. Answered from the data, with the
+        # provider and the problem named — never from StockAI's model instead.
+        log.warning("[assistant] company provider failed: %s (tenant=%s, channel=%s)",
+                    exc.code, tenant_id, chan.name)
+        from backend.ai.providers import store as provider_store
+        cfg_row = provider_store.row(tenant_id) or {}
+        return _rules("provider_error", {"provider": cfg_row.get("provider"),
+                                         "code": exc.code, "params": dict(exc.params)})
     except _OutOfTime:
         log.warning("[assistant] out of time after %.1fs (tenant=%s, tools=%s)",
                     time.monotonic() - started, tenant_id, tools_used)

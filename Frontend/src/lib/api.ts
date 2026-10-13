@@ -1034,7 +1034,17 @@ export const sendChatMessage = (
   language: 'es' | 'en',
   sku?: string | null,
 ) =>
-  request<{ user_message: ChatMessage; ai_message: ChatMessage }>(
+  request<{
+    user_message: ChatMessage
+    ai_message: ChatMessage
+    /** Why the answer is the rule-based one, when it is. `provider_error` is
+     *  set when the company's OWN AI provider failed (code + provider). */
+    assistant?: {
+      source: 'assistant' | 'rules'
+      reason: string | null
+      provider_error?: { provider: string | null; code: AiProviderErrorCode; params?: Record<string, unknown> } | null
+    }
+  }>(
     'POST', `/analyst/chats/${chatId}/messages`,
     { question, language, sku },
   )
@@ -3153,7 +3163,130 @@ export interface Capabilities {
   contact_channels: { whatsapp: boolean; email: boolean }
   background_worker: boolean
   scheduled_jobs: boolean
+  /** Who answers this company's assistant, and — for its OWN provider — why
+   *  it cannot right now. `reason` is an AiProviderErrorCode. */
+  assistant_provider?: {
+    source: 'stockai' | 'company'
+    provider: string | null
+    state: 'ready' | 'not_configured' | 'failing' | 'paused'
+    reason: string | null
+  }
 }
+
+// ── A company's own AI provider (backend/ai/providers/) ──────────────────────
+
+export type AiProviderErrorCode =
+  | 'invalid_key' | 'quota_exceeded' | 'rate_limited' | 'model_not_found'
+  | 'bad_request' | 'content_blocked' | 'provider_down' | 'timeout'
+  | 'unreachable' | 'malformed_response' | 'base_url_refused' | 'circuit_open'
+
+export interface AiProviderSpec {
+  key: string
+  label: string
+  wire: 'openai' | 'anthropic'
+  free: boolean
+  key_required: boolean
+  docs_url: string
+  suggested_models: string[]
+  default_model: string
+  lists_models: boolean
+  custom_base_url: boolean
+  supports_org: boolean
+}
+
+export interface AiProviderCatalogue {
+  providers: AiProviderSpec[]
+  allow_private_hosts: boolean
+  max_output_tokens: number
+}
+
+export interface AiProviderConfig {
+  configured: boolean
+  provider?: string
+  model?: string
+  base_url?: string
+  has_key?: boolean
+  api_key_mask?: string | null
+  organization?: string
+  project?: string
+  temperature?: number | null
+  max_tokens?: number | null
+  enabled?: boolean
+  updated_at?: string | null
+  updated_by?: string | null
+}
+
+export interface AiProviderUsage {
+  days: number; calls: number; failures: number; input_tokens: number; output_tokens: number
+}
+
+export interface AiProviderStatus {
+  source: 'stockai' | 'company'
+  configured: boolean
+  enabled: boolean
+  provider?: string | null
+  model?: string
+  instance_available?: boolean
+  breaker?: 'closed' | 'open' | 'half_open'
+  breaker_threshold?: number
+  breaker_cooldown_s?: number
+  consecutive_failures?: number
+  last_success_at?: string | null
+  last_failure?: { code: AiProviderErrorCode; message: string | null; at: string | null } | null
+  last_test?: { at: string | null; ok: boolean | null; code: string | null; latency_ms: number | null } | null
+  usage_7d: AiProviderUsage
+}
+
+export interface AiProviderError {
+  code: AiProviderErrorCode
+  params: Record<string, string | number | null>
+  message?: string
+  status?: number | null
+}
+
+export interface AiProviderTestResult {
+  ok: boolean
+  provider: string
+  model: string
+  latency_ms: number | null
+  models: { id: string; free: boolean }[]
+  models_error: { code: string; params: Record<string, unknown> } | null
+  error: AiProviderError | null
+  reply_preview: string | null
+}
+
+export interface AiProviderDraft {
+  provider: string
+  model: string
+  base_url?: string
+  /** Write-only. Empty keeps the stored key (same provider only). */
+  api_key?: string
+  organization?: string
+  project?: string
+  temperature?: number | null
+  max_tokens?: number | null
+  enabled?: boolean
+}
+
+export const getAiProviderCatalogue = (opts?: RequestOpts) =>
+  request<AiProviderCatalogue>('GET', '/ai-provider/providers', undefined, opts)
+
+export const getAiProviderConfig = (opts?: RequestOpts) =>
+  request<AiProviderConfig>('GET', '/ai-provider/config', undefined, opts)
+
+export const getAiProviderStatus = (opts?: RequestOpts) =>
+  request<AiProviderStatus>('GET', '/ai-provider/status', undefined, opts)
+
+export const saveAiProvider = (draft: AiProviderDraft, test = false, opts?: RequestOpts) =>
+  request<{ config: AiProviderConfig; test: AiProviderTestResult | null; status: AiProviderStatus }>(
+    'PUT', `/ai-provider/config${test ? '?test=true' : ''}`, draft, opts,
+  )
+
+export const testAiProvider = (draft?: AiProviderDraft, opts?: RequestOpts) =>
+  request<AiProviderTestResult>('POST', '/ai-provider/test', draft, opts)
+
+export const resetAiProvider = (opts?: RequestOpts) =>
+  request<{ reset: boolean; status: AiProviderStatus }>('POST', '/ai-provider/reset', undefined, opts)
 
 export interface ServiceWriteResult {
   written: string[]

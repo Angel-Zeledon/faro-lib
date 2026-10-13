@@ -27,6 +27,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { AssistantAvatar } from '@/components/brand/AssistantAvatar'
 import { MessageBubble, TypingBubble, previewText, clampStyle } from './parts'
 import FavoritesList from './Favorites'
+import ProviderNotice from './ProviderNotice'
 
 export interface AssistantMobileProps {
   chats: Chat[]
@@ -50,6 +51,8 @@ export interface AssistantMobileProps {
   onRetry?: () => void
   welcome: AssistantWelcome | null
   assistantOff: boolean
+  /** An admin is shown the link to fix the AI model; others are told to ask one. */
+  isAdmin: boolean
   onToggleFavorite: (id: string) => void
   onDelete: (id: string) => void
   relTime: (iso: string) => string
@@ -77,16 +80,9 @@ export default function AssistantMobile(p: AssistantMobileProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: '100%' }}>
-      {p.assistantOff && (
-        <div role="status" style={{
-          display: 'flex', gap: 8, alignItems: 'flex-start', padding: '12px 14px', marginBottom: 12,
-          borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border)',
-          fontSize: 13.5, color: 'var(--text)', lineHeight: 1.5,
-        }}>
-          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2, color: '#B7791F' }} aria-hidden="true" />
-          <span>{t('analyst.unavailable_banner')}</span>
-        </div>
-      )}
+      {/* No model on this installation, or the company's own provider
+          failing: which one, and the way out for an admin. */}
+      <ProviderNotice isAdmin={p.isAdmin} compact />
 
       {p.activeChatId ? <Thread {...p} /> : <Home {...p} />}
 

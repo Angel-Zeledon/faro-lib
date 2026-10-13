@@ -41,6 +41,7 @@ def narrate(
     context: str,
     question: Optional[str] = None,
     history: Optional[list] = None,
+    tenant_id: Optional[str] = None,
 ) -> dict:
     """
     Generate a verbal narrative for `data` given a business context.
@@ -60,8 +61,8 @@ def narrate(
         }
     """
     try:
-        from backend.ai.local_llm import get_local_llm_client
-        client = get_local_llm_client(timeout=60.0)
+        from backend.ai.local_llm import get_llm_client
+        client = get_llm_client(tenant_id, timeout=60.0)
     except Exception as exc:
         log.error("Narrator: client init failed: %s", exc)
         return {"narrative": "Could not connect to AI service.", "source": "error",
@@ -105,6 +106,13 @@ def narrate(
         tokens    = (resp.usage.input_tokens + resp.usage.output_tokens) if resp.usage else None
         return {"narrative": narrative, "source": "llm", "tokens_used": tokens, "error": None}
     except Exception as exc:
+        from backend.ai.providers.errors import ProviderError
+        if isinstance(exc, ProviderError):
+            # The company's own provider: the code, never the provider's text.
+            log.warning("Narrator: company provider failed: %s", exc.code)
+            return {"narrative": "", "source": "error", "tokens_used": None,
+                    "error": exc.code, "provider_error": {
+                        "code": exc.code, "provider": getattr(client, "provider", None)}}
         log.error("Narrator: LLM call failed: %s", exc)
         return {"narrative": f"AI generation failed: {exc}", "source": "error",
                 "tokens_used": None, "error": str(exc)}

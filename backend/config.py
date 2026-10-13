@@ -206,6 +206,21 @@ class Settings(BaseSettings):
     # (tests, queries, exports, refreshes). The next waits briefly, then is
     # refused with a clear message instead of piling onto a customer's ERP.
     sql_sources_max_concurrent_per_tenant: int = 4
+    # A company's OWN AI provider (backend/ai/providers/). These bound how our
+    # server talks to whatever provider a tenant chose; none of them chooses a
+    # provider — that is the tenant's stored, explicit choice, never inferred.
+    #   ai_provider_allow_private_hosts — a "custom" base URL on loopback /
+    #       RFC 1918 (a self-hosted Ollama on the customer's LAN). Off: refused,
+    #       because on the hosted product it would reach our own network.
+    ai_provider_allow_private_hosts: bool = False
+    ai_provider_connect_timeout_s: float = 5.0
+    ai_provider_read_timeout_s: float = 30.0
+    ai_provider_total_deadline_s: float = 45.0
+    ai_provider_max_retries: int = 2
+    ai_provider_breaker_threshold: int = 5
+    ai_provider_breaker_cooldown_s: int = 120
+    ai_provider_max_concurrent_per_tenant: int = 4
+    ai_provider_max_output_tokens: int = 4096
     # Inventory sync (backend/inventory_sync/): sane ceilings, not plan gates.
     # Profiles one tenant may keep, rows one run may read (more is a refusal
     # that changes nothing, never a silent truncation), and the shortest

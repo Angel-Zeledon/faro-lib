@@ -264,7 +264,8 @@ LLM = Service(
     key="llm",
     kind="external",
     probe="probe_llm",
-    summary="DeepSeek — the only LLM backend. Powers every AI feature.",
+    summary="DeepSeek — StockAI's default LLM. Powers every AI feature for "
+            "companies that did not choose their own provider.",
     what_breaks=(
         "The assistant stops answering, the morning narrative and the inventory "
         "insight fall back to their rule-based text, the RAG analyst goes off, "
@@ -272,10 +273,12 @@ LLM = Service(
         "Nothing errors: each surface says the assistant is unavailable."
     ),
     docs_note=(
-        "There is exactly one provider and no fallback chain. A previous "
-        "version picked whichever key happened to be set, which meant a typo in "
-        "the variable name produced working AI features answered by a different "
-        "vendor — visible only on the invoice."
+        "There is no fallback chain. A previous version picked whichever key "
+        "happened to be set, which meant a typo in the variable name produced "
+        "working AI features answered by a different vendor — visible only on "
+        "the invoice. A company may choose its own provider (see ai_provider); "
+        "that is a stored choice, and when it fails the company is told, it is "
+        "never answered from this key instead."
     ),
     fields=(
         ConfigField(
@@ -1266,9 +1269,102 @@ SQL_SOURCES = Service(
 )
 
 
+AI_PROVIDER = Service(
+    key="ai_provider",
+    kind="deployment",
+    summary="Limits on how StockAI talks to a company's own AI provider.",
+    what_breaks=(
+        "Nothing turns off. A company that chose its own provider (OpenAI, "
+        "Claude, Gemini, Groq, OpenRouter, DeepSeek or any OpenAI-compatible "
+        "URL) is called within these timeouts and retries; when its provider "
+        "fails, the assistant answers from the data and says which provider "
+        "problem happened. It never answers from StockAI's own model instead."
+    ),
+    docs_note=(
+        "These never pick a provider: that is each company's explicit choice, "
+        "stored per tenant and edited from the assistant's settings card. "
+        "Private addresses for a custom base URL stay refused on a hosted "
+        "deployment; a self-hosted installation whose Ollama or vLLM runs on "
+        "its own network sets AI_PROVIDER_ALLOW_PRIVATE_HOSTS=true. Link-local "
+        "and cloud metadata addresses are refused either way."
+    ),
+    fields=(
+        ConfigField(
+            key="ai_provider_allow_private_hosts",
+            env="AI_PROVIDER_ALLOW_PRIVATE_HOSTS", kind="bool", editable=False,
+            doc="Let a company's custom AI base URL point at loopback and "
+                "private-network addresses (a self-hosted Ollama on its LAN). "
+                "Off by default; turn it on only on a self-hosted installation. "
+                "Plain http is accepted only for those private addresses.",
+            default="false", example="false",
+        ),
+        ConfigField(
+            key="ai_provider_connect_timeout_s", env="AI_PROVIDER_CONNECT_TIMEOUT_S",
+            kind="float",
+            doc="Seconds to open a connection to a company's AI provider before "
+                "the call is reported as unreachable.",
+            default="5.0", example="5.0",
+        ),
+        ConfigField(
+            key="ai_provider_read_timeout_s", env="AI_PROVIDER_READ_TIMEOUT_S",
+            kind="float",
+            doc="Seconds to wait for the provider's answer once connected. A "
+                "call cut here is never retried: the provider may already have "
+                "billed it.",
+            default="30.0", example="30.0",
+        ),
+        ConfigField(
+            key="ai_provider_total_deadline_s", env="AI_PROVIDER_TOTAL_DEADLINE_S",
+            kind="float",
+            doc="Ceiling for one call including its retries. Each screen may "
+                "ask for less (the chat fits under the web proxy's 30 seconds).",
+            default="45.0", example="45.0",
+        ),
+        ConfigField(
+            key="ai_provider_max_retries", env="AI_PROVIDER_MAX_RETRIES", kind="int",
+            doc="Extra attempts after a transient failure (rate limit, provider "
+                "error, connection failure). A rejected key, an exhausted quota "
+                "or an unknown model is never retried.",
+            default="2", example="2",
+        ),
+        ConfigField(
+            key="ai_provider_breaker_threshold", env="AI_PROVIDER_BREAKER_THRESHOLD",
+            kind="int",
+            doc="Consecutive failed calls after which a company's provider is "
+                "paused, so a dead provider does not make every screen wait out "
+                "its timeouts.",
+            default="5", example="5",
+        ),
+        ConfigField(
+            key="ai_provider_breaker_cooldown_s", env="AI_PROVIDER_BREAKER_COOLDOWN_S",
+            kind="int",
+            doc="Seconds a paused provider waits before one trial call is let "
+                "through. A success resumes it; a failure pauses it again.",
+            default="120", example="120",
+        ),
+        ConfigField(
+            key="ai_provider_max_concurrent_per_tenant",
+            env="AI_PROVIDER_MAX_CONCURRENT_PER_TENANT", kind="int",
+            doc="Calls one company may have in flight to its provider at the "
+                "same time from this process. The next waits briefly, then is "
+                "reported as rate limited.",
+            default="4", example="4",
+        ),
+        ConfigField(
+            key="ai_provider_max_output_tokens", env="AI_PROVIDER_MAX_OUTPUT_TOKENS",
+            kind="int",
+            doc="Upper bound for the answer length a company may configure, in "
+                "tokens. Longer answers cost the company more on its own bill.",
+            default="4096", example="4096",
+        ),
+    ),
+)
+
+
 SERVICES: tuple[Service, ...] = (
     CORE,
     LLM,
+    AI_PROVIDER,
     EMAIL,
     WHATSAPP,
     SMS,

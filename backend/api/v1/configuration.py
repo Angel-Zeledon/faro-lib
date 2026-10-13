@@ -862,9 +862,10 @@ def get_data_health(
         can_train = False
 
     # Diagnosis runs on the local LLM; it returns None gracefully if unavailable.
-    diagnosis = _llm_health_narrative(
+    diagnosis, diagnosis_reason = _llm_health_narrative(
         global_score, status, sku_reports,
         inspection.get("profile", {}),
+        tenant_id=user.tenant_id,
     )
 
     report = {
@@ -874,6 +875,10 @@ def get_data_health(
         "n_skus":        len(sku_reports),
         "sku_reports":   sku_reports,
         "diagnosis":     diagnosis,
+        # Why there is no written diagnosis: a provider code when the
+        # company's own AI provider failed, else "not_configured"/"llm_error".
+        "diagnosis_degraded": diagnosis is None,
+        "diagnosis_reason":   diagnosis_reason,
         "columns_used":  {"date": dt_col, "target": target_col, "group": group_col},
         "analyzed_at":   _now(),
     }
@@ -1038,11 +1043,15 @@ def _llm_health_narrative(
     status: str,
     sku_reports: dict,
     profile: dict,
-) -> Optional[dict]:
-    """Call the local LLM to produce a 3-field business-language diagnosis."""
+    tenant_id: Optional[str] = None,
+) -> tuple[Optional[dict], Optional[str]]:
+    """Ask the tenant's model for a 3-field business-language diagnosis.
+    Returns (diagnosis, None) or (None, reason code)."""
+    from backend.ai.local_llm import LLMNotConfigured
+    from backend.ai.providers.errors import ProviderError
     try:
         import json
-        from backend.ai.local_llm import get_local_llm_client
+        from backend.ai.local_llm import get_llm_client
 
         n_skus    = len(sku_reports)
         stats     = profile.get("stats", {})
@@ -1082,7 +1091,7 @@ def _llm_health_narrative(
             "Each field under 120 words."
         )
 
-        client = get_local_llm_client()
+        client = get_llm_client(tenant_id)
         msg = client.messages.create(
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
@@ -1092,8 +1101,15 @@ def _llm_health_narrative(
         if "{" in text and "}" in text:
             start = text.index("{")
             end   = text.rindex("}") + 1
-            return json.loads(text[start:end])
-        return None
+            parsed = json.loads(text[start:end])
+            if isinstance(parsed, dict):
+                return parsed, None
+        return None, "malformed_response"
+    except ProviderError as exc:
+        log.warning("LLM health narrative: company provider failed: %s", exc.code)
+        return None, exc.code
+    except LLMNotConfigured:
+        return None, "not_configured"
     except Exception as exc:
         log.warning("LLM health narrative failed: %s", exc)
-        return None
+        return None, "llm_error"

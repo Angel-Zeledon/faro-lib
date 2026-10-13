@@ -69,6 +69,7 @@ INTERNAL_TAGS: dict[str, str] = {
     "audit": "the tenant's audit trail names its people; an administrator reads it on the screen",
     "api-keys": "key management: a key must never mint, list or revoke keys",
     "service-config": "instance and channel configuration (operators and tenant admins only)",
+    "ai-provider": "which AI provider a company pays for, and its key, are an administrator's decision on the settings card; a key must never read or swap them",
     "tenant": "tenant export and deletion",
     "messages": "person-to-person inbox",
     "chats": "a person's own assistant conversations",
