@@ -83,7 +83,7 @@ export function EgressNote({ ips, code }: { ips: string[]; code?: string | null 
 
 // ── Health ───────────────────────────────────────────────────────────────────
 
-export function HealthPanel({ profile, egress, onDoctor }: { profile: SyncProfile; egress: string[]; onDoctor: () => void }) {
+export function HealthPanel({ profile, egress, onDoctor }: { profile: SyncProfile; egress: string[]; onDoctor?: () => void }) {
   const { t } = useLanguage()
   const { text, remedy } = useCodeText()
   const health = profile.health || 'new'
@@ -97,7 +97,9 @@ export function HealthPanel({ profile, egress, onDoctor }: { profile: SyncProfil
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <strong style={{ color, fontSize: 13 }}>{t('isync.health_title')}: {t(`isync.health.${health}`)}</strong>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button type="button" data-tour="sync.doctor" style={btn} onClick={onDoctor}>{t('isync.doctor_run')}</button>
+          {/* The doctor connects to the customer's database: analysts and admins only (a
+              viewer's click was refused after the fact). */}
+          {onDoctor && <button type="button" data-tour="sync.doctor" style={btn} onClick={onDoctor}>{t('isync.doctor_run')}</button>}
           <CopyButton value={diag} label={t('isync.copy_diagnostic')} />
         </div>
       </div>
@@ -206,7 +208,7 @@ export function RunDetailPanel({ profileId, runId, onClose }: { profileId: strin
       )}
       {run.warnings?.codes?.length ? (
         <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12.5, color: C.amber }}>
-          {run.warnings.codes.map(c => <li key={c}>{text(c, { refused: run.refused_ceiling })}</li>)}
+          {run.warnings.codes.map(c => <li key={c}>{text(c, { refused: run.refused_ceiling, count: run.owned_elsewhere })}</li>)}
         </ul>
       ) : null}
       {(run.rejected_sample?.length ?? 0) > 0 && (
@@ -300,7 +302,10 @@ function Recipes({ sourceId }: { sourceId?: string }) {
         {Object.entries(r.examples).map(([k, ex]) => (
           <div key={k} style={{ marginTop: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12 }}>{ex.title}</span>
+              <span style={{ fontSize: 12 }}>
+                {ex.product ? `${ex.product} · ${t(`data.conn.engine_${ex.engine}`)}` : ex.title}
+                {ex.verified === false && <span style={{ color: 'var(--muted)' }}> · {t('isync.recipe_unverified')}</span>}
+              </span>
               <CopyButton value={ex.sql} label={t('isync.copy')} />
             </div>
             <pre style={pre}>{ex.sql}</pre>

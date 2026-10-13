@@ -69,6 +69,15 @@ class TestVocabularyCannotDriftFromItsCopy:
         missing = [k for k in keys if cat.count(f"'events.detail.{k}'") != 2]
         assert not missing, f"no label in both languages for: {missing}"
 
+    def test_a_shared_detail_label_is_not_reused_for_another_meaning(self):
+        """`events.detail.count` reads "Enlaces" / "Links" (approval links). The
+        inventory-sync events reused `count` for replaced hand edits and drifted
+        balances, so the feed said "Enlaces: 1" under "the source replaced
+        manual edits" (found walking /sincronizacion)."""
+        for action in ("inventory_sync.manual_edits_overwritten", "inventory_sync.ledger_drift"):
+            assert "count" not in EVENTS[action].detail_keys, action
+        assert "count" in EVENTS["purchase.approval_links_sent"].detail_keys
+
     def test_every_severity_is_declared_and_labelled(self):
         cat = _catalogue()
         for sev in SEVERITIES:

@@ -537,7 +537,7 @@ EVENTS: dict[str, EventSpec] = {
     # (late, back-dated, edited or deleted movements) and applied the source.
     "inventory_sync.ledger_drift": EventSpec(
         kind="data", severity=WARNING,
-        detail_keys=("profile_name", "count"),
+        detail_keys=("profile_name", "keys_drifted"),
     ),
     # A profile that was failing or stopped works again.
     "inventory_sync.recovered": EventSpec(
@@ -548,7 +548,7 @@ EVENTS: dict[str, EventSpec] = {
     # rule: the source wins for the fields a profile maps).
     "inventory_sync.manual_edits_overwritten": EventSpec(
         kind="data", severity=WARNING,
-        detail_keys=("profile_name", "count"),
+        detail_keys=("profile_name", "edits_replaced"),
     ),
 
     # ── Data the tenant put in ───────────────────────────────────────────────

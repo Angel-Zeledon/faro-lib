@@ -261,11 +261,22 @@ def inspect(source_id: str, body: InspectBody,
     return ok({**sampled, "suggestion": suggest.suggest_mapping(sampled["columns"])})
 
 
+def _no_pull_preview_of_push(cfg: dict) -> None:
+    """A push sync has no database to read: its preview is a batch sent with
+    `dry_run=true` to /ingest. Reading it as a pull answered "data source not
+    found", after the page had already saved the profile."""
+    if cfg.get("source_kind") == "push":
+        raise AppError("inventory_sync_push_preview_by_batch",
+                       "A push sync is previewed by sending a batch with dry_run=true to its ingest URL.",
+                       status_code=409, params={"profile_id": cfg.get("id")})
+
+
 @router.post("/inventory-sync/dry-run")
 def dry_run_unsaved(body: ProfileBody, user: CurrentUser = Depends(require_analyst_or_above)):
     """Preview a configuration that is not saved yet. Writes nothing."""
     wscope.require_company_setting(user)
     cfg = profiles.normalize(user.tenant_id, _body(body))
+    _no_pull_preview_of_push(cfg)
     return ok(engine.dry_run(user.tenant_id, cfg))
 
 
@@ -318,6 +329,7 @@ def dry_run_saved(profile_id: str, user: CurrentUser = Depends(require_analyst_o
     it (until its configuration changes again)."""
     wscope.require_company_setting(user)
     row = profiles.require(user.tenant_id, profile_id)
+    _no_pull_preview_of_push(row)
     result = engine.dry_run(user.tenant_id, row)
     profiles.mark_dry_run(user.tenant_id, profile_id, row["config_hash"])
     return ok(result)

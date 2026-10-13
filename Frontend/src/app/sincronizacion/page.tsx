@@ -174,7 +174,9 @@ function payload(d: Draft): SyncProfileInput {
   }
 }
 
-const MASTER_WH_COLS: (keyof SyncMasterSource)[] = ['code_column', 'name_column', 'active_column', 'kind_column', 'city_column']
+const masterKey = (sourceId: string, m: SyncMasterSource) =>
+  `${sourceId}|${m.source_schema ?? ''}|${m.source_object ?? ''}`
+const MASTER_WH_COLS:(keyof SyncMasterSource)[] = ['code_column', 'name_column', 'active_column', 'kind_column', 'city_column']
 const MASTER_SUP_COLS: (keyof SyncMasterSource)[] = ['code_column', 'name_column', 'active_column', 'lead_time_column',
   'payment_terms_column', 'email_column']
 const MASTER_LABEL: Record<string, string> = {
@@ -210,6 +212,28 @@ export default function InventorySyncPage() {
   const [busy, setBusy] = useState(false)
   const [doctorFor, setDoctorFor] = useState<string | null>(null)
   const [runDetail, setRunDetail] = useState<string | null>(null)
+  // The preview and the error render above the form, but the buttons that
+  // produce them sit at the bottom of a long form: without scrolling to the
+  // outcome, "Preview" looked like it did nothing.
+  // Column names of each master table, keyed by masterKey().
+  const [masterCols, setMasterCols] = useState<Record<string, string[]>>({})
+  const whMaster = draft?.wh_master, supMaster = draft?.sup_master, draftSourceId = draft?.data_source_id
+  useEffect(() => {
+    if (!draftSourceId) return
+    for (const m of [whMaster, supMaster]) {
+      if (!m?.source_object || (m.source_kind !== 'table' && m.source_kind !== 'collection')) continue
+      const k = masterKey(draftSourceId, m)
+      if (masterCols[k]) continue
+      getSyncTableColumns(draftSourceId, m.source_schema ?? null, m.source_object)
+        .then(r => setMasterCols(prev => ({ ...prev, [k]: r.columns.map(c => c.name) })))
+        .catch(() => { /* the free-text field stays; the dry run names a wrong column */ })
+    }
+  }, [draftSourceId, whMaster, supMaster, masterCols])
+  const tablesFor = useRef<string | null>(null)
+  const errorBox = useRef<HTMLParagraphElement>(null)
+  const dryRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (error) errorBox.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
+  useEffect(() => { if (dry) dryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [dry])
 
   const codeText = useCallback((code: string | null | undefined, params?: Record<string, unknown> | null) => {
     if (!code) return ''
@@ -287,8 +311,15 @@ export default function InventorySyncPage() {
   }
 
   async function loadTables(sourceId: string, refresh = false) {
+    // Discovery can take seconds and the person may switch database meanwhile:
+    // only the answer for the database now selected may land, or the slower,
+    // older one would list another database's tables under this one.
+    tablesFor.current = sourceId
     setTables(null)
-    try { setTables(await discoverSyncSource(sourceId, refresh)) } catch (e) { setError(errorDetail(e)) }
+    try {
+      const r = await discoverSyncSource(sourceId, refresh)
+      if (tablesFor.current === sourceId) setTables(r)
+    } catch (e) { if (tablesFor.current === sourceId) setError(errorDetail(e)) }
   }
 
   async function pickTable(tb: SyncTable) {
@@ -336,15 +367,24 @@ export default function InventorySyncPage() {
     } catch (e) { setError(errorDetail(e)) }
   }
 
+  // Broken JSON in the model configuration used to travel as a marker object
+  // and come back as "column_required" — a refusal about something else.
+  function modelJsonBroken(d: Draft): boolean {
+    if (d.stock_model === 'snapshot' || !d.model_config_text.trim()) return false
+    if (!('__invalid_json__' in parseModelConfig(d.model_config_text))) return false
+    setError(t('errors.inventory_sync_model_invalid.invalid_json'))
+    return true
+  }
+
   async function previewDraft() {
-    if (!draft) return
+    if (!draft || modelJsonBroken(draft)) return
     setBusy(true); setError(null); setDry(null)
     try { setDry(await dryRunSyncDraft(payload(draft))) }
     catch (e) { setError(errorDetail(e)) } finally { setBusy(false) }
   }
 
   async function saveDraft() {
-    if (!draft) return
+    if (!draft || modelJsonBroken(draft)) return
     setBusy(true); setError(null); setNotice(null)
     try {
       let saved: SyncProfile
@@ -355,9 +395,17 @@ export default function InventorySyncPage() {
       } else {
         saved = await createSyncProfile(payload(draft))
       }
-      // The preview that allows turning it on is of the SAVED configuration.
-      setDry(await dryRunSyncProfile(saved.id))
+      // Saved: leave the form now. A preview that fails after this point used to
+      // keep the form open over a profile that already existed, and saving
+      // again created a duplicate or hit "key already in use".
       setDraft(null); setSelected(saved.id); load()
+      if (saved.source_kind === 'push') {
+        // Nothing to read: the preview is a dry_run batch from the customer's system.
+        setNotice(t('isync.push_saved'))
+      } else {
+        // The preview that allows turning it on is of the SAVED configuration.
+        setDry(await dryRunSyncProfile(saved.id))
+      }
     } catch (e) { setError(errorDetail(e)) } finally { setBusy(false) }
   }
 
@@ -383,7 +431,7 @@ export default function InventorySyncPage() {
   return (
     <div style={{ width: '100%', maxWidth: 980, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
       <p style={{ margin: 0, fontSize: 13, color: C.muted, lineHeight: 1.5 }}>{t('isync.intro')}</p>
-      {error && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: C.red }}>{error}</p>}
+      {error && <p ref={errorBox} role="alert" style={{ margin: 0, fontSize: 12.5, color: C.red }}>{error}</p>}
       {notice && <p role="status" style={{ margin: 0, fontSize: 12.5, color: C.green }}>{notice}</p>}
 
       {/* ── Profile list ─────────────────────────────────────────────────── */}
@@ -443,7 +491,7 @@ export default function InventorySyncPage() {
               </p>
               {current.source_kind === 'push' && (
                 <p style={{ ...small, marginTop: 4, overflowWrap: 'anywhere' }}>
-                  {t('isync.push_url')}: <code>POST /api/inventory-sync/profiles/{current.id}/ingest</code>
+                  {t('isync.push_url')}: <code>POST /api/v1/inventory-sync/profiles/{current.id}/ingest</code>
                 </p>
               )}
             </div>
@@ -454,7 +502,8 @@ export default function InventorySyncPage() {
             <div><div style={small}>{t('isync.last_success_label')}</div>
               <strong style={{ fontSize: 13 }}>{current.last_success_at ? `${age(current.last_success_age_s)} · ${when(current.last_success_at)}` : t('isync.never')}</strong></div>
             <div><div style={small}>{t('isync.next_run_label')}</div>
-              <strong style={{ fontSize: 13 }}>{current.enabled && current.next_run_at ? when(current.next_run_at) : t('isync.not_scheduled')}</strong></div>
+              <strong style={{ fontSize: 13 }}>{current.source_kind === 'push' ? t('isync.push_on_arrival')
+                : current.enabled && current.next_run_at ? when(current.next_run_at) : t('isync.not_scheduled')}</strong></div>
             <div><div style={small}>{t('isync.owned_label')}</div>
               <strong style={{ fontSize: 13 }}>{current.owned_fields.map(fieldLabel).join(', ') || '—'}</strong></div>
           </div>
@@ -489,21 +538,29 @@ export default function InventorySyncPage() {
             </p>
           )}
           {current.needs_dry_run && (
-            <p style={{ margin: '10px 0 0', fontSize: 12.5, color: C.amber }}>{t('isync.needs_dry_run')}</p>
+            <p style={{ margin: '10px 0 0', fontSize: 12.5, color: C.amber }}>
+              {current.source_kind === 'push' ? t('isync.push_preview_hint', { id: current.id }) : t('isync.needs_dry_run')}
+            </p>
           )}
-          <div data-tour="sync.health"><HealthPanel profile={current} egress={egress} onDoctor={() => setDoctorFor(current.id)} /></div>
+          <div data-tour="sync.health"><HealthPanel profile={current} egress={egress} onDoctor={canEdit ? () => setDoctorFor(current.id) : undefined} /></div>
 
           {canEdit && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-              <button type="button" style={btn} disabled={busy}
-                      onClick={() => act(async () => setDry(await dryRunSyncProfile(current.id)))}>{t('isync.dry_run')}</button>
+              {/* A push sync has nothing to read: its preview is a dry_run batch. */}
+              {current.source_kind !== 'push' && (
+                <button type="button" style={btn} disabled={busy}
+                        onClick={() => act(async () => setDry(await dryRunSyncProfile(current.id)))}>{t('isync.dry_run')}</button>
+              )}
               {current.enabled
                 ? <button type="button" style={btn} disabled={busy} onClick={() => act(() => disableSyncProfile(current.id), t('isync.disabled'))}>{t('isync.disable')}</button>
                 : <button type="button" style={{ ...primary, opacity: current.needs_dry_run ? 0.5 : 1 }} disabled={busy || current.needs_dry_run}
                           onClick={() => act(() => enableSyncProfile(current.id), t('isync.enabled'))}>{t('isync.enable')}</button>}
-              <button type="button" style={{ ...btn, opacity: current.needs_dry_run || current.running ? 0.5 : 1 }}
-                      disabled={busy || current.needs_dry_run || current.running}
-                      onClick={() => act(() => runSyncProfile(current.id), t('isync.run_started'))}>{t('isync.run_now')}</button>
+              {/* A push sync is fed by the customer's system: nothing to pull. */}
+              {current.source_kind !== 'push' && (
+                <button type="button" style={{ ...btn, opacity: current.needs_dry_run || current.running ? 0.5 : 1 }}
+                        disabled={busy || current.needs_dry_run || current.running}
+                        onClick={() => act(() => runSyncProfile(current.id), t('isync.run_started'))}>{t('isync.run_now')}</button>
+              )}
               <button type="button" style={btn} disabled={busy} onClick={() => void startEdit(current)}>{t('isync.edit')}</button>
               <button type="button" style={btn} disabled={busy} onClick={async () => {
                 if (await confirm({ title: t('isync.delete_title'), message: t('isync.delete_body', { name: current.name }),
@@ -517,7 +574,7 @@ export default function InventorySyncPage() {
 
       {!draft && current && doctorFor === current.id && <DoctorPanel profileId={current.id} onClose={() => setDoctorFor(null)} />}
 
-      {dry && <DryRunCard dry={dry} fieldLabel={fieldLabel} />}
+      {dry && <div ref={dryRef} style={{ scrollMarginTop: 16 }}><DryRunCard dry={dry} fieldLabel={fieldLabel} /></div>}
 
       {!draft && current && (
         <Card padding={16}>
@@ -816,11 +873,26 @@ export default function InventorySyncPage() {
                           ))}
                         </Select>
                       </Field>
-                      {m?.source_object && cols.map(c => (
-                        <Field key={c} label={t(MASTER_LABEL[c])}>
-                          <Input value={String(m[c] ?? '')} onChange={e => set({ [c]: e.target.value || null } as Partial<SyncMasterSource>)} />
-                        </Field>
-                      ))}
+                      {m?.source_object && cols.map(c => {
+                        const known = masterCols[masterKey(draft.data_source_id, m)]
+                        const value = String(m[c] ?? '')
+                        return (
+                          <Field key={c} label={t(MASTER_LABEL[c])}>
+                            {/* The master's own columns, read from the source: typed by
+                                hand, a typo silently emptied the whole master. Free
+                                text stays only while the column list is unavailable. */}
+                            {known ? (
+                              <Select value={value} onChange={e => set({ [c]: e.target.value || null } as Partial<SyncMasterSource>)}>
+                                <option value="">{t('isync.not_mapped')}</option>
+                                {value && !known.includes(value) && <option value={value}>{value}</option>}
+                                {known.map(col => <option key={col} value={col}>{col}</option>)}
+                              </Select>
+                            ) : (
+                              <Input value={value} onChange={e => set({ [c]: e.target.value || null } as Partial<SyncMasterSource>)} />
+                            )}
+                          </Field>
+                        )
+                      })}
                     </div>
                     {key === 'sup_master' && m?.source_object && (
                       <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, marginTop: 8, cursor: 'pointer' }}>
@@ -998,6 +1070,11 @@ function DryRunCard({ dry, fieldLabel }: {
             <strong style={{ fontSize: 18, color }}>{dry[k]}</strong></div>
         ))}
       </div>
+      {(dry.owned_elsewhere ?? 0) > 0 && (
+        <p role="status" style={{ ...small, marginTop: 10, color: C.amber }}>
+          {t('isync.dry_owned', { n: dry.owned_elsewhere ?? 0, list: (dry.owned_by ?? []).join(', ') })}
+        </p>
+      )}
       {dry.masters && (dry.masters.warehouses.master_rows > 0 || dry.masters.suppliers.master_rows > 0
         || dry.masters.warehouses.new.length > 0 || dry.masters.warehouses.defaulted > 0) && (
         <div style={{ marginTop: 10 }}>

@@ -131,6 +131,13 @@ _FIELD = S("obj", props={
     "value_map": S("obj", extra=S("str", max_len=F.MAX_TEXT), nullable=True),
 }, desc="One canonical field: where it comes from and how it is transformed.")
 
+_MASTER = S("obj", nullable=True, extra=S("any"), props={
+    "source_kind": S("str", enum=("table", "query", "collection", "pipeline")),
+    "source_schema": _COL, "source_object": _COL,
+    "source_query": S("str", max_len=100_000, nullable=True),
+    "code_column": _COL, "name_column": _COL,
+})
+
 SPEC = S("obj", required=("schema", "name", "source", "mapping"), props={
     "schema": S("str", enum=(SCHEMA_ID,)),
     "slug": S("str", pattern=r"[a-z0-9][a-z0-9_-]{0,62}", nullable=True,
@@ -169,7 +176,15 @@ SPEC = S("obj", required=("schema", "name", "source", "mapping"), props={
         "allow_new_warehouses": S("bool"),
         "default_warehouse": S("str", max_len=F.MAX_TEXT, nullable=True),
         "priority": S("int", minimum=1, maximum=10_000),
+        "unknown_warehouse": S("str", enum=("create", "reject", "default"), nullable=True,
+                               desc="A row naming a warehouse StockAI does not have: create it, reject "
+                                    "the row, or book it to the default warehouse. Null: create when a "
+                                    "warehouse master is set or allow_new_warehouses is on."),
     }),
+    "masters": S("obj", nullable=True, props={
+        "warehouses": _MASTER, "suppliers": _MASTER,
+    }, desc="Where warehouse / supplier codes are named: a table, query or collection on the same "
+            "data source (masters.py). Validated in full when applied."),
     "brake": S("obj", props={
         "max_vanished_pct": S("num", minimum=0, maximum=100),
         "min_row_ratio": S("num", minimum=0, maximum=1),
@@ -240,6 +255,8 @@ def to_body(tenant_id: str, doc: dict) -> dict:
         "duplicate_policy": pol.get("duplicates", "reject"),
         "allow_new_warehouses": pol.get("allow_new_warehouses", False),
         "default_warehouse": pol.get("default_warehouse"), "priority": pol.get("priority", 100),
+        "unknown_warehouse": pol.get("unknown_warehouse"),
+        "masters": {k: v for k, v in (doc.get("masters") or {}).items() if v},
         "brake_max_vanished_pct": brake.get("max_vanished_pct", 20),
         "brake_min_row_ratio": brake.get("min_row_ratio", 0.5),
         "brake_max_rejected_pct": brake.get("max_rejected_pct", 50),
@@ -302,7 +319,10 @@ def from_profile(row: dict) -> dict:
                                       "overlap_minutes": row.get("overlap_minutes") or 0}},
         "policies": {"missing": row["missing_policy"], "negative": row["negative_policy"],
                      "duplicates": row["duplicate_policy"], "allow_new_warehouses": bool(row["allow_new_warehouses"]),
-                     "default_warehouse": row.get("default_warehouse"), "priority": int(row.get("priority") or 100)},
+                     "default_warehouse": row.get("default_warehouse"), "priority": int(row.get("priority") or 100),
+                     "unknown_warehouse": row.get("unknown_warehouse") or None},
+        # The masters reference tables on the same data source: no secrets.
+        "masters": row.get("masters") or None,
         "brake": {"max_vanished_pct": float(row["brake_max_vanished_pct"]),
                   "min_row_ratio": float(row["brake_min_row_ratio"]),
                   "max_rejected_pct": float(row["brake_max_rejected_pct"]),

@@ -150,6 +150,34 @@ def _lookup(row: dict, column: Optional[str]) -> Any:
     return mapper._lookup(row, column) if column else None
 
 
+_COLUMN_KEYS = ("code_column", "name_column", "active_column", "kind_column", "city_column",
+                "lead_time_column", "payment_terms_column", "email_column", "phone_column")
+
+
+def _require_columns(rows: list[dict], cfg: dict, which: str) -> None:
+    """A configured column that no master row carries is a mistake to name, not
+    an empty master: a typo in the code column would otherwise skip every row,
+    report zero master rows and, on a real run, mark every code the master used
+    to list inactive. Same rule as the stock mapping: absent from every row
+    (documents are polymorphic), compared case-blind like the lookup."""
+    if not rows:
+        return
+    seen: set[str] = set()
+    for r in rows:
+        seen.update(str(k).lower() for k in r)
+    missing = [cfg[k] for k in _COLUMN_KEYS
+               if cfg.get(k) and str(cfg[k]).lower() not in seen and not _dotted_present(rows, cfg[k])]
+    if missing:
+        raise AppError("inventory_sync_column_missing",
+                       f"The {which} master has no column {missing[0]}.", status_code=422,
+                       params={"column": missing[0], "columns": ", ".join(missing), "master": which})
+
+
+def _dotted_present(rows: list[dict], column: str) -> bool:
+    # A MongoDB master may name a nested field ("detalle.nombre").
+    return "." in column and any(_lookup(r, column) is not None for r in rows)
+
+
 def load(tenant_id: str, profile: dict, which: str) -> tuple[dict, list[dict]]:
     """{normalised code: entry} for a configured master, and the collisions."""
     cfg = (profile.get("masters") or {}).get(which)
@@ -157,7 +185,9 @@ def load(tenant_id: str, profile: dict, which: str) -> tuple[dict, list[dict]]:
         return {}, []
     out: dict[str, dict] = {}
     collisions: list[dict] = []
-    for r in _read(tenant_id, profile, cfg):
+    rows = _read(tenant_id, profile, cfg)
+    _require_columns(rows, cfg, which)
+    for r in rows:
         code = _lookup(r, cfg["code_column"])
         name = _lookup(r, cfg["name_column"])
         if code in (None, "") or name in (None, ""):

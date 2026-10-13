@@ -3707,6 +3707,9 @@ export interface SyncRun {
 
 export interface SyncDryRun {
   rows_read: number
+  /** Rows another profile with a better priority owns: the run will skip them. */
+  owned_elsewhere?: number
+  owned_by?: string[]
   filtered_out: number
   rejected: number
   rejected_by_code: Record<string, number>
@@ -3814,7 +3817,7 @@ export interface SyncFreshness {
 }
 export interface SyncRefreshEntry {
   profile_id: string; profile_name: string; data_as_of: string | null
-  status: 'done' | 'running' | 'cooldown' | 'paused' | 'blocked' | 'failed' | 'braked'
+  status: 'done' | 'running' | 'cooldown' | 'paused' | 'blocked' | 'failed' | 'braked' | 'push'
   run_id?: string; joined?: boolean; retry_after_s?: number; reason?: string | null; error_code?: string | null
   created?: number; updated?: number; unchanged?: number; rejected?: number
 }
@@ -3849,7 +3852,8 @@ export interface SyncRunDetail extends SyncRun {
 }
 export interface SyncRecipes {
   grants: Record<string, string[]>; egress_ips: string[]
-  examples: Record<string, { title: string; sql: string }>
+  examples: Record<string, { title: string; sql: string; product?: string; vendor?: string
+                             engine?: string; verified?: boolean }>
   forwarders: Record<string, string>; view_template: Record<string, unknown>
 }
 

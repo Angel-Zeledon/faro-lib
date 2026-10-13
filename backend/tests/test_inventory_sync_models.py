@@ -213,6 +213,26 @@ class TestLedger:
         assert [m["signed"] for m in ex["movements"]] == [40, -12, -3, 0]
         assert ex["movements"][3]["counted"] is False
 
+    def test_an_unsaved_ledger_can_be_previewed(self, client, test_tenant, auth_headers, src_db, mov_table):
+        # Found walking /sincronizacion: "Vista previa" on a new ledger sync
+        # answered 500 (KeyError 'id' in read_balances) — only a saved one
+        # could be previewed, and the form's own preview button never worked.
+        tid = test_tenant["id"]
+        _insert(src_db, mov_table, [{"id": 1, "item": "A", "wh": "W", "qty": 40, "mtype": "REC"},
+                                    {"id": 2, "item": "A", "wh": "W", "qty": 12, "mtype": "SALE"}])
+        body = {"name": "ledger draft", "data_source_id": _source(tid), "source_kind": "table",
+                "source_schema": "public", "source_object": mov_table, "stock_model": "ledger",
+                "model_config": {"sign": {"mode": "type_map", "type_column": "mtype", "type_map": TYPES},
+                                 "id_column": "id"},
+                "mapping": {"sku": "item", "warehouse": "wh", "current_stock": "qty"},
+                "allow_new_warehouses": True, "interval_minutes": 60}
+        r = client.post("/api/v1/inventory-sync/dry-run", json=body, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["would_create"] == 1 and data["examples"][0]["total"] == 28
+        assert _stock(tid) == {}
+        assert query("SELECT 1 FROM inventory_sync_ledger_balances WHERE tenant_id = %s", (tid,)) == []
+
     def test_reconcile_view(self, test_tenant, src_db, mov_table):
         tid = test_tenant["id"]
         _insert(src_db, mov_table, [{"id": 1, "item": "A", "wh": "W", "qty": 40, "mtype": "REC"}])
@@ -222,6 +242,31 @@ class TestLedger:
         view = ledger.reconcile_view(tid, profiles.get(tid, p["id"]), "A", "W")
         assert view["stockai"] == 40 and view["running_balance"] == 40
         assert view["source_sum"] == 25 and view["difference"] == -15
+
+    def test_reconcile_view_with_a_warehouse_master(self, test_tenant, src_db, mov_table):
+        # Found walking /sincronizacion: with a master, stock is booked under
+        # the master's name ("Bodega Norte") but balances and source rows carry
+        # the code ("BOD-NOR"), so the view answered null balance, null source
+        # sum and no difference for every key.
+        tid = test_tenant["id"]
+        master = f"whm_{uuid4().hex[:8]}"
+        with src_db.cursor() as cur:
+            cur.execute(f"CREATE TABLE {master} (code TEXT, descr TEXT)")
+            cur.execute(f"INSERT INTO {master} VALUES ('BOD-NOR', 'Bodega Norte')")
+        try:
+            _insert(src_db, mov_table, [{"id": 1, "item": "A", "wh": "BOD-NOR", "qty": 40, "mtype": "REC"}])
+            p = _ledger_profile(tid, _source(tid), mov_table, masters={"warehouses": {
+                "source_kind": "table", "source_schema": "public", "source_object": master,
+                "code_column": "code", "name_column": "descr"}})
+            assert _run(tid, p["id"])["status"] == "success"
+            assert float(_stock(tid)[("A", "Bodega Norte")]["current_stock"]) == 40
+            _insert(src_db, mov_table, [{"id": 2, "item": "A", "wh": "BOD-NOR", "qty": 15, "mtype": "SALE"}])
+            view = ledger.reconcile_view(tid, profiles.get(tid, p["id"]), "A", "Bodega Norte")
+            assert view["stockai"] == 40 and view["running_balance"] == 40
+            assert view["source_sum"] == 25 and view["difference"] == -15
+        finally:
+            with src_db.cursor() as cur:
+                cur.execute(f"DROP TABLE IF EXISTS {master}")
 
     def test_ledger_config_validation(self, test_tenant, src_db, mov_table):
         from backend.errors import AppError
