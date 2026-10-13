@@ -1,4 +1,7 @@
-"""AI completion client — one factory, one backend: DeepSeek.
+"""AI completion client — StockAI's default backend (DeepSeek), and the seam
+where a company's OWN provider is chosen instead (`get_llm_client(tenant_id)`,
+see `backend/ai/providers/`). A company's provider is a stored, explicit choice;
+when it fails the feature degrades and says so — it never falls back here.
 
 Every AI feature in the product goes through `get_local_llm_client()`: the
 morning narrative, the inventory insight, the RAG analyst, the chat, and the
@@ -206,6 +209,30 @@ class LLMNotConfigured(RuntimeError):
     to their rule-based text, so this degrades the same way, while the log line
     names the actual problem.
     """
+
+
+def get_llm_client(tenant_id: str | None = None, timeout: float = 60.0):
+    """The AI client for one tenant — the entry point every consumer calls.
+
+    A tenant that STORED its own provider (`backend/ai/providers/`) gets that
+    provider and only that provider: if it fails, the caller gets a
+    `ProviderError` and degrades to its rule-based text, saying which provider
+    problem happened. It is never quietly answered from the instance's
+    DeepSeek — that would be the "whichever key exists" chain this module
+    removed, wearing a different hat.
+
+    A tenant with no stored choice (or one it switched off), and every caller
+    with no tenant, get `get_local_llm_client()` — looked up on this module at
+    call time, so the suite-wide patch in conftest.py and a test's own patch
+    still decide what runs. That path is byte-for-byte the previous behaviour.
+    """
+    if tenant_id:
+        from backend.ai.providers import store as provider_store
+        from backend.ai.providers.client import TenantLLMClient
+        cfg = provider_store.load_active(tenant_id)
+        if cfg is not None:
+            return TenantLLMClient(cfg, timeout=timeout)
+    return get_local_llm_client(timeout=timeout)
 
 
 def get_local_llm_client(timeout: float = 60.0) -> DeepSeekClient:

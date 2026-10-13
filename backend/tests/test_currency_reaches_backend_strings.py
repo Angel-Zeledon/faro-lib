@@ -368,7 +368,7 @@ class TestBriefingAndNarrativeThreadTheSetting:
         no LLM is called; the currency threading under test is upstream of it."""
         import backend.ai.narrative_service as ns
         from backend.sessions.service import create_session
-        monkeypatch.setattr(ns, "_get_client", lambda: None)
+        monkeypatch.setattr(ns, "_get_client", lambda *a, **k: None)
 
         tid = test_tenant["id"]
         sid = create_session(tid, "usr_test", "cur-narrative")["id"]
@@ -419,7 +419,7 @@ class TestBriefingAndNarrativeThreadTheSetting:
             return "narrative stub"
 
         # A truthy client so the LLM branch is taken, and the call intercepted.
-        monkeypatch.setattr(ns, "_get_client", lambda: object())
+        monkeypatch.setattr(ns, "_get_client", lambda *a, **k: object())
         monkeypatch.setattr(ns, "_call_llm", fake_call)
 
         tid = test_tenant["id"]

@@ -670,6 +670,14 @@ EVENTS: dict[str, EventSpec] = {
     "audit_stream.auto_disabled": EventSpec(
         kind="account", severity=WARNING, detail_keys=("host",),
     ),
+    # The company's own AI provider (backend/ai/providers/) failed — a rejected
+    # key, an exhausted quota, a dead endpoint. Recorded at most once per UTC
+    # day per tenant, by whichever call (chat, WhatsApp bot, narrative) hit it
+    # first, so a broken key at 3 a.m. is in the bell at 8 and not 300 times.
+    "ai_provider.failing": EventSpec(
+        kind="account", severity=WARNING,
+        detail_keys=("provider", "model", "error_code"),
+    ),
     # SCIM provisioning (backend/scim/). The actor is "scim": the company's
     # identity provider did these, not a person in the app. Losing or regaining
     # access and a changed role are warnings - the things an admin is asked
@@ -897,6 +905,9 @@ REASONS: tuple[str, ...] = (
     # the audit stream gave up on `days` different days, or its address is refused
     "audit_stream_failing_for_days",
     "audit_stream_host_refused",
+    # the company's own AI provider refused or failed a call;
+    # `reason_params.error_code` is one of backend/ai/providers/errors.CODES
+    "ai_provider_call_failed",
     # organization links: which side ended it, or that an erased tenant did
     "org_revoked_by_parent",
     "org_revoked_by_child",

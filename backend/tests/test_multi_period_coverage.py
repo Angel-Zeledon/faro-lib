@@ -495,7 +495,7 @@ class TestNarrativeKpiConsistency:
         the forced-Ollama client's timeout. The period-resolution under test is
         upstream of the LLM, so the fallback exercises it identically."""
         import backend.ai.narrative_service as ns
-        monkeypatch.setattr(ns, "_get_client", lambda: None)
+        monkeypatch.setattr(ns, "_get_client", lambda *a, **k: None)
 
     def test_weekly_narrative_agrees_with_kpi_tile(
         self, client, auth_headers, test_tenant, monkeypatch

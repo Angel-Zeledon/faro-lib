@@ -87,14 +87,29 @@ def _answer_language(language: str | None) -> str:
 _NARRATIVE_TIMEOUT_SECONDS = 12.0
 
 
-def _get_client():
-    """Returns the local LLM client, or None if it can't be constructed."""
+def _get_client(tenant_id: str | None = None):
+    """The tenant's AI client (its own provider when it chose one), or None if
+    it can't be constructed."""
     try:
-        from backend.ai.local_llm import get_local_llm_client
-        return get_local_llm_client(timeout=_NARRATIVE_TIMEOUT_SECONDS)
+        from backend.ai.local_llm import get_llm_client
+        return get_llm_client(tenant_id, timeout=_NARRATIVE_TIMEOUT_SECONDS)
     except Exception as e:
-        log.warning("Narrative service: local LLM client unavailable: %s", e)
+        log.warning("Narrative service: LLM client unavailable: %s", e)
         return None
+
+
+def _degraded(client, exc: Exception | None) -> dict:
+    """`degraded` / `reason` for a fallback answer, so the screen can say WHY
+    the text is the rule-based one. `reason` is a code: one of the provider
+    codes (backend/ai/providers/errors.CODES) when the company's own provider
+    failed, `not_configured` with no model at all, `llm_error` otherwise."""
+    from backend.ai.providers.errors import ProviderError
+    if client is None:
+        return {"degraded": True, "reason": "not_configured"}
+    if isinstance(exc, ProviderError):
+        return {"degraded": True, "reason": exc.code,
+                "provider": getattr(client, "provider", None)}
+    return {"degraded": True, "reason": "llm_error"}
 
 
 def _call_llm(client, user_message: str, max_tokens: int = 600,
@@ -139,7 +154,8 @@ def _as_money(value, currency: dict | None) -> str:
 
 def generate_morning_narrative(briefing: dict, profile: str = 'distributor',
                                currency: dict | None = None,
-                               language: str | None = None) -> dict:
+                               language: str | None = None,
+                               tenant_id: str | None = None) -> dict:
     """
     Generates a 150-200 word executive morning briefing narrative.
     Returns: {narrative, key_points, urgency, fallback}
@@ -152,7 +168,7 @@ def generate_morning_narrative(briefing: dict, profile: str = 'distributor',
     instruction; the rule-based fallback ignores it and returns English text plus
     `key_points` as code + params, which the frontend renders from its catalogue.
     """
-    client = _get_client()
+    client = _get_client(tenant_id) if tenant_id else _get_client()
     profile_ctx = _PROFILE_CONTEXT.get(profile, _PROFILE_CONTEXT['distributor'])
 
     # Build a concise data summary
@@ -205,7 +221,8 @@ def generate_morning_narrative(briefing: dict, profile: str = 'distributor',
         # Rule-based fallback when Claude is not available
         urgency = 'critical' if kpis.get('order_now', 0) > 0 else ('warning' if kpis.get('order_soon', 0) > 0 else 'ok')
         narrative = _build_fallback_narrative(data_summary, currency)
-        return {"narrative": narrative, "key_points": _extract_key_points(data_summary, currency), "urgency": urgency, "fallback": True}
+        return {"narrative": narrative, "key_points": _extract_key_points(data_summary, currency), "urgency": urgency, "fallback": True,
+                **_degraded(None, None)}
 
     prompt = f"""Company profile: {profile_ctx}
 
@@ -241,14 +258,18 @@ symbol, and never re-format the digits."""
     except Exception as e:
         log.error("Morning narrative failed: %s", e)
         urgency = 'critical' if kpis.get('order_now', 0) > 0 else 'ok'
-        return {"narrative": _build_fallback_narrative(data_summary, currency), "key_points": [], "urgency": urgency, "fallback": True, "error": str(e)}
+        # `error` used to carry str(e): with a company's own provider that
+        # string can be the provider's error page, so only the code travels.
+        return {"narrative": _build_fallback_narrative(data_summary, currency), "key_points": [], "urgency": urgency, "fallback": True,
+                **_degraded(client, e)}
 
 
 # ── Inventory Insight ─────────────────────────────────────────────────────────
 
 def generate_inventory_insight(items: list[dict], profile: str = 'distributor',
                                currency: dict | None = None,
-                               language: str | None = None) -> dict:
+                               language: str | None = None,
+                               tenant_id: str | None = None) -> dict:
     """
     Generates a concise insight about the current inventory state.
     Returns: {insight, recommendations, urgency, fallback}
@@ -256,7 +277,7 @@ def generate_inventory_insight(items: list[dict], profile: str = 'distributor',
     `currency`: as in `generate_morning_narrative` — the fallback sentence quotes
     the overstock value, so it must carry the tenant's symbol.
     """
-    client = _get_client()
+    client = _get_client(tenant_id) if tenant_id else _get_client()
     profile_ctx = _PROFILE_CONTEXT.get(profile, _PROFILE_CONTEXT['distributor'])
 
     # Build compact summary
@@ -292,7 +313,8 @@ def generate_inventory_insight(items: list[dict], profile: str = 'distributor',
     }
 
     if not client:
-        return {"insight": _build_inventory_fallback(data_summary, currency), "recommendations": [], "urgency": "warning" if signals.get('PEDIR_YA', 0) > 0 else "ok", "fallback": True}
+        return {"insight": _build_inventory_fallback(data_summary, currency), "recommendations": [], "urgency": "warning" if signals.get('PEDIR_YA', 0) > 0 else "ok", "fallback": True,
+                **_degraded(None, None)}
 
     prompt = f"""Profile: {profile_ctx}
 
@@ -314,19 +336,21 @@ Use concrete numbers. No technical jargon."""
         return {"insight": text, "urgency": urgency, "fallback": False}
     except Exception as e:
         log.error("Inventory insight failed: %s", e)
-        return {"insight": _build_inventory_fallback(data_summary, currency), "urgency": "warning", "fallback": True}
+        return {"insight": _build_inventory_fallback(data_summary, currency), "urgency": "warning", "fallback": True,
+                **_degraded(client, e)}
 
 
 # ── Forecast Explanation ──────────────────────────────────────────────────────
 
 def generate_forecast_explanation(sku: str, sku_data: dict, profile: str = 'distributor',
-                                  language: str | None = None) -> dict:
+                                  language: str | None = None,
+                                  tenant_id: str | None = None) -> dict:
     """
     Explains why a specific SKU has the forecast it has, in plain business language.
     sku_data: {'avg_daily', 'signal', 'coverage_days', 'abc', 'xyz', 'demand_trend_pct',
                'display_name', 'current_stock', 'recommended_qty', 'calc_explanation'}
     """
-    client = _get_client()
+    client = _get_client(tenant_id) if tenant_id else _get_client()
     profile_ctx = _PROFILE_CONTEXT.get(profile, _PROFILE_CONTEXT['distributor'])
 
     name = sku_data.get('display_name') or sku
@@ -363,6 +387,7 @@ def generate_forecast_explanation(sku: str, sku_data: dict, profile: str = 'dist
                 "lead_days": calc.get('lead_time_days', '?'),
             },
             "fallback": True,
+            **_degraded(None, None),
         }
 
     prompt = f"""Profile: {profile_ctx}
@@ -396,6 +421,7 @@ No technical jargon. Like an analyst explaining to their boss."""
                 "lead_days": sku_data.get('lead_time_days', '?'),
             },
             "fallback": True,
+            **_degraded(client, e),
         }
 
 

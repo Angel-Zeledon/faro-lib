@@ -20,6 +20,7 @@ Two audiences, two shapes, and they are not the same endpoint on purpose:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from backend.config import Settings, settings
@@ -29,6 +30,8 @@ from backend.service_config.registry import (
     editable_fields, required_fields, requirement_groups, service_fields,
 )
 from backend.service_config.resolver import resolve
+
+log = logging.getLogger(__name__)
 
 # Last probe result per (service, scope). In memory: a probe is a point-in-time
 # observation, and a stale one persisted across a restart would claim knowledge
@@ -280,6 +283,22 @@ def capabilities(tenant_id: str | None = None) -> dict:
     telling a non-admin about the deployment's secrets.
     """
     llm = _service_is_ready("llm", tenant_id)
+    # A company that chose its OWN provider answers from it and only from it
+    # (backend/ai/providers/). `assistant` then follows that provider: off while
+    # its breaker has it paused, whatever the instance's DeepSeek key says —
+    # the instance key is never a fallback for it. `assistant_provider` carries
+    # the reason as a CODE: it is the company's own provider's state, so any of
+    # its users may see "your provider rejected the key" before typing.
+    assistant_provider: dict = {"source": "stockai", "provider": None,
+                                "state": "ready" if llm else "not_configured", "reason": None}
+    if tenant_id:
+        try:
+            from backend.ai.providers.service import capability
+            assistant_provider = capability(tenant_id, llm)
+        except Exception:  # noqa: BLE001 - capabilities must answer; the call path still decides
+            log.error("capabilities: AI provider state unreadable", exc_info=True)
+    if assistant_provider["source"] == "company":
+        llm = assistant_provider["state"] != "paused"
     # The OR that makes email configured — a Resend key or SMTP credentials —
     # used to be written out here as well as implied by the registry. Two
     # copies of one rule is one copy too many: this one said "configured" and
@@ -291,6 +310,7 @@ def capabilities(tenant_id: str | None = None) -> dict:
         # narrative and the diagnosis degrade to rule-based text rather than
         # disappearing, so they are reported separately.
         "assistant": llm,
+        "assistant_provider": assistant_provider,
         "ai_narrative": llm,
         "documents_search": _service_is_ready("rag", tenant_id),
         # Delivery channels for alerts and purchase orders.

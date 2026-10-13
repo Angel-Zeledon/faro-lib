@@ -187,6 +187,14 @@ _EXPORT_SPECS: list[tuple[str, str, str]] = [
     ("ip_allowlist_entries", "ip_allowlist_entries", "*"),
     # The tenant's session and password policy: limits only, no secret.
     ("tenant_session_policies", "tenant_session_policies", "*"),
+    # The company's own AI provider: which one, which model and its health.
+    # The key's ciphertext and its hint are credentials and never exported.
+    ("tenant_ai_providers", "tenant_ai_providers",
+     "tenant_id, provider, model, base_url, organization, project, temperature, "
+     "max_tokens, enabled, created_at, created_by, updated_at, updated_by, "
+     "last_test_at, last_test_ok, last_test_code, last_success_at, last_failure_at, "
+     "last_failure_code, consecutive_failures"),
+    ("ai_provider_usage_daily", "ai_provider_usage_daily", "*"),
     # Paying for the plan. No secret lives in these tables (keys and webhook
     # secrets are instance configuration, never per tenant); the provider ids
     # are the tenant's own records at Stripe / PayPal, so they travel.
@@ -304,6 +312,9 @@ _DELETE_ORDER: list[str] = [
     "ip_allowlist_policies",
     # Session and password policy (cascades from tenants; listed for the same reason).
     "tenant_session_policies",
+    # A company's own AI provider and its usage (both cascade from tenants).
+    "ai_provider_usage_daily",
+    "tenant_ai_providers",
     "model_artifacts",
     # Billing (2026-10-05). The first two cascade from tenants; the event log
     # has no FK (an event may name no known tenant) and is only removed here.

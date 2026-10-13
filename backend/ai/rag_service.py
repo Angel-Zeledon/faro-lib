@@ -566,6 +566,7 @@ class RAGService:
         retrieved_texts: list[str],
         sku:             str | None,
         history:         list[dict],
+        tenant_id:       str | None = None,
     ) -> str:
         context_block = "\n\n".join(
             f"[Retrieved context {i+1}]\n{text}"
@@ -585,7 +586,15 @@ class RAGService:
         ]
         messages.append({"role": "user", "content": user_content})
 
-        response = self._anthro.messages.create(
+        # Per call, per tenant: `_anthro` is one instance-wide client cached by
+        # `_init()`, and a company that chose its own provider must be answered
+        # by that provider, never by the cached instance one.
+        client = self._anthro
+        if tenant_id:
+            from backend.ai.local_llm import get_llm_client
+            from backend.api.v1.chats import LLM_BUDGET_S
+            client = get_llm_client(tenant_id, timeout=LLM_BUDGET_S)
+        response = client.messages.create(
             model="deepseek-chat",
             max_tokens=MAX_TOKENS,
             system=_SYSTEM_PROMPT,
@@ -677,9 +686,17 @@ class RAGService:
         retrieved_texts = [r["text"] for r in scored]
 
         try:
-            answer = self._generate(question, retrieved_texts, sku, history or [])
+            answer = self._generate(question, retrieved_texts, sku, history or [],
+                                    tenant_id=tenant_id)
             return {"answer": answer, "retrieved": retrieved_texts, "source": "rag"}
         except Exception as exc:
+            from backend.ai.providers.errors import ProviderError
+            if isinstance(exc, ProviderError):
+                # The company's own provider failed: calling it again from the
+                # fallback would fail the same way. Say which problem it was.
+                log.warning("RAG generation: company provider failed: %s", exc.code)
+                return {"answer": "", "retrieved": retrieved_texts, "source": "provider_error",
+                        "degraded": True, "reason": exc.code}
             log.error("RAG generation failed: %s", exc, exc_info=True)
             # Retrieval succeeded but LLM is unavailable — try fallback,
             # then report "rag_retrieved" so callers know security checks passed.
@@ -801,11 +818,11 @@ class RAGService:
             # "'NoneType' object has no attribute 'messages'" at the user, in a
             # chat bubble. A fallback that needs the initialisation it exists to
             # do without is not a fallback.
-            client = self._anthro
-            if client is None:
-                from backend.ai.local_llm import get_local_llm_client
-                from backend.api.v1.chats import LLM_BUDGET_S
-                client = get_local_llm_client(timeout=LLM_BUDGET_S)
+            # Per tenant, always: the cached `_anthro` is the instance client and
+            # would answer a company that chose its own provider from ours.
+            from backend.ai.local_llm import get_llm_client
+            from backend.api.v1.chats import LLM_BUDGET_S
+            client = get_llm_client(tenant_id, timeout=LLM_BUDGET_S)
             resp = client.messages.create(
                 model="deepseek-chat",
                 max_tokens=MAX_TOKENS,
@@ -814,6 +831,11 @@ class RAGService:
             )
             return {"answer": resp.content[0].text, "retrieved": [], "source": "fallback"}
         except Exception as exc:
+            from backend.ai.providers.errors import ProviderError
+            if isinstance(exc, ProviderError):
+                log.warning("Fallback: company provider failed: %s", exc.code)
+                return {"answer": "", "retrieved": [], "source": "provider_error",
+                        "degraded": True, "reason": exc.code}
             log.error("Fallback LLM call failed: %s", exc)
             return {
                 "answer":    f"LLM call failed: {exc}. Context available: {list(context.keys())}",

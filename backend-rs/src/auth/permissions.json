@@ -81,6 +81,7 @@
     {"class": "write", "prefix": "/planning", "permission": "manage_settings"},
     {"class": "write", "prefix": "/tenant", "permission": "manage_settings"},
     {"class": "write", "prefix": "/service-config", "permission": "manage_settings"},
+    {"class": "write", "prefix": "/ai-provider", "permission": "manage_settings"},
     {"class": "write", "prefix": "/billing", "permission": "manage_settings"},
 
     {"class": "write", "prefix": "/users", "permission": "manage_users"},
@@ -118,6 +119,7 @@
     {"class": "read", "prefix": "/inbound-email", "permission": "manage_integrations"},
     {"class": "read", "prefix": "/service-config", "permission": "manage_settings"},
     {"class": "read", "prefix": "/service-config/capabilities", "permission": "open"},
+    {"class": "read", "prefix": "/ai-provider", "permission": "view_analysts"},
     {"class": "read", "prefix": "/billing/status", "permission": "manage_settings"}
   ],
   "probes": [
@@ -149,6 +151,8 @@
     ["GET", "/service-config/capabilities", "open"],
     ["GET", "/service-config/tenant", "manage_settings"],
     ["POST", "/webhooks/{webhook_id}/rotate-secret", "manage_integrations"],
+    ["PUT", "/ai-provider/config", "manage_settings"],
+    ["GET", "/ai-provider/status", "view_analysts"],
     ["POST", "/sessions-archive", "none"]
   ]
 }

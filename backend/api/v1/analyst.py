@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from backend.ai import rag
 from backend.ai.narrator import narrate
 from backend.auth.guards import CurrentUser, get_current_user
+from backend.errors import AppError
 from backend.schemas.common import ok
 from backend.sessions import service as session_svc
 
@@ -99,8 +100,14 @@ async def analyst_narrate(
     if not context:
         raise HTTPException(status_code=400, detail="'context' field is required")
 
-    result = narrate(data=data, context=context, question=question, history=history)
+    result = narrate(data=data, context=context, question=question, history=history,
+                     tenant_id=user.tenant_id)
 
+    if result["source"] == "error" and result.get("provider_error"):
+        pe = result["provider_error"]
+        raise AppError("ai_provider_failed",
+                       "The company's AI provider could not answer.", status_code=502,
+                       params={"code": pe.get("code"), "provider": pe.get("provider")})
     if result["source"] == "error":
         raise HTTPException(status_code=502, detail=result.get("error") or "AI generation failed")
 

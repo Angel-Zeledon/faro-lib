@@ -445,6 +445,8 @@ app.include_router(freshness_router.router, prefix=_PREFIX)
 app.include_router(alerts_router.router,    prefix=_PREFIX)
 app.include_router(messages_router.router,  prefix=_PREFIX)
 app.include_router(service_config_router.router, prefix=_PREFIX)
+from backend.api.v1 import ai_provider as ai_provider_router  # noqa: E402
+app.include_router(ai_provider_router.router, prefix=_PREFIX)
 from backend.api.v1 import audit as audit_router  # noqa: E402
 app.include_router(audit_router.router, prefix=_PREFIX)
 app.include_router(audit_router.manifest_router, prefix=_PREFIX)
@@ -506,6 +508,17 @@ def health():
         except Exception as exc:  # noqa: BLE001 — never let diagnostics be the outage
             log.error("Health check: loop status failed: %s", exc)
 
+    # Companies on their OWN AI provider: how many, how many paused by the
+    # breaker, how many failing. Counts only — which company is a tenant's
+    # business, and the per-tenant state is on its own settings card.
+    ai_providers: dict = {}
+    if database_ok:
+        try:
+            from backend.ai.providers.service import health_summary
+            ai_providers = health_summary()
+        except Exception as exc:  # noqa: BLE001 — never let diagnostics be the outage
+            log.error("Health check: AI provider summary failed: %s", exc)
+
     return {
         "status": "ok" if database_ok else "degraded",
         "version": settings.app_version,
@@ -513,6 +526,7 @@ def health():
         "database": database_ok,
         "services": services,
         "loops": loops,
+        "ai_providers": ai_providers,
     }
 
 
