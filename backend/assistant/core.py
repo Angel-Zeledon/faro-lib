@@ -153,9 +153,11 @@ def rules_answer(data: AccountData, language: str, reason: str,
     lines: list[str] = []
     if reason == "provider_error" and provider_error:
         from backend.ai.providers import catalog as provider_catalog
-        spec = provider_catalog.get(provider_error.get("provider") or "")
-        intro = r("assistant_intro_provider_failed",
-                  provider=spec.label if spec else (provider_error.get("provider") or ""),
+        key = provider_error.get("provider") or ""
+        spec = provider_catalog.get(key)
+        # A product name reads the same in every language; "a custom URL" does not.
+        name = r("llm_custom_provider") if key == "custom" or not spec else spec.label
+        intro = r("assistant_intro_provider_failed", provider=name,
                   problem=r(f"llm_problem_{provider_error.get('code') or 'provider_down'}"))
     else:
         intro = r("assistant_intro_not_configured" if reason == "not_configured"

@@ -377,6 +377,7 @@ _ES: dict[str, str] = {
     # The company's OWN AI provider failed (backend/ai/providers/). {problem}
     # is one of the llm_problem_* lines below.
     "assistant_intro_provider_failed": "Tu proveedor de IA ({provider}) no respondió: {problem} Mientras tanto, esto es lo que dicen tus datos:",
+    "llm_custom_provider":            "el servidor que indicaste",
     "llm_problem_invalid_key":        "rechazó la llave de API. Un administrador debe revisarla en Configuración > Modelo de IA.",
     "llm_problem_quota_exceeded":     "tu cuenta allí no tiene saldo o llegó a su límite de gasto.",
     "llm_problem_rate_limited":       "está recibiendo demasiadas consultas; intenta de nuevo en un minuto.",
@@ -464,6 +465,7 @@ _EN: dict[str, str] = {
     "assistant_intro_not_configured": "The AI assistant is not enabled on this installation, so here is what your data says directly:",
     "assistant_intro_failed":         "I could not produce an AI answer right now, so here is what your data says at the moment:",
     "assistant_intro_provider_failed": "Your AI provider ({provider}) did not answer: {problem} Meanwhile, here is what your data says:",
+    "llm_custom_provider":            "the server you entered",
     "llm_problem_invalid_key":        "it rejected the API key. An administrator needs to check it in Settings > AI model.",
     "llm_problem_quota_exceeded":     "your account there has no credit or reached its spending limit.",
     "llm_problem_rate_limited":       "it is receiving too many requests; try again in a minute.",
