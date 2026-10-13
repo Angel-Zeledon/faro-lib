@@ -571,6 +571,29 @@ class TestPrecedence:
         assert "owned_by_other_profile" in run["warnings"]["codes"]
         assert float(_stock(tid)[("A1", "Norte")]["current_stock"]) == 10     # the better profile owns it
 
+    def test_the_preview_says_which_rows_another_sync_owns(self, test_tenant, src_db, src_table):
+        # Found walking /sincronizacion: the preview of a second sync promised
+        # "40 would update", the run then read 40 and changed nothing, reported
+        # healthy, and the only trace was a raw code in the run detail.
+        tid = test_tenant["id"]
+        _put(src_db, src_table, [("A1", "Norte", 10), ("B2", "Norte", 5)])
+        sid = _source(tid)
+        first = _profile(tid, sid, src_table, name="ERP main")
+        _run(tid, first["id"])
+        with src_db.cursor() as cur:
+            cur.execute(f"UPDATE {src_table} SET existencia = existencia + 1")
+        second = _profile(tid, sid, src_table, name="ERP lots")  # same priority, newer: the first wins
+        dry = engine.dry_run(tid, dict(profiles.get(tid, second["id"])))
+        assert dry["would_update"] == 0 and dry["would_create"] == 0
+        assert dry["owned_elsewhere"] == 2
+        assert dry["owned_by"] == ["ERP main"]
+        assert all(c["action"] != "update" for c in dry["changes_sample"])
+        # A draft (not saved yet) counts as the newest profile.
+        draft = {k: v for k, v in profiles.get(tid, second["id"]).items() if k not in ("id", "created_at")}
+        assert engine.dry_run(tid, draft)["owned_elsewhere"] == 2
+        # The better-placed profile's own preview is not affected.
+        assert engine.dry_run(tid, dict(profiles.get(tid, first["id"])))["owned_elsewhere"] == 0
+
 
 # ── Rows of the catalogue the classes above did not exercise end to end ──────
 
@@ -700,6 +723,20 @@ def test_every_outcome_has_a_remedy_in_both_languages():
     assert not missing, missing
     for cat_name in failures.HEALTH_OF:
         assert cat.count(f"'isync.remedy.category.{cat_name}'") == 2
+
+
+def test_every_run_warning_has_copy_in_both_languages():
+    """A run's warnings are rendered from `isync.code.<code>`; an unmapped one
+    put the raw code `owned_by_other_profile` on the run detail."""
+    cat = _catalogue_text()
+    codes = set()
+    for name in ("engine.py", "apply.py"):
+        text = (ROOT / "backend" / "inventory_sync" / name).read_text(encoding="utf-8")
+        codes |= set(re.findall(r'warnings_codes"\]\.add\("([a-z_]+)"\)', text))
+        codes |= set(re.findall(r'warnings\.append\("([a-z_]+)"\)', text))
+    assert "owned_by_other_profile" in codes and len(codes) >= 10
+    missing = sorted(c for c in codes if cat.count(f"'isync.code.{c}'") != 2)
+    assert not missing, missing
 
 
 def test_every_code_the_sync_can_raise_is_catalogued():

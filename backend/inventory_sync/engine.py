@@ -260,6 +260,26 @@ def _existing(tenant_id: str, keys: list[tuple[str, str]], conn=None) -> dict[tu
     return {(r["sku"], r["warehouse"]): r for r in rows}
 
 
+def _owned_elsewhere(tenant_id: str, profile: dict,
+                     keys: list[tuple[str, str]]) -> tuple[set[tuple[str, str]], list[str]]:
+    """Keys another profile owns with a better (priority, age) — the rule the
+    apply step enforces (apply.py, "precedence"). The preview must skip them
+    too, or it promises updates the run will not make. A draft that is not
+    saved yet counts as the newest profile."""
+    if not keys:
+        return set(), []
+    rows = query(
+        "SELECT k.sku, k.warehouse, p.name FROM inventory_sync_keys k "
+        "JOIN inventory_sync_profiles p ON p.id = k.profile_id "
+        "JOIN unnest(%s::text[], %s::text[]) AS x(sku, warehouse) "
+        "  ON k.sku = x.sku AND k.warehouse = x.warehouse "
+        "WHERE k.tenant_id = %s AND k.profile_id <> %s AND NOT k.inactive "
+        "AND (p.priority, p.created_at) < (%s, COALESCE(%s::timestamptz, NOW()))",
+        ([k[0] for k in keys], [k[1] for k in keys], tenant_id, profile.get("id") or "",
+         int(profile.get("priority") or 100), profile.get("created_at")))
+    return {(r["sku"], r["warehouse"]) for r in rows}, sorted({r["name"] for r in rows})
+
+
 def _changes(new: dict, current: Optional[dict]) -> dict:
     """Fields of `new` whose value differs from the stored row."""
     if current is None:
@@ -324,9 +344,12 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
             valid[key] = row
 
     existing = _existing(tenant_id, list(valid.keys()))
+    owned, owned_by = _owned_elsewhere(tenant_id, profile, list(valid.keys()))
     creates, updates, unchanged = 0, 0, 0
     changes_sample: list[dict] = []
     for key, row in valid.items():
+        if key in owned:
+            continue
         current = existing.get(key)
         changed = _changes(row, current)
         if current is None:
@@ -365,6 +388,7 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
         **prep.summary(),
         "valid": len(valid), "would_create": creates, "would_update": updates,
         "would_leave_unchanged": unchanged, "changes_sample": changes_sample,
+        "owned_elsewhere": len(owned), "owned_by": owned_by,
         "preview_rows": preview, "sample_limit": sample,
         "sample_truncated": prep.rows_read >= sample,
         "owned_fields": F.owned_fields(profile.get("mapping") or {}),

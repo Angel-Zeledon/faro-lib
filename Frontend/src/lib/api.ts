@@ -3707,6 +3707,9 @@ export interface SyncRun {
 
 export interface SyncDryRun {
   rows_read: number
+  /** Rows another profile with a better priority owns: the run will skip them. */
+  owned_elsewhere?: number
+  owned_by?: string[]
   filtered_out: number
   rejected: number
   rejected_by_code: Record<string, number>

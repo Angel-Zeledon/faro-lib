@@ -206,7 +206,7 @@ export function RunDetailPanel({ profileId, runId, onClose }: { profileId: strin
       )}
       {run.warnings?.codes?.length ? (
         <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12.5, color: C.amber }}>
-          {run.warnings.codes.map(c => <li key={c}>{text(c, { refused: run.refused_ceiling })}</li>)}
+          {run.warnings.codes.map(c => <li key={c}>{text(c, { refused: run.refused_ceiling, count: run.owned_elsewhere })}</li>)}
         </ul>
       ) : null}
       {(run.rejected_sample?.length ?? 0) > 0 && (

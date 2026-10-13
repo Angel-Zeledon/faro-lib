@@ -1044,6 +1044,11 @@ function DryRunCard({ dry, fieldLabel }: {
             <strong style={{ fontSize: 18, color }}>{dry[k]}</strong></div>
         ))}
       </div>
+      {(dry.owned_elsewhere ?? 0) > 0 && (
+        <p role="status" style={{ ...small, marginTop: 10, color: C.amber }}>
+          {t('isync.dry_owned', { n: dry.owned_elsewhere ?? 0, list: (dry.owned_by ?? []).join(', ') })}
+        </p>
+      )}
       {dry.masters && (dry.masters.warehouses.master_rows > 0 || dry.masters.suppliers.master_rows > 0
         || dry.masters.warehouses.new.length > 0 || dry.masters.warehouses.defaulted > 0) && (
         <div style={{ marginTop: 10 }}>
