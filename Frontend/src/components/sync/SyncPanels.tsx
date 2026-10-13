@@ -300,7 +300,10 @@ function Recipes({ sourceId }: { sourceId?: string }) {
         {Object.entries(r.examples).map(([k, ex]) => (
           <div key={k} style={{ marginTop: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12 }}>{ex.title}</span>
+              <span style={{ fontSize: 12 }}>
+                {ex.product ? `${ex.product} · ${t(`data.conn.engine_${ex.engine}`)}` : ex.title}
+                {ex.verified === false && <span style={{ color: 'var(--muted)' }}> · {t('isync.recipe_unverified')}</span>}
+              </span>
               <CopyButton value={ex.sql} label={t('isync.copy')} />
             </div>
             <pre style={pre}>{ex.sql}</pre>

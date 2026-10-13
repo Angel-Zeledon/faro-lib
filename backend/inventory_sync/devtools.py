@@ -31,8 +31,9 @@ def erp_examples() -> dict[str, dict[str, str]]:
         params = {k: v for k, v in params.items() if v}
         engine = pr["engines"][0]
         body = presets.render(pid, engine, params)["profile"]
-        verified = "" if pr.get("verified") else " (unverified against a live system)"
-        out[pid] = {"title": f"{pr['product']} - {engine}{verified}", "sql": body["source_query"]}
+        # Data, not prose: the page words "unverified" in the reader's language.
+        out[pid] = {"title": f"{pr['product']} - {engine}", "product": pr["product"], "vendor": pr["vendor"],
+                    "engine": engine, "verified": bool(pr.get("verified")), "sql": body["source_query"]}
     return out
 
 

@@ -3852,7 +3852,8 @@ export interface SyncRunDetail extends SyncRun {
 }
 export interface SyncRecipes {
   grants: Record<string, string[]>; egress_ips: string[]
-  examples: Record<string, { title: string; sql: string }>
+  examples: Record<string, { title: string; sql: string; product?: string; vendor?: string
+                             engine?: string; verified?: boolean }>
   forwarders: Record<string, string>; view_template: Record<string, unknown>
 }
 

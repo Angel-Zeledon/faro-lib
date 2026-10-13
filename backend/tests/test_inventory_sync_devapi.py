@@ -208,6 +208,13 @@ class TestDoctorAndHelp:
         rec = client.get(f"{URL}/recipes", headers=analyst_headers).json()["data"]
         assert set(rec["grants"]) == {"postgresql", "mysql", "mssql", "oracle", "mongodb"}
         assert "sap_ecc_mard" in rec["examples"] and "MANDT" in rec["examples"]["sap_ecc_mard"]["sql"]
+        # Found walking /sincronizacion in Spanish: each title ended in English
+        # "(unverified against a live system)". The flag travels as data and
+        # the page words it; the title carries no prose.
+        mard = rec["examples"]["sap_ecc_mard"]
+        assert (mard["verified"], mard["engine"], mard["vendor"]) == (False, "oracle", "SAP")
+        assert mard["product"] == "SAP ECC (on Oracle / SQL Server)"
+        assert not any("unverified" in ex["title"] for ex in rec["examples"].values())
         assert "python_push" in rec["forwarders"]
         t = client.post(f"{URL}/transform-test", json={"field": "current_stock",
                         "spec": {"multiplier": 12, "decimal": "comma"}, "value": "1,5"},
