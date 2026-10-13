@@ -389,7 +389,9 @@ def read_balances(tenant_id: str, profile: dict, *, run_id: Optional[str] = None
         yield from _mongo_full(tenant_id, profile, run_id=run_id, report=report, limit=limit)
         return
     keys = _Keys(tenant_id, profile)
-    pid = profile["id"]
+    # An unsaved draft (the form's preview) has no id: it reads, and writes
+    # nothing — every use of `pid` below is behind `run_id`.
+    pid = profile.get("id")
     if incremental and profile.get("cursor_value") and not scope:
         yield from _incremental(tenant_id, profile, engine, keys, run_id, report)
         return

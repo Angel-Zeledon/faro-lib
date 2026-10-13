@@ -213,6 +213,26 @@ class TestLedger:
         assert [m["signed"] for m in ex["movements"]] == [40, -12, -3, 0]
         assert ex["movements"][3]["counted"] is False
 
+    def test_an_unsaved_ledger_can_be_previewed(self, client, test_tenant, auth_headers, src_db, mov_table):
+        # Found walking /sincronizacion: "Vista previa" on a new ledger sync
+        # answered 500 (KeyError 'id' in read_balances) — only a saved one
+        # could be previewed, and the form's own preview button never worked.
+        tid = test_tenant["id"]
+        _insert(src_db, mov_table, [{"id": 1, "item": "A", "wh": "W", "qty": 40, "mtype": "REC"},
+                                    {"id": 2, "item": "A", "wh": "W", "qty": 12, "mtype": "SALE"}])
+        body = {"name": "ledger draft", "data_source_id": _source(tid), "source_kind": "table",
+                "source_schema": "public", "source_object": mov_table, "stock_model": "ledger",
+                "model_config": {"sign": {"mode": "type_map", "type_column": "mtype", "type_map": TYPES},
+                                 "id_column": "id"},
+                "mapping": {"sku": "item", "warehouse": "wh", "current_stock": "qty"},
+                "allow_new_warehouses": True, "interval_minutes": 60}
+        r = client.post("/api/v1/inventory-sync/dry-run", json=body, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["would_create"] == 1 and data["examples"][0]["total"] == 28
+        assert _stock(tid) == {}
+        assert query("SELECT 1 FROM inventory_sync_ledger_balances WHERE tenant_id = %s", (tid,)) == []
+
     def test_reconcile_view(self, test_tenant, src_db, mov_table):
         tid = test_tenant["id"]
         _insert(src_db, mov_table, [{"id": 1, "item": "A", "wh": "W", "qty": 40, "mtype": "REC"}])
