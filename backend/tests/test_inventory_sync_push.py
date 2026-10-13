@@ -140,3 +140,21 @@ class TestPush:
         assert r.status_code == 200, r.text
         assert r.json()["data"]["run"]["created"] == 2
         assert float(_stock(tid)[("A", "N")]["current_stock"]) == 7
+
+    def test_a_pull_preview_of_a_push_profile_says_how_to_preview_it(self, client, analyst_headers,
+                                                                        test_tenant):
+        # Found walking /sincronizacion: saving a push sync answered "No
+        # encontramos esa fuente de datos" (the page ran the pull preview, which
+        # looks for a database a push sync does not have) although the profile
+        # had been created — and saving again then hit "key already in use".
+        tid = test_tenant["id"]
+        p = _push_profile(tid)
+        r = client.post(f"{URL}/profiles/{p['id']}/dry-run", headers=analyst_headers)
+        assert r.status_code == 409, r.text
+        assert r.json()["error_code"] == "inventory_sync_push_preview_by_batch"
+        row = profiles.get(tid, p["id"])
+        assert row["dry_run_hash"] is None and not row["enabled"]
+        r = client.post(f"{URL}/dry-run", headers=analyst_headers, json={
+            "name": "push draft", "source_kind": "push",
+            "mapping": {"sku": "code", "warehouse": "store", "current_stock": "qty"}})
+        assert r.status_code == 409 and r.json()["error_code"] == "inventory_sync_push_preview_by_batch"

@@ -395,9 +395,17 @@ export default function InventorySyncPage() {
       } else {
         saved = await createSyncProfile(payload(draft))
       }
-      // The preview that allows turning it on is of the SAVED configuration.
-      setDry(await dryRunSyncProfile(saved.id))
+      // Saved: leave the form now. A preview that fails after this point used to
+      // keep the form open over a profile that already existed, and saving
+      // again created a duplicate or hit "key already in use".
       setDraft(null); setSelected(saved.id); load()
+      if (saved.source_kind === 'push') {
+        // Nothing to read: the preview is a dry_run batch from the customer's system.
+        setNotice(t('isync.push_saved'))
+      } else {
+        // The preview that allows turning it on is of the SAVED configuration.
+        setDry(await dryRunSyncProfile(saved.id))
+      }
     } catch (e) { setError(errorDetail(e)) } finally { setBusy(false) }
   }
 
@@ -529,14 +537,19 @@ export default function InventorySyncPage() {
             </p>
           )}
           {current.needs_dry_run && (
-            <p style={{ margin: '10px 0 0', fontSize: 12.5, color: C.amber }}>{t('isync.needs_dry_run')}</p>
+            <p style={{ margin: '10px 0 0', fontSize: 12.5, color: C.amber }}>
+              {current.source_kind === 'push' ? t('isync.push_preview_hint', { id: current.id }) : t('isync.needs_dry_run')}
+            </p>
           )}
           <div data-tour="sync.health"><HealthPanel profile={current} egress={egress} onDoctor={canEdit ? () => setDoctorFor(current.id) : undefined} /></div>
 
           {canEdit && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-              <button type="button" style={btn} disabled={busy}
-                      onClick={() => act(async () => setDry(await dryRunSyncProfile(current.id)))}>{t('isync.dry_run')}</button>
+              {/* A push sync has nothing to read: its preview is a dry_run batch. */}
+              {current.source_kind !== 'push' && (
+                <button type="button" style={btn} disabled={busy}
+                        onClick={() => act(async () => setDry(await dryRunSyncProfile(current.id)))}>{t('isync.dry_run')}</button>
+              )}
               {current.enabled
                 ? <button type="button" style={btn} disabled={busy} onClick={() => act(() => disableSyncProfile(current.id), t('isync.disabled'))}>{t('isync.disable')}</button>
                 : <button type="button" style={{ ...primary, opacity: current.needs_dry_run ? 0.5 : 1 }} disabled={busy || current.needs_dry_run}
