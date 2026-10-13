@@ -464,8 +464,17 @@ Verified to fail against the previous code: 4 of the 10 red.
   arrived by sync but who has no sales history yet.** 300 synced rows were in
   `inventory_stock`; the screen said there was nothing. A customer who connects
   the ERP first (the order the sync screen suggests) sees an empty inventory.
-  Not fixed: the screen's list is driven by the forecast/catalogue side, and
-  changing what it lists is a product decision.
+  Fixed 2026-10-13 (fix/sync-followups): with no completed forecast the
+  screen lists every stock row as SIN DATOS (`/inventory/status?without_forecast=true`).
+- **The Inventario product editor writes a phantom `principal` row for a SKU
+  that lives only in other warehouses** — open (found 2026-10-13 walking the
+  sync follow-ups). Editing ART-002 (stock only in "Norte") saved 17 into a NEW
+  `principal` row and left Norte at 16; a two-warehouse SKU did the same. The
+  editor calls `PUT /inventory/stock/{sku}` with no warehouse, and the PUT
+  resolves that to the default warehouse and creates the row (the PATCH was
+  fixed for exactly this, §1.nonies; the PUT was not). The stock-only list also
+  cannot pick a warehouse (the selector needs a session), so the bulk editor is
+  read-only for a multi-warehouse tenant with no forecast.
 - **Docker's 64 MB `/dev/shm` breaks large PostgreSQL parallel queries.** The
   bundled `db` service in `deploy/docker-compose.prod.yml` now sets
   `shm_size: 256mb` (fixed 90d523f); any other PostgreSQL container that serves

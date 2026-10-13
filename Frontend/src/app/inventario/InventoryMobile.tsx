@@ -150,6 +150,12 @@ export function MobileStockCards({ items, coverageUnit, mode, effectiveQty, edit
             onClick={() => onOpen(item)}
             ariaLabel={`${item.display_name || item.sku}, ${signalLabel(t, item.signal)}`}
           >
+            {(item.warehouses?.length ?? 0) > 0 && (
+              // Stock-only rows (no forecast yet): where the quantity sits.
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                {item.warehouses!.map(w => `${w.warehouse ?? '—'} ${fmtNum(w.current_stock ?? 0)}`).join(' · ')}
+              </span>
+            )}
             {item.forecast_source === 'analogy' && (
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }} title={t('analogy.badge_tip')}>
                 {t('analogy.badge')} · {t('analogy.badge_tip')}
@@ -361,7 +367,7 @@ export interface MobileEditState {
   brand: string; unit_of_measure: string; barcode: string
 }
 
-export function MobileEditSheet({ sku, state, setState, suppliers, onSave, onCancel, saving }: {
+export function MobileEditSheet({ sku, state, setState, suppliers, onSave, onCancel, saving, notice }: {
   sku: string | null
   state: MobileEditState | null
   setState: (fn: (s: MobileEditState | null) => MobileEditState | null) => void
@@ -369,6 +375,8 @@ export function MobileEditSheet({ sku, state, setState, suppliers, onSave, onCan
   onSave: () => void
   onCancel: () => void
   saving: boolean
+  /** Shown above the fields: e.g. "a sync will overwrite these values". */
+  notice?: React.ReactNode
 }) {
   const { t } = useLanguage()
   const open = !!sku && !!state
@@ -396,6 +404,7 @@ export function MobileEditSheet({ sku, state, setState, suppliers, onSave, onCan
     >
       {state && sku && (
         <form onSubmit={e => { e.preventDefault(); onSave() }} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {notice}
           <div style={group}>
             <h3 style={h}>{t('inventory.m_section_product')}</h3>
             <MField label={t('inventory.edit_display_name_placeholder')} hint={t('inventory.edit_display_name_hint')}>

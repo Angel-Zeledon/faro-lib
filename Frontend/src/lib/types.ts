@@ -1980,6 +1980,8 @@ export type ServiceLevelCaveat = 'intermittent_demand'
 export interface InventoryStatusItem extends InventoryStock {
   has_forecast:         boolean
   has_stock:            boolean
+  /** Stock-only rows (no forecast yet): where the quantity sits. */
+  warehouses?:          { warehouse: string | null; current_stock: number | null }[]
   /** Set when the supplier came from the SKU's configured primary supplier
    *  (sku_suppliers); a free-text name on the stock row has no id. */
   supplier_id?:         string | null
@@ -2191,6 +2193,9 @@ export type CoverageUnit = 'day' | 'week' | 'month'
 export interface InventoryStatusResponse {
   items: InventoryStatusItem[]
   excluded_skus?: ExcludedSku[]
+  /** True when there is no completed forecast yet: every stock row, SIN_DATOS,
+   *  no recommendation (asked for with an empty session id). */
+  stock_only?: boolean
   // Active planning period (multi-period Phase C). Coverage values in `items`
   // are expressed in `coverage_unit`; the UI labels them accordingly.
   period?:        PlanningPeriod
