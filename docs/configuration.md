@@ -93,9 +93,9 @@ A tenant override applies ONLY to mail addressed to that tenant's own people and
 | `RESEND_API_KEY` | - | secret | Resend API key. When set, Resend is the transport and SMTP is not consulted. |
 | `EMAIL_FROM` | `StockAI <onboarding@resend.dev>` | - | Sender shown to the recipient. 'onboarding@resend.dev' works without domain verification and is fine for a trial; a real deployment should send from its own verified domain. |
 | `SMTP_SERVER` | `smtp.gmail.com` | - | SMTP host for the fallback transport. |
-| `SMTP_PORT` | `587` | - | SMTP port. 587 is STARTTLS, which is what the client uses. |
+| `SMTP_PORT` | `587` | - | SMTP port. 587 negotiates STARTTLS; 465 is implicit TLS (SSL). The client handles both and verifies the server certificate. |
 | `SMTP_USER` | - | - | SMTP username; also the From address on the SMTP path. |
-| `SMTP_PASS` | - | secret | SMTP password. For Gmail this is an app password, not the account password. |
+| `SMTP_PASS` | - | secret | SMTP password. For Gmail this is an app password, not the account password; for Hostinger it is the mailbox password, not the hPanel one. |
 
 Writable from the panel: `RESEND_API_KEY`, `EMAIL_FROM`, `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`.
 

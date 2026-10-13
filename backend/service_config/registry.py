@@ -347,7 +347,8 @@ EMAIL = Service(
         ),
         ConfigField(
             key="smtp_port", env="SMTP_PORT", kind="int",
-            doc="SMTP port. 587 is STARTTLS, which is what the client uses.",
+            doc="SMTP port. 587 negotiates STARTTLS; 465 is implicit TLS (SSL). "
+                "The client handles both and verifies the server certificate.",
             default="587", example="587",
         ),
         ConfigField(
@@ -358,7 +359,8 @@ EMAIL = Service(
         ConfigField(
             key="smtp_pass", env="SMTP_PASS", secret=True,
             doc="SMTP password. For Gmail this is an app password, not the "
-                "account password.",
+                "account password; for Hostinger it is the mailbox password, "
+                "not the hPanel one.",
             example="your-app-password",
         ),
     ),

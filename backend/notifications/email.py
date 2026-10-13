@@ -18,6 +18,7 @@ import html as html_lib
 import base64
 import logging
 import smtplib
+import ssl
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -154,6 +155,9 @@ def _send_resend(
     resp.raise_for_status()
 
 
+_SMTP_TIMEOUT_SECONDS = 20
+
+
 def _send_smtp(
     to: str, subject: str, html: str, attachment: dict | None = None,
     tenant_id: str | None = None,
@@ -175,9 +179,22 @@ def _send_smtp(
     else:
         msg.attach(MIMEText(html, "html", "utf-8"))
 
-    with smtplib.SMTP(cfg.smtp_server, cfg.smtp_port) as smtp:
+    # Port 465 is implicit TLS (SSL from the first byte), the rest negotiate
+    # STARTTLS. Either way the certificate is verified and the whole exchange has
+    # a deadline: without one a mail server that accepts the connection and then
+    # says nothing parks the request (or the worker thread) forever.
+    context = ssl.create_default_context()
+    if cfg.smtp_port == 465:
+        conn = smtplib.SMTP_SSL(cfg.smtp_server, cfg.smtp_port,
+                                timeout=_SMTP_TIMEOUT_SECONDS, context=context)
+    else:
+        conn = smtplib.SMTP(cfg.smtp_server, cfg.smtp_port,
+                            timeout=_SMTP_TIMEOUT_SECONDS)
+    with conn as smtp:
         smtp.ehlo()
-        smtp.starttls()
+        if cfg.smtp_port != 465:
+            smtp.starttls(context=context)
+            smtp.ehlo()
         smtp.login(cfg.smtp_user, cfg.smtp_pass)
         smtp.sendmail(cfg.smtp_user, to, msg.as_string())
 
