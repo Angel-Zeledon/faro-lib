@@ -1633,10 +1633,14 @@ export const getInventoryStatusPage = (
   serviceLevel = 0.95, opts?: RequestOpts,
 ) => {
   const qs = new URLSearchParams({
-    session_id: sessionId, service_level: String(serviceLevel),
+    service_level: String(serviceLevel),
     limit: String(params.limit), offset: String(params.offset ?? 0),
     sort: params.sort ?? 'urgency',
   })
+  // No session yet: ask for the stock rows themselves (SIN_DATOS, no
+  // recommendation) instead of the 400 "no completed session".
+  if (sessionId) qs.set('session_id', sessionId)
+  else qs.set('without_forecast', 'true')
   if (params.order) qs.set('order', params.order)
   if (params.q && params.q.trim()) qs.set('q', params.q.trim())
   if (params.signal) qs.set('signal', params.signal)
@@ -3717,6 +3721,8 @@ export interface SyncDryRun {
   would_create: number
   would_update: number
   would_leave_unchanged: number
+  /** What the run's safety brake would say about these rows; null = nothing. */
+  brake_warning?: { code: string; params: { jumped: number; matched: number; factor: number; max_pct: number } } | null
   changes_sample: { sku: string; warehouse: string; action: 'create' | 'update';
                     fields: Record<string, { before: unknown; after: unknown }> }[]
   preview_rows: Record<string, unknown>[]
@@ -3823,6 +3829,27 @@ export interface SyncRefreshResult { profiles: SyncRefreshEntry[]; freshness: Sy
 
 export const getSyncFreshness = () =>
   request<SyncFreshness>('GET', '/inventory-sync/freshness', undefined, { silent: true })
+
+/** The live sync that owns a stock value, as the editors need it to warn. */
+export interface SyncOwnerProfile {
+  id: string
+  name: string
+  freshness: 'scheduled' | 'continuous' | 'on_demand' | string
+  push: boolean
+  interval_minutes?: number | null
+  /** null: push or on demand — nobody can tell when it writes next. */
+  next_sync_at: string | null
+  fields: string[]
+}
+export interface SyncOwnership {
+  items: { sku: string; warehouse: string; profile_id: string; fields: string[] }[]
+  profiles: SyncOwnerProfile[]
+  truncated: boolean
+}
+/** Which fields of these SKUs a live sync will overwrite at its next run. */
+export const getSyncOwnership = (skus: string[]) =>
+  request<SyncOwnership>('GET', `/inventory-sync/ownership?skus=${encodeURIComponent(skus.slice(0, 1000).join(','))}`,
+    undefined, { silent: true })
 export const refreshInventorySync = (body: { profile_id?: string; skus?: string[]; wait_seconds?: number }) =>
   request<SyncRefreshResult>('POST', '/inventory-sync/refresh', body, { silent: true })
 

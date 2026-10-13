@@ -163,6 +163,36 @@ def get_freshness(user: CurrentUser = Depends(get_current_user)):
     return ok(out)
 
 
+@status_router.get("/inventory-sync/ownership")
+def get_ownership(
+    skus: Optional[str] = Query(
+        default=None, max_length=40_000,
+        description="Comma-separated SKUs to ask about (at most 1000). Omitted = every key a live "
+                    "sync owns, up to 5000 (`truncated` says when there were more)."),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Which stock fields of which (sku, warehouse) a live sync will overwrite
+    at its next run, and which sync: the editors warn before a person saves a
+    value the source will replace (the source wins; the replacement is
+    counted and audit-logged). `items[].fields` are the fields the owning
+    profile writes; `profiles[]` carries its name and `next_sync_at` (null for
+    a push sync or an on-demand one: nobody can tell when it will write).
+
+    Warehouse scope: a user limited to some warehouses gets only the keys of
+    those warehouses."""
+    from backend.inventory_sync import ownership
+    wanted = None
+    if skus is not None:
+        wanted = [s.strip() for s in skus.split(",") if s.strip()]
+        if len(wanted) > 1000:
+            raise AppError("inventory_sync_too_many_skus", "Ask about at most 1000 SKUs at a time.",
+                           status_code=422, params={"max": 1000, "count": len(wanted)})
+        if not wanted:
+            return ok({"items": [], "profiles": [], "truncated": False})
+    visible = (lambda w: wscope.in_scope(user, w)) if wscope.is_scoped(user) else None
+    return ok(ownership.owned_keys(user.tenant_id, wanted, warehouse_visible=visible))
+
+
 @status_router.get("/inventory-sync/profiles")
 def list_profiles(user: CurrentUser = Depends(get_current_user)):
     """Every inventory sync profile with its status: enabled, last success and

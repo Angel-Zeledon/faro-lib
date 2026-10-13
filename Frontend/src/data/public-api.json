@@ -2,8 +2,8 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 291,
-  "read": 167,
+  "total": 292,
+  "read": 168,
   "write": 124
  },
  "limits": {
@@ -10014,6 +10014,17 @@
         "description": "Comma-separated exact SKUs: look up the names/status of a known few"
        },
        "example": "<skus>"
+      },
+      {
+       "name": "without_forecast",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "boolean",
+        "default": false,
+        "description": "When the tenant has no completed forecast session (none given, none active), list every stock row with signal SIN_DATOS, its warehouses and no recommended quantity (`stock_only: true`) instead of answering 400 no_completed_session."
+       },
+       "example": false
       }
      ],
      "request_body": null,
@@ -15416,6 +15427,51 @@
         "default": false
        },
        "example": false
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-inventory-sync-ownership",
+     "method": "GET",
+     "path": "/inventory-sync/ownership",
+     "tag": "inventory-sync-status",
+     "scope": "read",
+     "summary": "Get Ownership",
+     "description": "Which stock fields of which (sku, warehouse) a live sync will overwrite at its next run, and which sync: the editors warn before a person saves a value the source will replace (the source wins; the replacement is counted and audit-logged). `items[].fields` are the fields the owning profile writes; `profiles[]` carries its name and `next_sync_at` (null for a push sync or an on-demand one: nobody can tell when it will write).",
+     "parameters": [
+      {
+       "name": "skus",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "max_length": 40000,
+        "description": "Comma-separated SKUs to ask about (at most 1000). Omitted = every key a live sync owns, up to 5000 (`truncated` says when there were more)."
+       },
+       "example": "<skus>"
       }
      ],
      "request_body": null,

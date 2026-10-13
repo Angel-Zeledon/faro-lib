@@ -80,6 +80,12 @@ export interface StockImportPreview {
   skipped_no_sku:    number
   sample_rows:       Record<string, unknown>[]
   issues:            StockImportIssueGroup[]
+  /** Per live inventory sync: imported rows that set a field it will replace
+   *  at its next run. Empty when no sync owns any of them. */
+  synced_overwrites?: {
+    profile_id: string; name: string; freshness: string; push: boolean
+    next_sync_at: string | null; rows: number; fields: string[]
+  }[]
   fields:            string[]
   /** The one thing a file cannot answer about itself: whether the dot in
    *  "1.250" is a thousands separator or a decimal point. When `ambiguous`,

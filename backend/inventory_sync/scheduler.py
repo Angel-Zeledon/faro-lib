@@ -269,8 +269,15 @@ def _refreshable(tenant_id: str, profile_id: Optional[str]) -> list[dict]:
             raise AppError("inventory_sync_profile_not_found", "Sync profile not found.", status_code=404,
                            params={"profile_id": profile_id})
         return rows
-    return query("SELECT * FROM inventory_sync_profiles WHERE tenant_id = %s "
+    live = query("SELECT * FROM inventory_sync_profiles WHERE tenant_id = %s "
                  "AND (enabled OR freshness = 'on_demand') ORDER BY priority, created_at", (tenant_id,))
+    if live:
+        return live
+    # No sync is switched on, but the stock on screen came from one (a person
+    # previewed it and pressed "Sync now" without enabling it): "Refresh now"
+    # runs those, exactly like that button, instead of answering "nothing".
+    return query("SELECT * FROM inventory_sync_profiles WHERE tenant_id = %s ORDER BY priority, created_at",
+                 (tenant_id,))
 
 
 def _iso(v):
@@ -362,10 +369,20 @@ def _wait(run_id: str, wait_s: float) -> dict:
 def freshness(tenant_id: str) -> dict:
     """The tenant's freshness chip: `fresh` / `stale` / `blocked` / `none`,
     `data_as_of` (the oldest last-success among live profiles: the stock is at
-    least that fresh), and per profile what is wrong when it is not fresh."""
-    rows = query("SELECT id, name, enabled, freshness, interval_minutes, poll_seconds, health, "
-                 "health_reason, data_as_of, last_success_at, lease_until FROM inventory_sync_profiles "
-                 "WHERE tenant_id = %s AND (enabled OR freshness = 'on_demand')", (tenant_id,))
+    least that fresh), and per profile what is wrong when it is not fresh.
+
+    With no live profile but some switched off, those are reported (as
+    `stale`, reason `inventory_sync_disabled`): the stock on screen came from
+    them and nothing keeps it current. `none` means the tenant has no sync."""
+    all_rows = query("SELECT id, name, enabled, freshness, interval_minutes, poll_seconds, health, "
+                     "health_reason, data_as_of, last_success_at, lease_until FROM inventory_sync_profiles "
+                     "WHERE tenant_id = %s", (tenant_id,))
+    # With no live profile, the switched-off ones that wrote the stock on screen
+    # (a success on record) describe it; one that never ran says nothing about
+    # it and would turn "data as of 09:30" into "never".
+    rows = ([r for r in all_rows if r["enabled"] or r["freshness"] == "on_demand"]
+            or [r for r in all_rows if r.get("data_as_of") or r.get("last_success_at")]
+            or all_rows)
     if not rows:
         return {"state": "none", "data_as_of": None, "profiles": []}
     now = datetime.now(timezone.utc)
@@ -375,15 +392,19 @@ def freshness(tenant_id: str) -> dict:
         budget = (2 * int(r["poll_seconds"] or 60) if r["freshness"] == "continuous"
                   else 120 * int(r["interval_minutes"] or 60))
         last = r.get("data_as_of") or r.get("last_success_at")
+        off = not r["enabled"] and r["freshness"] != "on_demand"
+        reason = r.get("health_reason")
         if r["health"] in ("paused", "blocked"):
             state = "blocked"
+        elif off:
+            state, reason = "stale", "inventory_sync_disabled"
         elif last is None or (r["freshness"] != "on_demand" and (now - last).total_seconds() > budget):
             state = "stale"
         else:
             state = "fresh"
         worst = state if order[state] > order[worst] else worst
         items.append({"profile_id": r["id"], "name": r["name"], "state": state, "health": r["health"],
-                      "reason": r.get("health_reason"), "data_as_of": _iso(last),
+                      "reason": reason, "data_as_of": _iso(last), "enabled": bool(r["enabled"]),
                       "running": bool(r.get("lease_until") and r["lease_until"] > now)})
     known = [r.get("data_as_of") or r.get("last_success_at") for r in rows]
     as_of = None if any(k is None for k in known) else min(known)

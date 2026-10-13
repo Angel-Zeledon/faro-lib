@@ -579,7 +579,15 @@ async def bulk_import_preview(
             group["samples"].append({"row": err["row"], "sku": err["sku"],
                                      "value": err["params"].get("value")})
 
+    # Rows that set a field a live inventory sync owns: the import is allowed
+    # (the source wins at the sync's next run, and that is audit-logged), but
+    # the person is told BEFORE importing which sync will replace them.
+    from backend.inventory_sync import ownership
+    visible = (lambda w: wscope.in_scope(user, w)) if wscope.is_scoped(user) else None
+    synced_overwrites = ownership.overwrites_for(user.tenant_id, rows, warehouse_visible=visible)
+
     return ok({
+        "synced_overwrites": synced_overwrites,
         "format": fmt,
         "separator": sep,
         "columns": columns,
@@ -970,6 +978,11 @@ def inventory_status(
     skus: Optional[str] = Query(
         default=None, max_length=4000,
         description="Comma-separated exact SKUs: look up the names/status of a known few"),
+    without_forecast: bool = Query(
+        default=False,
+        description="When the tenant has no completed forecast session (none given, none active), "
+                    "list every stock row with signal SIN_DATOS, its warehouses and no recommended "
+                    "quantity (`stock_only: true`) instead of answering 400 no_completed_session."),
     user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -990,16 +1003,70 @@ def inventory_status(
     if isinstance(q, _QueryDefault): q = None
     if isinstance(skus, _QueryDefault): skus = None
     if isinstance(abc, _QueryDefault): abc = None
+    if isinstance(without_forecast, _QueryDefault): without_forecast = False
+    if isinstance(by_warehouse, _QueryDefault): by_warehouse = False
+    stock_only = False
     if not session_id:
         session_id = planning_service.resolve_active_session(user.tenant_id)
         if not session_id:
-            raise AppError(
-                "no_completed_session",
-                "No completed session for this tenant yet",
-                status_code=400,
-            )
+            if not without_forecast or by_warehouse:
+                raise AppError(
+                    "no_completed_session",
+                    "No completed session for this tenant yet",
+                    status_code=400,
+                )
+            stock_only = True
 
     period = planning_service.get_planning(user.tenant_id).get("period", "daily")
+
+    if stock_only:
+        # Stock with no forecast behind it yet (synced or typed before any sales
+        # history): every row, SIN_DATOS, no recommendation. Same filters and
+        # paging as the session view; a warehouse-scoped caller sees only the
+        # stock of its warehouses.
+        rows = svc.list_stock(user.tenant_id)
+        if wscope.is_scoped(user):
+            rows = wscope.filter_rows(user, rows)
+        items = svc.get_stock_only_status(user.tenant_id, service_level, period, stock_rows=rows)
+        if signal:
+            items = [i for i in items if i["signal"] == signal.upper()]
+        if supplier:
+            items = [i for i in items if (i.get("supplier") or "").lower() == supplier.lower()]
+        if abc:
+            items = [i for i in items if i.get("abc") == abc.upper()]
+        if skus and skus.strip():
+            wanted = {x.strip() for x in skus.split(",") if x.strip()}
+            items = [i for i in items if i["sku"] in wanted]
+        if q and q.strip():
+            needle = q.strip().lower()
+            items = [i for i in items if needle in " ".join(
+                str(i.get(k) or "") for k in ("sku", "display_name", "category", "supplier")).lower()]
+        shown, page = items, None
+        if limit is not None:
+            shown = svc.sort_status_items(items, sort, order)[offset:offset + limit]
+            page = {"limit": limit, "offset": offset, "total": len(items), "sort": sort}
+            if order:
+                page["order"] = order
+        return ok({
+            "period": period,
+            "coverage_unit": _COVERAGE_UNIT.get(period, "day"),
+            "stock_only": True,
+            "items": shown,
+            "page": page,
+            "excluded_skus": [],
+            "summary": {
+                "total_skus":    len(items),
+                "order_now":     sum(1 for i in items if i["signal"] == "PEDIR_YA"),
+                "order_soon":    sum(1 for i in items if i["signal"] == "PEDIR_PRONTO"),
+                "ok":            sum(1 for i in items if i["signal"] == "OK"),
+                "without_stock": sum(1 for i in items if not i.get("has_stock")),
+                "with_forecast": 0,
+                "overstock":     sum(1 for i in items if i["signal"] == "SOBRESTOCK"),
+                "sin_datos":     sum(1 for i in items if i["signal"] == "SIN_DATOS"),
+                "total_inventory_value": 0,
+            },
+            "computed_at": datetime.now(timezone.utc).isoformat(),
+        })
 
     # The aggregate view is served from the persisted snapshot (SQL filtering,
     # sorting and paging; recomputed only when an input changed — see

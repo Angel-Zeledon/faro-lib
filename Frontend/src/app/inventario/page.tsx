@@ -1,5 +1,8 @@
 'use client'
 import FreshnessChip from '@/components/inventory/FreshnessChip'
+import SyncOwnedNotice, { ownedAmong, useOwnedNoticeText, useSyncOwnership } from '@/components/inventory/SyncOwnedNotice'
+import { previewStockImport, type SyncOwnerProfile } from '@/lib/api'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -1203,6 +1206,14 @@ function ShrinkageModal({ sessionId, warehouses, defaultWarehouse, onClose, onSa
   return () => { alive = false; clearTimeout(handle) }
  }, [sku, sessionId])
  const selected = items.find(i => i.sku === sku) || null
+ // A synced quantity is replaced at the sync's next run: a loss recorded here
+ // only lasts until then unless the source records it too.
+ const shrinkOwners = useSyncOwnership(selected ? [selected.sku] : null)
+ const shrinkOwner = selected ? shrinkOwners.get(selected.sku) : undefined
+ const shrinkOwned = ownedAmong(shrinkOwner, ['current_stock'], warehouses.length > 1 ? warehouse : undefined)
+ const shrinkNotice = shrinkOwner && shrinkOwned.length > 0
+  ? <SyncOwnedNotice profile={shrinkOwner.profile} fields={shrinkOwned} compact />
+  : null
  const qtyNum = parseFloat(quantity)
  const estCost = selected?.unit_cost != null && !isNaN(qtyNum) && qtyNum > 0
   ? qtyNum * selected.unit_cost
@@ -1279,6 +1290,7 @@ function ShrinkageModal({ sessionId, warehouses, defaultWarehouse, onClose, onSa
       {t('inventory.shrinkage_estimated_cost_prefix')} <strong style={{ color: C.red }}>{fmtCurrency(estCost)}</strong>
      </div>
     )}
+    {shrinkNotice}
     {error && <div role="alert" style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.08)', fontSize: 13, color: C.red }}>{error}</div>}
     <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
    </form>
@@ -1367,6 +1379,8 @@ function ShrinkageModal({ sessionId, warehouses, defaultWarehouse, onClose, onSa
        {t('inventory.shrinkage_estimated_cost_prefix')} <strong style={{ color: C.red }}>{fmtCurrency(estCost)}</strong>
       </div>
      )}
+
+     {shrinkNotice}
 
      {error && (
       <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', fontSize: 12, color: C.red }}>{error}</div>
@@ -1686,6 +1700,17 @@ interface EditState { current_stock: string; lead_time_days: string; unit_cost: 
 function rowToEdit(item: InventoryStatusItem): EditState {
  return { current_stock: String(item.current_stock ?? ''), lead_time_days: String(item.lead_time_days ?? DEFAULT_LEAD_TIME_DAYS), unit_cost: String(item.unit_cost ?? ''), moq: String(item.moq ?? DEFAULT_MOQ), supplier: item.supplier ?? '', display_name: item.display_name ?? '', service_level: String(item.service_level ?? DEFAULT_SERVICE_LEVEL), sale_price: String(item.sale_price ?? ''), category: item.category ?? '', family: item.family ?? '', brand: item.brand ?? '', unit_of_measure: item.unit_of_measure ?? '', barcode: item.barcode ?? '' }
 }
+/** "Norte 4 · Sur 6": where a stock-only row's quantity sits. */
+function warehouseLine(item: InventoryStatusItem): string {
+ return (item.warehouses ?? [])
+  .map(w => `${w.warehouse ?? '—'} ${fmtNum(w.current_stock ?? 0)}`)
+  .join(' · ')
+}
+
+// The product editor's fields an inventory sync can own (fields.CANONICAL_FIELDS
+// on the backend, minus the key). MOQ, family and service level are StockAI's.
+const SYNC_EDITOR_FIELDS = ['current_stock', 'unit_cost', 'supplier', 'lead_time_days', 'sale_price',
+ 'category', 'brand', 'unit_of_measure', 'barcode', 'display_name']
 const inputS: React.CSSProperties = { background: 'var(--surface-2)', border: `1px solid var(--border)`, borderRadius: 5, color: 'var(--text)', fontSize: 12, outline: 'none', padding: '3px 7px', width: '100%', boxSizing: 'border-box' }
 
 // ── Provider group ────────────────────────────────────────────────────────────
@@ -2272,15 +2297,20 @@ export default function InventoryPage() {
 
  // Re-reads the current page after a save/import/refresh. Edited order
  // quantities are dropped: they were typed against numbers that just changed.
- const load = useCallback(async (sid?: string) => {
- if (sid === '') return
+ // `sid` is accepted for the callers' readability only: the fetch below reads
+ // the current session (or, with none, the stock-only list).
+ const load = useCallback(async (_sid?: string) => {
  reloadRef.current = true
  setEditedQty({})
  setEditingQtySku(null)
  setReloadTick(n => n + 1)
  }, [])
 
- const wantsStatus = !!sessionId && viewMode !== 'capital' && viewMode !== 'inflation'
+ // No completed forecast yet (sessions loaded, none there): the stock rows
+ // themselves are listed, SIN_DATOS, so stock that arrived by sync or by hand
+ // before any sales history is visible instead of "0 SKUs".
+ const stockOnly = !sessionId && !sessionsLoading && !sessionsError
+ const wantsStatus = (!!sessionId || stockOnly) && viewMode !== 'capital' && viewMode !== 'inflation'
   && viewMode !== 'erosion' && viewMode !== 'money' && viewMode !== 'ignored' && viewMode !== 'committed'
 
  useEffect(() => {
@@ -2533,6 +2563,42 @@ export default function InventoryPage() {
  // A page that no longer exists (rows were deleted under it) pulls back in.
  useEffect(() => { if (!loading && !fetching && data && page > pageCount) setPage(pageCount) }, [loading, fetching, data, page, pageCount, setPage])
  const pageItems = paged.rows
+
+ // Values a live inventory sync owns are replaced at its next run (the source
+ // wins). Saving stays allowed; the editors say so BEFORE the save. One read
+ // for the SKU being edited, one per page while the bulk editor is open.
+ const ownedText = useOwnedNoticeText()
+ const confirm = useConfirm()
+ const editOwners = useSyncOwnership(editId ? [editId] : null)
+ const editOwner = editId ? editOwners.get(editId) : undefined
+ const editOwnedFields = ownedAmong(editOwner, SYNC_EDITOR_FIELDS)
+ const editNotice = editOwner && editOwnedFields.length > 0
+  ? <SyncOwnedNotice profile={editOwner.profile} fields={editOwnedFields} compact />
+  : null
+ const bulkSkus = useMemo(() => (viewMode === 'update' ? pageItems.map(i => i.sku) : null), [viewMode, pageItems])
+ const bulkOwners = useSyncOwnership(bulkSkus)
+ const bulkNotices = useMemo(() => {
+  const groups = new Map<string, { profile: SyncOwnerProfile; rows: number; fields: Set<string> }>()
+  updatedSkus.forEach(sku => {
+   const owner = bulkOwners.get(sku)
+   const draft = updateDraft[sku]
+   const base = rowBaseline[sku]
+   if (!owner || !draft) return
+   const changed = (['current_stock', 'lead_time_days', 'supplier'] as const).filter(f => !base || draft[f] !== base[f])
+   const owned = ownedAmong(owner, [...changed], selectedWarehouse ?? undefined)
+   if (owned.length === 0) return
+   const g = groups.get(owner.profile.id) ?? { profile: owner.profile, rows: 0, fields: new Set<string>() }
+   g.rows += 1
+   owned.forEach(f => g.fields.add(f))
+   groups.set(owner.profile.id, g)
+  })
+  return Array.from(groups.values())
+ }, [updatedSkus, bulkOwners, updateDraft, rowBaseline, selectedWarehouse])
+ const bulkNoticeBlock = bulkNotices.length > 0 ? (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: narrow ? '0 0 10px' : '10px 16px', borderBottom: narrow ? 'none' : `1px solid ${C.border}` }}>
+   {bulkNotices.map(g => <SyncOwnedNotice key={g.profile.id} profile={g.profile} fields={Array.from(g.fields)} rows={g.rows} compact />)}
+  </div>
+ ) : null
  const deadCapitalItems = useMemo(() => deadCapital?.items ?? [], [deadCapital])
  const deadCapitalPaged = usePage(deadCapitalItems, deadCapitalPage, setDeadCapitalPage)
  const forecastMoneyItems = useMemo(() => forecastMoney?.items ?? [], [forecastMoney])
@@ -2628,6 +2694,18 @@ export default function InventoryPage() {
  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
  const file = e.target.files?.[0]; if (!file) return; e.target.value = ''; setImporting(true)
  try {
+ // Rows that set a value a live sync owns are imported all the same and
+ // replaced at that sync's next run: say so BEFORE importing. A preview
+ // that fails is not a reason to block the import (it reports its own errors).
+ let overwrites: NonNullable<Awaited<ReturnType<typeof previewStockImport>>['synced_overwrites']> = []
+ try { overwrites = (await previewStockImport(file, undefined, { silent: true })).synced_overwrites ?? [] }
+ catch { overwrites = [] }
+ if (overwrites.length > 0) {
+  const message = overwrites.map(o => `${t('isync.owned_rows', { n: o.rows })} ${ownedText(
+   { id: o.profile_id, name: o.name, freshness: o.freshness, push: o.push, next_sync_at: o.next_sync_at, fields: o.fields },
+   o.fields)}`).join('\n\n')
+  if (!(await confirm({ title: t('isync.owned_import_title'), message, confirmLabel: t('isync.owned_import_confirm') }))) return
+ }
  // Whichever warehouse tab is open is the destination for rows that name
  // none. In "Todas" nothing is passed and the backend resolves the default,
  // exactly as before.
@@ -2784,7 +2862,9 @@ export default function InventoryPage() {
   : analysisViews.find(([m]) => m === viewMode)?.[2] ?? ''
 
  // KPIs and the "no stock" banner come from the server's whole-catalogue summary.
- const summary = kpi ?? undefined
+ // With no forecast and no stock rows there is nothing to summarise: the
+ // welcome card stands alone, exactly as before stock-only listing existed.
+ const summary = kpi && !(stockOnly && !kpi.total_skus) ? kpi : undefined
  const skusWithoutStock = kpi?.without_stock ?? 0
  const skusWithForecast = kpi?.with_forecast ?? 0
 
@@ -2839,13 +2919,13 @@ export default function InventoryPage() {
  </div>
 
  <FreshnessChip canRefresh={canEdit} visibleSkus={data?.items.map(i => i.sku)}
-  onRefreshed={() => { if (sessionId) void load(sessionId) }} />
+  onRefreshed={() => { void load() }} />
 
  <div data-tour="inv.more_menu"><MenuButton
   icon={<MoreHorizontal size={14} />}
   title={t('inventory.menu_more')}
   items={[
-   { label: t('inventory.btn_refresh'), icon: <RefreshCw size={12} />, onSelect: () => sessionId && load(sessionId), disabled: loading },
+   { label: t('inventory.btn_refresh'), icon: <RefreshCw size={12} />, onSelect: () => load(), disabled: loading },
    ...(canEdit ? [
     { label: t('inventory.menu_import_csv'),        icon: <Upload size={12} />,       onSelect: () => importRef.current?.click(), disabled: importing },
     { label: t('inventory.shrinkage_btn_register'), icon: <PackageMinus size={12} />, onSelect: () => setShowShrinkageModal(true), danger: true },
@@ -2916,7 +2996,7 @@ export default function InventoryPage() {
 
  {/* Secondary failure over an already-rendered screen (e.g. the money-not-moving view). */}
  {error != null && data != null && (
- <InlineError error={error} onRetry={() => sessionId && load(sessionId)} onDismiss={() => setError(null)} />
+ <InlineError error={error} onRetry={() => load()} onDismiss={() => setError(null)} />
  )}
 
  {/* Excluded SKUs notice — products uploaded but left out of the forecast */}
@@ -2970,8 +3050,19 @@ export default function InventoryPage() {
  </div>
  )}
 
- {/* Situación */}
- {summary && !isAnalysisView && <ContextMessage summary={summary} />}
+ {/* Situación. With no forecast yet the rows are stock only: say exactly
+     that (ContextMessage's "no signal" sentence is about a missing stock
+     count, the opposite case). */}
+ {summary && !isAnalysisView && !stockOnly && <ContextMessage summary={summary} />}
+ {summary && !isAnalysisView && stockOnly && (
+ <div role="status" data-testid="inv-stock-only" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px', borderRadius: 10, background: C.surface, border: `1px solid ${C.border}`, color: C.text, fontSize: 13, lineHeight: 1.5 }}>
+ <Info size={14} style={{ flexShrink: 0, marginTop: 3, color: C.amber }} aria-hidden="true" />
+ <span>
+ {t('inventory.stock_only_notice', { n: summary.total_skus })}{' '}
+ <Link href="/ventas" style={{ color: C.indigo, fontWeight: 600 }}>{t('inventory.stock_only_cta')}</Link>
+ </span>
+ </div>
+ )}
 
  {/* SKUs sin stock banner */}
  {!loading && sessionId && skusWithoutStock > 0 && !isAnalysisView && (
@@ -3016,7 +3107,7 @@ export default function InventoryPage() {
  value={selectedWarehouse}
  onChange={setSelectedWarehouse}
  warehouses={warehouses}
- onSharesChanged={() => { if (sessionId) load(sessionId) }}
+ onSharesChanged={() => { void load() }}
  />
  )}
 
@@ -3083,7 +3174,7 @@ export default function InventoryPage() {
  ) : error && !data ? (
  /* ── Status request failed outright ───────────────────────── */
  <div style={{ padding: '32px 24px' }}>
- <ErrorState error={error} onRetry={() => sessionId && load(sessionId)} />
+ <ErrorState error={error} onRetry={() => load()} />
  </div>
  ) : sessionsError ? (
  /* ── Session list failed to load ──────────────────────────── */
@@ -3094,8 +3185,8 @@ export default function InventoryPage() {
  <RefreshCw size={12} /> {t('inventory.btn_retry')}
  </button>
  </div>
- ) : !sessionId ? (
- /* ── Onboarding empty state ───────────────────────────────── */
+ ) : !sessionId && !(kpi?.total_skus) ? (
+ /* ── Onboarding empty state: no forecast AND no stock rows ── */
  <div style={{ padding: '40px 48px', maxWidth: 520, margin: '0 auto', textAlign: 'center' }}>
  <ShoppingCart size={36} strokeWidth={1} color={C.indigo} style={{ margin: '0 auto 16px', opacity: 0.4 }} />
  <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>{t('inventory.onboarding_welcome')}</div>
@@ -3181,6 +3272,7 @@ export default function InventoryPage() {
     : tOr(t, 'inventory.bulk_row_error', `Row ${rowStatus.sku} could not be saved`, { sku: rowStatus.sku })
  )}
  </div>
+ {bulkNoticeBlock}
  <MobileStockEntry
   items={pageItems}
   draft={updateDraft}
@@ -3215,6 +3307,7 @@ export default function InventoryPage() {
  <Upload size={11} /> {t('inventory.btn_import_csv_arrow')}
  </button>
  </div>
+ {bulkNoticeBlock}
  {/* Action bar */}
  <div style={{ padding: '10px 16px', background: C.card, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
  <span style={{ fontSize: 12, color: updatedSkus.size > 0 ? C.text : C.dim, fontWeight: updatedSkus.size > 0 ? 600 : 400, flex: 1 }}>
@@ -4210,7 +4303,7 @@ export default function InventoryPage() {
   {/* Standing deliveries: "N units every week / month", materialised ahead as commitments. */}
   <RecurringDeliveriesPanel reloadToken={commitmentsVersion} onChanged={() => setCommitmentsVersion(v => v + 1)} />
   {/* Forecast by analogy: a new product with no history plans from products it sells like. */}
-  <AnalogyPanel onChanged={() => { if (sessionId) load(sessionId) }} />
+  <AnalogyPanel onChanged={() => { void load() }} />
  </div>
 
  ) : viewMode === 'ignored' && narrow ? (
@@ -4498,7 +4591,15 @@ export default function InventoryPage() {
  const crit = item.signal === 'PEDIR_YA'
 
  if (isEditing && editState) return (
- <tr key={item.sku} style={{ background: 'color-mix(in srgb, var(--accent) 4%, transparent)' }}>
+ <Fragment key={item.sku}>
+ {editNotice && (
+ <tr style={{ background: 'color-mix(in srgb, var(--accent) 4%, transparent)' }}>
+ {/* Sticky to the left edge so the sentence stays readable while the
+     wide table is scrolled sideways. */}
+ <td colSpan={99} style={{ padding: '8px 12px 0' }}><div style={{ position: 'sticky', left: 12, maxWidth: 820 }}>{editNotice}</div></td>
+ </tr>
+ )}
+ <tr style={{ background: 'color-mix(in srgb, var(--accent) 4%, transparent)' }}>
  <td style={{ padding: '8px 6px', borderBottom: `1px solid ${C.border}` }} />
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}><SignalBadge s={item.signal} /></td>
  <td style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}` }}>
@@ -4574,6 +4675,7 @@ export default function InventoryPage() {
  </div>
  </td>
  </tr>
+ </Fragment>
  )
 
  return (
@@ -4609,6 +4711,9 @@ export default function InventoryPage() {
  <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 11 }}>{item.sku}</div>
  {item.display_name && <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{item.display_name}</div>}
  {item.supplier && <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>{item.supplier}</div>}
+ {(item.warehouses?.length ?? 0) > 0 && (
+ <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>{warehouseLine(item)}</div>
+ )}
  {item.forecast_source === 'analogy' && (
  <div style={{ fontSize: 10.5, fontWeight: 600, color: C.indigo, marginTop: 2 }} title={t('analogy.badge_tip')}>
  {t('analogy.badge')} · {t('analogy.badge_tip')}
@@ -4753,7 +4858,7 @@ export default function InventoryPage() {
   // is the one the modal opens on. On "Todas" it falls back to the default.
   defaultWarehouse={selectedWarehouse}
   onClose={() => setShowShrinkageModal(false)}
-  onSaved={() => { if (sessionId) load(sessionId) }}
+  onSaved={() => { void load() }}
  />
  )}
 
@@ -4794,6 +4899,7 @@ export default function InventoryPage() {
    onSave={() => editId && commitEdit(editId)}
    onCancel={cancelEdit}
    saving={saving}
+   notice={editNotice}
   />
  )}
 

@@ -461,8 +461,11 @@ export default function InventorySyncPage() {
                   <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                     <strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{p.name}</strong>
                     <span style={{ fontSize: 12, color: C.muted }}>
-                      {(p.source_object || t(`isync.kind.${p.source_kind}`))}
-                      {' · '}{t('isync.last_success', { when: age(p.last_success_age_s) })}
+                      {/* A push sync has no schedule: it is as current as its last batch. */}
+                      {p.source_kind === 'push'
+                        ? <>{t('isync.push_receives')}{' · '}{t('isync.push_last_batch', { when: age(p.last_success_age_s) })}</>
+                        : <>{(p.source_object || t(`isync.kind.${p.source_kind}`))}
+                            {' · '}{t('isync.last_success', { when: age(p.last_success_age_s) })}</>}
                     </span>
                   </span>
                   <span style={{ fontSize: 12 }}>{statusBadge(p)}</span>
@@ -479,6 +482,16 @@ export default function InventorySyncPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0 }}>
               <h2 style={{ ...h2, overflowWrap: 'anywhere' }}>{current.name}</h2>
+              {current.source_kind === 'push' ? (
+                // Fed by the customer's system: no data source, no schedule, no
+                // connection to check. What matters is when the last batch came.
+                <p style={small}>
+                  {t('isync.push_receives')}
+                  {' · '}{t('isync.push_last_batch', { when: current.last_success_at
+                    ? `${age(current.last_success_age_s)} · ${when(current.last_success_at)}` : t('isync.never') })}
+                  {' · '}{t(`isync.model.${current.stock_model ?? 'snapshot'}`)}
+                </p>
+              ) : (
               <p style={small}>
                 {sourceOf(current.data_source_id)?.name ?? current.data_source_id}
                 {' · '}{current.source_object || t(`isync.kind.${current.source_kind}`)}
@@ -489,6 +502,7 @@ export default function InventorySyncPage() {
                 {' · '}{t(`isync.model.${current.stock_model ?? 'snapshot'}`)}
                 {current.strategy && current.strategy !== 'auto' ? ` · ${t(`isync.strategy.${current.strategy}`)}` : ''}
               </p>
+              )}
               {current.source_kind === 'push' && (
                 <p style={{ ...small, marginTop: 4, overflowWrap: 'anywhere' }}>
                   {t('isync.push_url')}: <code>POST /api/v1/inventory-sync/profiles/{current.id}/ingest</code>
@@ -542,7 +556,7 @@ export default function InventorySyncPage() {
               {current.source_kind === 'push' ? t('isync.push_preview_hint', { id: current.id }) : t('isync.needs_dry_run')}
             </p>
           )}
-          <div data-tour="sync.health"><HealthPanel profile={current} egress={egress} onDoctor={canEdit ? () => setDoctorFor(current.id) : undefined} /></div>
+          <div data-tour="sync.health"><HealthPanel profile={current} egress={egress} onDoctor={canEdit && current.source_kind !== 'push' ? () => setDoctorFor(current.id) : undefined} /></div>
 
           {canEdit && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
@@ -1070,6 +1084,17 @@ function DryRunCard({ dry, fieldLabel }: {
             <strong style={{ fontSize: 18, color }}>{dry[k]}</strong></div>
         ))}
       </div>
+      {/* The run's quantity-jump brake judged on these rows: said here, before
+          enabling, against the stock already in StockAI (any source). */}
+      {dry.brake_warning && (
+        <div role="alert" style={{ marginTop: 10, padding: 10, borderRadius: 8, border: `1px solid ${C.red}` }}>
+          <p style={{ margin: 0, fontSize: 12.5, color: C.red, fontWeight: 700 }}>{t('isync.dry_brake_title')}</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12.5 }}>
+            {t(`isync.code.${dry.brake_warning.code}`, dry.brake_warning.params)}
+          </p>
+          <p style={{ ...small, marginTop: 4 }}>{t(`isync.remedy.${dry.brake_warning.code}`)}</p>
+        </div>
+      )}
       {(dry.owned_elsewhere ?? 0) > 0 && (
         <p role="status" style={{ ...small, marginTop: 10, color: C.amber }}>
           {t('isync.dry_owned', { n: dry.owned_elsewhere ?? 0, list: (dry.owned_by ?? []).join(', ') })}

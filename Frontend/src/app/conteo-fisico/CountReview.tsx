@@ -20,6 +20,8 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { ErrorState, LoadingState, InlineError } from '@/components/ui/States'
 import StickyActionBar from '@/components/mobile/StickyActionBar'
+import SyncOwnedNotice, { ownedAmong, useSyncOwnership } from '@/components/inventory/SyncOwnedNotice'
+import type { SyncOwnerProfile } from '@/lib/api'
 
 const C = {
   surface: 'var(--surface)', card: 'var(--surface-2)', border: 'var(--border)',
@@ -56,6 +58,23 @@ export default function CountReview({ countId, canApply, onLeave, onChanged }: {
 
   const withDiff = useMemo(
     () => (data?.lines ?? []).filter(l => Math.abs(l.difference) > 1e-9 && !l.applied_at), [data])
+  // A live inventory sync that owns these quantities replaces the counted
+  // figure at its next run (the source wins). Applying stays allowed; the
+  // review says so before the person applies.
+  const diffSkus = useMemo(() => withDiff.map(l => l.sku), [withDiff])
+  const owners = useSyncOwnership(diffSkus)
+  const syncNotices = useMemo(() => {
+    const groups = new Map<string, { profile: SyncOwnerProfile; rows: number }>()
+    for (const l of withDiff) {
+      if (!picked.has(l.sku)) continue
+      const owner = owners.get(l.sku)
+      if (ownedAmong(owner, ['current_stock'], data?.count.warehouse).length === 0) continue
+      const g = groups.get(owner!.profile.id) ?? { profile: owner!.profile, rows: 0 }
+      g.rows += 1
+      groups.set(owner!.profile.id, g)
+    }
+    return Array.from(groups.values())
+  }, [withDiff, picked, owners, data])
 
   if (error) return <ErrorState error={error} onRetry={load} />
   if (!data) return <LoadingState />
@@ -165,6 +184,11 @@ export default function CountReview({ countId, canApply, onLeave, onChanged }: {
       {tot.unpriced_lines > 0 && <p style={noteStyle}>{t('count.rv_unpriced', { n: tot.unpriced_lines })}</p>}
       {tot.uncounted_skus > 0 && <p style={noteStyle}>{t('count.rv_uncounted', { n: tot.uncounted_skus })}</p>}
       {!canApply && <p style={noteStyle}>{t('count.rv_readonly')}</p>}
+      {syncNotices.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+          {syncNotices.map(g => <SyncOwnedNotice key={g.profile.id} profile={g.profile} fields={['current_stock']} rows={g.rows} />)}
+        </div>
+      )}
       {actionError != null && <InlineError error={actionError} onDismiss={() => setActionError(null)} />}
 
       {withDiff.length === 0 ? (

@@ -23,6 +23,7 @@ import type {
   StockImportMapping, StockImportPreview, StockImportResult,
 } from '@/lib/stockSetupTypes'
 import { useIsNarrow } from '@/hooks/useIsNarrow'
+import SyncOwnedNotice from '@/components/inventory/SyncOwnedNotice'
 
 const RED   = '#C0504D'
 const AMBER = '#B7791F'
@@ -248,6 +249,18 @@ export default function StockImportWizard({ onImported }: { onImported?: () => v
               </span>
             )}
           </div>
+
+          {/* Rows that set a value a live inventory sync owns: imported all the
+              same, and replaced at that sync's next run. Said before importing. */}
+          {(preview.synced_overwrites ?? []).length > 0 && (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {preview.synced_overwrites!.map(o => (
+                <SyncOwnedNotice key={o.profile_id} rows={o.rows} fields={o.fields} compact
+                  profile={{ id: o.profile_id, name: o.name, freshness: o.freshness, push: o.push,
+                             next_sync_at: o.next_sync_at, fields: o.fields }} />
+              ))}
+            </div>
+          )}
 
           {preview.issues.map(issue => (
             <div key={`${issue.code}-${issue.column}`}

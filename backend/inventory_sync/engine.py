@@ -346,11 +346,19 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
     existing = _existing(tenant_id, list(valid.keys()))
     owned, owned_by = _owned_elsewhere(tenant_id, profile, list(valid.keys()))
     creates, updates, unchanged = 0, 0, 0
+    jump_matched, jump_jumped = 0, 0
     changes_sample: list[dict] = []
     for key, row in valid.items():
         if key in owned:
             continue
         current = existing.get(key)
+        if current is not None and row.get("current_stock") is not None \
+                and current.get("current_stock") is not None:
+            # The run's quantity-jump brake, judged on the sample: the person
+            # sees the warning here, before enabling, instead of after a run.
+            jump_matched += 1
+            if _is_jump(float(current["current_stock"]), float(row["current_stock"])):
+                jump_jumped += 1
         changed = _changes(row, current)
         if current is None:
             creates += 1
@@ -382,7 +390,10 @@ def dry_run(tenant_id: str, profile: dict, *, sample: int = DRY_RUN_SAMPLE,
     masters_out = prep.masters_summary()
     if prep.sup_master:
         masters_out["suppliers"].update(prep._masters.preview_suppliers(tenant_id, profile, prep.sup_master))
+    jump = _jump_verdict(profile, jump_matched, jump_jumped)
     return {
+        # What the run's safety brake would say about these rows (None: nothing).
+        "brake_warning": ({"code": "brake_mass_quantity_change", "params": jump} if jump else None),
         "masters": masters_out,
         "advice": hints,
         **prep.summary(),
@@ -676,21 +687,46 @@ def _check_brake(profile: dict, prep: _Prep, valid: int, run_id: str, *, kind: s
         ratio = float(profile.get("brake_min_row_ratio") or 0)
         if prev and prev["rows_valid"] and valid < prev["rows_valid"] * ratio:
             raise _Brake("row_count_drop", rows=valid, previous=int(prev["rows_valid"]), min_ratio=ratio)
+    # The quantity this run would write against the quantity that is THERE now,
+    # whoever wrote it: this profile, another sync, an upload or a person. It
+    # used to join this profile's own key ledger, so the FIRST run of a new sync
+    # pointed at the wrong table overwrote good stock and passed. Keys another
+    # profile owns with precedence are left out: the apply step skips them
+    # (apply.py, "precedence"), so they cannot be overwritten.
     jump = query_one(
         "SELECT COUNT(*) AS matched, COUNT(*) FILTER (WHERE greatest(s.current_stock, x.q) >= %s "
         "  AND greatest(s.current_stock, x.q) > %s * least(s.current_stock, x.q)) AS jumped "
         "FROM (SELECT sku, warehouse, (data->>'current_stock')::float8 AS q FROM inventory_sync_staging "
-        "      WHERE run_id = %s AND NOT duplicate) x "
+        "      WHERE run_id = %s AND NOT duplicate AND data ? 'current_stock') x "
         "JOIN inventory_stock s ON s.tenant_id = %s AND s.sku = x.sku AND s.warehouse = x.warehouse "
-        "JOIN inventory_sync_keys k ON k.profile_id = %s AND k.sku = x.sku AND k.warehouse = x.warehouse",
-        (JUMP_FACTOR, JUMP_FACTOR, run_id, profile["tenant_id"], profile["id"]))
-    max_jump = float(profile.get("brake_max_jump_pct") or 20)
-    if jump and jump["matched"] >= MIN_ROWS_FOR_JUMP and jump["jumped"] * 100.0 / jump["matched"] > max_jump:
-        # Many quantities this profile wrote before changed by more than 10x
-        # at once: a unit change (boxes -> units), a decimal shift, a wrong column.
-        raise _Brake("mass_quantity_change", jumped=int(jump["jumped"]), matched=int(jump["matched"]),
-                     factor=JUMP_FACTOR, max_pct=max_jump)
+        "WHERE x.q IS NOT NULL AND s.current_stock IS NOT NULL AND NOT EXISTS ("
+        "  SELECT 1 FROM inventory_sync_keys k JOIN inventory_sync_profiles p ON p.id = k.profile_id "
+        "  WHERE k.tenant_id = %s AND k.sku = x.sku AND k.warehouse = x.warehouse "
+        "  AND k.profile_id <> %s AND NOT k.inactive AND (p.priority, p.created_at) < (%s, %s))",
+        (JUMP_FACTOR, JUMP_FACTOR, run_id, profile["tenant_id"], profile["tenant_id"], profile["id"],
+         int(profile.get("priority") or 100), profile.get("created_at")))
+    verdict = _jump_verdict(profile, int(jump["matched"]) if jump else 0, int(jump["jumped"]) if jump else 0)
+    if verdict:
+        # Many quantities changed by more than 10x at once against the stock
+        # already there: a unit change (boxes -> units), a decimal shift, a
+        # wrong column, a wrong table.
+        raise _Brake("mass_quantity_change", **verdict)
     return stats
+
+
+def _is_jump(current: float, incoming: float) -> bool:
+    """The SQL predicate above, for the preview (same numbers, same answer)."""
+    hi, lo = max(current, incoming), min(current, incoming)
+    return hi >= JUMP_FACTOR and hi > JUMP_FACTOR * lo
+
+
+def _jump_verdict(profile: dict, matched: int, jumped: int) -> Optional[dict]:
+    """The brake's params when `jumped` of the `matched` overlapping rows trip
+    the profile's threshold; None when the run may go ahead."""
+    max_jump = float(profile.get("brake_max_jump_pct") or 20)
+    if matched >= MIN_ROWS_FOR_JUMP and jumped * 100.0 / matched > max_jump:
+        return {"jumped": jumped, "matched": matched, "factor": JUMP_FACTOR, "max_pct": max_jump}
+    return None
 
 
 def _guard_profile(tenant_id: str, profile: dict, trigger: str) -> dict:
