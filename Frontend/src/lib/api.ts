@@ -3717,6 +3717,8 @@ export interface SyncDryRun {
   would_create: number
   would_update: number
   would_leave_unchanged: number
+  /** What the run's safety brake would say about these rows; null = nothing. */
+  brake_warning?: { code: string; params: { jumped: number; matched: number; factor: number; max_pct: number } } | null
   changes_sample: { sku: string; warehouse: string; action: 'create' | 'update';
                     fields: Record<string, { before: unknown; after: unknown }> }[]
   preview_rows: Record<string, unknown>[]
