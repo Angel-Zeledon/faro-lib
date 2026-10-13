@@ -14,8 +14,17 @@ import jwt
 from backend.config import settings
 
 _ALG = "HS256"
-_ACCESS_EXPIRE_MIN = 15
 _REFRESH_EXPIRE_DAYS = 7
+
+
+def access_token_ttl_seconds() -> int:
+    """Access-token lifetime from ACCESS_TOKEN_EXPIRE_MINUTES (default 15).
+
+    It used to be a module constant of 15 while the registry documented the
+    variable as the knob: setting it changed nothing, and every response still
+    announced `expires_in: 900`. Environment-only (not panel-editable), so it
+    is read from `settings`."""
+    return max(1, int(settings.access_token_expire_minutes)) * 60
 
 
 def create_access_token(
@@ -58,8 +67,8 @@ def create_access_token(
         "iat": datetime.now(timezone.utc).timestamp(),
         # timezone-aware UTC: datetime.utcnow().timestamp() misreads the naive
         # value as local time, so on a non-UTC host the token would live longer
-        # (or shorter) than _ACCESS_EXPIRE_MIN by the host's UTC offset.
-        "exp": (datetime.now(timezone.utc) + timedelta(minutes=_ACCESS_EXPIRE_MIN)).timestamp(),
+        # (or shorter) than intended by the host's UTC offset.
+        "exp": (datetime.now(timezone.utc) + timedelta(seconds=access_token_ttl_seconds())).timestamp(),
     }
     if session_started_at is not None:
         payload["sat"] = float(session_started_at)

@@ -379,6 +379,28 @@ class TestRefresh:
             "/api/v1/sessions", headers={"Authorization": f"Bearer {new_token}"},
         ).status_code == 200
 
+    def test_access_token_lifetime_follows_the_setting(self, client, registered_user, monkeypatch):
+        """ACCESS_TOKEN_EXPIRE_MINUTES was documented but ignored (a hardcoded
+        15): both the token's `exp` and the announced `expires_in` must follow it."""
+        from backend.auth.jwt_handler import decode_token
+        from backend.config import settings
+        monkeypatch.setattr(settings, "access_token_expire_minutes", 2)
+
+        login = client.post("/api/v1/auth/login", json={
+            "email": registered_user["email"],
+            "password": registered_user["password"],
+        }).json()["data"]
+        claims = decode_token(login["access_token"])
+        assert login["expires_in"] == 120
+        assert abs((claims["exp"] - claims["iat"]) - 120) < 1
+
+        renewed = client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": login["refresh_token"]},
+        ).json()["data"]
+        claims = decode_token(renewed["access_token"])
+        assert renewed["expires_in"] == 120
+        assert abs((claims["exp"] - claims["iat"]) - 120) < 1
+
     def test_refresh_invalid_token_returns_401_and_no_token(self, client):
         resp = client.post("/api/v1/auth/refresh", json={"refresh_token": "invalid_token"})
         assert resp.status_code == 401
