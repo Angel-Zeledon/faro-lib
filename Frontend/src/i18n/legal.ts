@@ -280,7 +280,7 @@ const es: LegalCopy = {
       summary: [
         'Usamos tus datos solo para darte el servicio. **No los vendemos ni hacemos publicidad con ellos.** No hay rastreadores ni analítica en la web.',
         'Los pronósticos de tu cuenta se entrenan solo con los datos de tu cuenta. Ninguna otra empresa ve tus datos.',
-        'Si usas las funciones de inteligencia artificial, parte de tus datos se envía a DeepSeek, un proveedor con sede en China.',
+        'Si usas las funciones de inteligencia artificial, parte de tus datos se envía a un proveedor de modelos de lenguaje: DeepSeek (con sede en China) por defecto, o el que tu empresa haya elegido en Configuración.',
         `Puedes pedir una copia completa de tus datos o su borrado escribiendo a ${MAIL}.`,
       ],
       sections: [
@@ -337,7 +337,8 @@ const es: LegalCopy = {
           blocks: [
             'Algunas funciones usan un modelo de lenguaje de **DeepSeek**: el asistente (en la aplicación y por WhatsApp), el resumen de la mañana en el Panel de compras, la explicación de un pronóstico y el diagnóstico de calidad de un archivo. El resumen del Panel de compras se pide al abrir esa pantalla.',
             'Cuando se usan, enviamos a DeepSeek la pregunta y los datos de tu cuenta que hacen falta para responderla —por ejemplo, códigos y nombres de productos, cantidades, el estado del semáforo, proveedores y montos—. No enviamos contraseñas ni credenciales. DeepSeek tiene su sede en China y trata esos datos según sus propias condiciones.',
-            `Hoy la inteligencia artificial no se puede apagar por cuenta desde la aplicación. Si no quieres que tus datos lleguen a DeepSeek, escríbenos a ${MAIL} antes de usar StockAI. Si el servicio no tiene configurado DeepSeek, no se envía nada y esas pantallas responden con texto calculado por reglas.`,
+            `La administración de tu empresa puede elegir su propio proveedor de IA en Configuración (por ejemplo OpenAI, Anthropic, Google, Groq, OpenRouter, DeepSeek o un servicio compatible propio). Entonces la pregunta y los datos se envían a ese proveedor, y no a DeepSeek, con la llave y las condiciones de tu empresa: ese proveedor es un encargado de tu empresa y no nuestro. Nosotros solo guardamos su llave cifrada y nunca la volvemos a mostrar. Si el proveedor elegido falla, no usamos otro por nuestra cuenta: la pantalla dice qué falló y muestra texto calculado por reglas.`,
+            `La inteligencia artificial no se puede apagar por completo por cuenta desde la aplicación. Si no quieres que tus datos lleguen a DeepSeek, pide a la administración de tu empresa que elija otro proveedor, o escríbenos a ${MAIL} antes de usar StockAI. Si el servicio no tiene ningún proveedor configurado, no se envía nada y esas pantallas responden con texto calculado por reglas.`,
           ],
         },
         {
@@ -350,7 +351,8 @@ const es: LegalCopy = {
                 head: ['Proveedor', 'Para qué', 'Qué datos', 'Dónde'],
                 rows: [
                   ['Hostinger', 'Servidor (VPS) donde corren la aplicación y la base de datos, y correo de stockai.es', 'Todos los datos del servicio', 'Boston, Estados Unidos'],
-                  ['DeepSeek', 'Funciones de inteligencia artificial', 'La pregunta y los datos necesarios para responderla', 'China'],
+                  ['DeepSeek', 'Funciones de inteligencia artificial (proveedor predeterminado)', 'La pregunta y los datos necesarios para responderla', 'China'],
+                  ['Proveedor de IA elegido por tu empresa (opcional)', 'Funciones de inteligencia artificial, solo si la administración lo configura; es encargado de tu empresa', 'La pregunta y los datos necesarios para responderla', 'Según el proveedor elegido'],
                   ['Proveedor de correo: Hostinger (SMTP) o Resend, según la configuración', 'Enviar correos del servicio y alertas', 'Tu dirección de correo y el contenido del mensaje', '[UBICACIÓN — confirmar con el propietario]'],
                   ['Twilio (solo si WhatsApp o SMS están activados)', 'Enviar y recibir mensajes de WhatsApp y SMS', 'Tu número y el contenido del mensaje', 'Estados Unidos'],
                 ],
@@ -364,7 +366,7 @@ const es: LegalCopy = {
           id: 'transfers',
           title: 'Transferencias internacionales',
           blocks: [
-            'Por los proveedores de arriba, tus datos pueden tratarse fuera de tu país: en Boston, Estados Unidos (servidor), en China (DeepSeek, si usas las funciones de IA) y en Estados Unidos (Twilio, si activas WhatsApp o SMS).',
+            'Por los proveedores de arriba, tus datos pueden tratarse fuera de tu país: en Boston, Estados Unidos (servidor), en China (DeepSeek, si usas las funciones de IA con el proveedor predeterminado), en el país del proveedor de IA que tu empresa elija en Configuración y en Estados Unidos (Twilio, si activas WhatsApp o SMS).',
             'Si estás en la Unión Europea o en España, ten en cuenta que China no cuenta con una decisión de adecuación de la Comisión Europea. Por eso te contamos qué funciones envían datos a DeepSeek y cómo evitarlo.',
           ],
         },
@@ -795,7 +797,7 @@ const en: LegalCopy = {
       summary: [
         'We use your data only to provide the service. **We do not sell it or use it for advertising.** There are no trackers or analytics on the site.',
         'Your account\'s forecasts are trained only on your account\'s data. No other company sees your data.',
-        'If you use the artificial-intelligence features, part of your data is sent to DeepSeek, a provider based in China.',
+        'If you use the artificial-intelligence features, part of your data is sent to a language-model provider: DeepSeek (based in China) by default, or the one your company has chosen in Settings.',
         `You can ask for a complete copy of your data, or for its deletion, by writing to ${MAIL}.`,
       ],
       sections: [
@@ -852,7 +854,8 @@ const en: LegalCopy = {
           blocks: [
             'Some features use a language model from **DeepSeek**: the assistant (in the application and over WhatsApp), the morning summary on the Purchasing Panel, the explanation of a forecast and the quality check of a file. The Purchasing Panel summary is requested when you open that screen.',
             'When they are used, we send DeepSeek the question and the data from your account needed to answer it — for example, product codes and names, quantities, the stock signal, suppliers and amounts. We do not send passwords or credentials. DeepSeek is based in China and processes that data under its own terms.',
-            `Today artificial intelligence cannot be switched off per account from the application. If you do not want your data to reach DeepSeek, write to ${MAIL} before using StockAI. If the service has no DeepSeek configured, nothing is sent and those screens answer with rule-based text.`,
+            `Your company's administrators can choose their own AI provider in Settings (for example OpenAI, Anthropic, Google, Groq, OpenRouter, DeepSeek or a compatible service of their own). The question and the data are then sent to that provider, not to DeepSeek, under your company's key and terms: that provider is a processor of your company, not ours. We only store its key, encrypted, and never show it again. If the chosen provider fails, we do not use another one on our own: the screen says what failed and shows rule-based text.`,
+            `Artificial intelligence cannot be switched off entirely per account from the application. If you do not want your data to reach DeepSeek, ask your company's administrators to choose another provider, or write to ${MAIL} before using StockAI. If the service has no provider configured, nothing is sent and those screens answer with rule-based text.`,
           ],
         },
         {
@@ -865,7 +868,8 @@ const en: LegalCopy = {
                 head: ['Provider', 'What for', 'What data', 'Where'],
                 rows: [
                   ['Hostinger', 'Server (VPS) running the application and the database, and stockai.es email', 'All service data', 'Boston, United States'],
-                  ['DeepSeek', 'Artificial-intelligence features', 'The question and the data needed to answer it', 'China'],
+                  ['DeepSeek', 'Artificial-intelligence features (default provider)', 'The question and the data needed to answer it', 'China'],
+                  ['AI provider chosen by your company (optional)', 'Artificial-intelligence features, only if the administrators set it up; it is a processor of your company', 'The question and the data needed to answer it', 'Depends on the chosen provider'],
                   ['Email provider: Hostinger (SMTP) or Resend, depending on configuration', 'Sending service emails and alerts', 'Your email address and the message content', '[LOCATION — confirm with the owner]'],
                   ['Twilio (only if WhatsApp or SMS are switched on)', 'Sending and receiving WhatsApp and SMS messages', 'Your number and the message content', 'United States'],
                 ],
@@ -879,7 +883,7 @@ const en: LegalCopy = {
           id: 'transfers',
           title: 'International transfers',
           blocks: [
-            'Because of the providers above, your data may be processed outside your country: in Boston, United States (server), in China (DeepSeek, if you use the AI features) and in the United States (Twilio, if you switch on WhatsApp or SMS).',
+            'Because of the providers above, your data may be processed outside your country: in Boston, United States (server), in China (DeepSeek, if you use the AI features with the default provider), in the country of the AI provider your company chooses in Settings and in the United States (Twilio, if you switch on WhatsApp or SMS).',
             'If you are in the European Union or Spain, note that China has no adequacy decision from the European Commission. That is why we tell you which features send data to DeepSeek and how to avoid it.',
           ],
         },

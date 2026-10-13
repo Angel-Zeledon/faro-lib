@@ -249,7 +249,8 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
               head: ['Subencargado', 'Para qué', 'Cuándo', 'Dónde'],
               rows: [
                 ['Hostinger', 'Servidor (VPS) donde corren la aplicación y la base de datos; correo de stockai.es', 'Siempre', 'Boston, Estados Unidos'],
-                ['DeepSeek', 'Modelo de lenguaje del asistente, los resúmenes, las explicaciones y el diagnóstico de archivos (ver [cómo usamos la IA](/ia))', 'Solo cuando se usan esas funciones', 'China'],
+                ['DeepSeek', 'Modelo de lenguaje del asistente, los resúmenes, las explicaciones y el diagnóstico de archivos, como proveedor predeterminado (ver [cómo usamos la IA](/ia))', 'Solo cuando se usan esas funciones y el cliente no eligió otro proveedor', 'China'],
+                ['Proveedor de IA elegido por el cliente (opcional)', 'Las mismas funciones, cuando el cliente configura su propio proveedor y su propia llave. Es encargado del propio cliente, no subencargado de StockAI', 'Solo cuando se usan esas funciones', 'Según el proveedor elegido por el cliente'],
                 ['Proveedor de correo: Hostinger (SMTP) o Resend, según la configuración', 'Enviar correos del servicio, avisos y órdenes de compra', 'Cuando se envía un correo', '[UBICACIÓN — confirmar con el propietario]'],
                 ['Twilio', 'Enviar y recibir mensajes de WhatsApp y SMS', 'Solo si WhatsApp o SMS están activados', 'Estados Unidos'],
               ],
@@ -263,7 +264,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         id: 'transfers',
         title: 'Transferencias internacionales',
         blocks: [
-          'Por los subencargados de arriba, los datos pueden tratarse fuera del país del cliente: en Boston, Estados Unidos, en China (DeepSeek, solo si se usan las funciones de IA) y en Estados Unidos (Twilio, solo si se activan WhatsApp o SMS).',
+          'Por los subencargados de arriba, los datos pueden tratarse fuera del país del cliente: en Boston, Estados Unidos, en China (DeepSeek, solo si se usan las funciones de IA con el proveedor predeterminado), en el país del proveedor de IA que el cliente elija y en Estados Unidos (Twilio, solo si se activan WhatsApp o SMS).',
           'Para clientes en la Unión Europea o en España: China no tiene una decisión de adecuación de la Comisión Europea. [MECANISMO DE TRANSFERENCIA — cláusulas contractuales tipo u otro, confirmar con un abogado para DeepSeek y Twilio]. Si el cliente no puede aceptar la transferencia a China, puede pedirnos que su cuenta no use las funciones de IA escribiendo a ' + MAIL + '.',
         ],
       },
@@ -323,7 +324,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
     title: 'Cómo usa StockAI la inteligencia artificial',
     intro: 'Qué funciones usan inteligencia artificial, qué datos salen de StockAI para eso, qué límites tiene y cómo evitarla.',
     summary: [
-      'Hay dos tipos de IA en StockAI: **los modelos de pronóstico**, que se entrenan dentro de StockAI con los datos de tu cuenta, y **un modelo de lenguaje (DeepSeek)**, para el asistente y los textos explicativos.',
+      'Hay dos tipos de IA en StockAI: **los modelos de pronóstico**, que se entrenan dentro de StockAI con los datos de tu cuenta, y **un modelo de lenguaje (DeepSeek por defecto, o el proveedor que elija tu empresa)**, para el asistente y los textos explicativos.',
       'Los pronósticos no salen de StockAI ni se mezclan con los de otras empresas.',
       'El asistente **solo lee**: no puede crear, cambiar ni borrar nada en tu cuenta.',
       'La IA se equivoca. Las cifras del asistente se comparan con tus datos, pero **la decisión es siempre tuya**.',
@@ -347,7 +348,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         id: 'language-model',
         title: 'El modelo de lenguaje',
         blocks: [
-          'Algunas funciones usan un modelo de lenguaje de **DeepSeek**, un proveedor con sede en China, para escribir texto:',
+          'Algunas funciones usan un modelo de lenguaje de **DeepSeek** (por defecto, un proveedor con sede en China) o del proveedor que tu empresa haya elegido en Configuración, para escribir texto:',
           {
             table: {
               head: ['Función', 'Cuándo se usa', 'Qué se envía'],
@@ -360,8 +361,9 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
               ],
             },
           },
-          'Nunca enviamos contraseñas, claves de API ni credenciales. La conexión con DeepSeek va cifrada (HTTPS).',
-          'Si el servicio no tiene configurado DeepSeek, no se envía nada: el asistente avisa que no está disponible y las demás pantallas muestran texto calculado por reglas.',
+          'Nunca enviamos contraseñas, claves de API ni credenciales. La conexión con el proveedor va cifrada (HTTPS).',
+          'Si el servicio no tiene ningún proveedor configurado, no se envía nada: el asistente avisa que no está disponible y las demás pantallas muestran texto calculado por reglas.',
+          'La administración de tu empresa puede elegir su propio proveedor (OpenAI, Anthropic, Google, Groq, OpenRouter, DeepSeek o un servicio compatible) con su propia llave. Entonces los datos van a ese proveedor, bajo sus condiciones, y no a DeepSeek. Si ese proveedor falla, no usamos otro por nuestra cuenta: te decimos qué falló y mostramos texto calculado por reglas. Guardamos la llave cifrada y no la volvemos a mostrar.',
         ],
       },
       {
@@ -392,7 +394,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
         id: 'training',
         title: 'Entrenamiento de modelos de terceros',
         blocks: [
-          'Nosotros no usamos tus datos para entrenar modelos de lenguaje ni los compartimos para ese fin. DeepSeek recibe los datos para responder a cada petición; lo que DeepSeek hace con ellos se rige por sus propias condiciones. [CONDICIONES DE DEEPSEEK SOBRE USO DE DATOS PARA ENTRENAMIENTO — verificar el contrato o los términos de la API vigentes y resumirlos aquí]',
+          'Nosotros no usamos tus datos para entrenar modelos de lenguaje ni los compartimos para ese fin. El proveedor de IA (DeepSeek por defecto, o el que elija tu empresa) recibe los datos para responder a cada petición; lo que hace con ellos se rige por sus propias condiciones. [CONDICIONES DE DEEPSEEK SOBRE USO DE DATOS PARA ENTRENAMIENTO — verificar el contrato o los términos de la API vigentes y resumirlos aquí]',
         ],
       },
       {
@@ -402,7 +404,7 @@ export const LEGAL_EXTRA_ES: Record<ExtraKey, LegalDoc> = {
           {
             list: [
               'Si no escribes al asistente ni pides explicaciones, esas funciones no envían nada.',
-              '**El resumen del Panel de compras se pide solo, al abrir esa pantalla.** Si no quieres que esos datos lleguen a DeepSeek, no abras el Panel de compras: el inventario, los pronósticos y las órdenes se pueden usar desde sus propias pantallas.',
+              '**El resumen del Panel de compras se pide solo, al abrir esa pantalla.** Si no quieres que esos datos lleguen al proveedor de IA, no abras el Panel de compras: el inventario, los pronósticos y las órdenes se pueden usar desde sus propias pantallas.',
               `Hoy la IA no se puede apagar para una sola cuenta desde la aplicación. Si necesitas que tu cuenta no la use en absoluto, escríbenos a ${MAIL} antes de subir datos.`,
             ],
           },
@@ -960,7 +962,8 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
               head: ['Sub-processor', 'What for', 'When', 'Where'],
               rows: [
                 ['Hostinger', 'Server (VPS) running the app and the database; stockai.es email', 'Always', 'Boston, United States'],
-                ['DeepSeek', 'Language model behind the assistant, summaries, explanations and file diagnosis (see [how we use AI](/ia))', 'Only when those features are used', 'China'],
+                ['DeepSeek', 'Language model behind the assistant, summaries, explanations and file diagnosis, as the default provider (see [how we use AI](/ia))', 'Only when those features are used and the customer has not chosen another provider', 'China'],
+                ['AI provider chosen by the customer (optional)', 'The same features, when the customer sets up its own provider and its own key. It is a processor of the customer itself, not a sub-processor of StockAI', 'Only when those features are used', 'Depends on the provider the customer chose'],
                 ['Email provider: Hostinger (SMTP) or Resend, depending on the configuration', 'Sending service emails, alerts and purchase orders', 'When an email is sent', '[LOCATION — confirm with the owner]'],
                 ['Twilio', 'Sending and receiving WhatsApp and SMS messages', 'Only if WhatsApp or SMS is turned on', 'United States'],
               ],
@@ -974,7 +977,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'transfers',
         title: 'International transfers',
         blocks: [
-          'Because of the sub-processors above, data may be processed outside the customer\'s country: in Boston, United States, in China (DeepSeek, only if the AI features are used) and in the United States (Twilio, only if WhatsApp or SMS is turned on).',
+          'Because of the sub-processors above, data may be processed outside the customer\'s country: in Boston, United States, in China (DeepSeek, only if the AI features are used with the default provider), in the country of the AI provider the customer chooses and in the United States (Twilio, only if WhatsApp or SMS is turned on).',
           'For customers in the European Union or Spain: China has no adequacy decision from the European Commission. [TRANSFER MECHANISM — standard contractual clauses or other, confirm with a lawyer for DeepSeek and Twilio]. If the customer cannot accept the transfer to China, it can ask us for its account not to use the AI features by writing to ' + MAIL + '.',
         ],
       },
@@ -1034,7 +1037,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
     title: 'How StockAI uses artificial intelligence',
     intro: 'Which features use artificial intelligence, what data leaves StockAI for it, what its limits are and how to avoid it.',
     summary: [
-      'There are two kinds of AI in StockAI: **the forecasting models**, trained inside StockAI on your account\'s data, and **a language model (DeepSeek)**, for the assistant and the explanatory texts.',
+      'There are two kinds of AI in StockAI: **the forecasting models**, trained inside StockAI on your account\'s data, and **a language model (DeepSeek by default, or the provider your company chooses)**, for the assistant and the explanatory texts.',
       'Forecasts never leave StockAI and are never mixed with other companies\'.',
       'The assistant **only reads**: it cannot create, change or delete anything in your account.',
       'AI makes mistakes. The assistant\'s figures are checked against your data, but **the decision is always yours**.',
@@ -1058,7 +1061,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'language-model',
         title: 'The language model',
         blocks: [
-          'Some features use a language model from **DeepSeek**, a provider based in China, to write text:',
+          'Some features use a language model from **DeepSeek** (by default, a provider based in China) or from the provider your company has chosen in Settings, to write text:',
           {
             table: {
               head: ['Feature', 'When it is used', 'What is sent'],
@@ -1071,8 +1074,9 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
               ],
             },
           },
-          'We never send passwords, API keys or credentials. The connection to DeepSeek is encrypted (HTTPS).',
-          'If the service has no DeepSeek configured, nothing is sent: the assistant says it is unavailable and the other screens show rule-based text.',
+          'We never send passwords, API keys or credentials. The connection to the provider is encrypted (HTTPS).',
+          'If the service has no provider configured, nothing is sent: the assistant says it is unavailable and the other screens show rule-based text.',
+          'Your company\'s administrators can choose their own provider (OpenAI, Anthropic, Google, Groq, OpenRouter, DeepSeek or a compatible service) with their own key. The data then goes to that provider, under its terms, and not to DeepSeek. If that provider fails, we do not use another one on our own: we tell you what failed and show rule-based text. We store the key encrypted and never show it again.',
         ],
       },
       {
@@ -1103,7 +1107,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
         id: 'training',
         title: 'Training third-party models',
         blocks: [
-          'We do not use your data to train language models, nor do we share it for that purpose. DeepSeek receives the data to answer each request; what DeepSeek does with it is governed by its own terms. [DEEPSEEK TERMS ON USING DATA FOR TRAINING — check the current contract or API terms and summarise them here]',
+          'We do not use your data to train language models, nor do we share it for that purpose. The AI provider (DeepSeek by default, or the one your company chooses) receives the data to answer each request; what it does with them is governed by its own terms. [DEEPSEEK TERMS ON USING DATA FOR TRAINING — check the current contract or API terms and summarise them here]',
         ],
       },
       {
@@ -1113,7 +1117,7 @@ export const LEGAL_EXTRA_EN: Record<ExtraKey, LegalDoc> = {
           {
             list: [
               'If you do not write to the assistant or ask for explanations, those features send nothing.',
-              '**The Purchasing Panel summary is requested on its own, when that screen opens.** If you do not want that data to reach DeepSeek, do not open the Purchasing Panel: inventory, forecasts and orders can all be used from their own screens.',
+              '**The Purchasing Panel summary is requested on its own, when that screen opens.** If you do not want that data to reach the AI provider, do not open the Purchasing Panel: inventory, forecasts and orders can all be used from their own screens.',
               `Today AI cannot be turned off for a single account from the app. If you need your account not to use it at all, write to us at ${MAIL} before uploading data.`,
             ],
           },
