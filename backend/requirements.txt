@@ -64,3 +64,9 @@ oracledb==26.0.1
 # MongoDB data sources (inventory sync): read-only find/aggregate only, see
 # backend/datasources/mongo.py. 4.10.1 (Oct 2024) is the version verified here.
 pymongo==4.10.1
+# SFTP file-drop sources (backend/file_drop/). LGPL-2.1, used unmodified as a library.
+# CVE-2026-44405 (RSA SHA-1 signatures accepted, no release with the fix yet) is
+# mitigated in code: ssh-rsa is disabled and the host key is pinned.
+paramiko==4.0.0
+invoke==3.0.3
+PyNaCl==1.6.2

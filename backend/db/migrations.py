@@ -2109,6 +2109,9 @@ _MIGRATIONS += _PO_APPROVAL_LINKS
 # Inventory sync from a customer's own database (backend/inventory_sync/).
 from backend.inventory_sync.migrations import MIGRATIONS as _INVENTORY_SYNC  # noqa: E402
 _MIGRATIONS += _INVENTORY_SYNC
+# File-drop sources: SFTP / S3 directories that feed a dataset (backend/file_drop/).
+from backend.file_drop.migrations import MIGRATIONS as _FILE_DROP  # noqa: E402
+_MIGRATIONS += _FILE_DROP
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

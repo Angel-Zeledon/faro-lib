@@ -123,6 +123,12 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # data leaving the product
     ("GET", "/tenant/export"):                      _r("export.tenant_data", "tenant"),
     ("GET", "/inventory/status/export-po"):         _r("export.purchase_orders", "purchase_order"),
+    # file drops: the credentials of the company's own server, and what may replace a dataset
+    ("POST", "/file-drop/sources"):                 _r("file_drop.source_created", "file_drop_source"),
+    ("PATCH", "/file-drop/sources/{source_id}"):    _r("file_drop.source_updated", "file_drop_source", "source_id"),
+    ("DELETE", "/file-drop/sources/{source_id}"):   _r("file_drop.source_deleted", "file_drop_source", "source_id"),
+    ("POST", "/file-drop/sources/{source_id}/host-key"): _r("file_drop.host_key_accepted", "file_drop_source", "source_id"),
+    ("POST", "/file-drop/files/{file_id}/decision"): _r("file_drop.file_decided", "file_drop_file", "file_id"),
     # Documents a buyer forwards to other people. Each handler notes what left
     # (rows or bytes, format) so the row answers "what did they take".
     ("GET", "/inventory/report/pdf"):               _r("export.inventory_pdf", "session"),

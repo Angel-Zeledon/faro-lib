@@ -28,6 +28,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
 import { translateErrorParts } from '@/lib/errorMessage'
 import { DevPanel, DoctorPanel, HealthPanel, PresetPicker, RunDetailPanel } from '@/components/sync/SyncPanels'
+import FileDropPanel from '@/components/sync/FileDropPanel'
 
 const C = {
   border: 'var(--border)', text: 'var(--text)', muted: 'var(--muted)', dim: 'var(--dim)',
@@ -475,6 +476,9 @@ export default function InventorySyncPage() {
           </ul>
         </Card>
       )}
+
+      {/* ── File drops: SFTP / S3 folders that feed a dataset ────────────── */}
+      {!draft && <FileDropPanel />}
 
       {/* ── Detail / status ──────────────────────────────────────────────── */}
       {!draft && current && (

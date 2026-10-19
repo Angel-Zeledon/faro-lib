@@ -922,6 +922,59 @@ export const analystQuery = (
   )
 
 
+// ── File drops: SFTP / S3 directories that feed a dataset (backend/file_drop/) ──
+export type FileDropKind = 'sftp' | 's3'
+export interface FileDropSource {
+  id: string; name: string; kind: FileDropKind
+  config: Record<string, string | number | null>
+  has_secret: boolean
+  host_key_fingerprint: string | null; host_key_pinned_at: string | null
+  target_dataset_id: string | null; file_pattern: string
+  interval_minutes: number; min_age_seconds: number; enabled: boolean
+  status: 'new' | 'ok' | 'error' | 'blocked'
+  last_checked_at: string | null; last_ok_at: string | null
+  last_error_code: string | null; last_error_params: Record<string, unknown> | null
+}
+export interface FileDropFile {
+  id: string; source_id: string; source_name: string; remote_name: string
+  size_bytes: number; status: 'applying' | 'applied' | 'held' | 'rejected' | 'failed'
+  reason_code: string | null; reason_params: Record<string, unknown> | null
+  rows: number | null; moved: boolean; seen_at: string; decided_at: string | null
+}
+export interface FileDropInput {
+  name: string; kind: FileDropKind
+  config: Record<string, string | number>
+  secrets: Record<string, string>
+  target_dataset_id?: string | null; file_pattern?: string; interval_minutes?: number
+}
+export interface FileDropTest {
+  ok: boolean; files_seen: number; files_matching: number; sample: string[]; kind: FileDropKind
+  host_key: { fingerprint: string; newly_pinned: boolean } | null
+  least_privilege: string[]
+}
+export interface FileDropCheck {
+  seen: number; waiting: number; applied: number; held: number; rejected: number
+  failed: number; already_known: number; move_failed: number; error: string | null
+}
+export const listFileDropSources = (opts?: RequestOpts) =>
+  request<FileDropSource[]>('GET', '/file-drop/sources', undefined, opts)
+export const createFileDropSource = (body: FileDropInput) =>
+  request<FileDropSource>('POST', '/file-drop/sources', body)
+export const updateFileDropSource = (id: string, body: Partial<FileDropInput> & { enabled?: boolean }) =>
+  request<FileDropSource>('PATCH', `/file-drop/sources/${id}`, body)
+export const deleteFileDropSource = (id: string) =>
+  request<{ deleted: boolean }>('DELETE', `/file-drop/sources/${id}`)
+export const testFileDropSource = (id: string) =>
+  request<FileDropTest>('POST', `/file-drop/sources/${id}/test`, {})
+export const acceptFileDropHostKey = (id: string, fingerprint: string) =>
+  request<FileDropSource>('POST', `/file-drop/sources/${id}/host-key`, { fingerprint })
+export const checkFileDropSource = (id: string) =>
+  request<FileDropCheck>('POST', `/file-drop/sources/${id}/check`, {})
+export const listFileDropFiles = (limit = 50, opts?: RequestOpts) =>
+  request<FileDropFile[]>('GET', `/file-drop/files?limit=${limit}`, undefined, opts)
+export const decideFileDropFile = (id: string, action: 'apply' | 'reject') =>
+  request<{ status: string }>('POST', `/file-drop/files/${id}/decision`, { action })
+
 // ── Data Sources ──────────────────────────────────────────────────────────────
 export const listDataSources = (skip = 0, limit = 50) =>
   request<{ items: DataSource[]; total: number }>('GET', `/data-sources?skip=${skip}&limit=${limit}`)

@@ -551,6 +551,30 @@ EVENTS: dict[str, EventSpec] = {
         detail_keys=("profile_name", "edits_replaced"),
     ),
 
+    # ── File drops (backend/file_drop/) ──────────────────────────────────────
+    # A file applied is history. A file held for a person or rejected, and a source
+    # that stopped or keeps failing, need a decision, so they reach the bell.
+    "file_drop.file_applied": EventSpec(
+        kind="data", severity=INFO,
+        detail_keys=("source_name", "file_name", "rows"),
+    ),
+    "file_drop.file_held": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("source_name", "file_name"),
+    ),
+    "file_drop.file_rejected": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("source_name", "file_name"),
+    ),
+    "file_drop.source_blocked": EventSpec(
+        kind="data", severity=CRITICAL,
+        detail_keys=("source_name",),
+    ),
+    "file_drop.source_failed": EventSpec(
+        kind="data", severity=WARNING,
+        detail_keys=("source_name",),
+    ),
+
     # ── Data the tenant put in ───────────────────────────────────────────────
     "data.stock_imported": EventSpec(
         kind="data", severity=INFO,
@@ -959,6 +983,12 @@ REASONS: tuple[str, ...] = (
     "inventory_sync_source_wins",
     "inventory_sync_needs_action",
     "inventory_sync_ledger_drift_healed",
+    # file drops: a file was held for a person (`code` says why), rejected (`code`
+    # says why), or the source stopped / keeps failing (`code` names the failure)
+    "file_drop_file_held",
+    "file_drop_file_rejected",
+    "file_drop_source_stopped",
+    "file_drop_source_failing",
     # an outbound webhook gave up on `days` different days in a row
     "webhook_failing_for_days",
     # the audit stream gave up on `days` different days, or its address is refused

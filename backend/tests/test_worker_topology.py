@@ -36,7 +36,7 @@ class TestEnabledComponents:
         monkeypatch.setattr(settings, "worker_enabled", True)
         monkeypatch.setattr(settings, "scheduler_enabled", True)
         assert worker.enabled_components() == [
-            "job-worker", "inventory-sync", "job-scheduler", "inventory-alerts",
+            "job-worker", "inventory-sync", "file-drop", "job-scheduler", "inventory-alerts",
             "overstock-snapshot", "operator-digest", "trial-reaper", "billing-sweep",
             "webhook-deliveries", "outbox-drain", "audit-stream", "report-scheduler",
         ]
@@ -52,7 +52,7 @@ class TestEnabledComponents:
         monkeypatch.setattr(settings, "scheduler_enabled", False)
         components = worker.enabled_components()
         # The inventory sync is a lease-based claim loop too: safe on N workers.
-        assert components == ["job-worker", "inventory-sync"]
+        assert components == ["job-worker", "inventory-sync", "file-drop"]
 
     def test_scheduler_only_instance_has_no_claim_loop(self, monkeypatch):
         monkeypatch.setattr(settings, "worker_enabled", False)
