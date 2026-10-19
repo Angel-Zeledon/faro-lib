@@ -2690,6 +2690,15 @@ _AI_PROVIDER = [
          output_tokens  BIGINT NOT NULL DEFAULT 0,
          PRIMARY KEY (tenant_id, day, provider, model)
      )"""),
+    # What the company pays its provider per million tokens, typed by the
+    # company (prices change and differ per contract, so none is baked in).
+    # NULL means "not set": the card then shows tokens only, never a $0.
+    ("ai_provider_price_input",
+     "ALTER TABLE tenant_ai_providers ADD COLUMN IF NOT EXISTS price_input_per_mtok NUMERIC(12,4) "
+     "CHECK (price_input_per_mtok >= 0)"),
+    ("ai_provider_price_output",
+     "ALTER TABLE tenant_ai_providers ADD COLUMN IF NOT EXISTS price_output_per_mtok NUMERIC(12,4) "
+     "CHECK (price_output_per_mtok >= 0)"),
 ]
 _MIGRATIONS += _AI_PROVIDER
 

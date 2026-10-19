@@ -56,7 +56,7 @@ class ProviderConfig:
 
 _PUBLIC_COLS = """tenant_id, provider, model, base_url, api_key_hint,
     (api_key_enc IS NOT NULL) AS has_key, organization, project, temperature,
-    max_tokens, enabled, created_at, created_by, updated_at, updated_by,
+    max_tokens, price_input_per_mtok, price_output_per_mtok, enabled, created_at, created_by, updated_at, updated_by,
     last_test_at, last_test_ok, last_test_code, last_test_latency_ms,
     last_success_at, last_failure_at, last_failure_code, last_failure_message,
     consecutive_failures, breaker_opened_at"""
@@ -127,7 +127,9 @@ def masked(r: Optional[dict]) -> Optional[str]:
 
 def save(tenant_id: str, *, provider: str, model: str, base_url: str, api_key: Optional[str],
          organization: str, project: str, temperature: Optional[float],
-         max_tokens: Optional[int], enabled: bool, actor: str) -> dict:
+         max_tokens: Optional[int], enabled: bool, actor: str,
+         price_input_per_mtok: Optional[float] = None,
+         price_output_per_mtok: Optional[float] = None) -> dict:
     """Insert or replace the tenant's choice. `api_key=None` keeps the stored
     one. Health and breaker state are reset: they described the old settings."""
     enc = hint = None
@@ -138,8 +140,8 @@ def save(tenant_id: str, *, provider: str, model: str, base_url: str, api_key: O
         """INSERT INTO tenant_ai_providers
                (tenant_id, provider, model, base_url, api_key_enc, api_key_hint,
                 organization, project, temperature, max_tokens, enabled,
-                created_by, updated_by)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                created_by, updated_by, price_input_per_mtok, price_output_per_mtok)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            ON CONFLICT (tenant_id) DO UPDATE SET
                provider = EXCLUDED.provider, model = EXCLUDED.model,
                base_url = EXCLUDED.base_url,
@@ -150,6 +152,8 @@ def save(tenant_id: str, *, provider: str, model: str, base_url: str, api_key: O
                organization = EXCLUDED.organization, project = EXCLUDED.project,
                temperature = EXCLUDED.temperature, max_tokens = EXCLUDED.max_tokens,
                enabled = EXCLUDED.enabled,
+               price_input_per_mtok = EXCLUDED.price_input_per_mtok,
+               price_output_per_mtok = EXCLUDED.price_output_per_mtok,
                updated_at = NOW(), updated_by = EXCLUDED.updated_by,
                last_failure_at = NULL, last_failure_code = NULL, last_failure_message = NULL,
                consecutive_failures = 0, breaker_opened_at = NULL,
@@ -157,7 +161,7 @@ def save(tenant_id: str, *, provider: str, model: str, base_url: str, api_key: O
                last_test_latency_ms = NULL""",
         (tenant_id, provider, model, base_url or None, enc, hint,
          organization or None, project or None, temperature, max_tokens, enabled,
-         actor, actor),
+         actor, actor, price_input_per_mtok, price_output_per_mtok),
     )
     return row(tenant_id) or {}
 
@@ -268,6 +272,12 @@ def claim_daily_alert(tenant_id: str) -> bool:
 
 
 def usage_since(tenant_id: str, days: int = 7) -> dict[str, Any]:
+    """Calls and tokens over the last `days` UTC days, plus an ESTIMATED cost
+    in USD from the prices the company typed (`price_*_per_mtok`).
+
+    `estimated_cost_usd` is None, never 0, when no price is set: a missing
+    price must not read as a free bill. The estimate applies today's prices to
+    the whole window, so it is an estimate and the card says so."""
     since: date = _now().date() - timedelta(days=days - 1)
     r = query_one(
         """SELECT COALESCE(SUM(calls), 0) AS calls, COALESCE(SUM(failures), 0) AS failures,
@@ -275,7 +285,14 @@ def usage_since(tenant_id: str, days: int = 7) -> dict[str, Any]:
                   COALESCE(SUM(output_tokens), 0) AS output_tokens
              FROM ai_provider_usage_daily WHERE tenant_id = %s AND day >= %s""",
         (tenant_id, since)) or {}
+    price = query_one(
+        "SELECT price_input_per_mtok, price_output_per_mtok FROM tenant_ai_providers "
+        "WHERE tenant_id = %s", (tenant_id,)) or {}
+    pin, pout = price.get("price_input_per_mtok"), price.get("price_output_per_mtok")
+    tin, tout = int(r.get("input_tokens") or 0), int(r.get("output_tokens") or 0)
+    cost = None
+    if pin is not None or pout is not None:
+        cost = round((tin * float(pin or 0) + tout * float(pout or 0)) / 1_000_000, 4)
     return {"days": days, "calls": int(r.get("calls") or 0),
             "failures": int(r.get("failures") or 0),
-            "input_tokens": int(r.get("input_tokens") or 0),
-            "output_tokens": int(r.get("output_tokens") or 0)}
+            "input_tokens": tin, "output_tokens": tout, "estimated_cost_usd": cost}

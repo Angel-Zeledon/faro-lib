@@ -18,6 +18,10 @@ _MODEL_RE = re.compile(r"^[A-Za-z0-9._:/@+\-]{1,200}$")
 _ORG_RE = re.compile(r"^[A-Za-z0-9_\-]{1,100}$")
 
 
+def _num(v) -> Optional[float]:
+    return float(v) if v is not None else None
+
+
 def _iso(v) -> Optional[str]:
     return v.isoformat() if v is not None and hasattr(v, "isoformat") else v
 
@@ -103,6 +107,24 @@ def validate(body: dict, existing: Optional[dict]) -> dict:
                            "The answer length is outside the allowed range.", status_code=422,
                            params={"min": 16, "max": cap})
 
+    prices = {}
+    for field in ("price_input_per_mtok", "price_output_per_mtok"):
+        raw = body.get(field)
+        if raw in ("", None):
+            prices[field] = None
+            continue
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            val = -1.0
+        # NaN fails both comparisons; 100000 USD per million tokens is far
+        # above any real price and keeps the NUMERIC(12,4) column safe.
+        if not 0.0 <= val <= 100000.0:
+            raise AppError("ai_provider_price_invalid",
+                           "The price per million tokens must be a number of USD, 0 or more.",
+                           status_code=422, params={"field": field})
+        prices[field] = round(val, 4)
+
     enabled = body.get("enabled", True)
     if not isinstance(enabled, bool):
         raise AppError("ai_provider_enabled_invalid", "'enabled' must be true or false.",
@@ -110,7 +132,8 @@ def validate(body: dict, existing: Optional[dict]) -> dict:
 
     return {"provider": provider, "model": model, "base_url": base_url, "api_key": api_key,
             "clear_key": clear_key, "organization": organization, "project": project,
-            "temperature": temperature, "max_tokens": max_tokens, "enabled": enabled}
+            "temperature": temperature, "max_tokens": max_tokens, "enabled": enabled,
+            **prices}
 
 
 def save(tenant_id: str, body: dict, actor: str) -> dict:
@@ -125,7 +148,9 @@ def save(tenant_id: str, body: dict, actor: str) -> dict:
                    base_url=clean["base_url"], api_key=clean["api_key"],
                    organization=clean["organization"], project=clean["project"],
                    temperature=clean["temperature"], max_tokens=clean["max_tokens"],
-                   enabled=clean["enabled"], actor=actor)
+                   enabled=clean["enabled"], actor=actor,
+                   price_input_per_mtok=clean["price_input_per_mtok"],
+                   price_output_per_mtok=clean["price_output_per_mtok"])
     except store.SecretStorageUnavailable:
         raise AppError("secret_storage_unavailable",
                        "The key cannot be stored encrypted on this installation.",
@@ -169,6 +194,8 @@ def config_view(tenant_id: str) -> dict:
         "has_key": bool(r.get("has_key")), "api_key_mask": store.masked(r),
         "organization": r.get("organization") or "", "project": r.get("project") or "",
         "temperature": r.get("temperature"), "max_tokens": r.get("max_tokens"),
+        "price_input_per_mtok": _num(r.get("price_input_per_mtok")),
+        "price_output_per_mtok": _num(r.get("price_output_per_mtok")),
         "enabled": bool(r.get("enabled")),
         "updated_at": _iso(r.get("updated_at")), "updated_by": r.get("updated_by"),
     }
@@ -183,9 +210,11 @@ def status_view(tenant_id: str) -> dict:
     r = store.row(tenant_id)
     s = client._settings()
     usage = store.usage_since(tenant_id, 7)
+    usage_30d = store.usage_since(tenant_id, 30)
     if not r or not r.get("enabled"):
         return {"source": "stockai", "configured": bool(r), "enabled": bool(r and r["enabled"]),
                 "instance_available": _instance_ready(), "usage_7d": usage,
+                "usage_30d": usage_30d,
                 "provider": r["provider"] if r else None}
     state = store.breaker_state(r, s["cooldown"])
     return {
@@ -203,7 +232,7 @@ def status_view(tenant_id: str) -> dict:
                        "code": r.get("last_test_code"),
                        "latency_ms": r.get("last_test_latency_ms")}
                       if r.get("last_test_at") else None),
-        "usage_7d": usage,
+        "usage_7d": usage, "usage_30d": usage_30d,
     }
 
 

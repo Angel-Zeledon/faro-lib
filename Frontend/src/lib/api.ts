@@ -3211,6 +3211,8 @@ export interface AiProviderConfig {
   project?: string
   temperature?: number | null
   max_tokens?: number | null
+  price_input_per_mtok?: number | null
+  price_output_per_mtok?: number | null
   enabled?: boolean
   updated_at?: string | null
   updated_by?: string | null
@@ -3218,6 +3220,8 @@ export interface AiProviderConfig {
 
 export interface AiProviderUsage {
   days: number; calls: number; failures: number; input_tokens: number; output_tokens: number
+  /** USD, from the prices the company typed; null when none is set (never 0). */
+  estimated_cost_usd: number | null
 }
 
 export interface AiProviderStatus {
@@ -3235,6 +3239,7 @@ export interface AiProviderStatus {
   last_failure?: { code: AiProviderErrorCode; message: string | null; at: string | null } | null
   last_test?: { at: string | null; ok: boolean | null; code: string | null; latency_ms: number | null } | null
   usage_7d: AiProviderUsage
+  usage_30d: AiProviderUsage
 }
 
 export interface AiProviderError {
@@ -3265,6 +3270,8 @@ export interface AiProviderDraft {
   project?: string
   temperature?: number | null
   max_tokens?: number | null
+  price_input_per_mtok?: number | null
+  price_output_per_mtok?: number | null
   enabled?: boolean
 }
 
