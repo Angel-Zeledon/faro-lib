@@ -3368,6 +3368,8 @@ export interface Supplier {
    *  which is how every tenant behaved before the field existed. */
   review_period_days?: number
   payment_terms:  string | null
+  /** The vendor number the company's ERP uses (purchase-order files). */
+  erp_code?:      string | null
   notes:          string | null
   active:         boolean
   created_at:     string

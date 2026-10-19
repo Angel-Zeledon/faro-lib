@@ -1856,6 +1856,37 @@ export const getPOHistoryPage = (
   return request<POHistoryPage>('GET', `/inventory/po-history/page?${qs.toString()}`, undefined, opts)
 }
 
+// ── Purchase orders out to the ERP (backend/po_erp/) ───────────────────────────
+export interface ErpFormat {
+  key: string; label: string; extension: string; verified: boolean; unmapped_fields: string[]
+}
+export interface ErpDocumentLine {
+  line_id: string; sku: string; name: string | null; quantity: number
+  unit_cost: number | null; total: number | null
+}
+export interface ErpDocument {
+  document_id: string; number: string
+  supplier: { id: string | null; name: string | null; erp_code: string | null; mapped: boolean }
+  currency: string | null; mixed_currency: boolean
+  expected_date: string | null; erp_reference: string | null; acknowledged: boolean
+  lines: ErpDocumentLine[]
+}
+export interface ErpOrder {
+  id: string; number: string; state: string; created_at: string; documents: ErpDocument[]
+}
+export const getErpFormats = (opts?: RequestOpts) =>
+  request<ErpFormat[]>('GET', '/purchase-orders/export/formats', undefined, opts)
+export const getErpUnacknowledged = (opts?: RequestOpts) =>
+  request<ErpOrder[]>('GET', '/purchase-orders/unacknowledged', undefined, opts)
+export const downloadErpFile = (poIds: string[], format: string, extension: string) =>
+  downloadBlob(
+    `/purchase-orders/export/file?po_ids=${encodeURIComponent(poIds.join(','))}&format=${encodeURIComponent(format)}`,
+    `purchase_orders_${format}.${extension}`)
+export const setErpReference = (poLogId: string, reference: string, supplierId: string | null) =>
+  request<{ changed: boolean; reference: string }>(
+    'POST', `/purchase-orders/${poLogId}/erp-reference`,
+    { reference, supplier_id: supplierId })
+
 // ── PO reception (cerrar el loop de purchase) ──────────────────────────────────
 export const getPOItems = (poLogId: string) =>
   request<import('./types').POItemsResponse>('GET', `/inventory/po/${poLogId}/items`)

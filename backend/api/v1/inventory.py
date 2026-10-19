@@ -2810,6 +2810,9 @@ class SupplierCreate(BaseModel):
     # wins over the parser — the user correcting a bad parse must stick.
     payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str] = None
+    # The vendor number the company's ERP uses for this supplier; the purchase-order
+    # feed and ERP files carry it (backend/po_erp/).
+    erp_code:       Optional[str] = Field(default=None, max_length=64)
 
     @field_validator("email")
     @classmethod
@@ -2833,6 +2836,7 @@ class SupplierPatch(BaseModel):
     payment_terms:  Optional[str]   = None
     payment_terms_days: Optional[int] = Field(default=None, ge=0, le=365)
     notes:          Optional[str]   = None
+    erp_code:       Optional[str]   = Field(default=None, max_length=64)
 
     @field_validator("email")
     @classmethod

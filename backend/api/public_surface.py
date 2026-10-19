@@ -53,6 +53,9 @@ EXPOSED_TAGS: frozenset[str] = frozenset({
     # developers wire it up from CI with a write key — the same dry-run gate,
     # brake and audit as the screen; a read key only reads.
     "inventory-sync",
+    # Approved purchase orders out to the company's ERP: a cursor feed, import
+    # files, and the ERP's own document number written back (a write key).
+    "purchase-orders-erp",
     # One endpoint speaking MCP over five READ tools (backend/mcp/catalog.py).
     "mcp",
 })

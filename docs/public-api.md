@@ -453,8 +453,12 @@ one to forget about.
 
 Honesty up front, so nobody designs against something that does not exist:
 
-- **Webhooks fire once, with no retry.** If your endpoint was down at that
-  moment, the event is gone: for anything that cannot be lost, poll.
+- **Webhook retries are bounded.** A delivery is attempted up to five times: now,
+  then after 1, 5, 15 and 40 minutes. A transport error, a timeout, a `5xx`, a `408`
+  and a `429` are retried; any other status (a `4xx`, a redirect) fails at once.
+  After the last attempt the delivery is marked `failed` in the log, and an endpoint
+  that gives up on three different days is switched off. An endpoint down for more
+  than about an hour loses the event: for anything that cannot be lost, also poll.
 - **There is no sandbox.** You test against the real tenant.
 - **There is no real versioning yet.** The `/api/v1` prefix exists, but the
   stability promise comes from this list, not from the number. If something ever
