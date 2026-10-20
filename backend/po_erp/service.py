@@ -265,8 +265,6 @@ def acknowledge(tenant_id: str, user_id: str, po_log_id: str, reference: str,
                        "The reference is empty or longer than "
                        f"{core.MAX_REFERENCE_LENGTH} characters",
                        status_code=400) from exc
-    key = core.supplier_key(supplier_id)
-
     po = query_one("SELECT id, cancelled_at, po_number FROM inventory_po_log "
                    "WHERE id = %s AND tenant_id = %s", (po_log_id, tenant_id))
     if not po:
@@ -274,6 +272,20 @@ def acknowledge(tenant_id: str, user_id: str, po_log_id: str, reference: str,
     keys = {core.supplier_key(r["supplier_id"]) for r in query(
         "SELECT supplier_id FROM inventory_po_items WHERE po_log_id = %s AND tenant_id = %s "
         "AND status IN %s", (po_log_id, tenant_id, _ORDERED))}
+    if supplier_id is None or not str(supplier_id).strip():
+        # The common case is an order with one supplier: no need to name it. With
+        # several, naming the document is the only way to know which one the
+        # number belongs to, so it is asked for rather than guessed.
+        if len(keys) == 1:
+            key = next(iter(keys))
+        elif len(keys) > 1:
+            raise AppError("erp_reference_supplier_required",
+                           "This order has documents for several suppliers; say which one",
+                           status_code=400, params={"suppliers": sorted(k for k in keys if k)})
+        else:
+            key = ""
+    else:
+        key = core.supplier_key(supplier_id)
     if key not in keys:
         raise AppError("erp_reference_unknown_supplier",
                        "The order has no document for that supplier",

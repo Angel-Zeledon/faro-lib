@@ -230,6 +230,21 @@ class TestAcknowledgement:
         assert resp.status_code == 409 and resp.json()["error_code"] == "erp_reference_in_use"
         assert query("SELECT 1 FROM po_erp_references WHERE po_log_id = %s", (b,)) == []
 
+    def test_an_order_with_several_suppliers_must_say_which_document(
+            self, client, analyst_headers, test_tenant):
+        tid = test_tenant["id"]
+        s1, s2 = _supplier(tid, "M1"), _supplier(tid, "M2")
+        po = _po(tid, [("M-1", 1, s1, "M1", 1.0), ("M-2", 1, s2, "M2", 1.0)])
+        resp = client.post(self._url(po), json={"reference": "R"}, headers=analyst_headers)
+        assert resp.status_code == 400
+        assert resp.json()["error_code"] == "erp_reference_supplier_required"
+        assert query("SELECT 1 FROM po_erp_references WHERE po_log_id = %s", (po,)) == []
+        ok = client.post(self._url(po), json={"reference": "R", "supplier_id": s2},
+                         headers=analyst_headers)
+        assert ok.status_code == 200
+        assert query_one("SELECT supplier_key FROM po_erp_references WHERE po_log_id = %s",
+                         (po,))["supplier_key"] == s2
+
     def test_a_supplier_the_order_does_not_have_is_refused(self, client, analyst_headers,
                                                           test_tenant):
         tid = test_tenant["id"]
@@ -241,7 +256,8 @@ class TestAcknowledgement:
         assert resp.json()["error_code"] == "erp_reference_unknown_supplier"
 
     def test_another_tenants_order_is_not_found(self, client, analyst_headers, test_tenant):
-        other = query_one("INSERT INTO tenants (name) VALUES ('erp-other') RETURNING id")["id"]
+        from backend.tenants.service import create_tenant
+        other = create_tenant("erp-other")["id"]
         try:
             po = _po(other, [("Z-1", 1, None, None, 1.0)])
             resp = client.post(self._url(po), json={"reference": "R"}, headers=analyst_headers)
