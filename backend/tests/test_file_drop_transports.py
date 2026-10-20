@@ -181,6 +181,8 @@ class TestSftp:
         with pytest.raises(AppError) as exc:
             SftpTransport(_cfg(sftp_server), {"password": "nope"}, pinned=None)
         assert exc.value.code == "file_drop_auth_failed"
+        # Never a 401: the screen would take it for the PERSON being logged out.
+        assert exc.value.status_code == 400
 
     def test_a_file_over_the_ceiling_is_not_read(self, sftp_server):
         (sftp_server["root"] / "big.csv").write_bytes(b"x" * 500)

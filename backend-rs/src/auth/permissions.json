@@ -91,6 +91,7 @@
 
     {"class": "write", "prefix": "/api-keys", "permission": "manage_integrations"},
     {"class": "write", "prefix": "/webhooks", "permission": "manage_integrations"},
+    {"class": "write", "prefix": "/file-drop", "permission": "manage_data_sources"},
     {"class": "write", "prefix": "/inbound-email", "permission": "manage_integrations"},
     {"class": "write", "prefix": "/audit-stream", "permission": "manage_integrations"},
 
@@ -145,6 +146,7 @@
     {"class": "read", "prefix": "/audit/filters", "permission": "open"},
     {"class": "read", "prefix": "/api-keys", "permission": "manage_integrations"},
     {"class": "read", "prefix": "/webhooks", "permission": "manage_integrations"},
+    {"class": "read", "prefix": "/file-drop", "permission": "view_data_sources"},
     {"class": "read", "prefix": "/inbound-email", "permission": "manage_integrations"},
     {"class": "read", "prefix": "/service-config", "permission": "manage_settings"},
     {"class": "read", "prefix": "/service-config/capabilities", "permission": "open"},

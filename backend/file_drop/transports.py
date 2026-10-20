@@ -60,8 +60,10 @@ class Transport(Protocol):
     def close(self) -> None: ...
 
 
-def _err(code: str, message: str, status: int = _ANY, **params) -> AppError:
-    return AppError(code, message, status_code=status, params=params)
+def _err(code: str, message: str, **params) -> AppError:
+    # Always a 400: the remote server's refusal is not a statement about THIS
+    # session. A 401 here would make the screen think the person was logged out.
+    return AppError(code, message, status_code=_ANY, params=params)
 
 
 def _too_large(max_bytes: int) -> AppError:
@@ -143,8 +145,7 @@ class SftpTransport:
         except AppError:
             raise
         except paramiko.AuthenticationException as exc:
-            raise _err("file_drop_auth_failed", "The SFTP server refused the credentials",
-                       status=401) from exc
+            raise _err("file_drop_auth_failed", "The SFTP server refused the credentials") from exc
 
     def _path(self, *parts: str) -> str:
         return "/".join([self._base, *parts]) if self._base != "." else "/".join(parts)
@@ -288,13 +289,13 @@ class S3Transport:
                        detail=type(exc).__name__) from exc
         if resp.status_code in (401, 403):
             raise _err("file_drop_auth_failed", "The storage server refused the credentials",
-                       status=resp.status_code)
+                       remote_status=resp.status_code)
         if resp.status_code == 404:
             raise _err("file_drop_path_not_found", "The bucket or file does not exist",
                        bucket=self._bucket)
         if resp.status_code >= 300:
             raise _err("file_drop_connection_failed", "The storage server answered an error",
-                       status=resp.status_code)
+                       remote_status=resp.status_code)
         return resp
 
     def list_files(self) -> list[RemoteFile]:

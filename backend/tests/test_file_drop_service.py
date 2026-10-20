@@ -326,7 +326,8 @@ class TestApi:
         assert query_one("SELECT status FROM file_drop_files WHERE id = %s", (fid,))["status"] == "held"
 
     def test_another_tenants_source_is_not_found(self, client, auth_headers, drop):
-        other = query_one("INSERT INTO tenants (name) VALUES ('fd-other') RETURNING id")["id"]
+        from backend.tenants.service import create_tenant
+        other = create_tenant("fd-other")["id"]
         try:
             mine = service.create_source(other, None, {
                 "name": "theirs", "kind": "s3", "config": {"bucket": "b"},

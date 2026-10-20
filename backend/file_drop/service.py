@@ -700,7 +700,7 @@ def decide(tenant_id: str, user_id: str, file_id: str, action: str) -> dict:
         raise _bad("file_drop_file_not_found", "File not found", 404)
     if rec["status"] != "held":
         raise _bad("file_drop_file_not_held", "Only a held file can be decided", 409,
-                   status=rec["status"])
+                   current_status=rec["status"])
     row = get_source(tenant_id, rec["source_id"])
     transport = open_transport(row)
     summary = {"seen": 0, "waiting": 0, "applied": 0, "held": 0, "rejected": 0,
