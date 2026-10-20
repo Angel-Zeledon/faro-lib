@@ -2,9 +2,9 @@
  "generated_by": "backend/scripts/export_public_api.py",
  "base_path": "/api/v1",
  "counts": {
-  "total": 292,
-  "read": 168,
-  "write": 124
+  "total": 297,
+  "read": 172,
+  "write": 125
  },
  "limits": {
   "per_minute_per_key": 120,
@@ -11697,6 +11697,13 @@
          "required": false,
          "type": "string",
          "nullable": true
+        },
+        {
+         "name": "erp_code",
+         "required": false,
+         "type": "string",
+         "max_length": 64,
+         "nullable": true
         }
        ]
       },
@@ -12181,6 +12188,13 @@
          "name": "notes",
          "required": false,
          "type": "string",
+         "nullable": true
+        },
+        {
+         "name": "erp_code",
+         "required": false,
+         "type": "string",
+         "max_length": 64,
          "nullable": true
         }
        ]
@@ -15986,6 +16000,247 @@
       {
        "status": 403,
        "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tag": "purchase-orders-erp",
+   "endpoints": [
+    {
+     "id": "get-purchase-orders-export",
+     "method": "GET",
+     "path": "/purchase-orders/export",
+     "tag": "purchase-orders-erp",
+     "scope": "read",
+     "summary": "Export Feed",
+     "description": "Approved orders changed after `since`, oldest change first, with a cursor to resume from. A cancelled order comes back with `state = \"cancelled\"`. An order still waiting for approval is not here until it is approved.",
+     "parameters": [
+      {
+       "name": "since",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "description": "Cursor from the previous page"
+       },
+       "example": "<since>"
+      },
+      {
+       "name": "limit",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 500
+       },
+       "example": 1
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-purchase-orders-export-file",
+     "method": "GET",
+     "path": "/purchase-orders/export/file",
+     "tag": "purchase-orders-erp",
+     "scope": "read",
+     "summary": "Export File",
+     "description": "The chosen orders as the file the ERP imports. One document per supplier.",
+     "parameters": [
+      {
+       "name": "po_ids",
+       "in": "query",
+       "required": true,
+       "schema": {
+        "type": "string",
+        "description": "Comma-separated purchase order ids"
+       },
+       "example": "<po_ids>"
+      },
+      {
+       "name": "format",
+       "in": "query",
+       "required": false,
+       "schema": {
+        "type": "string",
+        "default": "csv"
+       },
+       "example": "csv"
+      }
+     ],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-purchase-orders-export-formats",
+     "method": "GET",
+     "path": "/purchase-orders/export/formats",
+     "tag": "purchase-orders-erp",
+     "scope": "read",
+     "summary": "Export Formats",
+     "description": "The ERP file layouts, and which of them have been run against a real system.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "get-purchase-orders-unacknowledged",
+     "method": "GET",
+     "path": "/purchase-orders/unacknowledged",
+     "tag": "purchase-orders-erp",
+     "scope": "read",
+     "summary": "Unacknowledged",
+     "description": "Open approved orders whose ERP document number nobody has written back.",
+     "parameters": [],
+     "request_body": null,
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 429,
+       "description": "Per-minute rate limit or the plan's daily ceiling reached (`rate_limited`). Honour `Retry-After` (seconds)."
+      }
+     ]
+    },
+    {
+     "id": "post-purchase-orders-po_log_id-erp-reference",
+     "method": "POST",
+     "path": "/purchase-orders/{po_log_id}/erp-reference",
+     "tag": "purchase-orders-erp",
+     "scope": "write",
+     "summary": "Set Erp Reference",
+     "description": "Store the ERP's own document number for an order. Idempotent on (order, reference); a different number for the same document is refused.",
+     "parameters": [
+      {
+       "name": "po_log_id",
+       "in": "path",
+       "required": true,
+       "schema": {
+        "type": "string"
+       },
+       "example": "<po_log_id>"
+      }
+     ],
+     "request_body": {
+      "content_type": "application/json",
+      "required": true,
+      "schema": {
+       "type": "object",
+       "fields": [
+        {
+         "name": "reference",
+         "required": true,
+         "type": "string",
+         "min_length": 1,
+         "max_length": 100
+        },
+        {
+         "name": "supplier_id",
+         "required": false,
+         "type": "string",
+         "max_length": 100,
+         "nullable": true
+        }
+       ]
+      },
+      "example": {
+       "reference": "reference",
+       "supplier_id": "<supplier_id>"
+      }
+     },
+     "success_status": 200,
+     "response_content_types": [
+      "application/json"
+     ],
+     "errors": [
+      {
+       "status": 401,
+       "description": "API key missing (`unauthenticated`), invalid, revoked or expired (`api_key_invalid`)."
+      },
+      {
+       "status": 403,
+       "description": "The key may not call this endpoint (`api_key_route_not_exposed`), is read-only on a write (`api_key_scope_insufficient`), or another permission check refused it."
+      },
+      {
+       "status": 422,
+       "description": "Validation Error"
       },
       {
        "status": 429,

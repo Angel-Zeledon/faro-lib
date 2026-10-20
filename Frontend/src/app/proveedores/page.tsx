@@ -144,6 +144,7 @@ interface SupplierForm {
   lead_time_std:  string
   review_period_days: string
   payment_terms:  string
+  erp_code:       string
   notes:          string
 }
 
@@ -163,7 +164,7 @@ interface SupplierForm {
  * chose it.
  */
 function blankForm(name = ''): SupplierForm {
-  return { name, email: '', phone: '', whatsapp: '', lead_time_days: '', lead_time_std: '3', review_period_days: '', payment_terms: '', notes: '' }
+  return { name, email: '', phone: '', whatsapp: '', lead_time_days: '', lead_time_std: '3', review_period_days: '', payment_terms: '', erp_code: '', notes: '' }
 }
 
 function supplierToForm(s: Supplier): SupplierForm {
@@ -176,6 +177,7 @@ function supplierToForm(s: Supplier): SupplierForm {
     lead_time_std:  String(s.lead_time_std),
     review_period_days: s.review_period_days ? String(s.review_period_days) : '',
     payment_terms:  s.payment_terms ?? '',
+    erp_code:       s.erp_code ?? '',
     notes:          s.notes ?? '',
   }
 }
@@ -255,6 +257,13 @@ function SupplierFormPanel({
             </Select>
             <ChevronDown size={11} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: C.dim }} aria-hidden="true" />
           </div>
+        </Field>
+      </div>
+
+      {/* The vendor number the company's ERP uses; it goes in the purchase-order files. */}
+      <div style={pair}>
+        <Field label={t('suppliers.erp_code')} hint={t('suppliers.erp_code_hint')} labelStyle={FORM_LABEL_STYLE}>
+          <Input name="supplier_erp_code" aria-label={t('suppliers.erp_code')} maxLength={64} value={form.erp_code} onChange={set('erp_code')} />
         </Field>
       </div>
 
@@ -712,6 +721,8 @@ function SuppliersPageInner() {
       // exactly, so an empty box must send 0 rather than nothing.
       review_period_days: parseInt(form.review_period_days) || 0,
       payment_terms:  form.payment_terms || null,
+      // An empty box clears the code (the server stores it as none).
+      erp_code:       form.erp_code.trim(),
       notes:          form.notes.trim() || null,
     }
     try {

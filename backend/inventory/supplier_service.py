@@ -309,9 +309,12 @@ def assert_name_available(
 
 def create_supplier(tenant_id: str, data: dict) -> dict:
     allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
-               "review_period_days", "payment_terms", "payment_terms_days", "notes"}
+               "review_period_days", "payment_terms", "payment_terms_days", "notes",
+               "erp_code"}
     safe = _stamp_lead_time_provenance(
         {k: v for k, v in data.items() if k in allowed}, data)
+    if "erp_code" in safe:
+        safe["erp_code"] = (safe["erp_code"] or "").strip() or None
 
     assert_name_available(tenant_id, safe.get("name"))
 
@@ -338,9 +341,12 @@ def create_supplier(tenant_id: str, data: dict) -> dict:
 
 def update_supplier(tenant_id: str, supplier_id: str, data: dict) -> Optional[dict]:
     allowed = {"name", "email", "phone", "whatsapp", "lead_time_days", "lead_time_std",
-               "review_period_days", "payment_terms", "payment_terms_days", "notes"}
+               "review_period_days", "payment_terms", "payment_terms_days", "notes",
+               "erp_code"}
     safe = _stamp_lead_time_provenance(
         {k: v for k, v in data.items() if k in allowed}, data)
+    if "erp_code" in safe:
+        safe["erp_code"] = (safe["erp_code"] or "").strip() or None
     if not safe:
         return get_supplier(tenant_id, supplier_id)
 

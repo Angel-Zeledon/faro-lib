@@ -123,6 +123,9 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     # data leaving the product
     ("GET", "/tenant/export"):                      _r("export.tenant_data", "tenant"),
     ("GET", "/inventory/status/export-po"):         _r("export.purchase_orders", "purchase_order"),
+    ("GET", "/purchase-orders/export/file"):        _r("export.purchase_orders_erp", "purchase_order"),
+    ("POST", "/purchase-orders/{po_log_id}/erp-reference"):
+        _r("purchase_order.erp_acknowledged", "purchase_order", "po_log_id"),
     # Documents a buyer forwards to other people. Each handler notes what left
     # (rows or bytes, format) so the row answers "what did they take".
     ("GET", "/inventory/report/pdf"):               _r("export.inventory_pdf", "session"),

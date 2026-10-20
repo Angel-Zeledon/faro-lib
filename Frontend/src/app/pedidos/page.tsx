@@ -9,7 +9,7 @@ import { TransfersPanel } from '@/components/po/TransfersPanel'
 import BulkImportButton from '@/components/inventory/BulkImportButton'
 import { useWarehouses } from '@/components/inventory/WarehouseControls'
 import { EmptyState, ErrorState, LoadingState, SkeletonTable } from '@/components/ui/States'
-import { ClipboardList, Plus, ShoppingCart } from 'lucide-react'
+import { ClipboardList, FileOutput, Plus, ShoppingCart } from 'lucide-react'
 import Card from '@/components/ui/Card'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getUser } from '@/lib/auth'
@@ -17,6 +17,7 @@ import { useIsNarrow } from '@/hooks/useIsNarrow'
 import PedidosMobile from './PedidosMobile'
 import { ApprovalInbox } from '@/components/po/POApproval'
 import ApprovalDelegation from '@/components/po/ApprovalDelegation'
+import ErpExportDialog from '@/components/po/ErpExportDialog'
 
 const C = {
   surface: 'var(--surface)', border: 'var(--border)',
@@ -38,6 +39,7 @@ export default function OrdersPage() {
   const [error,       setError]       = useState<unknown>(null)
   const [receivingPO, setReceivingPO] = useState<string | null>(null)
   const [creatingPO,  setCreatingPO]  = useState(false)
+  const [erpOpen,     setErpOpen]     = useState(false)
   const canCreate = getUser()?.role !== 'viewer'
   // What is waiting on the buyer is shown as a chip inside the order's row (and
   // in the bell / nav count), never as a banner above the table.
@@ -183,6 +185,18 @@ export default function OrdersPage() {
             </span>
           )}
           <BulkImportButton kind="orders" onImported={() => load()} />
+          <button
+            data-tour="pedidos.erp"
+            onClick={() => setErpOpen(true)}
+            style={{
+              all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
+              gap: 6, padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+              border: `1px solid ${C.border}`, color: C.text,
+            }}
+          >
+            <FileOutput size={13} aria-hidden="true" />
+            {t('po.erp_open')}
+          </button>
           {canCreate && (
             <button
               data-tour="pedidos.manual"
@@ -295,6 +309,7 @@ export default function OrdersPage() {
           onSaved={() => { setCreatingPO(false); load() }}
         />
       )}
+      {erpOpen && <ErpExportDialog onClose={() => { setErpOpen(false); load() }} />}
       </>
       )}
     </div>

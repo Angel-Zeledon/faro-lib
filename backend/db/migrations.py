@@ -2109,6 +2109,9 @@ _MIGRATIONS += _PO_APPROVAL_LINKS
 # Inventory sync from a customer's own database (backend/inventory_sync/).
 from backend.inventory_sync.migrations import MIGRATIONS as _INVENTORY_SYNC  # noqa: E402
 _MIGRATIONS += _INVENTORY_SYNC
+# Purchase orders out to the ERP (backend/po_erp/): after the order tables and suppliers.
+from backend.po_erp.migrations import MIGRATIONS as _PO_ERP  # noqa: E402
+_MIGRATIONS += _PO_ERP
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────
