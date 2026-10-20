@@ -735,6 +735,43 @@ class TestCapabilities:
         assert s["usage_7d"]["calls"] == 1 and s["usage_7d"]["input_tokens"] == 4
         assert s["last_success_at"] is not None
 
+    def test_cost_is_an_estimate_from_the_company_prices_and_none_without_them(
+            self, client, auth_headers, analyst_headers, viewer_headers, test_tenant, fake):
+        tid = test_tenant["id"]
+        _store(tid, base_url=fake.base + "/v1")
+        fake.reply(Reply(200, openai_ok("x", prompt_tokens=2_000_000, completion_tokens=500_000)))
+        _call(tid)
+        # No price typed: tokens are shown, the cost is unknown (None, not 0).
+        s = client.get(f"{API}/status", headers=analyst_headers).json()["data"]
+        assert s["usage_7d"]["estimated_cost_usd"] is None
+        # A viewer cannot set the prices; the row is unchanged.
+        body = {"provider": "custom", "model": "m-1", "base_url": fake.base + "/v1",
+                "price_input_per_mtok": 1, "price_output_per_mtok": 4}
+        assert client.put(f"{API}/config", headers=viewer_headers, json=body).status_code == 403
+        assert _row(tid)["price_input_per_mtok"] is None
+        # The admin sets them: 2M in x $1 + 0.5M out x $4 = $4.
+        r = client.put(f"{API}/config", headers=auth_headers, json=body)
+        assert r.status_code == 200, r.text
+        row = _row(tid)
+        assert float(row["price_input_per_mtok"]) == 1.0 and float(row["price_output_per_mtok"]) == 4.0
+        s = client.get(f"{API}/status", headers=analyst_headers).json()["data"]
+        assert s["usage_7d"]["estimated_cost_usd"] == 4.0
+        assert s["usage_30d"]["input_tokens"] == 2_000_000
+        assert client.get(f"{API}/config", headers=analyst_headers).json()["data"][
+            "price_output_per_mtok"] == 4.0
+
+    @pytest.mark.parametrize("bad", [-1, "abc", "nan", 1_000_000])
+    def test_an_invalid_price_is_refused_and_nothing_changes(
+            self, bad, client, auth_headers, test_tenant, fake):
+        tid = test_tenant["id"]
+        _store(tid, base_url=fake.base + "/v1")
+        r = client.put(f"{API}/config", headers=auth_headers,
+                       json={"provider": "custom", "model": "m-1", "base_url": fake.base + "/v1",
+                             "price_input_per_mtok": bad})
+        assert r.status_code == 422
+        assert r.json()["error_code"] == "ai_provider_price_invalid"
+        assert _row(tid)["price_input_per_mtok"] is None
+
 
 def test_every_provider_error_code_has_es_and_en_copy():
     from pathlib import Path

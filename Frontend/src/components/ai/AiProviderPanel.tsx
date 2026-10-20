@@ -20,7 +20,7 @@ import {
   getAiProviderCatalogue, getAiProviderConfig, getAiProviderStatus,
   saveAiProvider, testAiProvider, resetAiProvider,
   type AiProviderCatalogue, type AiProviderConfig, type AiProviderDraft,
-  type AiProviderSpec, type AiProviderStatus, type AiProviderTestResult,
+  type AiProviderSpec, type AiProviderStatus, type AiProviderTestResult, type AiProviderUsage,
 } from '@/lib/api'
 import { getUser, type AuthUser } from '@/lib/auth'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -72,6 +72,8 @@ export default function AiProviderPanel() {
   const [project, setProject] = useState('')
   const [temperature, setTemperature] = useState('')
   const [maxTokens, setMaxTokens] = useState('')
+  const [priceIn, setPriceIn] = useState('')
+  const [priceOut, setPriceOut] = useState('')
   const [enabled, setEnabled] = useState(true)
 
   const [test, setTest] = useState<AiProviderTestResult | null>(null)
@@ -88,6 +90,8 @@ export default function AiProviderPanel() {
     setProject(c.project ?? '')
     setTemperature(c.temperature == null ? '' : String(c.temperature))
     setMaxTokens(c.max_tokens == null ? '' : String(c.max_tokens))
+    setPriceIn(c.price_input_per_mtok == null ? '' : String(c.price_input_per_mtok))
+    setPriceOut(c.price_output_per_mtok == null ? '' : String(c.price_output_per_mtok))
     setEnabled(c.enabled !== false)
     setApiKey('')
   }, [])
@@ -118,6 +122,8 @@ export default function AiProviderPanel() {
       : t('aiProvider.never')
 
   const num = (n: number) => n.toLocaleString(lang === 'es' ? 'es' : 'en')
+  const usd = (n: number) => n.toLocaleString(lang === 'es' ? 'es' : 'en',
+    { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 })
 
   const pick = (key: string) => {
     if (!isAdmin || key === provider) return
@@ -136,6 +142,8 @@ export default function AiProviderPanel() {
     project: spec?.supports_org ? project.trim() : undefined,
     temperature: temperature.trim() === '' ? null : Number(temperature),
     max_tokens: maxTokens.trim() === '' ? null : Number(maxTokens),
+    price_input_per_mtok: priceIn.trim() === '' ? null : Number(priceIn),
+    price_output_per_mtok: priceOut.trim() === '' ? null : Number(priceOut),
     enabled,
   })
 
@@ -232,10 +240,17 @@ export default function AiProviderPanel() {
             )}
           </>
         )}
-        <p style={hint}>{t('aiProvider.usage', {
-          calls: num(status.usage_7d.calls), failures: num(status.usage_7d.failures),
-          input: num(status.usage_7d.input_tokens), output: num(status.usage_7d.output_tokens),
-        })}</p>
+        {([status.usage_7d, status.usage_30d] as (AiProviderUsage | undefined)[]).map(u => u && (
+          <p key={u.days} style={hint} data-testid={`ai-usage-${u.days}d`}>
+            {t('aiProvider.usage', {
+              days: u.days, calls: num(u.calls), failures: num(u.failures),
+              input: num(u.input_tokens), output: num(u.output_tokens),
+            })}{' '}
+            {u.estimated_cost_usd == null
+              ? t('aiProvider.cost_unknown')
+              : t('aiProvider.cost_estimate', { cost: usd(u.estimated_cost_usd) })}
+          </p>
+        ))}
       </section>
 
       {!isAdmin && user && (
@@ -374,7 +389,18 @@ export default function AiProviderPanel() {
                   <input name="ai_max_tokens" type="number" inputMode="numeric" min={16} max={cat.max_output_tokens}
                          value={maxTokens} onChange={e => setMaxTokens(e.target.value)} disabled={!isAdmin} style={input} />
                 </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={label}>{t('aiProvider.field_price_in')}</span>
+                  <input name="ai_price_in" type="number" inputMode="decimal" min={0} step="any"
+                         value={priceIn} onChange={e => setPriceIn(e.target.value)} disabled={!isAdmin} style={input} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={label}>{t('aiProvider.field_price_out')}</span>
+                  <input name="ai_price_out" type="number" inputMode="decimal" min={0} step="any"
+                         value={priceOut} onChange={e => setPriceOut(e.target.value)} disabled={!isAdmin} style={input} />
+                </label>
               </div>
+              <p style={hint}>{t('aiProvider.price_hint')}</p>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13 }}>
                 <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} disabled={!isAdmin} />
                 {t('aiProvider.field_enabled')}
