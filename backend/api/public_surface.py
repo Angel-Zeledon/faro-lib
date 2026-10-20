@@ -59,6 +59,7 @@ EXPOSED_TAGS: frozenset[str] = frozenset({
 
 # ── Tags a key never reaches, and why ────────────────────────────────────────
 INTERNAL_TAGS: dict[str, str] = {
+    "sandbox": "a sandbox is minted by an administrator on the screen and hands out a key; a key must never create tenants or credentials",
     "inventory-signal-thresholds": "the traffic-light cut-offs move every recommendation the tenant sees; a person changes them on the rules panel, with its preview",
     "inventory-service-level-classes": "applying a suggested service level rewrites planning values on many SKUs at once; a person reads the suggestion and accepts it class by class",
     "auth": "login, signup and session tokens: a machine holds a key, it never logs in",

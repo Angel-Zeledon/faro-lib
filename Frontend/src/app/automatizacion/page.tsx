@@ -29,6 +29,7 @@ import {
 import MobileFormScope from '@/components/mobile/MobileFormScope'
 import { FeatureGate } from '@/components/limits/FeatureLocked'
 import ApiKeysMobile from './ApiKeysMobile'
+import SandboxCard from '@/components/apidocs/SandboxCard'
 import RunDurationsPanel from './RunDurationsPanel'
 
 type Tab = 'api-keys' | 'webhooks' | 'schedules'
@@ -247,6 +248,9 @@ function ApiKeysTab() {
           </tbody>
         </table></div>
       )}
+
+      {/* A sandbox to build the integration against, apart from the real data. */}
+      <SandboxCard />
     </div>
   )
 }

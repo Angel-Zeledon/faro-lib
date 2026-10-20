@@ -92,11 +92,17 @@ def _enforce_capacity() -> None:
         )
 
 
-def create_trial_account() -> dict:
+def create_trial_account(*, hours: int = TRIAL_HOURS, tenant_name: str = "Demo",
+                         include_ids: bool = False) -> dict:
     """Create the tenant and its one user. Returns the credentials.
 
     The password is returned once, here, and never stored in the clear — the
     page that shows it is the only place it exists.
+
+    `hours` and `tenant_name` let the sandbox (backend/sandbox/) ride the same
+    ceilings, tier and reaper with a longer life. `include_ids` adds the new
+    tenant and user ids to the answer; the public `POST /trial` never asks for
+    them.
     """
     from backend.tenants.data_export import delete_tenant
     from backend.tenants.service import create_tenant
@@ -105,8 +111,8 @@ def create_trial_account() -> dict:
 
     _enforce_capacity()
 
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=TRIAL_HOURS)
-    tenant = create_tenant("Demo")
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=hours)
+    tenant = create_tenant(tenant_name)
     tenant_id = tenant["id"]
     execute(
         "UPDATE tenants SET tier = %s, trial_ends_at = %s WHERE id = %s",
@@ -138,12 +144,15 @@ def create_trial_account() -> dict:
 
     log.info("[trial] created tenant=%s user=%s expires=%s",
              tenant_id, user["id"], expires_at.isoformat())
-    return {
+    result = {
         "email": email,
         "password": password,
         "expires_at": expires_at.isoformat(),
-        "hours": TRIAL_HOURS,
+        "hours": hours,
     }
+    if include_ids:
+        result.update(tenant_id=tenant_id, user_id=user["id"])
+    return result
 
 
 def is_expired_trial(tenant: dict | None) -> bool:

@@ -336,6 +336,56 @@ def test_live_responses_have_the_documented_shape(client, auth_headers, complete
     assert not drift, "documented responses that no longer match the live API:\n" + "\n".join(drift)
 
 
+def vanished_keys(example, live, where: str = "$") -> list[str]:
+    """Object keys the documented example carries with a real value that the live
+    answer no longer has. Lists are not walked: which element comes first is not a
+    contract. A key that was null or empty in the example is not promised."""
+    if not (isinstance(example, dict) and isinstance(live, dict)):
+        return []
+    out: list[str] = []
+    for key, value in example.items():
+        if value is None or value == [] or value == {}:
+            continue
+        if key not in live:
+            out.append(f"{where}.{key}")
+        else:
+            out += vanished_keys(value, live[key], f"{where}.{key}")
+    return out
+
+
+def test_vanished_keys_finds_a_removed_field_and_ignores_the_rest():
+    example = {"data": {"a": 1, "b": {"c": 2, "d": None}, "e": [], "f": [1]}}
+    assert vanished_keys(example, {"data": {"a": 1, "b": {"c": 2}, "f": [9]}}) == []
+    assert vanished_keys(example, {"data": {"b": {"c": 2}, "f": [9]}}) == ["$.data.a"]
+    assert vanished_keys(example, {"data": {"a": 1, "b": {}, "f": [9]}}) == ["$.data.b.c"]
+    assert vanished_keys(example, {"data": {"a": 1, "b": {"c": 2}}}) == ["$.data.f"]
+
+
+def test_a_documented_response_field_does_not_disappear(client, auth_headers, completed_session):
+    """The versioning policy promises that a documented response field is not
+    removed inside a version. The shape check above allows absent or null values
+    (accounts differ), so on its own a removed field would pass: this one fails
+    when a key the captured example carries with a value is gone from the live
+    answer of the same endpoint."""
+    session_id = completed_session["id"]
+    compared, gone = 0, []
+    for ep in _readable_endpoints():
+        path = ep["path"].replace("{session_id}", session_id).replace("{sku}", "SKU_001")
+        params = {p["name"]: p["example"] for p in ep["parameters"]
+                  if p["in"] == "query" and p["required"] and not str(p["example"]).startswith("<")}
+        if any(p["in"] == "query" and p["required"] and str(p["example"]).startswith("<") for p in ep["parameters"]):
+            params["session_id"] = session_id
+        resp = client.get(f"/api/v1{path}", params=params, headers=auth_headers)
+        if resp.status_code != 200 or "json" not in resp.headers.get("content-type", ""):
+            continue
+        compared += 1
+        missing = vanished_keys(_examples()[ep["id"]]["example"], resp.json())
+        if missing:
+            gone.append(f"{ep['id']}: {missing[:4]}")
+    assert compared >= 12, f"only {compared} endpoints could be compared; the check is vacuous"
+    assert not gone, "documented response fields that disappeared:\n" + "\n".join(gone)
+
+
 # ── the prose that states numbers ─────────────────────────────────────────────
 
 def test_the_in_app_console_states_the_real_limits():

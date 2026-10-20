@@ -1388,6 +1388,18 @@ export const createApiKey = (name: string, scope: import('./types').ApiKeyScope 
   request<{ key: string; name: string; role: string; scope: import('./types').ApiKeyScope }>(
     'POST', '/api-keys', { name, scope })
 
+// A throwaway tenant to build an integration against (backend/sandbox/).
+export interface SandboxInfo { id: string; created_at: string | null; expires_at: string | null }
+export interface SandboxCreated {
+  id: string; api_key: string; environment: 'sandbox'; expires_at: string; seeded: boolean
+  login: { email: string; password: string }
+}
+export const listSandboxes = (opts?: RequestOpts) =>
+  request<SandboxInfo[]>('GET', '/sandbox', undefined, opts)
+export const createSandbox = () => request<SandboxCreated>('POST', '/sandbox', {})
+export const deleteSandbox = (id: string) =>
+  request<{ deleted: boolean }>('DELETE', `/sandbox/${id}`)
+
 export const listApiKeys = (opts?: RequestOpts) =>
   request<import('./types').ApiKey[]>('GET', '/api-keys', undefined, opts)
 

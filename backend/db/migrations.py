@@ -2109,6 +2109,9 @@ _MIGRATIONS += _PO_APPROVAL_LINKS
 # Inventory sync from a customer's own database (backend/inventory_sync/).
 from backend.inventory_sync.migrations import MIGRATIONS as _INVENTORY_SYNC  # noqa: E402
 _MIGRATIONS += _INVENTORY_SYNC
+# Sandbox tenants for building an integration (backend/sandbox/).
+from backend.sandbox.migrations import MIGRATIONS as _SANDBOX  # noqa: E402
+_MIGRATIONS += _SANDBOX
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

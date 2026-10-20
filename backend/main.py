@@ -168,6 +168,12 @@ app.add_middleware(RequestLoggerMiddleware)
 app.add_middleware(MachineAuditMiddleware)
 from backend.middleware.audit_trail import AuditMiddleware  # noqa: E402
 app.add_middleware(AuditMiddleware)
+# Deprecation headers: installed only when a route is actually deprecated
+# (backend/api/deprecation.py), so with none the stack is exactly what it was.
+from backend.api import deprecation as _deprecation  # noqa: E402
+if _deprecation.DEPRECATIONS:
+    from backend.middleware.deprecation import DeprecationMiddleware  # noqa: E402
+    app.add_middleware(DeprecationMiddleware)
 
 # ── Error envelope ─────────────────────────────────────────────────────────
 # A user-facing AppError becomes a JSON error response that keeps the existing
@@ -398,6 +404,8 @@ from backend.api.v1 import po_cancellation as po_cancellation_router  # noqa: E4
 app.include_router(po_cancellation_router.router, prefix=_PREFIX)
 from backend.api.v1 import po_approvals as po_approvals_router  # noqa: E402
 app.include_router(po_approvals_router.router, prefix=_PREFIX)
+from backend.api.v1 import sandbox as sandbox_router  # noqa: E402
+app.include_router(sandbox_router.router, prefix=_PREFIX)
 from backend.api.v1 import forecast_adjustments as forecast_adjustments_router  # noqa: E402
 app.include_router(forecast_adjustments_router.router, prefix=_PREFIX)
 from backend.api.v1 import committed_demand as committed_demand_router  # noqa: E402
