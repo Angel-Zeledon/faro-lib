@@ -1,0 +1,109 @@
+{
+  "name": "StockAI - imminent stockout to a Jira issue",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stockai-stockout-imminent",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "StockAI webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "b2000000-0000-4000-8000-000000000002"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verifies a StockAI webhook delivery (signature + age) and drops repeats.\n// Needs the signing secret, shown once when the webhook was created, in the n8n\n// environment variable STOCKAI_WEBHOOK_SECRET, and NODE_FUNCTION_ALLOW_BUILTIN=crypto.\nconst crypto = require('crypto');\nconst secret = $env.STOCKAI_WEBHOOK_SECRET;\nif (!secret) throw new Error('Set STOCKAI_WEBHOOK_SECRET to the signing secret of this webhook');\n\nconst raw = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst headers = $input.first().json.headers || {};\nconst header = headers['x-stockai-signature'] || '';\nconst parts = Object.fromEntries(header.split(',').map(p => p.split('=')).filter(p => p.length === 2));\nconst t = parseInt(parts.t, 10);\nif (!t || Math.abs(Date.now() / 1000 - t) > 300) throw new Error('Rejected: the signature timestamp is missing or too old');\n\nconst expected = crypto.createHmac('sha256', secret).update(`${t}.`).update(raw).digest('hex');\nconst given = String(parts.v1 || '');\nconst a = Buffer.from(expected);\nconst b = Buffer.from(given);\nif (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new Error('Rejected: the signature does not match');\n\nconst event = JSON.parse(raw.toString('utf8'));\n\n// A delivery can arrive more than once: handle each event id one time.\nconst seen = $getWorkflowStaticData('global');\nseen.ids = seen.ids || {};\nif (seen.ids[event.id]) return [];\nseen.ids[event.id] = Date.now();\nfor (const [id, at] of Object.entries(seen.ids)) {\n  if (Date.now() - at > 86400000) delete seen.ids[id];\n}\nreturn [{ json: event }];\n"
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "create",
+        "project": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "issueType": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "summary": "=Stockout risk: {{ $json.data.sku }} at {{ $json.data.warehouse }} ({{ $json.data.coverage_days }} days of cover)",
+        "additionalFields": {
+          "description": "=StockAI flagged {{ $json.data.sku }} as {{ $json.data.signal }} on {{ $json.data.detected_on }}.\nStock on hand: {{ $json.data.current_stock }}. Reorder point: {{ $json.data.reorder_point }}.\nWarehouse: {{ $json.data.warehouse }}. Event: {{ $json.id }}"
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Create the issue",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "StockAI event: stockout.imminent (sent once when a SKU enters the state, not every day).\n\nCreate a webhook in StockAI subscribed to stockout.imminent, set STOCKAI_WEBHOOK_SECRET, choose the Jira project and issue type, and select your Jira credentials.\n\nNot yet imported into a live n8n by the authors: check each node after importing.",
+        "height": 260,
+        "width": 380
+      },
+      "id": "a1000000-0000-4000-8000-0000000000ff",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "StockAI webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Create the issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

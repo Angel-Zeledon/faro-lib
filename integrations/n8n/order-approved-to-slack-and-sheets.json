@@ -1,0 +1,147 @@
+{
+  "name": "StockAI - approved purchase order to Slack and Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stockai-purchase-order-approved",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "StockAI webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "b2000000-0000-4000-8000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verifies a StockAI webhook delivery (signature + age) and drops repeats.\n// Needs the signing secret, shown once when the webhook was created, in the n8n\n// environment variable STOCKAI_WEBHOOK_SECRET, and NODE_FUNCTION_ALLOW_BUILTIN=crypto.\nconst crypto = require('crypto');\nconst secret = $env.STOCKAI_WEBHOOK_SECRET;\nif (!secret) throw new Error('Set STOCKAI_WEBHOOK_SECRET to the signing secret of this webhook');\n\nconst raw = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst headers = $input.first().json.headers || {};\nconst header = headers['x-stockai-signature'] || '';\nconst parts = Object.fromEntries(header.split(',').map(p => p.split('=')).filter(p => p.length === 2));\nconst t = parseInt(parts.t, 10);\nif (!t || Math.abs(Date.now() / 1000 - t) > 300) throw new Error('Rejected: the signature timestamp is missing or too old');\n\nconst expected = crypto.createHmac('sha256', secret).update(`${t}.`).update(raw).digest('hex');\nconst given = String(parts.v1 || '');\nconst a = Buffer.from(expected);\nconst b = Buffer.from(given);\nif (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new Error('Rejected: the signature does not match');\n\nconst event = JSON.parse(raw.toString('utf8'));\n\n// A delivery can arrive more than once: handle each event id one time.\nconst seen = $getWorkflowStaticData('global');\nseen.ids = seen.ids || {};\nif (seen.ids[event.id]) return [];\nseen.ids[event.id] = Date.now();\nfor (const [id, at] of Object.entries(seen.ids)) {\n  if (Date.now() - at > 86400000) delete seen.ids[id];\n}\nreturn [{ json: event }];\n"
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "text": "=Purchase order {{ $json.data.po_number }} was approved for {{ $json.data.approved_amount }} ({{ $json.data.sku_count }} SKUs, {{ $json.data.total_units }} units). Approved by {{ $json.data.decided_by }}.",
+        "otherOptions": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Tell the channel",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        440,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Order": "={{ $json.data.po_number }}",
+            "Order id": "={{ $json.data.po_log_id }}",
+            "Warehouse": "={{ $json.data.warehouse }}",
+            "SKUs": "={{ $json.data.sku_count }}",
+            "Units": "={{ $json.data.total_units }}",
+            "Value": "={{ $json.data.total_value }}",
+            "Approved amount": "={{ $json.data.approved_amount }}",
+            "Approved by": "={{ $json.data.decided_by }}",
+            "Event id": "={{ $json.id }}",
+            "At": "={{ $json.occurred_at }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Add a row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "StockAI event: purchase_order.approved.\n\n1. In StockAI (Automation > Webhooks) create a webhook pointing at this workflow's production URL and subscribe it to purchase_order.approved only.\n2. Put its signing secret in the n8n variable STOCKAI_WEBHOOK_SECRET and allow the crypto module (NODE_FUNCTION_ALLOW_BUILTIN=crypto).\n3. Pick the Slack channel and the Sheet, and select your credentials.\n\nNot yet imported into a live n8n by the authors: check each node after importing.",
+        "height": 260,
+        "width": 380
+      },
+      "id": "a1000000-0000-4000-8000-0000000000ff",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "StockAI webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Tell the channel",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Add a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,158 @@
+{
+  "name": "StockAI - new Google Drive file replaces a dataset",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "New file in the folder",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Download it",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.stockai.es/api/v1/data-sources/REPLACE_WITH_DATA_SOURCE_ID/file",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Replace the dataset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "text": "=StockAI refused the file {{ $('Download it').item.binary.data.fileName }}: {{ $json.error.message }}",
+        "otherOptions": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Say it failed",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        680,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Replaces the file of an existing StockAI data source each time a file lands in the Drive folder (POST /api/v1/data-sources/{id}/file). The saved column mapping and the retrain-on-change schedule keep working.\n\n1. Replace REPLACE_WITH_DATA_SOURCE_ID with the data source id.\n2. Create an n8n Header Auth credential: name Authorization, value Bearer <a StockAI WRITE key>.\n3. Choose the Drive folder and the Slack channel.\n\nNot yet imported into a live n8n by the authors: check each node after importing.",
+        "height": 260,
+        "width": 380
+      },
+      "id": "a1000000-0000-4000-8000-0000000000ff",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "New file in the folder": {
+      "main": [
+        [
+          {
+            "node": "Download it",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download it": {
+      "main": [
+        [
+          {
+            "node": "Replace the dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace the dataset": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Say it failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
