@@ -459,10 +459,46 @@ Honesty up front, so nobody designs against something that does not exist:
   After the last attempt the delivery is marked `failed` in the log, and an endpoint
   that gives up on three different days is switched off. An endpoint down for more
   than about an hour loses the event: for anything that cannot be lost, also poll.
-- **There is no sandbox.** You test against the real tenant.
-- **There is no real versioning yet.** The `/api/v1` prefix exists, but the
-  stability promise comes from this list, not from the number. If something ever
-  has to break, there will be a `/v2` and notice.
+- **A sandbox is a throwaway tenant, not a copy of yours.** See "Sandbox" below.
+  It has the demo history, not your data.
+
+## Sandbox
+
+An administrator creates a sandbox from the API keys screen (or `POST /sandbox`). It
+is a separate throwaway tenant on the trial ceilings (30 SKUs, one key, 200 calls a
+day), seeded with the bundled demo history, with a write key already issued (shown
+once). It lives 7 days, or until you delete it, and you may hold two at a time.
+
+A sandbox key cannot read or write your real tenant, and your real keys cannot read
+or write the sandbox: every call is scoped to the tenant its key belongs to. The
+sandbox cannot send email or WhatsApp messages. It is not a staging copy of your
+inventory; to test against your own data, use a dataset you upload to it.
+
+## Versioning and deprecation
+
+- **What counts as breaking:** removing or renaming an endpoint, a response field or
+  a query parameter; changing the type or meaning of a field; making an optional
+  request field required; changing an error code. These do not happen inside a
+  version.
+- **What does not:** a new endpoint, a new response field, a new optional request
+  field or query parameter, a new error code for a new situation. Write clients that
+  ignore fields they do not know.
+- **A breaking change ships as a new version** (`/api/v2`). The old version keeps
+  working for at least **12 months** after the new one is announced.
+- **Deprecating a single endpoint** inside a version needs at least **180 days** of
+  notice. From the day it is announced every response from it carries
+  `Deprecation: @<unix time>`, `Sunset: <HTTP date>` and, when there is a replacement,
+  `Link: <successor>; rel="successor-version"`. The endpoint works until the sunset
+  date. Nothing is deprecated today.
+- A test fails whenever a response field this page documents disappears from the live
+  answer, so a removal cannot slip in without somebody deciding to announce it.
+
+## Client libraries
+
+Two single-file clients with no dependencies are generated from this API's own
+description, so they cannot drift from it: `sdk/python/stockai_client.py` and
+`sdk/typescript/stockai-client.ts`. One method per endpoint, named by the endpoint's
+id in the reference. They return the response envelope as the API sent it.
 
 ## Running it on separate infrastructure
 

@@ -25,8 +25,10 @@ current. This file makes the examples TRUE:
   say object, or a type that changed turns this red.
 """
 import inspect
+import os
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -334,6 +336,83 @@ def test_live_responses_have_the_documented_shape(client, auth_headers, complete
             drift.append(f"{ep['id']}: {problems[:3]}")
     assert compared >= 12, f"only {compared} endpoints could be compared; the check is vacuous"
     assert not drift, "documented responses that no longer match the live API:\n" + "\n".join(drift)
+
+
+_FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+FIELD_BASELINE = Path(__file__).with_name("api_response_fields.json")
+UPDATE_FLAG = "UPDATE_API_FIELD_BASELINE"
+
+
+def field_paths(value, where: str = "$") -> set[str]:
+    """Object field paths of a JSON answer. Lists are not walked (which element
+    comes first is not a contract) and a dict whose keys are DATA - a SKU id, a
+    date - is not a set of fields: a key that is not a snake_case name ends the
+    walk there."""
+    if not isinstance(value, dict):
+        return set()
+    if any(not _FIELD_NAME.match(str(k)) for k in value):
+        return set()
+    out: set[str] = set()
+    for key, sub in value.items():
+        path = f"{where}.{key}"
+        out.add(path)
+        out |= field_paths(sub, path)
+    return out
+
+
+def test_field_paths_skips_lists_and_maps_keyed_by_data():
+    answer = {"data": {"a": 1, "b": {"c": None}, "rows": [{"x": 1}], "by_sku": {"SKU-001": {"q": 1}}}}
+    assert field_paths(answer) == {"$.data", "$.data.a", "$.data.b", "$.data.b.c",
+                                   "$.data.rows", "$.data.by_sku"}
+    assert field_paths({"SKU-001": 1}) == set()
+    assert field_paths([1]) == set()
+
+
+def _live_field_paths(client, headers, session_id) -> dict[str, set[str]]:
+    out: dict[str, set[str]] = {}
+    for ep in _readable_endpoints():
+        path = ep["path"].replace("{session_id}", session_id).replace("{sku}", "SKU_001")
+        params = {p["name"]: p["example"] for p in ep["parameters"]
+                  if p["in"] == "query" and p["required"] and not str(p["example"]).startswith("<")}
+        if any(p["in"] == "query" and p["required"] and str(p["example"]).startswith("<") for p in ep["parameters"]):
+            params["session_id"] = session_id
+        resp = client.get(f"/api/v1{path}", params=params, headers=headers)
+        if resp.status_code == 200 and "json" in resp.headers.get("content-type", ""):
+            out[ep["id"]] = field_paths(resp.json())
+    return out
+
+
+def test_a_documented_response_field_does_not_disappear(client, auth_headers, completed_session):
+    """The versioning policy promises that a response field is not removed inside
+    a version. The shape check above allows absent or null values (accounts
+    differ), so a removed field would pass it. This one keeps a committed list of
+    the fields (`api_response_fields.json`) that both the documented example and
+    the live answer carried for the reference account, and fails when one is gone.
+
+    A field that went away on purpose is a breaking change: announce it
+    (backend/api/deprecation.py), then regenerate the list with
+    `UPDATE_API_FIELD_BASELINE=1 pytest backend/tests/test_public_api_examples.py -k disappear`.
+    """
+    live = _live_field_paths(client, auth_headers, completed_session["id"])
+    examples = _examples()
+    if os.environ.get(UPDATE_FLAG):
+        baseline = {i: sorted(paths & field_paths(examples[i]["example"]))
+                    for i, paths in sorted(live.items())}
+        FIELD_BASELINE.write_text(json.dumps(baseline, indent=1) + "\n", encoding="utf-8")
+        pytest.skip(f"baseline rewritten for {len(baseline)} endpoints")
+    baseline = json.loads(FIELD_BASELINE.read_text(encoding="utf-8"))
+    assert len(baseline) >= 12, "the committed field list is too small to guard anything"
+    gone, compared = [], 0
+    for ep_id, expected in baseline.items():
+        if ep_id not in live:
+            gone.append(f"{ep_id}: the endpoint no longer answers 200")
+            continue
+        compared += 1
+        missing = sorted(set(expected) - live[ep_id])
+        if missing:
+            gone.append(f"{ep_id}: {missing[:4]}")
+    assert compared >= 12
+    assert not gone, "documented response fields that disappeared:\n" + "\n".join(gone)
 
 
 # ── the prose that states numbers ─────────────────────────────────────────────

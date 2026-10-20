@@ -2115,6 +2115,9 @@ _MIGRATIONS += _PO_ERP
 # File-drop sources: SFTP / S3 directories that feed a dataset (backend/file_drop/).
 from backend.file_drop.migrations import MIGRATIONS as _FILE_DROP  # noqa: E402
 _MIGRATIONS += _FILE_DROP
+# Sandbox tenants for building an integration (backend/sandbox/).
+from backend.sandbox.migrations import MIGRATIONS as _SANDBOX  # noqa: E402
+_MIGRATIONS += _SANDBOX
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

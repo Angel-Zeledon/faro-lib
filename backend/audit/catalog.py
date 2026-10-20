@@ -132,6 +132,8 @@ ROUTES: dict[tuple[str, str], AuditRoute] = {
     ("DELETE", "/file-drop/sources/{source_id}"):   _r("file_drop.source_deleted", "file_drop_source", "source_id"),
     ("POST", "/file-drop/sources/{source_id}/host-key"): _r("file_drop.host_key_accepted", "file_drop_source", "source_id"),
     ("POST", "/file-drop/files/{file_id}/decision"): _r("file_drop.file_decided", "file_drop_file", "file_id"),
+    ("POST", "/sandbox"):                           _r("sandbox.created", "sandbox"),
+    ("DELETE", "/sandbox/{sandbox_id}"):            _r("sandbox.deleted", "sandbox", "sandbox_id"),
     # Documents a buyer forwards to other people. Each handler notes what left
     # (rows or bytes, format) so the row answers "what did they take".
     ("GET", "/inventory/report/pdf"):               _r("export.inventory_pdf", "session"),
