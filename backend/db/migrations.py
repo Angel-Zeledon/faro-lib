@@ -2112,6 +2112,9 @@ _MIGRATIONS += _INVENTORY_SYNC
 # Purchase orders out to the ERP (backend/po_erp/): after the order tables and suppliers.
 from backend.po_erp.migrations import MIGRATIONS as _PO_ERP  # noqa: E402
 _MIGRATIONS += _PO_ERP
+# File-drop sources: SFTP / S3 directories that feed a dataset (backend/file_drop/).
+from backend.file_drop.migrations import MIGRATIONS as _FILE_DROP  # noqa: E402
+_MIGRATIONS += _FILE_DROP
 
 
 # ── Inventory status snapshot (docs/status-performance.md) ───────────────────

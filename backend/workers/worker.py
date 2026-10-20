@@ -680,6 +680,13 @@ def _inventory_sync_loop() -> None:
     loop()
 
 
+# File-drop sources (backend/file_drop/): SFTP / S3 directories that feed a
+# dataset. Same claim-loop shape as the inventory sync.
+def _file_drop_loop() -> None:
+    from backend.file_drop.scheduler import loop
+    loop()
+
+
 def enabled_components() -> list[str]:
     """Thread names start() will launch under the current settings.
 
@@ -691,6 +698,7 @@ def enabled_components() -> list[str]:
     if settings.worker_enabled:
         components.append("job-worker")
         components.append("inventory-sync")
+        components.append("file-drop")
     if settings.scheduler_enabled:
         components += [
             "job-scheduler", "inventory-alerts", "overstock-snapshot",
@@ -712,6 +720,7 @@ _COMPONENT_TARGETS = {
     "audit-stream":       _audit_stream_loop,
     "report-scheduler":   _report_scheduler_loop,
     "inventory-sync":     _inventory_sync_loop,
+    "file-drop":          _file_drop_loop,
 }
 
 
